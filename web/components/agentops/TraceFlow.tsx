@@ -542,27 +542,31 @@ function NodeCard({ data }: { data: CardData }) {
 /** The data a stack card is drawn from. */
 interface BandData {
   band: FlowBand;
-  face: RunFace;
+  /** The front card, built exactly as any other node's is — see `BandCard`. */
+  card: CardData;
   onExpand: () => void;
   [key: string]: unknown;
 }
 
 /**
- * A run of like nodes, drawn as one card.
+ * A run of like nodes, drawn as that node with copies behind it.
  *
- * It wears the FACE of the thing it stacks, because that is what makes a stack readable
- * without opening it: every node inside is this node, and the only new information is
- * how many and how long they took together. A card standing for several kinds of work
- * could not say that, which is why this stacks like with like and nothing else.
+ * **The front card is a REAL node card, in its ordinary state.** An earlier pass replaced
+ * it with a condensed two-line summary, and that was the wrong trade: the default card is
+ * what a reader already knows how to read, and every node in the stack is that node — so
+ * shrinking it removed the familiar thing and put a new thing in its place, to save
+ * vertical room the layout was not short of. The reference frame stacks whole nodes for
+ * the same reason.
  *
- * The offset plates behind it are the affordance the request asked for; they also say,
- * without a word, that this is several nodes and not one.
+ * The only additions are the offset plates behind it and the count on top. The plates are
+ * the affordance the request asked for; they also say, without a word, that this is
+ * several nodes and not one. The duration on the face is the stack's TOTAL
+ * (`bandAsNode`), which is the one number that would otherwise be wrong.
  */
 function BandCard({ data }: { data: BandData }) {
-  const { band, face, onExpand } = data;
-  const first = band.members[0];
-  const total = band.members.reduce((sum, m) => sum + (m.duration_ms || 0), 0);
-  const accent = FACE_META[face].color;
+  const { band, card, onExpand } = data;
+  const accent = FACE_META[card.face].color;
+  const label = `Expand ${band.reps} stacked ${card.node.name || card.face} nodes`;
 
   return (
     <div style={{ position: "relative", width: CARD_W }}>
@@ -578,35 +582,21 @@ function BandCard({ data }: { data: BandData }) {
       <div
         role="button"
         tabIndex={0}
-        aria-label={`Expand ${band.reps} stacked ${first.name || face} nodes`}
+        aria-label={label}
         onClick={onExpand}
         onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onExpand(); } }}
-        style={{
-          position: "relative", width: CARD_W, cursor: "pointer",
-          background: "var(--bg-2)",
-          borderTop: "1px solid var(--border)", borderRight: "1px solid var(--border)",
-          borderBottom: "1px solid var(--border)",
-          borderLeft: `3px solid ${accent}`,
-          borderRadius: "var(--r-chip)", overflow: "hidden",
-        }}>
-        <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-        <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 9px",
-          borderBottom: "1px solid var(--b1)" }}>
-          <span style={{ width: 7, height: 7, borderRadius: "var(--r-pill)",
-            flexShrink: 0, background: accent }} />
-          <span className="aug-fs-ui" style={{ fontWeight: 600, overflow: "hidden",
-            textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {first.name || face}
-          </span>
-          <span className="aug-fs-ui" style={{ marginLeft: "auto", fontWeight: 600,
-            color: accent }}>
-            ×{band.reps}
-          </span>
-        </div>
-        <div className="aug-fs-xs" style={{ padding: "6px 9px", color: "var(--t4)" }}>
-          {ms(total)} total · click to expand
-        </div>
-        <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+        style={{ position: "relative", cursor: "pointer" }}>
+        <NodeCard data={card} />
+        <span
+          aria-hidden
+          style={{
+            position: "absolute", top: -7, right: -7,
+            padding: "1px 7px", borderRadius: "var(--r-pill)",
+            background: "var(--bg-1)", border: `1px solid ${accent}`, color: accent,
+          }}
+          className="aug-fs-xs">
+          ×{band.reps}
+        </span>
       </div>
     </div>
   );
@@ -831,7 +821,20 @@ export function TraceFlow({
         position: { x: p.col * COL_W, y: p.row * ROW_H },
         data: {
           band,
-          face: faceOf(band.members[0]),
+          // Built through the same path as any other card, off the synthetic node — so
+          // the stack's face is the node's face, not a second rendering of it that could
+          // drift. `bandAsNode` carries the stack's TOTAL duration.
+          card: {
+            node: bandAsNode(band),
+            event: eventForNode(band.members[0], events),
+            face: faceOf(band.members[0]),
+            open: false,
+            selected: false,
+            runUsage: timeline.usage ?? null,
+            answer,
+            origin,
+            onToggle: () => setExpanded(cur => new Set(cur).add(band.id)),
+          },
           onExpand: () => setExpanded(cur => new Set(cur).add(band.id)),
         } satisfies BandData,
         draggable: true,

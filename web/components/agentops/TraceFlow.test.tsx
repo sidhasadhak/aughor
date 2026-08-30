@@ -426,6 +426,31 @@ describe("stacked nodes", () => {
       .toBeInTheDocument();
   });
 
+  it("draws the ordinary node card, not a shrunken summary of one", () => {
+    // The default card is what a reader already knows how to read, and every node in the
+    // stack IS that node. An earlier pass replaced it with a condensed two-line summary
+    // to save vertical room the layout was not short of; this locks that back.
+    const stacked = Array.from({ length: 30 }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }));
+    render(<TraceFlow timeline={timeline(stacked)} edges={[]} />);
+    const card = canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes");
+    // The ordinary card in its default state is name · duration · Details. The condensed
+    // summary this replaced had no Details affordance at all, so its presence is what
+    // separates "the node, stacked" from "a card about the node".
+    expect(within(card).getByText("Details")).toBeInTheDocument();
+    expect(within(card).getByText("gemini-3.1-flash-lite")).toBeInTheDocument();
+    expect(within(card).getByText("×30")).toBeInTheDocument();
+  });
+
+  it("shows the stack's TOTAL duration, the one number a single face would get wrong", () => {
+    const stacked = Array.from({ length: 30 }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name: "gemini", duration_ms: 100 }));
+    render(<TraceFlow timeline={timeline(stacked)} edges={[]} />);
+    const band = drawn().nodes.find(n => n.type === "bandNode");
+    const bandData = band!.data as { card: { node: TimelineNode } };
+    expect(bandData.card.node.duration_ms).toBe(3000);
+  });
+
   it("does NOT stack like nodes that something else came between", () => {
     // The rule, in the user's own words: two model calls with an ask between them are
     // two cards, because they are not one after the other.
