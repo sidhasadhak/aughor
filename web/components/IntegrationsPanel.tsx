@@ -38,6 +38,10 @@ export function IntegrationsPanel() {
   const [setupFor, setSetupFor] = useState<string | null>(null);
   const [clientId, setClientId] = useState("");
   const [clientSecret, setClientSecret] = useState("");
+  /** The callback being authored. Seeded from what the provider has stored, else from
+   *  the address this API is currently reached at — which is only the right answer when
+   *  the two happen to agree. */
+  const [callback, setCallback] = useState("");
   const [busy, setBusy] = useState("");
   /** Set after a revoke of a provider with no revocation endpoint — the one case where
    *  "revoked" is only half true and the reader must be told the other half. */
@@ -74,14 +78,32 @@ export function IntegrationsPanel() {
     return [...by.entries()];
   }, [providers]);
 
+  /** Open (or close) one provider's form, seeded from what is stored.
+   *
+   *  It used to clear both fields on every open, which read as "nothing was ever saved"
+   *  on a provider that was in fact configured — the user's own report. The client id
+   *  comes back whole; the secret cannot (it is encrypted at rest and masked on every
+   *  read) so its box stays empty and says what empty MEANS: keep the stored one. */
+  const openSetup = (p: IntegrationProvider) => {
+    const opening = setupFor !== p.id;
+    setSetupFor(opening ? p.id : null);
+    setClientId(opening ? p.client_id : "");
+    setClientSecret("");
+    setCallback(opening ? (p.redirect_uri || redirectUri) : "");
+  };
+
   const saveApp = async (provider: string) => {
     setBusy(provider);
     setError("");
     try {
       await setupIntegrationApp(provider, {
         client_id: clientId.trim(), client_secret: clientSecret.trim(),
+        // Sent only when the person changed it away from the derived address: an
+        // override stored on every save would freeze a deployment to whatever host it
+        // happened to be reached at the day someone last opened this form.
+        redirect_uri: callback.trim() === redirectUri.trim() ? "" : callback.trim(),
       });
-      setClientId(""); setClientSecret(""); setSetupFor(null);
+      setClientId(""); setClientSecret(""); setCallback(""); setSetupFor(null);
       await load();
     } catch (e) {
       setError((e as Error).message);
@@ -180,15 +202,13 @@ export function IntegrationsPanel() {
                     {p.configured && (
                       <Button variant="ghost" size="xs" disabled={busy === p.id}
                         title={`Replace the ${p.name} OAuth client`}
-                        onClick={() => { setSetupFor(cur => cur === p.id ? null : p.id);
-                                         setClientId(""); setClientSecret(""); }}>
+                        onClick={() => { openSetup(p); }}>
                         Edit
                       </Button>
                     )}
                     {!p.configured ? (
                       <Button variant="secondary" size="xs" disabled={busy === p.id}
-                        onClick={() => { setSetupFor(cur => cur === p.id ? null : p.id);
-                                         setClientId(""); setClientSecret(""); }}>
+                        onClick={() => { openSetup(p); }}>
                         Set up
                       </Button>
                     ) : p.connection?.status === "active" ? (
@@ -225,11 +245,24 @@ export function IntegrationsPanel() {
                         style={{ color: "var(--blue4)" }}>the {p.name} console</a>
                       {" "}with this redirect URI, then paste the client credentials back:
                     </div>
-                    <code className="aug-fs-xs" style={{ padding: "5px 8px",
-                      background: "var(--bg-2)", borderRadius: "var(--r2)",
-                      border: "1px solid var(--b1)", overflowWrap: "anywhere" }}>
-                      {redirectUri}
-                    </code>
+                    {/* EDITABLE. It was a read-only `<code>` of the address this API
+                        happens to be reached at, which is the right answer only when
+                        that matches what the provider has registered — and it cannot
+                        match for a provider that refuses http:// while you develop over
+                        localhost. Blank-equals-derived is preserved: saving it unchanged
+                        stores no override at all. */}
+                    <input className="aug-fs-xs" style={{ ...inputStyle,
+                      fontFamily: "var(--font-mono)" }}
+                      value={callback} spellCheck={false} autoComplete="off"
+                      aria-label="Redirect URI"
+                      placeholder={redirectUri}
+                      onChange={e => setCallback(e.target.value)} />
+                    {callback.trim() && callback.trim() !== redirectUri.trim() && (
+                      <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                        Overrides the derived address ({redirectUri}) — the provider will
+                        be sent this one, and the exchange will use the same string.
+                      </div>
+                    )}
                     {/* Said BEFORE the credentials are pasted, not after the provider's
                         own error page. Slack rejects `http://` outright — localhost
                         included — while Google and Microsoft accept the loopback
@@ -248,12 +281,19 @@ export function IntegrationsPanel() {
                     <input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
                       value={clientId} autoComplete="off" spellCheck={false}
                       onChange={e => setClientId(e.target.value)} />
-                    <input className="aug-fs-ui" style={inputStyle} placeholder="Client secret"
+                    <input className="aug-fs-ui" style={inputStyle}
+                      placeholder={p.secret_preview
+                        ? `Client secret — stored (${p.secret_preview}), leave blank to keep it`
+                        : "Client secret"}
                       value={clientSecret} autoComplete="off" spellCheck={false}
                       onChange={e => setClientSecret(e.target.value)} />
                     <div style={{ display: "flex", gap: 6 }}>
                       <Button variant="default" size="xs"
-                        disabled={!clientId.trim() || !clientSecret.trim() || busy === p.id}
+                        /* The secret is required only when there is not one already:
+                           blank now MEANS "keep the stored one", and a Save that stayed
+                           disabled would have made that impossible to express. */
+                        disabled={!clientId.trim() || busy === p.id
+                                  || (!clientSecret.trim() && !p.secret_preview)}
                         onClick={() => saveApp(p.id)}>
                         {busy === p.id ? "Saving…" : "Save"}
                       </Button>

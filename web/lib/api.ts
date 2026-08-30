@@ -3472,6 +3472,15 @@ export interface IntegrationProvider {
   blurb: string;
   /** The org registered an OAuth client — flips the card from Set up to Connect. */
   configured: boolean;
+  /** The stored OAuth client id, echoed back so the Set-up form can EDIT rather than
+   *  ask again. Not a secret: it travels in the browser's own address bar during the
+   *  dance. Empty when the provider was never set up. */
+  client_id: string;
+  /** A masked preview of the stored secret ("abcd••••••"), or "". Enough to say one
+   *  exists; never enough to read it. */
+  secret_preview: string;
+  /** The authored callback, when one was set; "" means the derived one applies. */
+  redirect_uri: string;
   console_url: string;
   /** This provider REFUSES an `http://` redirect URL, localhost included — Slack says
    *  so in its own docs, Google and Microsoft accept the loopback address. The Set-up
@@ -3490,7 +3499,14 @@ export async function getIntegrationsCatalog(): Promise<{
 }
 
 export async function setupIntegrationApp(provider: string, body: {
-  client_id: string; client_secret: string;
+  client_id: string;
+  /** Blank on an update = keep the stored secret. It is encrypted at rest and masked on
+   *  every read, so requiring it back would force a rotation to fix a typo elsewhere. */
+  client_secret: string;
+  /** Blank = derive the callback from the request, as every deployment did before this
+   *  field existed. Set it when the API is REGISTERED at an address it is not currently
+   *  being reached at — the case every local Slack setup lands in. */
+  redirect_uri?: string;
 }): Promise<{ redirect_uri: string }> {
   const res = await fetch(`${getApiBase()}/integrations/${provider}/app`, {
     method: "PUT", headers: { "Content-Type": "application/json" },

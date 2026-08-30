@@ -44,6 +44,15 @@ class ProviderApp(BaseModel):
     id: str = ""                      # provider id: "google" | "slack" | "microsoft"
     client_id: str = ""
     client_secret: str = ""           # encrypted at rest
+    #: An explicit callback address, when the derived one is not the one registered.
+    #:
+    #: The callback is normally read off the request (`_callback_uri`), which is right
+    #: for a deployment reached at its own address. It is WRONG the moment the API is
+    #: registered under an address it is not currently being reached at — the case every
+    #: local Slack setup lands in, because Slack refuses `http://` and the developer is
+    #: browsing over `http://localhost` while the provider must call back to a tunnel.
+    #: Empty = derive it, which is every deployment that never needed to think about it.
+    redirect_uri: str = ""
     created_at: str = Field(default_factory=now_iso_z)
     updated_at: str = Field(default_factory=now_iso_z)
 

@@ -54,6 +54,16 @@ def catalog(request: Request):
         out.append({
             "id": p.id, "name": p.name, "category": p.category, "blurb": p.blurb,
             "configured": bool(app and app.client_id),
+            # What was stored, so the Set-up form can show it back instead of a pair of
+            # empty boxes that read as "nothing was ever saved". The client id is not a
+            # secret — it travels in the browser's own address bar during the dance — so
+            # it comes back whole; the secret comes back as a masked PREVIEW, which is
+            # the difference between "there is one" and "here it is".
+            "client_id": app.client_id if app else "",
+            "secret_preview": app.to_safe_dict()["client_secret"] if app else "",
+            # The override, when one was set. Empty means "derive it from the request",
+            # which is what the `redirect_uri` beside this payload already shows.
+            "redirect_uri": (app.redirect_uri if app else "") or "",
             "console_url": p.console_url,
             # So the Set-up form can say that THIS redirect URI will not be accepted,
             # rather than showing a string the provider rejects on the next click.
@@ -67,7 +77,36 @@ def catalog(request: Request):
 
 class AppBody(BaseModel):
     client_id: str = ""
+    #: Blank on an UPDATE means "keep the stored one". The secret is never readable, so
+    #: a form that required it back would force a rotation on every edit — the slackbots
+    #: `merge_secrets` rule, which exists for exactly this.
     client_secret: str = ""
+    #: Blank means "derive the callback from the request", the behaviour every
+    #: deployment had before this field existed.
+    redirect_uri: str = ""
+
+
+def _check_redirect(provider, uri: str) -> str:
+    """An authored callback, or a sentence saying why it cannot be one.
+
+    Refused at SAVE rather than at the provider's error page, which is where this
+    project's users have been meeting these mistakes: a callback that does not end in
+    the one route that exists cannot be handled whatever the provider does with it, and
+    an `http://` address for a provider that documents HTTPS-only is a registration that
+    is going to be rejected either way.
+    """
+    uri = uri.strip()
+    if not uri:
+        return ""
+    if not uri.startswith(("http://", "https://")):
+        raise HTTPException(422, "the callback must be an absolute http:// or https:// URL")
+    if not uri.endswith("/oauth/callback"):
+        raise HTTPException(422, "the callback must end with /oauth/callback — that is the "
+                                 "only route that can complete the exchange")
+    if provider.https_only and uri.startswith("http://"):
+        raise HTTPException(422, f"{provider.name} refuses an http:// redirect URL, "
+                                 "localhost included — register an https:// address")
+    return uri
 
 
 @router.put("/integrations/{provider_id}/app")
@@ -75,11 +114,14 @@ def put_app(provider_id: str, body: AppBody, request: Request):
     provider = get_provider(provider_id)
     if provider is None:
         raise HTTPException(404, f"unknown provider: {provider_id}")
-    if not body.client_id.strip() or not body.client_secret.strip():
+    stored = store.get_app_decrypted(provider_id)
+    secret = body.client_secret.strip() or (stored.client_secret if stored else "")
+    if not body.client_id.strip() or not secret:
         raise HTTPException(422, "client_id and client_secret are both required")
     app = store.save_app(ProviderApp(
         id=provider_id, client_id=body.client_id.strip(),
-        client_secret=body.client_secret.strip()))
+        client_secret=secret,
+        redirect_uri=_check_redirect(provider, body.redirect_uri)))
     # The redirect URI rides back with the save because it is the NEXT thing the person
     # needs — it must be pasted into the provider console they just came from.
     return {"app": app.to_safe_dict(), "redirect_uri": _callback_uri(request)}
@@ -90,9 +132,15 @@ def put_app(provider_id: str, body: AppBody, request: Request):
 @router.post("/integrations/{provider_id}/connect")
 def connect(provider_id: str, request: Request):
     """Begin the dance; the client sends the browser to `authorize_url`."""
+    # The AUTHORED callback wins over the derived one: a deployment registered under an
+    # address it is not currently being reached at (every local Slack setup, since Slack
+    # refuses http://) would otherwise send the provider a URI nobody registered.
+    # `complete()` reads it back off the pending flow, so both legs carry the same string.
+    app = store.get_app(provider_id)
     try:
         url = broker.begin(provider_id, user_id=_user(),
-                           redirect_uri=_callback_uri(request))
+                           redirect_uri=(app.redirect_uri if app else "")
+                                        or _callback_uri(request))
     except broker.BrokerError as exc:
         raise HTTPException(422, str(exc))
     return {"authorize_url": url}

@@ -74,3 +74,67 @@ def test_someone_elses_connection_is_a_404_not_a_403(client, no_provider_calls):
 
     mine = client.get("/integrations/connections").json()["connections"]
     assert all(c["id"] != foreign.id for c in mine)
+
+
+# ── the Set-up form is an EDITOR, not a one-shot ──────────────────────────────────
+
+def test_the_catalog_shows_back_what_was_stored(client):
+    """An Edit form opening on two empty boxes reads as "nothing was ever saved" — the
+    user's own words when they hit it. The client id comes back whole (it travels in the
+    browser's address bar during the dance; it is not a secret), the secret only as a
+    masked preview: enough to say one EXISTS, never enough to read it."""
+    client.put("/integrations/google/app",
+               json={"client_id": "cid-123", "client_secret": "shh-super-secret"})
+
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["client_id"] == "cid-123"
+    assert google["secret_preview"] and "shh-super-secret" not in google["secret_preview"]
+    assert "•" in google["secret_preview"]
+
+
+def test_a_blank_secret_keeps_the_stored_one(client):
+    """The secret is never readable, so requiring it back on every edit would force a
+    rotation to fix a typo in the client id."""
+    client.put("/integrations/google/app",
+               json={"client_id": "cid-1", "client_secret": "secret-1"})
+    fixed = client.put("/integrations/google/app", json={"client_id": "cid-2"})
+    assert fixed.status_code == 200, fixed.text
+
+    from aughor.integrations.store import get_app_decrypted
+    app = get_app_decrypted("google")
+    assert app.client_id == "cid-2"
+    assert app.client_secret == "secret-1"      # unchanged, not blanked
+
+
+def test_an_authored_callback_is_stored_and_used(client):
+    client.put("/integrations/google/app", json={
+        "client_id": "cid", "client_secret": "sec",
+        "redirect_uri": "https://tunnel.example.com/oauth/callback"})
+
+    google = next(p for p in client.get("/integrations/catalog").json()["providers"]
+                  if p["id"] == "google")
+    assert google["redirect_uri"] == "https://tunnel.example.com/oauth/callback"
+
+    url = client.post("/integrations/google/connect").json()["authorize_url"]
+    assert "tunnel.example.com%2Foauth%2Fcallback" in url or \
+           "tunnel.example.com/oauth/callback" in url
+
+
+def test_a_callback_that_cannot_complete_is_refused_at_save(client):
+    """Only one route can finish the exchange; a URI that does not end there is a flow
+    that breaks after the person has already consented."""
+    bad = client.put("/integrations/google/app", json={
+        "client_id": "c", "client_secret": "s", "redirect_uri": "https://example.com/hello"})
+    assert bad.status_code == 422
+    assert "/oauth/callback" in bad.json()["detail"]
+
+
+def test_slack_refuses_an_http_callback_at_save(client):
+    """Slack's own documented rule, enforced before the person walks into its error
+    page — which is how this was found."""
+    refused = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "http://localhost:8000/oauth/callback"})
+    assert refused.status_code == 422
+    assert "http://" in refused.json()["detail"]

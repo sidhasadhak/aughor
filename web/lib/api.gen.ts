@@ -8990,6 +8990,11 @@ export interface components {
              * @default
              */
             client_secret: string;
+            /**
+             * Redirect Uri
+             * @default
+             */
+            redirect_uri: string;
         };
         /**
          * AskRequest
