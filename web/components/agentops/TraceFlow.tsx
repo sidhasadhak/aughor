@@ -21,12 +21,30 @@
  * order; a node's children hang one column to the right, stacked, and the next root
  * starts clear of the whole subtree.
  *
+ * ── VA-4e: THE ARRANGEMENT ───────────────────────────────────────────────────
+ * The canvas above was right and read flat: every node was the same rectangle, so the
+ * shape of a run had to be read word by word. Two changes, both presentation:
+ *
+ *   - **Typed faces** (`RunNodes.tsx`). A trigger, a guardrail, a model call, a tool and
+ *     the final response now each show the fields they actually have. Same rows, same
+ *     endpoint — a guardrail's verdict was always in `payload.blocked`, and was being
+ *     rendered as an anonymous dot named "pii".
+ *   - **A docked rail.** Where the run came from, what it cost, and every node as a
+ *     clickable index — so a 24-node canvas is navigable without hunting across it.
+ *     Selecting a row centres its node and opens it, which is the affordance a canvas
+ *     needs the moment it is bigger than the viewport.
+ *
+ * Nothing new is recorded and no node is invented: a run with no `user_request` row gets
+ * no trigger card, and its origin is stated in the rail from the built-in agent and
+ * connection it did record. A synthesised head node would be indistinguishable from a
+ * real one.
+ *
  * (An earlier version of this file rendered a nested list and argued that avoided a
  * dependency. It did not: `@xyflow/react` has been in this app since #178 and drives two
  * other canvases. The argument was wrong on the facts, so the canvas is the better
  * answer — same library, same design system, and pan/zoom/fit come with it.)
  */
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Background,
   Controls,
@@ -36,29 +54,22 @@ import {
   ReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
+import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
+import {
+  CARD_W, FACE_META, FaceHeader, FieldRow, ProseBlock, UsageBlock,
+  faceOf, guardVerdict, ms, originOf, type RunFace, type RunOrigin,
+} from "@/components/agentops/RunNodes";
 import type { SessionEvent, TimelineNode, TraceFlowEdge, TraceTimeline } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 
-const KIND_COLOR: Record<string, string> = {
-  model: "var(--chart-1)",
-  tool: "var(--chart-2)",
-  frame: "var(--chart-3)",
-  error: "var(--red4)",
-  event: "var(--chart-6)",
-  delegation: "var(--chart-4)",
-};
-
-/** Card geometry. Columns are wide enough for a model id; rows clear a usage block. */
+/** Card geometry. Columns clear a card; rows clear a usage block. */
 const COL_W = 260;
-const ROW_H = 132;
-
-function ms(n: number | null | undefined): string {
-  if (n == null) return "—";
-  return n >= 1000 ? `${(n / 1000).toFixed(2)}s` : `${Math.round(n)}ms`;
-}
+const ROW_H = 138;
 
 interface FlowNode extends TimelineNode {
   children: FlowNode[];
@@ -154,6 +165,12 @@ function payloadText(event: SessionEvent | null): string | null {
   }
 }
 
+/** A clock time, for a card that answers "when", not "how long". */
+function clockOf(at: string | null | undefined): string {
+  if (!at) return "—";
+  return String(at).replace("T", " ").slice(11, 19);
+}
+
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
@@ -163,28 +180,156 @@ function DetailRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function NodeCard({ data }: {
-  data: { node: TimelineNode; event: SessionEvent | null; open: boolean; onToggle: () => void };
-}) {
-  const node = data.node;
-  const event = data.event;
-  const open = data.open;
+/* ── the card ────────────────────────────────────────────────────────────────── */
+
+interface CardData {
+  node: TimelineNode;
+  event: SessionEvent | null;
+  face: RunFace;
+  open: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  /** The run's roll-up, carried on the response card because that is where a reader
+   *  looks for what the whole run cost. */
+  runUsage?: TraceTimeline["usage"] | null;
+  /** The final answer's headline. The detail endpoint does not carry it — the runs list
+   *  does — so it is handed down rather than re-derived here from a payload that is null
+   *  on every `final_response` row measured. */
+  answer?: string;
+  origin?: RunOrigin;
+}
+
+/** The body a face shows. Each branch prints only fields that face genuinely has. */
+function FaceBody({ data }: { data: CardData }) {
+  const { node, event, face } = data;
+
+  if (face === "trigger") {
+    const question = String((event?.payload as Record<string, unknown> | undefined)
+      ?.question ?? "");
+    const depth = String((event?.payload as Record<string, unknown> | undefined)
+      ?.depth ?? "");
+    return (
+      <>
+        <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+          {data.origin?.service && <FieldRow label="Service" value={data.origin.service} />}
+          <FieldRow label="At" value={clockOf(node.at)} />
+          {depth && <FieldRow label="Depth" value={depth} />}
+        </div>
+        {question && <ProseBlock text={question} tone="var(--t1)" />}
+      </>
+    );
+  }
+
+  if (face === "response") {
+    const u = data.runUsage;
+    return (
+      <>
+        <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+          <FieldRow
+            label="Status"
+            value={node.ok === false ? (node.error_class || "failed") : "ok"}
+            tone={node.ok === false ? "var(--red4)" : "var(--chart-2)"}
+          />
+        </div>
+        {data.answer && <ProseBlock text={data.answer} tone="var(--t1)" />}
+        {u && (u.total_tokens != null || u.prompt_tokens != null) && (
+          <UsageBlock usage={{
+            prompt_tokens: u.prompt_tokens ?? null,
+            completion_tokens: u.completion_tokens ?? null,
+            total_tokens: u.total_tokens ?? null,
+          }} />
+        )}
+      </>
+    );
+  }
+
+  if (face === "guardrail") {
+    // §6.8's guardrail span: allowed or blocked, the action it took, and how much it
+    // found. All three were already in the payload and none of them was on screen.
+    const v = guardVerdict(event);
+    return (
+      <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+        <FieldRow
+          label={v.blocked ? "Blocked" : "Allowed"}
+          value={[v.action, v.found ? `${formatCount(v.found)} found` : ""]
+            .filter(Boolean).join(" · ") || "—"}
+          tone={v.blocked ? "var(--red4)" : "var(--chart-2)"}
+        />
+      </div>
+    );
+  }
+
+  if (face === "model") {
+    return (
+      <>
+        <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>
+          {node.role && <FieldRow label="Role" value={node.role} />}
+          {node.provider && <FieldRow label="Provider" value={node.provider} />}
+          {node.fallback === true && (
+            <FieldRow label="Fallback" value="primary refused" tone="var(--amb4)" />
+          )}
+        </div>
+        {node.usage && (node.usage.total_tokens != null || node.usage.prompt_tokens != null)
+          && <UsageBlock usage={node.usage} />}
+      </>
+    );
+  }
+
+  if (face === "delegation" && node.delegation) {
+    return (
+      <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}
+           title={`delegation path: ${node.delegation.path}`}>
+        <FieldRow label="Agent" value={node.delegation.agent_name} tone="var(--chart-4)" />
+        {node.delegation.depth != null && (
+          <FieldRow label="Depth" value={`d${node.delegation.depth}`} />
+        )}
+      </div>
+    );
+  }
+
+  // tool / event: what a step of work has to report is what it returned.
+  const rows: React.ReactNode[] = [];
+  if (node.row_count != null) {
+    rows.push(<FieldRow key="rows" label="Rows" value={formatCount(node.row_count)} />);
+  }
+  if (event?.retries) {
+    rows.push(<FieldRow key="retries" label="Retries" value={formatCount(event.retries)}
+                        tone="var(--amb4)" />);
+  }
+  if (!rows.length) return null;
+  return (
+    <div style={{ borderTop: "1px solid var(--border)", padding: "2px 0" }}>{rows}</div>
+  );
+}
+
+function NodeCard({ data }: { data: CardData }) {
+  const { node, event, face, open, selected } = data;
   const payload = open ? payloadText(event) : null;
-  const color = KIND_COLOR[node.kind] ?? "var(--chart-6)";
   const failed = node.ok === false;
-  const u = node.usage;
-  const border = failed ? "var(--red4)" : color;
+  const accent = failed ? "var(--red4)" : FACE_META[face].color;
+  // A guardrail that allowed everything is the run working. It gets the same face as one
+  // that blocked, and a quieter frame — a canvas where every node shouts says nothing.
+  const quiet = face === "guardrail" && !failed && !guardVerdict(event).blocked;
+
+  const frame = `1px solid ${selected ? accent : "var(--border)"}`;
 
   return (
     <div
-      className="aug-fs-ui"
       style={{
-        width: COL_W - 40,
+        width: CARD_W,
         background: "var(--bg-2)",
-        border: `1px solid ${border}`,
-        borderLeft: `3px solid ${border}`,
+        // Long-hand on all four sides, not `border` + a `borderLeft` override. React
+        // warns on exactly that combination the moment the shorthand CHANGES between
+        // renders — which it now does, because selecting a card recolours its frame —
+        // and the warning is right: which of the two wins is render-order dependent.
+        borderTop: frame,
+        borderRight: frame,
+        borderBottom: frame,
+        borderLeft: `3px solid ${accent}`,
         borderRadius: "var(--r-chip)",
         overflow: "hidden",
+        opacity: quiet ? 0.82 : 1,
+        boxShadow: selected ? "var(--shadow-md)" : undefined,
       }}
     >
       {/* A custom node needs handles or its edges have nothing to anchor to and simply
@@ -193,54 +338,12 @@ function NodeCard({ data }: {
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px" }}>
-        <span style={{ color: "var(--t1)", fontWeight: 500, overflow: "hidden",
-                       textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {node.name}
-        </span>
-        <span style={{ color: "var(--t3)", marginLeft: "auto", flexShrink: 0 }}>
-          {ms(node.duration_ms)}
-        </span>
-      </div>
+      <FaceHeader face={face} title={node.name} duration={node.duration_ms} failed={failed} />
 
-      {node.delegation && (
-        // The hop's own identity. `path` is the value the runtime refuses cycles on, so
-        // what is drawn here and what was refused there cannot disagree.
-        <div style={{ padding: "0 8px 6px" }} title={`delegation path: ${node.delegation.path}`}>
-          <span style={{ color: "var(--chart-4)", border: "1px solid var(--chart-4)",
-                         borderRadius: "var(--r-pill)", padding: "0 6px" }}>
-            {node.delegation.agent_name}
-            {node.delegation.depth != null && ` · d${node.delegation.depth}`}
-          </span>
-        </div>
-      )}
-
-      {node.model && (
-        <div style={{ display: "flex", justifyContent: "space-between",
-                      padding: "3px 8px", borderTop: "1px solid var(--border)" }}>
-          <span style={{ color: "var(--t4)" }}>Model</span>
-          <span style={{ color: "var(--t2)" }}>{node.model}</span>
-        </div>
-      )}
-
-      {u && (u.total_tokens != null || u.prompt_tokens != null) && (
-        // §6.1's usage block, as three rows rather than one hover: the split between
-        // prompt and completion is the number that tells you WHICH half to go and fix.
-        <div style={{ borderTop: "1px solid var(--border)", padding: "3px 8px" }}>
-          {([["Prompt", u.prompt_tokens], ["Completion", u.completion_tokens],
-             ["Total", u.total_tokens]] as const).map(([label, v]) => (
-            <div key={label} style={{ display: "flex", justifyContent: "space-between" }}>
-              <span style={{ color: "var(--t4)" }}>{label}</span>
-              <span style={{ color: label === "Total" ? "var(--t1)" : "var(--t3)" }}>
-                {v == null ? "—" : formatCount(v)}
-              </span>
-            </div>
-          ))}
-        </div>
-      )}
+      <FaceBody data={data} />
 
       {failed && (
-        <div style={{ padding: "3px 8px", color: "var(--red4)",
+        <div className="aug-fs-xs" style={{ padding: "3px 9px", color: "var(--red4)",
                       borderTop: "1px solid var(--border)" }}>
           {node.error_class || "failed"}
         </div>
@@ -249,25 +352,26 @@ function NodeCard({ data }: {
       {/* The card summarises; this is the row it summarises FROM. Without it the canvas
           could say a call took 9.63s and cost 806 tokens and still not say what was
           asked or answered — which is the question a person opens a trace to settle. */}
-      <button
-        type="button"
+      <Button
+        variant="ghost"
+        size="xs"
         onClick={data.onToggle}
         className="nodrag aug-fs-xs"
         style={{
           width: "100%", display: "flex", justifyContent: "space-between",
-          alignItems: "center", padding: "3px 8px", background: "none", cursor: "pointer",
-          border: "none", borderTop: "1px solid var(--border)", color: "var(--t3)",
+          alignItems: "center", padding: "0 9px", borderRadius: 0,
+          borderTop: "1px solid var(--border)", color: "var(--t3)",
         }}
       >
         <span>{open ? "Hide details" : "Details"}</span>
-        <span>{open ? "▾" : "▸"}</span>
-      </button>
+        <Icon name={open ? "chevd" : "chevr"} size={11} />
+      </Button>
 
       {open && (
         <div
           className="nodrag nowheel aug-fs-xs"
           style={{
-            borderTop: "1px solid var(--border)", padding: "6px 8px",
+            borderTop: "1px solid var(--border)", padding: "6px 9px",
             maxHeight: 260, overflowY: "auto", background: "var(--bg-1)",
           }}
         >
@@ -321,22 +425,143 @@ function NodeCard({ data }: {
 
 const NODE_TYPES = { traceNode: NodeCard };
 
+/* ── the rail ────────────────────────────────────────────────────────────────── */
+
+function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ borderTop: "1px solid var(--b1)", padding: "7px 10px" }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.06em",
+        textTransform: "uppercase", marginBottom: 3 }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Where the run came from, what it cost, and every node as an index.
+ *
+ * The origin block is the honest replacement for a synthesised trigger node: a run
+ * started inside the platform has no request row, and saying "agent: explorer ·
+ * connection workspace" is a true answer where an invented head card would be a false
+ * one.
+ */
+function TimelineRail({ timeline, nodes, origin, selectedId, onSelect }: {
+  timeline: TraceTimeline;
+  nodes: TimelineNode[];
+  origin: RunOrigin;
+  selectedId: string | null;
+  onSelect: (id: string) => void;
+}) {
+  const u = timeline.usage ?? {};
+  return (
+    <div data-testid="timeline-rail" style={{
+      width: 208, flexShrink: 0, display: "flex", flexDirection: "column",
+      border: "1px solid var(--border)", borderRadius: "var(--r-chip)",
+      background: "var(--bg-1)", overflow: "hidden",
+    }}>
+      <div style={{ padding: "8px 10px" }}>
+        <div className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>Timeline</div>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 1 }}>
+          {formatCount(timeline.span_count ?? nodes.length)} spans
+          {timeline.model_calls ? ` · ${formatCount(timeline.model_calls)} model calls` : ""}
+        </div>
+      </div>
+
+      <RailSection title="Origin">
+        {origin.service && <FieldRow label="Service" value={origin.service} />}
+        {!origin.requested && (
+          // Named, rather than left as an empty trigger slot on the canvas: this run was
+          // started inside the platform, and that is a different fact from "unknown".
+          <FieldRow label="Started" value="inside the platform" />
+        )}
+        {/* The built-in that ran it and the user's own agent are DIFFERENT facts — a
+            run can have both — so they get two rows rather than one that guesses. */}
+        {origin.builtinAgent && <FieldRow label="Agent" value={origin.builtinAgent} />}
+        {origin.customAgent && <FieldRow label="Custom agent" value={origin.customAgent} />}
+        {origin.connId && <FieldRow label="Connection" value={origin.connId} />}
+        {origin.jobId && <FieldRow label="Job" value={origin.jobId} />}
+      </RailSection>
+
+      <RailSection title="Timing">
+        <FieldRow label="Wall" value={ms(timeline.wall_ms)} />
+        <FieldRow label="Busy" value={ms(timeline.busy_ms)} />
+        <FieldRow label="Idle" value={ms(timeline.idle_ms)} />
+        {!!timeline.concurrent_nodes && (
+          // Wall ≠ busy + idle the moment anything overlaps, so the number that makes
+          // the other three readable ships beside them rather than in a tooltip.
+          <FieldRow label="Overlapped" tone="var(--amb4)"
+            value={`${formatCount(timeline.concurrent_nodes)} nodes`} />
+        )}
+        {u.total_tokens != null && (
+          <FieldRow label="Tokens" value={formatCount(u.total_tokens)} />
+        )}
+      </RailSection>
+
+      <div style={{ borderTop: "1px solid var(--b1)", flex: 1, overflowY: "auto",
+        padding: "4px 0" }}>
+        {nodes.map(n => {
+          const face = faceOf(n);
+          const active = selectedId === n.id;
+          return (
+            <Button
+              key={n.id}
+              variant="ghost"
+              size="sm"
+              onClick={() => onSelect(n.id)}
+              className="aug-fs-xs"
+              style={{
+                display: "flex", width: "100%", height: "auto", gap: 6, textAlign: "left",
+                padding: "3px 10px", borderRadius: 0, justifyContent: "flex-start",
+                background: active ? "var(--bg-sel)" : undefined,
+              }}
+            >
+              <span style={{ color: n.ok === false ? "var(--red4)" : FACE_META[face].color,
+                flexShrink: 0, display: "flex" }}>
+                <Icon name={FACE_META[face].icon} size={11} />
+              </span>
+              <span style={{ flex: 1, minWidth: 0, overflow: "hidden",
+                textOverflow: "ellipsis", whiteSpace: "nowrap",
+                color: active ? "var(--t1)" : "var(--t2)" }}>{n.name}</span>
+              <span style={{ color: "var(--t4)", flexShrink: 0,
+                fontVariantNumeric: "tabular-nums" }}>
+                {n.duration_ms == null ? "" : ms(n.duration_ms)}
+              </span>
+            </Button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+/* ── the canvas ──────────────────────────────────────────────────────────────── */
+
 export function TraceFlow({
   timeline,
   edges,
   events = [],
+  answer,
 }: {
   timeline: TraceTimeline;
   edges: TraceFlowEdge[];
   /** The trace's stored rows, so a node can show what it was built FROM. */
   events?: SessionEvent[];
+  /** The run's answer headline, from the runs list. `final_response` payloads are null
+   *  on every row measured, so the detail endpoint has nothing to give here. */
+  answer?: string;
 }) {
   // One at a time. An expanded card overlays the row beneath it — the layout is a fixed
   // grid, so it cannot make room — and several open at once turns a readable canvas into
   // stacked panels. Opening one closes the last, which is also how a person reads a run.
   const [openId, setOpenId] = useState<string | null>(null);
+  const [rf, setRf] = useState<ReactFlowInstance | null>(null);
+  /** The rail gives up its 208px on demand. On a narrow pane that is the difference
+   *  between a canvas and a column of clipped cards. */
+  const [railOpen, setRailOpen] = useState(true);
 
-  const { rfNodes, rfEdges, nested } = useMemo(() => {
+  const origin = useMemo(() => originOf(events), [events]);
+
+  const { rfNodes, rfEdges, nested, drawnNodes } = useMemo(() => {
     const forest = buildForest(timeline.nodes ?? [], edges ?? []);
     const pos = layoutForest(forest);
     const drawn = new Set(pos.keys());
@@ -353,9 +578,14 @@ export function TraceFlow({
           data: {
             node: n,
             event: eventForNode(n, events),
+            face: faceOf(n),
             open,
+            selected: open,
+            runUsage: timeline.usage ?? null,
+            answer,
+            origin,
             onToggle: () => setOpenId(cur => (cur === n.id ? null : n.id)),
-          },
+          } satisfies CardData,
           draggable: true,
           // An open card has to sit above its neighbours, or the detail it exists to
           // show is drawn underneath the next node.
@@ -390,8 +620,46 @@ export function TraceFlow({
     return {
       rfNodes, rfEdges,
       nested: forest.some(n => n.children.length > 0),
+      drawnNodes: (timeline.nodes ?? []).filter(n => drawn.has(n.id)),
     };
-  }, [timeline.nodes, edges, events, openId]);
+  }, [timeline.nodes, timeline.usage, edges, events, openId, answer, origin]);
+
+  /**
+   * Re-fit when the RUN changes.
+   *
+   * `fitView` as a prop applies on first mount only, and this component does not remount
+   * between runs — it takes new props. Measured in the browser: opening a 24-node run,
+   * clicking its last rail row, then switching to a 45-node run left the viewport at
+   * `scale 0.8, x 245.8` — the previous run's pan — so the new run opened wherever the
+   * old one had been left rather than fitted. Nothing errored; it just showed the wrong
+   * part of the right run.
+   *
+   * Keyed on the node IDS, not on `rfNodes`: that array is rebuilt every time a card
+   * opens, and keying on it would yank the viewport back on every click.
+   */
+  const fitKey = rfNodes.map(n => n.id).join("|");
+  useEffect(() => {
+    if (!rf || !fitKey) return;
+    // Deferred a frame: the nodes for the new run have to be measured before there are
+    // bounds to fit to, and ReactFlow measures after commit.
+    const frame = requestAnimationFrame(() => {
+      // The same bounds as the prop it stands in for — an unbounded fit resolves a wide
+      // run to scale 0.2, which is a picture of a run rather than a reading of one.
+      rf.fitView({ minZoom: 0.55, maxZoom: 1, padding: 0.15 });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [rf, fitKey]);
+
+  /** Pick a node from the rail: open it AND bring it into view. A canvas wider than the
+   *  viewport makes selection without centring a no-op the reader cannot see. */
+  const selectNode = useCallback((id: string) => {
+    setOpenId(cur => (cur === id ? null : id));
+    const n = rfNodes.find(x => x.id === id);
+    if (n && rf) {
+      rf.setCenter(n.position.x + CARD_W / 2, n.position.y + ROW_H / 3,
+                   { zoom: Math.max(0.8, rf.getZoom()), duration: 240 });
+    }
+  }, [rfNodes, rf]);
 
   if (!rfNodes.length) {
     return (
@@ -402,35 +670,54 @@ export function TraceFlow({
   }
 
   return (
-    <div style={{ height: "100%", minHeight: 340, display: "flex", flexDirection: "column" }}>
-      {!nested && (
-        // Say it plainly rather than presenting a chain as a graph. A run that never
-        // delegated genuinely has no structure to show, and the waterfall reads better.
-        <div className="aug-fs-xs" style={{ color: "var(--t3)", paddingBottom: 6 }}>
-          This run is a single sequence — nothing nested inside anything else. The
-          Waterfall shows the same nodes against time.
+    <div style={{ height: "100%", minHeight: 360, display: "flex", flexDirection: "column" }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, paddingBottom: 6 }}>
+        {!nested && (
+          // Say it plainly rather than presenting a chain as a graph. A run that never
+          // delegated genuinely has no structure to show, and the waterfall reads better.
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", flex: 1 }}>
+            This run is a single sequence — nothing nested inside anything else. The
+            Waterfall shows the same nodes against time.
+          </div>
+        )}
+        <Button variant="ghost" size="xs" className="aug-fs-xs"
+          style={{ marginLeft: "auto", color: "var(--t3)" }}
+          onClick={() => setRailOpen(o => !o)}>
+          {railOpen ? "Hide timeline" : "Timeline"}
+        </Button>
+      </div>
+      <div style={{ flex: 1, minHeight: 320, display: "flex", gap: 8 }}>
+        <div style={{ flex: 1, minWidth: 0, border: "1px solid var(--border)",
+                      borderRadius: "var(--r-chip)" }}>
+          <ReactFlow
+            nodes={rfNodes}
+            edges={rfEdges}
+            nodeTypes={NODE_TYPES}
+            onInit={setRf}
+            fitView
+            // Bounded, because an unbounded fit is not a view. A wide run fitted to the
+            // container resolved to scale 0.2 — every card 7px tall and unreadable, which
+            // is a picture of a run rather than a reading of one. Fit when the run is
+            // small enough to fit legibly; otherwise stay legible and let the reader pan,
+            // with fit-to-screen still one click away in the controls.
+            fitViewOptions={{ minZoom: 0.55, maxZoom: 1, padding: 0.15 }}
+            proOptions={{ hideAttribution: true }}
+            minZoom={0.2}
+            maxZoom={1.6}
+          >
+            <Background gap={16} color="var(--border)" />
+            <Controls showInteractive={false} />
+          </ReactFlow>
         </div>
-      )}
-      <div style={{ flex: 1, minHeight: 300, border: "1px solid var(--border)",
-                    borderRadius: "var(--r-chip)" }}>
-        <ReactFlow
-          nodes={rfNodes}
-          edges={rfEdges}
-          nodeTypes={NODE_TYPES}
-          fitView
-          // Bounded, because an unbounded fit is not a view. A wide run fitted to the
-          // container resolved to scale 0.2 — every card 7px tall and unreadable, which
-          // is a picture of a run rather than a reading of one. Fit when the run is
-          // small enough to fit legibly; otherwise stay legible and let the reader pan,
-          // with fit-to-screen still one click away in the controls.
-          fitViewOptions={{ minZoom: 0.55, maxZoom: 1, padding: 0.15 }}
-          proOptions={{ hideAttribution: true }}
-          minZoom={0.2}
-          maxZoom={1.6}
-        >
-          <Background gap={16} color="var(--border)" />
-          <Controls showInteractive={false} />
-        </ReactFlow>
+        {railOpen && (
+          <TimelineRail
+            timeline={timeline}
+            nodes={drawnNodes}
+            origin={origin}
+            selectedId={openId}
+            onSelect={selectNode}
+          />
+        )}
       </div>
     </div>
   );

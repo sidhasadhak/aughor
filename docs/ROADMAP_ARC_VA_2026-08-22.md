@@ -424,11 +424,61 @@ reading a value nobody set), and RC-4 is what makes that dimension usable at all
   approval gate fails closed (it governs permission). 10 tests, both guards
   mutation-tested. Inert today in the sense that matters: no caps DB exists, so nothing
   is blocked — but every outbound call is now visible and countable.
-* **VA-9b — per-user connections.** Generalise the `SlackBot` record onto RC-4's
-  `identity_links`, so "my Slack" differs from yours. Follows a proven pattern rather
-  than inventing one; the vault/mask/verify contract already has tests.
-* **VA-9c — per-agent tool grants.** A `UserAgent` gets *named* tools from a connection,
-  never a whole server. Writes route through the approvals plane (tiered writes hold).
+* **VA-9b — the agent is the actor — ✅ BUILT 2026-08-29.**
+  *Scope widened on the user's direction: "these automations are actually agentic ops,
+  make sure it is so — that arrangement makes the 'agentic' nature of the platform very
+  coherent."* Measured, and the incoherence was real: **only `investigate` consulted an
+  agent**, `AutomationRun` recorded **none**, and every governed action was attributed to
+  `automation:<id>` — a MECHANISM, not an actor with a charter, instructions, bound
+  documents, an eval chip and an owner. An automation was a cron with side effects.
+
+  The chain was already half-built and unconnected: `UserAgent.owner` exists, and
+  `Effect.agent_id` was a generic property reading `config` for **any** kind — documented
+  as investigate-only, consumed by nothing else. So this connects
+  **person → agent → automation → connection**:
+  `Automation.agent_id` (the automation operates as an agent); every effect inherits it,
+  and a step may name its own to delegate; `EffectOutcome.agent_id` per STEP, because a
+  run-level field could not say which step delegated; `AutomationRun.agent_id` on **every**
+  run including gated and not-fired ones, since a run that did nothing still did nothing
+  on someone's behalf; and a governed write now attributes to **`agent:<id>`**, which
+  parses as a principal ref so RC-4's identity plane resolves it like any other.
+  The VA-4b graph shows which agent acts and which step delegates — on the *Structure*
+  view too, because "who will act" is part of the design, not only of a run.
+
+  Per-user half: `SlackBot.owner`, a platform-user id resolvable through
+  `identity_links`, so a linked Slack person is the same subject and "my Slack" differs
+  from yours without a second identity scheme. `bots_for_owner` deliberately includes the
+  org's **unowned** bots — `owner=""` is what every earlier bot carries, and excluding
+  them would make the field a silent migration rather than an addition.
+
+  13 tests. Mutation-tested: removing inheritance or the agent attribution fails four.
+  ⚠️ Still org-scoped: **warehouse connections themselves have no owner** (`registry.py`
+  has `org_id` only). Owning a connection is the remaining piece of "per-user".
+* **VA-9c — per-agent tool grants — ✅ BUILT 2026-08-29.** Measured first, and the gap was
+  wider than "unbuilt": **every tool an agent could call was a READ** (`run_sql`,
+  `answer_question`, `deep_analysis`, `list_tables`, `describe_table`, plus a platform
+  roster documented as *"the read roster for one connection"* and never filtered per
+  agent), and `stage_proposal` was reachable **only from an HTTP route**. An agent had no
+  way to propose anything, so VA-9's receipt was unreachable rather than merely missing.
+
+  `UserAgent.tool_grants` names the actions an agent may propose, and
+  `aughor/agent/action_tools.py` adds the one tool that is not a read. **A grant is
+  permission to PROPOSE, never to EXECUTE**: a granted action still lands in the
+  resolve-once inbox and waits for a human accept (or a target-bound standing grant,
+  minted separately per value). Collapsing those would turn "may suggest a refund" into
+  "may issue refunds", which is the distinction the approvals plane exists to hold — and
+  the live inbox has a `refund_orders` row that makes it concrete.
+
+  **No grants ⇒ no write tool at all**, not a tool that always refuses: the model routes
+  over what it can see, and a visible tool is one it will spend a turn trying. An
+  ungranted action is refused **by name, with the roster**, so it does not guess again. An
+  unreadable agent record means READ-ONLY, never open. Grants are **governing
+  configuration** (`config_rev`, sorted like the other lists) — an agent that gained the
+  power to propose a refund is not the agent an eval chip was earned by.
+
+  12 tests, gate mutation-tested. ⚠️ The `agent_id` now threads through
+  `/ask → _stream_converse → converse → converse_tools`, so the roster is bound by
+  closure and the model cannot name an agent it was not given.
 * **VA-9d — the MCP consumer.** stdio + SSE, server registry, tool discovery, health,
   timeouts, per-call audit. The untouched core, and deliberately last.
 
@@ -464,6 +514,103 @@ grant tools, approve, see whose traces); audit of admin access to user traces
 both and that access is itself audited; quotas bite.
 **Risk:** privacy — an admin reading a user's prompts is a real policy question, not a
 technical one. Default to visible-metadata, gated-payloads.
+
+---
+
+### VA-11 — The connector catalog: direct OAuth — ⛔ NOT STARTED, LOGGED 2026-08-30
+
+**Where this came from.** The user put three screenshots of a current agent product's
+integrations surface beside ours: a searchable catalog under `All` / `Connected`, split
+by **Categories** (Productivity · Developer · Communication · Data · Research), **Apps**
+(Slack & Teams · Arcade), **Workspace** (Computer), and closed with **`+ Custom MCP`**.
+Every entry is a card with one button — **`Connect`** — and roughly forty of them:
+BigQuery, Google Sheets, Hex, Neon, Prisma, Salesforce, ThoughtSpot; Slack, Teams,
+LinkedIn, Pylon, X; Gmail, Outlook, Drive, OneDrive, Sharepoint, Calendar, Docs, Slides,
+Meet, Notion, Linear, Ashby, Close, Wix. *"Newer tools have developed direct OAuth
+connections — we should have it too."*
+
+**Why it is a separate wave and not part of VA-9.** VA-9 is about what an agent may DO
+with a connection — MCP consumption, per-agent grants, propose-not-execute. VA-11 is
+about how a connection is **acquired**. Today every one of ours arrives by paste: a
+service-account JSON for BigQuery, a bot token and a manifest for RC-5's Slack factory, a
+webhook URL that *is* the credential (#385). Paste is why a connection has no owner, no
+scope, no expiry and no revoke — and re-specced VA-9's own measurement says it plainly:
+**no credential store anywhere is user-scoped.**
+
+**What we already have, so this is smaller than it looks** *(to be re-measured before
+building — every wave in this arc moved its own scope at the pre-check)*:
+
+| Piece | Where it already lives |
+|---|---|
+| Vaulted credentials, Fernet at rest, masked on read | `aughor/slackbots/` (RC-5) |
+| A door credential validated before the record exists | RC-5's `auth.test` probe |
+| `provider:external_id` identity refs and link table | `aughor/identity/` (RC-4) |
+| Every outbound call spanned and capped | `aughor/govern/outbound.py` (VA-9a) |
+| Acting-as-an-agent attribution on writes | `Automation.agent_id` (VA-9b) |
+| Permission to propose, never to execute | `UserAgent.tool_grants` (VA-9c) |
+
+**The actual gap is the OAuth dance and the shape it stores into:** an authorization-code
+redirect, a token pair, a refresh loop, a scope set the user consented to, and a revoke —
+per user, not per org. Plus the catalog itself: today a connection is a form, not a thing
+you browse.
+
+**Deliverables**
+1. A `Connection` record that is **user-scoped and provider-typed**, with granted scopes,
+   expiry, and a `revoke()` that actually reaches the provider. Warehouse connections
+   adopt it — *they have no owner at all today, which is the oldest open item here.*
+2. An OAuth broker: redirect, callback, token exchange, refresh-before-expiry, and the
+   error paths that matter (consent denied, scope downgraded by the provider, refresh
+   token revoked upstream).
+3. A **catalog surface** — categorized, searchable, `Connected` filter, one `Connect` per
+   provider — with `+ Custom MCP` as its last entry, which is where VA-9d's consumer
+   surfaces to a user.
+4. Provider adapters, in the order our own product argues for: **Slack** (we already own
+   its record plane), **Google/BigQuery** (replaces the pasted service-account JSON and
+   is the one connection that carries real data), **Gmail/Calendar**, **Notion/Linear**.
+
+**Receipt:** a user clicks Connect on BigQuery, consents in Google's own dialog, and a
+query runs against their warehouse under **their** grant — with the token never rendered,
+the scopes shown back to them, and Revoke removing access at the provider and not merely
+from our table.
+
+**Risks, both real.** (a) A redirect-based OAuth broker needs `state` and PKCE done
+correctly, and a token store that is user-scoped is a **new** hermeticity boundary — the
+allowlist in `tests/conftest.py` must name it in the same commit (this repo has been bitten
+by exactly that). (b) Scope creep by catalog: forty providers is a catalog, not a wave.
+Ship the broker plus two adapters; the rest is content.
+
+**Sequencing:** after VA-9d. VA-9d decides the security posture for talking to *someone
+else's* tools; VA-11 decides how we get permission to. Deciding the second before the
+first would set the posture by accident.
+
+---
+
+### VA-4 — Automations dataflow + the run canvas — **UNPARKED and BUILT 2026-08-29**
+
+**Automations MOVED to Agent Ops 2026-08-29 (user-decided).** *"The whole Automation
+Subtab in the Monitors should be part of Agentic Ops as a sub-tab."* It now sits beside
+Overview · Roster · Attention · Activity · Runs, and Operations is Monitors ·
+Notifications · Security & Audit. This is the placement the code had already half-admitted:
+Agent Ops carried a **Runs** tab blurbed *"Conditions → effects"* and an
+`onOpenAutomations` callback that navigated OUT to Monitors to find them. Since VA-9b an
+automation names the agent it runs as, every step inherits it, and its governed writes are
+attributed to `agent:<id>` — filing that under Monitors said it was a metric watch with
+side effects rather than an agent operating on a schedule. Attention's "Open automation"
+now switches a layer instead of leaving the workspace.
+
+**VA-4c — the run canvas (2026-08-29).** Built against the user's VoltAgent screenshot.
+Measured first: `EffectOutcome` carried **no timing and no tokens**, and nothing tied LLM
+spend to a step — so per-node duration and usage were not a display problem, they were
+missing data. Now: per-step `duration_ms` / `started_at` stamped by the ENGINE at the call
+site (the run's single `duration_ms` cannot answer "which step was slow"); the trigger node
+says **what fired it** and when, not only what it watches; an `investigate` step publishes
+its `investigation_id`, so a node reaches its own spend without this model growing a usage
+field the other five effect kinds could never fill; and the graph endpoint returns a bounded
+**runs rail** so a canvas can ask "which run?" in one request.
+
+**Deliberately NOT in this wave, and worth naming:** `Add Trigger` / `Add Action` authoring
+(the canvas reads; it does not author), per-node token counts (only a link to where spend
+lives), the composed prompt as its own node, and a stop button for a running automation.
 
 ---
 
@@ -577,8 +724,12 @@ PLATFORM
   VA-8  guardrail plane         (2 wk)   spans land in VA-5, block-rate feeds VA-6
   VA-9  integrations            (3 wk)   the vision's core; largest risk surface
   VA-10 multi-user + admin      (2 wk)   hardening pass over everything above
+  VA-11 connector catalog       (2 wk)   AFTER VA-9d — 9d sets the posture for talking
+                                         to someone else's tools, 11 is how we get
+                                         permission to. Needs VA-10's user scope to be
+                                         a per-USER grant rather than another org one.
 
-LATER   VA-4 automations dataflow (unpark when VA-9 forces it)
+LATER   VA-4 automations dataflow (unpark when VA-9 forces it) — UNPARKED + BUILT 08-29
 ```
 
 **House rules that bind every PR:** one PR at a time, squash, never push without
@@ -776,6 +927,13 @@ mechanism — **`webhook` | `polling` | `schedule`** — and category: Slack, Gm
 Airtable, Cron, plus **`Request Integration`**. Dashboard: `Success rate`, `Executions`
 with trend. **Active Triggers** table (trigger · connections · status · targets) and
 **Recent Runs** across all connections.
+
+*(2026-08-30 — the user supplied three screenshots of a different product's take on the
+same surface: a categorized catalog where every provider carries a single **`Connect`**
+button doing direct OAuth, closing with **`+ Custom MCP`**. Logged as **VA-11**, above.
+The difference from this entry is worth naming: §6.10 is a catalog of TRIGGERS — what
+starts a run — and VA-11 is a catalog of CONNECTIONS — what a run is permitted to reach.
+They share a surface in both products and are not the same plane.)*
 
 ### 6.11 RAG
 Chunk settings: delimiter, **max chunk length**, **chunk overlap**; pre-processing

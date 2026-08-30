@@ -14,7 +14,6 @@ const loading = () => (
 );
 
 const MonitorsPanel      = dynamic(() => import("@/components/MonitorsPanel").then(m => ({ default: m.MonitorsPanel })),           { ssr: false, loading });
-const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
 const ActionHubPanel     = dynamic(() => import("@/components/ActionHubPanel").then(m => ({ default: m.ActionHubPanel })),         { ssr: false, loading });
 const SecurityAuditPanel = dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
 
@@ -39,11 +38,16 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type OpsLayer = "monitors" | "automations" | "actions" | "security";
+// `automations` MOVED to Agent Ops 2026-08-29 (user-decided): an automation is an agent
+// operating on a schedule, not a metric watch with side effects. Removed from the union
+// rather than left as a dead member — checked first that nothing could still reach it:
+// `LEGACY_OPS_LAYER` never mapped a nav route to it, no URL parameter persists this layer,
+// and the command palette has no entry for it. It was reachable only by clicking the tab
+// that no longer exists, so keeping the id would be defensive code against nothing.
+export type OpsLayer = "monitors" | "actions" | "security";
 
 const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "monitors",    icon: "activity", label: "Monitors",         blurb: "Metric watches & alerts" },
-  { id: "automations", icon: "gear",     label: "Automations",      blurb: "Condition → effect, & the proposal queue" },
   { id: "actions",     icon: "spark",    label: "Notifications",    blurb: "Webhook, Slack & Jira triggers" },
   { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
 ];
@@ -78,7 +82,6 @@ export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange,
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;
-        if (id === "automations") return <AutomationsPanel connId={connId} workspaceId={workspaceId} />;
         if (id === "actions")     return <ActionHubPanel />;
         return <SecurityAuditPanel connId={connId} lens={secLens} onLensChange={onSecLensChange} />; // "security"
       }}

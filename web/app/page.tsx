@@ -2191,6 +2191,7 @@ export default function Home() {
             {tab === "agentic-ops" && (
               <ErrorBoundary label="The Agents workspace hit an error.">
                 <AgenticOpsWorkspace
+                  connId={selectedConn ?? undefined}
                   layer={agenticOpsLayer}
                   onLayerChange={setAgenticOpsLayer}
                   workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
@@ -2199,10 +2200,7 @@ export default function Home() {
                     setSelectedHistoryInvId(invId);
                     handleNavigate("recents");
                   }}
-                  onOpenAutomations={() => {
-                    setOpsLayer("automations");
-                    handleNavigate("operations");
-                  }}
+                  onOpenAutomations={() => setAgenticOpsLayer("automations")}
                 />
               </ErrorBoundary>
             )}

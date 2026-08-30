@@ -96,7 +96,12 @@ def test_the_governing_fields_are_exactly_what_changes_an_answer():
     from aughor.custom_agents.models import GOVERNING_FIELDS
 
     assert set(GOVERNING_FIELDS) == {
-        "instructions", "connection_id", "schema_scope", "doc_ids", "pack_ids"}
+        "instructions", "connection_id", "schema_scope", "doc_ids", "pack_ids",
+        # VA-9c — `tool_grants` reaches the runtime through `action_tools`, which decides
+        # whether a write tool exists on a turn at all. Added here only once that
+        # consumption existed: this guard failed FIRST, which is exactly its job — it
+        # catches a governing field nothing reads.
+        "tool_grants"}
 
 
 def test_an_agent_with_no_documents_sees_none_rather_than_the_global_corpus():

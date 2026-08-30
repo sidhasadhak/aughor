@@ -34,6 +34,8 @@ from __future__ import annotations
 import logging
 import random
 import time as _time
+import uuid as _uuid
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -292,9 +294,13 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
         return EffectOutcome(kind=effect.kind, target=effect.action_id,
                              status="dispatch_error", message=detail)
 
+    # VA-9b — a governed write is attributed to the AGENT that made it, not to the
+    # mechanism that scheduled it. `automation:<id>` named a cron; `agent:<id>` names an
+    # actor with a charter, instructions, bound documents and an owner. It also parses as
+    # a principal ref (RC-4), so the identity plane can resolve it like any other.
     result = execute_kinetic_action(
         action, effect.params,
-        actor=f"automation:{automation.id}", scope=automation.conn_id,
+        actor=acting_agent_ref(effect, automation), scope=automation.conn_id,
     )
     status = result.status if result.status in {
         "executed", "criterion_failed", "approval_required", "invalid_params", "dispatch_error",
@@ -304,6 +310,72 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
                          # The executor already returns a dispatch result; it was thrown
                          # away at this boundary.
                          data=dict(result.outcome or {}))
+
+
+@contextmanager
+def _step_span(effect: Effect, automation: Automation, alias: str, run_id: str = ""):
+    """One TOOL span for one step. Best-effort — telemetry must never fail a run.
+
+    Named `automation.<kind>` rather than the effect's target: the span name is what a
+    waterfall row reads, and `slack_post` answers "what kind of work" where a channel id
+    answers nothing.
+
+    The span is CONSTRUCTED inside the try and ENTERED outside it. Wrapping the whole
+    `with` instead would swallow the body's own exceptions into the telemetry fallback —
+    and a fallback that yields a second time is a RuntimeError, not a graceful degrade.
+    """
+    span = None
+    bound = None
+    try:
+        from aughor.telemetry import bind_trace, mlflow_tool_span
+        # Bound per STEP rather than once around the loop: same trace id either way, and
+        # this needs no re-indent of the chain, which is the part that must not churn.
+        # `bind_trace` is independent of every observability flag — a trace id is a
+        # correlation fact, not a sink, and making it conditional is how spans end up
+        # orphaned with nothing able to group them.
+        if run_id:
+            bound = bind_trace(run_id)
+            bound.__enter__()
+        span = mlflow_tool_span(f"automation.{effect.kind}", {
+            "automation_id": automation.id, "automation": automation.name,
+            "step": alias, "agent_id": acting_agent(effect, automation),
+        }, span_kind="tool")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "automation step span is best-effort", counter="automation.span")
+    try:
+        if span is None:
+            yield
+        else:
+            with span:
+                yield
+    finally:
+        if bound is not None:
+            try:
+                bound.__exit__(None, None, None)
+            except Exception as exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(exc, "trace unbind is best-effort", counter="automation.span")
+
+
+def acting_agent(effect: Effect, automation: Automation) -> str:
+    """The agent this step runs as: its own if it names one, else the automation's.
+
+    A step may delegate one part of a chain to a different agent; leaving it empty is
+    what makes an automation read as ONE agent's work rather than a bag of effects.
+    """
+    return effect.agent_id or getattr(automation, "agent_id", "") or ""
+
+
+def acting_agent_ref(effect: Effect, automation: Automation) -> str:
+    """The actor string for a governed record.
+
+    `agent:<id>` when the automation operates as one — a principal ref RC-4's identity
+    plane parses like any other. Falls back to `automation:<id>`, which is what every
+    automation written before VA-9b records, so nothing already stored changes meaning.
+    """
+    agent = acting_agent(effect, automation)
+    return f"agent:{agent}" if agent else f"automation:{automation.id}"
 
 
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -487,7 +559,9 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     swallow them.
     """
     question = str(effect.config.get("question", ""))
-    agent_id = effect.agent_id
+    # VA-9b — inherit the automation's agent when the step does not name its own, so
+    # `investigate` stops being the one effect that knows who is acting.
+    agent_id = acting_agent(effect, automation)
     target = question[:200]
     ran_as = f" as agent {agent_id}" if agent_id else ""
 
@@ -512,8 +586,15 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         # recorded as `executed`: a tick that answered nothing, filed as a tick that worked.
         return EffectOutcome(kind=effect.kind, target=target, status="failed",
                              message=f"{run.message}{ran_as}")
+    _inv = str(getattr(run, "investigation_id", "") or getattr(run, "id", "") or "")
     return EffectOutcome(kind=effect.kind, target=target, status="executed",
-                         message=f"{run.message}{ran_as}")
+                         message=f"{run.message}{ran_as}",
+                         # VA-4c — the run this step produced. Its TOKENS live on the
+                         # investigation, so carrying the id lets a node reach its own
+                         # spend without this model growing a usage field the other five
+                         # effect kinds could never fill.
+                         investigation_id=_inv,
+                         data={"investigation_id": _inv} if _inv else {})
 
 
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
@@ -627,10 +708,19 @@ def run_automation(
         })
         return append_run(run) if persist else run
 
+    # VA-4d — allocated up front so the run id can BE the trace id: clicking a run in
+    # `Activity → Runs` then lands on exactly this AutomationRun, with no second
+    # correlation key to keep in sync.
+    run_id = str(_uuid.uuid4())
     base = {
+        "id": run_id,
         "automation_id": automation.id,
         "automation_name": automation.name,
         "conn_id": automation.conn_id,
+        # VA-9b — on EVERY run, including the gated and not-fired ones. A run that did
+        # nothing still did nothing on someone's behalf, and an agent's history is
+        # incomplete if it only contains the ticks that acted.
+        "agent_id": getattr(automation, "agent_id", "") or "",
         "started_at": started,
     }
 
@@ -659,6 +749,7 @@ def run_automation(
         claim_delivery(automation.id, started)
     sleep_budget = [MAX_RETRY_SLEEP_SECONDS]
 
+
     # VA-4a — a CHAIN, not a list comprehension. Each effect sees the accumulated output
     # of every prior step (merged-data, à la `andThen`), which is what makes "post the
     # answer from step 1 into the thread step 2 opened" expressible at all. Before this,
@@ -675,11 +766,32 @@ def run_automation(
             # systems; a missing channel or a missing thread id is not a value to
             # default, and `skipped` already exists precisely for "did not run, and
             # that is not a failure of this step".
-            outcomes.append(EffectOutcome(kind=effect.kind, target=alias, status="skipped",
-                                          message=f"upstream data unavailable: {exc}"))
+            outcomes.append(EffectOutcome(
+                kind=effect.kind, target=alias, status="skipped",
+                agent_id=acting_agent(effect, automation),
+                message=f"upstream data unavailable: {exc}"))
             continue
-        outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
-                              dispatch_fn, sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
+        step_started = now_iso_z()
+        step_t0 = _time.monotonic()
+        # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one
+        # layer over one substrate (session_events)", and an automation emitted NOTHING
+        # into it — which is why its runs were invisible there and needed a bespoke
+        # canvas. A span per step makes an automation run a run like any other: waterfall,
+        # events, logs, filters and cost, none of it designed twice.
+        with _step_span(effect, automation, alias, run_id):
+            outcome = _run_effect(effect.model_copy(update={"config": bound}), automation,
+                                  dispatch_fn, sleeper=sleeper, rng=rng,
+                                  sleep_budget=sleep_budget)
+        step_ms = (_time.monotonic() - step_t0) * 1000.0
+        # Stamped HERE rather than in each dispatcher: six dispatchers each remembering to
+        # set it is six chances to forget, and a step that silently ran as nobody is
+        # exactly the gap this wave closes.
+        outcome = outcome.model_copy(update={
+            "agent_id": acting_agent(effect, automation),
+            # Stamped at the call site for the same reason as the agent: six dispatchers
+            # each remembering to time themselves is six chances to forget, and a step
+            # with no duration is invisible in exactly the view built to find slow ones.
+            "duration_ms": round(step_ms, 1), "started_at": step_started})
         outcomes.append(outcome)
         # Only a step that EXECUTED contributes. A failed step publishing an empty dict
         # would let a downstream binding resolve to nothing and run anyway — the exact

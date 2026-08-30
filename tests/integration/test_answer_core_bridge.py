@@ -266,7 +266,12 @@ def test_a_currency_resolution_failure_no_longer_leaks_the_connection(monkeypatc
 
     def _boom(*a, **k):
         raise RuntimeError("currency store fell over")
-    monkeypatch.setattr(inv, "_resolve_currency_symbol", _boom)
+    # The resolver went private → public when `routers/charts.py` started importing it for
+    # the Vega SSR path; this patch kept naming `_resolve_currency_symbol` and so raised
+    # AttributeError during SETUP. The path it pins is untouched — the call still sits
+    # inside the `try` whose `finally` closes `db` — but the guard had gone blind, which
+    # is this repo's most-repeated failure mode: a matching key that stopped matching.
+    monkeypatch.setattr(inv, "resolve_currency_symbol", _boom)
 
     with pytest.raises(RuntimeError, match="currency store fell over"):
         inv._answer_core("q", "fixture", [], emit=lambda t, p: None)

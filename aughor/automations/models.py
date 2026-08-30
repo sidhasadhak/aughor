@@ -152,10 +152,15 @@ class Effect(BaseModel):
 
     @property
     def agent_id(self) -> str:
-        """The user-defined agent an ``investigate`` effect runs as ("" = none).
+        """The user-defined agent THIS STEP runs as ("" = inherit the automation's).
 
-        Not in ``_EFFECT_REQUIRED``: an unbound investigation is still valid, so the
-        absence of this key is the pre-H1 behaviour byte-for-byte.
+        Was documented as investigate-only, but the property always read `config` for any
+        kind — the plumbing existed and nothing consumed it (VA-9b). A step may name its
+        own agent to delegate one part of a chain; leaving it empty inherits, which is
+        what makes an automation read as one agent's work rather than a bag of effects.
+
+        Not in ``_EFFECT_REQUIRED``: an unbound step is still valid, so the absence of
+        this key is the pre-H1 behaviour byte-for-byte.
         """
         return str(self.config.get("agent_id", ""))
 
@@ -186,6 +191,18 @@ class Automation(BaseModel):
     conn_id: str = Field(description="Connection this automation runs against")
     name: str
     description: str = ""
+    #: VA-9b — the UserAgent this automation OPERATES AS. "" = unattributed, which is
+    #: every automation written before this field and stays byte-identical.
+    #:
+    #: This is what makes an automation an *agentic operation* rather than a cron with
+    #: side effects. Measured before adding it: only `investigate` consulted an agent,
+    #: `AutomationRun` recorded none, and the engine attributed every governed action to
+    #: `automation:<id>` — a MECHANISM, not an actor with a charter, instructions,
+    #: bound documents or an eval chip. An agent already carries all of those, and an
+    #: `owner`, so naming one here connects the whole chain: person → agent →
+    #: automation → connection. A step may still name its own agent to delegate; empty
+    #: inherits this one.
+    agent_id: str = ""
 
     conditions: list[Condition] = Field(min_length=1)
     condition_logic: Literal["all", "any"] = "all"
@@ -260,6 +277,21 @@ class EffectOutcome(BaseModel):
     ]
     message: str = ""      # authored criterion message / error, verbatim — never paraphrased
     attempts: int = 1
+    #: VA-9b — the agent this step ran as ("" = unattributed). Recorded per STEP, not
+    #: only per run, because a chain may delegate one part to a different agent and a
+    #: run-level field could not say which step that was.
+    agent_id: str = ""
+    #: VA-4c — how long this step took, and when it began. The run carried a single
+    #: `duration_ms` for the whole tick, which cannot answer "which step was slow" —
+    #: the question a run canvas exists to answer. Measured around the dispatch, so it
+    #: includes the retries a step actually spent.
+    duration_ms: float = 0.0
+    started_at: str = ""
+    #: VA-4c — the investigation this step produced, when it produced one. An
+    #: `investigate` step's TOKENS live on its investigation, not here; carrying the id
+    #: is how a node links to its own spend without this model inventing a usage field
+    #: it cannot fill for the other five effect kinds.
+    investigation_id: str = ""
     #: VA-4a — what this effect PRODUCED, for later effects to consume. Every dispatcher
     #: already held this and discarded it here: the investigate runner had its run, the
     #: declared-action executor its dispatch result, `slack_post` the thread `ts` it was
@@ -279,6 +311,8 @@ class AutomationRun(BaseModel):
     automation_id: str
     automation_name: str = ""
     conn_id: str = ""
+    #: VA-9b — the agent this run operated as, so a run can say WHOSE work it was.
+    agent_id: str = ""
 
     started_at: str = Field(default_factory=now_iso_z)
     finished_at: Optional[str] = None

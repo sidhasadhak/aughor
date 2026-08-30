@@ -234,3 +234,137 @@ def test_an_unknown_step_is_also_a_422(client):
                                 "thread_ts": {"$from": "nope.ts"}}}],
     })
     assert r.status_code == 422 and "unknown step" in r.text
+
+
+# ── VA-9b: an automation is an agent operating, not a cron with side effects ─────
+
+def _agentic(*effects, agent="ag-analyst"):
+    from aughor.automations.models import Automation, Condition
+    return Automation(name="agentic", conn_id="conn-a", agent_id=agent, max_retries=0,
+                      conditions=[Condition(kind="schedule", config={"cron": "* * * * *"})],
+                      effects=list(effects))
+
+
+def test_every_effect_inherits_the_automations_agent():
+    """Measured before this wave: only `investigate` consulted an agent, so every other
+    step ran as nobody. An automation that is one agent's work must act as that agent
+    throughout, or 'agentic' is a label on the surface and not a property of the run."""
+    from aughor.automations.engine import acting_agent
+    a = _agentic(_effect(), _effect())
+    assert [acting_agent(e, a) for e in a.effects] == ["ag-analyst", "ag-analyst"]
+
+
+def test_a_step_may_delegate_to_its_own_agent():
+    from aughor.automations.engine import acting_agent
+    a = _agentic(_effect(), _effect(agent_id="ag-reviewer"))
+    assert [acting_agent(e, a) for e in a.effects] == ["ag-analyst", "ag-reviewer"]
+
+
+def test_a_governed_action_is_attributed_to_the_AGENT_not_the_mechanism():
+    """`automation:<id>` names a cron. `agent:<id>` names an actor with a charter,
+    instructions, bound documents and an owner — and parses as a principal ref, so RC-4's
+    identity plane resolves it like any other."""
+    from aughor.automations.engine import acting_agent_ref
+    from aughor.identity import parse_ref
+    a = _agentic(_effect())
+    ref = acting_agent_ref(a.effects[0], a)
+    assert ref == "agent:ag-analyst"
+    ident = parse_ref(ref)
+    assert ident is not None and ident.provider == "agent" and ident.external_id == "ag-analyst"
+
+
+def test_an_unattributed_automation_still_records_the_mechanism():
+    """Every automation written before this field has agent_id="" and must keep the
+    attribution it already has — nothing already stored changes meaning."""
+    from aughor.automations.engine import acting_agent_ref
+    a = _automation(_effect())          # no agent
+    assert acting_agent_ref(a.effects[0], a).startswith("automation:")
+
+
+def test_the_run_and_every_outcome_record_who_acted():
+    def _dispatch(effect, automation):
+        return EffectOutcome(kind=effect.kind, target="t", status="executed", data={"ts": "1"})
+
+    run = _run(_agentic(_effect(), _effect(agent_id="ag-reviewer")), _dispatch)
+    assert run.agent_id == "ag-analyst", "the run says whose work it was"
+    assert [o.agent_id for o in run.effects] == ["ag-analyst", "ag-reviewer"], \
+        "per STEP, because a chain may delegate and a run-level field could not say which"
+
+
+def test_a_gated_run_still_records_the_agent():
+    """A run that did nothing still did nothing on someone's behalf; an agent's history
+    is incomplete if it holds only the ticks that acted."""
+    from aughor.automations.engine import run_automation
+    a = _agentic(_effect())
+    a = a.model_copy(update={"enabled": False})
+    run = run_automation(a, persist=False, dispatch=lambda e, au: None,
+                         sleeper=lambda _s: None, rng=lambda: 0.0)
+    assert run.outcome == "gated" and run.agent_id == "ag-analyst"
+
+
+def test_the_graph_says_which_agent_acts_and_which_step_delegates():
+    from aughor.automations.graph import build_graph
+    g = build_graph(_agentic(_effect(), _effect(agent_id="ag-reviewer")))
+    steps = [n for n in g["nodes"] if n["type"] == "effect"]
+    assert g["agent_id"] == "ag-analyst"
+    assert steps[0]["agent_id"] == "ag-analyst" and steps[0]["delegated"] is False
+    assert steps[1]["agent_id"] == "ag-reviewer" and steps[1]["delegated"] is True
+
+
+def test_the_ENGINE_stamps_a_duration_on_every_step():
+    """Asserted against the real engine, not a hand-built outcome. The graph tests
+    construct EffectOutcome directly, so removing the engine's stamping left every one of
+    them green — mutation-testing caught that the producer was untested."""
+    def _dispatch(effect, automation):
+        return EffectOutcome(kind=effect.kind, target="t", status="executed")
+
+    run = _run(_automation(_effect(), _effect()), _dispatch)
+    assert all(o.started_at for o in run.effects), "a step with no start is invisible"
+    assert all(isinstance(o.duration_ms, float) for o in run.effects)
+    # >= 0 rather than > 0: a stubbed dispatcher can genuinely take under the clock's
+    # resolution, and asserting a positive number there is how a test becomes flaky.
+    assert all(o.duration_ms >= 0.0 for o in run.effects)
+
+
+# ── VA-4d: an automation run is a run like any other ────────────────────────────
+
+def test_a_run_emits_ONE_TRACE_that_Activity_Runs_can_group_by():
+    """`Activity → Runs` is "one layer over one substrate (session_events)", and an
+    automation emitted NOTHING into it — which is why its runs were invisible there and
+    needed a bespoke canvas. Every step's span now carries the RUN ID as its trace, so
+    the whole run groups, and clicking it lands on exactly this AutomationRun rather than
+    on a second correlation key kept in sync by hand."""
+    seen: list[str] = []
+    import aughor.obs.session_log as slog
+    real = slog.emit
+
+    def _capture(kind, **kw):
+        if kw.get("trace_id"):
+            seen.append(kw["trace_id"])
+        return real(kind, **kw)
+
+    import pytest as _pytest
+    mp = _pytest.MonkeyPatch()
+    mp.setattr(slog, "emit", _capture)
+    try:
+        run = _run(_automation(_effect(), _effect()),
+                   lambda e, a: EffectOutcome(kind=e.kind, target="t", status="executed"))
+    finally:
+        mp.undo()
+
+    assert seen, "an automation run must emit into the shared substrate"
+    assert set(seen) == {run.id}, "every step belongs to ONE trace, and it is the run's id"
+
+
+def test_a_broken_telemetry_sink_never_fails_the_run():
+    """Telemetry is best-effort everywhere else in this engine and must be here too."""
+    import pytest as _pytest
+    mp = _pytest.MonkeyPatch()
+    mp.setattr("aughor.telemetry.mlflow_tool_span",
+               lambda *a, **k: (_ for _ in ()).throw(RuntimeError("sink down")))
+    try:
+        run = _run(_automation(_effect()),
+                   lambda e, a: EffectOutcome(kind=e.kind, target="t", status="executed"))
+    finally:
+        mp.undo()
+    assert run.effects[0].status == "executed"

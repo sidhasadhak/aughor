@@ -51,6 +51,15 @@ class SlackBot(BaseModel):
     # ── the binding ──
     agent_id: str = ""          # the UserAgent whose instructions/docs/packs answer
     connection_id: str = ""     # the warehouse it answers over ("" = the ask's own)
+    #: VA-9b — whose connection this is. "" = the org's, which is every bot created
+    #: before this field and is the single-tenant behaviour byte-for-byte.
+    #:
+    #: A platform-user id, resolvable through RC-4's identity plane — so a Slack person
+    #: (`slack:U08N9EQ80UT`) who has been linked to a platform user is the same subject
+    #: here. That is what makes "my Slack" differ from yours without a second identity
+    #: scheme: the link table already answers who someone is, and this says whose
+    #: credential is being spent.
+    owner: str = ""
 
     # ── the credentials (encrypted at rest, masked on read) ──
     bot_token: str = ""         # xoxb-…  posts as the bot

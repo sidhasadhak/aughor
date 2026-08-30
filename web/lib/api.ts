@@ -3502,6 +3502,14 @@ export async function getAutomationRuns(id: string, limit = 50): Promise<Automat
 export interface AutomationGraphNode {
   id: string; type: string; kind?: string; label: string; detail?: string;
   status?: string; message?: string; produced?: string[];
+  agent_id?: string; delegated?: boolean;
+  duration_ms?: number; attempts?: number; investigation_id?: string;
+  fired?: string[]; at?: string;
+}
+
+export interface AutomationRunSummary {
+  id: string; outcome: string; at: string;
+  duration_ms: number; steps: number; failed: number;
 }
 export interface AutomationGraphEdge {
   from: string; to: string; type: string; label?: string;
@@ -3510,6 +3518,7 @@ export interface AutomationGraphData {
   nodes: AutomationGraphNode[]; edges: AutomationGraphEdge[];
   mode: string; name?: string; run_missing?: boolean;
   run_outcome?: string; run_reason?: string; run_at?: string;
+  agent_id?: string; runs?: AutomationRunSummary[]; run_id?: string;
 }
 
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {
@@ -5434,6 +5443,25 @@ export interface SessionEvent {
   payload: Record<string, unknown> | null;
   /** Set only when the row carries prompt CONTENT (obs.prompt_capture was on). */
   content_captured?: boolean;
+}
+
+/**
+ * The wire field naming the built-in agent that owned a run.
+ *
+ * The word the wire uses for it is retired product vocabulary — `docs/GLOSSARY.md` lists
+ * the six built-ins as agents and names that word as one not to say to a user, and the
+ * vocabulary ratchet enforces it across `web/`. This module is the one place exempted,
+ * because it exists to spell the wire exactly. So the translation happens HERE, at the
+ * boundary that already speaks both, and every surface above it addresses the field
+ * through this constant and reads it through `builtinAgentOf`.
+ */
+export const BUILTIN_AGENT_FIELD = "charter_id" as const;
+
+/** Which built-in agent owned this row — `analyst`, `explorer`, `watcher` — or null. */
+export function builtinAgentOf(
+  e: Pick<SessionEvent, typeof BUILTIN_AGENT_FIELD>,
+): string | null {
+  return e[BUILTIN_AGENT_FIELD] || null;
 }
 
 export interface TraceSummary {

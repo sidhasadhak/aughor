@@ -3172,6 +3172,7 @@ async def _stream_converse(
     session_id: str = "",
     canvas_id: Optional[str] = None,
     origin_prose: str = "",
+    agent_id: str = "",
 ) -> AsyncGenerator[str, None]:
     """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, EXPERIMENT, default off).
 
@@ -3257,10 +3258,23 @@ async def _stream_converse(
                        resolve_prior_answers(question, connection_id, session_id)))
         if origin_prose:
             _memory = origin_prose + "\n\n" + _memory if _memory else origin_prose
+        # VA-9c — the agent record, so its GRANTS decide whether a write tool exists at
+        # all on this turn. Resolved here rather than passed as an id: the tool roster is
+        # bound by closure precisely so the model cannot name an agent it was not given.
+        _agent_rec = None
+        if agent_id:
+            try:
+                from aughor.custom_agents.store import get_agent
+                _agent_rec = get_agent(agent_id)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "agent lookup for tool grants is best-effort — an "
+                               "unreadable agent means READ-ONLY, never open",
+                         counter="converse.agent_lookup")
         result = converse(connection_id, question,
                           extra_context=_memory,
                           on_step=_on_step, tool_emit=_forward,
-                          session_id=session_id, canvas_id=canvas_id)
+                          session_id=session_id, canvas_id=canvas_id, agent=_agent_rec)
 
         answer = (result.answer or "").strip()
         if not answer:
@@ -5157,7 +5171,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         # budget allows. Converse needs it more, not less — it makes SEVERAL provider
         # calls where the fast path makes a handful.
         _body = (
-            _stream_converse(req.question, conn_id, req.history,
+            _stream_converse(req.question, conn_id, req.history, agent_id=req.agent_id or "",
                              session_id=req.session_id, canvas_id=req.canvas_id,
                              # CI-4 — a seeded/dossier turn hands its finding to the
                              # conversation instead of bypassing it.

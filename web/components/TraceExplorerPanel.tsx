@@ -18,8 +18,10 @@ import type { TraceFilters } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { StatusChip } from "@/components/brief/StatusChip";
 import { TraceFlow } from "@/components/agentops/TraceFlow";
+import { originOf } from "@/components/agentops/RunNodes";
 import { TraceWaterfall } from "@/components/agentops/TraceWaterfall";
 import {
   getTrace, getTraceLogs, getTraces, getTraceFeedback, getVerdicts, recordTraceFeedback,
@@ -47,7 +49,13 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [traces, setTraces] = useState<TraceSummary[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<TraceDetail | null>(null);
-  const [tab, setTab] = useState<"timeline" | "flow" | "events" | "logs" | "feedback">("timeline");
+  // VA-4e — the canvas leads. "Where did the time go" is a follow-up question; "what did
+  // this run actually do" is the one a reader opens a run with, and the flow answers it.
+  const [tab, setTab] = useState<"flow" | "timeline" | "events" | "logs" | "feedback">("flow");
+  /** The index collapses to a rail. A 420px list beside a canvas leaves the canvas the
+   *  narrower half of the pane — measured, 24-node runs fitted at 0.4 zoom — and once a
+   *  run is picked, the list has done its job. */
+  const [indexOpen, setIndexOpen] = useState(true);
   const [expanded, setExpanded] = useState<number | null>(null);
   const [note, setNote] = useState("");
   const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
@@ -141,6 +149,29 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
 
   const totalMs = detail?.measured ? detail.duration_ms || 0 : 0;
 
+  /** Where this run came from, from the rows it recorded. Shared with the canvas rail so
+   *  the header and the rail cannot disagree about the same run. */
+  const runOrigin = useMemo(
+    () => (detail?.measured ? originOf(detail.events) : null), [detail]);
+
+  /** The model that did the work. Named in the header because "which model was this" is
+   *  the first thing asked of a slow or wrong run, and it was only ever visible by
+   *  opening a node. A run that used more than one says so rather than picking one. */
+  const runModel = useMemo(() => {
+    if (!detail?.measured) return "";
+    const models = new Set(detail.events.map(e => e.model).filter(Boolean) as string[]);
+    if (models.size === 0) return "";
+    if (models.size === 1) return [...models][0];
+    return `${models.size} models`;
+  }, [detail]);
+
+  /** The answer headline. The detail endpoint does not carry one — every measured
+   *  `final_response` row has a null payload — so it comes off the list row this run was
+   *  picked from, which is where the API does compute it. */
+  const runAnswer = useMemo(
+    () => traces.find(t => t.trace_id === selected)?.answer ?? "",
+    [traces, selected]);
+
   const submitRunFeedback = async (verdict: "helpful" | "unhelpful") => {
     if (!selected) return;
     setRunBusy(true);
@@ -175,21 +206,54 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
           how long it took, what it cost. Every control here sends its value to the
           server, so a match on page four is reachable — the previous surface held a
           fixed fifty and offered no way to look past them. */}
-      <div style={{ width: 420, flexShrink: 0, borderRight: "1px solid var(--b1)",
-                    display: "flex", flexDirection: "column", overflow: "hidden" }}>
+      {!indexOpen && (
+        // The collapsed rail. It states the count it is hiding, so reopening is a
+        // decision rather than a guess about what is behind the tab.
+        <div style={{ width: 30, flexShrink: 0, borderRight: "1px solid var(--b1)",
+                      display: "flex", flexDirection: "column", alignItems: "center",
+                      paddingTop: 8, gap: 6 }}>
+          <Button variant="ghost" size="icon-sm" aria-label="Show the runs index"
+            onClick={() => setIndexOpen(true)}>
+            <Icon name="panel" size={14} />
+          </Button>
+          {/* `--t2`, not `--t4`. This is the only thing on a 30px rail, so it is content
+              rather than a de-emphasised label, and `--t4` is 2.76:1 — below AA even for
+              large text. The Agent Ops readability guard catches exactly this. */}
+          <span className="aug-fs-xs" style={{ color: "var(--t2)", writingMode: "vertical-rl",
+            letterSpacing: "0.1em", textTransform: "uppercase" }}>
+            {total === 0 ? "runs" : `${total} runs`}
+          </span>
+        </div>
+      )}
+
+      {/* 420px, but never more than a third of the pane. Measured in the browser at an
+          820px viewport: a fixed 420 left the canvas 180px, and the run's header, its
+          rail and its cards all rendered on top of each other. The index is how a run is
+          FOUND; the canvas is what the surface is for, and it gets the majority. */}
+      <div style={{ width: 420, maxWidth: "34%", flexShrink: 0,
+                    borderRight: "1px solid var(--b1)",
+                    display: indexOpen ? "flex" : "none", flexDirection: "column",
+                    overflow: "hidden" }}>
 
         <div style={{ padding: 10, borderBottom: "1px solid var(--b1)",
                       display: "flex", flexDirection: "column", gap: 6 }}>
-          <input
-            className="aug-input aug-fs-sm"
-            placeholder="Search question or answer…"
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === "Enter") setFilters(f => ({ ...f, q: search || undefined }));
-            }}
-            onBlur={() => setFilters(f => ({ ...f, q: search || undefined }))}
-          />
+          <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input
+              className="aug-input aug-fs-sm"
+              style={{ flex: 1, minWidth: 0 }}
+              placeholder="Search question or answer…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === "Enter") setFilters(f => ({ ...f, q: search || undefined }));
+              }}
+              onBlur={() => setFilters(f => ({ ...f, q: search || undefined }))}
+            />
+            <Button variant="ghost" size="icon-sm" aria-label="Hide the runs index"
+              onClick={() => setIndexOpen(false)}>
+              <Icon name="panel" size={14} />
+            </Button>
+          </div>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
             {/* "No result", not "Running": only the /ask and /chat door records a final
                 response, so most runs without one are finished, not in flight. Measured
@@ -338,33 +402,46 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
           </div>
         ) : (
           <>
-            <div style={{ display: "flex", alignItems: "center", gap: 10,
-              padding: "12px 20px", borderBottom: "1px solid var(--b1)" }}>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13, fontWeight: 500, overflow: "hidden",
-                  textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail.question || detail.trace_id}</div>
-                <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
-                  {detail.events.length} events
-                  {totalMs > 0 && ` · ${fmtMs(totalMs)}`}
-                  {detail.agent_id && ` · agent ${detail.agent_id}`}
-                  {invId && ` · deep analysis ${invId}`}
+            {/* One header, two rows: WHAT this run is, then HOW to read it. They were
+                one row of eight controls competing for the same horizontal space, and the
+                title — the only part that is unique to the run — was the piece that got
+                truncated. */}
+            <div style={{ padding: "10px 16px", borderBottom: "1px solid var(--b1)",
+              display: "flex", flexDirection: "column", gap: 7 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div className="aug-fs-ui" style={{ fontWeight: 500, overflow: "hidden",
+                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {detail.question || detail.trace_id}
+                  </div>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2,
+                    display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span>{compactNumber(detail.events.length)} events</span>
+                    {totalMs > 0 && <span>{fmtMs(totalMs)}</span>}
+                    {runOrigin?.service && <span>via {runOrigin.service}</span>}
+                    {runOrigin?.builtinAgent && <span>{runOrigin.builtinAgent}</span>}
+                    {detail.agent_id && <span>custom agent {detail.agent_id}</span>}
+                    {runModel && <span>{runModel}</span>}
+                    {invId && <span>deep analysis {invId}</span>}
+                  </div>
                 </div>
+                {detail.ok != null && (
+                  <StatusChip hue={detail.ok ? "positive" : "negative"} strength="soft">
+                    {detail.ok ? "ok" : "failed"}
+                  </StatusChip>
+                )}
               </div>
-              {detail.ok != null && (
-                <StatusChip hue={detail.ok ? "positive" : "negative"} strength="soft">
-                  {detail.ok ? "ok" : "failed"}
-                </StatusChip>
-              )}
-              <Button variant={tab === "timeline" ? "secondary" : "ghost"} size="xs"
-                onClick={() => setTab("timeline")}>Waterfall</Button>
-              <Button variant={tab === "flow" ? "secondary" : "ghost"} size="xs"
-                onClick={() => setTab("flow")}>Flow</Button>
-              <Button variant={tab === "events" ? "secondary" : "ghost"} size="xs"
-                onClick={() => setTab("events")}>Events</Button>
-              <Button variant={tab === "logs" ? "secondary" : "ghost"} size="xs"
-                onClick={() => setTab("logs")}>Logs</Button>
-              <Button variant={tab === "feedback" ? "secondary" : "ghost"} size="xs"
-                onClick={() => setTab("feedback")}>Feedback</Button>
+              {/* A segmented group rather than five loose buttons: these are five readings
+                  of ONE run, and loose buttons read as five unrelated actions. */}
+              <div style={{ display: "inline-flex", gap: 2, padding: 2, alignSelf: "flex-start",
+                border: "1px solid var(--b1)", borderRadius: "var(--r-chip)",
+                background: "var(--bg-1)" }}>
+                {([["flow", "Flow"], ["timeline", "Waterfall"], ["events", "Events"],
+                   ["logs", "Logs"], ["feedback", "Feedback"]] as const).map(([key, label]) => (
+                  <Button key={key} variant={tab === key ? "secondary" : "ghost"} size="xs"
+                    onClick={() => setTab(key)}>{label}</Button>
+                ))}
+              </div>
             </div>
 
             {tab === "timeline" ? (
@@ -377,10 +454,14 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                     </div>}
               </div>
             ) : tab === "flow" ? (
-              <div style={{ flex: 1, overflowY: "auto", padding: "12px 20px" }}>
+              // `overflow: hidden`, not `auto`: the canvas pans and its rail scrolls on
+              // their own, and an outer scrollbar would let the whole surface slide
+              // instead — the reason this tab used to feel smaller than its pane.
+              <div style={{ flex: 1, overflow: "hidden", padding: "12px 16px",
+                display: "flex", flexDirection: "column" }}>
                 {detail.timeline
                   ? <TraceFlow timeline={detail.timeline} edges={detail.flow_edges ?? []}
-                               events={detail.events ?? []} />
+                               events={detail.events ?? []} answer={runAnswer} />
                   : <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>
                       This run predates the laid-out timeline, so there is no graph to
                       draw. The Events tab reads the same run from its raw log.

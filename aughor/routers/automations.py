@@ -181,7 +181,20 @@ def graph(automation_id: str, run: str = ""):
             # is exactly what the caller asked to see decorated. Refusing the whole
             # graph because it has never run would hide the thing they came to look at.
             return {**build_graph(automation), "run_missing": True}
-    return build_graph(automation, chosen)
+    graph = build_graph(automation, chosen)
+    # VA-4c — the runs rail, so a canvas can offer "which run?" without a second request
+    # and without inventing its own idea of recency. Bounded: a rail is for picking, and
+    # a list long enough to scroll is a different surface.
+    graph["runs"] = [
+        {"id": r.id, "outcome": r.outcome, "at": r.started_at,
+         "duration_ms": r.duration_ms,
+         "steps": len(r.effects or []),
+         "failed": sum(1 for e in (r.effects or [])
+                       if e.status not in ("executed", "skipped"))}
+        for r in get_runs(automation_id=automation_id, limit=12)
+    ]
+    graph["run_id"] = getattr(chosen, "id", "") if chosen is not None else ""
+    return graph
 
 
 @router.get("/automations/{automation_id}/runs")
