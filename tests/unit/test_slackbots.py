@@ -358,6 +358,41 @@ def test_the_runtime_route_refuses_when_the_deployment_authenticates_nobody(clie
     assert "Posting from automations is unaffected" in detail   # and what still works
 
 
+def test_a_supervisor_key_issued_from_the_app_opens_the_route(client, slack_ok):
+    """The remedy has to be reachable from inside the product. The first version of this
+    gate answered "export AUGHOR_API_KEY and restart", which locks every other client out
+    of the API to protect one route and cannot be done from the app at all — the user's
+    objection, and a fair one."""
+    client.post("/slack-bots", json={"name": "socket-bot", "bot_token": "xoxb-t",
+                                     "app_token": "xapp-t", "signing_secret": "sig"})
+    assert client.get("/slack-bots/supervisor-key").json()["issued"] is False
+
+    key = client.post("/slack-bots/supervisor-key").json()
+    assert key["env_line"] == f"AUGHOR_RUNTIME_KEY={key['key']}"
+    assert client.get("/slack-bots/supervisor-key").json()["issued"] is True
+    # Status never discloses it — issued once, re-issued rather than recovered.
+    assert key["key"] not in client.get("/slack-bots/supervisor-key").text
+
+    assert client.get("/slack-bots/runtime").status_code == 503
+    ok = client.get("/slack-bots/runtime", headers={"X-Aughor-Runtime-Key": key["key"]})
+    assert ok.status_code == 200
+    mine = next(b for b in ok.json()["bots"] if b["name"] == "socket-bot")
+    assert mine["bot_token"] == "xoxb-t"          # raw, which is the route's whole point
+
+    wrong = client.get("/slack-bots/runtime", headers={"X-Aughor-Runtime-Key": "guess"})
+    assert wrong.status_code == 503
+
+
+def test_issuing_again_rotates_and_retires_the_old_key(client, slack_ok):
+    first = client.post("/slack-bots/supervisor-key").json()["key"]
+    second = client.post("/slack-bots/supervisor-key").json()["key"]
+    assert first != second
+    assert client.get("/slack-bots/runtime",
+                      headers={"X-Aughor-Runtime-Key": first}).status_code == 503
+    assert client.get("/slack-bots/runtime",
+                      headers={"X-Aughor-Runtime-Key": second}).status_code == 200
+
+
 def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, slack_ok,
                                                                      monkeypatch):
     """With a shared key configured, `_require_auth` actually checks callers — the gate

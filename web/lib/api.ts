@@ -3595,6 +3595,24 @@ export async function createSlackBot(body: {
 /** The bots an automation may post AS. Returns [] when the plane is off (404), so a
  *  caller renders "no bots yet" rather than throwing — the same shape `getAutomations`
  *  uses for the same reason. */
+/** The supervisor's key, minted server-side and returned ONCE. Every later read is a
+ *  status, never a disclosure — a lost key is re-issued, not recovered. */
+export async function issueSupervisorKey(): Promise<{
+  key: string; env_line: string; issued_at: string;
+}> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`, { method: "POST" });
+  if (!res.ok) throw new Error(`Could not issue a supervisor key (${res.status})`);
+  return res.json();
+}
+
+export async function getSupervisorKeyStatus(): Promise<{
+  issued: boolean; issued_at: string;
+}> {
+  const res = await fetch(`${getApiBase()}/slack-bots/supervisor-key`);
+  if (!res.ok) return { issued: false, issued_at: "" };
+  return res.json();
+}
+
 export async function getSlackBots(): Promise<SlackBotSummary[]> {
   const res = await fetch(`${getApiBase()}/slack-bots`);
   if (res.status === 404) return [];

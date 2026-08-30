@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel
 
 from aughor.slackbots import store
@@ -72,7 +72,36 @@ def slack_bot_manifest(name: str = "Aughor", description: str = "", agent_id: st
     }
 
 
-def _refuse_without_a_front_door() -> None:
+#: The header the supervisor presents. Its own name, not `X-Api-Key`: this key opens
+#: exactly one route, and a reader should not have to work out which of two meanings a
+#: shared header carries.
+RUNTIME_KEY_HEADER = "x-aughor-runtime-key"
+
+
+@router.post("/slack-bots/supervisor-key")
+def issue_supervisor_key():
+    """Mint the supervisor's key and return it ONCE, with the line to paste.
+
+    This exists because the first version of the fail-closed gate answered "set
+    AUGHOR_API_KEY and restart" — a shell export, a restart, and every other client
+    locked out of the API to protect one route. Configuration the product requires has
+    to be reachable from the product; a button that hands you the value is the smallest
+    honest version of that.
+    """
+    raw = store.issue_supervisor_key()
+    return {"key": raw, "env_line": f"AUGHOR_RUNTIME_KEY={raw}",
+            "issued_at": store.supervisor_key_issued_at()}
+
+
+@router.get("/slack-bots/supervisor-key")
+def supervisor_key_status():
+    """Whether a key exists and when it was minted — never the key. Issued once, and a
+    lost one is re-issued rather than recovered."""
+    at = store.supervisor_key_issued_at()
+    return {"issued": bool(at), "issued_at": at}
+
+
+def _refuse_without_a_front_door(request: Request) -> None:
     """Refuse to hand out raw credentials to a deployment that authenticates nobody.
 
     The policy table has always said `ADMIN_MANAGE_ORG` for this route, and the
@@ -93,6 +122,9 @@ def _refuse_without_a_front_door() -> None:
     different source than its enforcer is a second opinion — the same mistake the
     integrations readiness check made a few hours earlier, found the same way.
     """
+    # The scoped key first: it is the one a person can actually issue from the product.
+    if store.supervisor_key_matches(request.headers.get(RUNTIME_KEY_HEADER, "")):
+        return
     from aughor.api import _API_KEY
     if _API_KEY:
         return
@@ -102,14 +134,16 @@ def _refuse_without_a_front_door() -> None:
         return
     raise HTTPException(
         status_code=503,
-        detail="refusing to serve Slack tokens: this deployment authenticates nobody. "
-               "Set AUGHOR_API_KEY on the API and pass the same value to the bot "
-               "supervisor as AUGHOR_API_KEY, then retry. Posting from automations is "
-               "unaffected — only the socket supervisor reads this route.")
+        detail="refusing to serve Slack tokens: this caller is unauthenticated. "
+               "Generate a supervisor key in Integrations → Slack and put it in the bot "
+               "supervisor's environment as AUGHOR_RUNTIME_KEY (an org-wide "
+               "AUGHOR_API_KEY works too, if this deployment already sets one). Posting "
+               "from automations is unaffected — only the socket supervisor reads this "
+               "route.")
 
 
 @router.get("/slack-bots/runtime")
-def slack_bots_runtime():
+def slack_bots_runtime(request: Request):
     """The supervisor's door: enabled bots with PLAINTEXT tokens.
 
     A deliberately separate route rather than a `?reveal=1` flag on the listing. A flag
@@ -123,7 +157,7 @@ def slack_bots_runtime():
     because that gate is inert without an enterprise licence, FAIL-CLOSED here as well:
     see :func:`_refuse_without_a_front_door`.
     """
-    _refuse_without_a_front_door()
+    _refuse_without_a_front_door(request)
     bots = [b for b in store.list_bots(include_disabled=False) if b.bot_token and b.app_token]
     return {"bots": [store.get_bot_decrypted(b.id).to_dict() for b in bots]}
 

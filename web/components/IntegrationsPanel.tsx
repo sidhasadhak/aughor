@@ -23,6 +23,8 @@ import {
   setupIntegrationApp,
   type IntegrationProvider,
   getSlackBots,
+  getSupervisorKeyStatus,
+  issueSupervisorKey,
   listUserAgents,
   type SlackBotSummary,
   type UserAgent,
@@ -59,6 +61,10 @@ export function IntegrationsPanel() {
   /** Which agent the new app answers AS. Optional: a bot with none still posts, it just
    *  cannot answer an @mention as anybody. */
   const [doorAgent, setDoorAgent] = useState("");
+  /** The supervisor's key: whether one exists, and the freshly-minted value while it is
+   *  on screen. It is returned once — the panel holds it only until the card closes. */
+  const [keyIssued, setKeyIssued] = useState(false);
+  const [freshKey, setFreshKey] = useState("");
 
   const load = useCallback(async () => {
     try {
@@ -75,6 +81,7 @@ export function IntegrationsPanel() {
         ]);
         setBots(b);
         setAgents(a);
+        setKeyIssued((await getSupervisorKeyStatus().catch(() => null))?.issued ?? false);
       }
     } catch (e) {
       setError((e as Error).message);
@@ -273,6 +280,54 @@ export function IntegrationsPanel() {
                     {" "}needs none — it opens an outbound socket — so it works on a
                     laptop with no tunnel. {bots.length > 0 && (
                       <>Connected: {bots.map(b => b.name).join(", ")}.</>
+                    )}
+                  </div>
+                )}
+
+                {/* The supervisor's key, offered where its bots are — and only once
+                    there is a bot, because a key for a supervisor with nothing to
+                    supervise is a control asking to be ignored. It exists so the fix
+                    for "the API refused to serve bot credentials" is a button here
+                    rather than a shell export and a restart. */}
+                {p.alt_door === "slack_app" && bots.length > 0 && (
+                  <div style={{ marginTop: 10, borderTop: "1px solid var(--b1)",
+                    paddingTop: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span className="aug-fs-xs" style={{ color: "var(--t3)", flex: 1 }}>
+                        Supervisor key — needed only to run the socket supervisor, which
+                        answers @mentions. Posting from automations never uses it.
+                        {keyIssued && !freshKey && " One is set."}
+                      </span>
+                      <Button variant="secondary" size="xs" disabled={busy === "key"}
+                        onClick={async () => {
+                          setBusy("key"); setError("");
+                          try {
+                            const k = await issueSupervisorKey();
+                            setFreshKey(k.env_line);
+                            setKeyIssued(true);
+                          } catch (e) { setError((e as Error).message); }
+                          finally { setBusy(""); }
+                        }}>
+                        {keyIssued ? "Regenerate" : "Generate"}
+                      </Button>
+                    </div>
+                    {freshKey && (
+                      <div style={{ marginTop: 8, display: "flex", flexDirection: "column",
+                        gap: 6 }}>
+                        {/* Shown ONCE. Re-reading returns a status, never the value, so
+                            this line is the only chance to copy it. */}
+                        <code className="aug-fs-xs" style={{ padding: "6px 8px",
+                          background: "var(--bg-2)", borderRadius: "var(--r2)",
+                          border: "1px solid var(--b1)", overflowWrap: "anywhere" }}>
+                          {freshKey}
+                        </code>
+                        <div className="aug-fs-xs" style={{ color: "var(--amb4)",
+                          lineHeight: 1.5 }}>
+                          Copy this now — it is shown once. Paste it into the bot
+                          supervisor&apos;s <code>.env.local</code>, then restart that
+                          process. Regenerating replaces it and the old one stops working.
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}
