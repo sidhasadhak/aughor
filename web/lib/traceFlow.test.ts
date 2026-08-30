@@ -9,7 +9,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  bandAsNode, buildForest, foldRepeats, layoutForest, layoutGrid,
+  bandAsNode, buildForest, dominantPeriod, foldRepeats, layoutForest, layoutGrid,
 } from "@/components/agentops/TraceFlow";
 import type { TimelineNode, TraceFlowEdge } from "@/lib/api";
 
@@ -390,5 +390,110 @@ describe("an opened stack grows downward", () => {
       const overlaps = o.x === lastMember.x && o.y > 0 && o.y <= lastMember.y;
       expect(overlaps).toBe(false);
     }
+  });
+});
+
+/* ── laying a run out on its own rhythm ─────────────────────────────────────── */
+
+/** The turn both long traces measured on the live instance actually have. */
+const turns = (n: number) =>
+  Array.from({ length: n }, (_, r) => [
+    step(`g${r}`, "guardrail", "pii"),
+    step(`m${r}`, "llm_call", "gemini"),
+    step(`t${r}`, "tool_call", "sql.execute"),
+  ]).flat();
+
+describe("dominantPeriod", () => {
+  it("finds the turn the run actually repeats", () => {
+    expect(dominantPeriod(asItems(turns(12)))).toBe(3);
+  });
+
+  it("prefers the SHORTEST turn — six is two threes, and a reader counts threes", () => {
+    expect(dominantPeriod(asItems(turns(8)))).toBe(3);
+  });
+
+  it("finds no turn in a run of ONE repeated thing", () => {
+    // That matches at every offset, so it "has" a period of two. It is not a rhythm, it
+    // is a run of the same card, and stacking already answers it.
+    const same = Array.from({ length: 20 }, (_, i) => step(`n${i}`, "tool_call", "t"));
+    expect(dominantPeriod(asItems(same))).toBeNull();
+  });
+
+  it("finds no turn in a run with no pattern", () => {
+    const mixed = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j"]
+      .map((n, i) => step(`n${i}`, "tool_call", n));
+    expect(dominantPeriod(asItems(mixed))).toBeNull();
+  });
+});
+
+describe("a run with a turn is laid out in WHOLE turns", () => {
+  it("puts a whole number of turns on every row", () => {
+    const items = asItems(turns(16));
+    const pos = layoutGrid(items, new Set(), CELL);
+    const perRow = new Map<number, number>();
+    for (const p of pos.values()) perRow.set(p.y, (perRow.get(p.y) ?? 0) + 1);
+    for (const [, n] of perRow) expect(n % 3 === 0 || n === items.length % 3).toBe(true);
+  });
+
+  it("lines the same kinds up down the columns, which is the rhythm made visible", () => {
+    const items = asItems(turns(16));
+    const pos = layoutGrid(items, new Set(), CELL);
+    // Every guardrail sits in a column whose x is one of the turn's first-slot columns.
+    const guardXs = new Set(items
+      .filter(i => i.kind === "node" && i.node.name === "pii")
+      .map(i => pos.get((i as { node: TimelineNode }).node.id)!.x));
+    const modelXs = new Set(items
+      .filter(i => i.kind === "node" && i.node.name === "gemini")
+      .map(i => pos.get((i as { node: TimelineNode }).node.id)!.x));
+    for (const x of guardXs) expect(modelXs.has(x)).toBe(false);
+  });
+
+  it("does NOT snake a run laid out in turns", () => {
+    // Reversing every other row would flip half the turns back to front and throw away
+    // the alignment that makes the block readable at all.
+    const items = asItems(turns(16));
+    const pos = layoutGrid(items, new Set(), CELL);
+    const rows = new Map<number, { x: number; i: number }[]>();
+    items.forEach((it, i) => {
+      const p = pos.get((it as { node: TimelineNode }).node.id)!;
+      (rows.get(p.y) ?? rows.set(p.y, []).get(p.y)!).push({ x: p.x, i });
+    });
+    for (const [, cells] of rows) {
+      const byOrder = [...cells].sort((a, b) => a.i - b.i);
+      for (let k = 1; k < byOrder.length; k++) {
+        expect(byOrder[k].x).toBeGreaterThan(byOrder[k - 1].x);
+      }
+    }
+  });
+
+  it("stays landscape rather than becoming a portrait ribbon", () => {
+    // Rounding to the nearest multiple of the turn gave 6 columns for 68 cards — a tall
+    // strip in a pane twice as wide as it is tall. The multiple is chosen by aspect.
+    const items = asItems(turns(23));
+    const pos = layoutGrid(items, new Set(), CELL);
+    const xs = [...pos.values()].map(p => p.x);
+    const ys = [...pos.values()].map(p => p.y);
+    const ratio = (Math.max(...xs) + CELL.w) / (Math.max(...ys) + CELL.h);
+    expect(ratio).toBeGreaterThan(0.9);
+  });
+});
+
+describe("the block does not re-flow when a stack opens", () => {
+  it("keeps the same column count open or closed", () => {
+    // If the column count moved with what is open, expanding a stack would rearrange the
+    // entire block — the opposite of the one thing an opened stack must guarantee.
+    const nodes = [
+      ...turns(6),
+      ...Array.from({ length: 6 }, (_, i) => step(`x${i}`, "llm_call", "gemini")),
+      ...turns(6),
+    ];
+    const items = foldRepeats(roots(nodes));
+    const band = items.find(i => i.kind === "band");
+    if (!band || band.kind !== "band") throw new Error("expected a stack");
+    const colsOf = (pos: Map<string, { x: number; y: number }>) =>
+      new Set([...pos.values()].map(p => p.x)).size;
+    const closed = layoutGrid(items, new Set(), CELL);
+    const open = layoutGrid(items, new Set([band.id]), CELL);
+    expect(colsOf(open)).toBe(colsOf(closed));
   });
 });

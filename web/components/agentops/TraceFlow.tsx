@@ -229,10 +229,50 @@ const FACE_HEIGHT: Record<RunFace, number> = {
   tool: 56, event: 80,
 };
 const ROW_GAP = 26;
+/** The longest repeating turn worth looking for — measured, the real one is 3. */
+const MAX_TURN = 8;
 const COL_GAP = 34;
 
 function cardHeight(node: TimelineNode): number {
   return FACE_HEIGHT[faceOf(node)] ?? 120;
+}
+
+/**
+ * The length of the run's repeating turn, or null when it has none.
+ *
+ * Measured on the live instance: after like-with-like stacking, both long traces are the
+ * same three cards over and over — `pii · model · sql.execute` — matching at every offset
+ * of three. A run with that rhythm has a structure, and a layout that cuts across it is
+ * what made the first block read as a spreadsheet: rows of arbitrary width chop each turn
+ * in a different place, so nothing lines up with anything and the eye finds no pattern to
+ * hold on to.
+ *
+ * Used ONLY to choose the row width. It groups nothing and claims nothing about the cards
+ * — every one stays its own card, which is the rule stacking already answers to.
+ */
+export function dominantPeriod(items: FlowItem[]): number | null {
+  const sig = items.map(it => (it.kind === "node"
+    ? stepSignature(it.node)
+    : stepSignature(it.members[0])));
+  if (sig.length < 8) return null;
+
+  for (let period = 2; period <= MAX_TURN; period++) {
+    if (sig.length < period * 3) break;
+    // A turn has to have VARIETY in it. A run of one repeated thing matches at every
+    // offset, so it "has" a period of two — which is not a rhythm, it is a run of the
+    // same card, and stacking already answers that. Caught by a test built from twenty
+    // identical nodes, which the first version happily laid out in turns of two.
+    if (new Set(sig.slice(0, period)).size < 2) continue;
+    let hits = 0;
+    for (let i = 0; i + period < sig.length; i++) {
+      if (sig[i] === sig[i + period]) hits++;
+    }
+    // The SMALLEST period that repeats almost everywhere, so the first match wins. A
+    // longer one scores just as well on a perfect cycle — six is two turns of three —
+    // and a reader counting turns means the short one.
+    if (hits / (sig.length - period) >= 0.8) return period;
+  }
+  return null;
 }
 
 /**
@@ -285,10 +325,44 @@ export function layoutGrid(
   // card height rather than a constant. Using the bare cell missed both and came out at
   // an aspect of 2.9 where 1.8 was asked for.
   const unitW = cell.w + COL_GAP;
-  const unitH = items.reduce((sum, it) => sum + heightOf(it), 0) / items.length + ROW_GAP;
-  const cols = items.length <= ONE_ROW_UP_TO
-    ? items.length
-    : Math.max(1, Math.round(Math.sqrt((items.length * unitH * TARGET) / unitW)));
+  // The TALLEST card, not the mean: a row is as tall as its tallest card, and with rows
+  // laid out in whole turns every row contains the tall one. Using the mean under-counted
+  // the height by a third and chose six columns where nine was the landscape answer.
+  //
+  // And COLLAPSED heights only. If the column count moved with what is open, expanding a
+  // stack would re-flow the entire block — the opposite of the one thing an opened stack
+  // is supposed to guarantee.
+  const baseHeight = (it: FlowItem) =>
+    cardHeight(it.kind === "node" ? it.node : it.members[0]);
+  const unitH = Math.max(...items.map(baseHeight)) + ROW_GAP;
+  const aspectOf = (c: number) =>
+    (c * unitW) / (Math.ceil(items.length / c) * unitH);
+
+  const turn = dominantPeriod(items);
+  let cols: number;
+  if (items.length <= ONE_ROW_UP_TO) {
+    cols = items.length;
+  } else if (turn) {
+    // WHOLE TURNS PER ROW. Every row then starts at the same point in the cycle, so the
+    // kinds line up down the columns and the run reads as the rhythm it is — instead of
+    // each row chopping the turn somewhere else and the block reading as noise.
+    // Which multiple is chosen by aspect rather than by rounding: rounding 7.2 to the
+    // nearest multiple of 3 gives 6, and 6 columns of 68 cards is a portrait ribbon in a
+    // landscape pane.
+    let bestK = 1;
+    for (let k = 1; k <= 6; k++) {
+      if (turn * k > items.length) break;
+      if (Math.abs(aspectOf(turn * k) - TARGET) < Math.abs(aspectOf(turn * bestK) - TARGET)) {
+        bestK = k;
+      }
+    }
+    cols = turn * bestK;
+  } else {
+    cols = Math.max(1, Math.round(Math.sqrt((items.length * unitH * TARGET) / unitW)));
+  }
+  // A run laid out in whole turns must NOT snake: reversing every other row would flip
+  // half the turns back to front and throw away the alignment that makes it readable.
+  const snake = !turn;
 
   const rowHeights: number[] = [];
   items.forEach((item, i) => {
@@ -307,7 +381,7 @@ export function layoutGrid(
     const within = i % cols;
     // Serpentine: odd rows run the other way, so the step from the end of one row to the
     // start of the next is a hop straight down rather than a diagonal across everything.
-    const col = row % 2 === 0 ? within : cols - 1 - within;
+    const col = snake && row % 2 === 1 ? cols - 1 - within : within;
     const x = col * unitW;
     const top = tops[row];
     if (item.kind === "node") {
