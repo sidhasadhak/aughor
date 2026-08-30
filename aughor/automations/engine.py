@@ -39,7 +39,9 @@ from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
-from aughor.automations.dataflow import UnresolvedBinding, alias_for, resolve
+from aughor.automations.dataflow import (
+    UnresolvedBinding, alias_for, collect_refs, parse_ref, resolve,
+)
 from aughor.automations.models import (
     Automation,
     AutomationRun,
@@ -358,6 +360,26 @@ def _step_span(effect: Effect, automation: Automation, alias: str, run_id: str =
                 tolerate(exc, "trace unbind is best-effort", counter="automation.span")
 
 
+#: Engine→dispatcher plumbing: set on a step's BOUND config when a later step binds to
+#: its output. Never authored, never stored — the engine adds it after `resolve` and the
+#: dispatcher reads it. Underscored so it cannot collide with a real config key, and
+#: absent from every label allowlist so it cannot reach a reader.
+AWAIT_KEY = "_await_result"
+
+
+def _downstream_binds(alias: str, later: list[Effect]) -> bool:
+    """Does any later step reference ``alias``?
+
+    Reads the same `collect_refs` the graph derives its data edges from, so a step the
+    canvas draws an arrow out of is exactly a step the engine waits for.
+    """
+    for nxt in later:
+        for ref in collect_refs(nxt.config):
+            if parse_ref(ref)[0] == alias:
+                return True
+    return False
+
+
 def acting_agent(effect: Effect, automation: Automation) -> str:
     """The agent this step runs as: its own if it names one, else the automation's.
 
@@ -559,6 +581,11 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     swallow them.
     """
     question = str(effect.config.get("question", ""))
+    # VA-13 — wait only when a later step binds to this one's answer (set by the chain
+    # loop from `collect_refs`). An unconsumed investigate keeps submitting and returning,
+    # which is what "run this nightly" wants and what every automation written before this
+    # already does.
+    await_result = bool(effect.config.get(AWAIT_KEY))
     # VA-9b — inherit the automation's agent when the step does not name its own, so
     # `investigate` stops being the one effect that knows who is acting.
     agent_id = acting_agent(effect, automation)
@@ -574,7 +601,7 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     run = run_investigation(
         InvestigationRequest(question=question, connection_id=automation.conn_id,
                              schema_name=effect.config.get("schema_name"),
-                             agent_id=agent_id or None),
+                             agent_id=agent_id or None, wait=await_result),
         idempotency_key=idem, caller=f"automation:{automation.id}",
     )
     if run.status == "refused":
@@ -594,7 +621,15 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                          # spend without this model growing a usage field the other five
                          # effect kinds could never fill.
                          investigation_id=_inv,
-                         data={"investigation_id": _inv} if _inv else {})
+                         # VA-13 — what a later step can bind to. `answer` is the run's
+                         # headline and is present only when this step was WAITED for; a
+                         # submitted run has produced no sentence yet, and publishing an
+                         # empty one would let `{"$from": "step1.answer"}` resolve to
+                         # nothing and post a blank message. Absent instead, so the
+                         # binding raises `UnresolvedBinding` and the downstream step is
+                         # SKIPPED with a reason — which is the honest outcome.
+                         data={k: v for k, v in (("investigation_id", _inv),
+                                                 ("answer", run.headline)) if v})
 
 
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
@@ -771,6 +806,20 @@ def run_automation(
                 agent_id=acting_agent(effect, automation),
                 message=f"upstream data unavailable: {exc}"))
             continue
+        # VA-13 — does anything LATER bind to this step's output?
+        #
+        # Only a step somebody is waiting on should be waited FOR. `investigate` submits a
+        # background job and returns a job id, which is the right shape for "run this
+        # nightly" and useless for "post its answer into Slack": there is no answer yet
+        # when the next step runs. So the engine tells the step, and only a step that is
+        # actually consumed pays the latency.
+        #
+        # Derived from `collect_refs` — the same function the graph's data edges come from
+        # — so "the canvas drew an edge here" and "the engine waited here" cannot disagree.
+        # Carried on the bound config rather than in the dispatcher signature: six
+        # dispatchers would otherwise grow a parameter five of them ignore.
+        if _downstream_binds(alias, automation.effects[i + 1:]):
+            bound = {**bound, AWAIT_KEY: True}
         step_started = now_iso_z()
         step_t0 = _time.monotonic()
         # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one

@@ -33,8 +33,9 @@ import {
   ConditionRow, EffectRow, effectsForWire, labelStyle, missingKeys, newCondition, newEffect,
 } from "@/components/automations/AutomationRows";
 import {
-  listUserAgents, updateAutomation,
-  type Automation, type AutoCondition, type AutoEffect, type NewAutomation, type UserAgent,
+  getSlackBots, listUserAgents, updateAutomation,
+  type Automation, type AutoCondition, type AutoEffect, type NewAutomation,
+  type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
 
 /** A pending draft, and whether it differs from what is stored. */
@@ -92,7 +93,9 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved }: {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [agents, setAgents] = useState<UserAgent[]>([]);
+  const [bots, setBots] = useState<SlackBotSummary[]>([]);
   useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
+  useEffect(() => { getSlackBots().then(setBots).catch(() => setBots([])); }, []);
 
   const stored: Draft = useMemo(
     () => ({ conditions: automation.conditions, effects: automation.effects }), [automation]);
@@ -182,7 +185,7 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved }: {
           </Button>
         </div>
         {draft.effects.map((e, i) => (
-          <EffectRow key={i} e={e} agents={agents} onChange={ee => setEff(i, ee)}
+          <EffectRow key={i} e={e} agents={agents} bots={bots} onChange={ee => setEff(i, ee)}
             onRemove={draft.effects.length > 1
               ? () => onDraft({ ...draft, effects: draft.effects.filter((_, j) => j !== i) })
               : undefined} />

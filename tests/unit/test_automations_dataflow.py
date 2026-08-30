@@ -368,3 +368,81 @@ def test_a_broken_telemetry_sink_never_fails_the_run():
     finally:
         mp.undo()
     assert run.effects[0].status == "executed"
+
+
+# ── VA-13: a step is waited for only when something binds to it ──────────────────
+
+def test_a_step_nobody_consumes_is_not_waited_for():
+    """The behaviour every automation written before VA-13 already has.
+
+    `investigate` submits a background job and returns a job id, which is exactly right
+    for "run this nightly" — the tick finishes in milliseconds and the answer lands in
+    Activity when it lands. Waiting unconditionally would turn every existing nightly run
+    into a tick that blocks for its whole token budget, for no reader.
+    """
+    from aughor.automations.engine import AWAIT_KEY
+
+    seen: list[dict] = []
+
+    def _dispatch(effect, automation):
+        seen.append(dict(effect.config))
+        return EffectOutcome(kind=effect.kind, target="t", status="executed", data={})
+
+    _run(_automation(_effect(), _effect()), _dispatch)
+    assert all(AWAIT_KEY not in c for c in seen), (
+        "no step is consumed here, so none of them should have been marked to wait")
+
+
+def test_a_step_SOMETHING_BINDS_TO_is_waited_for():
+    """The whole point: `{"$from": "step1.answer"}` means step 2 needs step 1's answer,
+    and there is no answer until the run that produces it has finished."""
+    from aughor.automations.engine import AWAIT_KEY
+
+    seen: list[dict] = []
+
+    def _dispatch(effect, automation):
+        seen.append(dict(effect.config))
+        return EffectOutcome(kind=effect.kind, target="t", status="executed",
+                             data={"answer": "Sales were 41,204 yesterday."})
+
+    _run(_automation(_effect(), _effect(message={"$from": "step1.answer"})), _dispatch)
+    assert seen[0][AWAIT_KEY] is True, "the consumed step must be marked to wait"
+    assert AWAIT_KEY not in seen[1], "the LAST step has no consumer and must not wait"
+    assert seen[1]["message"] == "Sales were 41,204 yesterday."
+
+
+def test_the_wait_marker_follows_the_ALIAS_not_the_position():
+    """A named step referenced by name must be waited for, and its unnamed neighbour
+    must not — the marker is derived from `collect_refs`, so it tracks whatever the
+    graph would draw an edge from."""
+    from aughor.automations.engine import AWAIT_KEY
+
+    seen: list[dict] = []
+
+    def _dispatch(effect, automation):
+        seen.append(dict(effect.config))
+        return EffectOutcome(kind=effect.kind, target="t", status="executed",
+                             data={"answer": "x"})
+
+    _run(_automation(_effect(alias="numbers"), _effect(),
+                     _effect(message={"$from": "numbers.answer"})), _dispatch)
+    assert seen[0][AWAIT_KEY] is True, "'numbers' is bound to and must wait"
+    assert AWAIT_KEY not in seen[1], "the middle step is referenced by nobody"
+
+
+def test_an_unwaited_investigation_publishes_no_answer_so_the_post_is_SKIPPED():
+    """The defect this wave exists to prevent, stated as a test.
+
+    A submitted investigation has produced no sentence yet. Publishing `answer: ""` would
+    let `{"$from": "step1.answer"}` resolve to an empty string and post a blank message
+    into a real Slack channel every night — a silent hole wearing the shape of a success.
+    Absent instead, so the binding raises and the dependent step is SKIPPED with a reason.
+    """
+    def _dispatch(effect, automation):
+        # what `_dispatch_investigate` returns for a SUBMITTED run: an id, no answer
+        return EffectOutcome(kind=effect.kind, target="t", status="executed",
+                             data={"investigation_id": "inv-1"})
+
+    run = _run(_automation(_effect(), _effect(message={"$from": "step1.answer"})), _dispatch)
+    assert run.effects[1].status == "skipped"
+    assert "upstream data unavailable" in run.effects[1].message

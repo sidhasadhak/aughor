@@ -3375,7 +3375,13 @@ export async function getDigest(connId: string, period: "week" | "day" = "week")
 // (and the inbox on `automations.proposals`) → a 404 means the plane is off.
 
 export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_appears";
-export type EffectKind = "investigate" | "brief" | "notify" | "kinetic_action";
+/** The effect kinds a PERSON may author.
+ *
+ *  Narrower than the server's `Literal` on purpose: `monitor` and `agent_alert` are
+ *  adopted objects the engine writes when an existing monitor or alert rule migrates onto
+ *  it — the model's own docstring says they are "not authored by hand". */
+export type EffectKind =
+  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3392,7 +3398,28 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   source_change: ["table"], entity_appears: ["table"],
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
+  slack_post: ["bot_id", "channel"],
 };
+
+/** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
+ *  usable credential — the mask is what the client renders and sends back. */
+export interface SlackBotSummary {
+  id: string;
+  name: string;
+  enabled: boolean;
+  team_id: string;
+  bot_user_id: string;
+}
+
+/** The bots an automation may post AS. Returns [] when the plane is off (404), so a
+ *  caller renders "no bots yet" rather than throwing — the same shape `getAutomations`
+ *  uses for the same reason. */
+export async function getSlackBots(): Promise<SlackBotSummary[]> {
+  const res = await fetch(`${getApiBase()}/slack-bots`);
+  if (res.status === 404) return [];
+  if (!res.ok) throw new Error("Failed to fetch Slack bots");
+  return (await res.json()).bots ?? [];
+}
 
 export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }
 export interface AutoEffect {

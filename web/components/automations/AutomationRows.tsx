@@ -13,15 +13,16 @@
  * objects that the engine writes when an existing monitor or alert rule is migrated onto
  * it, and the model's own docstring says they are "not authored by hand". Offering them
  * here would invite a reader to hand-write one and get a row that duplicates an object
- * they already have. Posting to Slack IS authorable and is absent for a different
- * reason: it needs a bot picker, and no client API lists Slack bots yet.
+ * they already have. Posting to Slack IS authorable and is offered — VA-13 added the
+ * `GET /slack-bots` client and the picker below.
  */
 import React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
   AUTOMATION_REQUIRED_KEYS,
-  type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind, type UserAgent,
+  type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
+  type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
@@ -37,6 +38,8 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
   { value: "brief",          label: "Deliver briefing", desc: "Deliver a briefing subscription" },
   { value: "kinetic_action", label: "Declared action",
     desc: "Run a declared, governed action — through its approval gate" },
+  { value: "slack_post", label: "Post to Slack",
+    desc: "Post into a channel as one of your bots — mentionable, and repliable in thread" },
 ];
 
 export const CRON_PRESETS = [
@@ -87,6 +90,28 @@ export function missingKeys(row: AutoCondition | AutoEffect): string[] {
     .filter(k => !String(row.config[k] ?? "").trim());
 }
 
+/** A `message` is either a sentence or a `{"$from": …}` binding. Rendered as the text a
+ *  person typed either way, so the field round-trips: showing `[object Object]` for a
+ *  binding would invite someone to overwrite the one thing that makes the chain work. */
+function messageText(e: AutoEffect): string {
+  const m = e.config.message;
+  if (m == null) return "";
+  return typeof m === "string" ? m : JSON.stringify(m);
+}
+
+/** Text back to a value. A well-formed binding object becomes one; anything else stays
+ *  the string it is — including half-typed JSON, which must not be swallowed mid-keystroke. */
+function parseMessage(text: string): unknown {
+  const t = text.trim();
+  if (!t.startsWith("{")) return text;
+  try {
+    const parsed = JSON.parse(t);
+    return parsed && typeof parsed === "object" && "$from" in parsed ? parsed : text;
+  } catch {
+    return text;
+  }
+}
+
 export function ConditionRow({ c, onChange, onRemove }: {
   c: AutoCondition; onChange: (c: AutoCondition) => void; onRemove?: () => void;
 }) {
@@ -122,8 +147,13 @@ export function ConditionRow({ c, onChange, onRemove }: {
   );
 }
 
-export function EffectRow({ e, agents, onChange, onRemove }: {
-  e: AutoEffect; agents: UserAgent[]; onChange: (e: AutoEffect) => void; onRemove?: () => void;
+export function EffectRow({ e, agents, bots = [], onChange, onRemove }: {
+  e: AutoEffect; agents: UserAgent[];
+  /** The bots a "Post to Slack" step may post AS. Empty ⇒ the row says so rather than
+   *  offering an empty picker, because "no bots configured" and "pick a bot" call for
+   *  different actions and only one of them is something the reader can do here. */
+  bots?: SlackBotSummary[];
+  onChange: (e: AutoEffect) => void; onRemove?: () => void;
 }) {
   const set = (patch: Record<string, unknown>) => onChange({ ...e, config: { ...e.config, ...patch } });
   return (
@@ -154,6 +184,33 @@ export function EffectRow({ e, agents, onChange, onRemove }: {
         )}
         {e.kind === "brief" && (
           <input style={inputStyle} value={String(e.config.subscription_id ?? "")} onChange={ev => set({ subscription_id: ev.target.value })} placeholder="briefing subscription id" />
+        )}
+        {e.kind === "slack_post" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {bots.length === 0 ? (
+              <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
+                No Slack bots configured — create one first, then this step can post as it.
+              </div>
+            ) : (
+              <select style={inputStyle} value={String(e.config.bot_id ?? "")}
+                aria-label="Post as bot"
+                onChange={ev => set({ bot_id: ev.target.value })}>
+                <option value="">Post as…</option>
+                {bots.filter(b => b.enabled).map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            )}
+            <input style={inputStyle} value={String(e.config.channel ?? "")}
+              onChange={ev => set({ channel: ev.target.value })}
+              placeholder="channel — e.g. #aughor-canvas or C0…" />
+            {/* Left as free text on purpose: a step whose message is
+                `{"$from": "step1.answer"}` is the whole reason the chain exists, and a
+                plain input is the only editor that can hold either that or a sentence. */}
+            <input style={inputStyle} value={messageText(e)}
+              onChange={ev => set({ message: parseMessage(ev.target.value) })}
+              placeholder={'message, or {"$from": "step1.answer"} to post an earlier step'} />
+          </div>
         )}
         {e.kind === "kinetic_action" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>

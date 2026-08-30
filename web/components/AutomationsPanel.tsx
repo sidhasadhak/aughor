@@ -26,6 +26,8 @@ import {
   getGrants,
   revokeGrant,
   listUserAgents,
+  getSlackBots,
+  type SlackBotSummary,
   type UserAgent,
 } from "@/lib/api";
 import {
@@ -477,7 +479,9 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
   // roster is empty — the picker then simply doesn't render, and
   // an unbound deep-analysis run is still the default.
   const [agents, setAgents] = useState<UserAgent[]>([]);
+  const [bots, setBots] = useState<SlackBotSummary[]>([]);
   useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
+  useEffect(() => { getSlackBots().then(setBots).catch(() => setBots([])); }, []);
 
   const setCond = (i: number, c: AutoCondition) => setConditions(cs => cs.map((x, j) => j === i ? c : x));
   const setEff = (i: number, e: AutoEffect) => setEffects(es => es.map((x, j) => j === i ? e : x));
@@ -534,7 +538,7 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
       <div style={{ marginBottom: 16 }}>
         <label style={labelStyle}>Then (in order)</label>
         {effects.map((e, i) => (
-          <EffectRow key={i} e={e} agents={agents} onChange={ee => setEff(i, ee)}
+          <EffectRow key={i} e={e} agents={agents} bots={bots} onChange={ee => setEff(i, ee)}
             onRemove={effects.length > 1 ? () => setEffects(es => es.filter((_, j) => j !== i)) : undefined} />
         ))}
         <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setEffects(es => [...es, newEffect()])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add effect</Button>
@@ -566,7 +570,10 @@ function describeCondition(c: AutoCondition): string {
   return `${c.kind}(${c.config.table ?? ""})`;
 }
 function describeEffect(e: AutoEffect): string {
-  const t = e.config.action_id || e.config.subscription_id || e.config.trigger_id || e.config.question || "";
+  // `channel` joins the list: a slack_post step described with no target read as a bare
+  // "slack_post" on the card, which is the one thing a reader scanning the list wants.
+  const t = e.config.action_id || e.config.subscription_id || e.config.trigger_id
+    || e.config.question || e.config.channel || "";
   return `${e.kind}${t ? `(${String(t).slice(0, 24)})` : ""}`;
 }
 
