@@ -43,7 +43,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { getAutomationGraph, type AutomationGraphData } from "@/lib/api";
+import { getAutomationGraph, type Automation, type AutomationGraphData } from "@/lib/api";
+
+import { AutomationAuthor, type Draft, sameDraft } from "@/components/automations/AutomationAuthor";
 
 export type { AutomationGraphData };
 
@@ -208,13 +210,37 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
   return { nodes, edges };
 }
 
-export function AutomationGraph({ automationId }: { automationId: string }) {
+export function AutomationGraph({ automationId, automation, onSaved }: {
+  automationId: string;
+  /** The record itself. Present ⇒ Structure becomes AUTHORABLE. Absent ⇒ the canvas is
+   *  exactly what it was: a picture. Passed rather than fetched, because the caller that
+   *  renders this already holds it and a second fetch is a second answer. */
+  automation?: Automation;
+  /** Saved — the caller reloads its list, so a renamed step shows up everywhere. */
+  onSaved?: () => void;
+}) {
   const [mode, setMode] = useState<"structure" | "execution">("structure");
   // "" = the latest run. A specific id pins the canvas to THAT run, which is what makes
   // the rail a rail rather than a list of links to somewhere else.
   const [runId, setRunId] = useState("");
   const [graph, setGraph] = useState<AutomationGraphData | null>(null);
   const [error, setError] = useState("");
+  /** Bumped after a save, to refetch the graph the server now derives. */
+  const [reloadKey, setReloadKey] = useState(0);
+
+  /** The design being edited. Seeded from the record and reseeded whenever the record
+   *  changes underneath — a save reloads the list, and a draft left pointing at the
+   *  previous version would re-submit stale steps. */
+  const [draft, setDraft] = useState<Draft>(() => ({
+    conditions: automation?.conditions ?? [], effects: automation?.effects ?? [],
+  }));
+  useEffect(() => {
+    if (automation) setDraft({ conditions: automation.conditions, effects: automation.effects });
+  }, [automation]);
+
+  const authoring = !!automation && mode === "structure";
+  const dirty = !!automation && !sameDraft(draft,
+    { conditions: automation.conditions, effects: automation.effects });
 
   useEffect(() => {
     let live = true;
@@ -223,7 +249,7 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
       .then((g) => { if (live) { setGraph(g); setError(""); } })
       .catch((e) => { if (live) setError(String(e)); });
     return () => { live = false; };
-  }, [automationId, mode, runId]);
+  }, [automationId, mode, runId, reloadKey]);
 
   const flow = useMemo(() => (graph ? toFlow(graph) : { nodes: [], edges: [] }), [graph]);
 
@@ -269,6 +295,17 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
             {graph.run_reason ? ` — ${graph.run_reason}` : ""}
           </span>
         )}
+        {/* The canvas keeps showing the SAVED design while a draft is pending, and says
+            so. The alternative — redrawing a speculative graph from the draft — means
+            deriving node labels and edges in the client, which is precisely what this
+            file exists not to do: the server owns the graph, from the same `collect_refs`
+            the engine resolves against. A picture drawn by a second reader is a picture
+            that can disagree with the run. The rail beside it IS the pending design. */}
+        {authoring && dirty && (
+          <span className="aug-fs-xs" style={{ color: "var(--amb4)", marginLeft: "auto" }}>
+            showing the saved design — save to redraw
+          </span>
+        )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
       {mode === "execution" && (graph.runs?.length ?? 0) > 0 && (
@@ -301,8 +338,12 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
           })}
         </div>
       )}
-      <div style={{ flex: 1, minHeight: 220, border: "1px solid var(--border)",
-                    borderRadius: 8, overflow: "hidden" }}>
+      <div style={{ flex: 1, minWidth: 0, minHeight: 220, border: "1px solid var(--border)",
+                    borderRadius: 8, overflow: "hidden",
+                    // Dimmed, not disabled: it is still the truth about what is stored,
+                    // and a reader comparing it against the rail is exactly the compare
+                    // an edit wants.
+                    opacity: authoring && dirty ? 0.72 : 1 }}>
         <ReactFlow
           nodes={flow.nodes}
           edges={flow.edges}
@@ -317,6 +358,14 @@ export function AutomationGraph({ automationId }: { automationId: string }) {
           <Controls showInteractive={false} />
         </ReactFlow>
       </div>
+      {authoring && (
+        <AutomationAuthor
+          automation={automation!}
+          draft={draft}
+          onDraft={setDraft}
+          onSaved={() => { setReloadKey(k => k + 1); onSaved?.(); }}
+        />
+      )}
       </div>
     </div>
   );

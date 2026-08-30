@@ -3377,8 +3377,33 @@ export async function getDigest(connId: string, period: "week" | "day" = "week")
 export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_appears";
 export type EffectKind = "investigate" | "brief" | "notify" | "kinetic_action";
 
+/**
+ * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
+ * `_EFFECT_REQUIRED` in `aughor/automations/models.py`.
+ *
+ * Here rather than in a component for the same reason the rest of this module is here:
+ * it is the backend contract spelled field-for-field, and a UI that re-states a contract
+ * in its own words is a UI that drifts from it. `tests/unit/test_automation_required_keys.py`
+ * asserts this object against the Python one, so the mirror cannot go stale silently —
+ * which is the failure mode a hand-copied map has by default.
+ */
+export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
+  schedule: ["cron"], metric: ["monitor_id"],
+  source_change: ["table"], entity_appears: ["table"],
+  investigate: ["question"], brief: ["subscription_id"],
+  notify: ["trigger_id"], kinetic_action: ["action_id"],
+};
+
 export interface AutoCondition { kind: ConditionKind; config: Record<string, unknown>; }
-export interface AutoEffect { kind: EffectKind; config: Record<string, unknown>; }
+export interface AutoEffect {
+  kind: EffectKind;
+  /** VA-4a — this step's name, which `{"$from": "<alias>.<key>"}` bindings point AT.
+   *  Optional because the server defaults it to the step's 1-based position, and every
+   *  automation written before VA-4a has none. Declared here because a client that
+   *  cannot see the field is a client that drops it on save. */
+  alias?: string;
+  config: Record<string, unknown>;
+}
 
 export interface Automation {
   id: string;

@@ -28,33 +28,16 @@ import {
   listUserAgents,
   type UserAgent,
 } from "@/lib/api";
+import {
+  CONDITION_KINDS, CRON_PRESETS, ConditionRow, EFFECT_KINDS, EffectRow,
+  effectsForWire, ghostBtn, inputStyle, labelStyle, newCondition, newEffect,
+} from "@/components/automations/AutomationRows";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 
 // ── Vocabulary (mirrors the backend Literals) ────────────────────────────────────
 
 type View = "list" | "runs" | "inbox" | "form";
-
-const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
-  { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
-  { value: "metric",         label: "Metric",         desc: "Delegate to an existing monitor by id" },
-  { value: "source_change",  label: "Source change",  desc: "A table's rows changed (add / delete / backfill)" },
-  { value: "entity_appears", label: "New entity",     desc: "A new key appeared in a table" },
-];
-
-const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] = [
-  { value: "notify",         label: "Notify",         desc: "Send through a Notifications trigger" },
-  { value: "investigate",    label: "Investigate",    desc: "Run the Agent" },
-  { value: "brief",          label: "Deliver briefing", desc: "Deliver a briefing subscription" },
-  { value: "kinetic_action", label: "Declared action", desc: "Run a governed KineticAction" },
-];
-
-const CRON_PRESETS = [
-  { label: "Hourly",  cron: "0 * * * *" },
-  { label: "Daily",   cron: "0 9 * * *" },
-  { label: "Weekly",  cron: "0 9 * * 1" },
-  { label: "Custom",  cron: "" },
-];
 
 const OUTCOME_COLOR: Record<string, string> = {
   fired:     "var(--grn3)",
@@ -70,10 +53,6 @@ const STATUS_COLOR: Record<string, string> = {
   criterion_failed:  "var(--chart-threshold-warn, #f59e0b)",
   approval_required: "var(--chart-threshold-warn, #f59e0b)",
   skipped:           "var(--t3)",
-};
-
-const ghostBtn: React.CSSProperties = {
-  background: "none", border: "none", color: "var(--t3)", cursor: "pointer", fontSize: 11,
 };
 
 // Time helpers kept at module scope: `Date.now()` / argless `new Date()` are impure and the
@@ -124,6 +103,15 @@ export function AutomationsPanel({ connId }: Props) {
   }, [conn]);
 
   useEffect(() => { load(); }, [load]);
+
+  /** Show the spinner only when there is nothing on screen yet.
+   *
+   *  `load()` is also the REFRESH after a canvas save, and gating the list on bare
+   *  `loading` unmounted every card while it ran — which destroyed each card's own
+   *  "is the flow open" state, so saving a design from the canvas closed the canvas you
+   *  had just saved from. Replacing content a reader is already looking at with the word
+   *  "Loading…" is the wrong trade even when nothing depends on the state. */
+  const showSpinner = loading && automations.length === 0;
 
   const loadInbox = useCallback(async () => {
     if (!conn) return;
@@ -221,9 +209,9 @@ export function AutomationsPanel({ connId }: Props) {
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
-        {loading && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
+        {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
 
-        {view === "list" && !loading && (
+        {view === "list" && !showSpinner && (
           automations.length === 0
             ? <EmptyState onAdd={() => { setEditing(null); setView("form"); }} />
             : <>
@@ -237,17 +225,17 @@ export function AutomationsPanel({ connId }: Props) {
                     <AutomationCard key={a.id} a={a}
                       onToggle={() => onToggle(a)} onPause={() => onPause(a)} onRun={() => onRun(a)}
                       onEdit={() => { setEditing(a); setView("form"); }} onDelete={() => onDelete(a)}
-                      onRuns={() => openRuns(a)} />
+                      onRuns={() => openRuns(a)} onSaved={load} />
                   ))}
                 </div>
               </>
         )}
 
-        {view === "runs" && !loading && (
+        {view === "runs" && !showSpinner && (
           <RunsView automations={automations} runsFor={runsFor} runs={runs} onPick={openRuns} />
         )}
 
-        {view === "inbox" && !loading && (
+        {view === "inbox" && !showSpinner && (
           <InboxView
             conn={conn} proposals={proposals} grants={grants}
             onReload={loadInbox} flash={flash} />
@@ -267,10 +255,13 @@ export function AutomationsPanel({ connId }: Props) {
 
 // ── List card ─────────────────────────────────────────────────────────────────
 
-function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns }: {
+function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns, onSaved }: {
   a: Automation;
   onToggle: () => void; onPause: () => void; onRun: () => void;
   onEdit: () => void; onDelete: () => void; onRuns: () => void;
+  /** The canvas saved a new design — reload the list so the card's own one-line summary
+   *  and the next Edit both read the version that is now stored. */
+  onSaved: () => void;
 }) {
   const muted = isFuture(a.paused_until);
   // VA-4b — collapsed by default. The one-line summary is the right density for a list;
@@ -315,8 +306,11 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns 
         </div>
       </div>
       {showGraph && (
-        <div style={{ marginTop: 10, height: 300 }}>
-          <AutomationGraph automationId={a.id} />
+        // Taller than the old 300px: the canvas now shares the row with an authoring
+        // rail, and a rail holding two editable steps needs the height to show them
+        // without its own scrollbar fighting the canvas's.
+        <div style={{ marginTop: 10, height: 420 }}>
+          <AutomationGraph automationId={a.id} automation={a} onSaved={onSaved} />
         </div>
       )}
     </div>
@@ -467,12 +461,6 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
 
 // ── Author form ───────────────────────────────────────────────────────────────
 
-const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "7px 10px", fontSize: 13, borderRadius: "var(--r3)",
-  border: "1px solid var(--b1)", background: "var(--bg-1, var(--bg-2))", color: "var(--t1)",
-};
-const labelStyle: React.CSSProperties = { fontSize: 11, fontWeight: 600, color: "var(--t3)", marginBottom: 5, display: "block", textTransform: "uppercase" };
-
 function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
   conn: string; initial: Automation | null;
   onCancel: () => void; onSaved: () => void; onError: (t: string) => void;
@@ -480,9 +468,9 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
   const [name, setName] = useState(initial?.name ?? "");
   const [logic, setLogic] = useState<"all" | "any">(initial?.condition_logic ?? "all");
   const [conditions, setConditions] = useState<AutoCondition[]>(
-    initial?.conditions ?? [{ kind: "schedule", config: { cron: "0 9 * * *" } }]);
+    initial?.conditions ?? [newCondition()]);
   const [effects, setEffects] = useState<AutoEffect[]>(
-    initial?.effects ?? [{ kind: "notify", config: { trigger_id: "" } }]);
+    initial?.effects ?? [newEffect()]);
   const [maxRetries, setMaxRetries] = useState(initial?.max_retries ?? 1);
   const [saving, setSaving] = useState(false);
   // The personas an `investigate` effect may run as (Wave H1). Empty when the
@@ -497,19 +485,10 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
   const save = async () => {
     if (!conn) { onError("No connection selected"); return; }
     if (!name.trim()) { onError("Name is required"); return; }
-    // Build the payload; kinetic_action params come in as a JSON string in config.paramsText.
+    // `paramsText` → parsed `params`, in the one place both surfaces share.
     let builtEffects: AutoEffect[];
-    try {
-      builtEffects = effects.map(e => {
-        if (e.kind === "kinetic_action") {
-          const raw = String((e.config as { paramsText?: string }).paramsText ?? "{}").trim() || "{}";
-          const { paramsText: _omit, ...rest } = e.config as Record<string, unknown>;
-          void _omit;
-          return { kind: e.kind, config: { ...rest, params: JSON.parse(raw) } };
-        }
-        return e;
-      });
-    } catch { onError("Declared-action params must be valid JSON"); return; }
+    try { builtEffects = effectsForWire(effects); }
+    catch (err) { onError((err as Error).message); return; }
 
     const payload: NewAutomation = {
       conn_id: conn, name: name.trim(), conditions, condition_logic: logic,
@@ -548,7 +527,7 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
           <ConditionRow key={i} c={c} onChange={cc => setCond(i, cc)}
             onRemove={conditions.length > 1 ? () => setConditions(cs => cs.filter((_, j) => j !== i)) : undefined} />
         ))}
-        <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setConditions(cs => [...cs, { kind: "schedule", config: { cron: "0 9 * * *" } }])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add condition</Button>
+        <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setConditions(cs => [...cs, newCondition()])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add condition</Button>
       </div>
 
       {/* Effects */}
@@ -558,7 +537,7 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
           <EffectRow key={i} e={e} agents={agents} onChange={ee => setEff(i, ee)}
             onRemove={effects.length > 1 ? () => setEffects(es => es.filter((_, j) => j !== i)) : undefined} />
         ))}
-        <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setEffects(es => [...es, { kind: "notify", config: { trigger_id: "" } }])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add effect</Button>
+        <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setEffects(es => [...es, newEffect()])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add effect</Button>
       </div>
 
       <div style={{ marginBottom: 20, display: "flex", gap: 16, alignItems: "center" }}>
@@ -575,78 +554,6 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
         </Button>
         <Button variant="ghost" onClick={onCancel} className="font-normal" style={{ ...ghostBtn, fontSize: 13 }}>Cancel</Button>
       </div>
-    </div>
-  );
-}
-
-function ConditionRow({ c, onChange, onRemove }: { c: AutoCondition; onChange: (c: AutoCondition) => void; onRemove?: () => void }) {
-  const set = (patch: Record<string, unknown>) => onChange({ ...c, config: { ...c.config, ...patch } });
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-      <select value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
-        style={{ ...inputStyle, width: 150 }}>
-        {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
-      </select>
-      <div style={{ flex: 1 }}>
-        {c.kind === "schedule" && (
-          <div style={{ display: "flex", gap: 6 }}>
-            <select value={CRON_PRESETS.find(p => p.cron === c.config.cron)?.cron ?? ""}
-              onChange={e => e.target.value && set({ cron: e.target.value })}
-              style={{ ...inputStyle, width: 110 }}>
-              {CRON_PRESETS.map(p => <option key={p.label} value={p.cron}>{p.label}</option>)}
-            </select>
-            <input style={inputStyle} value={String(c.config.cron ?? "")} onChange={e => set({ cron: e.target.value })} placeholder="cron e.g. 0 9 * * *" />
-          </div>
-        )}
-        {c.kind === "metric" && (
-          <input style={inputStyle} value={String(c.config.monitor_id ?? "")} onChange={e => set({ monitor_id: e.target.value })} placeholder="monitor id" />
-        )}
-        {(c.kind === "source_change" || c.kind === "entity_appears") && (
-          <input style={inputStyle} value={String(c.config.table ?? "")} onChange={e => set({ table: e.target.value })} placeholder="table (schema.table)" />
-        )}
-      </div>
-      {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
-    </div>
-  );
-}
-
-function EffectRow({ e, agents, onChange, onRemove }: { e: AutoEffect; agents: UserAgent[]; onChange: (e: AutoEffect) => void; onRemove?: () => void }) {
-  const set = (patch: Record<string, unknown>) => onChange({ ...e, config: { ...e.config, ...patch } });
-  return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-      <select value={e.kind} onChange={ev => onChange({ kind: ev.target.value as EffectKind, config: {} })}
-        style={{ ...inputStyle, width: 150 }}>
-        {EFFECT_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
-      </select>
-      <div style={{ flex: 1 }}>
-        {e.kind === "notify" && (
-          <input style={inputStyle} value={String(e.config.trigger_id ?? "")} onChange={ev => set({ trigger_id: ev.target.value })} placeholder="Notifications trigger id" />
-        )}
-        {e.kind === "investigate" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <input style={inputStyle} value={String(e.config.question ?? "")} onChange={ev => set({ question: ev.target.value })} placeholder="Agent question" />
-            {agents.length > 0 && (
-              <select style={inputStyle} value={String(e.config.agent_id ?? "")}
-                onChange={ev => set({ agent_id: ev.target.value })}>
-                <option value="">Run unbound (no agent)</option>
-                {agents.filter(a => a.enabled).map(a => (
-                  <option key={a.id} value={a.id}>Run as {a.name}</option>
-                ))}
-              </select>
-            )}
-          </div>
-        )}
-        {e.kind === "brief" && (
-          <input style={inputStyle} value={String(e.config.subscription_id ?? "")} onChange={ev => set({ subscription_id: ev.target.value })} placeholder="briefing subscription id" />
-        )}
-        {e.kind === "kinetic_action" && (
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            <input style={inputStyle} value={String(e.config.action_id ?? "")} onChange={ev => set({ action_id: ev.target.value })} placeholder="declared action id" />
-            <input style={inputStyle} value={String((e.config as { paramsText?: string }).paramsText ?? "")} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
-          </div>
-        )}
-      </div>
-      {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>
   );
 }

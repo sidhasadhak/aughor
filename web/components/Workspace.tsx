@@ -24,6 +24,12 @@ type WorkspaceProps<L extends string> = {
    *  title and the switcher. When present the switcher drops its `margin-left:auto`,
    *  so the trailing group is right-aligned by the first control instead. */
   headerControls?: React.ReactNode;
+  /** Optional controls pinned to the RIGHT of the header, after the switcher.
+   *  `headerControls` sits between the title and the switcher and is for things that
+   *  SCOPE the view — a range, a connection. This slot is for the one thing that is an
+   *  ACTION rather than a filter, and an action does not belong in the middle of a row
+   *  of view controls. */
+  headerTrailing?: React.ReactNode;
   /** Render the body of a layer. Called only for visited layers (keep-alive). */
   renderLayer: (id: L) => React.ReactNode;
   /** Optional live counts shown as a chip on a layer's switcher tab (e.g. the
@@ -51,8 +57,8 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, renderIcon, headerControls, renderLayer, badges,
-  headerless,
+  layers, layer, onLayerChange, ariaLabel, renderIcon, headerControls, headerTrailing,
+  renderLayer, badges, headerless,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
   const [visited, setVisited] = useState<Set<L>>(() => new Set([layer]));
@@ -140,6 +146,17 @@ export function Workspace<L extends string>({
             );
           })}
         </div>
+
+        {/* `margin-left: auto` HERE rather than on the switcher: with `headerControls`
+            present nothing in the row claimed the free space, so the header packed left
+            and left a third of its width empty. This pins the action to the right edge
+            and lets the switcher sit against the view controls it belongs with. */}
+        {headerTrailing && (
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center",
+                        gap: 8, flexShrink: 0 }}>
+            {headerTrailing}
+          </div>
+        )}
       </div>
       )}
 

@@ -41,6 +41,7 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Claim** | A statement a human has verified | — |
 | **Briefing** | The periodic narrative artifact, and its subscription | brief (as the artifact), digest, Intelligence Digest |
 | **Run** | One execution of anything | session, episode (a step *inside* a run is a **step**) |
+| **Trace** | The telemetry kept ABOUT one run — the `session_events` it wrote, reconstructed | run (a trace is the record, not the execution) |
 | **Segment** | A saved, named filter over an entity's rows | ObjectSet |
 | **Query template** | A reusable governed SQL template | OntologyAction |
 
