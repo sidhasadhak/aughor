@@ -192,6 +192,19 @@ _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 _AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json")
 
 
+def api_key_configured() -> bool:
+    """Whether this deployment gates requests on a shared key at all.
+
+    Public because callers outside this module need the answer and `_API_KEY` is not
+    theirs to read — the private-import ratchet is right about that. It is a question
+    about POSTURE, not a way to reach the secret: `/slack-bots/runtime` asks it to decide
+    whether handing out raw Slack tokens could possibly be safe here. Reading the value
+    `_require_auth` captured at import (rather than the environment now) is deliberate:
+    a gate that consults a different source than its enforcer is a second opinion.
+    """
+    return bool(_API_KEY)
+
+
 def _require_auth(request: Request, key: str | None = Security(_api_key_header)) -> None:
     """App-wide request gate: the shared-key front door PLUS (flag-gated) identity.
 

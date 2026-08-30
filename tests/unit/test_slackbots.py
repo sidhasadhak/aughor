@@ -401,7 +401,7 @@ def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, sla
     # already taken by the fixture, whose token is a different string.
     client.post("/slack-bots", json={"name": "front-door-bot", "bot_token": "xoxb-t",
                                      "app_token": "xapp-t", "signing_secret": "sig"})
-    monkeypatch.setattr("aughor.api._API_KEY", "a-real-key")
+    monkeypatch.setattr("aughor.api._API_KEY", "a-real-key")   # what api_key_configured() reads
 
     # And the caller must now present it — the SAME key satisfies the gate and the
     # front door, which is the whole reason the gate reads `_require_auth`'s value

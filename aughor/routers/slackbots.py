@@ -117,16 +117,18 @@ def _refuse_without_a_front_door(request: Request) -> None:
     is the one place raw credentials leave the server, and a credential handed to an
     unauthenticated caller is a credential given away.
 
-    The key is read from `aughor.api` rather than from `os.environ`, deliberately: that
-    module captured it at import, and it is what actually enforces. A gate reading a
-    different source than its enforcer is a second opinion — the same mistake the
-    integrations readiness check made a few hours earlier, found the same way.
+    The posture is read from `aughor.api` rather than from `os.environ`, deliberately:
+    that module captured the key at import, and it is what actually enforces. A gate
+    reading a different source than its enforcer is a second opinion — the same mistake
+    the integrations readiness check made a few hours earlier, found the same way. It
+    asks through `api_key_configured()`, a public predicate: whether a door exists is
+    this module's business, the key behind it is not.
     """
     # The scoped key first: it is the one a person can actually issue from the product.
     if store.supervisor_key_matches(request.headers.get(RUNTIME_KEY_HEADER, "")):
         return
-    from aughor.api import _API_KEY
-    if _API_KEY:
+    from aughor.api import api_key_configured
+    if api_key_configured():
         return
     from aughor.licensing import Capability, has_capability
     from aughor.security.authz import require_identity_enabled
