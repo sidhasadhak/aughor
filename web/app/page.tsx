@@ -104,6 +104,7 @@ type NavTab =
   | "canvas-workspace"
   | "recents"
   | "fleet"              // agent runs, status, cost (legacy tab id)
+  | "integrations"       // VA-11 — provider catalog: Set up / Connect / revoke
   | "agents"             // user-defined agents (domain personas, flag agents.user_defined)
   | "inbox"
   | "briefing"
@@ -334,6 +335,7 @@ const NAV_SECTIONS = [
       { id: "agentic-ops", icon: "process", label: "Agent Ops" },
       { id: "monitors", icon: "activity", label: "Monitors" },
       { id: "actions",  icon: "spark",    label: "Notifications" },
+      { id: "integrations", icon: "plug", label: "Integrations" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
       { id: "evals",    icon: "check",    label: "Evals" },
     ],
@@ -1788,6 +1790,7 @@ export default function Home() {
   const LEGACY_OPS_LAYER: Partial<Record<NavTab, OpsLayer>> = {
     monitors: "monitors",
     actions:  "actions",
+    integrations: "integrations",
     security: "security",
   };
 

@@ -137,7 +137,9 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   free to drag and fields editable on the node. That look is `@xyflow/react` (the library the
   four existing canvases already use) with styled handles instead of our `opacity: 0` ones and
   `nodesDraggable` on: design investment, not new technology. B1's picker and the visible port
-  are the same feature — the port IS the typed binding, drawn.
+  are the same feature — the port IS the typed binding, drawn. Reference for the
+  redesign (user-supplied): https://docs.langflow.org/concepts-components — their component
+  anatomy (header/inputs/outputs, port types, tool-mode toggle) is the vocabulary to beat.
 - **B2 · Dry-run.** We can inspect a run afterwards but cannot *try* a design before arming it.
   `evals/equivalence.py` already runs automations `persist=False` with an inert dispatch.
 

@@ -4268,6 +4268,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/integrations/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Catalog
+         * @description Every provider, with the two flags the two buttons need.
+         */
+        get: operations["catalog_integrations_catalog_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/connections": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** My Connections */
+        get: operations["my_connections_integrations_connections_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/connections/{conn_id}/revoke": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Revoke */
+        post: operations["revoke_integrations_connections__conn_id__revoke_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/{provider_id}/app": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Put App */
+        put: operations["put_app_integrations__provider_id__app_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/integrations/{provider_id}/connect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Connect
+         * @description Begin the dance; the client sends the browser to `authorize_url`.
+         */
+        post: operations["connect_integrations__provider_id__connect_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/investigate": {
         parameters: {
             query?: never;
@@ -5641,6 +5732,26 @@ export interface paths {
          * @description Run a monitor immediately and return the alert (or null if no condition met).
          */
         post: operations["trigger_monitor_monitors__monitor_id__trigger_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/oauth/callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Oauth Callback
+         * @description Where the provider sends the person back. HTML on purpose — see module doc.
+         */
+        get: operations["oauth_callback_oauth_callback_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -8790,6 +8901,19 @@ export interface components {
             row_key: string;
             /** Table */
             table: string;
+        };
+        /** AppBody */
+        AppBody: {
+            /**
+             * Client Id
+             * @default
+             */
+            client_id: string;
+            /**
+             * Client Secret
+             * @default
+             */
+            client_secret: string;
         };
         /**
          * AskRequest
@@ -19268,6 +19392,143 @@ export interface operations {
             };
         };
     };
+    catalog_integrations_catalog_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    my_connections_integrations_connections_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    revoke_integrations_connections__conn_id__revoke_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_app_integrations__provider_id__app_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AppBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    connect_integrations__provider_id__connect_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                provider_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     investigate_investigate_post: {
         parameters: {
             query?: {
@@ -21882,6 +22143,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    oauth_callback_oauth_callback_get: {
+        parameters: {
+            query?: {
+                state?: string;
+                code?: string;
+                error?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
