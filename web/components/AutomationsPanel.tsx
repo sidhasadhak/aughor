@@ -39,7 +39,7 @@ import { Button } from "@/components/ui/button";
 
 // ── Vocabulary (mirrors the backend Literals) ────────────────────────────────────
 
-type View = "list" | "runs" | "inbox" | "form";
+type View = "list" | "runs" | "inbox" | "form" | "canvas";
 
 const OUTCOME_COLOR: Record<string, string> = {
   fired:     "var(--grn3)",
@@ -87,6 +87,11 @@ export function AutomationsPanel({ connId }: Props) {
 
   // form
   const [editing, setEditing] = useState<Automation | null>(null);
+  /** The automation whose CANVAS fills the panel. The flow used to render as a 420px
+   *  strip inside its list row — a workflow in a drawer. The frames the user pointed
+   *  at (Langflow, VoltAgent) give the flow the whole room, and they are right: a
+   *  canvas competing with a list for height is a canvas at 55%% zoom forever. */
+  const [canvasFor, setCanvasFor] = useState<Automation | null>(null);
 
   const flash = useCallback((tone: "ok" | "err", text: string) => {
     setBanner({ tone, text });
@@ -210,7 +215,7 @@ export function AutomationsPanel({ connId }: Props) {
       )}
 
       {/* Body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: 20, position: "relative" }}>
         {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
 
         {view === "list" && !showSpinner && (
@@ -227,7 +232,8 @@ export function AutomationsPanel({ connId }: Props) {
                     <AutomationCard key={a.id} a={a}
                       onToggle={() => onToggle(a)} onPause={() => onPause(a)} onRun={() => onRun(a)}
                       onEdit={() => { setEditing(a); setView("form"); }} onDelete={() => onDelete(a)}
-                      onRuns={() => openRuns(a)} onSaved={load} />
+                      onRuns={() => openRuns(a)}
+                      onCanvas={() => { setCanvasFor(a); setView("canvas"); }} />
                   ))}
                 </div>
               </>
@@ -250,6 +256,36 @@ export function AutomationsPanel({ connId }: Props) {
             onSaved={async () => { await load(); setView("list"); flash("ok", "Saved"); }}
             onError={t => flash("err", t)} />
         )}
+
+        {view === "canvas" && canvasFor && (
+          // The canvas gets the ROOM. Height is the panel's, not a strip's; the list is
+          // one ← away. `canvasFor` is re-read from the loaded list after a save so the
+          // header chip and the next open reflect what is now stored.
+          <div style={{ position: "absolute", inset: 0, display: "flex",
+            flexDirection: "column", background: "var(--bg-0)", padding: "10px 16px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 8 }}>
+              <Button variant="ghost" size="sm" className="aug-fs-sm"
+                onClick={() => setView("list")} style={{ color: "var(--t3)" }}>
+                ← Automations
+              </Button>
+              <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{canvasFor.name}</span>
+              <span className="aug-fs-xs" style={{
+                color: canvasFor.enabled ? "var(--grn4)" : "var(--t4)" }}>
+                ● {canvasFor.enabled ? "enabled" : "disabled"}
+              </span>
+              <span style={{ flex: 1 }} />
+              <Button variant="ghost" size="sm" className="aug-fs-xs"
+                onClick={() => onRun(canvasFor)}>Run now</Button>
+            </div>
+            <div style={{ flex: 1, minHeight: 0 }}>
+              <AutomationGraph
+                automationId={canvasFor.id}
+                automation={automations.find(x => x.id === canvasFor.id) ?? canvasFor}
+                onSaved={load}
+              />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -257,19 +293,17 @@ export function AutomationsPanel({ connId }: Props) {
 
 // ── List card ─────────────────────────────────────────────────────────────────
 
-function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns, onSaved }: {
+function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns, onCanvas }: {
   a: Automation;
   onToggle: () => void; onPause: () => void; onRun: () => void;
   onEdit: () => void; onDelete: () => void; onRuns: () => void;
-  /** The canvas saved a new design — reload the list so the card's own one-line summary
-   *  and the next Edit both read the version that is now stored. */
-  onSaved: () => void;
+  /** Open this automation's canvas as the panel's full view. */
+  onCanvas: () => void;
 }) {
   const muted = isFuture(a.paused_until);
   // VA-4b — collapsed by default. The one-line summary is the right density for a list;
   // the graph is what you open when you want to see what feeds what. Mounted only when
   // open, so a page of automations does not fetch a graph per row.
-  const [showGraph, setShowGraph] = useState(false);
   return (
     <div style={{
       background: "var(--bg-1, var(--bg-2))", border: "1px solid var(--b1)", borderRadius: "var(--r3)",
@@ -298,8 +332,8 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns,
           </div>
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          <Button variant="ghost" onClick={() => setShowGraph(v => !v)} className="h-auto p-0 font-normal"
-                  style={ghostBtn}>{showGraph ? "Hide flow" : "Flow"}</Button>
+          <Button variant="ghost" onClick={onCanvas} className="h-auto p-0 font-normal"
+                  style={ghostBtn}>Design</Button>
           <Button variant="ghost" onClick={onRun} className="h-auto" style={{ fontSize: 11, padding: "3px 9px", opacity: 0.85 }}>Run now</Button>
           <Button variant="ghost" onClick={onRuns} className="h-auto p-0 font-normal" style={ghostBtn}>History</Button>
           <Button variant="ghost" onClick={onPause} className="h-auto p-0 font-normal" style={ghostBtn}>{muted ? "Unmute" : "Mute"}</Button>
@@ -307,14 +341,7 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns,
           <Button variant="ghost" onClick={onDelete} className="h-auto p-0 font-normal" style={{ ...ghostBtn, color: "var(--red3)" }}>Delete</Button>
         </div>
       </div>
-      {showGraph && (
-        // Taller than the old 300px: the canvas now shares the row with an authoring
-        // rail, and a rail holding two editable steps needs the height to show them
-        // without its own scrollbar fighting the canvas's.
-        <div style={{ marginTop: 10, height: 420 }}>
-          <AutomationGraph automationId={a.id} automation={a} onSaved={onSaved} />
-        </div>
-      )}
+
     </div>
   );
 }

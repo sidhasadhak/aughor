@@ -32,6 +32,7 @@ import {
   Controls,
   Handle,
   MarkerType,
+  Panel,
   Position,
   ReactFlow,
   type Edge as RFEdge,
@@ -40,7 +41,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
-import { EFFECT_KINDS } from "@/components/automations/AutomationRows";
+import { EFFECT_KINDS, newCondition, newEffect } from "@/components/automations/AutomationRows";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
@@ -198,17 +199,21 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
 
 /* ═══════════════════ DESIGN MODE (the draft, editable) ═══════════════════ */
 
+const NODE_W = 280;
+
 const inputStyle: React.CSSProperties = {
-  width: "100%", padding: "4px 8px", borderRadius: "var(--r2)",
+  width: "100%", padding: "6px 9px", borderRadius: "var(--r2)",
   border: "1px solid var(--b1)", background: "var(--bg-1)", color: "var(--t1)",
 };
 
-/** One port dot. Output dots are green ("gives"), input dots blue; a bound input fills. */
-const PORT = 9;
+/** A port dot, half over the card edge the way the reference frames draw them.
+ *  Output = green ("gives"), input = blue; a bound input fills solid. */
+const PORT = 10;
 const portStyle = (kind: "in" | "out", bound: boolean): React.CSSProperties => ({
   width: PORT, height: PORT, borderRadius: "var(--r-pill)",
-  background: bound ? "var(--chart-1)" : "var(--bg-1)",
+  background: bound ? "var(--chart-1)" : "var(--bg-2)",
   border: `2px solid ${kind === "out" ? "var(--chart-2)" : "var(--chart-1)"}`,
+  boxShadow: "0 0 0 3px var(--bg-0)",
 });
 
 interface DesignNodeData {
@@ -220,6 +225,8 @@ interface DesignNodeData {
   inputs: { field: string; boundTo: string | null }[];
   onPatch: (field: string, value: unknown) => void;
   onClear: (field: string) => void;
+  /** Remove this step — absent on the last one, the same law the rail enforces. */
+  onRemove?: () => void;
   [key: string]: unknown;
 }
 
@@ -236,62 +243,88 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   kinetic_action: [{ field: "action_id", placeholder: "declared action id" }],
 };
 
-function DesignStepNode({ data }: { data: DesignNodeData }) {
+/** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
+ *  way the reference canvases do, not as identical grey boxes. */
+const KIND_HUE: Record<string, string> = {
+  investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
+  brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
+};
+
+function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
   const boundOf = (field: string) =>
     data.inputs.find(i => i.field === field)?.boundTo ?? null;
   const bindableSet = new Set(data.inputs.map(i => i.field));
   const fields = PRIMARY_FIELDS[data.kind] ?? [];
   const kindLabel = EFFECT_KINDS.find(k => k.value === data.kind)?.label ?? data.kind;
+  const hue = KIND_HUE[data.kind] ?? "var(--chart-6)";
 
   return (
     <div style={{
-      width: COL_W - 40, borderRadius: 8, background: "var(--bg-2)",
-      border: "1px solid var(--b2)", boxShadow: "var(--shadow-sm)",
+      width: NODE_W, borderRadius: "var(--r3)", background: "var(--bg-2)",
+      border: `1px solid ${selected ? hue : "var(--b2)"}`,
+      boxShadow: selected ? `0 0 0 1px ${hue}, var(--shadow-md)` : "var(--shadow-sm)",
+      transition: "box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out)",
     }}>
-      {/* The unnamed target handle SEQUENCE edges land on. Named `in:` handles carry
-          bindings; an edge with no targetHandle attaches to the default handle, and a
-          node without one silently drops the edge — measured: the trigger's spine edge
-          vanished while every port rendered. Hidden: it is geometry, not a port. */}
-      <Handle type="target" position={Position.Left} style={{ opacity: 0, top: 16 }} />
-      {/* header — Langflow anatomy: icon · kind · the alias other steps bind BY */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 10px",
+      {/* The unnamed target handle SEQUENCE edges land on — an edge with no
+          targetHandle attaches to the default handle, and a node without one silently
+          drops the edge (measured: the trigger's spine vanished while every port
+          rendered). Hidden: geometry, not a port. */}
+      <Handle type="target" position={Position.Left} style={{ opacity: 0, top: 20 }} />
+
+      {/* header — icon tile · kind · alias · remove. The tile carries the kind's hue,
+          so a chain reads as roles at a glance (the reference frames' trick). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
         borderBottom: "1px solid var(--b1)" }}>
-        <span style={{ color: "var(--chart-1)", display: "flex" }}>
+        <span style={{
+          width: 24, height: 24, borderRadius: "var(--r2)", display: "grid",
+          placeItems: "center", color: hue,
+          background: "color-mix(in srgb, currentColor 14%, transparent)",
+        }}>
           <Icon name={KIND_ICON[data.kind] ?? "process"} size={13} />
         </span>
-        <span className="aug-fs-sm" style={{ fontWeight: 600 }}>{kindLabel}</span>
+        <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{kindLabel}</span>
         <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)",
-          border: "1px solid var(--b1)", borderRadius: "var(--r-pill)", padding: "0 7px" }}>
+          border: "1px solid var(--b1)", borderRadius: "var(--r-pill)",
+          padding: "1px 8px", background: "var(--bg-1)" }}>
           {data.alias}
         </span>
+        {data.onRemove && (
+          <Button variant="ghost" size="icon-sm" aria-label={`remove ${data.alias}`}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            onClick={data.onRemove}>
+            <Icon name="close" size={11} />
+          </Button>
+        )}
       </div>
 
-      {/* editable fields; a bound field renders its BINDING, with its input port dot */}
-      <div style={{ padding: "8px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+      {/* fields — each row owns its input port, dot centred ON the row it binds */}
+      <div style={{ padding: "10px 12px", display: "flex", flexDirection: "column", gap: 9 }}>
         {fields.map(({ field, placeholder }) => {
           const bound = boundOf(field);
           const bindable = bindableSet.has(field);
           return (
             <div key={field} style={{ position: "relative" }}>
-              <div className="aug-fs-xs" style={{ color: "var(--t4)", marginBottom: 2 }}>
-                {field}
-              </div>
               {bindable && (
                 <Handle
                   id={`in:${field}`} type="target" position={Position.Left}
-                  style={{ ...portStyle("in", !!bound), left: -15,
-                           top: "50%", transform: "translateY(-30%)" }}
-                  title={`bind '${field}' — drag from an output port`}
+                  style={{ ...portStyle("in", !!bound), left: -(12 + PORT / 2),
+                           top: "calc(50% + 7px)", transform: "translateY(-50%)" }}
+                  title={`bind '${field}' — drag from a gives port`}
                 />
               )}
+              <div className="aug-fs-xs" style={{ color: "var(--t4)", marginBottom: 3,
+                letterSpacing: "0.04em" }}>
+                {field}
+              </div>
               {bound ? (
-                <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center",
-                  gap: 6, padding: "4px 8px", borderRadius: "var(--r2)",
-                  border: "1px solid var(--chart-1)", background: "var(--bg-1)",
+                <div className="aug-fs-sm" style={{ display: "flex", alignItems: "center",
+                  gap: 7, padding: "6px 9px", borderRadius: "var(--r2)",
+                  border: "1px solid color-mix(in srgb, var(--chart-1) 55%, transparent)",
+                  background: "color-mix(in srgb, var(--chart-1) 10%, var(--bg-1))",
                   color: "var(--chart-1)" }}>
-                  <Icon name="link" size={11} />
+                  <Icon name="link" size={12} />
                   <span style={{ overflow: "hidden", textOverflow: "ellipsis",
-                    whiteSpace: "nowrap" }}>{bound}</span>
+                    whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{bound}</span>
                   <Button variant="ghost" size="icon-sm" aria-label={`unbind ${field}`}
                     className="nodrag" style={{ marginLeft: "auto", width: 18, height: 18 }}
                     onClick={() => data.onClear(field)}>
@@ -300,7 +333,7 @@ function DesignStepNode({ data }: { data: DesignNodeData }) {
                 </div>
               ) : (
                 <input
-                  className="nodrag aug-fs-xs"
+                  className="nodrag aug-fs-sm"
                   style={inputStyle}
                   placeholder={placeholder}
                   value={String(data.config[field] ?? "")}
@@ -312,20 +345,22 @@ function DesignStepNode({ data }: { data: DesignNodeData }) {
         })}
       </div>
 
-      {/* output ports — "gives X", each a real source dot. The design's promise; the
-          Execution node's `produced` is the run's answer to it. */}
+      {/* outputs — "gives X", one row per key, its dot half over the right edge */}
       {data.publishes.length > 0 && (
-        <div style={{ borderTop: "1px solid var(--b1)", padding: "5px 10px 7px" }}>
+        <div style={{ borderTop: "1px solid var(--b1)", padding: "7px 12px 9px",
+          display: "flex", flexDirection: "column", gap: 4 }}>
           {data.publishes.map(key => (
             <div key={key} style={{ position: "relative", display: "flex",
-              justifyContent: "flex-end", padding: "2px 0" }}>
+              justifyContent: "flex-end", alignItems: "center", minHeight: 18 }}>
               <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                gives <span style={{ color: "var(--chart-2)" }}>
-                  {data.openSet ? "the action's outcome" : key}</span>
+                gives{" "}
+                <span style={{ color: "var(--chart-2)", fontFamily: "var(--font-mono)" }}>
+                  {data.openSet ? "the action's outcome" : key}
+                </span>
               </span>
               <Handle
                 id={`out:${key}`} type="source" position={Position.Right}
-                style={{ ...portStyle("out", false), right: -15,
+                style={{ ...portStyle("out", false), right: -(12 + PORT / 2),
                          top: "50%", transform: "translateY(-50%)" }}
                 title={data.openSet ? "drag to bind (key asked on drop)" : `drag '${key}' onto an input port`}
               />
@@ -337,25 +372,53 @@ function DesignStepNode({ data }: { data: DesignNodeData }) {
   );
 }
 
-function DesignTriggerNode({ data }: { data: { detail: string } }) {
+/** One condition, humanised. The cron stays visible because it is the truth; the words
+ *  in front of it are for scanning, not a translation layer that could drift. */
+function conditionLine(c: { kind: string; config: Record<string, unknown> }): string {
+  if (c.kind === "schedule") return `on schedule · ${c.config.cron ?? ""}`;
+  if (c.kind === "metric") return `monitor ${c.config.monitor_id ?? ""} fires`;
+  if (c.kind === "source_change") return `${c.config.table ?? "a table"} changes`;
+  if (c.kind === "entity_appears") return `new key in ${c.config.table ?? "a table"}`;
+  return c.kind;
+}
+
+function DesignTriggerNode({ data }: {
+  data: { conditions: { kind: string; config: Record<string, unknown> }[]; logic: string };
+}) {
   return (
     <div style={{
-      minWidth: 170, maxWidth: 230, borderRadius: 8, padding: "8px 10px",
-      border: "1px dashed var(--b2)", background: "var(--bg-2)",
+      width: 210, borderRadius: "var(--r3)", background: "var(--bg-2)",
+      border: "1px dashed var(--b3)", boxShadow: "var(--shadow-sm)",
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-        <span style={{ color: "var(--chart-3)", display: "flex" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
+        borderBottom: "1px solid var(--b1)" }}>
+        <span style={{
+          width: 24, height: 24, borderRadius: "var(--r2)", display: "grid",
+          placeItems: "center", color: "var(--chart-3)",
+          background: "color-mix(in srgb, currentColor 14%, transparent)",
+        }}>
           <Icon name="bolt" size={13} />
         </span>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>when</span>
+        <span className="aug-fs-ui" style={{ fontWeight: 600 }}>Trigger</span>
+        {data.conditions.length > 1 && (
+          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t4)" }}>
+            {data.logic === "all" ? "all match" : "any match"}
+          </span>
+        )}
       </div>
-      <div className="aug-fs-sm" style={{ fontWeight: 600, marginTop: 2 }}>
-        {data.detail || "manual"}
+      <div style={{ padding: "9px 12px", display: "flex", flexDirection: "column", gap: 4 }}>
+        {data.conditions.length === 0 && (
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>manual only</span>
+        )}
+        {data.conditions.map((c, i) => (
+          <span key={i} className="aug-fs-sm" style={{ color: "var(--t2)" }}>
+            {conditionLine(c)}
+          </span>
+        ))}
       </div>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
-        edit triggers in the rail →
-      </div>
-      <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
+      <Handle type="source" position={Position.Right}
+        style={{ ...portStyle("out", false), right: -(12 + PORT / 2),
+                 top: "50%", transform: "translateY(-50%)" }} />
     </div>
   );
 }
@@ -364,14 +427,6 @@ const NODE_TYPES = {
   step: StepNode, trigger: TriggerNode,
   designStep: DesignStepNode, designTrigger: DesignTriggerNode,
 };
-
-function describeConditions(draft: Draft): string {
-  return draft.conditions.map(c => {
-    if (c.kind === "schedule") return `schedule · ${c.config.cron ?? ""}`;
-    if (c.kind === "metric") return `monitor ${c.config.monitor_id ?? ""}`;
-    return `${c.kind} · ${c.config.table ?? ""}`;
-  }).join("  +  ");
-}
 
 /* ═══════════════════ the component ═══════════════════ */
 
@@ -437,16 +492,23 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     const nodes: RFNode[] = [{
       id: "__trigger",
       type: "designTrigger",
-      position: positions.current.get("__trigger") ?? { x: 0, y: 40 },
-      data: { detail: describeConditions(draft) },
+      position: positions.current.get("__trigger") ?? { x: 0, y: 60 },
+      data: { conditions: draft.conditions,
+              logic: automation?.condition_logic ?? "all" },
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
-      position: positions.current.get(s.alias) ?? { x: (i + 1) * COL_W, y: 0 },
+      position: positions.current.get(s.alias) ?? { x: 260 + i * (NODE_W + 90), y: 0 },
       data: {
         ...s,
         onPatch: (field: string, value: unknown) => patchField(s.alias, field, value),
         onClear: (field: string) => clearField(s.alias, field),
+        // The last step keeps no remove control at all — the model requires one effect,
+        // and an affordance that fails at save teaches the wrong law. Same rule as the
+        // rail, enforced by ABSENCE both places.
+        onRemove: draft.effects.length > 1
+          ? () => setDraft(d => ({ ...d, effects: d.effects.filter((_, j) => j !== i) }))
+          : undefined,
       } as DesignNodeData,
     }))];
     const rfEdges: RFEdge[] = [
@@ -463,14 +525,19 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         target: e.to,
         targetHandle: `in:${e.field}`,
         label: e.key,
-        style: { stroke: "var(--chart-1)", strokeWidth: 1.6 },
-        labelStyle: { fill: "var(--t2)" },
-        labelBgStyle: { fill: "var(--bg-1)" },
+        // Animated, because the edge carries DATA — the reference frames use motion to
+        // say exactly this, and only this. The sequence spine stays still.
+        animated: true,
+        style: { stroke: "var(--chart-1)", strokeWidth: 2 },
+        labelStyle: { fill: "var(--t1)", fontFamily: "var(--font-mono)" },
+        labelBgStyle: { fill: "var(--bg-2)", stroke: "var(--b2)" },
+        labelBgPadding: [7, 3] as [number, number],
+        labelBgBorderRadius: 6,
         markerEnd: { type: MarkerType.ArrowClosed, color: "var(--chart-1)" },
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, vocab, patchField, clearField]);
+  }, [draft, vocab, patchField, clearField, automation]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -525,15 +592,6 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
             </Button>
           ))}
         </div>
-        {mode === "design" && !connectError && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
-            drag a <span style={{ color: "var(--chart-2)" }}>gives</span> dot onto an
-            input dot to bind it · double-click an edge to unbind · nodes drag freely
-          </span>
-        )}
-        {connectError && (
-          <span className="aug-fs-xs" style={{ color: "var(--amb4)" }}>{connectError}</span>
-        )}
         {mode === "execution" && graph?.run_missing && (
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             never run — showing the design
@@ -597,8 +655,38 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
               minZoom={0.3}
               maxZoom={1.6}
             >
-              <Background gap={16} color="var(--border)" />
+              <Background gap={18} size={1.2} color="var(--b1)" />
               <Controls showInteractive={false} />
+              {/* The Volt frame's toolbar, ON the canvas: adding is part of designing,
+                  not a trip to a side panel. Both write the same draft the rail and
+                  Save share; the rail stays for the fields a node does not carry. */}
+              {authoring && (
+                <Panel position="top-left" style={{ display: "flex", gap: 6 }}>
+                  <Button variant="secondary" size="xs"
+                    onClick={() => setDraft(d => ({ ...d, conditions: [...d.conditions, newCondition()] }))}>
+                    <Icon name="bolt" size={11} /> Add Trigger
+                  </Button>
+                  <Button variant="secondary" size="xs"
+                    onClick={() => setDraft(d => ({ ...d, effects: [...d.effects, newEffect()] }))}>
+                    <Icon name="plus" size={11} /> Add Action
+                  </Button>
+                </Panel>
+              )}
+              {connectError && (
+                <Panel position="top-center">
+                  <span className="aug-fs-xs" style={{ color: "var(--amb5)",
+                    background: "var(--amb1)", border: "1px solid var(--amb2)",
+                    borderRadius: "var(--r-chip)", padding: "3px 10px" }}>
+                    {connectError}
+                  </span>
+                </Panel>
+              )}
+              <Panel position="bottom-center">
+                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                  drag a <span style={{ color: "var(--chart-2)" }}>gives</span> dot onto an
+                  input dot to bind · double-click an edge to unbind
+                </span>
+              </Panel>
             </ReactFlow>
           ) : !graph ? (
             <div className="aug-fs-sm" style={{ color: "var(--t3)", padding: 16 }}>Loading…</div>
