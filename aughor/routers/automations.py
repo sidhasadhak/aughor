@@ -64,14 +64,22 @@ def vocabulary():
     required-keys mirror already costs a guard test to keep honest. `publishes: null`
     is the OPEN set — a declared-action step's keys are that action's own outcome
     shape, and the canvas draws it as a wildcard port rather than no port."""
-    from aughor.automations.dataflow import BINDABLE_FIELDS, PUBLISHED_KEYS
-    return {"kinds": {
-        kind: {
-            "publishes": list(keys) if keys is not None else None,
-            "bindable": list(BINDABLE_FIELDS.get(kind, ())),
-        }
-        for kind, keys in PUBLISHED_KEYS.items()
-    }}
+    from aughor.automations.dataflow import BINDABLE_FIELDS, GUARD_OPS, PUBLISHED_KEYS, UNARY_OPS
+    return {
+        "kinds": {
+            kind: {
+                "publishes": list(keys) if keys is not None else None,
+                "bindable": list(BINDABLE_FIELDS.get(kind, ())),
+            }
+            for kind, keys in PUBLISHED_KEYS.items()
+        },
+        # W1 — the guard operators, for the same reason as the ports above: a picker
+        # that offered an operator the engine cannot evaluate would fail at 09:00, and
+        # `unary` is what tells the form to hide the second field rather than ask for a
+        # value that is then ignored.
+        "guard_ops": [{"op": op, "label": label, "unary": op in UNARY_OPS}
+                      for op, label in GUARD_OPS.items()],
+    }
 
 
 @router.get("/automations")

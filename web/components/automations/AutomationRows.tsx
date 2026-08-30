@@ -20,10 +20,11 @@ import React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  AUTOMATION_REQUIRED_KEYS,
+  AUTOMATION_REQUIRED_KEYS, getAutomationVocabulary,
   type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
-  type SlackBotSummary, type UserAgent,
+  type AutomationVocabulary, type GuardClause, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
+import { upstreamKeys } from "@/lib/automationFlow";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
@@ -112,6 +113,118 @@ function parseMessage(text: string): unknown {
   }
 }
 
+
+/* ── W1 · "Only if" ───────────────────────────────────────────────────────────────
+ *
+ * The wire calls this `when`; every surface calls it **Only if**. The trigger node on
+ * the canvas is already labelled "When", and two Whens in one picture is a collision a
+ * reader pays for — so the word is translated here, at the boundary, exactly as the
+ * retired-vocabulary rule asks.
+ */
+
+/** The operators, FETCHED once per page and shared by every row.
+ *
+ *  A hook rather than a prop because `EffectRow` renders on two surfaces — the form and
+ *  the canvas — and a prop is a thing one of them can forget to pass. The cache is a
+ *  module-level promise: N rows on screen make one request, and a failure degrades to
+ *  an empty list (no operators offered) rather than an unhandled rejection. */
+const EMPTY_VOCAB: AutomationVocabulary = { kinds: {}, guardOps: [] };
+let vocabCache: Promise<AutomationVocabulary> | null = null;
+
+export function useAutomationVocabulary(): AutomationVocabulary {
+  const [vocab, setVocab] = React.useState<AutomationVocabulary>(EMPTY_VOCAB);
+  React.useEffect(() => {
+    vocabCache ??= getAutomationVocabulary().catch(() => EMPTY_VOCAB);
+    let live = true;
+    void vocabCache.then(v => { if (live) setVocab(v); });
+    return () => { live = false; };
+  }, []);
+  return vocab;
+}
+
+function refOf(value: unknown): string {
+  return value && typeof value === "object" && "$from" in (value as object)
+    ? String((value as { $from: unknown }).$from) : "";
+}
+
+/**
+ * The guard editor for one step.
+ *
+ * The left side is a PICKER over what earlier steps publish, never free text. B1 closed
+ * exactly this hole for params — an unknown key passed every save-time check and
+ * surfaced at 09:00 as a skipped step — and a guard authored as free text would have
+ * re-opened it one field over.
+ *
+ * Nothing renders when no earlier step publishes anything: the chain context is made of
+ * upstream output, so a first step has nothing it could ask about, and an empty picker
+ * is a control that cannot be used.
+ */
+export function GuardRows({ e, siblings, index, onChange }: {
+  e: AutoEffect;
+  /** The whole step list and this step's place in it — a guard may only read what runs
+   *  BEFORE it, which is the same rule `validate_chain` refuses a forward reference by. */
+  siblings: AutoEffect[]; index: number;
+  onChange: (e: AutoEffect) => void;
+}) {
+  const { kinds, guardOps: ops } = useAutomationVocabulary();
+  const upstream = upstreamKeys(siblings, index, kinds);
+  const clauses = e.when ?? [];
+  const unary = new Set(ops.filter(o => o.unary).map(o => o.op));
+  if (upstream.length === 0 || ops.length === 0) return null;
+
+  const put = (next: GuardClause[]) => onChange({ ...e, when: next });
+  const patch = (i: number, p: Partial<GuardClause>) =>
+    put(clauses.map((c, n) => (n === i ? { ...c, ...p } : c)));
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+        <span style={{ ...labelStyle, marginBottom: 0 }}>Only if</span>
+        {clauses.length > 1 && (
+          <select value={e.when_logic ?? "all"} aria-label="Only if logic"
+            onChange={ev => onChange({ ...e, when_logic: ev.target.value as "all" | "any" })}
+            style={{ ...inputStyle, width: 74, padding: "3px 6px", fontSize: 11 }}>
+            <option value="all">all</option>
+            <option value="any">any</option>
+          </select>
+        )}
+        <Button variant="ghost" className="h-auto font-normal" style={{ ...ghostBtn, padding: 0 }}
+          onClick={() => put([...clauses, { left: { $from: upstream[0].ref }, op: ops[0].op }])}>
+          + condition
+        </Button>
+      </div>
+      {clauses.map((c, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, marginBottom: 5, alignItems: "center" }}>
+          <select value={refOf(c.left)} aria-label="Only if subject"
+            onChange={ev => patch(i, { left: { $from: ev.target.value } })}
+            style={{ ...inputStyle, width: 150, fontSize: 12 }}>
+            {/* A reference the picker cannot offer — a step renamed or deleted since —
+                is kept as an option rather than silently re-pointed at the first entry,
+                which would change what the guard tests without anyone touching it. */}
+            {!upstream.some(u => u.ref === refOf(c.left)) && refOf(c.left) && (
+              <option value={refOf(c.left)}>{refOf(c.left)} (missing)</option>
+            )}
+            {upstream.map(u => <option key={u.ref} value={u.ref}>{u.ref}</option>)}
+          </select>
+          <select value={c.op} aria-label="Only if comparison"
+            onChange={ev => patch(i, { op: ev.target.value })}
+            style={{ ...inputStyle, width: 96, fontSize: 12 }}>
+            {ops.map(o => <option key={o.op} value={o.op}>{o.label}</option>)}
+          </select>
+          {!unary.has(c.op) && (
+            <input style={{ ...inputStyle, flex: 1, fontSize: 12 }} value={String(c.right ?? "")}
+              aria-label="Only if value" placeholder="value"
+              onChange={ev => patch(i, { right: ev.target.value })} />
+          )}
+          <Button variant="ghost" className="h-auto font-normal" aria-label="Remove condition"
+            onClick={() => put(clauses.filter((_, n) => n !== i))}
+            style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export function ConditionRow({ c, onChange, onRemove }: {
   c: AutoCondition; onChange: (c: AutoCondition) => void; onRemove?: () => void;
 }) {
@@ -147,8 +260,12 @@ export function ConditionRow({ c, onChange, onRemove }: {
   );
 }
 
-export function EffectRow({ e, agents, bots = [], onChange, onRemove }: {
+export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange, onRemove }: {
   e: AutoEffect; agents: UserAgent[];
+  /** W1 — the step list this row belongs to, so its "Only if" picker can offer what the
+   *  steps BEFORE it publish. Defaults to the row alone, which offers nothing: a surface
+   *  that has not been taught about order shows no guard rather than a wrong one. */
+  siblings?: AutoEffect[]; index?: number;
   /** The bots a "Post to Slack" step may post AS. Empty ⇒ the row says so rather than
    *  offering an empty picker, because "no bots configured" and "pick a bot" call for
    *  different actions and only one of them is something the reader can do here. */
@@ -218,6 +335,8 @@ export function EffectRow({ e, agents, bots = [], onChange, onRemove }: {
             <input style={inputStyle} value={String((e.config as { paramsText?: string }).paramsText ?? "")} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
           </div>
         )}
+        <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
+          onChange={onChange} />
       </div>
       {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove action" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>

@@ -117,7 +117,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "aughor/automations/dataflow.py",
          "tests/unit/test_automations_dataflow.py",
          "web/lib/automationFlow",
-         "web/components/AutomationGraph.tsx"),
+         "web/components/AutomationGraph.tsx",
+         # W1, the same ground once more: `effectsForWire` branches on the wire literal
+         # `kinetic_action` — it is the ONE branch that rebuilds `config`, so it is the
+         # one that could drop a step's guard on save. A test of that branch has to name
+         # the kind it branches on; renaming it here would stop testing the branch.
+         "web/components/automations/AutomationRows.test.tsx"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (

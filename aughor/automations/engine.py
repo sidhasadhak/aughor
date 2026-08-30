@@ -40,7 +40,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    UnresolvedBinding, alias_for, collect_refs, parse_ref, resolve,
+    GUARD_SKIP, UnresolvedBinding, alias_for, effect_refs, evaluate_guard, parse_ref,
+    resolve,
 )
 from aughor.automations.models import (
     Automation,
@@ -370,11 +371,16 @@ AWAIT_KEY = "_await_result"
 def _downstream_binds(alias: str, later: list[Effect]) -> bool:
     """Does any later step reference ``alias``?
 
-    Reads the same `collect_refs` the graph derives its data edges from, so a step the
+    Reads the same `effect_refs` the graph derives its data edges from, so a step the
     canvas draws an arrow out of is exactly a step the engine waits for.
+
+    W1 — `effect_refs`, so a step consumed ONLY by a downstream guard is waited for too.
+    Missing that would be the subtlest bug in this wave: "post only if step 1 found
+    something" would test the *job id* `investigate` returns when nobody waits — a
+    non-empty string, so `truthy` would hold every single morning.
     """
     for nxt in later:
-        for ref in collect_refs(nxt.config):
+        for ref in effect_refs(nxt):
             if parse_ref(ref)[0] == alias:
                 return True
     return False
@@ -582,7 +588,7 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     """
     question = str(effect.config.get("question", ""))
     # VA-13 — wait only when a later step binds to this one's answer (set by the chain
-    # loop from `collect_refs`). An unconsumed investigate keeps submitting and returning,
+    # loop from `effect_refs`). An unconsumed investigate keeps submitting and returning,
     # which is what "run this nightly" wants and what every automation written before this
     # already does.
     await_result = bool(effect.config.get(AWAIT_KEY))
@@ -796,6 +802,11 @@ def run_automation(
         alias = alias_for(effect, i)
         try:
             bound = resolve(effect.config, context)
+            # W1 — the guard is evaluated in the SAME try as the params, because an
+            # unresolvable reference means the same thing on either side: the upstream
+            # this step depends on is not there. Evaluated BEFORE the dispatch, so a
+            # guarded-off step costs nothing — no request, no token, no send.
+            should_run, why_not = evaluate_guard(effect, context)
         except UnresolvedBinding as exc:
             # SKIPPED, never run-with-a-hole. These steps send messages and write to
             # systems; a missing channel or a missing thread id is not a value to
@@ -806,6 +817,16 @@ def run_automation(
                 agent_id=acting_agent(effect, automation),
                 message=f"upstream data unavailable: {exc}"))
             continue
+        if not should_run:
+            # `skipped`, whose own definition is "did not run, and that is not a failure
+            # of this step" — which is precisely a guard holding. The MESSAGE carries the
+            # difference between a design working and an upstream breaking, and it is the
+            # one thing a reader needs at 09:00.
+            outcomes.append(EffectOutcome(
+                kind=effect.kind, target=alias, status="skipped",
+                agent_id=acting_agent(effect, automation),
+                message=f"{GUARD_SKIP}: {why_not}"))
+            continue
         # VA-13 — does anything LATER bind to this step's output?
         #
         # Only a step somebody is waiting on should be waited FOR. `investigate` submits a
@@ -814,7 +835,7 @@ def run_automation(
         # when the next step runs. So the engine tells the step, and only a step that is
         # actually consumed pays the latency.
         #
-        # Derived from `collect_refs` — the same function the graph's data edges come from
+        # Derived from `effect_refs` — the same function the graph's data edges come from
         # — so "the canvas drew an edge here" and "the engine waited here" cannot disagree.
         # Carried on the bound config rather than in the dispatcher signature: six
         # dispatchers would otherwise grow a parameter five of them ignore.
@@ -850,7 +871,14 @@ def run_automation(
 
     # 4 — fallback, only when EVERY effect failed to execute
     fallback_used = False
-    if automation.fallback_effect is not None and all(o.status != "executed" for o in outcomes):
+    # W1 — a run whose every step was SKIPPED did not fail; before the guard existed a
+    # step-1 skip was impossible, so `all(not executed)` and "everything failed" were the
+    # same set. They no longer are: an automation guarded off on a quiet morning would
+    # have paged on-call to say the automation itself was broken. The fallback needs a
+    # step that actually TRIED and did not succeed.
+    attempted = [o for o in outcomes if o.status != "skipped"]
+    if (automation.fallback_effect is not None and attempted
+            and all(o.status != "executed" for o in attempted)):
         fallback_used = True
         outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,
                                     sleeper=sleeper, rng=rng, sleep_budget=sleep_budget))

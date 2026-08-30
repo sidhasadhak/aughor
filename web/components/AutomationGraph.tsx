@@ -41,15 +41,18 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
-import { EFFECT_KINDS, newCondition, newEffect } from "@/components/automations/AutomationRows";
+import {
+  EFFECT_KINDS, newCondition, newEffect, useAutomationVocabulary,
+} from "@/components/automations/AutomationRows";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
   getAutomationGraph, getAutomationVocabulary,
-  type Automation, type AutomationGraphData,
+  type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
-  aliasFor, applyConnect, clearBinding, draftToFlow, type Vocabulary,
+  aliasFor, applyConnect, clearBinding, draftToFlow, GUARD_FIELD, guardSentences,
+  type Vocabulary,
 } from "@/lib/automationFlow";
 
 export type { AutomationGraphData };
@@ -84,7 +87,10 @@ function ms(n: number): string {
 function StepNode({ data }: { data: Record<string, unknown> }) {
   const status = String(data.status || "");
   const produced = (data.produced as string[]) || [];
-  const accent = status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
+  // A guarded skip reads in the guard's own hue: it is the design working, and the dim
+  // `skipped` grey is the colour of something having gone wrong.
+  const accent = data.guarded ? "var(--chart-3)"
+    : status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
   return (
     <div style={{
       minWidth: 190, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
@@ -102,9 +108,20 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
           {String(data.detail)}
         </div>
       )}
+      {/* W1 — the guard this step carried, and (below) whether it is what held the step.
+          A run canvas that shows only "skipped" cannot tell a design working from an
+          upstream breaking. */}
+      {Array.isArray(data.when) && (data.when as string[]).length > 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-3)", marginTop: 3,
+          fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis",
+          whiteSpace: "nowrap" }}>
+          only if {(data.when as string[]).join(
+            data.when_logic === "any" ? " or " : " and ")}
+        </div>
+      )}
       {!!status && (
         <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>
-          ● {status}
+          ● {data.guarded ? "held · condition not met" : status}
           {typeof data.duration_ms === "number" && (data.duration_ms as number) > 0 && (
             <span style={{ color: "var(--t4)" }}> · {ms(data.duration_ms as number)}</span>
           )}
@@ -186,10 +203,12 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
       label: isData ? e.label : undefined,
       animated: false,
       style: isData
-        ? { stroke: "var(--chart-1)", strokeWidth: 1.6 }
+        ? (e.guard
+            ? { stroke: "var(--chart-3)", strokeWidth: 1.6, strokeDasharray: "5 4" }
+            : { stroke: "var(--chart-1)", strokeWidth: 1.6 })
         : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
-                   color: isData ? "var(--chart-1)" : "var(--t4)" },
+                   color: isData ? (e.guard ? "var(--chart-3)" : "var(--chart-1)") : "var(--t4)" },
       data: { edgeType: e.type },
     };
   });
@@ -223,6 +242,10 @@ interface DesignNodeData {
   publishes: string[];
   openSet: boolean;
   inputs: { field: string; boundTo: string | null }[];
+  /** W1 — the guard, raw. Rendered into sentences with the server's operator words
+   *  rather than stored as prose, so a node and the editor cannot word it differently. */
+  when: GuardClause[];
+  whenLogic: "all" | "any";
   onPatch: (field: string, value: unknown) => void;
   onClear: (field: string) => void;
   /** Remove this step — absent on the last one, the same law the rail enforces. */
@@ -251,6 +274,9 @@ const KIND_HUE: Record<string, string> = {
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
+  // Operator WORDS come from the server's vocabulary (cached module-side, so N nodes
+  // make one request) — a local map would be a second spelling of a closed set.
+  const { guardOps } = useAutomationVocabulary();
   const boundOf = (field: string) =>
     data.inputs.find(i => i.field === field)?.boundTo ?? null;
   const bindableSet = new Set(data.inputs.map(i => i.field));
@@ -344,6 +370,31 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           );
         })}
       </div>
+
+      {/* W1 — "only if", with a port of its own. An input port that DECIDES rather than
+          fills, so it is drawn apart from the field rows and never inside them. The
+          strip is absent when there is no guard: an empty one would say a step is
+          conditional when it always runs. */}
+      {data.when.length > 0 && (
+        <div style={{ position: "relative", borderTop: "1px solid var(--b1)",
+          padding: "7px 12px 8px", background: "var(--bg-1)" }}>
+          <Handle
+            id={`in:${GUARD_FIELD}`} type="target" position={Position.Left}
+            style={{ ...portStyle("in", true), left: -(12 + PORT / 2),
+                     top: "50%", transform: "translateY(-50%)",
+                     borderColor: "var(--chart-3)", background: "var(--chart-3)" }}
+            title="this step runs only if the guard holds"
+          />
+          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+            only if{data.when.length > 1 ? ` · ${data.whenLogic}` : ""}
+          </div>
+          {guardSentences(data.when, guardOps).map((line, i) => (
+            <div key={i} className="aug-fs-xs" style={{ color: "var(--chart-3)",
+              fontFamily: "var(--font-mono)", marginTop: 2, overflow: "hidden",
+              textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{line}</div>
+          ))}
+        </div>
+      )}
 
       {/* outputs — "gives X", one row per key, its dot half over the right edge */}
       {data.publishes.length > 0 && (
@@ -453,7 +504,10 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   }, [automation]);
 
   useEffect(() => {
-    getAutomationVocabulary().then(setVocab).catch(() => setVocab({}));
+    // W1 — the fetch now carries the guard operators too; this canvas wants only the
+    // per-kind ports, and `AutomationRows` fetches (and caches) the same document for
+    // the "Only if" pickers.
+    getAutomationVocabulary().then(v => setVocab(v.kinds)).catch(() => setVocab({}));
   }, []);
 
   const authoring = !!automation && mode === "design";
@@ -527,13 +581,18 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         label: e.key,
         // Animated, because the edge carries DATA — the reference frames use motion to
         // say exactly this, and only this. The sequence spine stays still.
+        // W1 — a GUARD edge carries data too, but to a decision rather than a field, so
+        // it reads in its own hue and dashes: same motion, different claim.
         animated: true,
-        style: { stroke: "var(--chart-1)", strokeWidth: 2 },
+        style: e.guard
+          ? { stroke: "var(--chart-3)", strokeWidth: 2, strokeDasharray: "5 4" }
+          : { stroke: "var(--chart-1)", strokeWidth: 2 },
         labelStyle: { fill: "var(--t1)", fontFamily: "var(--font-mono)" },
         labelBgStyle: { fill: "var(--bg-2)", stroke: "var(--b2)" },
         labelBgPadding: [7, 3] as [number, number],
         labelBgBorderRadius: 6,
-        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--chart-1)" },
+        markerEnd: { type: MarkerType.ArrowClosed,
+                     color: e.guard ? "var(--chart-3)" : "var(--chart-1)" },
       })),
     ];
     return { nodes, edges: rfEdges };

@@ -185,7 +185,8 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved }: {
           </Button>
         </div>
         {draft.effects.map((e, i) => (
-          <EffectRow key={i} e={e} agents={agents} bots={bots} onChange={ee => setEff(i, ee)}
+          <EffectRow key={i} e={e} agents={agents} bots={bots} siblings={draft.effects} index={i}
+            onChange={ee => setEff(i, ee)}
             onRemove={draft.effects.length > 1
               ? () => onDraft({ ...draft, effects: draft.effects.filter((_, j) => j !== i) })
               : undefined} />

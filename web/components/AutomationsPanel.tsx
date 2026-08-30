@@ -565,7 +565,8 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
       <div style={{ marginBottom: 16 }}>
         <label style={labelStyle}>Then (in order)</label>
         {effects.map((e, i) => (
-          <EffectRow key={i} e={e} agents={agents} bots={bots} onChange={ee => setEff(i, ee)}
+          <EffectRow key={i} e={e} agents={agents} bots={bots} siblings={effects} index={i}
+            onChange={ee => setEff(i, ee)}
             onRemove={effects.length > 1 ? () => setEffects(es => es.filter((_, j) => j !== i)) : undefined} />
         ))}
         <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setEffects(es => [...es, newEffect()])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add effect</Button>

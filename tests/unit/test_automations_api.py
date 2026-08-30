@@ -95,3 +95,48 @@ def test_run_now_returns_the_reason_a_gated_automation_did_nothing(flag_on):
 
 def test_run_now_on_an_unknown_automation_is_404(flag_on):
     assert client.post("/automations/nope/run").status_code == 404
+
+
+# ── W1 · the guard, over the wire ────────────────────────────────────────────────
+
+def test_the_guard_operators_come_from_the_code(flag_on):
+    """FETCHED, never mirrored. A picker that offered an operator the engine cannot
+    evaluate would fail on a schedule, at 09:00, with nobody watching — the same
+    argument the per-kind ports are fetched by."""
+    from aughor.automations.dataflow import GUARD_OPS, UNARY_OPS
+
+    ops = client.get("/automations/vocabulary").json()["guard_ops"]
+    assert [o["op"] for o in ops] == list(GUARD_OPS)
+    assert {o["op"] for o in ops if o["unary"]} == set(UNARY_OPS)
+    # Every operator carries the word it READS as: "is set" is what a person authors
+    # against, `truthy` is what the engine evaluates, and only one of them belongs on
+    # a surface.
+    assert all(o["label"] for o in ops)
+
+
+def test_a_guarded_step_round_trips_through_create(flag_on):
+    """`when` must survive the wire. A field the API drops is a chain that silently
+    always fires — the same class of defect as the form that dropped `alias`."""
+    body = dict(BODY, effects=[
+        {"kind": "investigate", "alias": "numbers", "config": {"question": "how were sales?"}},
+        {"kind": "notify", "config": {"trigger_id": "trig-1"},
+         "when": [{"left": {"$from": "numbers.answer"}, "op": "truthy"}],
+         "when_logic": "any"},
+    ])
+    created = client.post("/automations", json=body)
+    assert created.status_code == 200, created.text
+    stored = client.get(f"/automations/{created.json()['id']}").json()
+    assert stored["effects"][1]["when"] == [
+        {"left": {"$from": "numbers.answer"}, "op": "truthy", "right": None}]
+    assert stored["effects"][1]["when_logic"] == "any"
+    client.delete(f"/automations/{created.json()['id']}")
+
+
+def test_a_guard_onto_an_unknown_step_is_422_not_stored(flag_on):
+    """The plane's own rule (K1): reject at parse, never surface. A guard naming a step
+    that does not exist is refused here, not discovered on a schedule."""
+    body = dict(BODY, effects=[
+        {"kind": "notify", "config": {"trigger_id": "t"},
+         "when": [{"left": {"$from": "ghost.answer"}, "op": "truthy"}]},
+    ])
+    assert client.post("/automations", json=body).status_code == 422

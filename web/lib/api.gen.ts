@@ -9802,6 +9802,14 @@ export interface components {
              * @enum {string}
              */
             kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post";
+            /** When */
+            when?: components["schemas"]["GuardClause"][];
+            /**
+             * When Logic
+             * @default all
+             * @enum {string}
+             */
+            when_logic: "all" | "any";
         };
         /** EvalIn */
         EvalIn: {
@@ -10015,6 +10023,27 @@ export interface components {
              * @default
              */
             text: string;
+        };
+        /**
+         * GuardClause
+         * @description W1 — one comparison in a step's ``when`` guard.
+         *
+         *     Either side may be a literal or a ``{"$from": "step1.answer"}`` binding, resolved
+         *     against the same accumulated chain context the step's params are. Structural, never
+         *     an expression string, for this plane's three standing reasons: it is validated when
+         *     the automation is saved, it is not an injection surface, and it DRAWS — a guard that
+         *     reads step 1 is an edge on the canvas exactly like a param that does.
+         */
+        GuardClause: {
+            /** Left */
+            left?: unknown;
+            /**
+             * Op
+             * @enum {string}
+             */
+            op: "truthy" | "falsy" | "eq" | "ne" | "gt" | "gte" | "lt" | "lte" | "contains";
+            /** Right */
+            right?: unknown;
         };
         /** GuardrailBody */
         GuardrailBody: {
