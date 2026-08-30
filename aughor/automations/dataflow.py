@@ -209,6 +209,14 @@ def render_clause(clause: Any) -> str:
     def side(value: Any) -> str:
         if is_binding(value):
             return str(value[FROM])
+        # An empty literal must still OCCUPY the sentence. Found live: a guard written
+        # against `""` rendered as "condition not met:  is set" — a hole where the
+        # subject belongs, which reads as a bug in the renderer rather than as the
+        # comparison someone wrote.
+        if value is None:
+            return "nothing"
+        if value == "":
+            return '""'
         text = str(value)
         return text if len(text) <= 40 else text[:39] + "…"
 

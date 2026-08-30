@@ -59,7 +59,11 @@ export function guardSentences(clauses: GuardClause[], ops: GuardOp[]): string[]
   const unary = new Set(ops.filter(o => o.unary).map(o => o.op));
   const side = (v: unknown): string => {
     const ref = bindingRef(v);
-    return ref !== null ? ref : String(v ?? "");
+    if (ref !== null) return ref;
+    // An empty literal must still occupy the sentence — the server's renderer says the
+    // same thing the same way, so a node and a run cannot word one guard differently.
+    if (v === null || v === undefined) return "nothing";
+    return v === "" ? '""' : String(v);
   };
   return clauses.map(c => {
     const word = label.get(c.op) ?? c.op;

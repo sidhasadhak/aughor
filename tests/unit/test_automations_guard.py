@@ -229,7 +229,7 @@ def test_all_requires_every_clause_and_names_the_ones_that_failed():
         {"left": 10, "op": "gt", "right": 5},
         {"left": "", "op": "truthy"},
     ]), {})
-    assert passed is False and why == " is set"
+    assert passed is False and why == '"" is set'
 
 
 def test_any_needs_only_one():
@@ -274,3 +274,12 @@ def test_a_real_failure_still_fires_the_fallback_with_a_guarded_step_beside_it()
         fallback=Effect(kind="notify", config={"trigger_id": "oncall"})), _dispatch)
     assert [o.status for o in run.effects[:2]] == ["failed", "skipped"]
     assert run.fallback_used is True
+
+
+def test_an_empty_literal_still_occupies_the_sentence():
+    """Found live: a guard against `""` rendered as "condition not met:  is set" — a hole
+    where the subject belongs, which reads as a broken renderer rather than as the
+    comparison someone wrote."""
+    from aughor.automations.dataflow import render_clause
+    assert render_clause({"left": "", "op": "truthy"}) == '"" is set'
+    assert render_clause({"left": None, "op": "eq", "right": 1}) == "nothing is 1"
