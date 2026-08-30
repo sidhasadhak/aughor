@@ -232,18 +232,32 @@ def default_probe(cond: Condition, automation: Automation) -> tuple[bool, str]:
 
 
 def evaluate_conditions(automation: Automation, *, now: datetime,
-                        probe: Optional[ConditionProbe] = None) -> tuple[bool, list[str], str]:
+                        probe: Optional[ConditionProbe] = None,
+                        manual: bool = False) -> tuple[bool, list[str], str]:
     """Evaluate every condition under ``condition_logic``. Returns ``(fired, details, reason)``.
 
     Deliberately evaluates ALL conditions rather than short-circuiting: the run history is meant to
     explain the tick, and "we stopped looking after the first false" makes a two-condition automation
     unanswerable. Probes are cheap by construction (A3 bounds them); correctness of the record wins.
+
+    **``manual`` — a person pressed Run now.** A schedule answers ONE question: *is it
+    time?* Someone clicking the button has already answered it, so consulting the cron
+    could only ever contradict them — and did: "Run now" on a daily automation replied
+    `not_fired — next due tomorrow` at every hour except one, which reads as a broken
+    button, not as a considered refusal.
+
+    Every OTHER condition kind is still evaluated, and that asymmetry is the whole point:
+    a metric threshold, a source change or an entity appearing are claims about the state
+    of the WORLD, and a human pressing a button has not changed any of them. Firing a
+    "when revenue drops 20%" automation because someone was curious would deliver an
+    alert about a drop that never happened.
     """
     probe_fn = probe or default_probe
     results: list[tuple[bool, str]] = []
     for cond in automation.conditions:
         if cond.kind == "schedule":
-            results.append(_schedule_fired(cond, automation, now))
+            results.append((True, f"schedule({cond.cron}): run now, by hand")
+                           if manual else _schedule_fired(cond, automation, now))
         else:
             results.append(probe_fn(cond, automation))
 
@@ -794,6 +808,7 @@ def run_automation(
     rng: Callable[[], float] = random.random,
     persist: bool = True,
     dry_run: bool = False,
+    manual: bool = False,
 ) -> AutomationRun:
     """Run one automation through the full pipeline and return its :class:`AutomationRun`.
 
@@ -888,7 +903,8 @@ def run_automation(
         reason = "dry run — nothing was sent" + (f"; {gate_reason}" if gate_reason else "")
     else:
         try:
-            fired, details, reason = evaluate_conditions(automation, now=now, probe=probe)
+            fired, details, reason = evaluate_conditions(automation, now=now, probe=probe,
+                                                         manual=manual)
         except Exception as exc:
             logger.warning("automation %s condition evaluation failed: %s",
                            automation.id, exc)

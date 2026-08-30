@@ -405,3 +405,52 @@ def test_a_missing_schema_ontology_says_so_instead_of_blaming_the_declaration(mo
     assert run.effects[0].status == "dispatch_error"
     assert "has no cached ontology" in run.effects[0].message
     assert "default" in run.effects[0].message and "main" in run.effects[0].message
+
+
+# ── "Run now" means now ───────────────────────────────────────────────────────────
+
+def test_run_now_does_not_consult_the_schedule():
+    """A schedule answers "is it time?". Someone pressing Run now has answered it, so
+    asking the cron could only contradict them — and did: a daily automation replied
+    `not_fired — next due tomorrow` at every hour except one, which reads as a broken
+    button rather than a considered refusal."""
+    from aughor.automations.engine import run_automation
+    from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
+
+    a = Automation(name="daily", conn_id="c",
+                   conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"})],
+                   effects=[Effect(kind="notify", config={"trigger_id": "t1"})])
+
+    def _dispatch(effect, automation):
+        return EffectOutcome(kind=effect.kind, target="t", status="executed")
+
+    # A cron with no history fires as "first run", so establish one — the not-due case
+    # is the whole point, and a control that cannot be false proves nothing.
+    first = run_automation(a, dispatch=_dispatch, persist=True)
+    assert first.outcome == "fired"
+
+    held = run_automation(a, dispatch=_dispatch, persist=False)
+    assert held.outcome == "not_fired"          # the heartbeat's answer, unchanged
+    assert "next due" in held.reason
+
+    ran = run_automation(a, dispatch=_dispatch, persist=False, manual=True)
+    assert ran.outcome == "fired"
+    assert "run now, by hand" in ran.reason
+
+
+def test_run_now_still_asks_the_conditions_about_the_WORLD():
+    """The asymmetry is the point. Nobody changed the metric by clicking a button, so a
+    "when revenue drops" automation must not deliver an alert about a drop that did not
+    happen."""
+    from aughor.automations.engine import run_automation
+    from aughor.automations.models import Automation, Condition, Effect
+
+    a = Automation(name="watch", conn_id="c",
+                   conditions=[Condition(kind="schedule", config={"cron": "0 9 * * *"}),
+                               Condition(kind="metric", config={"monitor_id": "m1"})],
+                   effects=[Effect(kind="notify", config={"trigger_id": "t1"})])
+
+    run = run_automation(a, persist=False, manual=True,
+                         probe=lambda cond, auto: (False, "metric(m1): unchanged"))
+    assert run.outcome == "not_fired"
+    assert "unchanged" in run.reason

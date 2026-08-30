@@ -130,6 +130,12 @@ def trigger_now(automation_id: str) -> Optional[AutomationRun]:
     Unlike the heartbeat this does NOT skip a disabled or paused automation — it runs it through
     the same gates and hands back the resulting run, so an operator asking "why isn't this firing?"
     gets the reason rather than silence.
+
+    ``manual=True``: the SCHEDULE is not consulted, because pressing this button is the
+    answer to the question a schedule asks. Every other condition still is — a threshold
+    or a source change describes the world, and nobody changed the world by clicking.
+    The lifecycle gates above are untouched for the reason in the paragraph above: a
+    disabled automation should say it is disabled, not run.
     """
     try:
         from aughor.automations.engine import run_automation
@@ -141,7 +147,7 @@ def trigger_now(automation_id: str) -> Optional[AutomationRun]:
         if automation is None:
             return None
         with using_org(get_connection_org(automation.conn_id) or ""):
-            return run_automation(automation)
+            return run_automation(automation, manual=True)
     except Exception as exc:
         logger.error("trigger_now failed for automation %s: %s", automation_id, exc)
         return None
