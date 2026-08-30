@@ -261,9 +261,10 @@ study is the *feature inventory*, not the stack — Arc VA is the result.
 
 ```
 NOW
-  B1  typed bindings              (small — closes the weakest seam in VA-12/13)
   W1  `when` guard on an effect   (small — largest expressive payoff)
   B2  dry-run an automation       (small — reuses evals' inert dispatch)
+  ✅ B1  SHIPPED `16019b5a` — typed ports (server vocabulary, fetched), drag-to-bind,
+        unknown KEYS refused at save; Runs layer retired into Activity → Phases
 
 NEXT — §6.1 decided 2026-08-30: Aughor owns the vault
   VA-11  Connection object + broker + Google, then Slack/Microsoft as data (§3.4)
