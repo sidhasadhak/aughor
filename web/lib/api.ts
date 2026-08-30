@@ -3411,6 +3411,17 @@ export interface SlackBotSummary {
   bot_user_id: string;
 }
 
+/** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
+ *  mirrored: a hand-copied vocabulary rots in the worst direction, and the server's
+ *  `PUBLISHED_KEYS` is the same table `validate_chain` refuses against. */
+export async function getAutomationVocabulary(): Promise<
+  Record<string, { publishes: string[] | null; bindable: string[] }>
+> {
+  const res = await fetch(`${getApiBase()}/automations/vocabulary`);
+  if (!res.ok) throw new Error(`Failed to load the vocabulary (${res.status})`);
+  return (await res.json()).kinds;
+}
+
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
 
 /** One user grant, as the API returns it — token fields are DROPPED server-side

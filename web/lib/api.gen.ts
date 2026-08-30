@@ -900,6 +900,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/vocabulary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vocabulary
+         * @description B1 — what each effect kind publishes and may bind, for the canvas's ports.
+         *
+         *     FETCHED by the client rather than mirrored into it: a hand-copied vocabulary rots
+         *     in the worst direction (a key added here while the UI keeps refusing it), and the
+         *     required-keys mirror already costs a guard test to keep honest. `publishes: null`
+         *     is the OPEN set — a declared-action step's keys are that action's own outcome
+         *     shape, and the canvas draws it as a wildcard port rather than no port.
+         */
+        get: operations["vocabulary_automations_vocabulary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/{automation_id}": {
         parameters: {
             query?: never;
@@ -13435,6 +13461,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vocabulary_automations_vocabulary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

@@ -103,6 +103,45 @@ def alias_for(effect: Any, index: int) -> str:
     return (getattr(effect, "alias", "") or "").strip() or f"step{index + 1}"
 
 
+#: B1 — what each effect kind PUBLISHES into the chain context, DECLARED.
+#:
+#: `EffectOutcome.data` is what a step actually published; this is what a step MAY.
+#: The split exists because the design surface needs an answer before any run has
+#: happened — the execution graph's `produced` is real but arrives too late to draw a
+#: port on an unsaved step. ``None`` means an OPEN set: a declared-action step
+#: publishes whatever that action's outcome carries, which this module cannot
+#: enumerate, so bindings onto it are accepted unchecked rather than wrongly refused.
+#:
+#: A kind mapped to ``()`` publishes nothing — measured off the dispatchers, which is
+#: the only honest source: `notify`/`brief`/`monitor`/`agent_alert` return outcomes
+#: with no ``data`` at all, so a binding onto them can never resolve and is refused at
+#: SAVE (the whole point of B1: the unknown KEY used to surface at 09:00 as a skipped
+#: step, a stack of honest machinery adding up to a silent no-op).
+PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
+    "investigate":    ("investigation_id", "answer"),
+    "slack_post":     ("ts", "channel"),
+    "kinetic_action": None,
+    "notify":         (),
+    "brief":          (),
+    "monitor":        (),
+    "agent_alert":    (),
+}
+
+#: B1 — the config fields a step may BIND (`{"$from": …}`) per kind: the input ports.
+#: Only fields whose consumption is a string the dispatcher reads; enumerated rather
+#: than "any field", because an edge onto a field nothing reads is a picture of
+#: dataflow the engine does not have.
+BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
+    "investigate":    ("question",),
+    "slack_post":     ("message", "thread_ts", "channel"),
+    "notify":         ("message",),
+    "brief":          (),
+    "kinetic_action": ("params",),
+    "monitor":        (),
+    "agent_alert":    (),
+}
+
+
 def validate_chain(effects: list) -> Optional[str]:
     """The error message for an unsatisfiable chain, or None when it is sound.
 
@@ -116,7 +155,7 @@ def validate_chain(effects: list) -> Optional[str]:
         LATER step is not a missing value, it is an impossible order, and saying so is
         the difference between a user fixing a name and a user fixing their mental model.
     """
-    seen: set[str] = set()
+    seen: dict[str, str] = {}   # alias → effect kind, for the key check above
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
         for ref in collect_refs(getattr(effect, "config", {}) or {}):
@@ -124,11 +163,22 @@ def validate_chain(effects: list) -> Optional[str]:
             if target == alias:
                 return f"step '{alias}' refers to itself ({ref})"
             if target in seen:
+                # B1 — the KEY, not only the step. An unknown key used to pass every
+                # save-time check and surface at 09:00 as a skipped step. Checked only
+                # for kinds with a CLOSED declared set; `None` (the declared-action kind) stays
+                # unchecked because its keys are the action's own outcome shape.
+                producer = seen[target]
+                declared = PUBLISHED_KEYS.get(producer)
+                key = parse_ref(ref)[1]
+                if declared is not None and key not in declared:
+                    have = f" — it publishes {', '.join(declared)}" if declared else                         " — it publishes nothing"
+                    return (f"step '{alias}' binds to '{ref}', but a "
+                            f"{producer} step has no '{key}'{have}")
                 continue
             later = {alias_for(e, j) for j, e in enumerate(effects) if j > i}
             if target in later:
                 return (f"step '{alias}' refers to '{ref}', which runs AFTER it — "
                         f"a chain cannot run backwards")
             return f"step '{alias}' refers to unknown step '{target}' ({ref})"
-        seen.add(alias)
+        seen[alias] = getattr(effect, "kind", "")
     return None
