@@ -3473,6 +3473,11 @@ export interface IntegrationProvider {
   /** The org registered an OAuth client — flips the card from Set up to Connect. */
   configured: boolean;
   console_url: string;
+  /** This provider REFUSES an `http://` redirect URL, localhost included — Slack says
+   *  so in its own docs, Google and Microsoft accept the loopback address. The Set-up
+   *  form uses it to warn BEFORE the credentials are pasted, instead of after the
+   *  provider's error page. */
+  https_only: boolean;
   connection: IntegrationConnection | null;
 }
 

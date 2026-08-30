@@ -39,6 +39,17 @@ class Provider(BaseModel):
     console_url: str = ""
     #: Extra query params some providers require on the authorize URL.
     authorize_extra: dict[str, str] = {}
+    #: Whether this provider REFUSES an `http://` redirect URL, localhost included.
+    #:
+    #: Measured against the vendors' own docs, not assumed: Google and Microsoft both
+    #: accept the loopback address, and Slack does not — "the `redirect_uri` must use
+    #: HTTPS", with `http://` examples listed among the rejected ones. The wave that
+    #: built this brokered on "localhost is a redirect URI every major provider
+    #: accepts", which is true of two of the three shipped here. Carried as a field
+    #: because it is the same kind of fact as `pkce` or `authorize_extra` — an
+    #: adapter's data — and because the person pasting credentials needs to be told
+    #: BEFORE they walk into the provider's own error page.
+    https_only: bool = False
 
 
 PROVIDERS: dict[str, Provider] = {p.id: p for p in [
@@ -68,6 +79,7 @@ PROVIDERS: dict[str, Provider] = {p.id: p for p in [
         default_scopes="chat:write channels:read",
         pkce=False,
         console_url="https://api.slack.com/apps",
+        https_only=True,
     ),
     Provider(
         id="microsoft",

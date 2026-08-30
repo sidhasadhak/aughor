@@ -55,6 +55,9 @@ def catalog(request: Request):
             "id": p.id, "name": p.name, "category": p.category, "blurb": p.blurb,
             "configured": bool(app and app.client_id),
             "console_url": p.console_url,
+            # So the Set-up form can say that THIS redirect URI will not be accepted,
+            # rather than showing a string the provider rejects on the next click.
+            "https_only": p.https_only,
             "connection": conn.to_safe_dict() if conn else None,
         })
     return {"providers": out, "redirect_uri": _callback_uri(request)}

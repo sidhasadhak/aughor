@@ -170,7 +170,21 @@ export function IntegrationsPanel() {
                       ● needs reconnect
                     </span>
                   )}
-                  <span style={{ marginLeft: "auto" }}>
+                  <span style={{ marginLeft: "auto", display: "flex", alignItems: "center",
+                    gap: 6 }}>
+                    {/* Set up was a ONE-WAY door: once an org client was stored the card
+                        offered only Connect (or Revoke), so a client id pasted with a
+                        typo, a rotated secret, or an app swapped for another could not
+                        be corrected from any screen. The credentials are still never
+                        READ back — the form replaces them, it does not display them. */}
+                    {p.configured && (
+                      <Button variant="ghost" size="xs" disabled={busy === p.id}
+                        title={`Replace the ${p.name} OAuth client`}
+                        onClick={() => { setSetupFor(cur => cur === p.id ? null : p.id);
+                                         setClientId(""); setClientSecret(""); }}>
+                        Edit
+                      </Button>
+                    )}
                     {!p.configured ? (
                       <Button variant="secondary" size="xs" disabled={busy === p.id}
                         onClick={() => { setSetupFor(cur => cur === p.id ? null : p.id);
@@ -204,7 +218,9 @@ export function IntegrationsPanel() {
                   <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8,
                     borderTop: "1px solid var(--b1)", paddingTop: 10 }}>
                     <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                      Create an OAuth client in{" "}
+                      {p.configured && "Replace the stored client — the current secret is "
+                        + "never shown, only overwritten. "}
+                      {p.configured ? "Create or pick an OAuth client in " : "Create an OAuth client in "}
                       <a href={p.console_url} target="_blank" rel="noreferrer"
                         style={{ color: "var(--blue4)" }}>the {p.name} console</a>
                       {" "}with this redirect URI, then paste the client credentials back:
@@ -214,6 +230,21 @@ export function IntegrationsPanel() {
                       border: "1px solid var(--b1)", overflowWrap: "anywhere" }}>
                       {redirectUri}
                     </code>
+                    {/* Said BEFORE the credentials are pasted, not after the provider's
+                        own error page. Slack rejects `http://` outright — localhost
+                        included — while Google and Microsoft accept the loopback
+                        address; `https_only` is the provider's own documented rule,
+                        carried as adapter data rather than assumed here. */}
+                    {p.https_only && redirectUri.startsWith("http://") && (
+                      <div className="aug-fs-xs" style={{ color: "var(--amb4)",
+                        lineHeight: 1.5 }}>
+                        {p.name} refuses an <code>http://</code> redirect URL, localhost
+                        included — registering the URI above will fail with
+                        “redirect_uri did not match”. Reach this API over HTTPS (a tunnel
+                        is enough — the callback follows the forwarded host), then
+                        register that address instead.
+                      </div>
+                    )}
                     <input className="aug-fs-ui" style={inputStyle} placeholder="Client ID"
                       value={clientId} autoComplete="off" spellCheck={false}
                       onChange={e => setClientId(e.target.value)} />
