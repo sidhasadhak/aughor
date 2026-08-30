@@ -251,6 +251,16 @@ export function IntegrationsPanel() {
                         match for a provider that refuses http:// while you develop over
                         localhost. Blank-equals-derived is preserved: saving it unchanged
                         stores no override at all. */}
+                    {/* Labelled, because the field does not explain itself: asked for
+                        "the redirect URI" beside a {p.name} console link, a reasonable
+                        person pastes their {p.name} address. It is the opposite — the
+                        address {p.name} comes BACK to. */}
+                    <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                      Redirect URI — where {p.name} sends the browser <strong>back to
+                      Aughor</strong>. It must reach THIS API
+                      {p.https_only ? " over HTTPS (a tunnel is enough)" : ""}, and be
+                      registered in the {p.name} console verbatim.
+                    </div>
                     <input className="aug-fs-xs" style={{ ...inputStyle,
                       fontFamily: "var(--font-mono)" }}
                       value={callback} spellCheck={false} autoComplete="off"

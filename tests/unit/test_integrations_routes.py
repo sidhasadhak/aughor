@@ -138,3 +138,24 @@ def test_slack_refuses_an_http_callback_at_save(client):
         "redirect_uri": "http://localhost:8000/oauth/callback"})
     assert refused.status_code == 422
     assert "http://" in refused.json()["detail"]
+
+
+def test_the_providers_own_address_is_refused_as_a_callback(client):
+    """The mistake this field invites, found live: a person asked for "the Slack URL"
+    has their WORKSPACE url in hand, and it passes every other rule — https, ends in
+    /oauth/callback, not http. It then fails silently: consent succeeds, Slack redirects
+    to itself, and nothing reaches the exchange."""
+    refused = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://luxexperience-crew.slack.com/oauth/callback"})
+    assert refused.status_code == 422
+    detail = refused.json()["detail"]
+    assert "own address" in detail
+    assert "BACK to Aughor" in detail        # it says WHOSE address it should be
+
+
+def test_a_tunnel_to_this_api_is_accepted(client):
+    ok = client.put("/integrations/slack/app", json={
+        "client_id": "c", "client_secret": "s",
+        "redirect_uri": "https://calm-otter-1234.trycloudflare.com/oauth/callback"})
+    assert ok.status_code == 200, ok.text

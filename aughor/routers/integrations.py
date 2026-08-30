@@ -86,6 +86,18 @@ class AppBody(BaseModel):
     redirect_uri: str = ""
 
 
+def _own_domain(host: str) -> str:
+    """The last two labels of a host — `luxexperience-crew.slack.com` → `slack.com`."""
+    return ".".join(host.lower().split(":")[0].split(".")[-2:])
+
+
+def _provider_domains(provider) -> set[str]:
+    """The provider's own domains, read off the endpoints it already declares."""
+    from urllib.parse import urlparse
+    return {_own_domain(urlparse(u).netloc)
+            for u in (provider.authorize_url, provider.token_url, provider.revoke_url) if u}
+
+
 def _check_redirect(provider, uri: str) -> str:
     """An authored callback, or a sentence saying why it cannot be one.
 
@@ -106,6 +118,19 @@ def _check_redirect(provider, uri: str) -> str:
     if provider.https_only and uri.startswith("http://"):
         raise HTTPException(422, f"{provider.name} refuses an http:// redirect URL, "
                                  "localhost included — register an https:// address")
+    # The callback is where the provider sends the browser BACK TO THIS API. Pointing it
+    # at the provider's own domain is the mistake this field invites — a workspace URL is
+    # the address a person has in hand when they are asked for "the Slack URL" — and it
+    # fails silently: consent succeeds, the provider redirects to itself, and nothing
+    # ever reaches the exchange. Found live, with a stored
+    # `https://<workspace>.slack.com/oauth/callback`.
+    from urllib.parse import urlparse
+    host = urlparse(uri).netloc
+    if _own_domain(host) in _provider_domains(provider):
+        raise HTTPException(422,
+            f"'{host}' is {provider.name}'s own address. The callback is where "
+            f"{provider.name} sends the browser BACK to Aughor, so it must be an address "
+            "that reaches THIS API over HTTPS — a tunnel to it is enough.")
     return uri
 
 
