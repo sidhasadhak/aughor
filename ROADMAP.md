@@ -132,6 +132,12 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 - **B1 · Typed bindings.** `validate_chain` catches an unknown *step* at save but **not an
   unknown key** — that surfaces at 09:00 as a skipped step. VA-13 shipped the binding as free
   text. A picker over "what each upstream step publishes" closes it. **Weakest seam in VA-12/13.**
+  *Design direction (user, 2026-08-30, from the Langflow canvas):* render bindings as **visible
+  inward/outward ports** on the nodes — coloured dots, output right, input left — with nodes
+  free to drag and fields editable on the node. That look is `@xyflow/react` (the library the
+  four existing canvases already use) with styled handles instead of our `opacity: 0` ones and
+  `nodesDraggable` on: design investment, not new technology. B1's picker and the visible port
+  are the same feature — the port IS the typed binding, drawn.
 - **B2 · Dry-run.** We can inspect a run afterwards but cannot *try* a design before arming it.
   `evals/equivalence.py` already runs automations `persist=False` with an inert dispatch.
 
