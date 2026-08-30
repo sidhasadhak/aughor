@@ -26,7 +26,7 @@ from pathlib import Path
 from typing import Optional
 
 from aughor.automations.models import Automation, AutomationRun
-from aughor.db.migrations import Migration, run_migrations
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
 from aughor.util.time import now_iso_z
@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS automations (
     expires_at            TEXT,
     max_retries           INTEGER NOT NULL DEFAULT 1,
     retry_backoff_seconds REAL NOT NULL DEFAULT 30.0,
+    agent_id              TEXT NOT NULL DEFAULT '',
     created_at            TEXT NOT NULL DEFAULT '',
     updated_at            TEXT NOT NULL DEFAULT '',
     last_run_at           TEXT,
@@ -96,7 +97,23 @@ CREATE INDEX IF NOT EXISTS idx_runs_time       ON automation_runs (started_at DE
 """
 
 # Base DDL is conceptually v1; every later additive change is a versioned step (DATA-05).
-_MIGRATIONS: list[Migration] = []
+def _add_agent_binding(conn: sqlite3.Connection) -> None:
+    """VA-9b's `Automation.agent_id` never had a column.
+
+    The model gained the field and the INSERT did not, so SQLite's named binding
+    quietly ignored it: an automation-level agent was accepted by the API, echoed back
+    in the response, and read as `""` from the next request onward. The per-STEP agent
+    survived only because it rides inside the `effects` JSON. Additive and idempotent,
+    like every migration here."""
+    add_column_if_missing(conn, "automations", "agent_id", "TEXT NOT NULL DEFAULT ''")
+
+
+#: Version 2 because the live store reads `PRAGMA user_version = 1` — checked against the
+#: deployed database, not assumed from this file, which is the only way to number one.
+_MIGRATIONS: list[Migration] = [
+    Migration(version=2, name="automation agent binding (VA-9b's missing column)",
+              apply=_add_agent_binding),
+]
 
 
 def _connect() -> sqlite3.Connection:
@@ -184,13 +201,22 @@ def upsert_automation(automation: Automation) -> Automation:
                 INSERT INTO automations (
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
-                    retry_backoff_seconds, created_at, updated_at, last_run_at, last_status
+                    retry_backoff_seconds, agent_id, created_at, updated_at,
+                    last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
-                    :retry_backoff_seconds, :created_at, :updated_at, :last_run_at, :last_status
+                    :retry_backoff_seconds, :agent_id, :created_at, :updated_at,
+                    :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET
+                    -- `conn_id` belongs here like every other authored field. Left out,
+                    -- an update silently kept the old connection: the API returned the
+                    -- CHANGED model (so every caller reported success) while the row kept
+                    -- the old value — the shape of wrong answer this codebase treats as
+                    -- worse than an exception. Found live, moving an automation onto the
+                    -- connection its own agent is bound to.
+                    conn_id=excluded.conn_id,
                     name=excluded.name,
                     description=excluded.description,
                     conditions=excluded.conditions,
@@ -202,6 +228,7 @@ def upsert_automation(automation: Automation) -> Automation:
                     expires_at=excluded.expires_at,
                     max_retries=excluded.max_retries,
                     retry_backoff_seconds=excluded.retry_backoff_seconds,
+                    agent_id=excluded.agent_id,
                     updated_at=excluded.updated_at,
                     last_run_at=excluded.last_run_at,
                     last_status=excluded.last_status
