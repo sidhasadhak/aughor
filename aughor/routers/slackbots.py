@@ -72,6 +72,42 @@ def slack_bot_manifest(name: str = "Aughor", description: str = "", agent_id: st
     }
 
 
+def _refuse_without_a_front_door() -> None:
+    """Refuse to hand out raw credentials to a deployment that authenticates nobody.
+
+    The policy table has always said `ADMIN_MANAGE_ORG` for this route, and the
+    docstring below has always said "admin-gated". Both were true only on an
+    enterprise-licensed deployment: `enforce_rbac` returns early without the `RBAC_SSO`
+    capability, and `_require_auth`'s shared-key door only engages when `AUGHOR_API_KEY`
+    is set. A default self-hosted install therefore served `xoxb-`/`xapp-` tokens in
+    plaintext to any caller that could reach the port — proved with an unauthenticated
+    `curl` on a live instance, 2026-08-30.
+
+    So this one route asks whether the deployment can identify its callers AT ALL, and
+    refuses when it cannot. Every other route may reasonably be open on a laptop; this
+    is the one place raw credentials leave the server, and a credential handed to an
+    unauthenticated caller is a credential given away.
+
+    The key is read from `aughor.api` rather than from `os.environ`, deliberately: that
+    module captured it at import, and it is what actually enforces. A gate reading a
+    different source than its enforcer is a second opinion — the same mistake the
+    integrations readiness check made a few hours earlier, found the same way.
+    """
+    from aughor.api import _API_KEY
+    if _API_KEY:
+        return
+    from aughor.licensing import Capability, has_capability
+    from aughor.security.authz import require_identity_enabled
+    if require_identity_enabled() and has_capability(Capability.RBAC_SSO):
+        return
+    raise HTTPException(
+        status_code=503,
+        detail="refusing to serve Slack tokens: this deployment authenticates nobody. "
+               "Set AUGHOR_API_KEY on the API and pass the same value to the bot "
+               "supervisor as AUGHOR_API_KEY, then retry. Posting from automations is "
+               "unaffected — only the socket supervisor reads this route.")
+
+
 @router.get("/slack-bots/runtime")
 def slack_bots_runtime():
     """The supervisor's door: enabled bots with PLAINTEXT tokens.
@@ -83,8 +119,11 @@ def slack_bots_runtime():
     accident from a UI that meant to list bots.
 
     A socket cannot be opened with a mask, so this is the one place raw credentials
-    leave the server. Everything else masks. Admin-gated in `rbac/policy.py`.
+    leave the server. Everything else masks. Admin-gated in `rbac/policy.py` — and,
+    because that gate is inert without an enterprise licence, FAIL-CLOSED here as well:
+    see :func:`_refuse_without_a_front_door`.
     """
+    _refuse_without_a_front_door()
     bots = [b for b in store.list_bots(include_disabled=False) if b.bot_token and b.app_token]
     return {"bots": [store.get_bot_decrypted(b.id).to_dict() for b in bots]}
 

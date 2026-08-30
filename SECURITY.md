@@ -66,6 +66,12 @@ exposing it to a network:
 
 - Set `AUGHOR_API_KEY` to a strong random value. Every request must then carry
   it as `X-Api-Key` (`/health`, `/docs`, `/redoc`, and `/openapi.json` stay open).
+  **`GET /slack-bots/runtime` refuses to answer at all until this is set** — it is
+  the one route that returns raw Slack `xoxb-`/`xapp-` tokens (a socket cannot be
+  opened with a mask), and handing a credential to an unauthenticated caller is
+  giving it away. Its RBAC entry alone is not enough: that gate is inert without an
+  enterprise licence. Nothing else is affected — automations posting to Slack read
+  the bot from the store server-side and never touch that route.
 - Set `AUGHOR_CORS_ORIGINS` to the exact origins you serve.
 - Terminate TLS in front of the app; Aughor speaks plain HTTP.
 - Give the warehouse credential the narrowest read-only grant that works.

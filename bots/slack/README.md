@@ -61,7 +61,7 @@ Copy `.env.local.example` to `.env.local` and fill it in.
 | `SLACK_SIGNING_SECRET` | from Basic Information |
 | `SLACK_AGENT_VIEW` | `1` once the app is in Agents & AI Apps mode. Left off, the adapter uses the legacy compatibility path. Turning it on against an app that is NOT in agent mode makes `stopStream` send a parameter that app cannot accept, which costs the final message of every answer — hence a flag, not a default. |
 | `AUGHOR_API_URL` | defaults to `http://127.0.0.1:8000` |
-| `AUGHOR_API_KEY` | when the API requires one |
+| `AUGHOR_API_KEY` | **required for the multi-bot supervisor.** `GET /slack-bots/runtime` is the one route that returns raw `xoxb-`/`xapp-` tokens, so it refuses to answer a deployment that authenticates nobody — set the same value on the API and here. Single-bot mode (the three `SLACK_*` vars above) does not read that route and needs no key. |
 | `AUGHOR_CONNECTION_ID` | which connection to answer from; defaults to `workspace` |
 | `AUGHOR_WEB_URL` | where "Open in Aughor →" points. Unset, answers simply carry no link — a wrong host is worse than none. |
 | `LOG_LEVEL` | `debug` shows every incoming envelope, and the adapter's own streaming decisions ("using fallback stream — …"). The difference between "Slack never sent the event" and "it arrived and nothing matched" is invisible at `info`. |

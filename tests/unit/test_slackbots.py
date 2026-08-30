@@ -341,3 +341,42 @@ def test_an_owner_is_the_same_subject_the_identity_plane_resolves():
     ident_store.put_link("slack", "U0OWNER", "amit@example.com")
     bot = store.save_bot(_bot(owner="amit@example.com"))
     assert attribution_key("slack:U0OWNER") == bot.owner
+
+
+# ── the one route that hands out raw credentials ─────────────────────────────────
+
+def test_the_runtime_route_refuses_when_the_deployment_authenticates_nobody(client):
+    """Proved against a live instance with an unauthenticated `curl`: the policy table
+    said ADMIN_MANAGE_ORG and the docstring said "admin-gated", but `enforce_rbac`
+    returns early without an enterprise licence and `_require_auth`'s key door only
+    engages when `AUGHOR_API_KEY` is set. A default self-hosted install served `xoxb-`
+    and `xapp-` tokens in plaintext to anyone who could reach the port."""
+    r = client.get("/slack-bots/runtime")
+    assert r.status_code == 503
+    detail = r.json()["detail"]
+    assert "AUGHOR_API_KEY" in detail            # says how to fix it
+    assert "Posting from automations is unaffected" in detail   # and what still works
+
+
+def test_the_runtime_route_serves_a_deployment_that_has_a_front_door(client, slack_ok,
+                                                                     monkeypatch):
+    """With a shared key configured, `_require_auth` actually checks callers — the gate
+    reads that same value rather than a second source, so the two cannot disagree."""
+    # A name of its own: this store accumulates across the file and `salesbot` is
+    # already taken by the fixture, whose token is a different string.
+    client.post("/slack-bots", json={"name": "front-door-bot", "bot_token": "xoxb-t",
+                                     "app_token": "xapp-t", "signing_secret": "sig"})
+    monkeypatch.setattr("aughor.api._API_KEY", "a-real-key")
+
+    # And the caller must now present it — the SAME key satisfies the gate and the
+    # front door, which is the whole reason the gate reads `_require_auth`'s value
+    # rather than one of its own.
+    assert client.get("/slack-bots/runtime").status_code == 401
+
+    r = client.get("/slack-bots/runtime", headers={"X-Api-Key": "a-real-key"})
+    assert r.status_code == 200
+    # Not an exact list — this store accumulates across the file. What matters is that
+    # the route still does its job: RAW tokens, which is the only reason it exists.
+    mine = next(b for b in r.json()["bots"] if b["name"] == "front-door-bot")
+    assert mine["bot_token"] == "xoxb-t"
+    assert "•" not in mine["app_token"]
