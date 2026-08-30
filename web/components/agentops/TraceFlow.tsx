@@ -951,14 +951,18 @@ export function TraceFlow({
       else { bands.push(item); laidOut.push(bandAsNode(item)); }
     }
 
-    // A flat run is a sequence, so it wraps into a block; a nested one has a shape of its
-    // own and keeps the tree layout, which is the only thing that can show it. The notice
-    // above the canvas already tells the reader which of the two they are looking at.
+    // THE ROW, restored 2026-08-30 after three attempts at a block were rejected.
+    //
+    // `layoutGrid` and `dominantPeriod` are kept and still tested — the wrapping itself
+    // is sound and the rhythm it found is real — but wrapping a 68-card sequence puts a
+    // return edge on every row, and no amount of aligning the rows made that read. The
+    // honest reading of three rejections is that the problem is not the shape of the
+    // block: it is that sixty-eight cards is too many cards, which is a question about
+    // what to DRAW, not where to put it.
     const nestedRun = forest.some(n => n.children.length > 0);
-    const pos: Map<string, { x: number; y: number }> = nestedRun
-      ? new Map([...layoutForest(laidOut)].map(([id, p]) =>
-          [id, { x: p.col * COL_W, y: p.row * ROW_H }]))
-      : layoutGrid(items, expanded, { w: COL_W, h: ROW_H });
+    const pos: Map<string, { x: number; y: number }> = new Map(
+      [...layoutForest(laidOut)].map(([id, p]) =>
+        [id, { x: p.col * COL_W, y: p.row * ROW_H }]));
     const drawn = new Set(pos.keys());
 
     // The way back, on the first card of each opened band and nowhere else.
