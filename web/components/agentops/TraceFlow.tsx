@@ -913,7 +913,17 @@ export function TraceFlow({
    * Keyed on the node IDS, not on `rfNodes`: that array is rebuilt every time a card
    * opens, and keying on it would yank the viewport back on every click.
    */
-  const fitKey = rfNodes.map(n => n.id).join("|");
+  // Keyed on the RUN's nodes, never on the drawn ones.
+  //
+  // Those differ the moment a stack opens, and keying on what is drawn made expanding one
+  // re-fit the whole canvas: the reader clicked a card to see inside it and the viewport
+  // jumped somewhere else, losing the very node they were looking at. Reported from the
+  // browser, and invisible to every test that does not drive it.
+  //
+  // With this key nothing moves on expand — the stack's first member takes the stack's
+  // own column, so the card under the cursor stays exactly where it was and only what
+  // lies to its right shifts along. A re-fit is still one click away in the controls.
+  const fitKey = (timeline.nodes ?? []).map(n => n.id).join("|");
   useEffect(() => {
     if (!rf || !fitKey) return;
     // Deferred a frame: the nodes for the new run have to be measured before there are
@@ -947,11 +957,17 @@ export function TraceFlow({
 
   return (
     <div style={{ height: "100%", minHeight: 360, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, paddingBottom: 6 }}>
+      {/* Wraps rather than squeezes. The stacking controls made this row three items
+          longer, and on a narrow pane a plain `flex: 1` note gave up its width first —
+          measured at a ~310px canvas, where it collapsed into a column one word wide
+          while the buttons stayed put. The note takes a whole line before it does that. */}
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 8, paddingBottom: 6,
+                    flexWrap: "wrap" }}>
         {!nested && (
           // Say it plainly rather than presenting a chain as a graph. A run that never
           // delegated genuinely has no structure to show, and the waterfall reads better.
-          <div className="aug-fs-xs" style={{ color: "var(--t3)", flex: 1 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", flex: "1 1 260px",
+                                              minWidth: 0 }}>
             This run is a single sequence — nothing nested inside anything else. The
             Waterfall shows the same nodes against time.
           </div>

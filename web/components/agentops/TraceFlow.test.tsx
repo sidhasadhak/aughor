@@ -18,7 +18,8 @@
  * and edges the component computes and passes down. That is where the bug lived: the
  * forest was right and the canvas got nothing. Geometry stays a browser question.
  */
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import React from "react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TraceFlow, eventForNode } from "@/components/agentops/TraceFlow";
@@ -28,6 +29,13 @@ import type { SessionEvent, TimelineNode, TraceFlowEdge } from "@/lib/api";
 
 /** What the component handed the renderer on the most recent render. */
 const handoff: { nodes: RFLike[]; edges: RFLike[] }[] = [];
+/** Every viewport move the component asked for. */
+const fits: string[] = [];
+const fakeRf = {
+  fitView: () => { fits.push("fit"); },
+  setCenter: () => { fits.push("center"); },
+  getZoom: () => 1,
+};
 type RFLike = Record<string, unknown>;
 
 // Partial: only the canvas is replaced. `Handle`, `Position` and `MarkerType` stay real,
@@ -39,10 +47,20 @@ vi.mock("@xyflow/react", async importOriginal => {
   const Provider = actual.ReactFlowProvider as React.ComponentType<{
     children?: React.ReactNode;
   }>;
-  const Stub = ({ nodes, edges, nodeTypes }: {
+  const Stub = ({ nodes, edges, nodeTypes, onInit }: {
     nodes: RFLike[]; edges: RFLike[]; nodeTypes: Record<string, React.ComponentType<RFLike>>;
+    onInit?: (rf: unknown) => void;
   }) => {
     handoff.push({ nodes, edges });
+    // Hand the component an instance ONCE, so the re-fit it performs is observable.
+    // Without this `rf` stays null, the effect returns early, and a test asserting the
+    // viewport does not jump would pass with the jump fully intact.
+    const inited = React.useRef(false);
+    React.useEffect(() => {
+      if (inited.current) return;
+      inited.current = true;
+      onInit?.(fakeRf);
+    }, [onInit]);
     // Each node rendered through ITS OWN registered type. Hard-wiring `traceNode` here
     // would have quietly dropped every band card the folding feature draws — a stub that
     // renders less than the canvas does is a test that passes on a blank screen.
@@ -104,6 +122,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   handoff.length = 0;
+  fits.length = 0;
 });
 
 describe("TraceFlow", () => {
@@ -532,5 +551,56 @@ describe("stacked nodes", () => {
     expect(xOf(failed[0])).toBeLessThan(bandXs[1]);
     const failedData = failed[0].data as { node: TimelineNode };
     expect(failedData.node.ok).toBe(false);
+  });
+});
+
+/* ── keeping the reader's place ─────────────────────────────────────────────── */
+
+/** The re-fit is deferred a frame (ReactFlow measures after commit), so an assertion
+ *  made straight after a click runs BEFORE the fit would have happened and passes with
+ *  the jump fully intact — this pair did exactly that until the frames were flushed. */
+const settleFrames = async () => {
+  for (let i = 0; i < 3; i++) {
+    await new Promise(resolve => requestAnimationFrame(() => resolve(null)));
+  }
+};
+
+describe("the viewport when a stack opens", () => {
+  const sameKind = (n: number) =>
+    Array.from({ length: n }, (_, i) =>
+      node(`m${i}`, { event_kind: "llm_call", name: "gemini-3.1-flash-lite" }));
+
+  it("does NOT re-fit — the card under the cursor stays where it was", async () => {
+    // Reported from the browser: expanding a stack jumped the viewport, losing the very
+    // node the reader had just clicked. The re-fit was keyed on the DRAWN nodes, which
+    // are exactly what expanding changes.
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    await waitFor(() => expect(fits.length).toBeGreaterThan(0));  // the mount fit
+    fits.length = 0;
+
+    fireEvent.click(canvas().getByLabelText("Expand 30 stacked gemini-3.1-flash-lite nodes"));
+    await waitFor(() => expect(drawn().nodes).toHaveLength(30));
+    await settleFrames();
+    expect(fits).toEqual([]);
+  });
+
+  it("does not re-fit when stacking is switched off either", async () => {
+    render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    await waitFor(() => expect(fits.length).toBeGreaterThan(0));
+    fits.length = 0;
+    fireEvent.click(screen.getByText("Grouped"));
+    await waitFor(() => expect(drawn().nodes).toHaveLength(30));
+    await settleFrames();
+    expect(fits).toEqual([]);
+  });
+
+  it("STILL re-fits when the run itself changes", async () => {
+    // The control. Without it this pair passes just as well with the re-fit deleted —
+    // and a canvas that never fits opens every new run at the previous one's pan.
+    const { rerender } = render(<TraceFlow timeline={timeline(sameKind(30))} edges={[]} />);
+    await waitFor(() => expect(fits.length).toBeGreaterThan(0));
+    fits.length = 0;
+    rerender(<TraceFlow timeline={timeline([node("other", { name: "another run" })])} edges={[]} />);
+    await waitFor(() => expect(fits).toContain("fit"));
   });
 });

@@ -20,6 +20,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { StatusChip } from "@/components/brief/StatusChip";
+import { ResizableSplit } from "@/components/ResizableSplit";
 import { TraceFlow } from "@/components/agentops/TraceFlow";
 import { originOf } from "@/components/agentops/RunNodes";
 import { TraceWaterfall } from "@/components/agentops/TraceWaterfall";
@@ -226,14 +227,22 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
         </div>
       )}
 
-      {/* 420px, but never more than a third of the pane. Measured in the browser at an
-          820px viewport: a fixed 420 left the canvas 180px, and the run's header, its
-          rail and its cards all rendered on top of each other. The index is how a run is
-          FOUND; the canvas is what the surface is for, and it gets the majority. */}
-      <div style={{ width: 420, maxWidth: "34%", flexShrink: 0,
-                    borderRight: "1px solid var(--b1)",
-                    display: indexOpen ? "flex" : "none", flexDirection: "column",
-                    overflow: "hidden" }}>
+      {/* The index is how a run is FOUND; the canvas is what the surface is for, so the
+          canvas gets the majority — and now the reader gets to say by how much.
+          `ResizableSplit` owns the width: drag the divider, double-click to reset, and
+          it persists. The previous fixed 420 (capped at 34% for an 820px viewport, where
+          a fixed 420 left the canvas 180px and drew header, rail and cards on top of each
+          other) is replaced by a 294 default — the same layout with 30% less index, which
+          is what the canvas was short of. `min` keeps the list usable and `collapsed`
+          hands the whole width over rather than fighting the existing hide control. */}
+      <ResizableSplit
+        storageKey="traces-index"
+        initial={294} min={230} max={620}
+        collapsed={!indexOpen}
+        style={{ flex: 1, minWidth: 0 }}
+        left={
+      <div style={{ height: "100%", borderRight: "1px solid var(--b1)",
+                    display: "flex", flexDirection: "column", overflow: "hidden" }}>
 
         <div style={{ padding: 10, borderBottom: "1px solid var(--b1)",
                       display: "flex", flexDirection: "column", gap: 6 }}>
@@ -391,8 +400,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
             onClick={() => setOffset(o => o + pageSize)}>›</Button>
         </div>
       </div>
-
-      {/* ── waterfall / feedback ── */}
+        }
+        right={
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         {!detail || !detail.measured ? (
           <div style={{ padding: 32, fontSize: 12, color: "var(--t3)" }}>
@@ -716,6 +725,8 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
           </>
         )}
       </div>
+        }
+      />
     </div>
   );
 }
