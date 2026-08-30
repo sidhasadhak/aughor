@@ -216,22 +216,46 @@ export function bandAsNode(band: FlowBand): FlowNode {
   return { ...first, id: band.id, duration_ms: total, children: [] };
 }
 
+/** Roughly how tall each face's card draws, MEASURED in the browser at scale 1.
+ *
+ *  Only spacing depends on these, so a wrong number costs whitespace, never correctness —
+ *  but a number that is too SMALL costs collisions, which is what the first block layout
+ *  shipped: rows were spaced 138px while a model call draws 154, so every model card
+ *  overlapped the row beneath it. Rounded up, and the row takes the tallest card in it. */
+const FACE_HEIGHT: Record<RunFace, number> = {
+  // Keyed by RunFace — `model`, not `llm`. Spelled wrong the first time, and the cost was
+  // silent: every model card fell through to the tool height and the rows sized to it.
+  model: 160, response: 160, trigger: 120, delegation: 120, guardrail: 80,
+  tool: 56, event: 80,
+};
+const ROW_GAP = 26;
+const COL_GAP = 34;
+
+function cardHeight(node: TimelineNode): number {
+  return FACE_HEIGHT[faceOf(node)] ?? 120;
+}
+
 /**
  * A FLAT run, laid out as a block rather than a line.
  *
  * A single sequence has no tree to draw, so the tree layout gave it one long row — 68
- * cards wide on a measured run, which no zoom makes readable. Wrapped in reading order
- * into roughly a square, the same run is a block a reader can take in: the aspect ratio
- * solves `cols · COL_W ≈ rows · ROW_H`, so the answer is shaped by the cards, not by a
- * number somebody picked.
+ * cards on a measured run, which no zoom makes readable. Wrapped in reading order into a
+ * landscape block, the same run is something a reader can take in.
  *
- * **An opened stack grows DOWNWARD from its own cell**, and its row grows to fit the
- * tallest stack opened in it. That is what keeps the rest of the run still: the cards
- * before and after an opened stack do not move at all, where flowing its members back
- * into the sequence would have shoved everything after it along.
+ * **The rows SNAKE.** Row 0 runs left to right, row 1 right to left, and so on, so the
+ * last card of one row sits directly above the first card of the next and the step
+ * between them is a short hop. Wrapping every row back to the left margin instead — the
+ * obvious way, and the way this shipped first — draws one long diagonal across the whole
+ * block per row. On a 68-card run that was eight of them crossing every card on the
+ * canvas, which is worse than the long line it replaced.
  *
- * Returns pixel positions, because the row heights are no longer uniform once a stack is
- * open and a `{col, row}` grid cannot say that.
+ * **Rows are as tall as the tallest card in them**, not a constant. The cards are not one
+ * height — a model call draws roughly twice a tool call — and spacing them uniformly is
+ * what made the first version collide.
+ *
+ * **An opened stack grows DOWNWARD from its own cell.** That is what keeps the run still:
+ * the stack's card and everything before it do not move, where flowing its members back
+ * into the sequence would shove everything after it along.
  */
 export function layoutGrid(
   items: FlowItem[],
@@ -242,38 +266,55 @@ export function layoutGrid(
   if (items.length === 0) return pos;
 
   // A run short enough to read across stays a line. Reshaping four cards into a block
-  // answers a question nobody had, and the median run measured is ten nodes.
-  // Otherwise: cols·w ≈ TARGET · rows·h with rows = n/cols ⇒ cols ≈ √(n·h·TARGET/w).
-  //
-  // TARGET is the aspect being aimed AT, and it is not 1. A canvas pane is landscape, so
-  // a literal square is the wrong shape to fill it — solving for one put ten cards in two
-  // columns, a 520×690 ribbon in a pane twice as wide as it is tall.
+  // answers a question nobody had.
+  // Otherwise cols·w ≈ TARGET · rows·h ⇒ cols ≈ √(n·h·TARGET/w). TARGET is the aspect
+  // being aimed AT, and it is not 1: a canvas pane is landscape, and solving for a
+  // literal square put ten cards in two columns — a ribbon in a pane twice as wide as
+  // it is tall.
+  /** How tall one item draws: a card, or an opened stack's whole column. */
+  const heightOf = (item: FlowItem): number => {
+    if (item.kind === "node") return cardHeight(item.node);
+    const one = cardHeight(item.members[0]);
+    return expanded.has(item.id)
+      ? item.members.length * (one + ROW_GAP) - ROW_GAP
+      : one;
+  };
+
   const TARGET = 1.8;
+  // Measured against what a cell actually OCCUPIES — the card plus its gap, and the mean
+  // card height rather than a constant. Using the bare cell missed both and came out at
+  // an aspect of 2.9 where 1.8 was asked for.
+  const unitW = cell.w + COL_GAP;
+  const unitH = items.reduce((sum, it) => sum + heightOf(it), 0) / items.length + ROW_GAP;
   const cols = items.length <= ONE_ROW_UP_TO
     ? items.length
-    : Math.max(1, Math.round(Math.sqrt((items.length * cell.h * TARGET) / cell.w)));
+    : Math.max(1, Math.round(Math.sqrt((items.length * unitH * TARGET) / unitW)));
 
-  // How many cards tall each row has to be: one, unless a stack in it is open.
-  const heights: number[] = [];
+  const rowHeights: number[] = [];
   items.forEach((item, i) => {
     const row = Math.floor(i / cols);
-    const tall = item.kind === "band" && expanded.has(item.id) ? item.members.length : 1;
-    heights[row] = Math.max(heights[row] ?? 1, tall);
+    rowHeights[row] = Math.max(rowHeights[row] ?? 0, heightOf(item));
   });
   const tops: number[] = [];
   let y = 0;
-  for (let r = 0; r < heights.length; r++) {
+  for (let r = 0; r < rowHeights.length; r++) {
     tops[r] = y;
-    y += heights[r] * cell.h;
+    y += rowHeights[r] + ROW_GAP;
   }
 
   items.forEach((item, i) => {
-    const x = (i % cols) * cell.w;
-    const top = tops[Math.floor(i / cols)];
+    const row = Math.floor(i / cols);
+    const within = i % cols;
+    // Serpentine: odd rows run the other way, so the step from the end of one row to the
+    // start of the next is a hop straight down rather than a diagonal across everything.
+    const col = row % 2 === 0 ? within : cols - 1 - within;
+    const x = col * unitW;
+    const top = tops[row];
     if (item.kind === "node") {
       pos.set(item.node.id, { x, y: top });
     } else if (expanded.has(item.id)) {
-      item.members.forEach((m, k) => pos.set(m.id, { x, y: top + k * cell.h }));
+      const step = cardHeight(item.members[0]) + ROW_GAP;
+      item.members.forEach((m, k) => pos.set(m.id, { x, y: top + k * step }));
     } else {
       pos.set(item.id, { x, y: top });
     }

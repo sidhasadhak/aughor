@@ -166,7 +166,14 @@ describe("layoutForest", () => {
  */
 
 const step = (id: string, kind: string, name: string, over: Partial<TimelineNode> = {}) =>
-  node(id, { event_kind: kind, name, ...over });
+  // `kind` mirrors `event_kind`, because `faceOf` reads `kind` for a model call and
+  // `event_kind` for the rest — a fixture that set only one filed every model call under
+  // the tool face, and the row heights sized to it.
+  node(id, {
+    event_kind: kind,
+    kind: kind === "llm_call" ? "model" : kind === "tool_call" ? "tool" : kind,
+    name, ...over,
+  });
 
 const roots = (nodes: TimelineNode[]) => buildForest(nodes, []);
 
@@ -283,16 +290,45 @@ describe("layoutGrid", () => {
     expect(width / height).toBeLessThan(2);
   });
 
-  it("keeps reading order — left to right, then the next row down", () => {
-    const items = asItems(Array.from({ length: 9 }, (_, i) => step(`n${i}`, "tool_call", "t")));
+  it("SNAKES, so every step is to a neighbour and never across the block", () => {
+    // Wrapping each row back to the left margin draws one long diagonal per row over
+    // every card on the canvas — measured on a 68-card run, and worse than the long line
+    // it replaced. Snaking puts the end of a row directly above the start of the next.
+    const items = asItems(Array.from({ length: 20 }, (_, i) => step(`n${i}`, "tool_call", "t")));
     const pos = layoutGrid(items, new Set(), CELL);
     const inOrder = items.map(i => pos.get(i.node.id)!);
     for (let i = 1; i < inOrder.length; i++) {
       const prev = inOrder[i - 1];
       const cur = inOrder[i];
-      const advanced = cur.y > prev.y || (cur.y === prev.y && cur.x > prev.x);
-      expect(advanced).toBe(true);
+      const sameRow = cur.y === prev.y;
+      // Along a row: one column across. Between rows: the same column, one row down.
+      const step_ = sameRow
+        ? Math.abs(cur.x - prev.x) <= CELL.w + 40 && cur.x !== prev.x
+        : cur.x === prev.x && cur.y > prev.y;
+      expect(step_).toBe(true);
     }
+  });
+
+  it("gives a row the height of its TALLEST card, so nothing collides", () => {
+    // Rows were spaced 138px while a model call draws 154 — every model card overlapped
+    // the row beneath it, which is what made the first block layout unreadable.
+    const items = asItems([
+      ...Array.from({ length: 7 }, (_, i) => step(`t${i}`, "tool_call", "sql")),
+      step("big", "llm_call", "gemini"),
+      ...Array.from({ length: 7 }, (_, i) => step(`u${i}`, "tool_call", "sql")),
+    ]);
+    const pos = layoutGrid(items, new Set(), CELL);
+    // The row holding the tall card is the one that has to grow; the all-tool rows stay
+    // short, which is the point of sizing a row to its own contents.
+    const bigY = pos.get("big")!.y;
+    const rows = [...new Set([...pos.values()].map(p => p.y))].sort((a, b) => a - b);
+    const next = rows.find(y => y > bigY);
+    expect(next).toBeDefined();
+    expect(next! - bigY).toBeGreaterThanOrEqual(160);
+    // And a short row stays short — a constant tall enough for everything would waste
+    // most of the block on whitespace.
+    const shortGaps = rows.slice(1).map((y, i) => y - rows[i]).filter(g => g < 160);
+    expect(shortGaps.length).toBeGreaterThan(0);
   });
 
   it("puts a short run on one row and leaves it alone", () => {
@@ -319,9 +355,11 @@ describe("an opened stack grows downward", () => {
     const pos = layoutGrid(items, new Set([band.id]), CELL);
     const members = band.members.map(m => pos.get(m.id)!);
     expect(new Set(members.map(p => p.x)).size).toBe(1);
-    for (let i = 1; i < members.length; i++) {
-      expect(members[i].y - members[i - 1].y).toBe(CELL.h);
-    }
+    // Evenly spaced by the card's own height — a constant would collide, which is the
+    // defect that made the first block layout unreadable.
+    const steps = members.slice(1).map((p, i) => p.y - members[i].y);
+    expect(new Set(steps).size).toBe(1);
+    expect(steps[0]).toBeGreaterThanOrEqual(160);
   });
 
   it("does not move the stack itself, or anything before it", () => {
