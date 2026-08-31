@@ -61,6 +61,10 @@ import {
   layoutToPersist, producedByAlias, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
+import {
+  canRedo, canUndo, initHistory, pushHistory, redoHistory, resetHistory, undoHistory,
+  type History, type PushOptions,
+} from "@/lib/history";
 
 export type { AutomationGraphData };
 
@@ -261,6 +265,12 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
 }
 
 /* ═══════════════════ DESIGN MODE (the draft, editable) ═══════════════════ */
+
+/** DS-4 — what one undo step restores: the chain, and where it was arranged. */
+interface CanvasState {
+  draft: Draft;
+  positions: Record<string, { x: number; y: number }>;
+}
 
 const NODE_W = 280;
 
@@ -570,11 +580,44 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const [connectError, setConnectError] = useState("");
   const [vocab, setVocab] = useState<Vocabulary | null>(null);
 
-  const [draft, setDraft] = useState<Draft>(() => ({
-    conditions: automation?.conditions ?? [], effects: automation?.effects ?? [],
+  /* ── DS-4 · one undoable state ──
+   *
+   * The draft and the arrangement travel together. They could have been two stacks, and
+   * that is the version that feels broken: a person drags a node, edits a field, presses
+   * undo twice and watches the two changes come back in an order neither of them chose.
+   * One state, one stack, one meaning for "the last thing I did".
+   */
+  const [history, setHistory] = useState<History<CanvasState>>(() => initHistory({
+    draft: { conditions: automation?.conditions ?? [], effects: automation?.effects ?? [] },
+    positions: {},
   }));
+  const draft = history.present.draft;
+  const positions = history.present.positions;
+
+  /** Record an edit. Keeps `useState`'s signature — value or updater — so the sixteen
+   *  places that write the draft did not have to learn about history, and an `opts.key`
+   *  is what turns a burst of keystrokes into one undo. */
+  const setDraft = useCallback((
+    next: Draft | ((d: Draft) => Draft), opts?: PushOptions,
+  ) => {
+    setHistory(h => {
+      const draftNext = typeof next === "function"
+        ? (next as (d: Draft) => Draft)(h.present.draft) : next;
+      if (draftNext === h.present.draft) return h;
+      return pushHistory(h, { ...h.present, draft: draftNext }, opts);
+    });
+  }, []);
+
+  // A record arriving from the server is a new BASELINE, never an edit: recording it
+  // would let undo walk backwards through the server's own reply, and the first thing
+  // it would restore is the draft as it was before the save that produced this reply.
+  // The arrangement rides through — it is not part of the record.
   useEffect(() => {
-    if (automation) setDraft({ conditions: automation.conditions, effects: automation.effects });
+    if (!automation) return;
+    setHistory(h => resetHistory(h, {
+      draft: { conditions: automation.conditions, effects: automation.effects },
+      positions: h.present.positions,
+    }));
   }, [automation]);
 
   useEffect(() => {
@@ -585,6 +628,8 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   }, []);
 
   const authoring = !!automation && mode === "design";
+  // Kept in a ref so the key listener can read it without being rebuilt on every edit.
+  useEffect(() => { authoringRef.current = authoring; }, [authoring]);
 
   // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
   useEffect(() => {
@@ -608,22 +653,19 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
    * saving the whole map safe: the cockpit's rule, that automatic (re)placement must
    * never persist, holds here by construction rather than by a flag.
    */
-  const positions = useRef(new Map<string, { x: number; y: number }>());
-  const [layoutLoaded, setLayoutLoaded] = useState(false);
-
   useEffect(() => {
-    positions.current.clear();
-    setLayoutLoaded(false);
     let live = true;
     getAutomationLayout(automationId)
       .then(saved => {
         if (!live) return;
-        for (const [alias, at] of Object.entries(saved)) positions.current.set(alias, at);
+        // Neither an edit nor a baseline — it COMPLETES the baseline that was already
+        // there, so it patches the present and leaves both stacks exactly as they are.
+        // A reset here would throw away edits made in the moment before it arrived.
+        setHistory(h => ({ ...h, present: { ...h.present, positions: saved } }));
       })
       // An arrangement is a convenience; failing to read one opens the canvas at its
       // computed default rather than putting an error over a working editor.
-      .catch(() => {})
-      .finally(() => { if (live) setLayoutLoaded(true); });
+      .catch(() => {});
     return () => { live = false; };
   }, [automationId]);
 
@@ -632,15 +674,58 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
 
   /** Persist the arrangement, debounced — a drag emits a position per frame at rest and
    *  one request per drag is the honest number. `alive` prunes: a step that was removed
-   *  (or a palette add that was discarded) must not keep a coordinate forever. */
-  const persistLayout = useCallback((alive: Set<string>) => {
+   *  (or a palette add that was discarded) must not keep a coordinate forever.
+   *
+   *  Takes the arrangement rather than reading it: after an undo the state React is
+   *  about to render and the one this closure captured are different, and the arrangement
+   *  that gets saved has to be the one on screen. */
+  const persistLayout = useCallback((
+    layout: Record<string, { x: number; y: number }>, alive: Set<string>,
+  ) => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
-      void saveAutomationLayout(
-        automationId, layoutToPersist(positions.current, alive),
-      ).catch(() => {});
+      void saveAutomationLayout(automationId, layoutToPersist(layout, alive)).catch(() => {});
     }, 500);
   }, [automationId]);
+
+  /* ── DS-4 · walking the stack ──
+   *
+   * An undo has to put back the ARRANGEMENT it restores, not just the chain, or the two
+   * halves of one state drift apart the first time somebody undoes a drag. So both walks
+   * persist the layout they land on, pruned to the steps that state actually has.
+   */
+  const walk = useCallback((direction: "undo" | "redo") => {
+    setHistory(h => {
+      const next = direction === "undo" ? undoHistory(h) : redoHistory(h);
+      if (next === h) return h;
+      const alive = new Set<string>([
+        "__trigger",
+        ...next.present.draft.effects.map((e, i) => aliasFor(e, i)),
+      ]);
+      persistLayout(next.present.positions, alive);
+      return next;
+    });
+  }, [persistLayout]);
+
+  const authoringRef = useRef(false);
+  useEffect(() => {
+    // ⌘Z / ⌘⇧Z, the repo's own shortcut shape (a window listener that reads
+    // `metaKey || ctrlKey`), armed only while this canvas is the thing being edited.
+    // A ref rather than a dependency so the listener is not torn down and rebuilt every
+    // time the draft changes — it would miss a keystroke landing in that gap.
+    const handler = (e: KeyboardEvent) => {
+      if (!authoringRef.current) return;
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta || e.key.toLowerCase() !== "z") return;
+      // The canvas fields ARE the draft, so this stack is the authority for them too —
+      // the browser's own text undo would put a character back into a field while the
+      // draft it belongs to had moved on.
+      e.preventDefault();
+      walk(e.shiftKey ? "redo" : "undo");
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [walk]);
 
   /* ── DS-4 · the open-set key picker (what replaced the window.prompt) ── */
   const [pendingBind, setPendingBind] =
@@ -697,24 +782,36 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           ? viewportCenter(rf.current.getViewport(),
                            { width: pane.width, height: pane.height }, NODE_W)
           : null);
-      if (at) {
-        positions.current.set(alias, at);
-        persistLayout(new Set([...positions.current.keys(), alias]));
-      }
-      setDraft(d => ({
-        ...d, effects: [...d.effects, newEffectOf(placement.kind as AutoEffect["kind"])],
-      }));
+      // The step and where it landed are ONE act, so they are one entry: an undo that
+      // removed the step but kept its coordinate would leave a ghost for the next add
+      // to inherit.
+      setHistory(h => {
+        const nextPositions = at ? { ...h.present.positions, [alias]: at } : h.present.positions;
+        const next = {
+          draft: {
+            ...h.present.draft,
+            effects: [...h.present.draft.effects,
+                      newEffectOf(placement.kind as AutoEffect["kind"])],
+          },
+          positions: nextPositions,
+        };
+        if (at) persistLayout(nextPositions, new Set([...Object.keys(nextPositions), alias]));
+        return pushHistory(h, next);
+      });
     },
-    [draft.effects.length],
+    [draft.effects.length, persistLayout],
   );
 
   const patchField = useCallback((alias: string, field: string, value: unknown) => {
+    // Coalesced per field: typing a question is ONE undo, not one per character. The
+    // clock is read out here rather than inside the updater, which React may call twice.
+    const now = Date.now();
     setDraft(d => ({
       ...d,
       effects: d.effects.map((e, i) =>
         aliasFor(e, i) === alias ? { ...e, config: { ...e.config, [field]: value } } : e),
-    }));
-  }, []);
+    }), { key: `${alias}.${field}`, at: now });
+  }, [setDraft]);
 
   const clearField = useCallback((alias: string, field: string) => {
     setDraft(d => clearBinding(d, alias, field));
@@ -726,13 +823,13 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     const nodes: RFNode[] = [{
       id: "__trigger",
       type: "designTrigger",
-      position: positions.current.get("__trigger") ?? { x: 0, y: 60 },
+      position: positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
               logic: automation?.condition_logic ?? "all" },
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
-      position: positions.current.get(s.alias) ?? { x: 260 + i * (NODE_W + 90), y: 0 },
+      position: positions[s.alias] ?? { x: 260 + i * (NODE_W + 90), y: 0 },
       data: {
         ...s,
         onPatch: (field: string, value: unknown) => patchField(s.alias, field, value),
@@ -781,7 +878,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, vocab, patchField, clearField, automation, layoutLoaded]);
+  }, [draft, positions, vocab, patchField, clearField, automation]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -931,8 +1028,16 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
               nodeTypes={NODE_TYPES}
               onConnect={onConnect}
               onNodeDragStop={(_e, n) => {
-                positions.current.set(n.id, n.position);
-                persistLayout(new Set(design.nodes.map(node => node.id)));
+                // A move is an edit: same stack, so one undo means "the last thing I
+                // did" whether that was typing or dragging. Coalesced per node, so
+                // nudging one card twice is one step.
+                const now = Date.now();
+                setHistory(h => {
+                  const nextPositions = { ...h.present.positions, [n.id]: n.position };
+                  persistLayout(nextPositions, new Set(design.nodes.map(node => node.id)));
+                  return pushHistory(h, { ...h.present, positions: nextPositions },
+                                     { key: `move:${n.id}`, at: now });
+                });
               }}
               onEdgeDoubleClick={(_e, edge) => {
                 // the edge IS the binding — double-click removes both
@@ -966,6 +1071,19 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
                     aria-expanded={palette === "action"}
                     onClick={() => setPalette(p => (p === "action" ? null : "action"))}>
                     <Icon name="plus" size={11} /> Add Action
+                  </Button>
+                  {/* The keyboard is the way this gets used; the buttons are how it gets
+                      FOUND, and how their disabled state says whether there is anything
+                      to walk back to. */}
+                  <Button variant="secondary" size="xs" disabled={!canUndo(history)}
+                    aria-label="Undo" title="Undo (⌘Z)"
+                    onClick={() => walk("undo")}>
+                    <Icon name="back" size={11} />
+                  </Button>
+                  <Button variant="secondary" size="xs" disabled={!canRedo(history)}
+                    aria-label="Redo" title="Redo (⌘⇧Z)"
+                    onClick={() => walk("redo")}>
+                    <Icon name="next" size={11} />
                   </Button>
                 </Panel>
               )}
