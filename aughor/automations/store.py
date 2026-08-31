@@ -90,6 +90,22 @@ CREATE TABLE IF NOT EXISTS probe_state (
     PRIMARY KEY (automation_id, target)
 );
 
+-- DS-4: where a person ARRANGED the steps on the Design canvas. A sidecar for the same
+-- reason `probe_state` is one, plus a sharper one: a layout is a VIEW PREFERENCE, and the
+-- automation row is a governed record the engine reads at 09:00. Putting an arrangement in
+-- it would mean the authoring PUT has to carry it (that request body is what a person
+-- types) and a stale client could erase where somebody put their nodes by renaming the
+-- automation — the exact family of silent write-loss this subsystem has paid for three
+-- times. Account-keyed like `card_layouts`: 'default' until identity is bound, so it
+-- upgrades to true per-user with no migration.
+CREATE TABLE IF NOT EXISTS automation_layouts (
+    automation_id TEXT NOT NULL,
+    user_id       TEXT NOT NULL DEFAULT 'default',
+    layout_json   TEXT NOT NULL DEFAULT '{}',
+    updated_at    TEXT NOT NULL DEFAULT '',
+    PRIMARY KEY (automation_id, user_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_auto_conn      ON automations (conn_id);
 CREATE INDEX IF NOT EXISTS idx_runs_automation ON automation_runs (automation_id);
 CREATE INDEX IF NOT EXISTS idx_runs_conn       ON automation_runs (conn_id);
@@ -246,6 +262,10 @@ def delete_automation(automation_id: str) -> bool:
             cur = conn.execute("DELETE FROM automations WHERE id = ?", (automation_id,))
             conn.execute("DELETE FROM automation_runs WHERE automation_id = ?", (automation_id,))
             conn.execute("DELETE FROM probe_state WHERE automation_id = ?", (automation_id,))
+            # The arrangement goes with the thing it arranged — otherwise a new automation
+            # that reused the id would open onto a stranger's layout.
+            conn.execute("DELETE FROM automation_layouts WHERE automation_id = ?",
+                         (automation_id,))
             conn.commit()
             return cur.rowcount > 0
         finally:
@@ -386,6 +406,61 @@ def last_run(automation_id: str) -> Optional[AutomationRun]:
 
 
 # ── Probe baselines (A3) ──────────────────────────────────────────────────────
+
+def get_layout(automation_id: str, user_id: str) -> dict:
+    """Where this user put the nodes of one automation (`{alias: {x, y}}`), `{}` if never.
+
+    Keyed by ALIAS, because an alias is the only name a step has — `aliasFor` derives it
+    from position when none is authored. So deleting a middle step shifts the ones after
+    it and they inherit the previous occupant's coordinates. That is a view preference
+    landing in a stale spot, not a wrong binding: the whole-replace on the next drag
+    corrects it, and the alternative (an id on every effect) is a model change to solve a
+    cosmetic problem.
+    """
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute(
+                "SELECT layout_json FROM automation_layouts "
+                "WHERE automation_id = ? AND user_id = ?",
+                (automation_id, user_id),
+            ).fetchone()
+            if not row:
+                return {}
+            try:
+                loaded = json.loads(row[0] or "{}")
+            except (TypeError, ValueError):
+                # A layout is a convenience. A corrupt one opens the canvas at the default
+                # arrangement rather than refusing to draw it at all.
+                return {}
+            return loaded if isinstance(loaded, dict) else {}
+        finally:
+            conn.close()
+
+
+def set_layout(automation_id: str, user_id: str, layout: dict) -> None:
+    """Persist the whole arrangement, replacing what was there.
+
+    Whole-replace rather than merge, the way the cockpit's layout does it: a step that was
+    removed must not keep a coordinate in the row forever, and merging would mean the
+    stored layout only ever grows.
+    """
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute(
+                """INSERT INTO automation_layouts
+                       (automation_id, user_id, layout_json, updated_at)
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(automation_id, user_id) DO UPDATE SET
+                       layout_json = excluded.layout_json,
+                       updated_at  = excluded.updated_at""",
+                (automation_id, user_id, json.dumps(layout or {}), now_iso_z()),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+
 
 def get_probe_baseline(automation_id: str, target: str) -> Optional[str]:
     """The last COMMITTED source-version fingerprint for (automation, table), or None when the

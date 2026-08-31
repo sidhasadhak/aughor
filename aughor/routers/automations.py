@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from aughor.automations.graph import build_graph
@@ -19,10 +19,12 @@ from aughor.automations.models import Automation, Condition, Effect
 from aughor.automations.store import (
     delete_automation,
     get_automation,
+    get_layout,
     get_runs,
     list_automations,
     pause_automation,
     set_automation_enabled,
+    set_layout,
     upsert_automation,
 )
 
@@ -112,6 +114,48 @@ def palette(conn_id: Optional[str] = None):
     """
     from aughor.automations.palette import entries
     return {"entries": entries(conn_id)}
+
+
+class LayoutRequest(BaseModel):
+    """`{alias: {x, y}}` — where each step sits on the Design canvas."""
+
+    layout: dict = Field(default_factory=dict)
+
+
+def _layout_user_id(request: Request) -> str:
+    """The account key for a canvas arrangement — the identified user, or a shared
+    'default' on localhost / identity-off so one operator sees the same canvas on any
+    device. Upgrades to true per-user the moment RBAC identity is bound, with no
+    migration. Same resolution the cockpit's layout uses; two account keys that could
+    disagree would put a user's arrangement somewhere they cannot find it."""
+    try:
+        from aughor.security.authz import get_principal
+        p = get_principal(request)
+        return p.user_id if p and p.user_id else "default"
+    except Exception:
+        return "default"
+
+
+@router.get("/automations/{automation_id}/layout")
+def read_layout(automation_id: str, request: Request):
+    """Where the caller arranged this automation's steps (`{}` if never touched).
+
+    Server-side and account-keyed rather than `localStorage`, for the reason the cockpit
+    settled once: an arrangement a person made on their laptop and cannot find on their
+    desktop reads as the product having forgotten it. No 404 for an unknown automation —
+    an empty layout IS the answer for one nobody has arranged.
+    """
+    return {"layout": get_layout(automation_id, _layout_user_id(request))}
+
+
+@router.put("/automations/{automation_id}/layout")
+def write_layout(automation_id: str, body: LayoutRequest, request: Request):
+    """Persist the whole arrangement. Separate from `PUT /automations/{id}` on purpose:
+    that route carries the governed record a person authored, this one carries where they
+    happened to drag it, and folding a view preference into the record the engine reads
+    is how a rename comes to move somebody's nodes."""
+    set_layout(automation_id, _layout_user_id(request), body.layout or {})
+    return {"ok": True}
 
 
 @router.get("/automations")

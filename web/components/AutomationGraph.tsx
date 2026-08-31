@@ -53,12 +53,12 @@ import { OutcomeKeyPicker } from "@/components/automations/OutcomeKeyPicker";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
-  getAutomationGraph, getAutomationVocabulary,
+  getAutomationGraph, getAutomationLayout, getAutomationVocabulary, saveAutomationLayout,
   type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  producedByAlias, viewportCenter, type Vocabulary,
+  layoutToPersist, producedByAlias, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 
@@ -601,8 +601,46 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   /* ── design-mode graph, drawn from the draft ── */
   // Positions survive dragging but reset per automation — session-local by design:
   // a stored layout is a second copy of the chain's order that could drift from it.
+  /* ── DS-4 · the arrangement, kept ──
+   *
+   * `positions` holds ONLY placements a person made — a drag, or a step dropped from the
+   * palette. The computed fallback below is never written into it, which is what makes
+   * saving the whole map safe: the cockpit's rule, that automatic (re)placement must
+   * never persist, holds here by construction rather than by a flag.
+   */
   const positions = useRef(new Map<string, { x: number; y: number }>());
-  useEffect(() => { positions.current.clear(); }, [automationId]);
+  const [layoutLoaded, setLayoutLoaded] = useState(false);
+
+  useEffect(() => {
+    positions.current.clear();
+    setLayoutLoaded(false);
+    let live = true;
+    getAutomationLayout(automationId)
+      .then(saved => {
+        if (!live) return;
+        for (const [alias, at] of Object.entries(saved)) positions.current.set(alias, at);
+      })
+      // An arrangement is a convenience; failing to read one opens the canvas at its
+      // computed default rather than putting an error over a working editor.
+      .catch(() => {})
+      .finally(() => { if (live) setLayoutLoaded(true); });
+    return () => { live = false; };
+  }, [automationId]);
+
+  const saveTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
+
+  /** Persist the arrangement, debounced — a drag emits a position per frame at rest and
+   *  one request per drag is the honest number. `alive` prunes: a step that was removed
+   *  (or a palette add that was discarded) must not keep a coordinate forever. */
+  const persistLayout = useCallback((alive: Set<string>) => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void saveAutomationLayout(
+        automationId, layoutToPersist(positions.current, alive),
+      ).catch(() => {});
+    }, 500);
+  }, [automationId]);
 
   /* ── DS-4 · the open-set key picker (what replaced the window.prompt) ── */
   const [pendingBind, setPendingBind] =
@@ -659,7 +697,10 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           ? viewportCenter(rf.current.getViewport(),
                            { width: pane.width, height: pane.height }, NODE_W)
           : null);
-      if (at) positions.current.set(alias, at);
+      if (at) {
+        positions.current.set(alias, at);
+        persistLayout(new Set([...positions.current.keys(), alias]));
+      }
       setDraft(d => ({
         ...d, effects: [...d.effects, newEffectOf(placement.kind as AutoEffect["kind"])],
       }));
@@ -740,7 +781,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, vocab, patchField, clearField, automation]);
+  }, [draft, vocab, patchField, clearField, automation, layoutLoaded]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -889,7 +930,10 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
               edges={edgesLive ? design.edges : []}
               nodeTypes={NODE_TYPES}
               onConnect={onConnect}
-              onNodeDragStop={(_e, n) => positions.current.set(n.id, n.position)}
+              onNodeDragStop={(_e, n) => {
+                positions.current.set(n.id, n.position);
+                persistLayout(new Set(design.nodes.map(node => node.id)));
+              }}
               onEdgeDoubleClick={(_e, edge) => {
                 // the edge IS the binding — double-click removes both
                 const m = /^bind:.*->(.+)\.([^.]+)$/.exec(edge.id);

@@ -11,7 +11,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  producedByAlias, seedConfig, upstreamKeys, viewportCenter, type Vocabulary,
+  layoutToPersist, producedByAlias, seedConfig, upstreamKeys, viewportCenter,
+  type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -421,5 +422,29 @@ describe("producedByAlias", () => {
   it("survives no graph at all", () => {
     expect(producedByAlias(null)).toEqual({});
     expect(producedByAlias(undefined)).toEqual({});
+  });
+});
+
+describe("layoutToPersist", () => {
+  const at = (x: number, y: number) => ({ x, y });
+
+  it("keeps only steps that still exist", () => {
+    // A removed step — or a palette add that was discarded — must not keep a coordinate
+    // forever, or the canvas eventually opens carrying the ghosts of everything deleted.
+    const positions = new Map([["__trigger", at(0, 60)], ["step1", at(9, 9)],
+                               ["step2", at(1, 1)]]);
+    expect(layoutToPersist(positions, new Set(["__trigger", "step1"])))
+      .toEqual({ __trigger: at(0, 60), step1: at(9, 9) });
+  });
+
+  it("rounds, so a drag's subpixel does not land in the row", () => {
+    expect(layoutToPersist(new Map([["s", at(312.7000000000001, -0.4)]]), new Set(["s"])))
+      .toEqual({ s: at(313, 0) });
+  });
+
+  it("persists an empty arrangement rather than refusing to", () => {
+    // Every node removed is a real arrangement — and the whole-replace save is what
+    // clears the row, so returning nothing here would leave the old layout standing.
+    expect(layoutToPersist(new Map([["gone", at(1, 1)]]), new Set())).toEqual({});
   });
 });

@@ -318,6 +318,29 @@ export function producedByAlias(
   return out;
 }
 
+/**
+ * DS-4 · the arrangement to persist: only steps that still exist, at whole pixels.
+ *
+ * Pruning is the half that rots silently. A step removed from the chain — or one dropped
+ * from the palette and then discarded — leaves a coordinate behind, and a layout that
+ * only ever grows eventually opens a canvas carrying the ghosts of everything anyone
+ * deleted. Rounding is smaller but the same idea: a drag ends on a subpixel, and storing
+ * `312.7000000000001` puts noise in a row a person may one day read.
+ */
+export function layoutToPersist(
+  positions: Map<string, { x: number; y: number }>, alive: Set<string>,
+): Record<string, { x: number; y: number }> {
+  // `Math.round(-0.4)` is `-0`, which survives into a stored coordinate as a signed zero
+  // — harmless once JSON flattens it, and confusing to anyone who reads the row or
+  // compares two layouts. Normalise it where it is made.
+  const px = (n: number): number => (Math.round(n) === 0 ? 0 : Math.round(n));
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const [alias, at] of positions) {
+    if (alive.has(alias)) out[alias] = { x: px(at.x), y: px(at.y) };
+  }
+  return out;
+}
+
 export interface Viewport { x: number; y: number; zoom: number }
 export interface Size { width: number; height: number }
 

@@ -3482,6 +3482,30 @@ export async function getAutomationPalette(
   return (body.entries ?? []) as AutomationPaletteEntry[];
 }
 
+/** DS-4 — where each step sits on the Design canvas, as `{alias: {x, y}}`.
+ *
+ *  Server-side and account-keyed rather than `localStorage`, for the reason the cockpit's
+ *  layout settled once: an arrangement someone made on their laptop and cannot find on
+ *  their desktop reads as the product having forgotten it. Its own endpoint, never a
+ *  field on the automation — a view preference must not ride the record the engine
+ *  reads, or a rename moves somebody's nodes. */
+export type CanvasLayout = Record<string, { x: number; y: number }>;
+
+export async function getAutomationLayout(id: string): Promise<CanvasLayout> {
+  const res = await fetch(`${getApiBase()}/automations/${encodeURIComponent(id)}/layout`);
+  if (!res.ok) throw new Error(`Failed to load the layout (${res.status})`);
+  return ((await res.json())?.layout ?? {}) as CanvasLayout;
+}
+
+export async function saveAutomationLayout(id: string, layout: CanvasLayout): Promise<void> {
+  const res = await fetch(`${getApiBase()}/automations/${encodeURIComponent(id)}/layout`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ layout }),
+  });
+  if (!res.ok) throw new Error(`Failed to save the layout (${res.status})`);
+}
+
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
 
 /** One user grant, as the API returns it — token fields are DROPPED server-side
