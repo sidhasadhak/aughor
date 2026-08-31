@@ -3909,8 +3909,14 @@ export interface AutomationDryRun {
 
 /** Preview a DRAFT — the unsaved one in the editor. The payload is `updatePayload`'s, so
  *  a preview previews exactly what Save would send, never a second assembly of it. */
-export async function dryRunAutomationDraft(body: NewAutomation): Promise<AutomationDryRun> {
-  const res = await fetch(`${getApiBase()}/automations/dry-run`, {
+/** `until` (DS-2) stops the walk after that step — the question a person actually has
+ *  while building is "what does the step I am looking at receive", and a whole-chain
+ *  preview buries that answer among the others. Omitted, it is B2's whole-chain walk. */
+export async function dryRunAutomationDraft(
+  body: NewAutomation, until?: string,
+): Promise<AutomationDryRun> {
+  const qs = until ? `?until=${encodeURIComponent(until)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/dry-run${qs}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

@@ -283,21 +283,28 @@ def run_now(automation_id: str, body: Optional[RunNowRequest] = None):
     return run.model_dump()
 
 
-def _dry_run_payload(automation: Automation) -> dict:
+def _dry_run_payload(automation: Automation, until: Optional[str] = None) -> dict:
     """``{"run": …, "graph": …}`` — the run AND the same graph an execution view reads.
 
     The graph is built here rather than fetched afterwards because a dry run is never
     stored: there is no id for `GET /automations/{id}/graph?run=…` to look up. Returning
     both means the canvas renders a preview through the code path it already uses for a
     real run, which is the whole reason a dry run returns an `AutomationRun` at all.
+
+    DS-2 — `until` stops the walk after that step. The graph is still built from the WHOLE
+    automation, so every node is drawn and only the walked ones carry an outcome: the
+    steps beyond the cut read as untouched rather than as missing, which is the difference
+    between "not asked" and "did nothing".
     """
     from aughor.automations.engine import run_automation
-    run = run_automation(automation, dry_run=True)
-    return {"run": run.model_dump(), "graph": {**build_graph(automation, run), "dry_run": True}}
+    run = run_automation(automation, dry_run=True, until_alias=until)
+    return {"run": run.model_dump(),
+            "graph": {**build_graph(automation, run), "dry_run": True},
+            "until": until or ""}
 
 
 @router.post("/automations/{automation_id}/dry-run")
-def dry_run_stored(automation_id: str):
+def dry_run_stored(automation_id: str, until: Optional[str] = None):
     """B2 — walk a STORED automation without dispatching anything.
 
     Distinct from `POST /{id}/run`, which is the real thing through the real gates: this
@@ -308,11 +315,11 @@ def dry_run_stored(automation_id: str):
     automation = get_automation(automation_id)
     if automation is None:
         raise HTTPException(status_code=404, detail="no such automation")
-    return _dry_run_payload(automation)
+    return _dry_run_payload(automation, until)
 
 
 @router.post("/automations/dry-run")
-def dry_run_draft(body: CreateAutomationRequest):
+def dry_run_draft(body: CreateAutomationRequest, until: Optional[str] = None):
     """B2 — walk an UNSAVED design. The one a canvas needs.
 
     "Try it before you arm it" is worth most before the thing exists at all, and the
@@ -324,7 +331,7 @@ def dry_run_draft(body: CreateAutomationRequest):
         automation = Automation(**body.model_dump())
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
-    return _dry_run_payload(automation)
+    return _dry_run_payload(automation, until)
 
 
 @router.get("/automations/{automation_id}/graph")

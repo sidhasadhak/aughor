@@ -273,6 +273,40 @@ def test_fallback_runs_only_when_every_effect_failed():
     assert len(calls) == 1
 
 
+def test_a_partial_walk_never_fires_the_fallback():
+    """DS-2 — `until_alias` stops the chain, and a stopped chain has not concluded.
+
+    The fallback arms when every step that TRIED failed to execute, which stopping early
+    can make true by construction: walk as far as one failing step and "they all failed"
+    is trivially so. Firing it there would report a disaster the reader caused by asking
+    a question — and the fallback is the one part of a preview that reads as a verdict.
+
+    Exercised on a REAL run rather than through the dry-run route, because `dry_run`
+    deliberately OVERRIDES the dispatcher with an inert one that reports "would run" — so
+    no step can fail in a preview, and a test written there would hold for the wrong
+    reason.
+    """
+    calls = []
+    a = _automation(
+        effects=[Effect(kind="notify", alias="one", config={"trigger_id": "t1"}),
+                 Effect(kind="notify", alias="two", config={"trigger_id": "t2"})],
+        fallback_effect=Effect(kind="notify", config={"trigger_id": "oncall"}),
+    )
+    common = dict(now=NOW, probe=_probe(True), sleeper=lambda s: None,
+                  rng=lambda: 0.0, persist=False)
+
+    partial = run_automation(a, dispatch=_dispatch(status="failed", calls=calls),
+                             until_alias="one", **common)
+    assert partial.fallback_used is False
+    assert len(partial.effects) == 1
+
+    # The same chain walked WHOLE does fire it — without this the assertion above would
+    # hold just as happily on a chain whose fallback could never arm at all.
+    calls.clear()
+    whole = run_automation(a, dispatch=_dispatch(status="failed", calls=calls), **common)
+    assert whole.fallback_used is True
+
+
 def test_fallback_is_skipped_when_any_effect_executed():
     a = _automation(
         effects=[Effect(kind="notify", config={"trigger_id": "t1"}),

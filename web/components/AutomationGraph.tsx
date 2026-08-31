@@ -42,7 +42,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
+import {
+  AutomationAuthor, updatePayload, type Draft,
+} from "@/components/automations/AutomationAuthor";
 import {
   AutomationPalette, PALETTE_DRAG_TYPE, readPaletteDrag,
   type PaletteGroup, type PalettePlacement,
@@ -55,8 +57,8 @@ import { canvasClipboard, copyToCanvasClipboard } from "@/lib/canvasClipboard";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
-  getActivityEvents, getAutomationGraph, getAutomationLayout, getAutomationVocabulary,
-  saveAutomationLayout,
+  dryRunAutomationDraft, getActivityEvents, getAutomationGraph, getAutomationLayout,
+  getAutomationVocabulary, saveAutomationLayout,
   type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
@@ -371,6 +373,10 @@ interface DesignNodeData {
   /** DS-4 — copy this step to the end of the chain, keeping the wiring that still
    *  means what it meant. Always present: duplicating never breaks a rule. */
   onDuplicate?: () => void;
+  /** DS-2 — walk the chain as far as THIS step and show what it would receive. */
+  onRunToHere?: () => void;
+  /** True while that walk is in flight, so the control cannot be pressed twice. */
+  running?: boolean;
   [key: string]: unknown;
 }
 
@@ -435,6 +441,15 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           padding: "1px 8px", background: "var(--bg-1)" }}>
           {data.alias}
         </span>
+        {data.onRunToHere && (
+          <Button variant="ghost" size="icon-sm" aria-label={`run to ${data.alias}`}
+            title="Run the chain to here — inert, nothing is sent"
+            disabled={data.running}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            onClick={data.onRunToHere}>
+            <Icon name={data.running ? "spinner" : "run"} size={11} />
+          </Button>
+        )}
         {data.onDuplicate && (
           <Button variant="ghost" size="icon-sm" aria-label={`duplicate ${data.alias}`}
             title="Duplicate this step (⌘D)"
@@ -818,6 +833,33 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
     });
   }, [persistLayout, itemAlias]);
 
+  /* ── DS-2 · run to here ──
+   *
+   * B2 already walks a whole chain inert, and returns an ordinary `AutomationRun` so the
+   * Execution canvas draws it with no second way of showing one. This is that same walk
+   * with a frontier: it previews the DRAFT (what Save would send, never a second
+   * assembly of it), and the steps past the cut come back drawn but undecorated — "not
+   * asked" rather than "did nothing".
+   */
+  const [runningTo, setRunningTo] = useState<string | null>(null);
+
+  const runToHere = useCallback(async (alias: string) => {
+    if (!automation) return;
+    setRunningTo(alias);
+    setNotice("");
+    try {
+      const { graph } = await dryRunAutomationDraft(
+        updatePayload(automation, draft), alias);
+      setPreview(graph);
+      setMode("execution");
+    } catch (e) {
+      setNotice((e as Error)?.message || "Could not walk the chain");
+      window.setTimeout(() => setNotice(""), 4000);
+    } finally {
+      setRunningTo(null);
+    }
+  }, [automation, draft]);
+
   /** Duplicate lands beside its original, so the copy is visibly a second card rather
    *  than one hiding exactly underneath the one it came from. */
   const duplicateStep = useCallback((alias: string) => {
@@ -1124,6 +1166,8 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
         // and an affordance that fails at save teaches the wrong law. Same rule as the
         // rail, enforced by ABSENCE both places.
         onDuplicate: () => duplicateStep(s.alias),
+        onRunToHere: automation ? () => runToHere(s.alias) : undefined,
+        running: runningTo === s.alias,
         onRemove: draft.effects.length > 1
           ? () => setDraft(d => ({ ...d, effects: d.effects.filter((_, j) => j !== i) }))
           : undefined,
@@ -1165,7 +1209,8 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, positions, vocab, patchField, clearField, automation, sizes]);
+  }, [draft, positions, vocab, patchField, clearField, automation, sizes,
+      duplicateStep, runToHere, runningTo]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the

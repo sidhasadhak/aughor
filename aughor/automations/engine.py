@@ -816,6 +816,7 @@ def run_automation(
     dry_run: bool = False,
     manual: bool = False,
     run_id: Optional[str] = None,
+    until_alias: Optional[str] = None,
 ) -> AutomationRun:
     """Run one automation through the full pipeline and return its :class:`AutomationRun`.
 
@@ -944,7 +945,24 @@ def run_automation(
     # so a designed workflow could draw arrows the engine would not have followed.
     context: dict[str, dict] = {}
     outcomes: list[EffectOutcome] = []
-    for i, effect in enumerate(automation.effects):
+
+    # DS-2 — "run to here": walk the chain only as far as one step.
+    #
+    # Truncating the list rather than breaking out of the loop, because a step can leave
+    # the body early by half a dozen routes — held by its guard, an unresolved binding, a
+    # refused fan-out, an empty list — and a `break` placed after any of them is a break
+    # the target step can slip past. The list cannot.
+    #
+    # An unknown alias walks the WHOLE chain rather than none of it: a frontier nobody can
+    # find is a caller's mistake, and answering it with an empty preview would look like a
+    # chain that does nothing.
+    walked = automation.effects
+    if until_alias:
+        cut = next((i for i, e in enumerate(walked) if alias_for(e, i) == until_alias), None)
+        if cut is not None:
+            walked = walked[:cut + 1]
+
+    for i, effect in enumerate(walked):
         alias = alias_for(effect, i)
         # W2 — the list this step runs once per item of, or None for the single dispatch
         # every automation written before W2 performs, byte for byte. Resolved BEFORE the
@@ -1109,7 +1127,11 @@ def run_automation(
     # have paged on-call to say the automation itself was broken. The fallback needs a
     # step that actually TRIED and did not succeed.
     attempted = [o for o in outcomes if o.status != "skipped"]
-    if (automation.fallback_effect is not None and attempted
+    # DS-2 — a PARTIAL walk cannot conclude that everything failed. Firing the fallback
+    # because the reader stopped early would report a disaster they caused by asking a
+    # question, and it is the one part of a preview that reads as a verdict.
+    partial = until_alias is not None and len(walked) < len(automation.effects)
+    if (automation.fallback_effect is not None and attempted and not partial
             and all(o.status != "executed" for o in attempted)):
         fallback_used = True
         outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,
