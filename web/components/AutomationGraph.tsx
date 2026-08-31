@@ -32,6 +32,7 @@ import {
   Controls,
   Handle,
   MarkerType,
+  MiniMap,
   Panel,
   Position,
   ReactFlow,
@@ -87,6 +88,46 @@ const KIND_ICON: Record<string, IconName> = {
 };
 
 const COL_W = 300;
+
+/* ── DS-4 · the minimap ─────────────────────────────────────────────────────────
+ *
+ * `Controls` has been stock, un-tokenised xyflow chrome in all four canvases since the
+ * first one shipped — there is not a single `.react-flow__*` override in this codebase.
+ * A default-styled MiniMap would have been the second such thing on screen, and a bigger
+ * one, so this one is tokened at every surface it exposes. It can be: `nodeColor` reaches
+ * the rect through `style.fill` and `bgColor`/`maskColor` become CSS custom properties,
+ * so `var(…)` resolves in all three (checked in the library, not assumed — a colour
+ * passed as an SVG *attribute* would have silently rendered black).
+ */
+
+/** Below this, a minimap is chrome rather than help — and on a narrow pane it is chrome
+ *  that costs canvas. A chain you can see all of does not need a map of itself. */
+const MINIMAP_FROM = 5;
+
+/**
+ * A dot reads as the card it stands for: the kind's hue while designing, the run's status
+ * while reading a run. Both come from the maps the cards themselves use, so a dot and its
+ * node cannot come to disagree — which is the only way a minimap can actively mislead.
+ */
+function miniNodeColor(mode: "design" | "execution") {
+  return (node: RFNode): string => {
+    const data = (node.data ?? {}) as Record<string, unknown>;
+    if (mode === "execution") {
+      if (data.guarded) return "var(--chart-3)";
+      const status = String(data.status || "");
+      return status ? (STATUS_COLOR[status] || "var(--t4)") : "var(--t4)";
+    }
+    if (node.type === "designTrigger") return "var(--t3)";
+    return KIND_HUE[String(data.kind ?? "")] ?? "var(--chart-6)";
+  };
+}
+
+const MINIMAP_STYLE: React.CSSProperties = {
+  width: 128, height: 88,
+  border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+  // The default sits hard in the corner, overlapping the zoom controls on a short pane.
+  marginRight: 8, marginBottom: 8,
+};
 
 /** Durations read as durations, not as raw milliseconds. */
 function ms(n: number): string {
@@ -866,6 +907,55 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     return () => { live = false; };
   }, [pendingBind, observed, automationId]);
 
+  /* ── DS-4 · what the canvas measured ──
+   *
+   * The minimap draws nothing for a node it cannot size, and it sizes from the node
+   * OBJECT we hand ReactFlow — `nodeHasDimensions(userNode)` — not from the internals it
+   * measures. Our nodes are derived fresh from the draft, and the library reports its
+   * measurements only through `onNodesChange`, which this canvas never receives (probed:
+   * it does not fire here at all). So the map came up an EMPTY BOX while the canvas
+   * itself was perfect, because edges and dragging read the internals instead.
+   *
+   * So we measure the rendered cards ourselves — the same thing the library does, from
+   * the same DOM, because the channel it would tell us through is silent. Exact rather
+   * than a declared guess: a card grows when it gains a guard or a fan-out strip, and a
+   * minimap drawn from an assumed height would quietly stop matching the canvas.
+   */
+  const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({});
+
+  const measureNodes = useCallback(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    setSizes(prev => {
+      let next = prev;
+      for (const el of pane.querySelectorAll<HTMLElement>(".react-flow__node")) {
+        const id = el.dataset.id;
+        if (!id) continue;
+        const width = el.offsetWidth, height = el.offsetHeight;
+        if (!width || !height) continue;
+        const seen = prev[id];
+        if (seen && seen.width === width && seen.height === height) continue;
+        // Clone only once something actually moved, so a re-measure that changed nothing
+        // cannot loop the memo that feeds it.
+        if (next === prev) next = { ...prev };
+        next[id] = { width, height };
+      }
+      return next;
+    });
+  }, []);
+
+  // After every render, and once more a frame later: the first pass catches the common
+  // case, the second a card whose fonts or strips settled late. No dependency list on
+  // purpose — the things that change a card's size are its content, its mode and its
+  // count, and enumerating those is a list that goes stale the next time a strip is
+  // added. It cannot loop: `measureNodes` returns the SAME state object unless a size
+  // actually moved, so a render that measures the same thing schedules nothing.
+  useEffect(() => {
+    measureNodes();
+    const frame = requestAnimationFrame(measureNodes);
+    return () => cancelAnimationFrame(frame);
+  });
+
   /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
   const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
   // Captured from `onInit` rather than `useReactFlow`, which would need this canvas
@@ -943,12 +1033,14 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     const nodes: RFNode[] = [{
       id: "__trigger",
       type: "designTrigger",
+      measured: sizes["__trigger"],
       position: positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
               logic: automation?.condition_logic ?? "all" },
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
+      measured: sizes[s.alias],
       position: positions[s.alias] ?? { x: 260 + i * (NODE_W + 90), y: 0 },
       data: {
         ...s,
@@ -999,7 +1091,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, positions, vocab, patchField, clearField, automation]);
+  }, [draft, positions, vocab, patchField, clearField, automation, sizes]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -1049,7 +1141,11 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   }
 
   const shown = preview ?? graph;
-  const execution = mode === "execution" && shown ? toFlow(shown) : null;
+  const executionFlow = mode === "execution" && shown ? toFlow(shown) : null;
+  const execution = executionFlow && {
+    ...executionFlow,
+    nodes: executionFlow.nodes.map(n => ({ ...n, measured: sizes[n.id] })),
+  };
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
@@ -1176,6 +1272,15 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
             >
               <Background gap={18} size={1.2} color="var(--b1)" />
               <Controls showInteractive={false} />
+              {design.nodes.length >= MINIMAP_FROM && (
+                <MiniMap pannable zoomable position="bottom-right"
+                  ariaLabel="Chain overview"
+                  nodeColor={miniNodeColor("design")} nodeStrokeWidth={0}
+                  nodeBorderRadius={3}
+                  bgColor="var(--bg-1)"
+                  maskColor="color-mix(in srgb, var(--bg-0) 68%, transparent)"
+                  style={MINIMAP_STYLE} />
+              )}
               {/* The Volt frame's toolbar, ON the canvas: adding is part of designing,
                   not a trip to a side panel. Both write the same draft the rail and
                   Save share; the rail stays for the fields a node does not carry.
@@ -1257,6 +1362,15 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
             >
               <Background gap={16} color="var(--border)" />
               <Controls showInteractive={false} />
+              {execution!.nodes.length >= MINIMAP_FROM && (
+                <MiniMap pannable zoomable position="bottom-right"
+                  ariaLabel="Run overview"
+                  nodeColor={miniNodeColor("execution")} nodeStrokeWidth={0}
+                  nodeBorderRadius={3}
+                  bgColor="var(--bg-1)"
+                  maskColor="color-mix(in srgb, var(--bg-0) 68%, transparent)"
+                  style={MINIMAP_STYLE} />
+              )}
             </ReactFlow>
           )}
         </div>
