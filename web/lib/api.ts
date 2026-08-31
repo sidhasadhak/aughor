@@ -3409,6 +3409,11 @@ export interface SlackBotSummary {
   enabled: boolean;
   team_id: string;
   bot_user_id: string;
+  /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
+   *  masks only the three secrets); undeclared here until the agent map needed to ask
+   *  which bots belong to an agent. */
+  agent_id: string;
+  connection_id: string;
 }
 
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
@@ -3741,6 +3746,10 @@ export interface Automation {
   updated_at: string;
   last_run_at: string | null;
   last_status: string | null;
+  /** VA-9b — the agent this whole chain RUNS AS ("" = nobody in particular). On the wire
+   *  since VA-9b; undeclared here until DS-5 needed to ask which chains an agent
+   *  operates. A per-STEP delegation lives on the effect's own config instead. */
+  agent_id: string;
 }
 
 export interface EffectOutcome {

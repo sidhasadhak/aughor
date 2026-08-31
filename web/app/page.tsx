@@ -2204,6 +2204,14 @@ export default function Home() {
                     handleNavigate("recents");
                   }}
                   onOpenAutomations={() => setAgenticOpsLayer("automations")}
+                  // DS-5 — an agent's Map sends the reader to the surface that owns the
+                  // thing they clicked: the provider catalog for a Slack door, the data
+                  // catalog (scoped to that connection) for the connection it answers on.
+                  onOpenIntegrations={() => handleNavigate("integrations")}
+                  onOpenConnection={connectionId => {
+                    setSelectedConn(connectionId);
+                    handleNavigate("catalog");
+                  }}
                 />
               </ErrorBoundary>
             )}

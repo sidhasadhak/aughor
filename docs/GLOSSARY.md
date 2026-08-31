@@ -68,6 +68,7 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Custom agent** | An agent a user created | persona, hired agent, user-defined agent, Gem |
 | **Pack** | A domain bundle (entities, metrics, questions, evals) | specialist pack, expertise pack, Domain Expertise Pack, expert |
 | **Agent Ops** | The workspace (layers: Overview · Roster · Attention · Activity · Runs) — renamed from "Agents" 2026-08-17 so the workspace and its Roster layer stop sharing a name | Agents (as the workspace name), Agentic Ops, Control Room, Fleet |
+| **Map** | An agent's Roster tab: what it is scoped to, the doors it can be reached through, and the chains it operates — read-only, every node a field that already exists | Canvas (that is Data Canvas), Design (that is the automation editor's mode, and this edits nothing), Graph (that is the knowledge graph) |
 | **Viewer · Editor · Owner** | The human permission ladder | "Analyst" as a *human* role — it names the agent |
 
 The agent that runs deep analyses stays **Analyst**; the human RBAC role renamed to

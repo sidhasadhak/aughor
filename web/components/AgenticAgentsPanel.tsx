@@ -20,6 +20,7 @@
 import { useCallback, useEffect, useState } from "react";
 
 import { CreateAgentFlow } from "@/components/agentops/CreateAgentFlow";
+import { AgentMap } from "@/components/agentops/AgentMap";
 import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
 import { rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
 import { Button } from "@/components/ui/button";
@@ -56,11 +57,16 @@ function fmtBudget(n: number | null): string {
 }
 
 export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, focusAgent,
-  range, createSignal }: {
+  range, createSignal, onOpenConnection, onOpenAutomations, onOpenIntegrations }: {
   workspaceId?: string;
   workspaceName?: string;
   /** CR1 drill-in: open a run's trace in the Activity layer's runs mode. */
   onOpenTrace?: (investigationId: string) => void;
+  /** DS-5 drill-in: where a node on the agent's Map leads. Each is optional, and an
+   *  absent one renders no Open control rather than a button that goes nowhere. */
+  onOpenConnection?: (connectionId: string) => void;
+  onOpenAutomations?: (automationId: string) => void;
+  onOpenIntegrations?: () => void;
   /** An agent opened from the Overview table — selected on arrival. */
   focusAgent?: { id: string; kind: "charter" | "persona" } | null;
   /** The surface's shared window — the agent page's own figures scope to it. */
@@ -150,7 +156,10 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
         ) : persona ? (
           <AgentDetail key={persona.id} agent={persona} onChanged={reload}
             onDeleted={() => { setSelected(null); reload(); }}
-            onError={setError} onOpenTrace={onOpenTrace} />
+            onError={setError} onOpenTrace={onOpenTrace}
+            onOpenConnection={onOpenConnection}
+            onOpenAutomations={onOpenAutomations}
+            onOpenIntegrations={onOpenIntegrations} />
         ) : charter ? (
           <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
             onChanged={reload} onError={setError} />
@@ -190,12 +199,18 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
 
 // ── custom-agent detail ───────────────────────────────────────────────────────────────
 
-function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace }: {
+function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
+  onOpenConnection, onOpenAutomations, onOpenIntegrations }: {
   agent: UserAgent; onChanged: () => void; onDeleted: () => void;
   onError: (e: string | null) => void;
   onOpenTrace?: (investigationId: string) => void;
+  /** DS-5 — where the map's nodes lead. Optional: a destination this shell does not
+   *  offer simply renders no Open control, rather than a button that goes nowhere. */
+  onOpenConnection?: (connectionId: string) => void;
+  onOpenAutomations?: (automationId: string) => void;
+  onOpenIntegrations?: () => void;
 }) {
-  const [tab, setTab] = useState<"overview" | "configure">("overview");
+  const [tab, setTab] = useState<"overview" | "map" | "configure">("overview");
   const [busy, setBusy] = useState(false);
 
   const togglePause = async () => {
@@ -232,13 +247,24 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace }: {
         </Button>
         <Button variant={tab === "overview" ? "secondary" : "ghost"} size="xs"
           onClick={() => setTab("overview")}>Overview</Button>
+        {/* DS-5 — "Map", not "Design": that word is the automation card's button and the
+            automation canvas's own mode label, and this surface edits nothing. */}
+        <Button variant={tab === "map" ? "secondary" : "ghost"} size="xs"
+          onClick={() => setTab("map")}>Map</Button>
         <Button variant={tab === "configure" ? "secondary" : "ghost"} size="xs"
           onClick={() => setTab("configure")}>Configure</Button>
       </div>
-      {tab === "overview"
-        ? <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
-        : <PersonaConfigure agent={agent} onChanged={onChanged}
-            onDeleted={onDeleted} onError={onError} />}
+      {tab === "overview" ? (
+        <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
+      ) : tab === "map" ? (
+        <AgentMap agent={agent}
+          onOpenConnection={onOpenConnection}
+          onOpenAutomations={onOpenAutomations}
+          onOpenIntegrations={onOpenIntegrations} />
+      ) : (
+        <PersonaConfigure agent={agent} onChanged={onChanged}
+          onDeleted={onDeleted} onError={onError} />
+      )}
     </div>
   );
 }
