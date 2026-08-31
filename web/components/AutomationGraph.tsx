@@ -50,6 +50,7 @@ import {
   EFFECT_KINDS, newConditionOf, newEffectOf, useAutomationVocabulary,
 } from "@/components/automations/AutomationRows";
 import { OutcomeKeyPicker } from "@/components/automations/OutcomeKeyPicker";
+import { canvasClipboard, copyToCanvasClipboard } from "@/lib/canvasClipboard";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
@@ -58,7 +59,7 @@ import {
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  layoutToPersist, producedByAlias, viewportCenter, type Vocabulary,
+  layoutToPersist, pasteEffect, producedByAlias, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 import {
@@ -306,6 +307,9 @@ interface DesignNodeData {
   onClear: (field: string) => void;
   /** Remove this step — absent on the last one, the same law the rail enforces. */
   onRemove?: () => void;
+  /** DS-4 — copy this step to the end of the chain, keeping the wiring that still
+   *  means what it meant. Always present: duplicating never breaks a rule. */
+  onDuplicate?: () => void;
   [key: string]: unknown;
 }
 
@@ -370,6 +374,14 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           padding: "1px 8px", background: "var(--bg-1)" }}>
           {data.alias}
         </span>
+        {data.onDuplicate && (
+          <Button variant="ghost" size="icon-sm" aria-label={`duplicate ${data.alias}`}
+            title="Duplicate this step (⌘D)"
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            onClick={data.onDuplicate}>
+            <Icon name="copy" size={11} />
+          </Button>
+        )}
         {data.onRemove && (
           <Button variant="ghost" size="icon-sm" aria-label={`remove ${data.alias}`}
             className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
@@ -577,8 +589,14 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   /** Drag-time refusals — `applyConnect`'s sentence, shown then cleared. */
-  const [connectError, setConnectError] = useState("");
+  /** A transient sentence over the canvas: a refused drag, or what a paste could not
+ *  carry over. One channel, because two would overlap in the same corner. */
+  const [notice, setNotice] = useState("");
   const [vocab, setVocab] = useState<Vocabulary | null>(null);
+  // W2's reserved word, from the same fetched document the pickers read — a paste
+  // has to know which refs are per-iteration, and must not spell that word itself.
+  const { forEach: fanVocab } = useAutomationVocabulary();
+  const itemAlias = fanVocab.itemAlias;
 
   /* ── DS-4 · one undoable state ──
    *
@@ -707,21 +725,123 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     });
   }, [persistLayout]);
 
+  /* ── DS-4 · duplicate, copy, paste ──
+   *
+   * Every one of these lands a step through `pasteEffect`, which is where the dangerous
+   * part lives: a step's name is positional and its bindings are strings, so a copy
+   * carries references that mean "whatever is in that position". A reference whose
+   * producer is not present and upstream is DROPPED and reported — never repointed,
+   * because a repointed binding saves cleanly, draws a confident edge, and posts another
+   * step's answer at 09:00.
+   */
+  const landStep = useCallback((step: AutoEffect, at?: { x: number; y: number }) => {
+    setHistory(h => {
+      const { draft: nextDraft, dropped } = pasteEffect(h.present.draft, step, itemAlias);
+      const alias = aliasFor(nextDraft.effects[nextDraft.effects.length - 1],
+                             nextDraft.effects.length - 1);
+      const nextPositions = at ? { ...h.present.positions, [alias]: at } : h.present.positions;
+      if (at) persistLayout(nextPositions, new Set([...Object.keys(nextPositions), alias]));
+      if (dropped.length) {
+        // Said out loud, because a paste that silently arrives half-wired is the same
+        // class of quiet wrongness this function refuses to commit.
+        setNotice(`${alias}: ${[...new Set(dropped)].join(", ")} `
+          + `${dropped.length > 1 ? "were" : "was"} not carried over — `
+          + "the step they read is not in this chain.");
+        window.setTimeout(() => setNotice(""), 5200);
+      }
+      return pushHistory(h, { draft: nextDraft, positions: nextPositions });
+    });
+  }, [persistLayout, itemAlias]);
+
+  /** Duplicate lands beside its original, so the copy is visibly a second card rather
+   *  than one hiding exactly underneath the one it came from. */
+  const duplicateStep = useCallback((alias: string) => {
+    const source = draft.effects.find((e, i) => aliasFor(e, i) === alias);
+    if (!source) return;
+    const from = positions[alias];
+    landStep(source, from ? { x: from.x + 42, y: from.y + 42 } : undefined);
+  }, [draft.effects, positions, landStep]);
+
+  /** Which step the canvas has selected — ReactFlow's own selection, so ⌘C acts on the
+   *  card with the ring around it rather than on some notion of "current" of our own. */
+  const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
+
+  /** The three gestures, behind a ref so the key listener reads today's draft without
+   *  being torn down and rebuilt on every keystroke. Each returns whether it DID
+   *  something, so the handler only swallows the browser's own shortcut when we used it
+   *  — ⌘C with nothing selected must still mean "copy the text I highlighted". */
+  const commandsRef = useRef<Record<"copy" | "paste" | "duplicate", () => boolean>>({
+    copy: () => false, paste: () => false, duplicate: () => false,
+  });
+  useEffect(() => {
+    const selected = () => (selectedAlias && selectedAlias !== "__trigger"
+      ? draft.effects.find((e, i) => aliasFor(e, i) === selectedAlias) ?? null
+      : null);
+    const centre = () => {
+      const pane = paneRef.current?.getBoundingClientRect();
+      return rf.current && pane
+        ? viewportCenter(rf.current.getViewport(),
+                         { width: pane.width, height: pane.height }, NODE_W)
+        : undefined;
+    };
+    commandsRef.current = {
+      copy: () => {
+        const step = selected();
+        if (!step) return false;
+        copyToCanvasClipboard(step);
+        setNotice(`${selectedAlias} copied — ⌘V to paste it into any chain.`);
+        window.setTimeout(() => setNotice(""), 2600);
+        return true;
+      },
+      paste: () => {
+        const step = canvasClipboard();
+        if (!step) return false;
+        landStep(step, centre());
+        return true;
+      },
+      duplicate: () => {
+        const step = selected();
+        if (!step || !selectedAlias) return false;
+        duplicateStep(selectedAlias);
+        return true;
+      },
+    };
+  }, [draft.effects, selectedAlias, landStep, duplicateStep]);
+
   const authoringRef = useRef(false);
   useEffect(() => {
     // ⌘Z / ⌘⇧Z, the repo's own shortcut shape (a window listener that reads
     // `metaKey || ctrlKey`), armed only while this canvas is the thing being edited.
     // A ref rather than a dependency so the listener is not torn down and rebuilt every
     // time the draft changes — it would miss a keystroke landing in that gap.
+    /** Is the person typing? ⌘C/⌘V mean TEXT inside a field and a STEP outside one —
+     *  taking the gesture away from a half-typed channel name would be a worse trade
+     *  than the convenience is worth. ⌘Z is the deliberate exception: those fields are
+     *  the draft, so this stack is the authority for them too. */
+    const inTextField = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable === true;
+    };
+
     const handler = (e: KeyboardEvent) => {
       if (!authoringRef.current) return;
       const meta = e.metaKey || e.ctrlKey;
-      if (!meta || e.key.toLowerCase() !== "z") return;
-      // The canvas fields ARE the draft, so this stack is the authority for them too —
-      // the browser's own text undo would put a character back into a field while the
-      // draft it belongs to had moved on.
-      e.preventDefault();
-      walk(e.shiftKey ? "redo" : "undo");
+      if (!meta) return;
+      const key = e.key.toLowerCase();
+
+      if (key === "z") {
+        e.preventDefault();
+        walk(e.shiftKey ? "redo" : "undo");
+        return;
+      }
+      if (inTextField(e.target)) return;
+
+      const cmd = commandsRef.current;
+      if (key === "c" && cmd.copy()) e.preventDefault();
+      else if (key === "v" && cmd.paste()) e.preventDefault();
+      else if (key === "d" && cmd.duplicate()) e.preventDefault();
     };
     window.addEventListener("keydown", handler);
     return () => window.removeEventListener("keydown", handler);
@@ -837,6 +957,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         // The last step keeps no remove control at all — the model requires one effect,
         // and an affordance that fails at save teaches the wrong law. Same rule as the
         // rail, enforced by ABSENCE both places.
+        onDuplicate: () => duplicateStep(s.alias),
         onRemove: draft.effects.length > 1
           ? () => setDraft(d => ({ ...d, effects: d.effects.filter((_, j) => j !== i) }))
           : undefined,
@@ -899,8 +1020,8 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     if (!vocab || !key) return;
     const r = applyConnect(draft, vocab, { fromAlias: from, key, toAlias, field });
     if (r.error) {
-      setConnectError(r.error);
-      window.setTimeout(() => setConnectError(""), 3200);
+      setNotice(r.error);
+      window.setTimeout(() => setNotice(""), 3200);
       return;
     }
     setDraft(r.draft);
@@ -1023,6 +1144,7 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           {mode === "design" ? (
             <ReactFlow
               onInit={(instance) => { rf.current = instance; }}
+              onSelectionChange={({ nodes }) => setSelectedAlias(nodes[0]?.id ?? null)}
               nodes={design.nodes}
               edges={edgesLive ? design.edges : []}
               nodeTypes={NODE_TYPES}
@@ -1099,19 +1221,20 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
                   />
                 </Panel>
               )}
-              {connectError && (
+              {notice && (
                 <Panel position="top-center">
                   <span className="aug-fs-xs" style={{ color: "var(--amb5)",
                     background: "var(--amb1)", border: "1px solid var(--amb2)",
                     borderRadius: "var(--r-chip)", padding: "3px 10px" }}>
-                    {connectError}
+                    {notice}
                   </span>
                 </Panel>
               )}
               <Panel position="bottom-center">
                 <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
                   drag a <span style={{ color: "var(--chart-2)" }}>gives</span> dot onto an
-                  input dot to bind · double-click an edge to unbind
+                  input dot to bind · double-click an edge to unbind · ⌘D duplicates a
+                  selected step, ⌘C / ⌘V move one between chains
                 </span>
               </Panel>
             </ReactFlow>

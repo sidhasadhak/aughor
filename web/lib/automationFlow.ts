@@ -249,6 +249,113 @@ export function applyConnect(draft: Draft, vocab: Vocabulary, c: {
   return { draft: { ...draft, effects }, error: "" };
 }
 
+/* ── DS-4 · duplicating and pasting a step ──────────────────────────────────────
+ *
+ * The sharp edge in this whole wave. A step's name is POSITIONAL — `aliasFor` derives
+ * `step3` from where it sits — while every binding is a STRING naming another step
+ * (`{"$from": "step1.answer"}`). So a copy carries references that mean "whatever is in
+ * that position", and pasted somewhere else they quietly mean something different.
+ *
+ * `validate_chain` cannot save us here: it refuses an UNKNOWN step and a FORWARD one, and
+ * a ref that now resolves to a *different* existing step is neither. The save succeeds,
+ * the canvas draws a confident edge, and at 09:00 a Slack message carries another step's
+ * answer. That is the worst failure this plane can produce — a well-formed wrong result —
+ * so the rule is: **a reference whose producer is not present and upstream is DROPPED,
+ * never repointed**, and the caller is told which ones went.
+ */
+
+/** Every alias in use, by the same rule the server names steps. */
+function aliasesOf(effects: AutoEffect[]): Set<string> {
+  return new Set(effects.map((e, i) => aliasFor(e, i)));
+}
+
+/**
+ * A free name for a step landing at `index`.
+ *
+ * An explicit alias is dropped rather than uniquified: `numbers` copied beside `numbers`
+ * is a collision, and `numbers-2` is a name the person never chose and would have to
+ * rename anyway. The copy takes its positional name — unless something else has already
+ * claimed that exact string as an explicit alias, in which case a suffix is the honest
+ * way out of a name that is genuinely taken.
+ */
+function freeAlias(taken: Set<string>, index: number): string | undefined {
+  const positional = `step${index + 1}`;
+  if (!taken.has(positional)) return undefined;   // undefined = let it default
+  let n = 2;
+  while (taken.has(`${positional}-${n}`)) n += 1;
+  return `${positional}-${n}`;
+}
+
+export interface PasteResult {
+  draft: Draft;
+  /** What was cut loose, in the words the surface uses — for a sentence, not a log. */
+  dropped: string[];
+}
+
+/**
+ * Append a copy of `step`, keeping every reference that still means what it meant and
+ * dropping every one that does not.
+ *
+ * Appending is what makes the surviving references safe: a step at the END has every
+ * other step upstream of it, so a ref that resolves at all resolves to the same producer
+ * it named in the original. The item alias survives only alongside the `for_each` that
+ * defines it — a per-iteration name means nothing without the iteration, and it is passed
+ * in rather than spelled here because the server owns that reserved word.
+ */
+export function pasteEffect(
+  draft: Draft, step: AutoEffect, itemAlias: string,
+): PasteResult {
+  const taken = aliasesOf(draft.effects);
+  const index = draft.effects.length;
+  const dropped: string[] = [];
+
+  const resolves = (ref: string | null, hasFan: boolean): boolean => {
+    if (!ref) return true;                       // not a reference at all
+    const dot = ref.indexOf(".");
+    if (dot <= 0) return false;
+    const from = ref.slice(0, dot);
+    if (from === itemAlias) return hasFan;       // only meaningful inside its own fan-out
+    return taken.has(from);
+  };
+
+  // The fan source first: whether it survives decides whether `item.…` means anything.
+  let forEach = step.for_each;
+  if (forEach && !resolves(bindingRef(forEach.source), false)) {
+    forEach = undefined;
+    dropped.push("for each");
+  }
+  const hasFan = !!forEach;
+
+  const config: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(step.config ?? {})) {
+    const ref = bindingRef(value);
+    if (ref && !resolves(ref, hasFan)) {
+      config[field] = "";                        // the field stays, its wiring does not
+      dropped.push(field);
+      continue;
+    }
+    config[field] = value;
+  }
+
+  // A guard with a dangling side cannot be evaluated, and half a comparison is not a
+  // weaker guard — it is a different one. The clause goes.
+  const when = (step.when ?? []).filter(clause => {
+    const ok = resolves(bindingRef(clause.left), hasFan)
+      && resolves(bindingRef(clause.right), hasFan);
+    if (!ok) dropped.push("only if");
+    return ok;
+  });
+
+  const copy: AutoEffect = {
+    ...step,
+    alias: freeAlias(taken, index),
+    config,
+    ...(when.length ? { when } : { when: undefined }),
+    for_each: forEach,
+  };
+  return { draft: { ...draft, effects: [...draft.effects, copy] }, dropped };
+}
+
 /** Remove one binding — the field goes back to plain (empty) text. */
 export function clearBinding(draft: Draft, toAlias: string, field: string): Draft {
   const effects = draft.effects.map((e, i) => {

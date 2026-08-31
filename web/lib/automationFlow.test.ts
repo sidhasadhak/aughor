@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  layoutToPersist, producedByAlias, seedConfig, upstreamKeys, viewportCenter,
-  type Vocabulary,
+  aliasFor, layoutToPersist, pasteEffect, producedByAlias, seedConfig, upstreamKeys,
+  viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -445,5 +445,124 @@ describe("layoutToPersist", () => {
     // Every node removed is a real arrangement — and the whole-replace save is what
     // clears the row, so returning nothing here would leave the old layout standing.
     expect(layoutToPersist({ gone: at(1, 1) }, new Set())).toEqual({});
+  });
+});
+
+/* ── DS-4 · duplicating and pasting a step ─────────────────────────────────── */
+
+describe("pasteEffect", () => {
+  const eff = (over: Partial<AutoEffect> = {}): AutoEffect =>
+    ({ kind: "slack_post", config: { channel: "#ops" }, ...over } as AutoEffect);
+  const from = (ref: string) => ({ $from: ref });
+  const chain = (...effects: AutoEffect[]) => ({ conditions: [], effects });
+
+  it("appends the copy", () => {
+    const { draft } = pasteEffect(chain(eff()), eff({ config: { channel: "#two" } }), "item");
+    expect(draft.effects).toHaveLength(2);
+    expect(draft.effects[1].config.channel).toBe("#two");
+  });
+
+  it("KEEPS a reference whose producer is still there and upstream", () => {
+    // The copy lands at the end, so everything it named is upstream of it and still
+    // means what it meant. Dropping these would make duplicate useless.
+    const source = eff({ config: { message: from("step1.answer") } });
+    const { draft, dropped } = pasteEffect(
+      chain(eff({ kind: "investigate" } as Partial<AutoEffect>), source), source, "item");
+
+    expect(draft.effects[2].config.message).toEqual(from("step1.answer"));
+    expect(dropped).toEqual([]);
+  });
+
+  it("DROPS a reference whose producer is not in this chain — never repoints it", () => {
+    // The trap this whole function exists for. `validate_chain` refuses an UNKNOWN step
+    // and a FORWARD one; a ref that now resolves to a DIFFERENT existing step is
+    // neither, so it saves, draws a confident edge, and posts the wrong step's answer.
+    const pasted = eff({ config: { message: from("numbers.answer") } });
+    const { draft, dropped } = pasteEffect(chain(eff()), pasted, "item");
+
+    expect(draft.effects[1].config.message).toBe("");
+    expect(dropped).toContain("message");
+  });
+
+  it("keeps the FIELD when it drops the wiring", () => {
+    // A dropped binding must leave a field to type into, not a hole where one was.
+    const { draft } = pasteEffect(chain(eff()),
+                                  eff({ config: { channel: "#x", message: from("gone.k") } }),
+                                  "item");
+    expect(Object.keys(draft.effects[1].config).sort()).toEqual(["channel", "message"]);
+    expect(draft.effects[1].config.channel).toBe("#x");
+  });
+
+  it("drops a guard clause with a dangling side rather than half of it", () => {
+    // Half a comparison is not a weaker guard — it is a different one, and it would
+    // decide whether the step runs.
+    const pasted = eff({ when: [{ left: from("gone.answer"), op: "truthy" }] } as Partial<AutoEffect>);
+    const { draft, dropped } = pasteEffect(chain(eff()), pasted, "item");
+
+    expect(draft.effects[1].when ?? []).toEqual([]);
+    expect(dropped).toContain("only if");
+  });
+
+  it("keeps a guard whose subject survives", () => {
+    const pasted = eff({ when: [{ left: from("step1.ts"), op: "truthy" }] } as Partial<AutoEffect>);
+    const { draft, dropped } = pasteEffect(chain(eff()), pasted, "item");
+
+    expect(draft.effects[1].when).toHaveLength(1);
+    expect(dropped).toEqual([]);
+  });
+
+  it("drops a fan-out whose list is gone, and the item refs that depended on it", () => {
+    // `item.value` is defined BY the fan-out. Keeping it after the source went would
+    // leave a reference to a name that no longer exists in the step at all.
+    const pasted = eff({
+      for_each: { source: from("gone.rows") },
+      config: { message: from("item.value") },
+    } as Partial<AutoEffect>);
+    const { draft, dropped } = pasteEffect(chain(eff()), pasted, "item");
+
+    expect(draft.effects[1].for_each).toBeUndefined();
+    expect(draft.effects[1].config.message).toBe("");
+    expect(dropped).toEqual(expect.arrayContaining(["for each", "message"]));
+  });
+
+  it("keeps item refs when the fan-out itself survives", () => {
+    const pasted = eff({
+      for_each: { source: ["EMEA", "NA"] },
+      config: { message: from("item.value") },
+    } as Partial<AutoEffect>);
+    const { draft, dropped } = pasteEffect(chain(eff()), pasted, "item");
+
+    expect(draft.effects[1].config.message).toEqual(from("item.value"));
+    expect(dropped).toEqual([]);
+  });
+
+  it("uses the SERVER's word for the item alias, not a hardcoded one", () => {
+    const pasted = eff({
+      for_each: { source: ["a"] }, config: { message: from("each.value") },
+    } as Partial<AutoEffect>);
+    expect(pasteEffect(chain(eff()), pasted, "each").draft.effects[1].config.message)
+      .toEqual(from("each.value"));
+  });
+
+  it("drops an explicit alias rather than duplicating a name", () => {
+    // Two steps called `numbers` is a collision; `numbers-2` is a name nobody chose.
+    // The copy takes its positional name.
+    const { draft } = pasteEffect(chain(eff({ alias: "numbers" })),
+                                  eff({ alias: "numbers" }), "item");
+    expect(draft.effects[1].alias).toBeUndefined();
+    expect(aliasFor(draft.effects[1], 1)).toBe("step2");
+  });
+
+  it("suffixes only when the positional name is genuinely taken", () => {
+    // Someone explicitly aliased an earlier step "step2"; the copy landing at index 1
+    // cannot also be step2, so it says so rather than colliding silently.
+    const { draft } = pasteEffect(chain(eff({ alias: "step2" })), eff(), "item");
+    expect(draft.effects[1].alias).toBe("step2-2");
+  });
+
+  it("never mutates the draft it was given", () => {
+    const original = chain(eff());
+    pasteEffect(original, eff(), "item");
+    expect(original.effects).toHaveLength(1);
   });
 });
