@@ -11,8 +11,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  aliasFor, layoutToPersist, pasteEffect, producedByAlias, seedConfig, upstreamKeys,
-  viewportCenter, type Vocabulary,
+  aliasFor, layoutToPersist, liveStatuses, pasteEffect, producedByAlias, seedConfig,
+  upstreamKeys, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -564,5 +564,74 @@ describe("pasteEffect", () => {
     const original = chain(eff());
     pasteEffect(original, eff(), "item");
     expect(original.effects).toHaveLength(1);
+  });
+});
+
+/* ── DS-3 · a run while it is still running ────────────────────────────────── */
+
+describe("liveStatuses", () => {
+  const call = (step: string, span = step) =>
+    ({ kind: "tool_call", span_id: span, ok: null, payload: { step } });
+  const result = (step: string, span = step, ok = true) =>
+    ({ kind: "tool_call_result", span_id: span, ok, payload: { step } });
+
+  it("reads an unpaired call as RUNNING — which is why the engine emits it first", () => {
+    expect(liveStatuses([call("step1")])).toEqual({ step1: "running" });
+  });
+
+  it("settles a step when its result arrives", () => {
+    expect(liveStatuses([call("step1"), result("step1")])).toEqual({ step1: "done" });
+  });
+
+  it("keeps earlier steps settled while a later one runs", () => {
+    // The shape the canvas exists to show: done, done, running, untouched.
+    expect(liveStatuses([
+      call("step1"), result("step1"), call("step2"), result("step2"), call("step3"),
+    ])).toEqual({ step1: "done", step2: "done", step3: "running" });
+  });
+
+  it("matches on the step ALIAS, never on position", () => {
+    // A guarded, refused or unresolved step emits NO span at all. Counting spans against
+    // effects would put every later status on the wrong card — the bug `group_outcomes`
+    // was written for on the server side.
+    expect(liveStatuses([call("post"), result("post")])).toEqual({ post: "done" });
+  });
+
+  it("folds a fanned step's per-item spans onto its one node", () => {
+    // W2 emits `alias[1/3]`, `alias[2/3]`, … — three spans, one card.
+    expect(liveStatuses([
+      call("step2[1/2]", "s1"), result("step2[1/2]", "s1"),
+      call("step2[2/2]", "s2"),
+    ])).toEqual({ step2: "running" });
+  });
+
+  it("settles a fanned step only when every item has closed", () => {
+    expect(liveStatuses([
+      call("step2[1/2]", "s1"), result("step2[1/2]", "s1"),
+      call("step2[2/2]", "s2"), result("step2[2/2]", "s2"),
+    ])).toEqual({ step2: "done" });
+  });
+
+  it("lets ONE failed item fail the step, and does not let a later success undo it", () => {
+    // Averaging a fan-out's failures away would draw a green card over a message nobody
+    // received.
+    expect(liveStatuses([
+      call("s[1/2]", "a"), result("s[1/2]", "a", false),
+      call("s[2/2]", "b"), result("s[2/2]", "b", true),
+    ])).toEqual({ s: "failed" });
+  });
+
+  it("ignores events that are not automation steps", () => {
+    // The trace carries the agent's own spans too — a model call inside `investigate`
+    // has no `step`, and must not invent a node.
+    expect(liveStatuses([
+      { kind: "tool_call", span_id: "x", ok: null, payload: { span_kind: "llm" } },
+      { kind: "tool_call", span_id: "y", ok: null, payload: null },
+    ])).toEqual({});
+  });
+
+  it("says nothing about a run that has emitted nothing", () => {
+    // A gated or not-fired run returns before any span. The canvas must not spin.
+    expect(liveStatuses([])).toEqual({});
   });
 });

@@ -3838,8 +3838,18 @@ export async function pauseAutomation(id: string, until: string | null): Promise
 
 /** Run an automation now — through the same gates the heartbeat uses, so a gated automation
  *  returns the REASON it did nothing rather than silence. */
-export async function runAutomation(id: string): Promise<AutomationRun> {
-  const res = await fetch(`${getApiBase()}/automations/${id}/run`, { method: "POST" });
+/** Run one automation now.
+ *
+ *  `runId` is DS-3's whole hinge: this request does not resolve until the chain has
+ *  finished, but every step writes a span under `trace_id == run_id` while it runs — so a
+ *  surface that wants to WATCH a run has to name it before asking for it. Omitted, the
+ *  engine mints one exactly as before. */
+export async function runAutomation(id: string, runId?: string): Promise<AutomationRun> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: runId ?? null }),
+  });
   if (!res.ok) throw new Error("Failed to run automation");
   return res.json();
 }

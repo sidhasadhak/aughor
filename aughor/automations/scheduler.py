@@ -124,7 +124,7 @@ def _run_one(automation) -> None:
     _work()              # no-loop fallback
 
 
-def trigger_now(automation_id: str) -> Optional[AutomationRun]:
+def trigger_now(automation_id: str, run_id: Optional[str] = None) -> Optional[AutomationRun]:
     """Run one automation immediately (synchronous, for the API test endpoint).
 
     Unlike the heartbeat this does NOT skip a disabled or paused automation — it runs it through
@@ -147,7 +147,7 @@ def trigger_now(automation_id: str) -> Optional[AutomationRun]:
         if automation is None:
             return None
         with using_org(get_connection_org(automation.conn_id) or ""):
-            return run_automation(automation, manual=True)
+            return run_automation(automation, manual=True, run_id=run_id)
     except Exception as exc:
         logger.error("trigger_now failed for automation %s: %s", automation_id, exc)
         return None

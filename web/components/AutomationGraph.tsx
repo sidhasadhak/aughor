@@ -55,12 +55,14 @@ import { canvasClipboard, copyToCanvasClipboard } from "@/lib/canvasClipboard";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
-  getAutomationGraph, getAutomationLayout, getAutomationVocabulary, saveAutomationLayout,
+  getActivityEvents, getAutomationGraph, getAutomationLayout, getAutomationVocabulary,
+  saveAutomationLayout,
   type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  layoutToPersist, pasteEffect, producedByAlias, viewportCenter, type Vocabulary,
+  layoutToPersist, liveStatuses, pasteEffect, producedByAlias, viewportCenter,
+  type LiveStatus, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 import {
@@ -80,6 +82,24 @@ const STATUS_COLOR: Record<string, string> = {
   criterion_failed: "var(--chart-threshold-warn, #f59e0b)",
   invalid_params: "var(--red4)",
   skipped: "var(--t4)",
+  // DS-3 — in flight. Its own hue: a step still working is not a step that worked.
+  running: "var(--chart-1)",
+};
+
+/** DS-3 — what a live span can honestly claim.
+ *
+ *  Measured on a real run: a step's `tool_call_result` comes back `ok: true` even when the
+ *  step's OUTCOME was `dispatch_error`, because the span records that the work returned
+ *  without raising — the verdict is decided after it closes. So a closed span means the
+ *  step STARTED and FINISHED, not that it worked, and mapping it to `executed` would
+ *  flash a green card over a message nobody received.
+ *
+ *  `ran` is therefore deliberately not one of the engine's outcome words: it has no colour
+ *  in `STATUS_COLOR`, renders in the neutral fallback, and is replaced a moment later by
+ *  the stored outcome when `build_graph` answers. The stream is the anticipation; the
+ *  stored run is the truth. */
+const LIVE_STATUS: Record<string, string> = {
+  running: "running", done: "ran", failed: "failed",
 };
 
 const KIND_ICON: Record<string, IconName> = {
@@ -613,11 +633,15 @@ const NODE_TYPES = {
 
 /* ═══════════════════ the component ═══════════════════ */
 
-export function AutomationGraph({ automationId, automation, onSaved }: {
+export function AutomationGraph({ automationId, automation, onSaved, liveRunId }: {
   automationId: string;
   /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent ⇒ read-only. */
   automation?: Automation;
   onSaved?: () => void;
+  /** DS-3 — a run happening NOW, named by whoever started it. While this is set the
+   *  canvas watches that run's own spans as they are written; when it clears, the
+   *  authoritative graph is fetched, and the two agree. */
+  liveRunId?: string | null;
 }) {
   const [mode, setMode] = useState<"design" | "execution">("design");
   const [runId, setRunId] = useState("");
@@ -907,6 +931,56 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     return () => { live = false; };
   }, [pendingBind, observed, automationId]);
 
+  /* ── DS-3 · a run, while it is running ──
+   *
+   * The substrate was already there: the engine writes a span per step under
+   * `trace_id == run_id` as it goes, and `/activity?trace_id=` reads them back. Nothing
+   * was watching. This polls at 1Hz rather than opening a stream, because `/activity`
+   * already takes the filter and `/activity/stream` does not — one existing endpoint
+   * beats one new one, and the swap to SSE is a later, smaller change.
+   *
+   * The stream is the ANTICIPATION; `build_graph` is the truth. When the run ends, the
+   * ordinary fetch below runs and replaces every guess with the stored outcome — which is
+   * what keeps a lively canvas from becoming a confident wrong one.
+   */
+  const [live, setLive] = useState<Record<string, LiveStatus>>({});
+
+  useEffect(() => {
+    if (!liveRunId) { setLive({}); return; }
+    let alive = true;
+    const tick = () => {
+      getActivityEvents({ trace_id: liveRunId, limit: 200 })
+        .then(r => { if (alive) setLive(liveStatuses(r.events ?? [])); })
+        // A poll that fails is a poll: never surfaced as an error, because blanking a
+        // working canvas over one dropped request is worse than a stale second.
+        .catch(() => {});
+    };
+    tick();
+    const iv = window.setInterval(tick, 1000);
+    return () => { alive = false; window.clearInterval(iv); };
+  }, [liveRunId]);
+
+  // A run that just ended is the one thing the stored graph must be re-read for.
+  const wasLive = useRef<string | null>(null);
+  useEffect(() => {
+    if (liveRunId) {
+      wasLive.current = liveRunId;
+      // A preview would otherwise swallow the run entirely — it blocks the fetch and
+      // wins the render, so a live run started with one up would be invisible.
+      setPreview(null);
+      setMode("execution");
+      setRunId(liveRunId);
+      return;
+    }
+    if (!wasLive.current) return;
+    const finished = wasLive.current;
+    wasLive.current = null;
+    setPreview(null);
+    setMode("execution");
+    setRunId(finished);
+    setReloadKey(k => k + 1);
+  }, [liveRunId]);
+
   /* ── DS-4 · what the canvas measured ──
    *
    * The minimap draws nothing for a node it cannot size, and it sizes from the node
@@ -1144,7 +1218,16 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const executionFlow = mode === "execution" && shown ? toFlow(shown) : null;
   const execution = executionFlow && {
     ...executionFlow,
-    nodes: executionFlow.nodes.map(n => ({ ...n, measured: sizes[n.id] })),
+    nodes: executionFlow.nodes.map(n => ({
+      ...n,
+      measured: sizes[n.id],
+      // While the run is in flight the server has no stored outcome for it yet — the
+      // graph it returns is the STRUCTURE, every node undecorated. The spans decorate it
+      // as they arrive, and a step that has not started stays undecorated, which is the
+      // honest picture of a chain part-way through.
+      ...(liveRunId ? { data: { ...n.data, status: LIVE_STATUS[live[n.id]] ?? "",
+                                duration_ms: null, message: "" } } : {}),
+    })),
   };
 
   return (

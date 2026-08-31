@@ -301,3 +301,33 @@ def test_update_keeps_what_the_authoring_body_does_not_carry(flag_on):
     assert after["last_status"] == "fired"
     assert after["last_run_at"] == before["last_run_at"]
     assert after["created_at"] == before["created_at"]
+
+
+def test_run_now_uses_the_run_id_the_caller_supplied(flag_on):
+    """DS-3 — a run is watchable only if its id exists before it finishes.
+
+    Every step writes a span under `trace_id == run_id` WHILE the chain runs, but this
+    request does not return until the chain has finished — so a caller that cannot name
+    the run in advance can only ever be told about it afterwards. Supplying the id is the
+    whole difference between watching a run and being notified about one.
+
+    The effect here names a notification trigger that does not exist, so the step records
+    a failure and nothing outward is reached — the contract under test is the id.
+    """
+    aid = client.post("/automations", json={**BODY, "conn_id": "conn-api-runid"}).json()["id"]
+
+    res = client.post(f"/automations/{aid}/run", json={"run_id": "run-chosen-by-caller"})
+    assert res.status_code == 200
+    assert res.json()["id"] == "run-chosen-by-caller"
+
+    # And it is the id the run was STORED under — the trace a watcher would subscribe to.
+    runs = client.get(f"/automations/{aid}/runs").json()["runs"]
+    assert [r["id"] for r in runs] == ["run-chosen-by-caller"]
+
+
+def test_run_now_still_mints_an_id_when_none_is_offered(flag_on):
+    """The old contract is untouched: no body, or no `run_id`, and the engine names it."""
+    aid = client.post("/automations", json={**BODY, "conn_id": "conn-api-mint"}).json()["id"]
+    res = client.post(f"/automations/{aid}/run")
+    assert res.status_code == 200
+    assert res.json()["id"]

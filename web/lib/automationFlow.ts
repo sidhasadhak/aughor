@@ -448,6 +448,76 @@ export function layoutToPersist(
   return out;
 }
 
+/* ── DS-3 · a run, while it is still running ────────────────────────────────────
+ *
+ * The engine writes two `session_events` rows per executed step — a `tool_call` on entry
+ * and a `tool_call_result` on exit — committed as it goes, under `trace_id == run_id`.
+ * That is the whole substrate: a run in flight is already legible, it simply had nothing
+ * reading it. This turns those rows into a status per STEP.
+ *
+ * **Matched on the step's alias, never on ordinal position.** A step held by its guard, a
+ * fan-out refused at save, an unresolved binding — each appends an outcome and emits no
+ * span at all, so counting spans against effects puts every later status on the wrong
+ * card. That is the same bug `group_outcomes` was written for on the server side.
+ */
+
+export type LiveStatus = "running" | "done" | "failed";
+
+/** The fields this reads off a session event. Structural, so a test does not have to
+ *  build a twenty-field row to assert one rule. */
+export interface LiveEvent {
+  kind: string;
+  span_id: string | null;
+  ok: boolean | null;
+  payload: Record<string, unknown> | null;
+}
+
+/** A fanned step emits one span per ITEM, labelled `alias[1/3]`. They are all the one
+ *  node, so the suffix comes off before anything is counted. */
+function baseAlias(step: string): string {
+  const bracket = step.indexOf("[");
+  return bracket > 0 ? step.slice(0, bracket) : step;
+}
+
+/**
+ * What each step is doing right now.
+ *
+ * A step is `running` while any of its spans has opened and not closed — which is what an
+ * unpaired `tool_call` means, and why the engine emits the call before the work rather
+ * than after. It is `failed` if any of its spans came back not-ok: one failed item of a
+ * fan-out is a failure of that step, and averaging it away would draw a green card over a
+ * message nobody received.
+ */
+export function liveStatuses(events: LiveEvent[]): Record<string, LiveStatus> {
+  const spanStep = new Map<string, string>();
+  const open = new Map<string, number>();
+  const status: Record<string, LiveStatus> = {};
+
+  for (const e of events) {
+    const step = typeof e.payload?.step === "string" ? baseAlias(e.payload.step) : "";
+    if (!step) continue;               // not an automation step span; nothing to place
+    if (e.kind === "tool_call") {
+      if (e.span_id) spanStep.set(e.span_id, step);
+      open.set(step, (open.get(step) ?? 0) + 1);
+      if (!status[step]) status[step] = "running";
+    } else if (e.kind === "tool_call_result") {
+      open.set(step, Math.max(0, (open.get(step) ?? 0) - 1));
+      // A failure sticks: a later item succeeding does not un-fail the ones that did not.
+      if (e.ok === false) status[step] = "failed";
+      else if (status[step] !== "failed" && (open.get(step) ?? 0) === 0) {
+        status[step] = "done";
+      }
+    }
+  }
+
+  // A step whose spans all closed while another was still open settles here rather than
+  // being left mid-flight by the ordering of two rows written microseconds apart.
+  for (const [step, still] of open) {
+    if (still > 0 && status[step] !== "failed") status[step] = "running";
+  }
+  return status;
+}
+
 export interface Viewport { x: number; y: number; zoom: number }
 export interface Size { width: number; height: number }
 

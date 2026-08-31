@@ -260,12 +260,24 @@ def pause(automation_id: str, body: PauseRequest):
     return a.model_dump()
 
 
+class RunNowRequest(BaseModel):
+    """DS-3 — the id this run will have.
+
+    A run writes a span per step under `trace_id == run_id` WHILE it runs, so a surface
+    that wants to watch one needs the id before the request returns — and this request
+    does not return until the whole chain has finished. Supplying it is the whole
+    difference between watching a run and being told about it afterwards. Omitted, the
+    engine mints one exactly as before."""
+
+    run_id: Optional[str] = None
+
+
 @router.post("/automations/{automation_id}/run")
-def run_now(automation_id: str):
+def run_now(automation_id: str, body: Optional[RunNowRequest] = None):
     """Run one automation immediately, through the same gates the heartbeat uses — so a gated
     automation returns the REASON it is gated rather than silently doing nothing."""
     from aughor.automations.scheduler import trigger_now
-    run = trigger_now(automation_id)
+    run = trigger_now(automation_id, run_id=(body.run_id if body else None) or None)
     if run is None:
         raise HTTPException(status_code=404, detail="Automation not found")
     return run.model_dump()
