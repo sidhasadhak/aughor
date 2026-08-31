@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  seedConfig, upstreamKeys, viewportCenter, type Vocabulary,
+  producedByAlias, seedConfig, upstreamKeys, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -392,5 +392,34 @@ describe("viewportCenter", () => {
     // infinity, which is indistinguishable from the node never having been added.
     const at = viewportCenter({ x: 0, y: 0, zoom: 0 }, { width: 800, height: 400 });
     expect(Number.isFinite(at.x) && Number.isFinite(at.y)).toBe(true);
+  });
+});
+
+describe("producedByAlias", () => {
+  it("reads the keys a step was SEEN to publish", () => {
+    // The open set's only honest source: what the run actually recorded. No ontology
+    // build, no second contract — the server already computes this for the canvas.
+    const graph = { nodes: [
+      { id: "step1", produced: ["annotation", "id"] },
+      { id: "step2", produced: [] },
+    ] };
+    expect(producedByAlias(graph)).toEqual({ step1: ["annotation", "id"] });
+  });
+
+  it("sorts and de-duplicates, so a fanned-out step lists each key once", () => {
+    // A `for_each` step appends one outcome per item, and the server's `produced` is a
+    // union — a picker offering "ts, ts, ts" would read as three different keys.
+    expect(producedByAlias({ nodes: [{ id: "s", produced: ["ts", "channel", "ts"] }] }))
+      .toEqual({ s: ["channel", "ts"] });
+  });
+
+  it("offers nothing for a step that has never run", () => {
+    // Which is exactly when the typed field is the only honest offer.
+    expect(producedByAlias({ nodes: [{ id: "s" }] })).toEqual({});
+  });
+
+  it("survives no graph at all", () => {
+    expect(producedByAlias(null)).toEqual({});
+    expect(producedByAlias(undefined)).toEqual({});
   });
 });

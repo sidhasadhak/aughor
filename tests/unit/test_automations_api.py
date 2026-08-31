@@ -266,3 +266,38 @@ def test_an_unsound_fan_out_is_refused_at_save(flag_on):
     ])
     refused = client.post("/automations", json=body)
     assert refused.status_code == 422, refused.text
+
+
+def test_update_keeps_what_the_authoring_body_does_not_carry(flag_on):
+    """A save must not erase the fields the engine owns.
+
+    `PUT` rebuilds the record from `CreateAutomationRequest`, which is the AUTHORING
+    shape — it has no field for the agent binding, the last run, or its outcome, because
+    a person does not type those. Carrying only `id` and `created_at` forward meant every
+    save reset them: the automation card went back to reading "never run" the moment
+    somebody renamed it, and `Automation.agent_id` — which the engine reads to decide who
+    a step runs AS — went back to empty.
+
+    This is the third of its family in this subsystem (a `conn_id` left out of the
+    upsert's DO UPDATE SET, an `agent_id` with no column at all), which is why the rule
+    is now a test and not a comment: **read the row back after changing it.**
+    """
+    aid = client.post("/automations", json={**BODY, "conn_id": "conn-api-carry"}).json()["id"]
+
+    # What the ENGINE writes, through its own path — not hand-set, so the test breaks if
+    # that path changes too.
+    append_run(AutomationRun(automation_id=aid, conn_id="conn-api-carry",
+                             outcome="fired", reason="schedule(0 8 * * 1)"))
+    before = client.get(f"/automations/{aid}").json()
+    assert before["last_status"] == "fired", "precondition: the run did not record"
+    assert before["last_run_at"], "precondition: the run did not stamp a time"
+
+    renamed = client.put(f"/automations/{aid}", json={**BODY, "conn_id": "conn-api-carry",
+                                                     "name": "Refund watch (renamed)"})
+    assert renamed.status_code == 200
+    after = client.get(f"/automations/{aid}").json()
+
+    assert after["name"] == "Refund watch (renamed)", "the edit itself must still land"
+    assert after["last_status"] == "fired"
+    assert after["last_run_at"] == before["last_run_at"]
+    assert after["created_at"] == before["created_at"]

@@ -169,8 +169,17 @@ def update(automation_id: str, body: CreateAutomationRequest):
     if existing is None:
         raise HTTPException(status_code=404, detail="Automation not found")
     try:
+        # `CreateAutomationRequest` is the AUTHORING shape — what a person types. Every
+        # field OUTSIDE it belongs to the engine, and the upsert is a full-row replace,
+        # so anything not carried here is erased by a rename. It was: `last_run_at` and
+        # `last_status` went back to null (the card read "never run" again) and
+        # `agent_id` — which the engine reads to decide who a step runs AS — went back
+        # to empty. Third of its family in this subsystem, which is why it now has a test.
         automation = Automation(**body.model_dump(), id=automation_id,
-                                created_at=existing.created_at)
+                                created_at=existing.created_at,
+                                agent_id=existing.agent_id,
+                                last_run_at=existing.last_run_at,
+                                last_status=existing.last_status)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     return upsert_automation(automation).model_dump()

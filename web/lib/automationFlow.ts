@@ -293,6 +293,31 @@ export function seedConfig(
   return { ...blanks, ...(KIND_SEED[kind] ?? {}) };
 }
 
+/**
+ * DS-4 · what a declared-action step has actually been seen to publish.
+ *
+ * The declared-action kind's published keys are an OPEN set — `PUBLISHED_KEYS` says
+ * `null` because the keys are that action's own outcome shape, which no client can
+ * enumerate. Until now the canvas asked for the key with a `window.prompt`, which is
+ * both homely and blind: a typo produces an edge the run then skips.
+ *
+ * The honest source is the run itself. The server already computes each node's
+ * `produced` from the real `EffectOutcome.data` and ships it on the execution graph, so
+ * the keys a step HAS published are known — no ontology build, no second contract. A
+ * step that has never run contributes nothing, which is exactly when the free-text tail
+ * is the only honest offer.
+ */
+export function producedByAlias(
+  graph: { nodes: { id: string; produced?: string[] }[] } | null | undefined,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const node of graph?.nodes ?? []) {
+    const keys = (node.produced ?? []).filter(Boolean);
+    if (keys.length) out[node.id] = [...new Set(keys)].sort();
+  }
+  return out;
+}
+
 export interface Viewport { x: number; y: number; zoom: number }
 export interface Size { width: number; height: number }
 

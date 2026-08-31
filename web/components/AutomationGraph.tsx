@@ -49,6 +49,7 @@ import {
 import {
   EFFECT_KINDS, newConditionOf, newEffectOf, useAutomationVocabulary,
 } from "@/components/automations/AutomationRows";
+import { OutcomeKeyPicker } from "@/components/automations/OutcomeKeyPicker";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
@@ -57,7 +58,7 @@ import {
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  viewportCenter, type Vocabulary,
+  producedByAlias, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 
@@ -603,6 +604,25 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const positions = useRef(new Map<string, { x: number; y: number }>());
   useEffect(() => { positions.current.clear(); }, [automationId]);
 
+  /* ── DS-4 · the open-set key picker (what replaced the window.prompt) ── */
+  const [pendingBind, setPendingBind] =
+    useState<{ from: string; to: string; field: string } | null>(null);
+  /** Keys each step has been SEEN to publish, from the latest run. `null` = not asked
+   *  yet; fetched only when a bind is actually pending, because a canvas nobody is
+   *  binding on should not spend a request to populate a picker nobody opened. */
+  const [observed, setObserved] = useState<Record<string, string[]> | null>(null);
+
+  useEffect(() => {
+    if (!pendingBind || observed !== null) return;
+    let live = true;
+    getAutomationGraph(automationId, "latest")
+      .then(g => { if (live) setObserved(producedByAlias(g)); })
+      // A step that never ran, or a graph we could not read, leaves the typed field as
+      // the only offer — which is the honest state, not an error worth a banner.
+      .catch(() => { if (live) setObserved({}); });
+    return () => { live = false; };
+  }, [pendingBind, observed, automationId]);
+
   /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
   const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
   // Captured from `onInit` rather than `useReactFlow`, which would need this canvas
@@ -734,27 +754,36 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     return () => cancelAnimationFrame(frame);
   }, [design.nodes.length, mode]);
 
-  const onConnect = useCallback((c: RFConnection) => {
-    if (!vocab || !c.source || !c.target) return;
-    const key = (c.sourceHandle ?? "").replace(/^out:/, "");
-    const field = (c.targetHandle ?? "").replace(/^in:/, "");
-    if (!key || !field) return;
-    // The open-set port ("*") cannot know its key at drag time; ask for it. A prompt
-    // is homely, but inventing a key silently would draw an edge the run then skips.
-    const realKey = key === "*"
-      ? (window.prompt("Which key of the action's outcome?") ?? "").trim()
-      : key;
-    if (!realKey) return;
-    const r = applyConnect(draft, vocab, {
-      fromAlias: c.source, key: realKey, toAlias: c.target, field,
-    });
+  /** Bind with a key, wherever the key came from — the drag, a picker row, or typed. */
+  const bindWith = useCallback((
+    from: string, toAlias: string, field: string, key: string,
+  ) => {
+    if (!vocab || !key) return;
+    const r = applyConnect(draft, vocab, { fromAlias: from, key, toAlias, field });
     if (r.error) {
       setConnectError(r.error);
       window.setTimeout(() => setConnectError(""), 3200);
       return;
     }
     setDraft(r.draft);
+    setPendingBind(null);
   }, [draft, vocab]);
+
+  const onConnect = useCallback((c: RFConnection) => {
+    if (!vocab || !c.source || !c.target) return;
+    const key = (c.sourceHandle ?? "").replace(/^out:/, "");
+    const field = (c.targetHandle ?? "").replace(/^in:/, "");
+    if (!key || !field) return;
+    // DS-4 — the open-set port ("*") cannot know its key at drag time. It used to be a
+    // `window.prompt`: homely, and blind, since a typo draws an edge the run then skips.
+    // Now the drop parks the connection and the picker below offers the keys this step
+    // has actually been seen to publish, with a typed tail for the ones it hasn't.
+    if (key === "*") {
+      setPendingBind({ from: c.source, to: c.target, field });
+      return;
+    }
+    bindWith(c.source, c.target, field, key);
+  }, [vocab, bindWith]);
 
   if (error && mode === "execution") {
     return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Could not load the graph: {error}</div>;
@@ -894,6 +923,18 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
                     onClick={() => setPalette(p => (p === "action" ? null : "action"))}>
                     <Icon name="plus" size={11} /> Add Action
                   </Button>
+                </Panel>
+              )}
+              {pendingBind && (
+                <Panel position="top-center">
+                  <OutcomeKeyPicker
+                    from={pendingBind.from}
+                    field={pendingBind.field}
+                    candidates={observed === null ? null : (observed[pendingBind.from] ?? [])}
+                    onPick={(key) => bindWith(
+                      pendingBind.from, pendingBind.to, pendingBind.field, key)}
+                    onCancel={() => setPendingBind(null)}
+                  />
                 </Panel>
               )}
               {connectError && (
