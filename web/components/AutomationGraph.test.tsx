@@ -122,3 +122,45 @@ describe("AutomationGraph handoff", () => {
     expect(edges).toEqual([]);
   });
 });
+
+/* ── DS-6 · the route, at the handoff ───────────────────────────────────────────── */
+
+describe("the route edge", () => {
+  const routed = (over: Partial<AutomationGraphData> = {}): AutomationGraphData =>
+    graph({
+      nodes: [
+        { id: "trigger", type: "trigger", label: "When", detail: "schedule" },
+        { id: "alerts", type: "effect", kind: "slack_post", label: "alerts",
+          when: ["numbers.answer is set"] },
+        { id: "daily", type: "effect", kind: "slack_post", label: "daily",
+          else_of: "alerts" },
+      ],
+      edges: [
+        { from: "trigger", to: "alerts", type: "sequence" },
+        { from: "alerts", to: "daily", type: "sequence" },
+        { from: "alerts", to: "daily", type: "route", label: "otherwise" },
+      ],
+      ...over,
+    });
+
+  it("draws the route in its own style, labelled with the server's word", () => {
+    const route = toFlow(routed()).edges
+      .find(e => (e.data as { edgeType?: string })?.edgeType === "route")!;
+    expect(route.label).toBe("otherwise");
+    expect(route.style?.strokeDasharray).toBe("7 4");
+    expect(route.style?.stroke).toBe("var(--chart-4)");
+  });
+
+  it("a route edge suppresses the sequence edge on its pair — it claims more", () => {
+    const pairs = seqEdges(routed()).map(e => `${e.source}->${e.target}`);
+    expect(pairs).not.toContain("alerts->daily");
+  });
+
+  it("the untaken arm's node data carries not_taken for the card to read", () => {
+    const g = routed({ mode: "execution" });
+    g.nodes[2].status = "skipped";
+    g.nodes[2].not_taken = true;
+    const byId = Object.fromEntries(toFlow(g).nodes.map(n => [n.id, n.data]));
+    expect((byId.daily as { not_taken?: boolean }).not_taken).toBe(true);
+  });
+});

@@ -123,3 +123,47 @@ describe("what the editor sends", () => {
     expect(wire.config.params).toEqual({ amount: 5 });
   });
 });
+
+/* ── DS-6 · the Otherwise editor ────────────────────────────────────────────────── */
+
+describe("the Otherwise editor", () => {
+  beforeEach(() => { vi.clearAllMocks(); });
+
+  /** A step the route may target: earlier, guarded, unfanned. */
+  const guarded: AutoEffect = { kind: "slack_post", alias: "alerts",
+    config: { bot_id: "b", channel: "#alerts" },
+    when: [{ left: { $from: "numbers.ts" }, op: "truthy" }] };
+
+  it("offers only steps this one may be the otherwise OF — earlier, guarded, unfanned", async () => {
+    renderRow(post(), [opener, guarded, post()], 2);
+    const picker = await screen.findByLabelText("Otherwise of");
+    const options = [...picker.querySelectorAll("option")].map(o => o.value);
+    // `numbers` (no guard) must not be offered; `alerts` must.
+    expect(options).toEqual(["", "alerts"]);
+  });
+
+  it("does not render at all when no earlier step qualifies", () => {
+    renderRow(post(), [opener, post()], 1);
+    expect(screen.queryByLabelText("Otherwise of")).toBeNull();
+  });
+
+  it("writes else_of on pick, and clears it back to undefined", async () => {
+    const onChange = renderRow(post(), [opener, guarded, post()], 2);
+    const picker = await screen.findByLabelText("Otherwise of");
+    fireEvent.change(picker, { target: { value: "alerts" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ else_of: "alerts" }));
+    fireEvent.change(picker, { target: { value: "" } });
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ else_of: undefined }));
+  });
+
+  it("keeps a target the picker cannot offer, marked missing — never silently cleared", async () => {
+    // The target was deleted or lost its guard since. Re-pointing or clearing would
+    // change WHEN this step runs without anyone touching it.
+    renderRow(post({ else_of: "ghost" }), [opener, post()], 1);
+    const picker = await screen.findByLabelText("Otherwise of");
+    expect([...picker.querySelectorAll("option")].map(o => o.textContent))
+      .toContain("ghost (missing)");
+    expect((picker as HTMLSelectElement).value).toBe("ghost");
+  });
+});

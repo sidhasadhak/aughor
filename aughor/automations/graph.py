@@ -26,8 +26,8 @@ from __future__ import annotations
 from typing import Any
 
 from aughor.automations.dataflow import (
-    FAN_PUBLISHED, GUARD_SKIP, alias_for, collect_refs, effect_refs, fan_source,
-    guard_clauses, is_binding, parse_ref, render_clause, FROM,
+    BRANCH_SKIP, FAN_PUBLISHED, GUARD_SKIP, alias_for, collect_refs, effect_refs,
+    else_target, fan_source, guard_clauses, is_binding, parse_ref, render_clause, FROM,
 )
 
 
@@ -163,6 +163,12 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         if clauses:
             node["when"] = [render_clause(c) for c in clauses]
             node["when_logic"] = getattr(effect, "when_logic", "all") or "all"
+        # DS-6 — the route, a design fact like the guard above: WHEN this step runs is
+        # part of what it is, and a canvas that omitted "otherwise of s2" would draw an
+        # arm as a step that always fires.
+        route_from = else_target(effect)
+        if route_from:
+            node["else_of"] = route_from
         acting = (getattr(effect, "agent_id", "") or getattr(automation, "agent_id", "") or "")
         if acting:
             node["agent_id"] = acting
@@ -185,6 +191,12 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             if node["status"] == "skipped":
                 node["guarded"] = all(
                     str(getattr(x, "message", "")).startswith(GUARD_SKIP)
+                    for x in group if getattr(x, "status", "") == "skipped")
+                # DS-6 — the route's untaken arm, read off BRANCH_SKIP the same way and
+                # for the same reason: "not taken" is the design working, one branch
+                # over, and the dim `skipped` grey is the colour of something wrong.
+                node["not_taken"] = all(
+                    str(getattr(x, "message", "")).startswith(BRANCH_SKIP)
                     for x in group if getattr(x, "status", "") == "skipped")
             # VA-4c — which step was slow, and how many attempts it took. The run's single
             # duration could not answer either. W2 — summed and maxed across the
@@ -226,6 +238,13 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         # sequence: the trigger starts the first step; each step precedes the next.
         edges.append({"from": trigger_id if i == 0 else alias_for(effects[i - 1], i - 1),
                       "to": alias, "type": "sequence"})
+
+        # DS-6 — the route, drawn. A third edge kind on purpose: it carries no value
+        # (that is `data`) and claims more than order (that is `sequence`) — it DECIDES
+        # whether the arm runs at all, off the deciding step's guard verdict.
+        if route_from:
+            edges.append({"from": route_from, "to": alias, "type": "route",
+                          "label": "otherwise"})
 
         # data: one edge per binding, labelled with the key it carries.
         #

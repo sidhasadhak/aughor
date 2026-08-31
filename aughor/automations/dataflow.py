@@ -37,6 +37,16 @@ from typing import Any, Optional
 #: to contain the string is untouched.
 FROM = "$from"
 
+#: DS-6 — the JOIN's marker: the first of several references that resolves. Written
+#: `{"$from_any": ["alerts.ts", "daily.ts"]}` and resolved in AUTHORED order, it is what
+#: lets one step run after either branch of a route: the arms are mutually exclusive, so
+#: at most one alternative ever resolves, and a step downstream of both reads whichever
+#: arm actually ran. Same exact-one-key rule as FROM — and every alternative is validated
+#: at save like an ordinary reference, so the join cannot name a step or key the chain
+#: does not have. Deliberately NOT a second resolution mechanism: each alternative is an
+#: ordinary `alias.key` against the same accumulated context.
+FROM_ANY = "$from_any"
+
 
 class UnresolvedBinding(LookupError):
     """A reference names a step that produced nothing — because it failed, was skipped,
@@ -46,6 +56,25 @@ class UnresolvedBinding(LookupError):
 
 def is_binding(value: Any) -> bool:
     return isinstance(value, dict) and set(value.keys()) == {FROM}
+
+
+def is_any_binding(value: Any) -> bool:
+    """A WELL-FORMED join binding: exactly the one key, and a non-empty list of
+    non-empty strings. A dict wearing the key with a malformed value is neither a
+    binding nor a payload anyone meant — `validate_chain` refuses it at save and
+    :func:`resolve` refuses it at run, so it can never pass silently as a literal."""
+    if not (isinstance(value, dict) and set(value.keys()) == {FROM_ANY}):
+        return False
+    refs = value[FROM_ANY]
+    return (isinstance(refs, list) and len(refs) > 0
+            and all(isinstance(r, str) and r.strip() for r in refs))
+
+
+def _wears_any_key(value: Any) -> bool:
+    """Exactly the one key — well-formed or not. The malformed case must be REFUSED,
+    never recursed into as an ordinary payload (a join that quietly became a literal
+    dict would be this plane's worst failure: well-formed and wrong)."""
+    return isinstance(value, dict) and set(value.keys()) == {FROM_ANY}
 
 
 def parse_ref(ref: str) -> tuple[str, str]:
@@ -58,10 +87,16 @@ def parse_ref(ref: str) -> tuple[str, str]:
 def collect_refs(params: Any) -> list[str]:
     """Every reference inside `params`, at any depth. Used by validation and by the
     canvas, which needs the same edges the engine will follow — two readers deriving
-    the graph differently is how a picture and its run come to disagree."""
+    the graph differently is how a picture and its run come to disagree.
+
+    DS-6 — a join contributes EVERY alternative: each one must exist to be refused or
+    awaited or drawn, even though only one of them will resolve on any given run.
+    """
     out: list[str] = []
     if is_binding(params):
         out.append(str(params[FROM]))
+    elif is_any_binding(params):
+        out.extend(str(r) for r in params[FROM_ANY])
     elif isinstance(params, dict):
         for v in params.values():
             out.extend(collect_refs(v))
@@ -134,6 +169,25 @@ def resolve(params: Any, context: dict[str, dict]) -> Any:
             raise UnresolvedBinding(f"step '{alias}' has no '{key}' (it produced: "
                                     f"{', '.join(sorted(produced)) or 'nothing'})")
         return produced[key]
+    if is_any_binding(params):
+        # DS-6 — the first alternative that resolves wins, in AUTHORED order. Down a
+        # route the arms are mutually exclusive so at most one can; outside one this is
+        # an honest preference order, and the drawn edges show every candidate either
+        # way. Only when NONE resolves is the step skipped — which is what "no branch
+        # was taken" must read as, not run-with-a-hole.
+        refs = [str(r) for r in params[FROM_ANY]]
+        for ref in refs:
+            alias, key = parse_ref(ref)
+            produced = context.get(alias)
+            if produced is not None and key in produced:
+                return produced[key]
+        raise UnresolvedBinding(
+            f"none of {', '.join(refs)} produced a value to read")
+    if _wears_any_key(params):
+        # Refused at save; refused again here so a malformed join that somehow reaches
+        # a run can never pass downstream as a literal dict.
+        raise UnresolvedBinding(
+            f"'{FROM_ANY}' needs a non-empty list of \"step.key\" references")
     if isinstance(params, dict):
         return {k: resolve(v, context) for k, v in params.items()}
     if isinstance(params, list):
@@ -188,6 +242,26 @@ UNARY_OPS: tuple[str, ...] = ("truthy", "falsy")
 #: matching is how a guard goes quietly blind.
 GUARD_SKIP = "condition not met"
 
+#: DS-6 — the prefix a route's untaken arm carries. Its own constant, not a GUARD_SKIP
+#: variant, because they are different facts a reader needs told apart at 09:00: "held ·
+#: condition not met" is a step whose own guard said no; "not taken" is the OTHER path
+#: of a decision that went the first way — the design working, one branch over. Same
+#: one-writer rule: `graph.py` reads this constant, never the prose.
+BRANCH_SKIP = "branch not taken"
+
+
+def else_target(effect: Any) -> str:
+    """DS-6 — the step this one runs OTHERWISE of, or ``"" `` when it is unrouted.
+
+    Reads models and raw dicts alike, like :func:`fan_source` and for the same reason:
+    the graph and the routers hand this module unvalidated payloads from the authoring
+    surface, and a picture that could only be drawn for a saved automation is drawn too
+    late.
+    """
+    val = (effect.get("else_of") if isinstance(effect, dict)
+           else getattr(effect, "else_of", ""))
+    return str(val or "").strip()
+
 
 class GuardUnevaluable(ValueError):
     """The comparison cannot be made — ``"n/a" > 5``, or ``contains`` on a number.
@@ -225,6 +299,10 @@ def render_clause(clause: Any) -> str:
     def side(value: Any) -> str:
         if is_binding(value):
             return str(value[FROM])
+        if is_any_binding(value):
+            # The join, as the reader authored it: every candidate, oldest first. The
+            # sentence stays paths-only like the rest of this renderer.
+            return " or ".join(str(r) for r in value[FROM_ANY])
         # An empty literal must still OCCUPY the sentence. Found live: a guard written
         # against `""` rendered as "condition not met:  is set" — a hole where the
         # subject belongs, which reads as a bug in the renderer rather than as the
@@ -265,8 +343,16 @@ def _clause_holds(op: str, left: Any, right: Any) -> bool:
     return {"gt": a > b, "gte": a >= b, "lt": a < b, "lte": a <= b}[op]
 
 
-def evaluate_guard(effect: Any, context: dict[str, dict]) -> tuple[bool, str]:
-    """``(should this step run, why not)`` for one effect's ``when`` guard.
+def evaluate_guard_verdict(effect: Any, context: dict[str, dict]) \
+        -> tuple[Optional[bool], str]:
+    """``(verdict, why not)`` for one effect's ``when`` guard — three-valued.
+
+    ``True`` runs the step, ``False`` holds it, and ``None`` means the comparison could
+    not be MADE (``"n/a" > 5``). The three-way split exists for DS-6: a route sends the
+    OTHERWISE arm down exactly the ``False`` path, and folding "cannot compare" into it
+    would turn an unevaluable guard into a decision — running the branch the guard's
+    author reserved for "the condition did not hold", on a morning when nothing was
+    decided at all. Skipped-never-guessed, W1's own rule, extended to the route.
 
     An empty guard runs — which is every automation written before W1, byte for byte.
 
@@ -290,7 +376,7 @@ def evaluate_guard(effect: Any, context: dict[str, dict]) -> tuple[bool, str]:
             # Unevaluable is a HOLD, and says so in its own words: "cannot compare" is a
             # different fix from "did not match", and a reader who is told the wrong one
             # goes looking at the wrong step.
-            return False, f"{render_clause(clause)} — cannot compare ({exc})"
+            return None, f"{render_clause(clause)} — cannot compare ({exc})"
         results.append((held, render_clause(clause)))
     if logic == "any":
         if any(held for held, _ in results):
@@ -300,6 +386,13 @@ def evaluate_guard(effect: Any, context: dict[str, dict]) -> tuple[bool, str]:
     if failed:
         return False, " and ".join(failed)
     return True, ""
+
+
+def evaluate_guard(effect: Any, context: dict[str, dict]) -> tuple[bool, str]:
+    """``(should this step run, why not)`` — the two-valued reading every pre-DS-6
+    caller keeps: unevaluable HOLDS the step, exactly as W1 shipped it."""
+    verdict, why_not = evaluate_guard_verdict(effect, context)
+    return verdict is True, why_not
 
 
 # ── W2: the fan-out ──────────────────────────────────────────────────────────────
@@ -456,6 +549,32 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
 }
 
 
+def _malformed_any(value: Any) -> Optional[str]:
+    """The first malformed join binding anywhere in `value`, as a sentence — or None.
+
+    A dict wearing exactly the `$from_any` key with anything but a non-empty list of
+    reference strings is refused at SAVE: recursing into it as an ordinary payload would
+    let a mistyped join pass every check and arrive at 09:00 as a literal dict in a
+    message body — well-formed, wrong, and silent.
+    """
+    if _wears_any_key(value):
+        if not is_any_binding(value):
+            return (f"'{FROM_ANY}' needs a non-empty list of \"step.key\" references — "
+                    f"got {type(value[FROM_ANY]).__name__}")
+        return None
+    if isinstance(value, dict):
+        for v in value.values():
+            problem = _malformed_any(v)
+            if problem:
+                return problem
+    elif isinstance(value, (list, tuple)):
+        for v in value:
+            problem = _malformed_any(v)
+            if problem:
+                return problem
+    return None
+
+
 def validate_chain(effects: list) -> Optional[str]:
     """The error message for an unsatisfiable chain, or None when it is sound.
 
@@ -471,8 +590,38 @@ def validate_chain(effects: list) -> Optional[str]:
     """
     seen: dict[str, str] = {}   # alias → effect kind, for the key check above
     fanned: set[str] = set()    # W2 — aliases that run once per item
+    guarded: set[str] = set()   # DS-6 — aliases with a non-empty `when`, routable-from
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
+        # DS-6 — a malformed join must not recurse past as an ordinary payload.
+        for candidate in ([effect_config(effect), fan_source(effect)]
+                          + [_clause_side(c, s) for c in guard_clauses(effect)
+                             for s in ("left", "right")]):
+            problem = _malformed_any(candidate)
+            if problem:
+                return f"step '{alias}': {problem}"
+        # DS-6 — the route. "Otherwise of s2" runs exactly when s2's guard was evaluated
+        # and did NOT hold, so the target must exist, run earlier, and carry a guard
+        # whose verdict is ONE verdict:
+        #   * a target with no `when` always runs — its otherwise-arm is dead at birth,
+        #     and an automation that can never do what it draws is refused, not stored;
+        #   * a fanned target evaluates its guard PER ITEM — N verdicts are not a route.
+        target = else_target(effect)
+        if target:
+            if target == alias:
+                return f"step '{alias}' is the otherwise of itself"
+            if target not in seen:
+                later = {alias_for(e, j) for j, e in enumerate(effects) if j > i}
+                if target in later:
+                    return (f"step '{alias}' is the otherwise of '{target}', which runs "
+                            f"AFTER it — a chain cannot run backwards")
+                return f"step '{alias}' is the otherwise of unknown step '{target}'"
+            if target in fanned:
+                return (f"step '{alias}' is the otherwise of '{target}', which runs once "
+                        f"per item — a per-item guard is many verdicts, not one route")
+            if target not in guarded:
+                return (f"step '{alias}' is the otherwise of '{target}', which has no "
+                        f"'Only if' — it always runs, so its otherwise could never")
         # W2 — `item.*` means "this iteration's item", so it is only a name on a step
         # that HAS iterations. On any other step it would read as an unknown step, and
         # "unknown step 'item'" sends someone hunting for a step they never wrote.
@@ -524,4 +673,6 @@ def validate_chain(effects: list) -> Optional[str]:
         seen[alias] = effect.get("kind", "") if isinstance(effect, dict) else getattr(effect, "kind", "")
         if is_fanned(effect):
             fanned.add(alias)
+        if guard_clauses(effect):
+            guarded.add(alias)
     return None

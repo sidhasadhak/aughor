@@ -222,6 +222,19 @@ class Effect(BaseModel):
     #: iteration appends its own `EffectOutcome`, so the run history shows what actually
     #: went out rather than one row standing for N sends.
     for_each: Optional[ForEach] = None
+    #: DS-6 — the route: run this step exactly when the named step's ``when`` guard was
+    #: evaluated and did NOT hold. Named **"Otherwise"** on every surface. Empty = the
+    #: unrouted step every automation written before DS-6 is, byte for byte.
+    #:
+    #: A field naming a sibling rather than a branch construct wrapping the list, for
+    #: this plane's standing reasons: it is structural (validated at save — the target
+    #: must exist, run earlier, and carry a guard; never an expression), it DRAWS (one
+    #: labelled edge from the deciding step), and the two arms are complementary BY
+    #: CONSTRUCTION — two hand-written opposite guards can drift apart, one guard read
+    #: from both sides cannot. The route reads only the guard's VERDICT, so it adds no
+    #: second dataflow: a guard that was never evaluated (upstream missing, or a
+    #: comparison that cannot be made) takes NEITHER arm — skipped, never guessed.
+    else_of: str = ""
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")

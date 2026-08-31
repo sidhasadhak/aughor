@@ -35,6 +35,7 @@ import {
   CONDITION_KINDS, CRON_PRESETS, ConditionRow, EFFECT_KINDS, EffectRow,
   effectsForWire, ghostBtn, inputStyle, labelStyle, newCondition, newEffect,
 } from "@/components/automations/AutomationRows";
+import { bindingRefs } from "@/lib/automationFlow";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 
@@ -662,9 +663,12 @@ function describeEffect(e: AutoEffect): string {
   const t = e.config.action_id || e.config.subscription_id || e.config.trigger_id
     || e.config.question || e.config.channel || "";
   // B1 made these fields BINDABLE, and `String({$from: …})` is "[object Object]" —
-  // found by driving a step whose channel is bound. A reference describes itself.
-  const target = t && typeof t === "object" && "$from" in (t as object)
-    ? String((t as { $from: unknown }).$from) : String(t);
+  // found by driving a step whose channel is bound. DS-6's join hit the identical
+  // hole one form over ("slack_post([object Object])", found the same way), so both
+  // shapes now go through the one helper that reads references — a third binding
+  // form would land in `bindingRefs`, not here.
+  const refs = bindingRefs(t);
+  const target = refs.length ? refs.join(" or ") : String(t);
   // W2 — a step that runs per item says so here too, or the list claims one send where
   // N happen.
   const fan = e.for_each ? " · per item" : "";

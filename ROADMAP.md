@@ -58,12 +58,12 @@ plane — see §7.
 | Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
-| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
+| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
 | Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
-**Honest limits, same date:** automations cannot branch/join (DS-6, begun 2026-08-31) or
-parallelise (DS-7), and a fan-out has no list to read from any effect kind but the declared
+**Honest limits, same date:** automations cannot parallelise (DS-7), and a fan-out has no
+list to read from any effect kind but the declared
 action's open outcome (§3.2); **`UserAgent.tool_grants` is a phantom** — consumed by
 `action_tools.py` and named in `GOVERNING_FIELDS`, but not a column, never loaded by
 `_row_to_agent`, absent from `_PATCHABLE`/`UserAgentCreate`/`UserAgentPatch`, so no agent can
@@ -484,7 +484,7 @@ the agent's *system* is a graph. Read-first; every node clicks through to its su
 
 #### Phase 2 · Past their ceiling (their documented, seven-release-old limit becomes our demo)
 
-**DS-6 · Branch and join.** Route between steps on a guard's verdict AND merge the branches
+**DS-6 · Branch and join — ✅ SHIPPED 2026-08-31.** Route between steps on a guard's verdict AND merge the branches
 back — **a join waits only on taken branches**, tractable because awaits already derive
 from the one `effect_refs` that validation, the engine's await and both canvases read (a
 route cannot become a fourth, invisible dataflow). Structural clauses only, W1's law:
@@ -493,6 +493,28 @@ implements the *anti*-pattern — persistent branch-exclusion that walks downstr
 stops everything the router didn't take, which is exactly why their branches cannot
 rejoin. **Receipt:** revenue fell → #alerts, else #daily, and ONE summary step runs after
 either.
+
+> **Shipped as:** `Effect.else_of` (surface word **Otherwise**: the arm runs exactly when
+> the named step's Only-if was evaluated and did NOT hold) + the `{"$from_any": [...]}`
+> join binding (first alternative that resolves, in authored order — each validated,
+> awaited and drawn like any reference). The laws that took deciding: **an undecided
+> guard takes NEITHER arm** (unevaluable/missing-upstream is not falsehood — the guard
+> went three-valued, `evaluate_guard_verdict`, to say so); **the route reads the
+> verdict, never the arm's health** (a failed primary does not run the otherwise — a
+> route is not a fallback); an untaken arm is `BRANCH_SKIP`, so it cannot fire the
+> fallback; `else_of` must name an earlier, guarded, unfanned step (a per-item guard is
+> N verdicts); elif chains fall out free (`else_of` onto an else-arm). Guards now
+> evaluate BEFORE the params resolve — cheaper, and the decision belongs to the guard.
+> Canvas: a third edge kind `route` (labelled "otherwise"), the arm's own strip + rail
+> picker, join chips reading "alerts.ts or daily.ts", one drawn edge per candidate;
+> dragging the *other arm* onto a bound field JOINS instead of replacing. Two defects
+> found by driving: the list summary rendered a join as `[object Object]` (the B1 hole,
+> one form over — both now route through `bindingRefs`), and a bound non-primary field
+> (`thread_ts`) never mounted its port, so ReactFlow silently dropped the join's edges
+> (`visibleFields`: a binding is wiring, and wiring must draw). Live-receipted on a
+> scratch instance: both branch directions, preview walking both arms ("otherwise of
+> alerts — decided when it runs"), and the execution canvas reading dispatch_error red /
+> **not taken** amber / skipped dim.
 
 **DS-7 · W3 — parallel steps** (absorbs §3.2's W3). Steps with no data dependency execute
 concurrently via frontier scheduling — the lfx shape (topological layers, a dynamically
@@ -700,9 +722,12 @@ NOW
         minimap, layout sidecar, the last window.prompt dead · the agent Map
         (spec-deltas in §3.7 Phase 1; DS-1's P1 port-filter + P2 rail remain open)
 
-NEXT (order within a band is the user's knob; 2026-08-31 the user picked DS-6 first —
-      the inert-vault repair stays highest among the rest)
-  DS-6  branch + join             (begun 2026-08-31 — §3.7 Phase 2)
+  ✅ DS-6  SHIPPED 2026-08-31 — branch ("Otherwise": else_of, routed on the guard's
+        VERDICT, undecided takes neither arm) + join ($from_any: first alternative that
+        resolved; a join waits only on taken branches). Their seven-release-old ceiling,
+        crossed — receipts in §3.7 Phase 2
+
+NEXT (order within a band is the user's knob; the inert-vault repair stays highest)
   VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
                                    the vault is built and nothing reaches it — §3.4; also DS-11's
                                    first half)

@@ -3725,6 +3725,13 @@ export interface AutoEffect {
    *
    *  Called **"For each" on every surface**, which is also the wire's word. */
   for_each?: { source: unknown } | null;
+  /** DS-6 — the route: run this step exactly when the named step's "Only if" was
+   *  evaluated and did NOT hold. Empty/absent = unrouted, which is every automation
+   *  written before DS-6. Declared for the reason `alias` above is: a client that
+   *  cannot see the field drops it on save.
+   *
+   *  Called **"Otherwise" on every surface**; `else_of` is the wire's word. */
+  else_of?: string;
   config: Record<string, unknown>;
 }
 
@@ -3875,6 +3882,13 @@ export interface AutomationGraphNode {
    *  Same status, opposite meanings: one is the design working, the other is something
    *  breaking. */
   guarded?: boolean;
+  /** DS-6 — the step whose "Only if" this one runs OTHERWISE of. A design fact like
+   *  `when` above: an arm drawn without it reads as a step that always fires. */
+  else_of?: string;
+  /** DS-6 — this `skipped` step is a route's untaken arm: the design working, one
+   *  branch over. Distinct from `guarded` (its own guard) and from a bare skip
+   *  (missing upstream). */
+  not_taken?: boolean;
 }
 
 export interface AutomationRunSummary {

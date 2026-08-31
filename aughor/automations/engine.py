@@ -40,9 +40,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, FanRefused, UnresolvedBinding, alias_for,
-    effect_refs, evaluate_guard, fan_items, fan_source, guard_clauses, is_binding,
-    item_context, item_refs, parse_ref, render_clause, resolve,
+    BRANCH_SKIP, FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, FanRefused, UnresolvedBinding,
+    alias_for, effect_refs, else_target, evaluate_guard_verdict, fan_items, fan_source,
+    guard_clauses, is_binding, item_context, item_refs, parse_ref, render_clause, resolve,
 )
 from aughor.automations.models import (
     Automation,
@@ -945,6 +945,11 @@ def run_automation(
     # so a designed workflow could draw arrows the engine would not have followed.
     context: dict[str, dict] = {}
     outcomes: list[EffectOutcome] = []
+    # DS-6 — each unfanned step's guard VERDICT: True (held, the step went on), False
+    # (did not hold), or None/absent (never decided — upstream missing, or a comparison
+    # that could not be made). The route reads exactly this, so it adds no second
+    # dataflow: the guard's own references are already validated, awaited and drawn.
+    verdicts: dict[str, Optional[bool]] = {}
 
     # DS-2 — "run to here": walk the chain only as far as one step.
     #
@@ -964,6 +969,26 @@ def run_automation(
 
     for i, effect in enumerate(walked):
         alias = alias_for(effect, i)
+        # DS-6 — the route, decided before anything else about this step: whether an
+        # OTHERWISE arm is taken depends only on the deciding step's guard verdict, so
+        # an untaken arm costs nothing — not even a fan-source resolve. Only a verdict
+        # of False takes the arm: True means the other path went, and None means the
+        # decision was never made (upstream missing, or a comparison that could not be
+        # made) — routing on a guess is the one thing a route must never do, so an
+        # undecided branch takes NEITHER arm and the join downstream skips honestly.
+        # B2 — in a preview the route is REPORTED, never decided (guards are samples);
+        # the arm's message says whose otherwise it is, below.
+        route_from = else_target(effect)
+        if route_from and not dry_run:
+            verdict = verdicts.get(route_from)
+            if verdict is not False:
+                outcomes.append(EffectOutcome(
+                    kind=effect.kind, target=alias, status="skipped",
+                    agent_id=acting_agent(effect, automation),
+                    message=(f"{BRANCH_SKIP}: '{route_from}' met its condition"
+                             if verdict is True else
+                             f"{BRANCH_SKIP}: '{route_from}' was not decided")))
+                continue
         # W2 — the list this step runs once per item of, or None for the single dispatch
         # every automation written before W2 performs, byte for byte. Resolved BEFORE the
         # params because an unresolvable SOURCE and an unresolvable param mean the same
@@ -1012,11 +1037,14 @@ def run_automation(
             label = alias if not fan_index else f"{alias}[{fan_index}/{fan_count}]"
             fan = {"fan_index": fan_index, "fan_count": fan_count}
             try:
-                bound = resolve(effect.config, step_context)
                 # W1 — the guard is evaluated in the SAME try as the params, because an
                 # unresolvable reference means the same thing on either side: the upstream
                 # this step depends on is not there. Evaluated BEFORE the dispatch, so a
-                # guarded-off step costs nothing — no request, no token, no send.
+                # guarded-off step costs nothing — no request, no token, no send — and,
+                # since DS-6, before the params resolve too: the guard reads only the
+                # chain context, a held step must not pay for a resolve it will not use,
+                # and the route needs the VERDICT even on a step whose own params are
+                # broken (the decision is the guard's; the arm's health is the arm's).
                 # W2 — and evaluated PER ITEM, which is the whole point of a guard on a
                 # fanned step: "post the regions that moved" is a filter over the list,
                 # and a guard checked once would make it all-or-nothing.
@@ -1024,7 +1052,17 @@ def run_automation(
                 # answer "will tomorrow's number clear this threshold", and a dry run that
                 # guessed would show a sound design as mostly held — the exact reading that
                 # would send someone rewriting a chain that was fine.
-                should_run, why_not = (True, "") if dry_run else evaluate_guard(effect, step_context)
+                verdict, why_not = ((True, "") if dry_run
+                                    else evaluate_guard_verdict(effect, step_context))
+                # DS-6 — the verdict, recorded for the route. Unfanned steps only: a
+                # fanned step's guard is N per-item verdicts, which is why the model
+                # refuses `else_of` onto one at save. Unevaluable (None) is recorded as
+                # exactly that — an OTHERWISE arm must not read "cannot compare" as
+                # "did not hold".
+                if items is None:
+                    verdicts[alias] = verdict
+                should_run = verdict is True
+                bound = resolve(effect.config, step_context) if should_run else {}
             except UnresolvedBinding as exc:
                 # SKIPPED, never run-with-a-hole. These steps send messages and write to
                 # systems; a missing channel or a missing thread id is not a value to
@@ -1094,12 +1132,18 @@ def run_automation(
                 guard = guard_clauses(effect)
                 fanned_note = (" · once per item at run time"
                                if fan_index and is_binding(fan_source(effect)) else "")
+                # DS-6 — the route, named as a decision that has not been made yet: a
+                # preview walks BOTH arms (a sample cannot say which way tomorrow's
+                # guard goes), and an arm shown without its "otherwise" would read as a
+                # step that always runs.
+                route_note = (f" · otherwise of {else_target(effect)} — decided when "
+                              "it runs" if else_target(effect) else "")
                 outcome = outcome.model_copy(update={
                     # What a later step will be able to read — declared keys plus whatever
                     # the later steps actually ask for, so the open set works too.
                     "data": dry_sample(alias, effect, automation.effects[i + 1:]),
                     # The guard, named as a question that has not been asked yet.
-                    "message": outcome.message + fanned_note + (
+                    "message": outcome.message + fanned_note + route_note + (
                         f" · only if {' and '.join(render_clause(c) for c in guard)}"
                         " — checked when it runs" if guard else ""),
                 })

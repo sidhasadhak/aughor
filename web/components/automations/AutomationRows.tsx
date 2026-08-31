@@ -114,14 +114,16 @@ function messageText(e: AutoEffect): string {
   return fieldText(e.config.message);
 }
 
-/** Text back to a value. A well-formed binding object becomes one; anything else stays
- *  the string it is — including half-typed JSON, which must not be swallowed mid-keystroke. */
+/** Text back to a value. A well-formed binding object becomes one — `$from`, or DS-6's
+ *  `$from_any` join — anything else stays the string it is, including half-typed JSON,
+ *  which must not be swallowed mid-keystroke. */
 function parseMessage(text: string): unknown {
   const t = text.trim();
   if (!t.startsWith("{")) return text;
   try {
     const parsed = JSON.parse(t);
-    return parsed && typeof parsed === "object" && "$from" in parsed ? parsed : text;
+    return parsed && typeof parsed === "object"
+      && ("$from" in parsed || "$from_any" in parsed) ? parsed : text;
   } catch {
     return text;
   }
@@ -241,6 +243,57 @@ export function GuardRows({ e, siblings, index, onChange }: {
             style={{ ...ghostBtn, color: "var(--red3)", padding: "2px 4px" }}>✕</Button>
         </div>
       ))}
+    </div>
+  );
+}
+
+/* ── DS-6 · "Otherwise" ───────────────────────────────────────────────────────────
+ *
+ * The wire calls it `else_of`; every surface calls it **Otherwise**. The route: this
+ * step runs exactly when the named step's "Only if" was evaluated and did NOT hold —
+ * complementary by construction, where two hand-written opposite guards can drift.
+ */
+
+/**
+ * The route editor for one step.
+ *
+ * The target is a PICKER over the steps this one may be the otherwise OF — earlier,
+ * guarded, unfanned: the same eligibility `validate_chain` refuses against, offered
+ * rather than discovered as a 422. Nothing renders when no earlier step qualifies and
+ * no route is set: an empty picker is a control that cannot be used.
+ */
+export function OtherwiseRows({ e, siblings, index, onChange }: {
+  e: AutoEffect; siblings: AutoEffect[]; index: number;
+  onChange: (e: AutoEffect) => void;
+}) {
+  const current = (e.else_of ?? "").trim();
+  const eligible = siblings
+    .map((s, i) => ({ step: s, alias: s.alias || `step${i + 1}`, i }))
+    .filter(({ step, i }) => i < index
+      && (step.when ?? []).length > 0 && !step.for_each);
+  if (eligible.length === 0 && !current) return null;
+
+  return (
+    <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px dashed var(--b1)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ ...labelStyle, marginBottom: 0 }}>Otherwise</span>
+        <select value={current} aria-label="Otherwise of"
+          onChange={ev => onChange({ ...e, else_of: ev.target.value || undefined })}
+          style={{ ...inputStyle, flex: 1, fontSize: 12 }}>
+          <option value="">— runs regardless —</option>
+          {/* A target the picker cannot offer — deleted, renamed, or no longer guarded
+              — is kept as an option rather than silently cleared, which would change
+              when this step runs without anyone touching it. */}
+          {current && !eligible.some(t => t.alias === current) && (
+            <option value={current}>{current} (missing)</option>
+          )}
+          {eligible.map(t => (
+            <option key={t.alias} value={t.alias}>
+              runs when {t.alias}&apos;s Only if does not hold
+            </option>
+          ))}
+        </select>
+      </div>
     </div>
   );
 }
@@ -448,6 +501,8 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
           </div>
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
+          onChange={onChange} />
+        <OtherwiseRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
           onChange={onChange} />
         <ForEachRows e={e} onChange={onChange} />
       </div>
