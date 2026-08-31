@@ -37,12 +37,17 @@ import {
   ReactFlow,
   type Edge as RFEdge,
   type Node as RFNode,
+  type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
 import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
 import {
-  EFFECT_KINDS, newCondition, newEffect, useAutomationVocabulary,
+  AutomationPalette, PALETTE_DRAG_TYPE, readPaletteDrag,
+  type PaletteGroup, type PalettePlacement,
+} from "@/components/automations/AutomationPalette";
+import {
+  EFFECT_KINDS, newConditionOf, newEffectOf, useAutomationVocabulary,
 } from "@/components/automations/AutomationRows";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
@@ -52,8 +57,9 @@ import {
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  type Vocabulary,
+  viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
+import type { AutoCondition, AutoEffect } from "@/lib/api";
 
 export type { AutomationGraphData };
 
@@ -597,6 +603,50 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const positions = useRef(new Map<string, { x: number; y: number }>());
   useEffect(() => { positions.current.clear(); }, [automationId]);
 
+  /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
+  const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
+  // Captured from `onInit` rather than `useReactFlow`, which would need this canvas
+  // wrapped in a provider it does not otherwise want.
+  const rf = useRef<ReactFlowInstance | null>(null);
+  const paneRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * Place what the palette handed over. The ONE add path: a clicked row and a dropped
+   * row both arrive here, and only the position differs — a drop knows where the reader
+   * put it, a click means "wherever I am looking".
+   *
+   * A TRIGGER ignores position on purpose: every condition renders inside the single
+   * `__trigger` node, so there is no new node for a drop point to be about, and moving
+   * the trigger card to wherever a reader released the mouse would be a surprise dressed
+   * as precision.
+   */
+  const addFromPalette = useCallback(
+    (placement: PalettePlacement, position?: { x: number; y: number }) => {
+      if (placement.group === "trigger") {
+        setDraft(d => ({
+          ...d,
+          conditions: [...d.conditions,
+                       newConditionOf(placement.kind as AutoCondition["kind"])],
+        }));
+        return;
+      }
+      // The alias the new step WILL have — `aliasFor`'s rule, one step ahead of it, so
+      // the position is filed under the same name the node is about to be drawn with.
+      const alias = `step${draft.effects.length + 1}`;
+      const pane = paneRef.current?.getBoundingClientRect();
+      const at = position
+        ?? (rf.current && pane
+          ? viewportCenter(rf.current.getViewport(),
+                           { width: pane.width, height: pane.height }, NODE_W)
+          : null);
+      if (at) positions.current.set(alias, at);
+      setDraft(d => ({
+        ...d, effects: [...d.effects, newEffectOf(placement.kind as AutoEffect["kind"])],
+      }));
+    },
+    [draft.effects.length],
+  );
+
   const patchField = useCallback((alias: string, field: string, value: unknown) => {
     setDraft(d => ({
       ...d,
@@ -776,10 +826,36 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           </div>
         )}
 
-        <div style={{ flex: 1, minWidth: 0, minHeight: 220,
+        {authoring && palette && (
+          <AutomationPalette
+            connId={automation?.conn_id}
+            only={palette === "all" ? undefined : palette}
+            onAdd={addFromPalette}
+            onClose={() => setPalette(null)}
+          />
+        )}
+
+        <div ref={paneRef}
+             onDragOver={(e) => {
+               // Without this the browser refuses the drop outright — and a palette row
+               // that can be picked up and not put down reads as a broken canvas.
+               if (e.dataTransfer.types.includes(PALETTE_DRAG_TYPE)) {
+                 e.preventDefault();
+                 e.dataTransfer.dropEffect = "copy";
+               }
+             }}
+             onDrop={(e) => {
+               const placement = readPaletteDrag(e.dataTransfer.getData(PALETTE_DRAG_TYPE));
+               if (!placement) return;
+               e.preventDefault();
+               addFromPalette(placement, rf.current?.screenToFlowPosition(
+                 { x: e.clientX, y: e.clientY }));
+             }}
+             style={{ flex: 1, minWidth: 0, minHeight: 220,
                       border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
           {mode === "design" ? (
             <ReactFlow
+              onInit={(instance) => { rf.current = instance; }}
               nodes={design.nodes}
               edges={edgesLive ? design.edges : []}
               nodeTypes={NODE_TYPES}
@@ -802,15 +878,20 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
               <Controls showInteractive={false} />
               {/* The Volt frame's toolbar, ON the canvas: adding is part of designing,
                   not a trip to a side panel. Both write the same draft the rail and
-                  Save share; the rail stays for the fields a node does not carry. */}
+                  Save share; the rail stays for the fields a node does not carry.
+                  DS-1 — these now OPEN the palette, narrowed to the half they name,
+                  instead of appending a kind nobody chose. Same two words, and the
+                  reader picks what lands. */}
               {authoring && (
                 <Panel position="top-left" style={{ display: "flex", gap: 6 }}>
-                  <Button variant="secondary" size="xs"
-                    onClick={() => setDraft(d => ({ ...d, conditions: [...d.conditions, newCondition()] }))}>
+                  <Button variant={palette === "trigger" ? "default" : "secondary"} size="xs"
+                    aria-expanded={palette === "trigger"}
+                    onClick={() => setPalette(p => (p === "trigger" ? null : "trigger"))}>
                     <Icon name="bolt" size={11} /> Add Trigger
                   </Button>
-                  <Button variant="secondary" size="xs"
-                    onClick={() => setDraft(d => ({ ...d, effects: [...d.effects, newEffect()] }))}>
+                  <Button variant={palette === "action" ? "default" : "secondary"} size="xs"
+                    aria-expanded={palette === "action"}
+                    onClick={() => setPalette(p => (p === "action" ? null : "action"))}>
                     <Icon name="plus" size={11} /> Add Action
                   </Button>
                 </Panel>

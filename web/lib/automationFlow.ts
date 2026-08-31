@@ -259,3 +259,60 @@ export function clearBinding(draft: Draft, toAlias: string, field: string): Draf
   });
   return { ...draft, effects };
 }
+
+
+/* ── DS-1 · placing what the palette hands over ──────────────────────────────────
+ *
+ * Both halves live here rather than in the canvas for this module's standing reason:
+ * jsdom measures every element as 0×0 and draws no edges, so anything a test must be
+ * able to catch has to be a function that never mounts a canvas. Placement arithmetic
+ * is exactly that kind of thing — it is wrong by a viewport, silently, and a screenshot
+ * is the only other way to see it.
+ */
+
+/** The config a brand-new row of `kind` starts with.
+ *
+ * Derived from `AUTOMATION_REQUIRED_KEYS` rather than written per kind: the server
+ * validates required config keys at CONSTRUCTION, so a default that omits one is a 422
+ * the moment it is saved, and a hand-written default per kind is one more place for that
+ * to be got wrong. Empty strings are deliberate — `missingKeys` then reports the row as
+ * incomplete on screen, which is the honest state of a step nobody has filled in yet.
+ *
+ * `schedule` is the one seeded with a real value: a cron is the only required key in this
+ * plane that has a sensible default, and shipping it keeps "Add Trigger" one click from a
+ * valid automation, exactly as it was before the palette existed.
+ */
+const KIND_SEED: Record<string, Record<string, unknown>> = {
+  schedule: { cron: "0 9 * * *" },
+};
+
+export function seedConfig(
+  kind: string, required: Record<string, string[]>,
+): Record<string, unknown> {
+  const blanks = Object.fromEntries((required[kind] ?? []).map(k => [k, ""]));
+  return { ...blanks, ...(KIND_SEED[kind] ?? {}) };
+}
+
+export interface Viewport { x: number; y: number; zoom: number }
+export interface Size { width: number; height: number }
+
+/**
+ * Where a node dropped by a CLICK should land: the middle of what the reader is
+ * currently looking at, in flow coordinates.
+ *
+ * ReactFlow's viewport is a pan/zoom transform over the flow plane, so the centre of the
+ * pane in flow terms is `(-pan + half the pane) / zoom`. `nodeWidth` shifts the result
+ * left by half a card so the node is centred on that point rather than starting at it —
+ * without it a clicked node lands visibly right of centre, which reads as a bug and is
+ * the kind of thing only a browser would have told us.
+ *
+ * A zero or missing zoom (a canvas that has not measured yet) falls back to 1: placing a
+ * node at a plausible spot beats dividing by zero and putting it at infinity.
+ */
+export function viewportCenter(vp: Viewport, size: Size, nodeWidth = 0): { x: number; y: number } {
+  const zoom = vp.zoom > 0 ? vp.zoom : 1;
+  return {
+    x: (-vp.x + size.width / 2) / zoom - nodeWidth / 2,
+    y: (-vp.y + size.height / 2) / zoom,
+  };
+}

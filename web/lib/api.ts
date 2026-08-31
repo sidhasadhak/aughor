@@ -3448,6 +3448,40 @@ export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
   };
 }
 
+/** DS-1 — one placeable thing, as the server describes it.
+ *
+ *  A sibling document to the vocabulary above, not part of it: that one is a closed set
+ *  of constants (safe to cache for the page), while this one counts the objects on THIS
+ *  deployment — bots, triggers, subscriptions, monitors — and its answer changes the
+ *  moment a reader creates one. `availability` is why the palette can refuse to look the
+ *  same on an install that can post to Slack and one that cannot. */
+export interface AutomationPaletteEntry {
+  kind: string;
+  group: "trigger" | "action";
+  label: string;
+  description: string;
+  /** An icon name from the client's own set — the server is guarded against sending one
+   *  we cannot draw (`tests/unit/test_automation_palette.py`). */
+  icon: string;
+  /** The server's curated order within a group; the client sorts by it, then by name. */
+  priority: number;
+  publishes: string[] | null;
+  bindable: string[];
+  availability: "ready" | "needs_setup";
+  /** Why it cannot be used here, in the words the reader should see. "" when ready. */
+  reason: string;
+}
+
+export async function getAutomationPalette(
+  connId?: string,
+): Promise<AutomationPaletteEntry[]> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/palette${qs}`);
+  if (!res.ok) throw new Error(`Failed to load the palette (${res.status})`);
+  const body = await res.json();
+  return (body.entries ?? []) as AutomationPaletteEntry[];
+}
+
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
 
 /** One user grant, as the API returns it — token fields are DROPPED server-side

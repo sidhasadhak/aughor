@@ -24,7 +24,7 @@ import {
   type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
   type AutomationVocabulary, type GuardClause, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
-import { upstreamKeys } from "@/lib/automationFlow";
+import { seedConfig, upstreamKeys } from "@/lib/automationFlow";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
@@ -72,12 +72,23 @@ export const ghostBtn: React.CSSProperties = {
  * 422 the moment it is saved. Two call sites inventing their own defaults is two chances
  * to get that wrong, and only one of them would be caught by a test.
  */
+export function newConditionOf(kind: ConditionKind): AutoCondition {
+  return { kind, config: seedConfig(kind, AUTOMATION_REQUIRED_KEYS) };
+}
+
+export function newEffectOf(kind: EffectKind): AutoEffect {
+  return { kind, config: seedConfig(kind, AUTOMATION_REQUIRED_KEYS) };
+}
+
+/** The kind a bare "add" reaches for, unchanged from before the palette existed: the two
+ *  on-canvas buttons and the rail's rows still add a row and let the reader change its
+ *  kind, and only the palette places a chosen one. */
 export function newCondition(): AutoCondition {
-  return { kind: "schedule", config: { cron: "0 9 * * *" } };
+  return newConditionOf("schedule");
 }
 
 export function newEffect(): AutoEffect {
-  return { kind: "notify", config: { trigger_id: "" } };
+  return newEffectOf("notify");
 }
 
 /** What is still missing before the server would accept this row. Empty = valid.

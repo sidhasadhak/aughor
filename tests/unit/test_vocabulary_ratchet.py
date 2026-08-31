@@ -118,6 +118,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "tests/unit/test_automations_dataflow.py",
          "web/lib/automationFlow",
          "web/components/AutomationGraph.tsx",
+         # DS-1's palette is the sibling of those vocabulary tables and carries the kind
+         # for the same reason: one entry in the roster of placeable things, keyed by the
+         # wire literal. Its prose says "declared action" throughout, and its test names
+         # the kind NOWHERE — it derives it as "the one kind whose published keys are
+         # open", so the file is exempt for a single identifier.
+         "aughor/automations/palette.py",
          # W1, the same ground once more: `effectsForWire` branches on the wire literal
          # `kinetic_action` — it is the ONE branch that rebuilds `config`, so it is the
          # one that could drop a step's guard on save. A test of that branch has to name
