@@ -164,3 +164,29 @@ describe("the route edge", () => {
     expect((byId.daily as { not_taken?: boolean }).not_taken).toBe(true);
   });
 });
+
+/* ── DS-7 · scheduling, at the handoff ──────────────────────────────────────────── */
+
+describe("parallel scheduling on the execution graph", () => {
+  it("hands the trigger card the scheduling so a rootless spine can say why", () => {
+    const g = graph({ scheduling: "parallel" });
+    const trigger = toFlow(g).nodes.find(n => n.id === "trigger")!;
+    expect((trigger.data as { scheduling?: string }).scheduling).toBe("parallel");
+    const step = toFlow(g).nodes.find(n => n.id === "ask")!;
+    expect((step.data as { scheduling?: string }).scheduling).toBeUndefined();
+  });
+
+  it("draws exactly the sequence edges the server sent — the frontier's spine is the server's call", () => {
+    // build_graph already prunes the spine to trigger→roots for a parallel
+    // automation; the client must pass that through, not re-derive its own order.
+    const g = graph({
+      scheduling: "parallel",
+      edges: [
+        { from: "trigger", to: "ask", type: "sequence" },
+        { from: "trigger", to: "post", type: "sequence" },
+      ],
+    });
+    const pairs = seqEdges(g).map(e => `${e.source}->${e.target}`);
+    expect(pairs).toEqual(["trigger->ask", "trigger->post"]);
+  });
+});

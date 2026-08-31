@@ -31,6 +31,8 @@ const automation = (over: Partial<Automation> = {}): Automation => ({
   // The three that a partial payload would quietly reset.
   enabled: false, paused_until: "2026-09-01T00:00:00Z", expires_at: "2026-12-01T00:00:00Z",
   max_retries: 4, retry_backoff_seconds: 90,
+  // DS-7 — the fourth: a parallel chain must not come back ordered from a rename.
+  scheduling: "parallel",
   created_at: "", updated_at: "", last_run_at: null, last_status: null,
   ...over,
 } as Automation);
@@ -50,6 +52,7 @@ describe("the update payload", () => {
     expect(p.max_retries).toBe(4);
     expect(p.retry_backoff_seconds).toBe(90);
     expect(p.condition_logic).toBe("any");
+    expect(p.scheduling).toBe("parallel");
     expect(p.conn_id).toBe("warehouse");
     expect(p.name).toBe("Refund spike watch");
   });

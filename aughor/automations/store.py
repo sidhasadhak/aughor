@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS automations (
     max_retries           INTEGER NOT NULL DEFAULT 1,
     retry_backoff_seconds REAL NOT NULL DEFAULT 30.0,
     agent_id              TEXT NOT NULL DEFAULT '',
+    scheduling            TEXT NOT NULL DEFAULT 'ordered',
     created_at            TEXT NOT NULL DEFAULT '',
     updated_at            TEXT NOT NULL DEFAULT '',
     last_run_at           TEXT,
@@ -124,11 +125,25 @@ def _add_agent_binding(conn: sqlite3.Connection) -> None:
     add_column_if_missing(conn, "automations", "agent_id", "TEXT NOT NULL DEFAULT ''")
 
 
+def _add_scheduling(conn: sqlite3.Connection) -> None:
+    """DS-7's `Automation.scheduling` — added everywhere AT ONCE, because this store has
+    already shipped the half-added version of this change: VA-9b's field had a model
+    attribute and no column, so the named INSERT quietly ignored it and the API echoed a
+    value the row never held. Model + DDL + this migration + both halves of the upsert,
+    one commit."""
+    add_column_if_missing(conn, "automations", "scheduling",
+                          "TEXT NOT NULL DEFAULT 'ordered'")
+
+
 #: Version 2 because the live store reads `PRAGMA user_version = 1` — checked against the
 #: deployed database, not assumed from this file, which is the only way to number one.
+#: Version 3 numbered off the same fact one release later: the deployed store runs this
+#: file's migrations at boot, so it sits at 2 — the highest version listed here on main.
 _MIGRATIONS: list[Migration] = [
     Migration(version=2, name="automation agent binding (VA-9b's missing column)",
               apply=_add_agent_binding),
+    Migration(version=3, name="step scheduling (DS-7: ordered | parallel)",
+              apply=_add_scheduling),
 ]
 
 
@@ -217,12 +232,12 @@ def upsert_automation(automation: Automation) -> Automation:
                 INSERT INTO automations (
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
-                    retry_backoff_seconds, agent_id, created_at, updated_at,
+                    retry_backoff_seconds, agent_id, scheduling, created_at, updated_at,
                     last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
-                    :retry_backoff_seconds, :agent_id, :created_at, :updated_at,
+                    :retry_backoff_seconds, :agent_id, :scheduling, :created_at, :updated_at,
                     :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET
@@ -245,6 +260,7 @@ def upsert_automation(automation: Automation) -> Automation:
                     max_retries=excluded.max_retries,
                     retry_backoff_seconds=excluded.retry_backoff_seconds,
                     agent_id=excluded.agent_id,
+                    scheduling=excluded.scheduling,
                     updated_at=excluded.updated_at,
                     last_run_at=excluded.last_run_at,
                     last_status=excluded.last_status

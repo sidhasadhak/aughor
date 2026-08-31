@@ -632,6 +632,38 @@ export function liveStatuses(events: LiveEvent[]): Record<string, LiveStatus> {
 }
 
 /**
+ * DS-7 · the steps nothing feeds — where a PARALLEL automation's spine attaches.
+ *
+ * Under frontier scheduling, "step N+1 runs after step N" is a lie unless an arrow
+ * says so: the trigger starts every root at once, and everything downstream is ordered
+ * by the data/route edges already drawn. A step's dependencies are the same set the
+ * engine waits on — every reference in its config, guard sides and fan source, plus
+ * its `else_of` target. The reserved per-iteration alias is not a step, so a fanned
+ * step reading only `item.…` is still a root.
+ */
+export function rootAliases(draft: Draft): string[] {
+  const known = new Set(draft.effects.map((e, i) => aliasFor(e, i)));
+  const producerOf = (ref: string): string => ref.slice(0, Math.max(0, ref.indexOf(".")));
+  return draft.effects
+    .map((e, i) => ({ e, alias: aliasFor(e, i) }))
+    .filter(({ e }) => {
+      const deps: string[] = [];
+      for (const v of Object.values(e.config ?? {})) {
+        deps.push(...bindingRefs(v).map(producerOf));
+      }
+      for (const c of e.when ?? []) {
+        deps.push(...bindingRefs(c.left).map(producerOf));
+        deps.push(...bindingRefs(c.right).map(producerOf));
+      }
+      deps.push(...bindingRefs(e.for_each?.source).map(producerOf));
+      const target = (e.else_of ?? "").trim();
+      if (target) deps.push(target);
+      return !deps.some(d => known.has(d));
+    })
+    .map(({ alias }) => alias);
+}
+
+/**
  * DS-6 (found by driving) · the field rows a design card renders.
  *
  * The primary fields always show; a non-primary field earns its row exactly when it is

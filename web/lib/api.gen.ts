@@ -9642,6 +9642,11 @@ export interface components {
              * @default 30
              */
             retry_backoff_seconds: number;
+            /**
+             * Scheduling
+             * @default ordered
+             */
+            scheduling: string;
         };
         /** CreateCanvasRequest */
         CreateCanvasRequest: {

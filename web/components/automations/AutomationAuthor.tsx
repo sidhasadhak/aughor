@@ -79,6 +79,9 @@ export function updatePayload(a: Automation, draft: Draft): NewAutomation {
     expires_at: a.expires_at,
     max_retries: a.max_retries,
     retry_backoff_seconds: a.retry_backoff_seconds,
+    // DS-7 — carried like everything above it: the PUT is a full replace, and a
+    // payload that omitted this would quietly re-serialise a parallel chain.
+    scheduling: a.scheduling,
   };
 }
 
@@ -203,7 +206,13 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved, onPrevie
         ))}
 
         <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "14px 0 6px" }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>Then (in order)</label>
+          {/* DS-7 — the header tells the truth about scheduling (edited on the form,
+              like `condition_logic` above): "in order" on a parallel chain would teach
+              a reader an order the frontier does not keep. */}
+          <label style={{ ...labelStyle, marginBottom: 0 }}>
+            Then {automation.scheduling === "parallel"
+              ? "(in parallel — as the arrows allow)" : "(in order)"}
+          </label>
           <Button variant="ghost" size="xs" className="aug-fs-xs"
             style={{ marginLeft: "auto", color: "var(--blue4)" }}
             onClick={() => onDraft({ ...draft, effects: [...draft.effects, newEffect()] })}>

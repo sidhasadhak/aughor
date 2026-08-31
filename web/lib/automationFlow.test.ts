@@ -12,8 +12,8 @@ import { describe, expect, it } from "vitest";
 import {
   applyConnect, bindingRefs, clearBinding, draftToFlow, ELSE_FIELD, FAN_FIELD,
   GUARD_FIELD, guardSentences, aliasFor, layoutToPersist, liveStatuses, pasteEffect,
-  producedByAlias, seedConfig, upstreamKeys, viewportCenter, visibleFields,
-  type Vocabulary,
+  producedByAlias, rootAliases, seedConfig, upstreamKeys, viewportCenter,
+  visibleFields, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -794,6 +794,40 @@ describe("pasteEffect — the route and the join under the drop-never-repoint la
       "item");
     expect(next.effects[next.effects.length - 1].else_of).toBeUndefined();
     expect(dropped).toContain("otherwise");
+  });
+});
+
+describe("rootAliases — where a parallel automation's spine attaches", () => {
+  it("a step is a root until something it reads exists in the chain", () => {
+    const roots = rootAliases(draft(
+      eff("investigate", { question: "sales?" }, "numbers"),
+      eff("investigate", { question: "costs?" }, "costs"),
+      eff("slack_post", { channel: "#c", message: { $from: "numbers.answer" } }),
+    ));
+    expect(roots).toEqual(["numbers", "costs"]);
+  });
+
+  it("guard sides, fan sources and the route all count as being fed", () => {
+    const roots = rootAliases(draft(
+      eff("investigate", { question: "q" }, "numbers"),
+      { kind: "slack_post", alias: "guarded", config: { channel: "#c" },
+        when: [{ left: { $from: "numbers.answer" }, op: "truthy" }] },
+      { kind: "slack_post", alias: "arm", else_of: "guarded",
+        config: { channel: "#d" } },
+      { kind: "slack_post", alias: "fanned",
+        config: { channel: { $from: "item.value" }, message: "hi" },
+        for_each: { source: { $from: "numbers.answer" } } },
+    ));
+    expect(roots).toEqual(["numbers"]);
+  });
+
+  it("the per-iteration item alias is not a step — a fanned literal stays a root", () => {
+    const roots = rootAliases(draft(
+      { kind: "slack_post", alias: "fan",
+        config: { channel: { $from: "item.value" }, message: "hi" },
+        for_each: { source: ["#a", "#b"] } },
+    ));
+    expect(roots).toEqual(["fan"]);
   });
 });
 

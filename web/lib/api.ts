@@ -3757,6 +3757,9 @@ export interface Automation {
    *  since VA-9b; undeclared here until DS-5 needed to ask which chains an agent
    *  operates. A per-STEP delegation lives on the effect's own config instead. */
   agent_id: string;
+  /** DS-7 — how the steps are scheduled: `ordered` (the sequential walk, the default)
+   *  or `parallel` (steps run as their arrows allow). */
+  scheduling: "ordered" | "parallel";
 }
 
 export interface EffectOutcome {
@@ -3796,6 +3799,10 @@ export type NewAutomation = {
   expires_at?: string | null;
   max_retries?: number;
   retry_backoff_seconds?: number;
+  /** DS-7 — `ordered` (default: the sequential walk) or `parallel` (steps run as
+   *  their arrows allow). An authored field: every update payload must carry it, or
+   *  a rename silently re-serialises a parallel chain. */
+  scheduling?: "ordered" | "parallel";
 };
 
 /** List automations. Returns [] when the plane is off (404) so a caller can render the
@@ -3908,6 +3915,8 @@ export interface AutomationGraphData {
   agent_id?: string; runs?: AutomationRunSummary[]; run_id?: string;
   /** B2 — this graph is a PREVIEW: nothing in it happened. */
   dry_run?: boolean;
+  /** DS-7 — how this automation schedules its steps, so the canvas can say it. */
+  scheduling?: string;
 }
 
 /** B2 — what this design WOULD do, dispatching nothing.

@@ -307,6 +307,18 @@ class Automation(BaseModel):
     conditions: list[Condition] = Field(min_length=1)
     condition_logic: Literal["all", "any"] = "all"
     effects: list[Effect] = Field(min_length=1)
+    #: DS-7 — how the steps are scheduled. ``ordered`` = the strictly sequential walk
+    #: every automation written before DS-7 performs, byte for byte. ``parallel`` =
+    #: frontier scheduling: steps run as their ARROWS allow — a step waits for every
+    #: step it references (params, guard, fan source, `else_of`) and for nothing else,
+    #: so two independent investigations overlap.
+    #:
+    #: Per-AUTOMATION and opt-in, deliberately. The declared list is today a documented
+    #: contract ("Then, in order" on every surface), and two steps with no data edge can
+    #: still be order-sensitive in the world (two posts into one channel arrive in list
+    #: order). Only the author knows; silently reordering every existing automation
+    #: would be a semantics change nobody asked for.
+    scheduling: Literal["ordered", "parallel"] = "ordered"
     fallback_effect: Optional[Effect] = Field(
         default=None,
         description="Runs only when EVERY declared effect failed after its retries — the "

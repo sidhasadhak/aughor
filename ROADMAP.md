@@ -58,11 +58,11 @@ plane — see §7.
 | Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
-| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
+| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), parallel steps (`scheduling`, DS-7), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
 | Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
-**Honest limits, same date:** automations cannot parallelise (DS-7), and a fan-out has no
+**Honest limits, same date:** a fan-out has no
 list to read from any effect kind but the declared
 action's open outcome (§3.2); **`UserAgent.tool_grants` is a phantom** — consumed by
 `action_tools.py` and named in `GOVERNING_FIELDS`, but not a column, never loaded by
@@ -148,8 +148,10 @@ most-wanted feature on this list.
 
 ### 3.2 · W1/W2 — the two workflow primitives
 
-Measured: our engine runs a strictly sequential list. It cannot branch between effects, fan out
-over a list, or parallelise. The user named this gap directly; it is real.
+Measured 2026-08-30: our engine ran a strictly sequential list. It could not branch between
+effects, fan out over a list, or parallelise. The user named this gap directly; it was real —
+and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), branch+join
+(DS-6) and parallel steps (DS-7, absorbing this section's W3).
 
 - ~~**W1 · `when` on an effect**~~ — **SHIPPED 2026-08-30.** A guard over the accumulated
   `context`, evaluated BEFORE the dispatch so a held step costs nothing. Its references run
@@ -171,7 +173,8 @@ over a list, or parallelise. The user named this gap directly; it is real.
   `outcomes[i]` because the engine appended exactly one outcome per effect, so every node
   after a fan-out would have shown another step's status — a picture that is *wrong*, not
   missing. Grouped by `fan_count` instead.
-- **W3 · parallel-safe steps** — absorbed into Arc DS as **DS-7** (§3.7 Phase 2).
+- ~~**W3 · parallel-safe steps**~~ — absorbed into Arc DS as **DS-7** and **SHIPPED
+  2026-08-31** (§3.7 Phase 2).
 
 Neither needs a new canvas: VA-12's authoring rail edits whatever the model can express.
 
@@ -516,11 +519,39 @@ either.
 > alerts — decided when it runs"), and the execution canvas reading dispatch_error red /
 > **not taken** amber / skipped dim.
 
-**DS-7 · W3 — parallel steps** (absorbs §3.2's W3). Steps with no data dependency execute
+**DS-7 · W3 — parallel steps — ✅ SHIPPED 2026-08-31** (absorbs §3.2's W3). Steps with no data dependency execute
 concurrently via frontier scheduling — the lfx shape (topological layers, a dynamically
 recomputed runnable frontier) adapted to our outcome model; DS-6's dependency analysis
 does most of the homework. One outcome per dispatch; spans intact under the run trace.
 **Receipt:** two independent investigations overlap in the span waterfall.
+
+> **Shipped as:** `Automation.scheduling: "ordered" | "parallel"` — **per-automation and
+> opt-in**, because the declared list is a documented contract ("Then, in order" on every
+> surface) and two steps with no data edge can still be order-sensitive in the world (two
+> posts into one channel arrive in list order); only the author knows. A step's
+> dependency set = every reference in its params, guard and fan source, plus its
+> `else_of` target — the one `effect_refs` again, so "may these overlap" and "is an edge
+> drawn between them" cannot disagree, and forward-ref refusal makes the graph a DAG by
+> construction. The engine's per-step body was EXTRACTED once (`_execute_step`) and
+> driven by both the ordered walk (byte-for-byte, the whole pre-DS-7 suite is that
+> assertion) and the frontier (`ContextThreadPoolExecutor`, the kernel's contextvar-
+> copying pool, ≤ `MAX_PARALLEL_STEPS`=4; per-step retry budgets since parallel sleeps
+> overlap; outcomes reassembled in DECLARED order because `group_outcomes` matches
+> positions). A dry run always walks in order — parallelism over an inert dispatcher
+> buys only nondeterministic sample ordering. The graph prunes the sequence spine to
+> trigger→roots under parallel (a chain spine would lie) and serves `scheduling` so both
+> canvases and the trigger card say "steps run in parallel — as the arrows allow".
+> Store migration 3 (rehearsed at boot on a v2 scratch store); the authoring form gained
+> the select AND the carry-forward fix — its payload was silently resetting
+> `description`/`enabled`/`paused_until`/`expires_at`/`retry_backoff_seconds`/
+> `fallback_effect` on every form edit (4th of the PUT-erase family; canary-proven fixed
+> live). **Live receipts on a scratch instance:** the same two-notify automation ran
+> 2.7s parallel (both steps opening the same millisecond) vs 5.1s ordered; worker-thread
+> spans landed under the run's trace with the waterfall's own header reading "this run
+> did work in parallel"; the DS-6 branch+join chain kept its laws under the frontier
+> (the otherwise arm waited for the verdict). Left open, chip-filed: the VA-5 waterfall
+> draws single `external_call` completion events forward from their timestamp, and both
+> editors read-modify-write from a stale list snapshot.
 
 **DS-8 · Durable pause — approvals mid-chain.** A run that reaches an approval-gated
 action parks durably, surfaces in the A4/RC-3 proposal inbox (resolve-once, expiry
@@ -727,6 +758,11 @@ NOW
         resolved; a join waits only on taken branches). Their seven-release-old ceiling,
         crossed — receipts in §3.7 Phase 2
 
+  ✅ DS-7  SHIPPED 2026-08-31 — parallel steps: scheduling="parallel" (opt-in, per
+        automation), frontier over the same effect_refs the awaits and canvases read;
+        one step body driven by both orders; 2.7s parallel vs 5.1s ordered on the same
+        chain, spans overlapping under one trace — receipts in §3.7 Phase 2
+
 NEXT (order within a band is the user's knob; the inert-vault repair stays highest)
   VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
                                    the vault is built and nothing reaches it — §3.4; also DS-11's
@@ -739,7 +775,7 @@ NEXT (order within a band is the user's knob; the inert-vault repair stays highe
                                    migration + store/create/patch surfaces; grants stay
                                    PROPOSE-only)
 
-THEN    DS-7 parallel · DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
+THEN    DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
 
 LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)

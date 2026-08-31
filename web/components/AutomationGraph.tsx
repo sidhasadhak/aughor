@@ -64,7 +64,7 @@ import {
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, ELSE_FIELD, FAN_FIELD, GUARD_FIELD,
   guardSentences, layoutToPersist, liveStatuses, pasteEffect, producedByAlias,
-  viewportCenter, visibleFields, type LiveStatus, type Vocabulary,
+  rootAliases, viewportCenter, visibleFields, type LiveStatus, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 import {
@@ -278,6 +278,12 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
             ? ` · ${ms(data.duration_ms as number)}` : ""}
         </div>
       )}
+      {/* DS-7 — the spine on this picture only touches the roots; the card says why. */}
+      {data.scheduling === "parallel" && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-2)", marginTop: 2 }}>
+          steps run in parallel — as the arrows allow
+        </div>
+      )}
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
@@ -296,7 +302,10 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
     // `executed`, which is the engine's honest word for "this step ran to completion"
     // and exactly the wrong one to put on screen when nothing ran: found by driving it,
     // with "● executed" sitting under a banner reading "nothing was sent".
-    data: { ...n, dryRun: !!graph.dry_run },
+    // DS-7 — the trigger card carries the scheduling, so a run whose spine only
+    // touches the roots can say why.
+    data: { ...n, dryRun: !!graph.dry_run,
+            ...(n.type === "trigger" ? { scheduling: graph.scheduling } : {}) },
   }));
 
   // A data edge already implies "runs after", so a sequence edge on the same pair is
@@ -658,7 +667,8 @@ function conditionLine(c: { kind: string; config: Record<string, unknown> }): st
 }
 
 function DesignTriggerNode({ data }: {
-  data: { conditions: { kind: string; config: Record<string, unknown> }[]; logic: string };
+  data: { conditions: { kind: string; config: Record<string, unknown> }[]; logic: string;
+          scheduling?: string };
 }) {
   return (
     <div style={{
@@ -690,6 +700,13 @@ function DesignTriggerNode({ data }: {
             {conditionLine(c)}
           </span>
         ))}
+        {/* DS-7 — a spine-less picture must say why: the frontier starts every root
+            at once, and only the arrows order what follows. */}
+        {data.scheduling === "parallel" && (
+          <span className="aug-fs-xs" style={{ color: "var(--chart-2)" }}>
+            steps run in parallel — as the arrows allow
+          </span>
+        )}
       </div>
       <Handle type="source" position={Position.Right}
         style={{ ...portStyle("out", false), right: -(12 + PORT / 2),
@@ -1209,7 +1226,8 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
       measured: sizes["__trigger"],
       position: positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
-              logic: automation?.condition_logic ?? "all" },
+              logic: automation?.condition_logic ?? "all",
+              scheduling: automation?.scheduling ?? "ordered" },
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
@@ -1230,13 +1248,27 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
           : undefined,
       } as DesignNodeData,
     }))];
+    const spineStyle = {
+      style: { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t4)" },
+    };
+    // DS-7 — where the spine attaches depends on the scheduling. Ordered: trigger →
+    // first step (order itself is the rail's). Parallel: trigger → every ROOT, because
+    // the frontier starts them all at once and everything downstream is ordered by the
+    // arrows already drawn — a single spine would claim a first step that isn't one.
+    const parallel = automation?.scheduling === "parallel";
     const rfEdges: RFEdge[] = [
-      // the faint "runs after" spine, trigger → first step (order itself is the rail's)
-      ...(steps.length ? [{
-        id: "__seq:trigger", source: "__trigger", target: steps[0].alias,
-        style: { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t4)" },
-      }] : []),
+      ...(steps.length
+        ? (parallel
+            ? rootAliases(draft).map(alias => ({
+                id: `__seq:trigger:${alias}`, source: "__trigger", target: alias,
+                ...spineStyle,
+              }))
+            : [{
+                id: "__seq:trigger", source: "__trigger", target: steps[0].alias,
+                ...spineStyle,
+              }])
+        : []),
       ...edges.map(e => ({
         id: `bind:${e.from}.${e.key}->${e.to}.${e.field}`,
         source: e.from,

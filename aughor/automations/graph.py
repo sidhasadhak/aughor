@@ -140,6 +140,17 @@ def build_graph(automation: Any, run: Any = None) -> dict:
     effects = list(getattr(automation, "effects", []) or [])
     groups = group_outcomes(effects, outcomes)
 
+    # DS-7 — under parallel scheduling the chain-of-sequence spine would be a LIE: step
+    # N+1 does not run after step N unless an arrow says so. The spine then connects the
+    # trigger to each ROOT (a step no other step feeds) and nothing else — every other
+    # ordering claim on the picture is a data or route edge the engine actually honours.
+    # The dependency set is the engine's own: `effect_refs` plus the `else_of` target.
+    parallel = getattr(automation, "scheduling", "ordered") == "parallel"
+    known = {alias_for(e, n) for n, e in enumerate(effects)}
+    fed = {alias_for(e, n): ({parse_ref(r)[0] for r in effect_refs(e)}
+                             | ({else_target(e)} if else_target(e) else set())) & known
+           for n, e in enumerate(effects)}
+
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
         node = {
@@ -236,8 +247,14 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         nodes.append(node)
 
         # sequence: the trigger starts the first step; each step precedes the next.
-        edges.append({"from": trigger_id if i == 0 else alias_for(effects[i - 1], i - 1),
-                      "to": alias, "type": "sequence"})
+        # DS-7 — on a parallel automation, only the trigger→root spine survives (see
+        # above): a sequence arrow between two independent steps would claim an order
+        # the frontier does not keep.
+        if not parallel:
+            edges.append({"from": trigger_id if i == 0 else alias_for(effects[i - 1], i - 1),
+                          "to": alias, "type": "sequence"})
+        elif not fed[alias]:
+            edges.append({"from": trigger_id, "to": alias, "type": "sequence"})
 
         # DS-6 — the route, drawn. A third edge kind on purpose: it carries no value
         # (that is `data`) and claims more than order (that is `sequence`) — it DECIDES
@@ -265,6 +282,10 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         "automation_id": getattr(automation, "id", ""),
         "name": getattr(automation, "name", ""),
         "agent_id": getattr(automation, "agent_id", "") or "",
+        # DS-7 — how the steps are scheduled, so a canvas can SAY it ("in parallel —
+        # as the arrows allow") instead of leaving a spine-less picture to explain
+        # itself.
+        "scheduling": getattr(automation, "scheduling", "ordered") or "ordered",
     }
     if run is not None:
         # VA-4c — the trigger node says WHAT fired it and when, not only what it watches.
