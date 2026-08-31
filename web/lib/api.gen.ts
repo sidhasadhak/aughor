@@ -1066,6 +1066,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/{automation_id}/layout": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read Layout
+         * @description Where the caller arranged this automation's steps (`{}` if never touched).
+         *
+         *     Server-side and account-keyed rather than `localStorage`, for the reason the cockpit
+         *     settled once: an arrangement a person made on their laptop and cannot find on their
+         *     desktop reads as the product having forgotten it. No 404 for an unknown automation —
+         *     an empty layout IS the answer for one nobody has arranged.
+         */
+        get: operations["read_layout_automations__automation_id__layout_get"];
+        /**
+         * Write Layout
+         * @description Persist the whole arrangement. Separate from `PUT /automations/{id}` on purpose:
+         *     that route carries the governed record a person authored, this one carries where they
+         *     happened to drag it, and folding a view preference into the record the engine reads
+         *     is how a rename comes to move somebody's nodes.
+         */
+        put: operations["write_layout_automations__automation_id__layout_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/{automation_id}/pause": {
         parameters: {
             query?: never;
@@ -10350,15 +10382,6 @@ export interface components {
             /** Title */
             title: string;
         };
-        /** LayoutRequest */
-        LayoutRequest: {
-            /** Connection Id */
-            connection_id: string;
-            /** Layout */
-            layout?: {
-                [key: string]: unknown;
-            };
-        };
         /** MetricRequest */
         MetricRequest: {
             /** Approved At */
@@ -10917,6 +10940,20 @@ export interface components {
              * @default true
              */
             persist: boolean;
+        };
+        /**
+         * RunNowRequest
+         * @description DS-3 — the id this run will have.
+         *
+         *     A run writes a span per step under `trace_id == run_id` WHILE it runs, so a surface
+         *     that wants to watch one needs the id before the request returns — and this request
+         *     does not return until the whole chain has finished. Supplying it is the whole
+         *     difference between watching a run and being told about it afterwards. Omitted, the
+         *     engine mints one exactly as before.
+         */
+        RunNowRequest: {
+            /** Run Id */
+            run_id?: string | null;
         };
         /** SlackBotBody */
         SlackBotBody: {
@@ -12068,6 +12105,25 @@ export interface components {
             scope: string;
             /** Table */
             table: string;
+        };
+        /**
+         * LayoutRequest
+         * @description `{alias: {x, y}}` — where each step sits on the Design canvas.
+         */
+        aughor__routers__automations__LayoutRequest: {
+            /** Layout */
+            layout?: {
+                [key: string]: unknown;
+            };
+        };
+        /** LayoutRequest */
+        aughor__routers__dashboard__LayoutRequest: {
+            /** Connection Id */
+            connection_id: string;
+            /** Layout */
+            layout?: {
+                [key: string]: unknown;
+            };
         };
     };
     responses: never;
@@ -13612,7 +13668,9 @@ export interface operations {
     };
     dry_run_draft_automations_dry_run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                until?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -13825,7 +13883,9 @@ export interface operations {
     };
     dry_run_stored_automations__automation_id__dry_run_post: {
         parameters: {
-            query?: never;
+            query?: {
+                until?: string | null;
+            };
             header?: never;
             path: {
                 automation_id: string;
@@ -13920,6 +13980,72 @@ export interface operations {
             };
         };
     };
+    read_layout_automations__automation_id__layout_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    write_layout_automations__automation_id__layout_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__automations__LayoutRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     pause_automations__automation_id__pause_post: {
         parameters: {
             query?: never;
@@ -13964,7 +14090,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RunNowRequest"] | null;
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -15036,7 +15166,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["LayoutRequest"];
+                "application/json": components["schemas"]["aughor__routers__dashboard__LayoutRequest"];
             };
         };
         responses: {
