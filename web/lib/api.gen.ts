@@ -902,6 +902,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/palette": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Palette
+         * @description DS-1 — what may be placed on the Design canvas, and whether it works HERE.
+         *
+         *     A sibling of `/automations/vocabulary` rather than an extension of it: that document
+         *     is a pure closed set (the same constants `validate_chain` refuses against) cached
+         *     module-side and shared by every row on screen, while this one is deployment-shaped —
+         *     it counts Slack bots, triggers, subscriptions and monitors, and its answer changes the
+         *     moment a reader creates one. Folding a per-deployment reading into a cached constant
+         *     table is how a palette comes to insist you have no bots an hour after you made one.
+         *
+         *     `conn_id` scopes the objects that are themselves connection-scoped (subscriptions,
+         *     monitors); omit it and those probes count across the workspace.
+         */
+        get: operations["palette_automations_palette_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/runs": {
         parameters: {
             query?: never;
@@ -13592,6 +13622,37 @@ export interface operations {
                 "application/json": components["schemas"]["CreateAutomationRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    palette_automations_palette_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
