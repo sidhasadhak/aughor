@@ -357,7 +357,13 @@ def _step_span(effect: Effect, automation: Automation, alias: str, run_id: str =
         span = mlflow_tool_span(f"automation.{effect.kind}", {
             "automation_id": automation.id, "automation": automation.name,
             "step": alias, "agent_id": acting_agent(effect, automation),
-        }, span_kind="tool")
+        }, span_kind="tool",
+            # DS-3 — the same two facts again, on `span_attrs` this time, because that is
+            # the only channel that reaches the `session_events` payload (telemetry.py
+            # says so in its own warning). As ordinary attributes they land in
+            # `task_history`, which has no HTTP door — so a reader watching a run live
+            # could see THAT a step ran and never which step it was.
+            span_attrs={"automation_id": automation.id, "step": alias})
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "automation step span is best-effort", counter="automation.span")
@@ -809,6 +815,8 @@ def run_automation(
     persist: bool = True,
     dry_run: bool = False,
     manual: bool = False,
+    run_id: Optional[str] = None,
+    until_alias: Optional[str] = None,
 ) -> AutomationRun:
     """Run one automation through the full pipeline and return its :class:`AutomationRun`.
 
@@ -872,7 +880,13 @@ def run_automation(
     # VA-4d — allocated up front so the run id can BE the trace id: clicking a run in
     # `Activity → Runs` then lands on exactly this AutomationRun, with no second
     # correlation key to keep in sync.
-    run_id = str(_uuid.uuid4())
+    #
+    # DS-3 — and a CALLER may supply it. Every step's span is written under this id while
+    # the chain runs, so a surface that wants to watch a run needs the id BEFORE the run
+    # finishes; minting it here only meant the one thing able to watch was the one thing
+    # that had already stopped caring. Nothing else changes: an unsupplied id is still
+    # minted here, and the id is still the trace id.
+    run_id = run_id or str(_uuid.uuid4())
     base = {
         "id": run_id,
         "automation_id": automation.id,
@@ -931,7 +945,24 @@ def run_automation(
     # so a designed workflow could draw arrows the engine would not have followed.
     context: dict[str, dict] = {}
     outcomes: list[EffectOutcome] = []
-    for i, effect in enumerate(automation.effects):
+
+    # DS-2 — "run to here": walk the chain only as far as one step.
+    #
+    # Truncating the list rather than breaking out of the loop, because a step can leave
+    # the body early by half a dozen routes — held by its guard, an unresolved binding, a
+    # refused fan-out, an empty list — and a `break` placed after any of them is a break
+    # the target step can slip past. The list cannot.
+    #
+    # An unknown alias walks the WHOLE chain rather than none of it: a frontier nobody can
+    # find is a caller's mistake, and answering it with an empty preview would look like a
+    # chain that does nothing.
+    walked = automation.effects
+    if until_alias:
+        cut = next((i for i, e in enumerate(walked) if alias_for(e, i) == until_alias), None)
+        if cut is not None:
+            walked = walked[:cut + 1]
+
+    for i, effect in enumerate(walked):
         alias = alias_for(effect, i)
         # W2 — the list this step runs once per item of, or None for the single dispatch
         # every automation written before W2 performs, byte for byte. Resolved BEFORE the
@@ -1096,7 +1127,11 @@ def run_automation(
     # have paged on-call to say the automation itself was broken. The fallback needs a
     # step that actually TRIED and did not succeed.
     attempted = [o for o in outcomes if o.status != "skipped"]
-    if (automation.fallback_effect is not None and attempted
+    # DS-2 — a PARTIAL walk cannot conclude that everything failed. Firing the fallback
+    # because the reader stopped early would report a disaster they caused by asking a
+    # question, and it is the one part of a preview that reads as a verdict.
+    partial = until_alias is not None and len(walked) < len(automation.effects)
+    if (automation.fallback_effect is not None and attempted and not partial
             and all(o.status != "executed" for o in attempted)):
         fallback_used = True
         outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,

@@ -80,6 +80,9 @@ type Props = {
   workspaceName?: string;
   onOpenInvestigation?: (invId: string) => void;
   onOpenAutomations?: () => void;
+  /** DS-5 — destinations an agent's Map can send a reader to, when the shell has them. */
+  onOpenIntegrations?: () => void;
+  onOpenConnection?: (connectionId: string) => void;
 };
 
 /**
@@ -91,6 +94,7 @@ type Props = {
 export function AgenticOpsWorkspace({
   layer, onLayerChange, workspaceId, workspaceName,
   connId, onOpenInvestigation, onOpenAutomations,
+  onOpenIntegrations, onOpenConnection,
 }: Props) {
   // Cross-layer focus: a trace opened from Fleet/Agents/Attention lands in the
   // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
@@ -162,7 +166,13 @@ export function AgenticOpsWorkspace({
         if (id === "agents") return (
           <AgenticAgentsPanel workspaceId={workspaceId} workspaceName={workspaceName}
             focusAgent={agentFocus} onOpenTrace={openTraceForInvestigation} range={range}
-            createSignal={createSignal} />
+            createSignal={createSignal}
+            // DS-5 — a node on an agent's Map opens the surface that owns it. The chains
+            // live one layer over, so that one is a layer switch; the rest belong to the
+            // app and are only offered when the shell passes them down.
+            onOpenAutomations={() => onLayerChange("automations")}
+            onOpenIntegrations={onOpenIntegrations}
+            onOpenConnection={onOpenConnection} />
         );
         if (id === "attention") return (
           <NeedsHumanPanel onOpenInvestigation={onOpenInvestigation}

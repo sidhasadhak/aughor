@@ -32,6 +32,7 @@ import {
   Controls,
   Handle,
   MarkerType,
+  MiniMap,
   Panel,
   Position,
   ReactFlow,
@@ -41,7 +42,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 
-import { AutomationAuthor, type Draft } from "@/components/automations/AutomationAuthor";
+import {
+  AutomationAuthor, updatePayload, type Draft,
+} from "@/components/automations/AutomationAuthor";
 import {
   AutomationPalette, PALETTE_DRAG_TYPE, readPaletteDrag,
   type PaletteGroup, type PalettePlacement,
@@ -49,17 +52,25 @@ import {
 import {
   EFFECT_KINDS, newConditionOf, newEffectOf, useAutomationVocabulary,
 } from "@/components/automations/AutomationRows";
+import { OutcomeKeyPicker } from "@/components/automations/OutcomeKeyPicker";
+import { canvasClipboard, copyToCanvasClipboard } from "@/lib/canvasClipboard";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import {
-  getAutomationGraph, getAutomationVocabulary,
+  dryRunAutomationDraft, getActivityEvents, getAutomationGraph, getAutomationLayout,
+  getAutomationVocabulary, saveAutomationLayout,
   type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  viewportCenter, type Vocabulary,
+  layoutToPersist, liveStatuses, pasteEffect, producedByAlias, viewportCenter,
+  type LiveStatus, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
+import {
+  canRedo, canUndo, initHistory, pushHistory, redoHistory, resetHistory, undoHistory,
+  type History, type PushOptions,
+} from "@/lib/history";
 
 export type { AutomationGraphData };
 
@@ -73,6 +84,24 @@ const STATUS_COLOR: Record<string, string> = {
   criterion_failed: "var(--chart-threshold-warn, #f59e0b)",
   invalid_params: "var(--red4)",
   skipped: "var(--t4)",
+  // DS-3 — in flight. Its own hue: a step still working is not a step that worked.
+  running: "var(--chart-1)",
+};
+
+/** DS-3 — what a live span can honestly claim.
+ *
+ *  Measured on a real run: a step's `tool_call_result` comes back `ok: true` even when the
+ *  step's OUTCOME was `dispatch_error`, because the span records that the work returned
+ *  without raising — the verdict is decided after it closes. So a closed span means the
+ *  step STARTED and FINISHED, not that it worked, and mapping it to `executed` would
+ *  flash a green card over a message nobody received.
+ *
+ *  `ran` is therefore deliberately not one of the engine's outcome words: it has no colour
+ *  in `STATUS_COLOR`, renders in the neutral fallback, and is replaced a moment later by
+ *  the stored outcome when `build_graph` answers. The stream is the anticipation; the
+ *  stored run is the truth. */
+const LIVE_STATUS: Record<string, string> = {
+  running: "running", done: "ran", failed: "failed",
 };
 
 const KIND_ICON: Record<string, IconName> = {
@@ -81,6 +110,46 @@ const KIND_ICON: Record<string, IconName> = {
 };
 
 const COL_W = 300;
+
+/* ── DS-4 · the minimap ─────────────────────────────────────────────────────────
+ *
+ * `Controls` has been stock, un-tokenised xyflow chrome in all four canvases since the
+ * first one shipped — there is not a single `.react-flow__*` override in this codebase.
+ * A default-styled MiniMap would have been the second such thing on screen, and a bigger
+ * one, so this one is tokened at every surface it exposes. It can be: `nodeColor` reaches
+ * the rect through `style.fill` and `bgColor`/`maskColor` become CSS custom properties,
+ * so `var(…)` resolves in all three (checked in the library, not assumed — a colour
+ * passed as an SVG *attribute* would have silently rendered black).
+ */
+
+/** Below this, a minimap is chrome rather than help — and on a narrow pane it is chrome
+ *  that costs canvas. A chain you can see all of does not need a map of itself. */
+const MINIMAP_FROM = 5;
+
+/**
+ * A dot reads as the card it stands for: the kind's hue while designing, the run's status
+ * while reading a run. Both come from the maps the cards themselves use, so a dot and its
+ * node cannot come to disagree — which is the only way a minimap can actively mislead.
+ */
+function miniNodeColor(mode: "design" | "execution") {
+  return (node: RFNode): string => {
+    const data = (node.data ?? {}) as Record<string, unknown>;
+    if (mode === "execution") {
+      if (data.guarded) return "var(--chart-3)";
+      const status = String(data.status || "");
+      return status ? (STATUS_COLOR[status] || "var(--t4)") : "var(--t4)";
+    }
+    if (node.type === "designTrigger") return "var(--t3)";
+    return KIND_HUE[String(data.kind ?? "")] ?? "var(--chart-6)";
+  };
+}
+
+const MINIMAP_STYLE: React.CSSProperties = {
+  width: 128, height: 88,
+  border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+  // The default sits hard in the corner, overlapping the zoom controls on a short pane.
+  marginRight: 8, marginBottom: 8,
+};
 
 /** Durations read as durations, not as raw milliseconds. */
 function ms(n: number): string {
@@ -261,6 +330,12 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
 
 /* ═══════════════════ DESIGN MODE (the draft, editable) ═══════════════════ */
 
+/** DS-4 — what one undo step restores: the chain, and where it was arranged. */
+interface CanvasState {
+  draft: Draft;
+  positions: Record<string, { x: number; y: number }>;
+}
+
 const NODE_W = 280;
 
 const inputStyle: React.CSSProperties = {
@@ -295,6 +370,13 @@ interface DesignNodeData {
   onClear: (field: string) => void;
   /** Remove this step — absent on the last one, the same law the rail enforces. */
   onRemove?: () => void;
+  /** DS-4 — copy this step to the end of the chain, keeping the wiring that still
+   *  means what it meant. Always present: duplicating never breaks a rule. */
+  onDuplicate?: () => void;
+  /** DS-2 — walk the chain as far as THIS step and show what it would receive. */
+  onRunToHere?: () => void;
+  /** True while that walk is in flight, so the control cannot be pressed twice. */
+  running?: boolean;
   [key: string]: unknown;
 }
 
@@ -359,6 +441,23 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           padding: "1px 8px", background: "var(--bg-1)" }}>
           {data.alias}
         </span>
+        {data.onRunToHere && (
+          <Button variant="ghost" size="icon-sm" aria-label={`run to ${data.alias}`}
+            title="Run the chain to here — inert, nothing is sent"
+            disabled={data.running}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            onClick={data.onRunToHere}>
+            <Icon name={data.running ? "spinner" : "run"} size={11} />
+          </Button>
+        )}
+        {data.onDuplicate && (
+          <Button variant="ghost" size="icon-sm" aria-label={`duplicate ${data.alias}`}
+            title="Duplicate this step (⌘D)"
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            onClick={data.onDuplicate}>
+            <Icon name="copy" size={11} />
+          </Button>
+        )}
         {data.onRemove && (
           <Button variant="ghost" size="icon-sm" aria-label={`remove ${data.alias}`}
             className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
@@ -549,11 +648,15 @@ const NODE_TYPES = {
 
 /* ═══════════════════ the component ═══════════════════ */
 
-export function AutomationGraph({ automationId, automation, onSaved }: {
+export function AutomationGraph({ automationId, automation, onSaved, liveRunId }: {
   automationId: string;
   /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent ⇒ read-only. */
   automation?: Automation;
   onSaved?: () => void;
+  /** DS-3 — a run happening NOW, named by whoever started it. While this is set the
+   *  canvas watches that run's own spans as they are written; when it clears, the
+   *  authoritative graph is fetched, and the two agree. */
+  liveRunId?: string | null;
 }) {
   const [mode, setMode] = useState<"design" | "execution">("design");
   const [runId, setRunId] = useState("");
@@ -566,14 +669,53 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   const [error, setError] = useState("");
   const [reloadKey, setReloadKey] = useState(0);
   /** Drag-time refusals — `applyConnect`'s sentence, shown then cleared. */
-  const [connectError, setConnectError] = useState("");
+  /** A transient sentence over the canvas: a refused drag, or what a paste could not
+ *  carry over. One channel, because two would overlap in the same corner. */
+  const [notice, setNotice] = useState("");
   const [vocab, setVocab] = useState<Vocabulary | null>(null);
+  // W2's reserved word, from the same fetched document the pickers read — a paste
+  // has to know which refs are per-iteration, and must not spell that word itself.
+  const { forEach: fanVocab } = useAutomationVocabulary();
+  const itemAlias = fanVocab.itemAlias;
 
-  const [draft, setDraft] = useState<Draft>(() => ({
-    conditions: automation?.conditions ?? [], effects: automation?.effects ?? [],
+  /* ── DS-4 · one undoable state ──
+   *
+   * The draft and the arrangement travel together. They could have been two stacks, and
+   * that is the version that feels broken: a person drags a node, edits a field, presses
+   * undo twice and watches the two changes come back in an order neither of them chose.
+   * One state, one stack, one meaning for "the last thing I did".
+   */
+  const [history, setHistory] = useState<History<CanvasState>>(() => initHistory({
+    draft: { conditions: automation?.conditions ?? [], effects: automation?.effects ?? [] },
+    positions: {},
   }));
+  const draft = history.present.draft;
+  const positions = history.present.positions;
+
+  /** Record an edit. Keeps `useState`'s signature — value or updater — so the sixteen
+   *  places that write the draft did not have to learn about history, and an `opts.key`
+   *  is what turns a burst of keystrokes into one undo. */
+  const setDraft = useCallback((
+    next: Draft | ((d: Draft) => Draft), opts?: PushOptions,
+  ) => {
+    setHistory(h => {
+      const draftNext = typeof next === "function"
+        ? (next as (d: Draft) => Draft)(h.present.draft) : next;
+      if (draftNext === h.present.draft) return h;
+      return pushHistory(h, { ...h.present, draft: draftNext }, opts);
+    });
+  }, []);
+
+  // A record arriving from the server is a new BASELINE, never an edit: recording it
+  // would let undo walk backwards through the server's own reply, and the first thing
+  // it would restore is the draft as it was before the save that produced this reply.
+  // The arrangement rides through — it is not part of the record.
   useEffect(() => {
-    if (automation) setDraft({ conditions: automation.conditions, effects: automation.effects });
+    if (!automation) return;
+    setHistory(h => resetHistory(h, {
+      draft: { conditions: automation.conditions, effects: automation.effects },
+      positions: h.present.positions,
+    }));
   }, [automation]);
 
   useEffect(() => {
@@ -584,6 +726,8 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   }, []);
 
   const authoring = !!automation && mode === "design";
+  // Kept in a ref so the key listener can read it without being rebuilt on every edit.
+  useEffect(() => { authoringRef.current = authoring; }, [authoring]);
 
   // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
   useEffect(() => {
@@ -600,8 +744,333 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
   /* ── design-mode graph, drawn from the draft ── */
   // Positions survive dragging but reset per automation — session-local by design:
   // a stored layout is a second copy of the chain's order that could drift from it.
-  const positions = useRef(new Map<string, { x: number; y: number }>());
-  useEffect(() => { positions.current.clear(); }, [automationId]);
+  /* ── DS-4 · the arrangement, kept ──
+   *
+   * `positions` holds ONLY placements a person made — a drag, or a step dropped from the
+   * palette. The computed fallback below is never written into it, which is what makes
+   * saving the whole map safe: the cockpit's rule, that automatic (re)placement must
+   * never persist, holds here by construction rather than by a flag.
+   */
+  useEffect(() => {
+    let live = true;
+    getAutomationLayout(automationId)
+      .then(saved => {
+        if (!live) return;
+        // Neither an edit nor a baseline — it COMPLETES the baseline that was already
+        // there, so it patches the present and leaves both stacks exactly as they are.
+        // A reset here would throw away edits made in the moment before it arrived.
+        setHistory(h => ({ ...h, present: { ...h.present, positions: saved } }));
+      })
+      // An arrangement is a convenience; failing to read one opens the canvas at its
+      // computed default rather than putting an error over a working editor.
+      .catch(() => {});
+    return () => { live = false; };
+  }, [automationId]);
+
+  const saveTimer = useRef<number | null>(null);
+  useEffect(() => () => { if (saveTimer.current) window.clearTimeout(saveTimer.current); }, []);
+
+  /** Persist the arrangement, debounced — a drag emits a position per frame at rest and
+   *  one request per drag is the honest number. `alive` prunes: a step that was removed
+   *  (or a palette add that was discarded) must not keep a coordinate forever.
+   *
+   *  Takes the arrangement rather than reading it: after an undo the state React is
+   *  about to render and the one this closure captured are different, and the arrangement
+   *  that gets saved has to be the one on screen. */
+  const persistLayout = useCallback((
+    layout: Record<string, { x: number; y: number }>, alive: Set<string>,
+  ) => {
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
+    saveTimer.current = window.setTimeout(() => {
+      void saveAutomationLayout(automationId, layoutToPersist(layout, alive)).catch(() => {});
+    }, 500);
+  }, [automationId]);
+
+  /* ── DS-4 · walking the stack ──
+   *
+   * An undo has to put back the ARRANGEMENT it restores, not just the chain, or the two
+   * halves of one state drift apart the first time somebody undoes a drag. So both walks
+   * persist the layout they land on, pruned to the steps that state actually has.
+   */
+  const walk = useCallback((direction: "undo" | "redo") => {
+    setHistory(h => {
+      const next = direction === "undo" ? undoHistory(h) : redoHistory(h);
+      if (next === h) return h;
+      const alive = new Set<string>([
+        "__trigger",
+        ...next.present.draft.effects.map((e, i) => aliasFor(e, i)),
+      ]);
+      persistLayout(next.present.positions, alive);
+      return next;
+    });
+  }, [persistLayout]);
+
+  /* ── DS-4 · duplicate, copy, paste ──
+   *
+   * Every one of these lands a step through `pasteEffect`, which is where the dangerous
+   * part lives: a step's name is positional and its bindings are strings, so a copy
+   * carries references that mean "whatever is in that position". A reference whose
+   * producer is not present and upstream is DROPPED and reported — never repointed,
+   * because a repointed binding saves cleanly, draws a confident edge, and posts another
+   * step's answer at 09:00.
+   */
+  const landStep = useCallback((step: AutoEffect, at?: { x: number; y: number }) => {
+    setHistory(h => {
+      const { draft: nextDraft, dropped } = pasteEffect(h.present.draft, step, itemAlias);
+      const alias = aliasFor(nextDraft.effects[nextDraft.effects.length - 1],
+                             nextDraft.effects.length - 1);
+      const nextPositions = at ? { ...h.present.positions, [alias]: at } : h.present.positions;
+      if (at) persistLayout(nextPositions, new Set([...Object.keys(nextPositions), alias]));
+      if (dropped.length) {
+        // Said out loud, because a paste that silently arrives half-wired is the same
+        // class of quiet wrongness this function refuses to commit.
+        setNotice(`${alias}: ${[...new Set(dropped)].join(", ")} `
+          + `${dropped.length > 1 ? "were" : "was"} not carried over — `
+          + "the step they read is not in this chain.");
+        window.setTimeout(() => setNotice(""), 5200);
+      }
+      return pushHistory(h, { draft: nextDraft, positions: nextPositions });
+    });
+  }, [persistLayout, itemAlias]);
+
+  /* ── DS-2 · run to here ──
+   *
+   * B2 already walks a whole chain inert, and returns an ordinary `AutomationRun` so the
+   * Execution canvas draws it with no second way of showing one. This is that same walk
+   * with a frontier: it previews the DRAFT (what Save would send, never a second
+   * assembly of it), and the steps past the cut come back drawn but undecorated — "not
+   * asked" rather than "did nothing".
+   */
+  const [runningTo, setRunningTo] = useState<string | null>(null);
+
+  const runToHere = useCallback(async (alias: string) => {
+    if (!automation) return;
+    setRunningTo(alias);
+    setNotice("");
+    try {
+      const { graph } = await dryRunAutomationDraft(
+        updatePayload(automation, draft), alias);
+      setPreview(graph);
+      setMode("execution");
+    } catch (e) {
+      setNotice((e as Error)?.message || "Could not walk the chain");
+      window.setTimeout(() => setNotice(""), 4000);
+    } finally {
+      setRunningTo(null);
+    }
+  }, [automation, draft]);
+
+  /** Duplicate lands beside its original, so the copy is visibly a second card rather
+   *  than one hiding exactly underneath the one it came from. */
+  const duplicateStep = useCallback((alias: string) => {
+    const source = draft.effects.find((e, i) => aliasFor(e, i) === alias);
+    if (!source) return;
+    const from = positions[alias];
+    landStep(source, from ? { x: from.x + 42, y: from.y + 42 } : undefined);
+  }, [draft.effects, positions, landStep]);
+
+  /** Which step the canvas has selected — ReactFlow's own selection, so ⌘C acts on the
+   *  card with the ring around it rather than on some notion of "current" of our own. */
+  const [selectedAlias, setSelectedAlias] = useState<string | null>(null);
+
+  /** The three gestures, behind a ref so the key listener reads today's draft without
+   *  being torn down and rebuilt on every keystroke. Each returns whether it DID
+   *  something, so the handler only swallows the browser's own shortcut when we used it
+   *  — ⌘C with nothing selected must still mean "copy the text I highlighted". */
+  const commandsRef = useRef<Record<"copy" | "paste" | "duplicate", () => boolean>>({
+    copy: () => false, paste: () => false, duplicate: () => false,
+  });
+  useEffect(() => {
+    const selected = () => (selectedAlias && selectedAlias !== "__trigger"
+      ? draft.effects.find((e, i) => aliasFor(e, i) === selectedAlias) ?? null
+      : null);
+    const centre = () => {
+      const pane = paneRef.current?.getBoundingClientRect();
+      return rf.current && pane
+        ? viewportCenter(rf.current.getViewport(),
+                         { width: pane.width, height: pane.height }, NODE_W)
+        : undefined;
+    };
+    commandsRef.current = {
+      copy: () => {
+        const step = selected();
+        if (!step) return false;
+        copyToCanvasClipboard(step);
+        setNotice(`${selectedAlias} copied — ⌘V to paste it into any chain.`);
+        window.setTimeout(() => setNotice(""), 2600);
+        return true;
+      },
+      paste: () => {
+        const step = canvasClipboard();
+        if (!step) return false;
+        landStep(step, centre());
+        return true;
+      },
+      duplicate: () => {
+        const step = selected();
+        if (!step || !selectedAlias) return false;
+        duplicateStep(selectedAlias);
+        return true;
+      },
+    };
+  }, [draft.effects, selectedAlias, landStep, duplicateStep]);
+
+  const authoringRef = useRef(false);
+  useEffect(() => {
+    // ⌘Z / ⌘⇧Z, the repo's own shortcut shape (a window listener that reads
+    // `metaKey || ctrlKey`), armed only while this canvas is the thing being edited.
+    // A ref rather than a dependency so the listener is not torn down and rebuilt every
+    // time the draft changes — it would miss a keystroke landing in that gap.
+    /** Is the person typing? ⌘C/⌘V mean TEXT inside a field and a STEP outside one —
+     *  taking the gesture away from a half-typed channel name would be a worse trade
+     *  than the convenience is worth. ⌘Z is the deliberate exception: those fields are
+     *  the draft, so this stack is the authority for them too. */
+    const inTextField = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      if (!el) return false;
+      const tag = el.tagName;
+      return tag === "INPUT" || tag === "TEXTAREA" || el.isContentEditable === true;
+    };
+
+    const handler = (e: KeyboardEvent) => {
+      if (!authoringRef.current) return;
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta) return;
+      const key = e.key.toLowerCase();
+
+      if (key === "z") {
+        e.preventDefault();
+        walk(e.shiftKey ? "redo" : "undo");
+        return;
+      }
+      if (inTextField(e.target)) return;
+
+      const cmd = commandsRef.current;
+      if (key === "c" && cmd.copy()) e.preventDefault();
+      else if (key === "v" && cmd.paste()) e.preventDefault();
+      else if (key === "d" && cmd.duplicate()) e.preventDefault();
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [walk]);
+
+  /* ── DS-4 · the open-set key picker (what replaced the window.prompt) ── */
+  const [pendingBind, setPendingBind] =
+    useState<{ from: string; to: string; field: string } | null>(null);
+  /** Keys each step has been SEEN to publish, from the latest run. `null` = not asked
+   *  yet; fetched only when a bind is actually pending, because a canvas nobody is
+   *  binding on should not spend a request to populate a picker nobody opened. */
+  const [observed, setObserved] = useState<Record<string, string[]> | null>(null);
+
+  useEffect(() => {
+    if (!pendingBind || observed !== null) return;
+    let live = true;
+    getAutomationGraph(automationId, "latest")
+      .then(g => { if (live) setObserved(producedByAlias(g)); })
+      // A step that never ran, or a graph we could not read, leaves the typed field as
+      // the only offer — which is the honest state, not an error worth a banner.
+      .catch(() => { if (live) setObserved({}); });
+    return () => { live = false; };
+  }, [pendingBind, observed, automationId]);
+
+  /* ── DS-3 · a run, while it is running ──
+   *
+   * The substrate was already there: the engine writes a span per step under
+   * `trace_id == run_id` as it goes, and `/activity?trace_id=` reads them back. Nothing
+   * was watching. This polls at 1Hz rather than opening a stream, because `/activity`
+   * already takes the filter and `/activity/stream` does not — one existing endpoint
+   * beats one new one, and the swap to SSE is a later, smaller change.
+   *
+   * The stream is the ANTICIPATION; `build_graph` is the truth. When the run ends, the
+   * ordinary fetch below runs and replaces every guess with the stored outcome — which is
+   * what keeps a lively canvas from becoming a confident wrong one.
+   */
+  const [live, setLive] = useState<Record<string, LiveStatus>>({});
+
+  useEffect(() => {
+    if (!liveRunId) { setLive({}); return; }
+    let alive = true;
+    const tick = () => {
+      getActivityEvents({ trace_id: liveRunId, limit: 200 })
+        .then(r => { if (alive) setLive(liveStatuses(r.events ?? [])); })
+        // A poll that fails is a poll: never surfaced as an error, because blanking a
+        // working canvas over one dropped request is worse than a stale second.
+        .catch(() => {});
+    };
+    tick();
+    const iv = window.setInterval(tick, 1000);
+    return () => { alive = false; window.clearInterval(iv); };
+  }, [liveRunId]);
+
+  // A run that just ended is the one thing the stored graph must be re-read for.
+  const wasLive = useRef<string | null>(null);
+  useEffect(() => {
+    if (liveRunId) {
+      wasLive.current = liveRunId;
+      // A preview would otherwise swallow the run entirely — it blocks the fetch and
+      // wins the render, so a live run started with one up would be invisible.
+      setPreview(null);
+      setMode("execution");
+      setRunId(liveRunId);
+      return;
+    }
+    if (!wasLive.current) return;
+    const finished = wasLive.current;
+    wasLive.current = null;
+    setPreview(null);
+    setMode("execution");
+    setRunId(finished);
+    setReloadKey(k => k + 1);
+  }, [liveRunId]);
+
+  /* ── DS-4 · what the canvas measured ──
+   *
+   * The minimap draws nothing for a node it cannot size, and it sizes from the node
+   * OBJECT we hand ReactFlow — `nodeHasDimensions(userNode)` — not from the internals it
+   * measures. Our nodes are derived fresh from the draft, and the library reports its
+   * measurements only through `onNodesChange`, which this canvas never receives (probed:
+   * it does not fire here at all). So the map came up an EMPTY BOX while the canvas
+   * itself was perfect, because edges and dragging read the internals instead.
+   *
+   * So we measure the rendered cards ourselves — the same thing the library does, from
+   * the same DOM, because the channel it would tell us through is silent. Exact rather
+   * than a declared guess: a card grows when it gains a guard or a fan-out strip, and a
+   * minimap drawn from an assumed height would quietly stop matching the canvas.
+   */
+  const [sizes, setSizes] = useState<Record<string, { width: number; height: number }>>({});
+
+  const measureNodes = useCallback(() => {
+    const pane = paneRef.current;
+    if (!pane) return;
+    setSizes(prev => {
+      let next = prev;
+      for (const el of pane.querySelectorAll<HTMLElement>(".react-flow__node")) {
+        const id = el.dataset.id;
+        if (!id) continue;
+        const width = el.offsetWidth, height = el.offsetHeight;
+        if (!width || !height) continue;
+        const seen = prev[id];
+        if (seen && seen.width === width && seen.height === height) continue;
+        // Clone only once something actually moved, so a re-measure that changed nothing
+        // cannot loop the memo that feeds it.
+        if (next === prev) next = { ...prev };
+        next[id] = { width, height };
+      }
+      return next;
+    });
+  }, []);
+
+  // After every render, and once more a frame later: the first pass catches the common
+  // case, the second a card whose fonts or strips settled late. No dependency list on
+  // purpose — the things that change a card's size are its content, its mode and its
+  // count, and enumerating those is a list that goes stale the next time a strip is
+  // added. It cannot loop: `measureNodes` returns the SAME state object unless a size
+  // actually moved, so a render that measures the same thing schedules nothing.
+  useEffect(() => {
+    measureNodes();
+    const frame = requestAnimationFrame(measureNodes);
+    return () => cancelAnimationFrame(frame);
+  });
 
   /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
   const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
@@ -639,21 +1108,36 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           ? viewportCenter(rf.current.getViewport(),
                            { width: pane.width, height: pane.height }, NODE_W)
           : null);
-      if (at) positions.current.set(alias, at);
-      setDraft(d => ({
-        ...d, effects: [...d.effects, newEffectOf(placement.kind as AutoEffect["kind"])],
-      }));
+      // The step and where it landed are ONE act, so they are one entry: an undo that
+      // removed the step but kept its coordinate would leave a ghost for the next add
+      // to inherit.
+      setHistory(h => {
+        const nextPositions = at ? { ...h.present.positions, [alias]: at } : h.present.positions;
+        const next = {
+          draft: {
+            ...h.present.draft,
+            effects: [...h.present.draft.effects,
+                      newEffectOf(placement.kind as AutoEffect["kind"])],
+          },
+          positions: nextPositions,
+        };
+        if (at) persistLayout(nextPositions, new Set([...Object.keys(nextPositions), alias]));
+        return pushHistory(h, next);
+      });
     },
-    [draft.effects.length],
+    [draft.effects.length, persistLayout],
   );
 
   const patchField = useCallback((alias: string, field: string, value: unknown) => {
+    // Coalesced per field: typing a question is ONE undo, not one per character. The
+    // clock is read out here rather than inside the updater, which React may call twice.
+    const now = Date.now();
     setDraft(d => ({
       ...d,
       effects: d.effects.map((e, i) =>
         aliasFor(e, i) === alias ? { ...e, config: { ...e.config, [field]: value } } : e),
-    }));
-  }, []);
+    }), { key: `${alias}.${field}`, at: now });
+  }, [setDraft]);
 
   const clearField = useCallback((alias: string, field: string) => {
     setDraft(d => clearBinding(d, alias, field));
@@ -665,13 +1149,15 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     const nodes: RFNode[] = [{
       id: "__trigger",
       type: "designTrigger",
-      position: positions.current.get("__trigger") ?? { x: 0, y: 60 },
+      measured: sizes["__trigger"],
+      position: positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
               logic: automation?.condition_logic ?? "all" },
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
-      position: positions.current.get(s.alias) ?? { x: 260 + i * (NODE_W + 90), y: 0 },
+      measured: sizes[s.alias],
+      position: positions[s.alias] ?? { x: 260 + i * (NODE_W + 90), y: 0 },
       data: {
         ...s,
         onPatch: (field: string, value: unknown) => patchField(s.alias, field, value),
@@ -679,6 +1165,9 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
         // The last step keeps no remove control at all — the model requires one effect,
         // and an affordance that fails at save teaches the wrong law. Same rule as the
         // rail, enforced by ABSENCE both places.
+        onDuplicate: () => duplicateStep(s.alias),
+        onRunToHere: automation ? () => runToHere(s.alias) : undefined,
+        running: runningTo === s.alias,
         onRemove: draft.effects.length > 1
           ? () => setDraft(d => ({ ...d, effects: d.effects.filter((_, j) => j !== i) }))
           : undefined,
@@ -720,7 +1209,8 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, vocab, patchField, clearField, automation]);
+  }, [draft, positions, vocab, patchField, clearField, automation, sizes,
+      duplicateStep, runToHere, runningTo]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -734,34 +1224,56 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
     return () => cancelAnimationFrame(frame);
   }, [design.nodes.length, mode]);
 
+  /** Bind with a key, wherever the key came from — the drag, a picker row, or typed. */
+  const bindWith = useCallback((
+    from: string, toAlias: string, field: string, key: string,
+  ) => {
+    if (!vocab || !key) return;
+    const r = applyConnect(draft, vocab, { fromAlias: from, key, toAlias, field });
+    if (r.error) {
+      setNotice(r.error);
+      window.setTimeout(() => setNotice(""), 3200);
+      return;
+    }
+    setDraft(r.draft);
+    setPendingBind(null);
+  }, [draft, vocab]);
+
   const onConnect = useCallback((c: RFConnection) => {
     if (!vocab || !c.source || !c.target) return;
     const key = (c.sourceHandle ?? "").replace(/^out:/, "");
     const field = (c.targetHandle ?? "").replace(/^in:/, "");
     if (!key || !field) return;
-    // The open-set port ("*") cannot know its key at drag time; ask for it. A prompt
-    // is homely, but inventing a key silently would draw an edge the run then skips.
-    const realKey = key === "*"
-      ? (window.prompt("Which key of the action's outcome?") ?? "").trim()
-      : key;
-    if (!realKey) return;
-    const r = applyConnect(draft, vocab, {
-      fromAlias: c.source, key: realKey, toAlias: c.target, field,
-    });
-    if (r.error) {
-      setConnectError(r.error);
-      window.setTimeout(() => setConnectError(""), 3200);
+    // DS-4 — the open-set port ("*") cannot know its key at drag time. It used to be a
+    // `window.prompt`: homely, and blind, since a typo draws an edge the run then skips.
+    // Now the drop parks the connection and the picker below offers the keys this step
+    // has actually been seen to publish, with a typed tail for the ones it hasn't.
+    if (key === "*") {
+      setPendingBind({ from: c.source, to: c.target, field });
       return;
     }
-    setDraft(r.draft);
-  }, [draft, vocab]);
+    bindWith(c.source, c.target, field, key);
+  }, [vocab, bindWith]);
 
   if (error && mode === "execution") {
     return <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>Could not load the graph: {error}</div>;
   }
 
   const shown = preview ?? graph;
-  const execution = mode === "execution" && shown ? toFlow(shown) : null;
+  const executionFlow = mode === "execution" && shown ? toFlow(shown) : null;
+  const execution = executionFlow && {
+    ...executionFlow,
+    nodes: executionFlow.nodes.map(n => ({
+      ...n,
+      measured: sizes[n.id],
+      // While the run is in flight the server has no stored outcome for it yet — the
+      // graph it returns is the STRUCTURE, every node undecorated. The spans decorate it
+      // as they arrive, and a step that has not started stays undecorated, which is the
+      // honest picture of a chain part-way through.
+      ...(liveRunId ? { data: { ...n.data, status: LIVE_STATUS[live[n.id]] ?? "",
+                                duration_ms: null, message: "" } } : {}),
+    })),
+  };
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
@@ -856,11 +1368,23 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
           {mode === "design" ? (
             <ReactFlow
               onInit={(instance) => { rf.current = instance; }}
+              onSelectionChange={({ nodes }) => setSelectedAlias(nodes[0]?.id ?? null)}
               nodes={design.nodes}
               edges={edgesLive ? design.edges : []}
               nodeTypes={NODE_TYPES}
               onConnect={onConnect}
-              onNodeDragStop={(_e, n) => positions.current.set(n.id, n.position)}
+              onNodeDragStop={(_e, n) => {
+                // A move is an edit: same stack, so one undo means "the last thing I
+                // did" whether that was typing or dragging. Coalesced per node, so
+                // nudging one card twice is one step.
+                const now = Date.now();
+                setHistory(h => {
+                  const nextPositions = { ...h.present.positions, [n.id]: n.position };
+                  persistLayout(nextPositions, new Set(design.nodes.map(node => node.id)));
+                  return pushHistory(h, { ...h.present, positions: nextPositions },
+                                     { key: `move:${n.id}`, at: now });
+                });
+              }}
               onEdgeDoubleClick={(_e, edge) => {
                 // the edge IS the binding — double-click removes both
                 const m = /^bind:.*->(.+)\.([^.]+)$/.exec(edge.id);
@@ -876,6 +1400,15 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
             >
               <Background gap={18} size={1.2} color="var(--b1)" />
               <Controls showInteractive={false} />
+              {design.nodes.length >= MINIMAP_FROM && (
+                <MiniMap pannable zoomable position="bottom-right"
+                  ariaLabel="Chain overview"
+                  nodeColor={miniNodeColor("design")} nodeStrokeWidth={0}
+                  nodeBorderRadius={3}
+                  bgColor="var(--bg-1)"
+                  maskColor="color-mix(in srgb, var(--bg-0) 68%, transparent)"
+                  style={MINIMAP_STYLE} />
+              )}
               {/* The Volt frame's toolbar, ON the canvas: adding is part of designing,
                   not a trip to a side panel. Both write the same draft the rail and
                   Save share; the rail stays for the fields a node does not carry.
@@ -894,21 +1427,47 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
                     onClick={() => setPalette(p => (p === "action" ? null : "action"))}>
                     <Icon name="plus" size={11} /> Add Action
                   </Button>
+                  {/* The keyboard is the way this gets used; the buttons are how it gets
+                      FOUND, and how their disabled state says whether there is anything
+                      to walk back to. */}
+                  <Button variant="secondary" size="xs" disabled={!canUndo(history)}
+                    aria-label="Undo" title="Undo (⌘Z)"
+                    onClick={() => walk("undo")}>
+                    <Icon name="back" size={11} />
+                  </Button>
+                  <Button variant="secondary" size="xs" disabled={!canRedo(history)}
+                    aria-label="Redo" title="Redo (⌘⇧Z)"
+                    onClick={() => walk("redo")}>
+                    <Icon name="next" size={11} />
+                  </Button>
                 </Panel>
               )}
-              {connectError && (
+              {pendingBind && (
+                <Panel position="top-center">
+                  <OutcomeKeyPicker
+                    from={pendingBind.from}
+                    field={pendingBind.field}
+                    candidates={observed === null ? null : (observed[pendingBind.from] ?? [])}
+                    onPick={(key) => bindWith(
+                      pendingBind.from, pendingBind.to, pendingBind.field, key)}
+                    onCancel={() => setPendingBind(null)}
+                  />
+                </Panel>
+              )}
+              {notice && (
                 <Panel position="top-center">
                   <span className="aug-fs-xs" style={{ color: "var(--amb5)",
                     background: "var(--amb1)", border: "1px solid var(--amb2)",
                     borderRadius: "var(--r-chip)", padding: "3px 10px" }}>
-                    {connectError}
+                    {notice}
                   </span>
                 </Panel>
               )}
               <Panel position="bottom-center">
                 <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
                   drag a <span style={{ color: "var(--chart-2)" }}>gives</span> dot onto an
-                  input dot to bind · double-click an edge to unbind
+                  input dot to bind · double-click an edge to unbind · ⌘D duplicates a
+                  selected step, ⌘C / ⌘V move one between chains
                 </span>
               </Panel>
             </ReactFlow>
@@ -931,6 +1490,15 @@ export function AutomationGraph({ automationId, automation, onSaved }: {
             >
               <Background gap={16} color="var(--border)" />
               <Controls showInteractive={false} />
+              {execution!.nodes.length >= MINIMAP_FROM && (
+                <MiniMap pannable zoomable position="bottom-right"
+                  ariaLabel="Run overview"
+                  nodeColor={miniNodeColor("execution")} nodeStrokeWidth={0}
+                  nodeBorderRadius={3}
+                  bgColor="var(--bg-1)"
+                  maskColor="color-mix(in srgb, var(--bg-0) 68%, transparent)"
+                  style={MINIMAP_STYLE} />
+              )}
             </ReactFlow>
           )}
         </div>

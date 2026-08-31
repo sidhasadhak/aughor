@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from aughor.automations.graph import build_graph
@@ -19,10 +19,12 @@ from aughor.automations.models import Automation, Condition, Effect
 from aughor.automations.store import (
     delete_automation,
     get_automation,
+    get_layout,
     get_runs,
     list_automations,
     pause_automation,
     set_automation_enabled,
+    set_layout,
     upsert_automation,
 )
 
@@ -114,6 +116,48 @@ def palette(conn_id: Optional[str] = None):
     return {"entries": entries(conn_id)}
 
 
+class LayoutRequest(BaseModel):
+    """`{alias: {x, y}}` — where each step sits on the Design canvas."""
+
+    layout: dict = Field(default_factory=dict)
+
+
+def _layout_user_id(request: Request) -> str:
+    """The account key for a canvas arrangement — the identified user, or a shared
+    'default' on localhost / identity-off so one operator sees the same canvas on any
+    device. Upgrades to true per-user the moment RBAC identity is bound, with no
+    migration. Same resolution the cockpit's layout uses; two account keys that could
+    disagree would put a user's arrangement somewhere they cannot find it."""
+    try:
+        from aughor.security.authz import get_principal
+        p = get_principal(request)
+        return p.user_id if p and p.user_id else "default"
+    except Exception:
+        return "default"
+
+
+@router.get("/automations/{automation_id}/layout")
+def read_layout(automation_id: str, request: Request):
+    """Where the caller arranged this automation's steps (`{}` if never touched).
+
+    Server-side and account-keyed rather than `localStorage`, for the reason the cockpit
+    settled once: an arrangement a person made on their laptop and cannot find on their
+    desktop reads as the product having forgotten it. No 404 for an unknown automation —
+    an empty layout IS the answer for one nobody has arranged.
+    """
+    return {"layout": get_layout(automation_id, _layout_user_id(request))}
+
+
+@router.put("/automations/{automation_id}/layout")
+def write_layout(automation_id: str, body: LayoutRequest, request: Request):
+    """Persist the whole arrangement. Separate from `PUT /automations/{id}` on purpose:
+    that route carries the governed record a person authored, this one carries where they
+    happened to drag it, and folding a view preference into the record the engine reads
+    is how a rename comes to move somebody's nodes."""
+    set_layout(automation_id, _layout_user_id(request), body.layout or {})
+    return {"ok": True}
+
+
 @router.get("/automations")
 def list_all(conn_id: Optional[str] = None, enabled_only: bool = False):
     return {"automations": [a.model_dump() for a in list_automations(conn_id, enabled_only)]}
@@ -169,8 +213,17 @@ def update(automation_id: str, body: CreateAutomationRequest):
     if existing is None:
         raise HTTPException(status_code=404, detail="Automation not found")
     try:
+        # `CreateAutomationRequest` is the AUTHORING shape — what a person types. Every
+        # field OUTSIDE it belongs to the engine, and the upsert is a full-row replace,
+        # so anything not carried here is erased by a rename. It was: `last_run_at` and
+        # `last_status` went back to null (the card read "never run" again) and
+        # `agent_id` — which the engine reads to decide who a step runs AS — went back
+        # to empty. Third of its family in this subsystem, which is why it now has a test.
         automation = Automation(**body.model_dump(), id=automation_id,
-                                created_at=existing.created_at)
+                                created_at=existing.created_at,
+                                agent_id=existing.agent_id,
+                                last_run_at=existing.last_run_at,
+                                last_status=existing.last_status)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     return upsert_automation(automation).model_dump()
@@ -207,32 +260,51 @@ def pause(automation_id: str, body: PauseRequest):
     return a.model_dump()
 
 
+class RunNowRequest(BaseModel):
+    """DS-3 — the id this run will have.
+
+    A run writes a span per step under `trace_id == run_id` WHILE it runs, so a surface
+    that wants to watch one needs the id before the request returns — and this request
+    does not return until the whole chain has finished. Supplying it is the whole
+    difference between watching a run and being told about it afterwards. Omitted, the
+    engine mints one exactly as before."""
+
+    run_id: Optional[str] = None
+
+
 @router.post("/automations/{automation_id}/run")
-def run_now(automation_id: str):
+def run_now(automation_id: str, body: Optional[RunNowRequest] = None):
     """Run one automation immediately, through the same gates the heartbeat uses — so a gated
     automation returns the REASON it is gated rather than silently doing nothing."""
     from aughor.automations.scheduler import trigger_now
-    run = trigger_now(automation_id)
+    run = trigger_now(automation_id, run_id=(body.run_id if body else None) or None)
     if run is None:
         raise HTTPException(status_code=404, detail="Automation not found")
     return run.model_dump()
 
 
-def _dry_run_payload(automation: Automation) -> dict:
+def _dry_run_payload(automation: Automation, until: Optional[str] = None) -> dict:
     """``{"run": …, "graph": …}`` — the run AND the same graph an execution view reads.
 
     The graph is built here rather than fetched afterwards because a dry run is never
     stored: there is no id for `GET /automations/{id}/graph?run=…` to look up. Returning
     both means the canvas renders a preview through the code path it already uses for a
     real run, which is the whole reason a dry run returns an `AutomationRun` at all.
+
+    DS-2 — `until` stops the walk after that step. The graph is still built from the WHOLE
+    automation, so every node is drawn and only the walked ones carry an outcome: the
+    steps beyond the cut read as untouched rather than as missing, which is the difference
+    between "not asked" and "did nothing".
     """
     from aughor.automations.engine import run_automation
-    run = run_automation(automation, dry_run=True)
-    return {"run": run.model_dump(), "graph": {**build_graph(automation, run), "dry_run": True}}
+    run = run_automation(automation, dry_run=True, until_alias=until)
+    return {"run": run.model_dump(),
+            "graph": {**build_graph(automation, run), "dry_run": True},
+            "until": until or ""}
 
 
 @router.post("/automations/{automation_id}/dry-run")
-def dry_run_stored(automation_id: str):
+def dry_run_stored(automation_id: str, until: Optional[str] = None):
     """B2 — walk a STORED automation without dispatching anything.
 
     Distinct from `POST /{id}/run`, which is the real thing through the real gates: this
@@ -243,11 +315,11 @@ def dry_run_stored(automation_id: str):
     automation = get_automation(automation_id)
     if automation is None:
         raise HTTPException(status_code=404, detail="no such automation")
-    return _dry_run_payload(automation)
+    return _dry_run_payload(automation, until)
 
 
 @router.post("/automations/dry-run")
-def dry_run_draft(body: CreateAutomationRequest):
+def dry_run_draft(body: CreateAutomationRequest, until: Optional[str] = None):
     """B2 — walk an UNSAVED design. The one a canvas needs.
 
     "Try it before you arm it" is worth most before the thing exists at all, and the
@@ -259,7 +331,7 @@ def dry_run_draft(body: CreateAutomationRequest):
         automation = Automation(**body.model_dump())
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
-    return _dry_run_payload(automation)
+    return _dry_run_payload(automation, until)
 
 
 @router.get("/automations/{automation_id}/graph")

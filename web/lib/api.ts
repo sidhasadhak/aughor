@@ -3409,6 +3409,11 @@ export interface SlackBotSummary {
   enabled: boolean;
   team_id: string;
   bot_user_id: string;
+  /** DS-5 — the agent this bot is a door ONTO. On the wire since RC-5 (`to_safe_dict`
+   *  masks only the three secrets); undeclared here until the agent map needed to ask
+   *  which bots belong to an agent. */
+  agent_id: string;
+  connection_id: string;
 }
 
 /** B1 — the effect-kind vocabulary the canvas draws its ports from. FETCHED, never
@@ -3480,6 +3485,30 @@ export async function getAutomationPalette(
   if (!res.ok) throw new Error(`Failed to load the palette (${res.status})`);
   const body = await res.json();
   return (body.entries ?? []) as AutomationPaletteEntry[];
+}
+
+/** DS-4 — where each step sits on the Design canvas, as `{alias: {x, y}}`.
+ *
+ *  Server-side and account-keyed rather than `localStorage`, for the reason the cockpit's
+ *  layout settled once: an arrangement someone made on their laptop and cannot find on
+ *  their desktop reads as the product having forgotten it. Its own endpoint, never a
+ *  field on the automation — a view preference must not ride the record the engine
+ *  reads, or a rename moves somebody's nodes. */
+export type CanvasLayout = Record<string, { x: number; y: number }>;
+
+export async function getAutomationLayout(id: string): Promise<CanvasLayout> {
+  const res = await fetch(`${getApiBase()}/automations/${encodeURIComponent(id)}/layout`);
+  if (!res.ok) throw new Error(`Failed to load the layout (${res.status})`);
+  return ((await res.json())?.layout ?? {}) as CanvasLayout;
+}
+
+export async function saveAutomationLayout(id: string, layout: CanvasLayout): Promise<void> {
+  const res = await fetch(`${getApiBase()}/automations/${encodeURIComponent(id)}/layout`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ layout }),
+  });
+  if (!res.ok) throw new Error(`Failed to save the layout (${res.status})`);
 }
 
 /* ── VA-11 · integrations: the credential as a governed object ─────────────── */
@@ -3717,6 +3746,10 @@ export interface Automation {
   updated_at: string;
   last_run_at: string | null;
   last_status: string | null;
+  /** VA-9b — the agent this whole chain RUNS AS ("" = nobody in particular). On the wire
+   *  since VA-9b; undeclared here until DS-5 needed to ask which chains an agent
+   *  operates. A per-STEP delegation lives on the effect's own config instead. */
+  agent_id: string;
 }
 
 export interface EffectOutcome {
@@ -3805,8 +3838,18 @@ export async function pauseAutomation(id: string, until: string | null): Promise
 
 /** Run an automation now — through the same gates the heartbeat uses, so a gated automation
  *  returns the REASON it did nothing rather than silence. */
-export async function runAutomation(id: string): Promise<AutomationRun> {
-  const res = await fetch(`${getApiBase()}/automations/${id}/run`, { method: "POST" });
+/** Run one automation now.
+ *
+ *  `runId` is DS-3's whole hinge: this request does not resolve until the chain has
+ *  finished, but every step writes a span under `trace_id == run_id` while it runs — so a
+ *  surface that wants to WATCH a run has to name it before asking for it. Omitted, the
+ *  engine mints one exactly as before. */
+export async function runAutomation(id: string, runId?: string): Promise<AutomationRun> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/run`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run_id: runId ?? null }),
+  });
   if (!res.ok) throw new Error("Failed to run automation");
   return res.json();
 }
@@ -3866,8 +3909,14 @@ export interface AutomationDryRun {
 
 /** Preview a DRAFT — the unsaved one in the editor. The payload is `updatePayload`'s, so
  *  a preview previews exactly what Save would send, never a second assembly of it. */
-export async function dryRunAutomationDraft(body: NewAutomation): Promise<AutomationDryRun> {
-  const res = await fetch(`${getApiBase()}/automations/dry-run`, {
+/** `until` (DS-2) stops the walk after that step — the question a person actually has
+ *  while building is "what does the step I am looking at receive", and a whole-chain
+ *  preview buries that answer among the others. Omitted, it is B2's whole-chain walk. */
+export async function dryRunAutomationDraft(
+  body: NewAutomation, until?: string,
+): Promise<AutomationDryRun> {
+  const qs = until ? `?until=${encodeURIComponent(until)}` : "";
+  const res = await fetch(`${getApiBase()}/automations/dry-run${qs}`, {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });

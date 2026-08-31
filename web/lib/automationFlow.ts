@@ -249,6 +249,113 @@ export function applyConnect(draft: Draft, vocab: Vocabulary, c: {
   return { draft: { ...draft, effects }, error: "" };
 }
 
+/* ── DS-4 · duplicating and pasting a step ──────────────────────────────────────
+ *
+ * The sharp edge in this whole wave. A step's name is POSITIONAL — `aliasFor` derives
+ * `step3` from where it sits — while every binding is a STRING naming another step
+ * (`{"$from": "step1.answer"}`). So a copy carries references that mean "whatever is in
+ * that position", and pasted somewhere else they quietly mean something different.
+ *
+ * `validate_chain` cannot save us here: it refuses an UNKNOWN step and a FORWARD one, and
+ * a ref that now resolves to a *different* existing step is neither. The save succeeds,
+ * the canvas draws a confident edge, and at 09:00 a Slack message carries another step's
+ * answer. That is the worst failure this plane can produce — a well-formed wrong result —
+ * so the rule is: **a reference whose producer is not present and upstream is DROPPED,
+ * never repointed**, and the caller is told which ones went.
+ */
+
+/** Every alias in use, by the same rule the server names steps. */
+function aliasesOf(effects: AutoEffect[]): Set<string> {
+  return new Set(effects.map((e, i) => aliasFor(e, i)));
+}
+
+/**
+ * A free name for a step landing at `index`.
+ *
+ * An explicit alias is dropped rather than uniquified: `numbers` copied beside `numbers`
+ * is a collision, and `numbers-2` is a name the person never chose and would have to
+ * rename anyway. The copy takes its positional name — unless something else has already
+ * claimed that exact string as an explicit alias, in which case a suffix is the honest
+ * way out of a name that is genuinely taken.
+ */
+function freeAlias(taken: Set<string>, index: number): string | undefined {
+  const positional = `step${index + 1}`;
+  if (!taken.has(positional)) return undefined;   // undefined = let it default
+  let n = 2;
+  while (taken.has(`${positional}-${n}`)) n += 1;
+  return `${positional}-${n}`;
+}
+
+export interface PasteResult {
+  draft: Draft;
+  /** What was cut loose, in the words the surface uses — for a sentence, not a log. */
+  dropped: string[];
+}
+
+/**
+ * Append a copy of `step`, keeping every reference that still means what it meant and
+ * dropping every one that does not.
+ *
+ * Appending is what makes the surviving references safe: a step at the END has every
+ * other step upstream of it, so a ref that resolves at all resolves to the same producer
+ * it named in the original. The item alias survives only alongside the `for_each` that
+ * defines it — a per-iteration name means nothing without the iteration, and it is passed
+ * in rather than spelled here because the server owns that reserved word.
+ */
+export function pasteEffect(
+  draft: Draft, step: AutoEffect, itemAlias: string,
+): PasteResult {
+  const taken = aliasesOf(draft.effects);
+  const index = draft.effects.length;
+  const dropped: string[] = [];
+
+  const resolves = (ref: string | null, hasFan: boolean): boolean => {
+    if (!ref) return true;                       // not a reference at all
+    const dot = ref.indexOf(".");
+    if (dot <= 0) return false;
+    const from = ref.slice(0, dot);
+    if (from === itemAlias) return hasFan;       // only meaningful inside its own fan-out
+    return taken.has(from);
+  };
+
+  // The fan source first: whether it survives decides whether `item.…` means anything.
+  let forEach = step.for_each;
+  if (forEach && !resolves(bindingRef(forEach.source), false)) {
+    forEach = undefined;
+    dropped.push("for each");
+  }
+  const hasFan = !!forEach;
+
+  const config: Record<string, unknown> = {};
+  for (const [field, value] of Object.entries(step.config ?? {})) {
+    const ref = bindingRef(value);
+    if (ref && !resolves(ref, hasFan)) {
+      config[field] = "";                        // the field stays, its wiring does not
+      dropped.push(field);
+      continue;
+    }
+    config[field] = value;
+  }
+
+  // A guard with a dangling side cannot be evaluated, and half a comparison is not a
+  // weaker guard — it is a different one. The clause goes.
+  const when = (step.when ?? []).filter(clause => {
+    const ok = resolves(bindingRef(clause.left), hasFan)
+      && resolves(bindingRef(clause.right), hasFan);
+    if (!ok) dropped.push("only if");
+    return ok;
+  });
+
+  const copy: AutoEffect = {
+    ...step,
+    alias: freeAlias(taken, index),
+    config,
+    ...(when.length ? { when } : { when: undefined }),
+    for_each: forEach,
+  };
+  return { draft: { ...draft, effects: [...draft.effects, copy] }, dropped };
+}
+
 /** Remove one binding — the field goes back to plain (empty) text. */
 export function clearBinding(draft: Draft, toAlias: string, field: string): Draft {
   const effects = draft.effects.map((e, i) => {
@@ -291,6 +398,124 @@ export function seedConfig(
 ): Record<string, unknown> {
   const blanks = Object.fromEntries((required[kind] ?? []).map(k => [k, ""]));
   return { ...blanks, ...(KIND_SEED[kind] ?? {}) };
+}
+
+/**
+ * DS-4 · what a declared-action step has actually been seen to publish.
+ *
+ * The declared-action kind's published keys are an OPEN set — `PUBLISHED_KEYS` says
+ * `null` because the keys are that action's own outcome shape, which no client can
+ * enumerate. Until now the canvas asked for the key with a `window.prompt`, which is
+ * both homely and blind: a typo produces an edge the run then skips.
+ *
+ * The honest source is the run itself. The server already computes each node's
+ * `produced` from the real `EffectOutcome.data` and ships it on the execution graph, so
+ * the keys a step HAS published are known — no ontology build, no second contract. A
+ * step that has never run contributes nothing, which is exactly when the free-text tail
+ * is the only honest offer.
+ */
+export function producedByAlias(
+  graph: { nodes: { id: string; produced?: string[] }[] } | null | undefined,
+): Record<string, string[]> {
+  const out: Record<string, string[]> = {};
+  for (const node of graph?.nodes ?? []) {
+    const keys = (node.produced ?? []).filter(Boolean);
+    if (keys.length) out[node.id] = [...new Set(keys)].sort();
+  }
+  return out;
+}
+
+/**
+ * DS-4 · the arrangement to persist: only steps that still exist, at whole pixels.
+ *
+ * Pruning is the half that rots silently. A step removed from the chain — or one dropped
+ * from the palette and then discarded — leaves a coordinate behind, and a layout that
+ * only ever grows eventually opens a canvas carrying the ghosts of everything anyone
+ * deleted. Rounding is smaller but the same idea: a drag ends on a subpixel, and storing
+ * `312.7000000000001` puts noise in a row a person may one day read.
+ */
+export function layoutToPersist(
+  positions: Record<string, { x: number; y: number }>, alive: Set<string>,
+): Record<string, { x: number; y: number }> {
+  // `Math.round(-0.4)` is `-0`, which survives into a stored coordinate as a signed zero
+  // — harmless once JSON flattens it, and confusing to anyone who reads the row or
+  // compares two layouts. Normalise it where it is made.
+  const px = (n: number): number => (Math.round(n) === 0 ? 0 : Math.round(n));
+  const out: Record<string, { x: number; y: number }> = {};
+  for (const [alias, at] of Object.entries(positions)) {
+    if (alive.has(alias)) out[alias] = { x: px(at.x), y: px(at.y) };
+  }
+  return out;
+}
+
+/* ── DS-3 · a run, while it is still running ────────────────────────────────────
+ *
+ * The engine writes two `session_events` rows per executed step — a `tool_call` on entry
+ * and a `tool_call_result` on exit — committed as it goes, under `trace_id == run_id`.
+ * That is the whole substrate: a run in flight is already legible, it simply had nothing
+ * reading it. This turns those rows into a status per STEP.
+ *
+ * **Matched on the step's alias, never on ordinal position.** A step held by its guard, a
+ * fan-out refused at save, an unresolved binding — each appends an outcome and emits no
+ * span at all, so counting spans against effects puts every later status on the wrong
+ * card. That is the same bug `group_outcomes` was written for on the server side.
+ */
+
+export type LiveStatus = "running" | "done" | "failed";
+
+/** The fields this reads off a session event. Structural, so a test does not have to
+ *  build a twenty-field row to assert one rule. */
+export interface LiveEvent {
+  kind: string;
+  span_id: string | null;
+  ok: boolean | null;
+  payload: Record<string, unknown> | null;
+}
+
+/** A fanned step emits one span per ITEM, labelled `alias[1/3]`. They are all the one
+ *  node, so the suffix comes off before anything is counted. */
+function baseAlias(step: string): string {
+  const bracket = step.indexOf("[");
+  return bracket > 0 ? step.slice(0, bracket) : step;
+}
+
+/**
+ * What each step is doing right now.
+ *
+ * A step is `running` while any of its spans has opened and not closed — which is what an
+ * unpaired `tool_call` means, and why the engine emits the call before the work rather
+ * than after. It is `failed` if any of its spans came back not-ok: one failed item of a
+ * fan-out is a failure of that step, and averaging it away would draw a green card over a
+ * message nobody received.
+ */
+export function liveStatuses(events: LiveEvent[]): Record<string, LiveStatus> {
+  const spanStep = new Map<string, string>();
+  const open = new Map<string, number>();
+  const status: Record<string, LiveStatus> = {};
+
+  for (const e of events) {
+    const step = typeof e.payload?.step === "string" ? baseAlias(e.payload.step) : "";
+    if (!step) continue;               // not an automation step span; nothing to place
+    if (e.kind === "tool_call") {
+      if (e.span_id) spanStep.set(e.span_id, step);
+      open.set(step, (open.get(step) ?? 0) + 1);
+      if (!status[step]) status[step] = "running";
+    } else if (e.kind === "tool_call_result") {
+      open.set(step, Math.max(0, (open.get(step) ?? 0) - 1));
+      // A failure sticks: a later item succeeding does not un-fail the ones that did not.
+      if (e.ok === false) status[step] = "failed";
+      else if (status[step] !== "failed" && (open.get(step) ?? 0) === 0) {
+        status[step] = "done";
+      }
+    }
+  }
+
+  // A step whose spans all closed while another was still open settles here rather than
+  // being left mid-flight by the ordering of two rows written microseconds apart.
+  for (const [step, still] of open) {
+    if (still > 0 && status[step] !== "failed") status[step] = "running";
+  }
+  return status;
 }
 
 export interface Viewport { x: number; y: number; zoom: number }

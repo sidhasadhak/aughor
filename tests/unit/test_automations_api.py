@@ -266,3 +266,127 @@ def test_an_unsound_fan_out_is_refused_at_save(flag_on):
     ])
     refused = client.post("/automations", json=body)
     assert refused.status_code == 422, refused.text
+
+
+def test_update_keeps_what_the_authoring_body_does_not_carry(flag_on):
+    """A save must not erase the fields the engine owns.
+
+    `PUT` rebuilds the record from `CreateAutomationRequest`, which is the AUTHORING
+    shape — it has no field for the agent binding, the last run, or its outcome, because
+    a person does not type those. Carrying only `id` and `created_at` forward meant every
+    save reset them: the automation card went back to reading "never run" the moment
+    somebody renamed it, and `Automation.agent_id` — which the engine reads to decide who
+    a step runs AS — went back to empty.
+
+    This is the third of its family in this subsystem (a `conn_id` left out of the
+    upsert's DO UPDATE SET, an `agent_id` with no column at all), which is why the rule
+    is now a test and not a comment: **read the row back after changing it.**
+    """
+    aid = client.post("/automations", json={**BODY, "conn_id": "conn-api-carry"}).json()["id"]
+
+    # What the ENGINE writes, through its own path — not hand-set, so the test breaks if
+    # that path changes too.
+    append_run(AutomationRun(automation_id=aid, conn_id="conn-api-carry",
+                             outcome="fired", reason="schedule(0 8 * * 1)"))
+    before = client.get(f"/automations/{aid}").json()
+    assert before["last_status"] == "fired", "precondition: the run did not record"
+    assert before["last_run_at"], "precondition: the run did not stamp a time"
+
+    renamed = client.put(f"/automations/{aid}", json={**BODY, "conn_id": "conn-api-carry",
+                                                     "name": "Refund watch (renamed)"})
+    assert renamed.status_code == 200
+    after = client.get(f"/automations/{aid}").json()
+
+    assert after["name"] == "Refund watch (renamed)", "the edit itself must still land"
+    assert after["last_status"] == "fired"
+    assert after["last_run_at"] == before["last_run_at"]
+    assert after["created_at"] == before["created_at"]
+
+
+def test_run_now_uses_the_run_id_the_caller_supplied(flag_on):
+    """DS-3 — a run is watchable only if its id exists before it finishes.
+
+    Every step writes a span under `trace_id == run_id` WHILE the chain runs, but this
+    request does not return until the chain has finished — so a caller that cannot name
+    the run in advance can only ever be told about it afterwards. Supplying the id is the
+    whole difference between watching a run and being notified about one.
+
+    The effect here names a notification trigger that does not exist, so the step records
+    a failure and nothing outward is reached — the contract under test is the id.
+    """
+    aid = client.post("/automations", json={**BODY, "conn_id": "conn-api-runid"}).json()["id"]
+
+    res = client.post(f"/automations/{aid}/run", json={"run_id": "run-chosen-by-caller"})
+    assert res.status_code == 200
+    assert res.json()["id"] == "run-chosen-by-caller"
+
+    # And it is the id the run was STORED under — the trace a watcher would subscribe to.
+    runs = client.get(f"/automations/{aid}/runs").json()["runs"]
+    assert [r["id"] for r in runs] == ["run-chosen-by-caller"]
+
+
+def test_run_now_still_mints_an_id_when_none_is_offered(flag_on):
+    """The old contract is untouched: no body, or no `run_id`, and the engine names it."""
+    aid = client.post("/automations", json={**BODY, "conn_id": "conn-api-mint"}).json()["id"]
+    res = client.post(f"/automations/{aid}/run")
+    assert res.status_code == 200
+    assert res.json()["id"]
+
+
+# ── DS-2 · run to here ────────────────────────────────────────────────────────
+
+CHAIN = {
+    "conn_id": "conn-api-until",
+    "name": "Three steps",
+    "conditions": [{"kind": "schedule", "config": {"cron": "0 8 * * 1"}}],
+    "effects": [
+        {"kind": "notify", "alias": "one", "config": {"trigger_id": "t1"}},
+        {"kind": "notify", "alias": "two", "config": {"trigger_id": "t2"}},
+        {"kind": "notify", "alias": "three", "config": {"trigger_id": "t3"}},
+    ],
+}
+
+
+def _steps(body: dict) -> list[tuple[str, str]]:
+    """Each effect node as `(alias, status)` — the graph is what a reader looks at, and
+    the alias only exists there: an outcome's `target` is what the step DISPATCHES to."""
+    return [(n["id"], n.get("status") or "") for n in body["graph"]["nodes"]
+            if n["type"] == "effect"]
+
+
+def test_dry_run_walks_only_as_far_as_the_named_step(flag_on):
+    """DS-2 — a preview you can stop.
+
+    A whole-chain preview answers "what would all of this do"; the question a person
+    actually has while building is "what does the step I am looking at receive". Walking
+    past it costs the reader that answer among four others.
+    """
+    res = client.post("/automations/dry-run?until=two", json=CHAIN)
+    assert res.status_code == 200
+    assert len(res.json()["run"]["effects"]) == 2
+    assert res.json()["until"] == "two"
+
+
+def test_the_steps_beyond_the_cut_are_DRAWN_but_untouched(flag_on):
+    """"Not asked" and "did nothing" are different pictures.
+
+    `build_graph` is given the whole automation, so every node exists and only the walked
+    ones carry a status. A graph truncated to the walk would look like a chain that ends
+    where the reader stopped looking.
+    """
+    assert _steps(client.post("/automations/dry-run?until=one", json=CHAIN).json()) == [
+        ("one", "executed"), ("two", ""), ("three", ""),
+    ]
+
+
+def test_an_unknown_frontier_walks_the_whole_chain(flag_on):
+    """A frontier nobody can find is the caller's mistake; answering it with an empty
+    preview would look like a chain that does nothing."""
+    body = client.post("/automations/dry-run?until=no-such-step", json=CHAIN).json()
+    assert len(body["run"]["effects"]) == 3
+
+
+def test_omitting_the_frontier_is_the_whole_chain_exactly_as_before(flag_on):
+    body = client.post("/automations/dry-run", json=CHAIN).json()
+    assert len(body["run"]["effects"]) == 3
+    assert body["until"] == ""

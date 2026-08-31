@@ -93,6 +93,26 @@ export function AutomationsPanel({ connId }: Props) {
    *  at (Langflow, VoltAgent) give the flow the whole room, and they are right: a
    *  canvas competing with a list for height is a canvas at 55%% zoom forever. */
   const [canvasFor, setCanvasFor] = useState<Automation | null>(null);
+  /** DS-3 — the run the canvas is watching. Set BEFORE the request, cleared when it
+   *  resolves; the canvas reads its spans in between. */
+  const [liveRun, setLiveRun] = useState<string | null>(null);
+
+  const runLive = async (a: Automation) => {
+    const id = (globalThis.crypto?.randomUUID?.() ?? `run-${Date.now()}`);
+    setLiveRun(id);
+    try {
+      const run = await runAutomation(a.id, id);
+      // Outcomes that emit no span at all — gated, not due — would otherwise leave the
+      // canvas waiting for a step that is never going to start.
+      flash(run.outcome === "fired" ? "ok" : "err",
+            run.outcome === "fired" ? "Ran" : `Did not run — ${run.reason || run.outcome}`);
+    } catch (e) {
+      flash("err", String((e as Error)?.message || e));
+    } finally {
+      setLiveRun(null);
+      await load();
+    }
+  };
 
   const flash = useCallback((tone: "ok" | "err", text: string) => {
     setBanner({ tone, text });
@@ -306,14 +326,21 @@ export function AutomationsPanel({ connId }: Props) {
                 ● {canvasFor.enabled ? "enabled" : "disabled"}
               </span>
               <span style={{ flex: 1 }} />
-              <Button variant="ghost" size="sm" className="aug-fs-xs"
-                onClick={() => onRun(canvasFor)}>Run now</Button>
+              {/* DS-3 — the canvas's own Run now NAMES the run before starting it. The
+                  request does not return until the chain is over, so a run the client
+                  cannot name is a run it can only be told about. The list's button is
+                  unchanged: nothing is watching there. */}
+              <Button variant="ghost" size="sm" className="aug-fs-xs" disabled={!!liveRun}
+                onClick={() => runLive(canvasFor)}>
+                {liveRun ? "Running…" : "Run now"}
+              </Button>
             </div>
             <div style={{ flex: 1, minHeight: 0 }}>
               <AutomationGraph
                 automationId={canvasFor.id}
                 automation={automations.find(x => x.id === canvasFor.id) ?? canvasFor}
                 onSaved={load}
+                liveRunId={liveRun}
               />
             </div>
           </div>
