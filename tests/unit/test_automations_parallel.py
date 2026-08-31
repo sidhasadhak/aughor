@@ -42,7 +42,8 @@ def _automation(*effects, scheduling="parallel", fallback=None, **kw) -> Automat
     return Automation(
         name="frontier", conn_id="conn-a", scheduling=scheduling,
         conditions=[Condition(kind="schedule", config={"cron": "0 9 * * 1"})],
-        effects=list(effects), fallback_effect=fallback, max_retries=0, **kw)
+        effects=list(effects), fallback_effect=fallback,
+        max_retries=kw.pop("max_retries", 0), **kw)
 
 
 def _run(automation, dispatch, **kwargs):
@@ -202,6 +203,71 @@ def test_a_fanned_step_publishes_its_count_under_the_frontier():
         _dispatch)
     statuses = [o.status for o in run.effects]
     assert statuses == ["executed"] * 4, statuses
+
+
+# ── R5's plane, joined ───────────────────────────────────────────────────────────
+
+def test_the_frontier_declares_its_fanout_region():
+    """The worker threads run inside `automations.parallel_steps` — which is what lets
+    `assert_dispatchable` in the governed executor refuse a declared action that is not
+    parallel-safe. An undeclared fan-out is invisible to that checkpoint, and invisible
+    is exactly the failure mode Wave R5 exists to remove. The ordered walk declares
+    nothing: serial is the pre-DS-7 state, byte for byte."""
+    from aughor.kernel.parallel_safety import current_fanout
+    regions: dict[str, str] = {}
+    lock = threading.Lock()
+
+    def _dispatch(effect, automation):
+        with lock:
+            regions[effect.alias] = current_fanout()
+        return EffectOutcome(kind=effect.kind, target=effect.alias, status="executed")
+
+    _run(_automation(_post(alias="a"), _post(alias="b")), _dispatch)
+    assert regions == {"a": "automations.parallel_steps",
+                       "b": "automations.parallel_steps"}
+
+    regions.clear()
+    _run(_automation(_post(alias="a"), scheduling="ordered"), _dispatch)
+    assert regions == {"a": ""}
+
+
+def test_parallel_refused_is_a_verdict_never_retried(monkeypatch):
+    """R5's refusal maps to the terminal `dispatch_error`, not the retriable `failed`:
+    the same inputs refuse identically next attempt, and retrying a refusal is another
+    request against whatever just refused (the #200 lesson). First reachable from an
+    automation now that steps can run concurrently."""
+    import aughor.actions.executor as kexec
+    import aughor.ontology.store as ostore
+
+    class _Result:
+        status = "parallel_refused"
+        message = ("refund_orders is not declared parallel-safe and was "
+                   "dispatched inside automations.parallel_steps")
+        outcome = None
+
+    class _Graph:
+        schema_name = ""
+        kinetic_actions = {"refund_orders": object()}
+
+    calls = {"n": 0}
+
+    def _refuse(*a, **k):
+        calls["n"] += 1
+        return _Result()
+
+    monkeypatch.setattr(kexec, "execute_kinetic_action", _refuse)
+    monkeypatch.setattr(ostore, "load_latest_ontology", lambda *a, **k: _Graph())
+
+    from aughor.automations.engine import run_automation
+    run = run_automation(_automation(
+        Effect(kind="kinetic_action", alias="refund",
+               config={"action_id": "refund_orders"}),
+        scheduling="parallel", max_retries=3),
+        persist=False, probe=lambda *a, **k: True,
+        sleeper=lambda _s: None, rng=lambda: 0.0)
+    assert run.effects[0].status == "dispatch_error"
+    assert "parallel-safe" in run.effects[0].message
+    assert calls["n"] == 1, "a refusal must never be retried"
 
 
 # ── the preview ──────────────────────────────────────────────────────────────────

@@ -328,6 +328,15 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
         action, effect.params,
         actor=acting_agent_ref(effect, automation), scope=automation.conn_id,
     )
+    # DS-7 — `parallel_refused` is R5's verdict (this action is not declared
+    # parallel-safe, and the run is inside a declared fan-out), first reachable from an
+    # automation now that steps can run concurrently. A verdict, not a fault: the same
+    # inputs refuse identically next attempt, so it maps to the terminal
+    # `dispatch_error` rather than the retriable `failed` — retrying a refusal is the
+    # #200 lesson — and the message names the region verbatim.
+    if result.status == "parallel_refused":
+        return EffectOutcome(kind=effect.kind, target=effect.action_id,
+                             status="dispatch_error", message=result.message)
     status = result.status if result.status in {
         "executed", "criterion_failed", "approval_required", "invalid_params", "dispatch_error",
     } else "failed"
@@ -1207,6 +1216,7 @@ def run_automation(
         from concurrent.futures import wait as _fut_wait
 
         from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
 
         known_aliases = {alias_for(e, n) for n, e in enumerate(walked)}
         deps: dict[int, set[str]] = {}
@@ -1222,7 +1232,13 @@ def run_automation(
         results: dict[int, list[EffectOutcome]] = {}
         scheduled: set[int] = set()
         pending: dict = {}
-        with ContextThreadPoolExecutor(
+        # R5's declared-fan-out plane, entered BEFORE the pool so every submit copies
+        # the label into its worker: a declared-action step dispatched inside this
+        # region is checked by `assert_dispatchable` in the one governed executor, and
+        # an action not declared parallel-safe is REFUSED with the region named — "two
+        # refunds with no error anywhere" is the exact failure Wave R5 exists to stop,
+        # and DS-7 is the first thing that makes it reachable from an automation.
+        with _fanout_region("automations.parallel_steps"), ContextThreadPoolExecutor(
                 max_workers=min(MAX_PARALLEL_STEPS, max(1, len(walked))),
                 thread_name_prefix="automation-step") as pool:
             while len(results) < len(walked):

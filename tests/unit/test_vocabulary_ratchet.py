@@ -139,7 +139,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # one in this plane is strings. A test of "what may a step fan out over" has to
          # construct an effect of the one kind that has it. Two hits, both the wire
          # literal; the prose in the file says "declared action".
-         "tests/unit/test_automations_foreach.py"),
+         "tests/unit/test_automations_foreach.py",
+         # DS-7, same ground: the parallel-refusal test has to monkeypatch the REAL
+         # executor (`execute_kinetic_action`), build the graph attribute the dispatcher
+         # reads (`kinetic_actions`) and construct an Effect of the one governed-write
+         # kind — identifiers all, and renaming any of them would stop testing the seam
+         # it exercises. The prose in the file says "declared action".
+         "tests/unit/test_automations_parallel.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
