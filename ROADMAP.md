@@ -7,6 +7,8 @@ Qdrant · instructor over 5 LLM backends · uv
 **Consolidated 2026-08-30.** This is the single roadmap. It replaces both the stale build-status
 file that used to live here (last reconciled 2026-06-24, pointing at a plan two months old) and
 the eleven per-arc roadmaps and adoption studies under `docs/`. §9 lists what was absorbed.
+**Arc DS added 2026-08-31** (§3.7) — the visual-editor re-study's full plan, absorbed here per
+the one-roadmap rule; it supersedes the session documents it came from.
 
 The per-feature record stays in [`FEATURES.md`](FEATURES.md); this file stays at the
 at-a-glance altitude.
@@ -56,7 +58,7 @@ plane — see §7.
 | Agent plane (Arc VA) | VA-0…VA-9c, VA-4a…4e shipped; VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
-| Automations | trigger → ordered effects, `{"$from": …}` dataflow, runs visible in Activity as traces |
+| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, dry run, typed-port Design canvas; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
 | Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
@@ -114,7 +116,7 @@ is not "everything failed".
 
 ---
 
-## 3 · ACTIVE — Arc VA remaining, plus substrate
+## 3 · ACTIVE — Arc VA remaining, Arc DS, plus substrate
 
 ### 3.1 · VA-9d — the MCP consumer
 
@@ -154,7 +156,7 @@ over a list, or parallelise. The user named this gap directly; it is real.
   `outcomes[i]` because the engine appended exactly one outcome per effect, so every node
   after a fan-out would have shown another step's status — a picture that is *wrong*, not
   missing. Grouped by `fan_count` instead.
-- **W3 · parallel-safe steps** — lowest priority; nothing measured is latency-bound.
+- **W3 · parallel-safe steps** — absorbed into Arc DS as **DS-7** (§3.7 Phase 2).
 
 Neither needs a new canvas: VA-12's authoring rail edits whatever the model can express.
 
@@ -305,6 +307,250 @@ themselves. (Compose-the-app-too is the alternative, but it helps only Docker us
 **Receipt:** fresh clone → `uv sync` → `uvicorn aughor.api:app` → semantic search returns hits
 with no second process running and no environment variable set.
 
+---
+
+### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.4)
+
+> **Origin.** The user's 2026-08-31 directive — *"any & every agent that we spawn should be
+> created via langflow style visual editor… fork it, clone it or whatever… go all in… think
+> years ahead"* — re-opened §4.2 from scratch. The four-pass re-study (their docs 1.5→1.12 ·
+> their source at v1.12.0 `da3d5050` · security/ownership · our own seams) **confirmed the
+> refusal of Langflow's codebase and produced this arc instead: the grammar, not the
+> codebase** — a Langflow-class editor, then a better one, on our engine and governance
+> plane. Evidence summary lives in §4.2's addendum; the falsifiers in this section's tail.
+> Named DS because the surface is already called **Design** ("Canvas" belongs to Data
+> Canvas — a collision already paid for once).
+>
+> **The grab split, decided with the user:** their node **anatomy and styles — YES**,
+> rebuilt in our own tsx on `@xyflow/react` (already under four canvases here); their
+> component **contract shape — YES** (declared typed inputs, outputs, dynamic field
+> visibility, a tool-mode-like flag → DS-10's schema); their **430 component
+> implementations — NO** (in-process `exec()` by design; mostly LLM/vector plumbing our
+> funnel already is, or Composio wrappers whose functionality lives on Composio's servers;
+> the useful ~10 % becomes DS-13's shortlist). MIT covers their code and patterns; their
+> name, logos and provider icons do not transfer.
+
+**Laws that bind every DS wave (standing, not per-phase):**
+
+- An agent remains **one record** (§4.1). The canvas authors what has producer/consumer
+  structure — the chain an agent operates. DS-5 draws an agent's *system*, never its record.
+- **Every node is a reference** to a governed capability. No node is code; no second write
+  path; adding a palette entry is a backend act, never a paste.
+- **One engine.** A foreign runtime bypasses the woven plane (token caps in the LLM funnel,
+  PII at `security_post`, approval/audit/identity in the one executor, spans in the engine
+  loop) — the REST API is the only complete choke point, so everything drawn executes here.
+- **The palette tells the truth of THIS deployment** — §3.4's alt-door rule generalized:
+  every entry is served as `ready | needs_setup | unavailable` with a reason and a door.
+- **`lfx` (MIT) is reference text, never a dependency** — study its layered scheduler,
+  dynamically-computed runnable frontier, subgraph-per-item loops and checkpoints for
+  DS-6/7/8; never execute its flows (a Langflow flow JSON is `exec()`d Python by design).
+- Prove each wave live · names from GLOSSARY.md · hues are tokens, never hexes (CSS-var
+  KIND gate) · vocabulary/ports/availability are **served, never mirrored** — the
+  hand-copied contract that rots is a paid-for trap.
+
+**Phase 0 — down already** (#412–#415, plus VA-4d/4e): typed ports from server vocabulary
+with drag-to-bind and drag-time refusals mirroring `validate_chain` (B1) · `when` guards
+(W1) · `for_each` with per-item guards and refuse-not-truncate caps (W2) · whole-chain dry
+run rendered on the run canvas (B2) · on-canvas authoring (VA-12) · run canvas with typed
+node faces and a timeline rail (VA-4e) · run-id-as-trace-id (VA-4d). The arc names and
+finishes a direction already chosen.
+
+#### Phase 1 · Editor-grade (next · default order DS-1 → DS-4 → DS-3 → DS-2 → DS-5)
+
+**DS-1 · The component palette** — the discovery surface, and the part the user singled
+out. Specced from a source-level dissection of theirs (sidebar component tree, hooks and
+constants read at v1.12.0) before this was written.
+
+- **The contract comes first.** Extend `/automations/vocabulary` (or a sibling
+  `/design/palette`) to serve, per item: category · name · description · icon name · port
+  signature (`PUBLISHED_KEYS` / `BINDABLE_FIELDS` already exist server-side) · badges
+  (`beta`, `legacy`) · a `priority` int (curated pinning) · and **availability:
+  `ready | needs_setup | unavailable` + reason sentence + door** — `slack_post` with no bot
+  record renders dimmed with "needs a Slack app" linking the Reach step; `kinetic_action`
+  lists per action actually declared on a connection; a fan-out notes it needs a
+  list-publishing upstream. Their palette shows the same 430 rows to every install and
+  lets the canvas discover what won't run; **ours refuses to lie at the palette.**
+- **P0 interactions:** fuzzy search — tight threshold (theirs: Fuse at 0.2 over
+  name/description/type/category), debounced, matched categories auto-expand, `/` focuses
+  and opens (shortcut configurable later), Esc blurs · collapsible categories from the
+  served contract · row = 18px icon + truncating name under tooltip + badges +
+  hover-revealed `+` + drag grip · **two add paths, one gate**: drag-to-place and
+  click/double-click/Enter-to-append (append lands at viewport centre computed from
+  pan/zoom) share one add gate, so the affordance and the refusal can never disagree ·
+  disabled-with-reason rows · Beta shown / Legacy hidden by default, both persisted ·
+  loading skeletons matching row geometry · badge text folded into the accessible name
+  (WCAG 2.5.3 label-in-name) and the panel `inert` while hidden.
+- **P1 — the killer interaction, the port-compatibility filter:** drop an edge on empty
+  canvas → the palette opens filtered to steps that can bind that type, a banner names the
+  active filter (with ×-to-clear), and choosing an entry lands the node **pre-bound to the
+  dragged edge**. Cheap here: B1's drag-time refusals already know every port's type.
+  Also P1: singleton/constraint reasons (one trigger node; one fan-out per step) and the
+  three-key sort (priority → search score → name).
+- **P2:** a slim segmented rail once there is more than one section — **Palette · Runs ·
+  Versions**, library-above / this-chain-below, active re-click collapses, feature
+  re-click returns to Palette, every section switch clears search. When VA-9d lands, adopt
+  their MCP pattern wholesale: **each allowlisted server materialized as its own palette
+  row**, with Add server / Manage servers in the section footer. Per-row context menu
+  (export a step as JSON) last.
+- **Deliberately not copied:** no code editor behind any row (DS-13's declarative form is
+  the custom path) · no Bundles section (breadth arrives as governed connections + MCP) ·
+  no Store · no per-row delete of built-ins · no drag-ghost theatrics until fundamentals
+  are receipted · no category graveyard — categories are few and real (≈ Triggers · Steps ·
+  Guards & flow · Connections · Tools) and Legacy is a display state kept empty by intent.
+  (Their own sidebar wears 13 Legacy chips per 20 rows with the toggle on, above a
+  constant carrying 16 retired category names — the metabolism of components-as-code;
+  references must not rot that way.)
+- **Color law:** one served map, port-type → hue **token**, used identically by the
+  palette row, the node's port dots and the edge — colour means the same thing in all
+  three places. Extends B1's kind-hued tiles; our type vocabulary (text · id · list ·
+  channel · tabular · open/unknown) fits in eight hues.
+- **Fit:** the palette owns discovery + placement; the Design rail owns configuration; the
+  canvas owns wiring. On-canvas Add Trigger / Add Action stay, as shortcuts that open the
+  palette pre-filtered.
+- **Receipt:** `/` → "slack" → drag the row in wired-ready, or click `+` and it lands at
+  centre; a fresh install with no bot shows the row dimmed with its door; drag from a
+  step's answer port into space and the palette shows only what can consume text.
+
+**DS-2 · Per-node run and run-to-here.** Scoped dry run: execute the chain up to a selected
+node against sample input, inert, results rendered on the traversed nodes, downstream
+quiet. Same five suppressions B2 measured (no dispatch, no delivery claim, no baseline
+commit, no span, no stored run), with a frontier cut; gates and conditions reported,
+guards reported never decided. The affordance that makes iterating on step 4 not cost
+steps 1–3. **Receipt:** "run to here" mid-chain shows would-run results above, quiet below.
+
+**DS-3 · Live runs stream onto the canvas.** The Execution view subscribes to a run's
+events as they happen instead of decorating a stored run afterwards. Substrate exists —
+the run id IS the trace id (VA-4d) and every step/iteration emits into `session_events` —
+so this is a feed (SSE, like the ask stream), not a new plane. **Receipt:** run-now; nodes
+light, stream and settle in order with no refresh.
+
+**DS-4 · Canvas ergonomics.** Undo/redo · copy/paste · minimap · persisted layout (a
+DECISION, not a drift — today's positions are deliberately session-local; persisting means
+a layout column on the automation, never localStorage) · and the death of the last
+`window.prompt`: the open-outcome binding key (declared-action outcomes are an open set,
+accepted unchecked by design) gets a typed picker with an "accepts any key" affordance —
+closing B1's residual free-text seam. **Receipt:** arrange, reload, find it where you left
+it; bind to a declared action's outcome without typing a key blind.
+
+**DS-5 · The agent map.** Every agent gets a Design view of its operational world: the
+agent at centre; its doors (chat, Slack bots, MCP); its automations; its tool grants and
+connections — real producer/consumer relations drawn from data that all exists today.
+This honours "every agent is visual" WITHOUT re-litigating §4.1: the record stays a form;
+the agent's *system* is a graph. Read-first; every node clicks through to its surface.
+**Receipt:** open any agent → Design; see every door and chain it operates.
+
+#### Phase 2 · Past their ceiling (their documented, seven-release-old limit becomes our demo)
+
+**DS-6 · Branch and join.** Route between steps on a guard's verdict AND merge the branches
+back — **a join waits only on taken branches**, tractable because awaits already derive
+from the one `effect_refs` that validation, the engine's await and both canvases read (a
+route cannot become a fourth, invisible dataflow). Structural clauses only, W1's law:
+validated at save, not an injection surface, and it draws. For contrast, their engine
+implements the *anti*-pattern — persistent branch-exclusion that walks downstream and
+stops everything the router didn't take, which is exactly why their branches cannot
+rejoin. **Receipt:** revenue fell → #alerts, else #daily, and ONE summary step runs after
+either.
+
+**DS-7 · W3 — parallel steps** (absorbs §3.2's W3). Steps with no data dependency execute
+concurrently via frontier scheduling — the lfx shape (topological layers, a dynamically
+recomputed runnable frontier) adapted to our outcome model; DS-6's dependency analysis
+does most of the homework. One outcome per dispatch; spans intact under the run trace.
+**Receipt:** two independent investigations overlap in the span waterfall.
+
+**DS-8 · Durable pause — approvals mid-chain.** A run that reaches an approval-gated
+action parks durably, surfaces in the A4/RC-3 proposal inbox (resolve-once, expiry
+applying, fail-closed), and resumes from its checkpoint on accept — prior steps never
+re-run (checkpoint = the persisted run + accumulated context). Their HITL is authored
+per-flow; ours rides the governance plane that already exists (verdicts, audit, identity,
+expiry). **Receipt:** a chain proposing a governed write pauses; accepting in the inbox
+resumes it; the trace shows one run with a human in its middle.
+
+**DS-9 · Subchains.** An automation invokes an automation as a step; cycles refused at
+save; child outcomes fold into the parent trace. Composition keeps the palette small while
+the library grows. **Receipt:** two chains share one "post with fallback" subchain.
+
+#### Phase 3 · The component economy (its first two waves ARE §3.4's consumer and §3.1's VA-9d)
+
+**DS-10 · One component registry.** Unify what already exists into a single typed roster
+the palette reads: 7 effect kinds · 17 connector types · 18 MCP-served tools · 12 platform
+tools · declared kinetic actions — each with ports, badges, priority and availability,
+served like `/automations/vocabulary`. Schema borrows their contract shape (declared typed
+inputs; outputs; dynamic field visibility; an "exposable as tool" flag that DS-14 reads)
+with the law kept: **a component references a governed capability.** Beta/Legacy live as
+registry metadata — display states, empty by intent. **Receipt:** the palette lists every
+capability of this deployment, searchably, and nothing that isn't real.
+
+**DS-11 · The VA-11 consumer and VA-9d, surfaced as components.** A vault `Connection`
+becomes a node ("as Google · sales@…") whose effects run under the user's grant through
+`govern.outbound` (cap before the work, span, `EXTERNAL_CALL` event) — the wave that makes
+§3.4's built-and-inert plane consumed. An allowlisted MCP server's tools land on the
+palette as governed nodes (posture per §3.1: allowlist + outbound-off-by-default, agreed
+with the user first). This is how the 400-component envy resolves: Composio/Arcade's
+catalog — the same one Langflow outsources to — arrives as governed rows under OUR
+approval gate and OUR vault. **Receipt:** a chain reads Gmail under the user's own grant
+and posts to Slack, every hop attributed, capped and audited.
+
+**DS-12 · Ontology components — the moat.** Metrics, entities, cohorts and trusted queries
+as first-class typed nodes: "Revenue (metric)" publishes a typed series; "Churned accounts
+(cohort)" publishes a LIST a `for_each` fans over — closing §3.2's honest limit that
+nothing in the plane publishes lists. The component class no canvas competitor can copy
+without a semantic layer. **Receipt:** fan over a cohort and post one message per at-risk
+account, the cohort's definition one click away.
+
+**DS-13 · Declarative custom components.** Extension WITHOUT `exec()`: an HTTP-template
+component (endpoint · schema-typed input/output · secrets from the vault · dispatched
+through `govern.outbound`) plus pack-shipped component bundles via the skills/packs plane
+(VA-1's draft→promote gate). The direct answer to Langflow's defining liability — their
+"New Custom Component" opens a Python editor; ours opens this form. Also the home of the
+useful sliver of their catalog: `http_request` · `url_fetch` · `web_search` (a real gap in
+our tool roster today) · file parsing. **Receipt:** a user adds a PagerDuty component from
+a form, never writes Python, and the approval gate still owns its writes.
+
+**DS-14 · B3 — chains as MCP tools** (absorbs the old LATER item). An enabled automation
+is exposable as a tool on our MCP server — external agents invoke it and inherit the whole
+governed path, because the server already fronts the real API. A2A agent cards ride later
+only if that protocol earns it. **Receipt:** Claude Desktop calls "daily-sales-report" and
+the run appears in Activity like any other.
+
+#### Phase 4 · The authoring inversion
+
+**DS-15 · Conversation authors the canvas.** Describe the outcome in chat; the agent
+proposes a chain — grounded in the ontology, the registry and THIS deployment's doors —
+rendered on the Design canvas with a dry-run receipt attached; the human edits and arms
+it. Creation by proposal, the same shape as every governed write here (a grant is
+permission to PROPOSE). Even Langflow no longer assumes the canvas is the author (their
+Assistant builds whole flows; coding agents author over MCP); ours is stronger because
+proposal-first already exists. **Receipt:** "post a Monday pipeline summary to #revenue"
+becomes a drawn, dry-run-proven chain awaiting one click.
+
+**DS-16 · The migration funnel.** An importer for Langflow (and archived-Flowise) flow
+JSON: model/prompt/agent/tool nodes map onto an agent record plus a chain; code-carrying
+nodes are REFUSED with a sentence naming the no-code-injection law and the declarative
+alternative. Their format is the category's lingua franca and their users' exit path.
+Cheap after DS-10, pointless before; their flow format migrates in-engine upstream, so
+DS-16 tracks it release-by-release. **Receipt:** drop a Langflow JSON; get a governed
+chain plus an honest report of what was refused and why.
+
+**DS-17 · Deploy is a menu of doors.** One Deploy control on the canvas enumerating what
+THIS deployment can open — schedule · webhook trigger (new, small: the trigger kinds grow
+by one) · Slack door (RC-5) · MCP tool (DS-14) — each an existing plane, each honouring
+the alt-door rule. Deploying an agent has always meant binding doors; say it on the
+surface where the behaviour lives. **Receipt:** a finished chain goes live on a schedule
+and as an MCP tool from one menu, no other screen involved.
+
+**Revisit triggers — §4.2's verdict is falsifiable.** Any of these is "new facts" and the
+question reopens without ceremony: upstream ships default-on sandboxed execution AND a
+genuinely embeddable editor package with a host-auth bridge (both, not either) ·
+branch-merge semantics land in their engine · IBM moves Langflow to neutral governance
+(foundation, enforced OSS RBAC, published trademark policy) · **or Phase 1 stalls for two
+quarters** — then the lfx-in-jailed-workers posture gets a real trial, not a paragraph.
+
+**Standing upkeep (an hour a quarter, not a project):** track their releases — the
+flow-JSON format (DS-16), the component anatomy (palette parity), and their CVE feed,
+which doubles as a checklist of mistakes for §3.4 to avoid (their seeded-PRNG Fernet key
+derivation is the class example; ours was audited clean 2026-08-31 — no derivation step
+exists to get wrong).
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -341,6 +587,40 @@ Studied on the user's question. Full study: git history, `LANGFLOW_STUDY_2026-08
 
 **Borrowed instead:** B1, B2 (§3.3). **Bought instead:** the connector runtime (§3.4).
 
+**Addendum — re-examined 2026-08-31 at the user's direction (*"be absolutely open… fork it…
+go all in"*): refusal CONFIRMED on stronger evidence; the vision adopted as Arc DS (§3.7).**
+The four-pass re-study (docs 1.5→1.12 · source v1.12.0 `da3d5050` · security/ownership · our
+seams) added, beyond the 2026-08-30 findings:
+
+- **`lfx` is real** — since 1.11 their engine ships standalone (MIT, pluggable services;
+  parallel frontier scheduling, per-item subgraph loops, checkpoint/pause worth studying for
+  DS-6/7/8) — but it executes Python embedded in the flow JSON in-process, unsandboxed;
+  sandboxing upstream is still an open proposal. A flow accepted from a user is code accepted
+  from a user.
+- **The editor is not extractable.** Their official embedded mode is chrome-hiding over an
+  iframe (their docs: it controls UI visibility only, not API exposure); the canvas is welded
+  to 21 stores and a hand-written client imported by 382 files; upstream moves at ~300
+  commits/month (45 releases in 12 months); no successful commercial fork or white-label
+  exists, and white-label requests upstream were closed not-planned.
+- **The security record is a pattern, not an incident**: ~a dozen critical/high advisories
+  2024–26, twice CISA-KEV, three in-the-wild campaigns (botnet, cryptominer + credential
+  harvest, cross-tenant flow-key exfiltration), one "fixed" release later shown still
+  exploitable — and a vault key derived from a seeded PRNG (CVSS 9.1). Our own Fernet paths
+  were audited clean the same day: no derivation step exists to get wrong.
+- **Ownership and category**: IBM closed the DataStax acquisition; hosted Langflow was shut
+  down 2026-04; OSS RBAC is a pass-through (enforcement is the commercial plugin seam);
+  watsonx is the funnel. Flowise reached EOL 2026-08-31; OpenAI's Agent Builder sunsets
+  2026-11. The standalone canvas is the most disposable layer of the agent stack.
+- **The ceiling stands**: If-Else×Loop incompatibility and no-branch-merge are still in the
+  1.11 docs verbatim, seven releases after we first cited them.
+- **The structural law, re-derived from our own seam map**: the REST API is Aughor's only
+  complete governance choke point — token caps live in the LLM funnel, PII at
+  `security_post`, approval/audit/identity in the one executor, spans in the engine loop.
+  A foreign engine bypasses all of it, or is routed through the API and reduced to a picture
+  of our engine. Their node is CODE; ours is a REFERENCE.
+
+Revisit triggers that would legitimately reopen this are carried at the end of §3.7.
+
 ### 4.3 · Arc OA — Langfuse + n8n — RETIRED (2026-08-29)
 
 Dropped at the user's direction: *"we are not going that way again."* The n8n rule stands:
@@ -372,14 +652,26 @@ NOW
         evaluated per item, an empty list a skip that does not page on-call, and a cap
         that REFUSES rather than sending a truncated part of a list
 
-NEXT
+NEXT (order within a band is the user's knob; the inert-vault repair stays first among equals)
   VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
-                                   the vault is built and nothing reaches it — §3.4)
+                                   the vault is built and nothing reaches it — §3.4; also DS-11's
+                                   first half)
+  DS-1  the component palette     (contract + P0, then P1 port-filter — §3.7 Phase 1)
+  DS-4  canvas ergonomics         (undo/redo · layout decision · the last window.prompt)
+  DS-3  live runs on the canvas   (a feed over VA-4d's substrate)
+  DS-2  run-to-here               (scoped dry run)
+  DS-5  the agent map
   S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
-  VA-9d  MCP consumer             (posture first — allowlist + outbound off by default)
-  VA-10  multi-user + admin       (hardening pass over everything above)
+  VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
+                                   surfaced as palette rows by DS-11)
 
-LATER   W3 parallel steps · B3 flow-as-MCP-tool
+THEN    DS-6 branch+join · DS-7 parallel · DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
+
+LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
+        customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
+        DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
+        (§3.7 Phase 4)
+        VA-10 multi-user + admin  (hardening pass over everything above)
 ```
 
 **House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
@@ -404,6 +696,14 @@ the browser** · **measure the premise before building.**
    this repo, while VA-11's live receipt waits on a Google OAuth client only the user can
    create.
 3. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
+4. ✅ **DECIDED 2026-08-31 — the visual-editor question: the grammar, not the codebase.**
+   The user re-opened §4.2 with a mandate for total openness ("fork it… go all in… think
+   years ahead"); the four-pass re-study confirmed the refusal (§4.2 addendum) and the
+   vision landed as **Arc DS (§3.7)** — Langflow-class editing on our engine, then past
+   their documented ceiling, then the governed component economy, then authoring by
+   proposal. Phase-1 default order DS-1 → DS-4 → DS-3 → DS-2 → DS-5, reorderable; the
+   VA-11 consumer stays first among equals in §5 (repairing the built-and-inert vault is
+   §7's own law).
 
 ---
 
@@ -425,8 +725,10 @@ the browser** · **measure the premise before building.**
 
 ## 8 · Not in scope
 
-A second application · a TS runtime · an n8n dependency · a low-code flow engine · a canvas for
-anything without a producer/consumer relation · model ids hardcoded anywhere in `aughor/`.
+A second application · a TS runtime · an n8n dependency · a low-code flow engine (adopting a
+foreign one, that is — Arc DS's visual authoring over our own engine is §3.7, not this) · a
+canvas for anything without a producer/consumer relation (an agent record still gets a form;
+its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/`.
 
 ---
 
