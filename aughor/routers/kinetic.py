@@ -3,8 +3,10 @@
 POST-only and governed: the route resolves the declared action from the connection's ontology,
 then runs it through the single executor (`kinetic.executor.execute_kinetic_action`). RBAC is
 enforced by the app-wide `enforce_rbac` dependency (a POST resolves to the `resource.write` floor
-in `rbac/policy.py`); the executor owns submission criteria + graduated approval + audit. Flag-gated
-on `kinetic.actions` so the route 404s when the kinetic plane is off.
+in `rbac/policy.py`); the executor owns submission criteria + graduated approval + audit. The
+kinetic plane is always on — the `kinetic.actions` flag was DELETED (hardwired 2026-08-02); do
+not reintroduce a gate on that name: `flag_enabled` answers False for unregistered names, which
+would tell every deployment its actions are off.
 """
 from __future__ import annotations
 

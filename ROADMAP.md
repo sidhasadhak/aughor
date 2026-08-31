@@ -48,24 +48,29 @@ plane — see §7.
 
 ---
 
-## 1 · What is true today (measured 2026-08-30)
+## 1 · What is true today (measured 2026-08-30; amended 2026-08-31 after Arc DS Phase 1)
 
 | Plane | State |
 |---|---|
 | Query workbench | SE-0…SE-5a complete |
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
-| Agent plane (Arc VA) | VA-0…VA-9c, VA-4a…4e shipped; VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
+| Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
-| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, dry run, typed-port Design canvas; runs visible in Activity as traces |
+| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
 | Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
-**Honest limits, same date:** automations cannot parallelise, and a fan-out has no list to
-read from any effect kind but the declared action's open outcome (§3.2); no
-user-scoped credential store anywhere; warehouse connections have **no owner**; `telemetry.py`'s
-Langfuse backend is silently dead (v2 path, 4.x runtime); no RBAC on `/agents/custom*`.
+**Honest limits, same date:** automations cannot branch/join (DS-6, begun 2026-08-31) or
+parallelise (DS-7), and a fan-out has no list to read from any effect kind but the declared
+action's open outcome (§3.2); **`UserAgent.tool_grants` is a phantom** — consumed by
+`action_tools.py` and named in `GOVERNING_FIELDS`, but not a column, never loaded by
+`_row_to_agent`, absent from `_PATCHABLE`/`UserAgentCreate`/`UserAgentPatch`, so no agent can
+hold a grant and `propose_action` is unreachable everywhere (persisting it = a migration +
+six files); no user-scoped credential store anywhere; warehouse connections have **no
+owner**; no RBAC on `/agents/custom*`. (`telemetry.py`'s Langfuse backend, dead here on
+2026-08-30, has since been repaired to ride the OTel exporter — OA·LF-1.)
 
 ---
 
@@ -93,7 +98,10 @@ GFM/CSV tables, deep links.
 **Arc VA · the agent platform** — skills plane (VA-1), delegation (VA-2), OTLP (VA-3),
 automations dataflow + run canvas (VA-4a…4e), trace excellence (VA-5), agent alerting (VA-6),
 instruction/prompt management (VA-7), guardrail plane (VA-8), outbound seam (VA-9a),
-automations-run-as-agents (VA-9b), per-agent tool grants (VA-9c).
+automations-run-as-agents (VA-9b), the propose-only action tool (VA-9c — **partial**: the
+law "a grant is permission to PROPOSE, never to EXECUTE" and the `propose_action` tool are
+live, but `tool_grants` is a phantom field — §1 honest limits — so no agent can yet hold a
+grant; the tool correctly serves nothing rather than a tool that always refuses).
 
 **VA-12/13/14 (2026-08-30)** — canvas authoring (Add Trigger / Add Action), the
 `investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
@@ -113,6 +121,13 @@ downstream *guard* is still **awaited** (or `investigate` would hand it the job 
 when nobody waits — a non-empty string, so `is set` would hold every morning), and a run whose
 every step was guarded off no longer fires the **fallback**, because "nothing was meant to run"
 is not "everything failed".
+
+**Arc DS Phase 1 (2026-08-31, #416–#418)** — the editor-grade pass: the component palette
+that tells THIS deployment's truth (DS-1) · run-to-here (DS-2) · live runs streaming onto
+the canvas (DS-3) · undo/redo, copy/paste, minimap, persisted layout, the last
+`window.prompt` dead (DS-4) · the agent Map (DS-5). Spec-deltas and receipts in §3.7
+Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
+`agent_id`/`last_run_at`/`last_status` on every save.
 
 ---
 
@@ -355,7 +370,35 @@ run rendered on the run canvas (B2) · on-canvas authoring (VA-12) · run canvas
 node faces and a timeline rail (VA-4e) · run-id-as-trace-id (VA-4d). The arc names and
 finishes a direction already chosen.
 
-#### Phase 1 · Editor-grade (next · default order DS-1 → DS-4 → DS-3 → DS-2 → DS-5)
+#### Phase 1 · Editor-grade — ✅ SHIPPED 2026-08-31 (#417 DS-1 · #418 DS-2…DS-5)
+
+> **Shipped as specced, with these measured deltas (the spec text below is kept as
+> written; where they disagree, this ledger is the truth):**
+> - **DS-1** — P0 + served availability shipped. **Open: the P1 port-compatibility filter
+>   and the P2 rail.** The port-type→hue map is DEFERRED to DS-10 — no port-type
+>   vocabulary exists yet and only six `--chart-N` tokens do (`lint:palette` CVD-validates
+>   additions); colour stays direction+kind keyed. No structured `door` field is served —
+>   the reason sentence names the door until DS-11 gives it destinations (don't serve a
+>   field nothing reads). A **failed availability probe leaves a row READY** — only a
+>   measured zero dims; a dimmed row that would have worked is a lie the reader can't check.
+> - **DS-2** — `until_alias` truncates the effect list before the loop; an unknown alias
+>   walks the whole chain; steps past the cut are drawn, undecorated.
+> - **DS-3** — zero new routes: `POST /automations/{id}/run` gained an optional `run_id`,
+>   step attrs joined `span_attrs` (the only channel that reaches `session_events`), feed
+>   = `/activity?trace_id=`. Live state renders **`ran`** — a span's `ok:true` is not step
+>   success (the verdict lands after the span closes); the stream is anticipation,
+>   `build_graph` is truth.
+> - **DS-4** — layout persisted in an `automation_layouts` **sidecar table, not a column
+>   on the automation**: the update route rewrites whole rows, and exactly that bug was
+>   live in this route (the `PUT` erase, fixed in #418). One pure undo stack covers
+>   draft+positions (coalesce <600 ms; rehydrate resets); paste **drops** a ref whose
+>   producer is absent rather than repointing it (`validate_chain` cannot catch a ref that
+>   resolves to a *different* step — a well-formed wrong result).
+> - **DS-5** — shipped as the **Map** tab ("Design" is the automation button AND its
+>   canvas mode; "Canvas" is Data Canvas). Zero server cost: two undeclared wire fields
+>   (`SlackBotSummary.agent_id`, `Automation.agent_id`) + three client filters bought
+>   every relation. It deliberately draws **no grants spoke** — `tool_grants` is a
+>   phantom (§1 honest limits).
 
 **DS-1 · The component palette** — the discovery surface, and the part the user singled
 out. Specced from a source-level dissection of theirs (sidebar component tree, hooks and
@@ -652,20 +695,26 @@ NOW
         evaluated per item, an empty list a skip that does not page on-call, and a cap
         that REFUSES rather than sending a truncated part of a list
 
-NEXT (order within a band is the user's knob; the inert-vault repair stays first among equals)
+  ✅ DS-1…DS-5  SHIPPED 2026-08-31 (#417, #418) — the palette that tells this deployment's
+        truth · run-to-here · live runs streaming onto nodes · undo/redo, copy/paste,
+        minimap, layout sidecar, the last window.prompt dead · the agent Map
+        (spec-deltas in §3.7 Phase 1; DS-1's P1 port-filter + P2 rail remain open)
+
+NEXT (order within a band is the user's knob; 2026-08-31 the user picked DS-6 first —
+      the inert-vault repair stays highest among the rest)
+  DS-6  branch + join             (begun 2026-08-31 — §3.7 Phase 2)
   VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
                                    the vault is built and nothing reaches it — §3.4; also DS-11's
                                    first half)
-  DS-1  the component palette     (contract + P0, then P1 port-filter — §3.7 Phase 1)
-  DS-4  canvas ergonomics         (undo/redo · layout decision · the last window.prompt)
-  DS-3  live runs on the canvas   (a feed over VA-4d's substrate)
-  DS-2  run-to-here               (scoped dry run)
-  DS-5  the agent map
   S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
                                    surfaced as palette rows by DS-11)
+  DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
+  tool_grants column              (turn VA-9c's phantom into a stored grant — §1 honest limits;
+                                   migration + store/create/patch surfaces; grants stay
+                                   PROPOSE-only)
 
-THEN    DS-6 branch+join · DS-7 parallel · DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
+THEN    DS-7 parallel · DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
 
 LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)

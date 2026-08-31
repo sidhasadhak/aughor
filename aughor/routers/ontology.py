@@ -560,9 +560,10 @@ def get_kinetic_actions(
     schema_name: Optional[str] = Query(default=None),
 ):
     """Wave K: human-declared governed actions overlaid onto the graph. Read-only — empty unless
-    the `kinetic.actions` flag is on and the connection has declared actions in its ontology
-    overrides. These are NOT executed here (that is the K2 executor); this surfaces what is
-    declared, for the authoring UI and for the agent's action prompt-section."""
+    the connection has declared actions in its ontology overrides (the plane is always on; the
+    `kinetic.actions` flag was deleted 2026-08-02). These are NOT executed here (that is the K2
+    executor); this surfaces what is declared, for the authoring UI and for the agent's action
+    prompt-section."""
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
@@ -860,7 +861,7 @@ def author_kinetic_action(
 ):
     """Wave K5 — author (or edit) a DECLARED KineticAction as a per-connection ontology override: the
     write path for the authoring UI. Persisted as ``target_kind='action'`` and overlaid onto the graph
-    at read time when ``kinetic.actions`` is on. The full spec is validated HERE, so a malformed
+    at read time (always — the ``kinetic.actions`` flag was deleted 2026-08-02). The full spec is validated HERE, so a malformed
     action (e.g. a submission criterion missing its authored message) is rejected at author time — not
     silently dropped at overlay or discovered at execute."""
     from aughor import govern
