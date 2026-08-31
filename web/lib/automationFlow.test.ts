@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  upstreamKeys, type Vocabulary,
+  seedConfig, upstreamKeys, viewportCenter, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -329,5 +329,68 @@ describe("for_each", () => {
     // edge from a step called "item" would be a picture of dataflow that does not exist.
     const { edges } = draftToFlow(draft(fanned(["EMEA"])), VOCAB);
     expect(edges.some(e => e.from === "item")).toBe(false);
+  });
+});
+
+/* ── DS-1 · what the palette places, and where ─────────────────────────────── */
+
+describe("seedConfig", () => {
+  const REQUIRED = {
+    schedule: ["cron"], metric: ["monitor_id"],
+    slack_post: ["bot_id", "channel"], investigate: ["question"],
+  };
+
+  it("seeds every key the save REQUIRES, so a placed step is never missing one", () => {
+    // The server validates required config keys at construction: a default that omits
+    // one is a 422 the moment it is saved, from a row the reader did nothing wrong to.
+    expect(Object.keys(seedConfig("slack_post", REQUIRED)).sort()).toEqual(["bot_id", "channel"]);
+  });
+
+  it("leaves them empty so the row reports itself incomplete", () => {
+    // `missingKeys` reads blank required keys and marks the row — which is the honest
+    // state of a step nobody has filled in yet. Inventing a plausible value would hide it.
+    expect(seedConfig("investigate", REQUIRED)).toEqual({ question: "" });
+  });
+
+  it("keeps a schedule one click from valid", () => {
+    expect(seedConfig("schedule", REQUIRED)).toEqual({ cron: "0 9 * * *" });
+  });
+
+  it("returns an empty config for a kind that requires nothing", () => {
+    expect(seedConfig("brief", REQUIRED)).toEqual({});
+  });
+});
+
+describe("viewportCenter", () => {
+  it("puts a clicked node in the middle of what the reader is looking at", () => {
+    // Pan 0, zoom 1: the centre of an 800×400 pane is (400, 200) in flow terms.
+    expect(viewportCenter({ x: 0, y: 0, zoom: 1 }, { width: 800, height: 400 }))
+      .toEqual({ x: 400, y: 200 });
+  });
+
+  it("reads the pan back out", () => {
+    // Panned right by 200, the same screen centre is 200 further into the flow plane.
+    expect(viewportCenter({ x: -200, y: -100, zoom: 1 }, { width: 800, height: 400 }))
+      .toEqual({ x: 600, y: 300 });
+  });
+
+  it("divides by the zoom rather than ignoring it", () => {
+    // Zoomed to 2×, the pane covers HALF as much flow — the centre is half as far out.
+    expect(viewportCenter({ x: 0, y: 0, zoom: 2 }, { width: 800, height: 400 }))
+      .toEqual({ x: 200, y: 100 });
+  });
+
+  it("centres the CARD on that point, not its left edge", () => {
+    // Without the half-width shift a clicked node lands visibly right of centre — the
+    // kind of off-by-a-viewport only a browser would otherwise have reported.
+    expect(viewportCenter({ x: 0, y: 0, zoom: 1 }, { width: 800, height: 400 }, 280).x)
+      .toBe(260);
+  });
+
+  it("survives a canvas that has not measured itself yet", () => {
+    // zoom 0 is what an unmeasured canvas reports; dividing by it puts the node at
+    // infinity, which is indistinguishable from the node never having been added.
+    const at = viewportCenter({ x: 0, y: 0, zoom: 0 }, { width: 800, height: 400 });
+    expect(Number.isFinite(at.x) && Number.isFinite(at.y)).toBe(true);
   });
 });

@@ -96,6 +96,24 @@ def vocabulary():
     }
 
 
+@router.get("/automations/palette")
+def palette(conn_id: Optional[str] = None):
+    """DS-1 — what may be placed on the Design canvas, and whether it works HERE.
+
+    A sibling of `/automations/vocabulary` rather than an extension of it: that document
+    is a pure closed set (the same constants `validate_chain` refuses against) cached
+    module-side and shared by every row on screen, while this one is deployment-shaped —
+    it counts Slack bots, triggers, subscriptions and monitors, and its answer changes the
+    moment a reader creates one. Folding a per-deployment reading into a cached constant
+    table is how a palette comes to insist you have no bots an hour after you made one.
+
+    `conn_id` scopes the objects that are themselves connection-scoped (subscriptions,
+    monitors); omit it and those probes count across the workspace.
+    """
+    from aughor.automations.palette import entries
+    return {"entries": entries(conn_id)}
+
+
 @router.get("/automations")
 def list_all(conn_id: Optional[str] = None, enabled_only: bool = False):
     return {"automations": [a.model_dump() for a in list_automations(conn_id, enabled_only)]}
