@@ -10,9 +10,10 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  aliasFor, layoutToPersist, liveStatuses, pasteEffect, producedByAlias, seedConfig,
-  upstreamKeys, viewportCenter, type Vocabulary,
+  applyConnect, bindingRefs, clearBinding, draftToFlow, ELSE_FIELD, FAN_FIELD,
+  GUARD_FIELD, guardSentences, aliasFor, layoutToPersist, liveStatuses, pasteEffect,
+  producedByAlias, rootAliases, seedConfig, upstreamKeys, viewportCenter,
+  visibleFields, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoEffect } from "@/lib/api";
 
@@ -633,5 +634,223 @@ describe("liveStatuses", () => {
   it("says nothing about a run that has emitted nothing", () => {
     // A gated or not-fired run returns before any span. The canvas must not spin.
     expect(liveStatuses([])).toEqual({});
+  });
+});
+
+/* ── DS-6 · branch and join ─────────────────────────────────────────────────────── */
+
+const HOLDS = [{ left: { $from: "numbers.answer" }, op: "truthy" }];
+
+/** alerts / daily as the two arms of one route, fed by an investigate. */
+const routed = (): AutoEffect[] => [
+  eff("investigate", { question: "did revenue fall?" }, "numbers"),
+  { kind: "slack_post", alias: "alerts", when: HOLDS,
+    config: { channel: "#alerts", message: "fell" } },
+  { kind: "slack_post", alias: "daily", else_of: "alerts",
+    config: { channel: "#daily", message: "steady" } },
+];
+
+describe("the route, drawn", () => {
+  it("emits one route edge from the deciding step to its otherwise arm", () => {
+    const { steps, edges } = draftToFlow(draft(...routed()), VOCAB);
+    expect(steps[2].elseOf).toBe("alerts");
+    expect(edges).toContainEqual(
+      { from: "alerts", key: "", to: "daily", field: ELSE_FIELD, route: true });
+  });
+
+  it("does not draw a route onto a step that does not exist", () => {
+    const { edges } = draftToFlow(draft(
+      { kind: "slack_post", alias: "daily", else_of: "ghost",
+        config: { channel: "#c" } }), VOCAB);
+    expect(edges.filter(e => e.route)).toEqual([]);
+  });
+});
+
+describe("the join, drawn", () => {
+  const joined = (): AutoEffect[] => [...routed(),
+    { kind: "slack_post", alias: "summary",
+      config: { channel: "#c",
+                thread_ts: { $from_any: ["alerts.ts", "daily.ts"] } } }];
+
+  it("draws one arrow per alternative — every candidate is dataflow", () => {
+    const { edges } = draftToFlow(draft(...joined()), VOCAB);
+    const into = edges.filter(e => e.to === "summary" && e.field === "thread_ts");
+    expect(into.map(e => `${e.from}.${e.key}`)).toEqual(["alerts.ts", "daily.ts"]);
+  });
+
+  it("the bound chip reads as the whole wiring, oldest candidate first", () => {
+    const { steps } = draftToFlow(draft(...joined()), VOCAB);
+    const chip = steps[3].inputs.find(i => i.field === "thread_ts");
+    expect(chip?.boundTo).toBe("alerts.ts or daily.ts");
+  });
+
+  it("a malformed join is not wiring — bindingRefs offers nothing to draw", () => {
+    // The server refuses it at save; meanwhile the canvas must not draw a confident
+    // edge from a shape the engine would refuse.
+    expect(bindingRefs({ $from_any: "alerts.ts" })).toEqual([]);
+    expect(bindingRefs({ $from_any: [] })).toEqual([]);
+    expect(bindingRefs({ $from_any: ["alerts.ts", 3] })).toEqual([]);
+  });
+
+  it("guardSentences reads a join side as its candidates", () => {
+    const ops = [{ op: "truthy", label: "is set", unary: true }];
+    expect(guardSentences(
+      [{ left: { $from_any: ["alerts.ts", "daily.ts"] }, op: "truthy" }], ops))
+      .toEqual(["alerts.ts or daily.ts is set"]);
+  });
+});
+
+describe("applyConnect — dragging the other arm is a join, not a replacement", () => {
+  const base = draft(...routed(),
+    { kind: "slack_post", alias: "summary",
+      config: { channel: "#c", thread_ts: { $from: "alerts.ts" } } });
+
+  it("merges the two arms of one route into $from_any", () => {
+    const { draft: next, error } = applyConnect(base, VOCAB, {
+      fromAlias: "daily", key: "ts", toAlias: "summary", field: "thread_ts" });
+    expect(error).toBe("");
+    expect(next.effects[3].config.thread_ts)
+      .toEqual({ $from_any: ["alerts.ts", "daily.ts"] });
+  });
+
+  it("still replaces for a producer that is not the other arm", () => {
+    const { draft: next } = applyConnect(base, VOCAB, {
+      fromAlias: "numbers", key: "answer", toAlias: "summary", field: "thread_ts" });
+    expect(next.effects[3].config.thread_ts).toEqual({ $from: "numbers.answer" });
+  });
+
+  it("re-dragging a candidate the field already carries changes nothing", () => {
+    const joinedBase = draft(...routed(),
+      { kind: "slack_post", alias: "summary",
+        config: { channel: "#c",
+                  thread_ts: { $from_any: ["alerts.ts", "daily.ts"] } } });
+    const { draft: next, error } = applyConnect(joinedBase, VOCAB, {
+      fromAlias: "alerts", key: "ts", toAlias: "summary", field: "thread_ts" });
+    expect(error).toBe("");
+    expect(next.effects[3].config.thread_ts)
+      .toEqual({ $from_any: ["alerts.ts", "daily.ts"] });
+  });
+});
+
+describe("clearBinding clears a join whole", () => {
+  it("the ✕ removes every candidate the chip showed, not half of them", () => {
+    const base = draft(...routed(),
+      { kind: "slack_post", alias: "summary",
+        config: { channel: "#c",
+                  thread_ts: { $from_any: ["alerts.ts", "daily.ts"] } } });
+    const next = clearBinding(base, "summary", "thread_ts");
+    expect(next.effects[3].config.thread_ts).toBe("");
+  });
+});
+
+describe("pasteEffect — the route and the join under the drop-never-repoint law", () => {
+  it("keeps a join's surviving candidates and reports the ones that went", () => {
+    const { draft: next, dropped } = pasteEffect(
+      draft(...routed()),
+      { kind: "slack_post",
+        config: { channel: "#c",
+                  thread_ts: { $from_any: ["alerts.ts", "ghost.ts"] } } },
+      "item");
+    const pasted = next.effects[next.effects.length - 1];
+    expect(pasted.config.thread_ts).toEqual({ $from_any: ["alerts.ts"] });
+    expect(dropped).toContain("thread_ts");
+  });
+
+  it("a join with no surviving candidate goes back to plain text", () => {
+    const { draft: next, dropped } = pasteEffect(
+      draft(eff("investigate", { question: "q" }, "numbers")),
+      { kind: "slack_post",
+        config: { channel: "#c",
+                  thread_ts: { $from_any: ["ghost.ts", "phantom.ts"] } } },
+      "item");
+    expect(next.effects[next.effects.length - 1].config.thread_ts).toBe("");
+    expect(dropped).toContain("thread_ts");
+  });
+
+  it("keeps the route when its target is still present, guarded and unfanned", () => {
+    const { draft: next, dropped } = pasteEffect(
+      draft(...routed()),
+      { kind: "slack_post", else_of: "alerts", config: { channel: "#x" } },
+      "item");
+    expect(next.effects[next.effects.length - 1].else_of).toBe("alerts");
+    expect(dropped).not.toContain("otherwise");
+  });
+
+  it("drops the route when the target is absent — never repoints it", () => {
+    const { draft: next, dropped } = pasteEffect(
+      draft(eff("investigate", { question: "q" }, "numbers")),
+      { kind: "slack_post", else_of: "alerts", config: { channel: "#x" } },
+      "item");
+    expect(next.effects[next.effects.length - 1].else_of).toBeUndefined();
+    expect(dropped).toContain("otherwise");
+  });
+
+  it("drops the route when the same-named target has lost its guard", () => {
+    // A silently kept route onto an unguarded step is an arm that can never run —
+    // and the save would refuse it with a message about a step this paste created.
+    const { draft: next, dropped } = pasteEffect(
+      draft(eff("slack_post", { channel: "#a" }, "alerts")),
+      { kind: "slack_post", else_of: "alerts", config: { channel: "#x" } },
+      "item");
+    expect(next.effects[next.effects.length - 1].else_of).toBeUndefined();
+    expect(dropped).toContain("otherwise");
+  });
+});
+
+describe("rootAliases — where a parallel automation's spine attaches", () => {
+  it("a step is a root until something it reads exists in the chain", () => {
+    const roots = rootAliases(draft(
+      eff("investigate", { question: "sales?" }, "numbers"),
+      eff("investigate", { question: "costs?" }, "costs"),
+      eff("slack_post", { channel: "#c", message: { $from: "numbers.answer" } }),
+    ));
+    expect(roots).toEqual(["numbers", "costs"]);
+  });
+
+  it("guard sides, fan sources and the route all count as being fed", () => {
+    const roots = rootAliases(draft(
+      eff("investigate", { question: "q" }, "numbers"),
+      { kind: "slack_post", alias: "guarded", config: { channel: "#c" },
+        when: [{ left: { $from: "numbers.answer" }, op: "truthy" }] },
+      { kind: "slack_post", alias: "arm", else_of: "guarded",
+        config: { channel: "#d" } },
+      { kind: "slack_post", alias: "fanned",
+        config: { channel: { $from: "item.value" }, message: "hi" },
+        for_each: { source: { $from: "numbers.answer" } } },
+    ));
+    expect(roots).toEqual(["numbers"]);
+  });
+
+  it("the per-iteration item alias is not a step — a fanned literal stays a root", () => {
+    const roots = rootAliases(draft(
+      { kind: "slack_post", alias: "fan",
+        config: { channel: { $from: "item.value" }, message: "hi" },
+        for_each: { source: ["#a", "#b"] } },
+    ));
+    expect(roots).toEqual(["fan"]);
+  });
+});
+
+describe("visibleFields — a binding is wiring, and wiring must draw", () => {
+  const primary = [{ field: "channel", placeholder: "#channel" },
+                   { field: "message", placeholder: "message" }];
+
+  it("a bound non-primary field earns its row (found by driving: thread_ts's join "
+     + "edges were silently dropped without a port to land on)", () => {
+    const fields = visibleFields(primary, [
+      { field: "message", boundTo: null },
+      { field: "thread_ts", boundTo: "alerts.ts or daily.ts" },
+      { field: "channel", boundTo: "alerts.channel" },
+    ]);
+    expect(fields.map(f => f.field)).toEqual(["channel", "message", "thread_ts"]);
+  });
+
+  it("an unbound non-primary field stays hidden — a node holding every field is a "
+     + "form wearing a node costume", () => {
+    const fields = visibleFields(primary, [
+      { field: "message", boundTo: null },
+      { field: "thread_ts", boundTo: null },
+    ]);
+    expect(fields.map(f => f.field)).toEqual(["channel", "message"]);
   });
 });

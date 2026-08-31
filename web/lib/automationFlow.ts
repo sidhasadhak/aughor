@@ -44,6 +44,37 @@ function bindingRef(value: unknown): string | null {
   return null;
 }
 
+/** DS-6 — the join's wire word. A structural constant like `$from` above, which this
+ *  module already spells rather than fetches: the marker is the grammar, not a
+ *  vocabulary that rots. */
+const FROM_ANY = "$from_any";
+
+/** A WELL-FORMED join binding's alternatives, or null. Same exact-one-key rule as
+ *  `$from`; a dict wearing the key with a malformed value is refused at save by the
+ *  server, so the client treats only the well-formed shape as wiring. */
+function anyBindingRefs(value: unknown): string[] | null {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    const keys = Object.keys(value as object);
+    if (keys.length === 1 && keys[0] === FROM_ANY) {
+      const refs = (value as Record<string, unknown>)[FROM_ANY];
+      if (Array.isArray(refs) && refs.length > 0
+          && refs.every(r => typeof r === "string" && r.trim())) {
+        return refs.map(String);
+      }
+    }
+  }
+  return null;
+}
+
+/** Every reference a value carries — one for `$from`, each alternative for a join,
+ *  none for a literal. The plural reading `collect_refs` gives the server, mirrored
+ *  here because the design canvas draws the UNSAVED draft (B1's one departure). */
+export function bindingRefs(value: unknown): string[] {
+  const one = bindingRef(value);
+  if (one !== null) return [one];
+  return anyBindingRefs(value) ?? [];
+}
+
 /** W1 — every `alias.key` an EARLIER step publishes, for a guard's subject picker.
  *
  * Open-set producers (the declared-action kind, `publishes: null`) contribute nothing:
@@ -60,6 +91,10 @@ export function guardSentences(clauses: GuardClause[], ops: GuardOp[]): string[]
   const side = (v: unknown): string => {
     const ref = bindingRef(v);
     if (ref !== null) return ref;
+    // DS-6 — a join reads as its candidates, oldest first: the server's renderer says
+    // "alerts.ts or daily.ts" and this one must not word it differently.
+    const any = anyBindingRefs(v);
+    if (any !== null) return any.join(" or ");
     // An empty literal must still occupy the sentence — the server's renderer says the
     // same thing the same way, so a node and a run cannot word one guard differently.
     if (v === null || v === undefined) return "nothing";
@@ -103,6 +138,9 @@ export interface FlowStep {
   forEach: string;
   /** W2 — the reference a BOUND fan-out reads, for the edge it draws. */
   forEachRef: string | null;
+  /** DS-6 — the step whose "Only if" this one runs OTHERWISE of, or "". A node that
+   *  omitted it would draw a route's arm as a step that always fires. */
+  elseOf: string;
 }
 
 export interface FlowEdgeSpec {
@@ -115,6 +153,9 @@ export interface FlowEdgeSpec {
   guard?: boolean;
   /** W2 — this edge carries the LIST the step runs once per item of. */
   fan?: boolean;
+  /** DS-6 — this edge is the ROUTE: the arm runs exactly when the source step's
+   *  "Only if" did not hold. It carries no value (`key` is empty) — it decides. */
+  route?: boolean;
 }
 
 /** The pseudo-field a guard edge lands on. Not a config key — the guard is not one. */
@@ -123,6 +164,10 @@ export const GUARD_FIELD = "__guard";
 /** W2 — the pseudo-field a fan-out's SOURCE edge lands on. A list is not a config field
  *  either: it decides how many times the step runs, not what one run says. */
 export const FAN_FIELD = "__for_each";
+
+/** DS-6 — the pseudo-field the route's edge lands on. Not a config key either: it
+ *  decides whether the arm runs at all. */
+export const ELSE_FIELD = "__otherwise";
 
 /** W2 — a fan-out as one line on a node face.
  *
@@ -135,6 +180,8 @@ export function fanLabel(source: unknown): string {
   if (source === null || source === undefined) return "";
   const ref = bindingRef(source);
   if (ref !== null) return ref;
+  const any = anyBindingRefs(source);
+  if (any !== null) return any.join(" or ");
   if (!Array.isArray(source)) return "";
   const scalars = source.filter(i => typeof i !== "object" || i === null);
   if (scalars.length !== source.length) return `${source.length} items`;
@@ -156,10 +203,12 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
 } {
   const steps: FlowStep[] = draft.effects.map((e, i) => {
     const v = vocab[e.kind] ?? { publishes: [], bindable: [] };
-    const inputs = (v.bindable ?? []).map(field => ({
-      field,
-      boundTo: bindingRef((e.config ?? {})[field]),
-    }));
+    const inputs = (v.bindable ?? []).map(field => {
+      // DS-6 — a joined field reads as its candidates ("alerts.ts or daily.ts"): the
+      // chip shows the whole wiring, and the edges below draw one arrow per candidate.
+      const refs = bindingRefs((e.config ?? {})[field]);
+      return { field, boundTo: refs.length ? refs.join(" or ") : null };
+    });
     return {
       alias: aliasFor(e, i),
       index: i,
@@ -169,6 +218,7 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
       whenLogic: e.when_logic ?? "all",
       forEach: fanLabel(e.for_each?.source),
       forEachRef: bindingRef(e.for_each?.source),
+      elseOf: (e.else_of ?? "").trim(),
       publishes: v.publishes === null ? ["*"] : v.publishes,
       openSet: v.publishes === null,
       inputs,
@@ -179,24 +229,27 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
   const edges: FlowEdgeSpec[] = [];
   for (const s of steps) {
     for (const inp of s.inputs) {
-      if (!inp.boundTo) continue;
-      const dot = inp.boundTo.indexOf(".");
-      if (dot <= 0) continue;
-      const from = inp.boundTo.slice(0, dot);
-      if (!known.has(from)) continue;  // validate_chain refuses these at save; do not draw a lie
-      edges.push({ from, key: inp.boundTo.slice(dot + 1), to: s.alias, field: inp.field });
+      // DS-6 — one arrow per reference: a joined field draws an edge from EVERY
+      // candidate, exactly as the server's graph reports every alternative.
+      for (const ref of bindingRefs(s.config[inp.field])) {
+        const dot = ref.indexOf(".");
+        if (dot <= 0) continue;
+        const from = ref.slice(0, dot);
+        if (!known.has(from)) continue;  // validate_chain refuses these at save; do not draw a lie
+        edges.push({ from, key: ref.slice(dot + 1), to: s.alias, field: inp.field });
+      }
     }
     // W1 — a guard reads the chain exactly as a param does, so it draws. The server's
     // graph does the same from `effect_refs`; the design canvas derives from the DRAFT
     // and must not be the one reader that omits it.
     for (const clause of s.when) {
       for (const side of [clause.left, clause.right]) {
-        const ref = bindingRef(side);
-        if (!ref) continue;
-        const dot = ref.indexOf(".");
-        if (dot <= 0 || !known.has(ref.slice(0, dot))) continue;
-        edges.push({ from: ref.slice(0, dot), key: ref.slice(dot + 1), to: s.alias,
-                     field: GUARD_FIELD, guard: true });
+        for (const ref of bindingRefs(side)) {
+          const dot = ref.indexOf(".");
+          if (dot <= 0 || !known.has(ref.slice(0, dot))) continue;
+          edges.push({ from: ref.slice(0, dot), key: ref.slice(dot + 1), to: s.alias,
+                       field: GUARD_FIELD, guard: true });
+        }
       }
     }
     // W2 — a fan-out's source is dataflow too. The server derives it from the same
@@ -209,6 +262,13 @@ export function draftToFlow(draft: Draft, vocab: Vocabulary): {
         edges.push({ from, key: s.forEachRef.slice(dot + 1), to: s.alias,
                      field: FAN_FIELD, fan: true });
       }
+    }
+    // DS-6 — the route draws from the deciding step to its otherwise arm. No key: it
+    // carries a verdict, not a value. An unknown target is not drawn — validate_chain
+    // refuses it at save, and the canvas must not draw a lie.
+    if (s.elseOf && known.has(s.elseOf)) {
+      edges.push({ from: s.elseOf, key: "", to: s.alias,
+                   field: ELSE_FIELD, route: true });
     }
   }
   return { steps, edges };
@@ -242,10 +302,31 @@ export function applyConnect(draft: Draft, vocab: Vocabulary, c: {
   if (!bindable.includes(c.field)) {
     return { draft, error: `${consumer.kind} does not read '${c.field}'` };
   }
+  const newRef = `${c.fromAlias}.${c.key}`;
+  // DS-6 — dragging the OTHER ARM of a route onto an already-bound field is a JOIN,
+  // not a replacement. The rule is deliberately this narrow: two arms of one route are
+  // mutually exclusive, so "replace" can never be what the gesture meant — while for
+  // any unrelated producer, replace stays exactly what it always did. The arm pair is
+  // read off `else_of` itself, never inferred from guards that merely look opposite.
+  const armPair = (a: string, b: string): boolean => {
+    const ea = draft.effects[aliases.indexOf(a)];
+    const eb = draft.effects[aliases.indexOf(b)];
+    return (ea?.else_of ?? "").trim() === b || (eb?.else_of ?? "").trim() === a;
+  };
+  const existing = bindingRefs((consumer.config ?? {})[c.field]);
+  // Dragging a reference the field already carries changes nothing — collapsing a
+  // join back to the one candidate someone re-dragged would be an edit nobody made.
+  if (existing.includes(newRef)) return { draft, error: "" };
+  const joins = existing.length > 0
+    && existing.some(r => {
+      const producer = r.slice(0, r.indexOf("."));
+      return producer.length > 0 && armPair(producer, c.fromAlias);
+    });
+  const value = joins
+    ? { [FROM_ANY]: [...existing, newRef] }
+    : { $from: newRef };
   const effects = draft.effects.map((e, i) =>
-    i === toIdx
-      ? { ...e, config: { ...e.config, [c.field]: { $from: `${c.fromAlias}.${c.key}` } } }
-      : e);
+    i === toIdx ? { ...e, config: { ...e.config, [c.field]: value } } : e);
   return { draft: { ...draft, effects }, error: "" };
 }
 
@@ -320,7 +401,7 @@ export function pasteEffect(
 
   // The fan source first: whether it survives decides whether `item.…` means anything.
   let forEach = step.for_each;
-  if (forEach && !resolves(bindingRef(forEach.source), false)) {
+  if (forEach && !bindingRefs(forEach.source).every(r => resolves(r, false))) {
     forEach = undefined;
     dropped.push("for each");
   }
@@ -334,17 +415,46 @@ export function pasteEffect(
       dropped.push(field);
       continue;
     }
+    // DS-6 — a join keeps the alternatives that still mean what they meant and sheds
+    // the rest, reported either way: half its wiring going quietly would be the same
+    // class of silent wrongness the single-ref rule refuses. None left = the field
+    // goes back to plain text, exactly like a dead `$from`.
+    const any = anyBindingRefs(value);
+    if (any) {
+      const kept = any.filter(r => resolves(r, hasFan));
+      if (kept.length < any.length) {
+        config[field] = kept.length ? { [FROM_ANY]: kept } : "";
+        dropped.push(field);
+        continue;
+      }
+    }
     config[field] = value;
   }
 
   // A guard with a dangling side cannot be evaluated, and half a comparison is not a
-  // weaker guard — it is a different one. The clause goes.
+  // weaker guard — it is a different one. The clause goes. A join side goes whole for
+  // the same reason: fewer alternatives is a different question, not a smaller one.
   const when = (step.when ?? []).filter(clause => {
-    const ok = resolves(bindingRef(clause.left), hasFan)
-      && resolves(bindingRef(clause.right), hasFan);
+    const ok = bindingRefs(clause.left).every(r => resolves(r, hasFan))
+      && bindingRefs(clause.right).every(r => resolves(r, hasFan));
     if (!ok) dropped.push("only if");
     return ok;
   });
+
+  // DS-6 — the route survives only when its target is still a step this arm can be the
+  // otherwise OF: present, guarded, unfanned — the same eligibility the save enforces.
+  // Dropped and reported otherwise, never repointed; a pasted arm that silently lost
+  // its route would run every time, which is the opposite of what it drew.
+  let elseOf = (step.else_of ?? "").trim();
+  if (elseOf) {
+    const targetIdx = draft.effects.findIndex((e, i) => aliasFor(e, i) === elseOf);
+    const target = targetIdx >= 0 ? draft.effects[targetIdx] : undefined;
+    const eligible = !!target && (target.when ?? []).length > 0 && !target.for_each;
+    if (!eligible) {
+      elseOf = "";
+      dropped.push("otherwise");
+    }
+  }
 
   const copy: AutoEffect = {
     ...step,
@@ -352,16 +462,19 @@ export function pasteEffect(
     config,
     ...(when.length ? { when } : { when: undefined }),
     for_each: forEach,
+    ...(elseOf ? { else_of: elseOf } : { else_of: undefined }),
   };
   return { draft: { ...draft, effects: [...draft.effects, copy] }, dropped };
 }
 
-/** Remove one binding — the field goes back to plain (empty) text. */
+/** Remove one binding — the field goes back to plain (empty) text. A joined field
+ *  clears WHOLE: the chip shows every candidate as one wiring, and the ✕ beside it
+ *  must not quietly leave half of what it appeared to remove. */
 export function clearBinding(draft: Draft, toAlias: string, field: string): Draft {
   const effects = draft.effects.map((e, i) => {
     if (aliasFor(e, i) !== toAlias) return e;
     const config = { ...e.config };
-    if (bindingRef(config[field]) !== null) config[field] = "";
+    if (bindingRefs(config[field]).length > 0) config[field] = "";
     return { ...e, config };
   });
   return { ...draft, effects };
@@ -516,6 +629,60 @@ export function liveStatuses(events: LiveEvent[]): Record<string, LiveStatus> {
     if (still > 0 && status[step] !== "failed") status[step] = "running";
   }
   return status;
+}
+
+/**
+ * DS-7 · the steps nothing feeds — where a PARALLEL automation's spine attaches.
+ *
+ * Under frontier scheduling, "step N+1 runs after step N" is a lie unless an arrow
+ * says so: the trigger starts every root at once, and everything downstream is ordered
+ * by the data/route edges already drawn. A step's dependencies are the same set the
+ * engine waits on — every reference in its config, guard sides and fan source, plus
+ * its `else_of` target. The reserved per-iteration alias is not a step, so a fanned
+ * step reading only `item.…` is still a root.
+ */
+export function rootAliases(draft: Draft): string[] {
+  const known = new Set(draft.effects.map((e, i) => aliasFor(e, i)));
+  const producerOf = (ref: string): string => ref.slice(0, Math.max(0, ref.indexOf(".")));
+  return draft.effects
+    .map((e, i) => ({ e, alias: aliasFor(e, i) }))
+    .filter(({ e }) => {
+      const deps: string[] = [];
+      for (const v of Object.values(e.config ?? {})) {
+        deps.push(...bindingRefs(v).map(producerOf));
+      }
+      for (const c of e.when ?? []) {
+        deps.push(...bindingRefs(c.left).map(producerOf));
+        deps.push(...bindingRefs(c.right).map(producerOf));
+      }
+      deps.push(...bindingRefs(e.for_each?.source).map(producerOf));
+      const target = (e.else_of ?? "").trim();
+      if (target) deps.push(target);
+      return !deps.some(d => known.has(d));
+    })
+    .map(({ alias }) => alias);
+}
+
+/**
+ * DS-6 (found by driving) · the field rows a design card renders.
+ *
+ * The primary fields always show; a non-primary field earns its row exactly when it is
+ * BOUND. `thread_ts` is bindable but was never a primary row, so its port never
+ * mounted and ReactFlow silently dropped the join's edges onto it — an arrow the
+ * engine follows that the card omitted. Unbound non-primary fields stay hidden: a node
+ * holding every field is a form wearing a node costume, but a binding is wiring, and
+ * wiring must draw.
+ */
+export function visibleFields(
+  primary: { field: string; placeholder: string }[],
+  inputs: { field: string; boundTo: string | null }[],
+): { field: string; placeholder: string }[] {
+  return [
+    ...primary,
+    ...inputs
+      .filter(i => i.boundTo && !primary.some(f => f.field === i.field))
+      .map(i => ({ field: i.field, placeholder: "" })),
+  ];
 }
 
 export interface Viewport { x: number; y: number; zoom: number }

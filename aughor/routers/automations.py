@@ -46,6 +46,10 @@ class CreateAutomationRequest(BaseModel):
     expires_at: Optional[str] = None
     max_retries: int = 1
     retry_backoff_seconds: float = 30.0
+    #: DS-7 — `ordered` (the default, every pre-DS-7 automation) or `parallel` (steps
+    #: run as their arrows allow). An authored field like `condition_logic` above, so
+    #: the PUT carries it and a rename cannot silently re-serialise a parallel chain.
+    scheduling: str = "ordered"
 
 
 class PauseRequest(BaseModel):

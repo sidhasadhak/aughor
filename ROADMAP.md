@@ -48,24 +48,29 @@ plane — see §7.
 
 ---
 
-## 1 · What is true today (measured 2026-08-30)
+## 1 · What is true today (measured 2026-08-30; amended 2026-08-31 after Arc DS Phase 1)
 
 | Plane | State |
 |---|---|
 | Query workbench | SE-0…SE-5a complete |
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
-| Agent plane (Arc VA) | VA-0…VA-9c, VA-4a…4e shipped; VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
+| Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
-| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, dry run, typed-port Design canvas; runs visible in Activity as traces |
+| Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), parallel steps (`scheduling`, DS-7), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
 | Connections | 7 live; BigQuery/theLook mirrored daily 07:00 |
 
-**Honest limits, same date:** automations cannot parallelise, and a fan-out has no list to
-read from any effect kind but the declared action's open outcome (§3.2); no
-user-scoped credential store anywhere; warehouse connections have **no owner**; `telemetry.py`'s
-Langfuse backend is silently dead (v2 path, 4.x runtime); no RBAC on `/agents/custom*`.
+**Honest limits, same date:** a fan-out has no
+list to read from any effect kind but the declared
+action's open outcome (§3.2); **`UserAgent.tool_grants` is a phantom** — consumed by
+`action_tools.py` and named in `GOVERNING_FIELDS`, but not a column, never loaded by
+`_row_to_agent`, absent from `_PATCHABLE`/`UserAgentCreate`/`UserAgentPatch`, so no agent can
+hold a grant and `propose_action` is unreachable everywhere (persisting it = a migration +
+six files); no user-scoped credential store anywhere; warehouse connections have **no
+owner**; no RBAC on `/agents/custom*`. (`telemetry.py`'s Langfuse backend, dead here on
+2026-08-30, has since been repaired to ride the OTel exporter — OA·LF-1.)
 
 ---
 
@@ -93,7 +98,10 @@ GFM/CSV tables, deep links.
 **Arc VA · the agent platform** — skills plane (VA-1), delegation (VA-2), OTLP (VA-3),
 automations dataflow + run canvas (VA-4a…4e), trace excellence (VA-5), agent alerting (VA-6),
 instruction/prompt management (VA-7), guardrail plane (VA-8), outbound seam (VA-9a),
-automations-run-as-agents (VA-9b), per-agent tool grants (VA-9c).
+automations-run-as-agents (VA-9b), the propose-only action tool (VA-9c — **partial**: the
+law "a grant is permission to PROPOSE, never to EXECUTE" and the `propose_action` tool are
+live, but `tool_grants` is a phantom field — §1 honest limits — so no agent can yet hold a
+grant; the tool correctly serves nothing rather than a tool that always refuses).
 
 **VA-12/13/14 (2026-08-30)** — canvas authoring (Add Trigger / Add Action), the
 `investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
@@ -114,6 +122,13 @@ when nobody waits — a non-empty string, so `is set` would hold every morning),
 every step was guarded off no longer fires the **fallback**, because "nothing was meant to run"
 is not "everything failed".
 
+**Arc DS Phase 1 (2026-08-31, #416–#418)** — the editor-grade pass: the component palette
+that tells THIS deployment's truth (DS-1) · run-to-here (DS-2) · live runs streaming onto
+the canvas (DS-3) · undo/redo, copy/paste, minimap, persisted layout, the last
+`window.prompt` dead (DS-4) · the agent Map (DS-5). Spec-deltas and receipts in §3.7
+Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
+`agent_id`/`last_run_at`/`last_status` on every save.
+
 ---
 
 ## 3 · ACTIVE — Arc VA remaining, Arc DS, plus substrate
@@ -133,8 +148,10 @@ most-wanted feature on this list.
 
 ### 3.2 · W1/W2 — the two workflow primitives
 
-Measured: our engine runs a strictly sequential list. It cannot branch between effects, fan out
-over a list, or parallelise. The user named this gap directly; it is real.
+Measured 2026-08-30: our engine ran a strictly sequential list. It could not branch between
+effects, fan out over a list, or parallelise. The user named this gap directly; it was real —
+and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), branch+join
+(DS-6) and parallel steps (DS-7, absorbing this section's W3).
 
 - ~~**W1 · `when` on an effect**~~ — **SHIPPED 2026-08-30.** A guard over the accumulated
   `context`, evaluated BEFORE the dispatch so a held step costs nothing. Its references run
@@ -156,7 +173,8 @@ over a list, or parallelise. The user named this gap directly; it is real.
   `outcomes[i]` because the engine appended exactly one outcome per effect, so every node
   after a fan-out would have shown another step's status — a picture that is *wrong*, not
   missing. Grouped by `fan_count` instead.
-- **W3 · parallel-safe steps** — absorbed into Arc DS as **DS-7** (§3.7 Phase 2).
+- ~~**W3 · parallel-safe steps**~~ — absorbed into Arc DS as **DS-7** and **SHIPPED
+  2026-08-31** (§3.7 Phase 2).
 
 Neither needs a new canvas: VA-12's authoring rail edits whatever the model can express.
 
@@ -355,7 +373,35 @@ run rendered on the run canvas (B2) · on-canvas authoring (VA-12) · run canvas
 node faces and a timeline rail (VA-4e) · run-id-as-trace-id (VA-4d). The arc names and
 finishes a direction already chosen.
 
-#### Phase 1 · Editor-grade (next · default order DS-1 → DS-4 → DS-3 → DS-2 → DS-5)
+#### Phase 1 · Editor-grade — ✅ SHIPPED 2026-08-31 (#417 DS-1 · #418 DS-2…DS-5)
+
+> **Shipped as specced, with these measured deltas (the spec text below is kept as
+> written; where they disagree, this ledger is the truth):**
+> - **DS-1** — P0 + served availability shipped. **Open: the P1 port-compatibility filter
+>   and the P2 rail.** The port-type→hue map is DEFERRED to DS-10 — no port-type
+>   vocabulary exists yet and only six `--chart-N` tokens do (`lint:palette` CVD-validates
+>   additions); colour stays direction+kind keyed. No structured `door` field is served —
+>   the reason sentence names the door until DS-11 gives it destinations (don't serve a
+>   field nothing reads). A **failed availability probe leaves a row READY** — only a
+>   measured zero dims; a dimmed row that would have worked is a lie the reader can't check.
+> - **DS-2** — `until_alias` truncates the effect list before the loop; an unknown alias
+>   walks the whole chain; steps past the cut are drawn, undecorated.
+> - **DS-3** — zero new routes: `POST /automations/{id}/run` gained an optional `run_id`,
+>   step attrs joined `span_attrs` (the only channel that reaches `session_events`), feed
+>   = `/activity?trace_id=`. Live state renders **`ran`** — a span's `ok:true` is not step
+>   success (the verdict lands after the span closes); the stream is anticipation,
+>   `build_graph` is truth.
+> - **DS-4** — layout persisted in an `automation_layouts` **sidecar table, not a column
+>   on the automation**: the update route rewrites whole rows, and exactly that bug was
+>   live in this route (the `PUT` erase, fixed in #418). One pure undo stack covers
+>   draft+positions (coalesce <600 ms; rehydrate resets); paste **drops** a ref whose
+>   producer is absent rather than repointing it (`validate_chain` cannot catch a ref that
+>   resolves to a *different* step — a well-formed wrong result).
+> - **DS-5** — shipped as the **Map** tab ("Design" is the automation button AND its
+>   canvas mode; "Canvas" is Data Canvas). Zero server cost: two undeclared wire fields
+>   (`SlackBotSummary.agent_id`, `Automation.agent_id`) + three client filters bought
+>   every relation. It deliberately draws **no grants spoke** — `tool_grants` is a
+>   phantom (§1 honest limits).
 
 **DS-1 · The component palette** — the discovery surface, and the part the user singled
 out. Specced from a source-level dissection of theirs (sidebar component tree, hooks and
@@ -441,7 +487,7 @@ the agent's *system* is a graph. Read-first; every node clicks through to its su
 
 #### Phase 2 · Past their ceiling (their documented, seven-release-old limit becomes our demo)
 
-**DS-6 · Branch and join.** Route between steps on a guard's verdict AND merge the branches
+**DS-6 · Branch and join — ✅ SHIPPED 2026-08-31.** Route between steps on a guard's verdict AND merge the branches
 back — **a join waits only on taken branches**, tractable because awaits already derive
 from the one `effect_refs` that validation, the engine's await and both canvases read (a
 route cannot become a fourth, invisible dataflow). Structural clauses only, W1's law:
@@ -451,11 +497,61 @@ stops everything the router didn't take, which is exactly why their branches can
 rejoin. **Receipt:** revenue fell → #alerts, else #daily, and ONE summary step runs after
 either.
 
-**DS-7 · W3 — parallel steps** (absorbs §3.2's W3). Steps with no data dependency execute
+> **Shipped as:** `Effect.else_of` (surface word **Otherwise**: the arm runs exactly when
+> the named step's Only-if was evaluated and did NOT hold) + the `{"$from_any": [...]}`
+> join binding (first alternative that resolves, in authored order — each validated,
+> awaited and drawn like any reference). The laws that took deciding: **an undecided
+> guard takes NEITHER arm** (unevaluable/missing-upstream is not falsehood — the guard
+> went three-valued, `evaluate_guard_verdict`, to say so); **the route reads the
+> verdict, never the arm's health** (a failed primary does not run the otherwise — a
+> route is not a fallback); an untaken arm is `BRANCH_SKIP`, so it cannot fire the
+> fallback; `else_of` must name an earlier, guarded, unfanned step (a per-item guard is
+> N verdicts); elif chains fall out free (`else_of` onto an else-arm). Guards now
+> evaluate BEFORE the params resolve — cheaper, and the decision belongs to the guard.
+> Canvas: a third edge kind `route` (labelled "otherwise"), the arm's own strip + rail
+> picker, join chips reading "alerts.ts or daily.ts", one drawn edge per candidate;
+> dragging the *other arm* onto a bound field JOINS instead of replacing. Two defects
+> found by driving: the list summary rendered a join as `[object Object]` (the B1 hole,
+> one form over — both now route through `bindingRefs`), and a bound non-primary field
+> (`thread_ts`) never mounted its port, so ReactFlow silently dropped the join's edges
+> (`visibleFields`: a binding is wiring, and wiring must draw). Live-receipted on a
+> scratch instance: both branch directions, preview walking both arms ("otherwise of
+> alerts — decided when it runs"), and the execution canvas reading dispatch_error red /
+> **not taken** amber / skipped dim.
+
+**DS-7 · W3 — parallel steps — ✅ SHIPPED 2026-08-31** (absorbs §3.2's W3). Steps with no data dependency execute
 concurrently via frontier scheduling — the lfx shape (topological layers, a dynamically
 recomputed runnable frontier) adapted to our outcome model; DS-6's dependency analysis
 does most of the homework. One outcome per dispatch; spans intact under the run trace.
 **Receipt:** two independent investigations overlap in the span waterfall.
+
+> **Shipped as:** `Automation.scheduling: "ordered" | "parallel"` — **per-automation and
+> opt-in**, because the declared list is a documented contract ("Then, in order" on every
+> surface) and two steps with no data edge can still be order-sensitive in the world (two
+> posts into one channel arrive in list order); only the author knows. A step's
+> dependency set = every reference in its params, guard and fan source, plus its
+> `else_of` target — the one `effect_refs` again, so "may these overlap" and "is an edge
+> drawn between them" cannot disagree, and forward-ref refusal makes the graph a DAG by
+> construction. The engine's per-step body was EXTRACTED once (`_execute_step`) and
+> driven by both the ordered walk (byte-for-byte, the whole pre-DS-7 suite is that
+> assertion) and the frontier (`ContextThreadPoolExecutor`, the kernel's contextvar-
+> copying pool, ≤ `MAX_PARALLEL_STEPS`=4; per-step retry budgets since parallel sleeps
+> overlap; outcomes reassembled in DECLARED order because `group_outcomes` matches
+> positions). A dry run always walks in order — parallelism over an inert dispatcher
+> buys only nondeterministic sample ordering. The graph prunes the sequence spine to
+> trigger→roots under parallel (a chain spine would lie) and serves `scheduling` so both
+> canvases and the trigger card say "steps run in parallel — as the arrows allow".
+> Store migration 3 (rehearsed at boot on a v2 scratch store); the authoring form gained
+> the select AND the carry-forward fix — its payload was silently resetting
+> `description`/`enabled`/`paused_until`/`expires_at`/`retry_backoff_seconds`/
+> `fallback_effect` on every form edit (4th of the PUT-erase family; canary-proven fixed
+> live). **Live receipts on a scratch instance:** the same two-notify automation ran
+> 2.7s parallel (both steps opening the same millisecond) vs 5.1s ordered; worker-thread
+> spans landed under the run's trace with the waterfall's own header reading "this run
+> did work in parallel"; the DS-6 branch+join chain kept its laws under the frontier
+> (the otherwise arm waited for the verdict). Left open, chip-filed: the VA-5 waterfall
+> draws single `external_call` completion events forward from their timestamp, and both
+> editors read-modify-write from a stale list snapshot.
 
 **DS-8 · Durable pause — approvals mid-chain.** A run that reaches an approval-gated
 action parks durably, surfaces in the A4/RC-3 proposal inbox (resolve-once, expiry
@@ -652,20 +748,34 @@ NOW
         evaluated per item, an empty list a skip that does not page on-call, and a cap
         that REFUSES rather than sending a truncated part of a list
 
-NEXT (order within a band is the user's knob; the inert-vault repair stays first among equals)
+  ✅ DS-1…DS-5  SHIPPED 2026-08-31 (#417, #418) — the palette that tells this deployment's
+        truth · run-to-here · live runs streaming onto nodes · undo/redo, copy/paste,
+        minimap, layout sidecar, the last window.prompt dead · the agent Map
+        (spec-deltas in §3.7 Phase 1; DS-1's P1 port-filter + P2 rail remain open)
+
+  ✅ DS-6  SHIPPED 2026-08-31 — branch ("Otherwise": else_of, routed on the guard's
+        VERDICT, undecided takes neither arm) + join ($from_any: first alternative that
+        resolved; a join waits only on taken branches). Their seven-release-old ceiling,
+        crossed — receipts in §3.7 Phase 2
+
+  ✅ DS-7  SHIPPED 2026-08-31 — parallel steps: scheduling="parallel" (opt-in, per
+        automation), frontier over the same effect_refs the awaits and canvases read;
+        one step body driven by both orders; 2.7s parallel vs 5.1s ordered on the same
+        chain, spans overlapping under one trace — receipts in §3.7 Phase 2
+
+NEXT (order within a band is the user's knob; the inert-vault repair stays highest)
   VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
                                    the vault is built and nothing reaches it — §3.4; also DS-11's
                                    first half)
-  DS-1  the component palette     (contract + P0, then P1 port-filter — §3.7 Phase 1)
-  DS-4  canvas ergonomics         (undo/redo · layout decision · the last window.prompt)
-  DS-3  live runs on the canvas   (a feed over VA-4d's substrate)
-  DS-2  run-to-here               (scoped dry run)
-  DS-5  the agent map
   S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
                                    surfaced as palette rows by DS-11)
+  DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
+  tool_grants column              (turn VA-9c's phantom into a stored grant — §1 honest limits;
+                                   migration + store/create/patch surfaces; grants stay
+                                   PROPOSE-only)
 
-THEN    DS-6 branch+join · DS-7 parallel · DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
+THEN    DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
 
 LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)

@@ -35,6 +35,7 @@ import {
   CONDITION_KINDS, CRON_PRESETS, ConditionRow, EFFECT_KINDS, EffectRow,
   effectsForWire, ghostBtn, inputStyle, labelStyle, newCondition, newEffect,
 } from "@/components/automations/AutomationRows";
+import { bindingRefs } from "@/lib/automationFlow";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 
@@ -555,6 +556,8 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
 }) {
   const [name, setName] = useState(initial?.name ?? "");
   const [logic, setLogic] = useState<"all" | "any">(initial?.condition_logic ?? "all");
+  const [scheduling, setScheduling] = useState<"ordered" | "parallel">(
+    initial?.scheduling ?? "ordered");
   const [conditions, setConditions] = useState<AutoCondition[]>(
     initial?.conditions ?? [newCondition()]);
   const [effects, setEffects] = useState<AutoEffect[]>(
@@ -580,9 +583,24 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
     try { builtEffects = effectsForWire(effects); }
     catch (err) { onError((err as Error).message); return; }
 
+    // Every field the form does not edit is CARRIED from the record. The PUT takes a
+    // whole automation and `CreateAutomationRequest`'s defaults fill whatever the
+    // payload omits — so the old shape of this payload was silently resetting
+    // `description`, `enabled`, `paused_until`, `expires_at`, `retry_backoff_seconds`
+    // and the fallback on every form edit: a paused automation came back armed because
+    // somebody fixed a typo in its name. Fourth of its family in this subsystem
+    // (`AutomationAuthor`'s header documents the same trap for the canvas rail).
     const payload: NewAutomation = {
       conn_id: conn, name: name.trim(), conditions, condition_logic: logic,
-      effects: builtEffects, max_retries: maxRetries,
+      effects: builtEffects, max_retries: maxRetries, scheduling,
+      ...(initial ? {
+        description: initial.description,
+        fallback_effect: initial.fallback_effect,
+        enabled: initial.enabled,
+        paused_until: initial.paused_until,
+        expires_at: initial.expires_at,
+        retry_backoff_seconds: initial.retry_backoff_seconds,
+      } : {}),
     };
     setSaving(true);
     try {
@@ -622,7 +640,19 @@ function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
 
       {/* Effects */}
       <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Then (in order)</label>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
+          <label style={{ ...labelStyle, marginBottom: 0 }}>Then</label>
+          {/* DS-7 — scheduling is authored HERE, beside the list it governs, the same
+              way `condition_logic` sits beside its conditions. "In order" is the
+              default every existing automation keeps; "in parallel" runs steps as
+              their arrows allow — a step waits only for the steps it reads. */}
+          <select value={scheduling} aria-label="Step scheduling" className="aug-fs-xs"
+            onChange={e => setScheduling(e.target.value as "ordered" | "parallel")}
+            style={{ ...inputStyle, width: "auto", padding: "3px 8px", fontSize: undefined }}>
+            <option value="ordered">in order</option>
+            <option value="parallel">in parallel — as the arrows allow</option>
+          </select>
+        </div>
         {effects.map((e, i) => (
           <EffectRow key={i} e={e} agents={agents} bots={bots} siblings={effects} index={i}
             onChange={ee => setEff(i, ee)}
@@ -662,9 +692,12 @@ function describeEffect(e: AutoEffect): string {
   const t = e.config.action_id || e.config.subscription_id || e.config.trigger_id
     || e.config.question || e.config.channel || "";
   // B1 made these fields BINDABLE, and `String({$from: …})` is "[object Object]" —
-  // found by driving a step whose channel is bound. A reference describes itself.
-  const target = t && typeof t === "object" && "$from" in (t as object)
-    ? String((t as { $from: unknown }).$from) : String(t);
+  // found by driving a step whose channel is bound. DS-6's join hit the identical
+  // hole one form over ("slack_post([object Object])", found the same way), so both
+  // shapes now go through the one helper that reads references — a third binding
+  // form would land in `bindingRefs`, not here.
+  const refs = bindingRefs(t);
+  const target = refs.length ? refs.join(" or ") : String(t);
   // W2 — a step that runs per item says so here too, or the list claims one send where
   // N happen.
   const fan = e.for_each ? " · per item" : "";

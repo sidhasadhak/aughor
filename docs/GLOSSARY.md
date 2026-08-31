@@ -56,6 +56,9 @@ keep it; frontend identifiers and every user-visible string do not.
 | **Automation** | The condition→effect engine | — |
 | **Only if** | A guard on ONE step: it runs only when the guard holds against what earlier steps published. `when` is the wire's field name | "When" (the automation's trigger already owns that word on the canvas), filter, condition (that is the trigger's) |
 | **For each** | A fan-out on ONE step: it runs once per item of a list, and each iteration reads its item as `item.<field>` (a scalar as `item.value`). `for_each` is the wire's field name, and the surface word too — there is no collision to translate away | loop, iterate, batch (a batch is one send of many things; this is many sends) |
+| **Otherwise** | The route on ONE step: it runs exactly when the named step's Only if was evaluated and did NOT hold — an undecided guard takes neither arm. `else_of` is the wire's field name | else/branch/if-else (programming words for a drawn surface), fallback (that is the every-step-failed escape hatch), condition |
+| **From any** | The join: a binding that reads the first of several references that resolved (`{"$from_any": [...]}`), which is how one step runs after either arm of a route. Every alternative is validated, awaited and drawn | merge (git's word), first-of, coalesce (SQL's) |
+| **In parallel** | An automation's step scheduling: steps run as their arrows allow — each waits for the steps it reads and nothing else. "In order" is the default and the pre-DS-7 sequential walk. `scheduling` is the wire's field name | concurrent/async/frontier (implementation words for a drawn surface), fan-out (that is For each — many sends of ONE step) |
 | **Advice rule** | A "if metric X then recommend Y" entry | playbook (the `playbook/` sense) |
 | **Starter** | A named question template that seeds a run | research playbook |
 

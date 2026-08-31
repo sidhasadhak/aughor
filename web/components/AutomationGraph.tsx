@@ -62,9 +62,9 @@ import {
   type Automation, type AutomationGraphData, type GuardClause,
 } from "@/lib/api";
 import {
-  aliasFor, applyConnect, clearBinding, draftToFlow, FAN_FIELD, GUARD_FIELD, guardSentences,
-  layoutToPersist, liveStatuses, pasteEffect, producedByAlias, viewportCenter,
-  type LiveStatus, type Vocabulary,
+  aliasFor, applyConnect, clearBinding, draftToFlow, ELSE_FIELD, FAN_FIELD, GUARD_FIELD,
+  guardSentences, layoutToPersist, liveStatuses, pasteEffect, producedByAlias,
+  rootAliases, viewportCenter, visibleFields, type LiveStatus, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 import {
@@ -163,9 +163,11 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
   const status = String(data.status || "");
   const produced = (data.produced as string[]) || [];
   // A guarded skip reads in the guard's own hue: it is the design working, and the dim
-  // `skipped` grey is the colour of something having gone wrong.
+  // `skipped` grey is the colour of something having gone wrong. DS-6 — a route's
+  // untaken arm is the same idea one branch over, in the route's own hue.
   const fan = (data.fan ?? null) as { count: number; executed: number; skipped: number } | null;
   const accent = data.guarded ? "var(--chart-3)"
+    : data.not_taken ? "var(--chart-4)"
     : status ? (STATUS_COLOR[status] || "var(--t3)") : "var(--border)";
   return (
     <div style={{
@@ -195,10 +197,23 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
             data.when_logic === "any" ? " or " : " and ")}
         </div>
       )}
+      {/* DS-6 — the route, a design fact like the guard above it: an arm drawn
+          without its "otherwise" reads as a step that always fires. */}
+      {!!data.else_of && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-4)", marginTop: 3,
+          fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis",
+          whiteSpace: "nowrap" }}>
+          otherwise of {String(data.else_of)}
+        </div>
+      )}
       {!!status && (
         <div className="aug-fs-xs" style={{ color: accent, marginTop: 4 }}>
           ● {data.dryRun && status === "executed" ? "would run"
-              : data.guarded ? "held · condition not met" : status}
+              : data.guarded ? "held · condition not met"
+              // "not taken" alone: the message distinguishes "met its condition"
+              // from "was not decided", and a summary that guessed which would be
+              // wrong half the time.
+              : data.not_taken ? "not taken" : status}
           {!!fan && (
             <span style={{ color: "var(--t4)" }}>
               {" "}· {fan.executed} of {fan.count}{fan.skipped ? ` · ${fan.skipped} held` : ""}
@@ -263,6 +278,12 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
             ? ` · ${ms(data.duration_ms as number)}` : ""}
         </div>
       )}
+      {/* DS-7 — the spine on this picture only touches the roots; the card says why. */}
+      {data.scheduling === "parallel" && (
+        <div className="aug-fs-xs" style={{ color: "var(--chart-2)", marginTop: 2 }}>
+          steps run in parallel — as the arrows allow
+        </div>
+      )}
       <Handle type="source" position={Position.Right} style={{ opacity: 0 }} />
     </div>
   );
@@ -281,13 +302,18 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
     // `executed`, which is the engine's honest word for "this step ran to completion"
     // and exactly the wrong one to put on screen when nothing ran: found by driving it,
     // with "● executed" sitting under a banner reading "nothing was sent".
-    data: { ...n, dryRun: !!graph.dry_run },
+    // DS-7 — the trigger card carries the scheduling, so a run whose spine only
+    // touches the roots can say why.
+    data: { ...n, dryRun: !!graph.dry_run,
+            ...(n.type === "trigger" ? { scheduling: graph.scheduling } : {}) },
   }));
 
   // A data edge already implies "runs after", so a sequence edge on the same pair is
   // the same claim twice on an identical path — keep the one that carries meaning.
+  // DS-6 — a route edge implies it too, and claims more: it decides.
   const carriesData = new Set(
-    graph.edges.filter((e) => e.type === "data").map((e) => `${e.from}->${e.to}`),
+    graph.edges.filter((e) => e.type === "data" || e.type === "route")
+      .map((e) => `${e.from}->${e.to}`),
   );
   // W1 + B2 — a step can bind the SAME upstream key twice: once into a field and once
   // in its guard (`message: {$from: numbers.answer}` beside `only if numbers.answer is
@@ -308,19 +334,26 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
 
   const edges: RFEdge[] = drawn.map((e, i) => {
     const isData = e.type === "data";
+    // DS-6 — the route, in its own hue and dashes: it carries no value (that is a
+    // data edge) and claims more than order (that is the sequence spine) — it decides
+    // whether the arm runs at all. Labelled with the server's own word.
+    const isRoute = e.type === "route";
     return {
       id: `${e.type}:${e.from}->${e.to}:${e.label || i}`,
       source: e.from,
       target: e.to,
-      label: isData ? e.label : undefined,
+      label: isData || isRoute ? e.label : undefined,
       animated: false,
-      style: isData
-        ? (e.guard
-            ? { stroke: "var(--chart-3)", strokeWidth: 1.6, strokeDasharray: "5 4" }
-            : { stroke: "var(--chart-1)", strokeWidth: 1.6 })
-        : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
+      style: isRoute
+        ? { stroke: "var(--chart-4)", strokeWidth: 1.6, strokeDasharray: "7 4" }
+        : isData
+          ? (e.guard
+              ? { stroke: "var(--chart-3)", strokeWidth: 1.6, strokeDasharray: "5 4" }
+              : { stroke: "var(--chart-1)", strokeWidth: 1.6 })
+          : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
-                   color: isData ? (e.guard ? "var(--chart-3)" : "var(--chart-1)") : "var(--t4)" },
+                   color: isRoute ? "var(--chart-4)"
+                     : isData ? (e.guard ? "var(--chart-3)" : "var(--chart-1)") : "var(--t4)" },
       data: { edgeType: e.type },
     };
   });
@@ -366,6 +399,8 @@ interface DesignNodeData {
   whenLogic: "all" | "any";
   /** W2 — the fan-out, as one line ("EMEA, NA" or "rows.items"). "" = runs once. */
   forEach: string;
+  /** DS-6 — the step whose "Only if" this one runs OTHERWISE of. "" = unrouted. */
+  elseOf: string;
   onPatch: (field: string, value: unknown) => void;
   onClear: (field: string) => void;
   /** Remove this step — absent on the last one, the same law the rail enforces. */
@@ -407,7 +442,9 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
   const boundOf = (field: string) =>
     data.inputs.find(i => i.field === field)?.boundTo ?? null;
   const bindableSet = new Set(data.inputs.map(i => i.field));
-  const fields = PRIMARY_FIELDS[data.kind] ?? [];
+  // A BOUND field renders even when it is not primary (`visibleFields` carries the
+  // full why — the short version: a hidden binding dropped the join's edges).
+  const fields = visibleFields(PRIMARY_FIELDS[data.kind] ?? [], data.inputs);
   const kindLabel = EFFECT_KINDS.find(k => k.value === data.kind)?.label ?? data.kind;
   const hue = KIND_HUE[data.kind] ?? "var(--chart-6)";
 
@@ -423,6 +460,10 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           drops the edge (measured: the trigger's spine vanished while every port
           rendered). Hidden: geometry, not a port. */}
       <Handle type="target" position={Position.Left} style={{ opacity: 0, top: 20 }} />
+      {/* DS-6 — the unnamed SOURCE handle the route edge leaves from: a verdict has no
+          "gives" port, and a node without a default source handle silently drops the
+          edge (the same measured lesson, one direction over). */}
+      <Handle type="source" position={Position.Right} style={{ opacity: 0, top: 20 }} />
 
       {/* header — icon tile · kind · alias · remove. The tile carries the kind's hue,
           so a chain reads as roles at a glance (the reference frames' trick). */}
@@ -540,6 +581,31 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
         </div>
       )}
 
+      {/* DS-6 — "otherwise", with a port of its own like the guard above: the route
+          DECIDES whether this arm runs, so it is drawn apart from the field rows.
+          Absent on an unrouted step — an empty strip would say a step is an arm when
+          it always runs. */}
+      {!!data.elseOf && (
+        <div style={{ position: "relative", borderTop: "1px solid var(--b1)",
+          padding: "7px 12px 8px", background: "var(--bg-1)" }}>
+          <Handle
+            id={`in:${ELSE_FIELD}`} type="target" position={Position.Left}
+            style={{ ...portStyle("in", true), left: -(12 + PORT / 2),
+                     top: "50%", transform: "translateY(-50%)",
+                     borderColor: "var(--chart-4)", background: "var(--chart-4)" }}
+            title="this step runs when that step's Only if does not hold"
+          />
+          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+            otherwise
+          </div>
+          <div className="aug-fs-xs" style={{ color: "var(--chart-4)",
+            fontFamily: "var(--font-mono)", marginTop: 2, overflow: "hidden",
+            textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            when {data.elseOf}&apos;s only-if does not hold
+          </div>
+        </div>
+      )}
+
       {/* W2 — "for each", with a port of its own for the same reason the guard has one:
           a list decides how many times the step runs, not what one run says, so it is
           drawn apart from the field rows. Absent when the step runs once — an empty
@@ -601,7 +667,8 @@ function conditionLine(c: { kind: string; config: Record<string, unknown> }): st
 }
 
 function DesignTriggerNode({ data }: {
-  data: { conditions: { kind: string; config: Record<string, unknown> }[]; logic: string };
+  data: { conditions: { kind: string; config: Record<string, unknown> }[]; logic: string;
+          scheduling?: string };
 }) {
   return (
     <div style={{
@@ -633,6 +700,13 @@ function DesignTriggerNode({ data }: {
             {conditionLine(c)}
           </span>
         ))}
+        {/* DS-7 — a spine-less picture must say why: the frontier starts every root
+            at once, and only the arrows order what follows. */}
+        {data.scheduling === "parallel" && (
+          <span className="aug-fs-xs" style={{ color: "var(--chart-2)" }}>
+            steps run in parallel — as the arrows allow
+          </span>
+        )}
       </div>
       <Handle type="source" position={Position.Right}
         style={{ ...portStyle("out", false), right: -(12 + PORT / 2),
@@ -1152,7 +1226,8 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
       measured: sizes["__trigger"],
       position: positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
-              logic: automation?.condition_logic ?? "all" },
+              logic: automation?.condition_logic ?? "all",
+              scheduling: automation?.scheduling ?? "ordered" },
     }, ...steps.map((s, i) => ({
       id: s.alias,
       type: "designStep" as const,
@@ -1173,38 +1248,59 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
           : undefined,
       } as DesignNodeData,
     }))];
+    const spineStyle = {
+      style: { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t4)" },
+    };
+    // DS-7 — where the spine attaches depends on the scheduling. Ordered: trigger →
+    // first step (order itself is the rail's). Parallel: trigger → every ROOT, because
+    // the frontier starts them all at once and everything downstream is ordered by the
+    // arrows already drawn — a single spine would claim a first step that isn't one.
+    const parallel = automation?.scheduling === "parallel";
     const rfEdges: RFEdge[] = [
-      // the faint "runs after" spine, trigger → first step (order itself is the rail's)
-      ...(steps.length ? [{
-        id: "__seq:trigger", source: "__trigger", target: steps[0].alias,
-        style: { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t4)" },
-      }] : []),
+      ...(steps.length
+        ? (parallel
+            ? rootAliases(draft).map(alias => ({
+                id: `__seq:trigger:${alias}`, source: "__trigger", target: alias,
+                ...spineStyle,
+              }))
+            : [{
+                id: "__seq:trigger", source: "__trigger", target: steps[0].alias,
+                ...spineStyle,
+              }])
+        : []),
       ...edges.map(e => ({
         id: `bind:${e.from}.${e.key}->${e.to}.${e.field}`,
         source: e.from,
-        sourceHandle: `out:${e.key}`,
+        // DS-6 — a ROUTE edge leaves from the node's hidden default handle: a verdict
+        // has no "gives" port. Everything else leaves from the key it carries.
+        sourceHandle: e.route ? undefined : `out:${e.key}`,
         target: e.to,
         targetHandle: `in:${e.field}`,
-        label: e.key,
+        label: e.route ? "otherwise" : e.key,
         // Animated, because the edge carries DATA — the reference frames use motion to
         // say exactly this, and only this. The sequence spine stays still.
         // W1 — a GUARD edge carries data too, but to a decision rather than a field, so
         // it reads in its own hue and dashes: same motion, different claim.
-        animated: true,
+        // DS-6 — a ROUTE edge carries nothing at all — it decides — so it alone among
+        // the labelled edges does not move.
+        animated: !e.route,
         // W2 — a FAN edge carries the list a step repeats over: its own hue again, and
         // dashed for the same reason the guard's is — neither fills a field.
-        style: e.guard
-          ? { stroke: "var(--chart-3)", strokeWidth: 2, strokeDasharray: "5 4" }
-          : e.fan
-            ? { stroke: "var(--chart-2)", strokeWidth: 2, strokeDasharray: "2 3" }
-            : { stroke: "var(--chart-1)", strokeWidth: 2 },
+        style: e.route
+          ? { stroke: "var(--chart-4)", strokeWidth: 2, strokeDasharray: "7 4" }
+          : e.guard
+            ? { stroke: "var(--chart-3)", strokeWidth: 2, strokeDasharray: "5 4" }
+            : e.fan
+              ? { stroke: "var(--chart-2)", strokeWidth: 2, strokeDasharray: "2 3" }
+              : { stroke: "var(--chart-1)", strokeWidth: 2 },
         labelStyle: { fill: "var(--t1)", fontFamily: "var(--font-mono)" },
         labelBgStyle: { fill: "var(--bg-2)", stroke: "var(--b2)" },
         labelBgPadding: [7, 3] as [number, number],
         labelBgBorderRadius: 6,
         markerEnd: { type: MarkerType.ArrowClosed,
-                     color: e.guard ? "var(--chart-3)"
+                     color: e.route ? "var(--chart-4)"
+                          : e.guard ? "var(--chart-3)"
                           : e.fan ? "var(--chart-2)" : "var(--chart-1)" },
       })),
     ];

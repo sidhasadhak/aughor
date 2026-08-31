@@ -222,6 +222,19 @@ class Effect(BaseModel):
     #: iteration appends its own `EffectOutcome`, so the run history shows what actually
     #: went out rather than one row standing for N sends.
     for_each: Optional[ForEach] = None
+    #: DS-6 — the route: run this step exactly when the named step's ``when`` guard was
+    #: evaluated and did NOT hold. Named **"Otherwise"** on every surface. Empty = the
+    #: unrouted step every automation written before DS-6 is, byte for byte.
+    #:
+    #: A field naming a sibling rather than a branch construct wrapping the list, for
+    #: this plane's standing reasons: it is structural (validated at save — the target
+    #: must exist, run earlier, and carry a guard; never an expression), it DRAWS (one
+    #: labelled edge from the deciding step), and the two arms are complementary BY
+    #: CONSTRUCTION — two hand-written opposite guards can drift apart, one guard read
+    #: from both sides cannot. The route reads only the guard's VERDICT, so it adds no
+    #: second dataflow: a guard that was never evaluated (upstream missing, or a
+    #: comparison that cannot be made) takes NEITHER arm — skipped, never guessed.
+    else_of: str = ""
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -294,6 +307,18 @@ class Automation(BaseModel):
     conditions: list[Condition] = Field(min_length=1)
     condition_logic: Literal["all", "any"] = "all"
     effects: list[Effect] = Field(min_length=1)
+    #: DS-7 — how the steps are scheduled. ``ordered`` = the strictly sequential walk
+    #: every automation written before DS-7 performs, byte for byte. ``parallel`` =
+    #: frontier scheduling: steps run as their ARROWS allow — a step waits for every
+    #: step it references (params, guard, fan source, `else_of`) and for nothing else,
+    #: so two independent investigations overlap.
+    #:
+    #: Per-AUTOMATION and opt-in, deliberately. The declared list is today a documented
+    #: contract ("Then, in order" on every surface), and two steps with no data edge can
+    #: still be order-sensitive in the world (two posts into one channel arrive in list
+    #: order). Only the author knows; silently reordering every existing automation
+    #: would be a semantics change nobody asked for.
+    scheduling: Literal["ordered", "parallel"] = "ordered"
     fallback_effect: Optional[Effect] = Field(
         default=None,
         description="Runs only when EVERY declared effect failed after its retries — the "

@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time as _time
 import uuid as _uuid
 from contextlib import contextmanager
@@ -40,9 +41,9 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, FanRefused, UnresolvedBinding, alias_for,
-    effect_refs, evaluate_guard, fan_items, fan_source, guard_clauses, is_binding,
-    item_context, item_refs, parse_ref, render_clause, resolve,
+    BRANCH_SKIP, FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, FanRefused, UnresolvedBinding,
+    alias_for, effect_refs, else_target, evaluate_guard_verdict, fan_items, fan_source,
+    guard_clauses, is_binding, item_context, item_refs, parse_ref, render_clause, resolve,
 )
 from aughor.automations.models import (
     Automation,
@@ -63,6 +64,13 @@ Dispatch = Callable[[Effect, Automation], EffectOutcome]
 #: scheduler thread while it waits, so the retry budget is bounded regardless of what an operator
 #: configures per automation.
 MAX_RETRY_SLEEP_SECONDS = 120.0
+
+#: DS-7 — the most steps a `scheduling="parallel"` automation runs at once. These steps
+#: post messages, call LLMs and query warehouses; the point of the frontier is that two
+#: independent investigations OVERLAP, not that fifty steps stampede whatever rate limit
+#: is behind them. A cap on concurrency, never on completion: every ready step still
+#: runs, some simply wait for a slot.
+MAX_PARALLEL_STEPS = 4
 
 
 class ProbeUnavailable(RuntimeError):
@@ -320,6 +328,15 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
         action, effect.params,
         actor=acting_agent_ref(effect, automation), scope=automation.conn_id,
     )
+    # DS-7 — `parallel_refused` is R5's verdict (this action is not declared
+    # parallel-safe, and the run is inside a declared fan-out), first reachable from an
+    # automation now that steps can run concurrently. A verdict, not a fault: the same
+    # inputs refuse identically next attempt, so it maps to the terminal
+    # `dispatch_error` rather than the retriable `failed` — retrying a refusal is the
+    # #200 lesson — and the message names the region verbatim.
+    if result.status == "parallel_refused":
+        return EffectOutcome(kind=effect.kind, target=effect.action_id,
+                             status="dispatch_error", message=result.message)
     status = result.status if result.status in {
         "executed", "criterion_failed", "approval_required", "invalid_params", "dispatch_error",
     } else "failed"
@@ -945,6 +962,11 @@ def run_automation(
     # so a designed workflow could draw arrows the engine would not have followed.
     context: dict[str, dict] = {}
     outcomes: list[EffectOutcome] = []
+    # DS-6 — each unfanned step's guard VERDICT: True (held, the step went on), False
+    # (did not hold), or None/absent (never decided — upstream missing, or a comparison
+    # that could not be made). The route reads exactly this, so it adds no second
+    # dataflow: the guard's own references are already validated, awaited and drawn.
+    verdicts: dict[str, Optional[bool]] = {}
 
     # DS-2 — "run to here": walk the chain only as far as one step.
     #
@@ -962,8 +984,48 @@ def run_automation(
         if cut is not None:
             walked = walked[:cut + 1]
 
-    for i, effect in enumerate(walked):
+    # DS-7 — a PREVIEW always walks in declared order, even on a parallel automation.
+    # The inert dispatcher is instant, so there is nothing to overlap; what parallelism
+    # would add to a dry run is only nondeterministic sample ordering — a preview that
+    # reads differently on every press answers no question anyone asked.
+    scheduling_parallel = (
+        getattr(automation, "scheduling", "ordered") == "parallel" and not dry_run)
+
+    def _execute_step(i: int, effect: Effect, *, context: dict, verdicts: dict,
+                      sleep_budget: list[float]) -> tuple[
+                          "list[EffectOutcome]", Optional[dict], bool, Optional[bool]]:
+        """One step, against a VIEW of the chain state — the whole per-step body,
+        extracted so the ordered walk and DS-7's frontier drive the SAME code.
+
+        Two drivers over a second copy of this body is how the guard, the route, the
+        await, the span and the timing each get to be subtly wrong in exactly one of
+        them (the fan-out made the same argument about a second dispatch path, one
+        level down). Returns ``(outcomes, context entry to publish or None,
+        verdict recorded?, verdict)`` — the DRIVER merges, because under the frontier
+        the merge needs a lock and this body must not know that.
+        """
         alias = alias_for(effect, i)
+        step_outcomes: list[EffectOutcome] = []
+        # DS-6 — the route, decided before anything else about this step: whether an
+        # OTHERWISE arm is taken depends only on the deciding step's guard verdict, so
+        # an untaken arm costs nothing — not even a fan-source resolve. Only a verdict
+        # of False takes the arm: True means the other path went, and None means the
+        # decision was never made (upstream missing, or a comparison that could not be
+        # made) — routing on a guess is the one thing a route must never do, so an
+        # undecided branch takes NEITHER arm and the join downstream skips honestly.
+        # B2 — in a preview the route is REPORTED, never decided (guards are samples);
+        # the arm's message says whose otherwise it is, below.
+        route_from = else_target(effect)
+        if route_from and not dry_run:
+            verdict = verdicts.get(route_from)
+            if verdict is not False:
+                step_outcomes.append(EffectOutcome(
+                    kind=effect.kind, target=alias, status="skipped",
+                    agent_id=acting_agent(effect, automation),
+                    message=(f"{BRANCH_SKIP}: '{route_from}' met its condition"
+                             if verdict is True else
+                             f"{BRANCH_SKIP}: '{route_from}' was not decided")))
+                return step_outcomes, None, False, None
         # W2 — the list this step runs once per item of, or None for the single dispatch
         # every automation written before W2 performs, byte for byte. Resolved BEFORE the
         # params because an unresolvable SOURCE and an unresolvable param mean the same
@@ -973,28 +1035,28 @@ def run_automation(
             items = fan_items(effect, context,
                               dry_item=dry_fan_item(effect) if dry_run else None)
         except UnresolvedBinding as exc:
-            outcomes.append(EffectOutcome(
+            step_outcomes.append(EffectOutcome(
                 kind=effect.kind, target=alias, status="skipped",
                 agent_id=acting_agent(effect, automation),
                 message=f"upstream data unavailable: {exc}"))
-            continue
+            return step_outcomes, None, False, None
         except FanRefused as exc:
             # Not an upstream absence — the step's OWN source is unusable — so it reads
             # as `invalid_params`, the status a dispatcher already returns for a config
             # it cannot use, rather than as a skip nobody investigates.
-            outcomes.append(EffectOutcome(
+            step_outcomes.append(EffectOutcome(
                 kind=effect.kind, target=alias, status="invalid_params",
                 agent_id=acting_agent(effect, automation), message=str(exc)))
-            continue
+            return step_outcomes, None, False, None
         if items is not None and not items:
             # An empty list is a SKIP, never a failure: "post per region that moved" on a
             # morning when nothing moved is the automation working. `skipped` also keeps
             # it out of `attempted` below, so a quiet morning cannot fire the fallback —
             # W1's lesson, which cost an on-call page to learn.
-            outcomes.append(EffectOutcome(
+            step_outcomes.append(EffectOutcome(
                 kind=effect.kind, target=alias, status="skipped",
                 agent_id=acting_agent(effect, automation), message=FAN_EMPTY_SKIP))
-            continue
+            return step_outcomes, None, False, None
         # One iteration for an ordinary step, N for a fanned one — the SAME body either
         # way. A fan-out that ran down a second dispatch path would be a second place for
         # the guard, the await, the span and the timing to each be subtly wrong.
@@ -1003,6 +1065,8 @@ def run_automation(
             (item_context(item), n + 1) for n, item in enumerate(items)]
         executed = 0
         published: dict = {}
+        verdict_known = False
+        step_verdict: Optional[bool] = None
         for item_ctx, fan_index in iterations:
             # The item is one more entry in the accumulated context, under a reserved
             # alias — not a second resolution mechanism. `{"$from": "item.channel"}` is
@@ -1012,11 +1076,14 @@ def run_automation(
             label = alias if not fan_index else f"{alias}[{fan_index}/{fan_count}]"
             fan = {"fan_index": fan_index, "fan_count": fan_count}
             try:
-                bound = resolve(effect.config, step_context)
                 # W1 — the guard is evaluated in the SAME try as the params, because an
                 # unresolvable reference means the same thing on either side: the upstream
                 # this step depends on is not there. Evaluated BEFORE the dispatch, so a
-                # guarded-off step costs nothing — no request, no token, no send.
+                # guarded-off step costs nothing — no request, no token, no send — and,
+                # since DS-6, before the params resolve too: the guard reads only the
+                # chain context, a held step must not pay for a resolve it will not use,
+                # and the route needs the VERDICT even on a step whose own params are
+                # broken (the decision is the guard's; the arm's health is the arm's).
                 # W2 — and evaluated PER ITEM, which is the whole point of a guard on a
                 # fanned step: "post the regions that moved" is a filter over the list,
                 # and a guard checked once would make it all-or-nothing.
@@ -1024,13 +1091,23 @@ def run_automation(
                 # answer "will tomorrow's number clear this threshold", and a dry run that
                 # guessed would show a sound design as mostly held — the exact reading that
                 # would send someone rewriting a chain that was fine.
-                should_run, why_not = (True, "") if dry_run else evaluate_guard(effect, step_context)
+                verdict, why_not = ((True, "") if dry_run
+                                    else evaluate_guard_verdict(effect, step_context))
+                # DS-6 — the verdict, recorded for the route. Unfanned steps only: a
+                # fanned step's guard is N per-item verdicts, which is why the model
+                # refuses `else_of` onto one at save. Unevaluable (None) is recorded as
+                # exactly that — an OTHERWISE arm must not read "cannot compare" as
+                # "did not hold".
+                if items is None:
+                    verdict_known, step_verdict = True, verdict
+                should_run = verdict is True
+                bound = resolve(effect.config, step_context) if should_run else {}
             except UnresolvedBinding as exc:
                 # SKIPPED, never run-with-a-hole. These steps send messages and write to
                 # systems; a missing channel or a missing thread id is not a value to
                 # default, and `skipped` already exists precisely for "did not run, and
                 # that is not a failure of this step".
-                outcomes.append(EffectOutcome(
+                step_outcomes.append(EffectOutcome(
                     kind=effect.kind, target=label, status="skipped", **fan,
                     agent_id=acting_agent(effect, automation),
                     message=f"upstream data unavailable: {exc}"))
@@ -1040,7 +1117,7 @@ def run_automation(
                 # of this step" — which is precisely a guard holding. The MESSAGE carries the
                 # difference between a design working and an upstream breaking, and it is the
                 # one thing a reader needs at 09:00.
-                outcomes.append(EffectOutcome(
+                step_outcomes.append(EffectOutcome(
                     kind=effect.kind, target=label, status="skipped", **fan,
                     agent_id=acting_agent(effect, automation),
                     message=f"{GUARD_SKIP}: {why_not}"))
@@ -1094,16 +1171,22 @@ def run_automation(
                 guard = guard_clauses(effect)
                 fanned_note = (" · once per item at run time"
                                if fan_index and is_binding(fan_source(effect)) else "")
+                # DS-6 — the route, named as a decision that has not been made yet: a
+                # preview walks BOTH arms (a sample cannot say which way tomorrow's
+                # guard goes), and an arm shown without its "otherwise" would read as a
+                # step that always runs.
+                route_note = (f" · otherwise of {else_target(effect)} — decided when "
+                              "it runs" if else_target(effect) else "")
                 outcome = outcome.model_copy(update={
                     # What a later step will be able to read — declared keys plus whatever
                     # the later steps actually ask for, so the open set works too.
                     "data": dry_sample(alias, effect, automation.effects[i + 1:]),
                     # The guard, named as a question that has not been asked yet.
-                    "message": outcome.message + fanned_note + (
+                    "message": outcome.message + fanned_note + route_note + (
                         f" · only if {' and '.join(render_clause(c) for c in guard)}"
                         " — checked when it runs" if guard else ""),
                 })
-            outcomes.append(outcome)
+            step_outcomes.append(outcome)
             if outcome.status == "executed":
                 executed += 1
                 published = dict(outcome.data or {})
@@ -1115,9 +1198,102 @@ def run_automation(
         # values and `{"$from": "step2.ts"}` could only mean one of them, so `validate_chain`
         # refuses that binding at save; what remains useful downstream is "did any of them
         # go out, and how many", which a guard can read.
-        if not executed:
-            continue
-        context[alias] = {"count": executed} if fan_count else published
+        entry = ({"count": executed} if fan_count else published) if executed else None
+        return step_outcomes, entry, verdict_known, step_verdict
+
+    # ── the drivers — one body, two orders ────────────────────────────────────────
+    #
+    # DS-7. `ordered` is the strictly sequential walk every automation written before
+    # this performs, byte for byte: each step sees everything before it. `parallel` is
+    # the frontier: a step waits for the steps its ARROWS name — every reference in its
+    # params, guard and fan source, plus its `else_of` target — and for nothing else.
+    # The dependency set comes from the one `effect_refs` that validation, the await
+    # and both canvases already read, so "may these overlap" and "is an edge drawn
+    # between them" can never disagree. Forward references are refused at save, so the
+    # graph is a DAG by construction and the frontier always progresses.
+    if scheduling_parallel:
+        from concurrent.futures import FIRST_COMPLETED
+        from concurrent.futures import wait as _fut_wait
+
+        from aughor.kernel.concurrency import ContextThreadPoolExecutor
+        from aughor.kernel.parallel_safety import fanout_region as _fanout_region
+
+        known_aliases = {alias_for(e, n) for n, e in enumerate(walked)}
+        deps: dict[int, set[str]] = {}
+        for n, e in enumerate(walked):
+            refs = {parse_ref(r)[0] for r in effect_refs(e)}
+            target = else_target(e)
+            if target:
+                refs.add(target)
+            deps[n] = refs & known_aliases
+
+        merge_lock = threading.Lock()
+        done_aliases: set[str] = set()
+        results: dict[int, list[EffectOutcome]] = {}
+        scheduled: set[int] = set()
+        pending: dict = {}
+        # R5's declared-fan-out plane, entered BEFORE the pool so every submit copies
+        # the label into its worker: a declared-action step dispatched inside this
+        # region is checked by `assert_dispatchable` in the one governed executor, and
+        # an action not declared parallel-safe is REFUSED with the region named — "two
+        # refunds with no error anywhere" is the exact failure Wave R5 exists to stop,
+        # and DS-7 is the first thing that makes it reachable from an automation.
+        with _fanout_region("automations.parallel_steps"), ContextThreadPoolExecutor(
+                max_workers=min(MAX_PARALLEL_STEPS, max(1, len(walked))),
+                thread_name_prefix="automation-step") as pool:
+            while len(results) < len(walked):
+                with merge_lock:
+                    ready = [n for n in range(len(walked))
+                             if n not in scheduled and deps[n] <= done_aliases]
+                    # A SNAPSHOT per scheduling round, not the live dicts: a ready
+                    # step's dependencies are complete, so everything it may read is
+                    # already in the copy — while the live dict may gain entries from
+                    # a worker mid-`{**context, ...}` merge, and a dict that changes
+                    # size under iteration is a crash on an unrelated step.
+                    ctx_snap = dict(context)
+                    ver_snap = dict(verdicts)
+                for n in ready:
+                    scheduled.add(n)
+                    # Each parallel step gets its OWN retry-sleep budget. The shared
+                    # budget bounds how long a TICK sleeps, and parallel sleeps
+                    # overlap — so per-step budgets keep the same wall-clock bound
+                    # without two workers racing one float.
+                    fut = pool.submit(_execute_step, n, walked[n],
+                                      context=ctx_snap, verdicts=ver_snap,
+                                      sleep_budget=[MAX_RETRY_SLEEP_SECONDS])
+                    pending[fut] = n
+                if not pending:
+                    # Unreachable by construction (forward refs are refused at save,
+                    # so some incomplete step always has every dependency complete) —
+                    # but a silent spin would be worse than a loud stop.
+                    raise RuntimeError("automation frontier stalled with steps left")
+                finished, _ = _fut_wait(list(pending), return_when=FIRST_COMPLETED)
+                for fut in finished:
+                    n = pending.pop(fut)
+                    step_outcomes, entry, known, v = fut.result()
+                    step_alias = alias_for(walked[n], n)
+                    with merge_lock:
+                        results[n] = step_outcomes
+                        if known:
+                            verdicts[step_alias] = v
+                        if entry is not None:
+                            context[step_alias] = entry
+                        done_aliases.add(step_alias)
+        # Outcomes are assembled in DECLARED order whatever order the work finished
+        # in: `group_outcomes` and every reader of a run's effects matches positions,
+        # and a run history shuffled by scheduling luck would decorate the wrong cards.
+        for n in range(len(walked)):
+            outcomes.extend(results[n])
+    else:
+        for i, effect in enumerate(walked):
+            step_outcomes, entry, known, v = _execute_step(
+                i, effect, context=context, verdicts=verdicts, sleep_budget=sleep_budget)
+            outcomes.extend(step_outcomes)
+            alias = alias_for(effect, i)
+            if known:
+                verdicts[alias] = v
+            if entry is not None:
+                context[alias] = entry
 
     # 4 — fallback, only when EVERY effect failed to execute
     fallback_used = False

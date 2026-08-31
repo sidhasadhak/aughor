@@ -26,8 +26,8 @@ from __future__ import annotations
 from typing import Any
 
 from aughor.automations.dataflow import (
-    FAN_PUBLISHED, GUARD_SKIP, alias_for, collect_refs, effect_refs, fan_source,
-    guard_clauses, is_binding, parse_ref, render_clause, FROM,
+    BRANCH_SKIP, FAN_PUBLISHED, GUARD_SKIP, alias_for, collect_refs, effect_refs,
+    else_target, fan_source, guard_clauses, is_binding, parse_ref, render_clause, FROM,
 )
 
 
@@ -140,6 +140,17 @@ def build_graph(automation: Any, run: Any = None) -> dict:
     effects = list(getattr(automation, "effects", []) or [])
     groups = group_outcomes(effects, outcomes)
 
+    # DS-7 — under parallel scheduling the chain-of-sequence spine would be a LIE: step
+    # N+1 does not run after step N unless an arrow says so. The spine then connects the
+    # trigger to each ROOT (a step no other step feeds) and nothing else — every other
+    # ordering claim on the picture is a data or route edge the engine actually honours.
+    # The dependency set is the engine's own: `effect_refs` plus the `else_of` target.
+    parallel = getattr(automation, "scheduling", "ordered") == "parallel"
+    known = {alias_for(e, n) for n, e in enumerate(effects)}
+    fed = {alias_for(e, n): ({parse_ref(r)[0] for r in effect_refs(e)}
+                             | ({else_target(e)} if else_target(e) else set())) & known
+           for n, e in enumerate(effects)}
+
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
         node = {
@@ -163,6 +174,12 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         if clauses:
             node["when"] = [render_clause(c) for c in clauses]
             node["when_logic"] = getattr(effect, "when_logic", "all") or "all"
+        # DS-6 — the route, a design fact like the guard above: WHEN this step runs is
+        # part of what it is, and a canvas that omitted "otherwise of s2" would draw an
+        # arm as a step that always fires.
+        route_from = else_target(effect)
+        if route_from:
+            node["else_of"] = route_from
         acting = (getattr(effect, "agent_id", "") or getattr(automation, "agent_id", "") or "")
         if acting:
             node["agent_id"] = acting
@@ -185,6 +202,12 @@ def build_graph(automation: Any, run: Any = None) -> dict:
             if node["status"] == "skipped":
                 node["guarded"] = all(
                     str(getattr(x, "message", "")).startswith(GUARD_SKIP)
+                    for x in group if getattr(x, "status", "") == "skipped")
+                # DS-6 — the route's untaken arm, read off BRANCH_SKIP the same way and
+                # for the same reason: "not taken" is the design working, one branch
+                # over, and the dim `skipped` grey is the colour of something wrong.
+                node["not_taken"] = all(
+                    str(getattr(x, "message", "")).startswith(BRANCH_SKIP)
                     for x in group if getattr(x, "status", "") == "skipped")
             # VA-4c — which step was slow, and how many attempts it took. The run's single
             # duration could not answer either. W2 — summed and maxed across the
@@ -224,8 +247,21 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         nodes.append(node)
 
         # sequence: the trigger starts the first step; each step precedes the next.
-        edges.append({"from": trigger_id if i == 0 else alias_for(effects[i - 1], i - 1),
-                      "to": alias, "type": "sequence"})
+        # DS-7 — on a parallel automation, only the trigger→root spine survives (see
+        # above): a sequence arrow between two independent steps would claim an order
+        # the frontier does not keep.
+        if not parallel:
+            edges.append({"from": trigger_id if i == 0 else alias_for(effects[i - 1], i - 1),
+                          "to": alias, "type": "sequence"})
+        elif not fed[alias]:
+            edges.append({"from": trigger_id, "to": alias, "type": "sequence"})
+
+        # DS-6 — the route, drawn. A third edge kind on purpose: it carries no value
+        # (that is `data`) and claims more than order (that is `sequence`) — it DECIDES
+        # whether the arm runs at all, off the deciding step's guard verdict.
+        if route_from:
+            edges.append({"from": route_from, "to": alias, "type": "route",
+                          "label": "otherwise"})
 
         # data: one edge per binding, labelled with the key it carries.
         #
@@ -246,6 +282,10 @@ def build_graph(automation: Any, run: Any = None) -> dict:
         "automation_id": getattr(automation, "id", ""),
         "name": getattr(automation, "name", ""),
         "agent_id": getattr(automation, "agent_id", "") or "",
+        # DS-7 — how the steps are scheduled, so a canvas can SAY it ("in parallel —
+        # as the arrows allow") instead of leaving a spine-less picture to explain
+        # itself.
+        "scheduling": getattr(automation, "scheduling", "ordered") or "ordered",
     }
     if run is not None:
         # VA-4c — the trigger node says WHAT fired it and when, not only what it watches.
