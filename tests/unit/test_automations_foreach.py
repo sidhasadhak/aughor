@@ -289,15 +289,15 @@ def test_item_on_an_unfanned_step_is_refused_at_save():
 def test_fanning_over_a_closed_producer_is_refused_at_save():
     """`slack_post` publishes two strings. Neither is a list, and that is knowable now.
 
-    DS-12 reworded the sentence — it now names the KEY that is not a list rather than
-    saying none of them are, because some producers now publish one that is. What is
-    pinned here is unchanged and is the point: the refusal still happens, at save, and it
-    names the step and the offending reference.
+    DS-11 and DS-12 both taught this check that a closed set may CONTAIN a list, from
+    opposite sides — per operation and per kind. The sentence is unchanged for a producer
+    that publishes none: `slack_post` publishes two strings, so "none of it is a list"
+    remains exactly right, and the refusal still names the step and the reference.
     """
     err = validate_chain([_post(alias="first"),
                           _post(alias="second", source={"$from": "first.ts"})])
     assert err
-    assert "'ts' is not a list" in err
+    assert "none of it is a list" in err
     assert "second" in err and "first.ts" in err
 
 
@@ -322,8 +322,10 @@ def test_fanning_over_a_NON_list_key_of_the_same_step_is_still_refused():
     at the key that would have worked, which is the whole reason to name it."""
     q = Effect(kind="trusted_query", alias="accounts", config={"query_id": "tq_1"})
     err = validate_chain([q, _post(alias="tell", source={"$from": "accounts.count"})])
-    assert err and "'count' is not a list" in err
-    assert "accounts.rows" in err, "the message should name the key that IS fannable"
+    assert err and "fans out over 'accounts.count'" in err
+    # The message names the key that WOULD have worked — unhelpful advice otherwise, to
+    # someone one key away from the right answer.
+    assert "only rows is a list" in err
 
 
 def test_binding_to_a_fanned_step_per_item_value_is_refused_at_save():

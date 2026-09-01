@@ -124,6 +124,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # imported router is bound as `actions_router` — so what is left cannot be reworded
          # without spelling the wire differently from the way the wire is spelled.
          "tests/unit/test_automations_pause.py",
+         # DS-11's completion, same ground once more. Every hit in this file is a name the
+         # running system uses and none is prose: `KineticAction` (the ontology model the
+         # fixtures build), `graph.kinetic_actions` (the attribute the loader reads),
+         # `AUGHOR_KINETIC_INBOX_DB` (the env var, registered in conftest's redirect loop),
+         # and the two audited action names `gov_action_of` actually returns. Its own
+         # prose says "declared action" and "governed write" throughout.
+         "tests/unit/test_kinetic_inbox.py",
          "web/lib/automationFlow",
          "web/components/AutomationGraph.tsx",
          # DS-1's palette is the sibling of those vocabulary tables and carries the kind
@@ -368,11 +375,12 @@ BASELINE: dict[str, int] = {
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     "investigation_in_web": 617,
-    # DS-13 lowered this from 402: `aughor/actions/executor.py` and its new suite joined
-    # the exemption list above, and every hit they carry is a type name, an exception the
-    # tests match on, or a wire literal the approval gate keys grants by. What remains
-    # counted is prose, which is what this ratchet is for.
-    "kinetic": 362,
+    # Lowered twice over, by two waves that landed together. DS-11's completion reworded
+    # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
+    # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
+    # exception the tests match on, or a wire literal the approval gate keys grants by.
+    # The number below is what remains COUNTED after both — measured, not added up.
+    "kinetic": 358,
     "mindsdb": 0,
     "palantir": 6,
     "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history

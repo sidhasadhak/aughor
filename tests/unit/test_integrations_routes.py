@@ -14,11 +14,19 @@ def _virgin_stores():
     """The integration stores are SESSION-scoped tmp files, so a `google_app` saved by
     one test file is still there when the next file's catalog asserts `configured is
     False`. Found as an ordering-dependent failure: broker tests before route tests
-    turned Set up into Connect. Every test here starts from an empty store."""
+    turned Set up into Connect. Every test here starts from an empty store.
+
+    Symmetric since DS-11, and the second half was bought the same way the first was: a
+    grant this file left behind turned up as an extra row in the COMPONENT REGISTRY's
+    search assertion two files later. Cleaning only on the way in protects this file from
+    its neighbours and leaves its neighbours exposed to it."""
     for s in (store._APPS, store._CONNS, store._PENDING):
         for d in list(s.all()):
             s.delete(d["id"])
     yield
+    for s in (store._APPS, store._CONNS, store._PENDING):
+        for d in list(s.all()):
+            s.delete(d["id"])
 
 
 @pytest.fixture
@@ -209,3 +217,56 @@ def test_a_stored_callback_that_cannot_work_is_not_readiness(client):
     slack = _slack(client)
     assert slack["oauth_ready"] is False
     assert slack["alt_door"] == "slack_app"
+
+
+# ── DS-11 · what a grant may DO, served ───────────────────────────────────────
+
+def test_the_operation_roster_is_served_whole_when_no_grant_is_named(client):
+    """A reader asking "what could this platform do for me" wants the catalog, not
+    their catalog."""
+    rows = client.get("/integrations/operations").json()["operations"]
+    assert {r["provider"] for r in rows} == {"google", "slack", "microsoft"}
+    listing = next(r for r in rows if r["id"] == "gmail.messages.list")
+    assert listing["publishes"] == ["items", "count", "next_page_token"]
+    assert listing["list_keys"] == ["items"], (
+        "the half /automations/vocabulary cannot answer — which key a for_each may fan")
+    assert [p["name"] for p in listing["params"]] == ["q", "maxResults"]
+    assert next(p for p in listing["params"] if p["name"] == "maxResults")["bindable"] \
+        is False, "an edge onto a page size is dataflow nobody meant to draw"
+    assert next(r for r in rows if r["id"] == "slack.chat.postMessage")["writes"] is True
+
+
+def test_naming_a_grant_narrows_the_roster_to_what_it_could_run(client):
+    store.save_connection(Connection(id="ic_r", provider="slack", user_id="",
+                                     scopes="channels:read", status="active"))
+    rows = client.get("/integrations/operations?connection_id=ic_r").json()["operations"]
+    assert {r["provider"] for r in rows} == {"slack"}, "only this grant's provider"
+    assert next(r for r in rows
+                if r["id"] == "slack.conversations.list")["availability"] == "ready"
+    posting = next(r for r in rows if r["id"] == "slack.chat.postMessage")
+    assert posting["availability"] == "needs_setup"
+    assert "chat:write" in posting["reason"], "the sentence names the scope, not a code"
+
+
+def test_someone_elses_grant_is_a_404_not_a_403(client):
+    """A 403 confirms the row exists — the same rule `revoke` states one route up."""
+    store.save_connection(Connection(id="ic_theirs", provider="google",
+                                     user_id="somebody-else", status="active"))
+    assert client.get("/integrations/operations?connection_id=ic_theirs").status_code == 404
+    assert client.get("/integrations/operations?connection_id=nope").status_code == 404
+
+
+def test_a_grants_own_verdict_outranks_a_scope_sentence(client):
+    """The registry dims every row of a grant the provider will not refresh; this route
+    has to say the same thing. A scope sentence on a dead grant sends someone to
+    re-consent to a scope on an account that has to be reconnected first."""
+    store.save_connection(Connection(id="ic_stale", provider="slack", user_id="",
+                                     scopes="channels:read", status="needs_reconnect"))
+    rows = client.get("/integrations/operations?connection_id=ic_stale").json()["operations"]
+    assert {r["availability"] for r in rows} == {"needs_setup"}
+    assert all("reconnect it under Integrations" in r["reason"] for r in rows)
+
+    store.save_connection(Connection(id="ic_gone", provider="slack", user_id="",
+                                     scopes="chat:write channels:read", status="revoked"))
+    rows = client.get("/integrations/operations?connection_id=ic_gone").json()["operations"]
+    assert {r["availability"] for r in rows} == {"unavailable"}

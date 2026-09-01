@@ -164,3 +164,63 @@ def test_purge_connection_and_source():
     assert inbox.purge_source("automation:auto-9") == 1
     assert inbox.purge_connection("conn-p") == 1
     assert inbox.list_proposals("conn-p") == []
+
+
+# ── DS-11's completion · the inbox's second proposal kind ─────────────────────
+
+def test_a_row_written_before_ds11_still_reads_as_a_declared_action(tmp_path,
+                                                                     monkeypatch):
+    """The migration is numbered against the LIVE store (`user_version` was 2, measured
+    2026-09-01), and both new columns default to what every existing row already means —
+    so there is no backfill and none is needed."""
+    import importlib
+    import sqlite3
+
+    db = tmp_path / "legacy_inbox.db"
+    c = sqlite3.connect(db)
+    c.execute("""CREATE TABLE staged_proposals (
+        id TEXT PRIMARY KEY, org_id TEXT NOT NULL DEFAULT '', connection_id TEXT NOT NULL,
+        schema_name TEXT NOT NULL DEFAULT '', action_id TEXT NOT NULL,
+        params TEXT NOT NULL DEFAULT '{}', reasoning TEXT NOT NULL DEFAULT '',
+        proposer TEXT NOT NULL DEFAULT 'agent', source TEXT NOT NULL DEFAULT 'agent',
+        run_id TEXT NOT NULL DEFAULT '', call_id TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL DEFAULT 'pending', status_message TEXT NOT NULL DEFAULT '',
+        outcome TEXT NOT NULL DEFAULT '{}', created_at TEXT NOT NULL, expires_at TEXT,
+        resolved_at TEXT, resolved_by TEXT NOT NULL DEFAULT '')""")
+    c.execute("INSERT INTO staged_proposals (id, connection_id, action_id, created_at) "
+              "VALUES ('old-1','fixture','issue_refund','2026-08-01T00:00:00Z')")
+    c.execute("PRAGMA user_version = 2")
+    c.commit()
+    c.close()
+
+    monkeypatch.setenv("AUGHOR_KINETIC_INBOX_DB", str(db))
+    mod = importlib.reload(importlib.import_module("aughor.actions.inbox"))
+    try:
+        row = mod.get_proposal("old-1")
+        assert row is not None
+        assert row.kind == "declared_action" and row.grant_id == ""
+        assert sqlite3.connect(db).execute("PRAGMA user_version").fetchone()[0] == 3
+    finally:
+        monkeypatch.undo()
+        importlib.reload(mod)
+
+
+def test_the_two_kinds_are_audited_under_the_names_they_are_gated_by():
+    """One function spells it, because the call seam GATES on that exact string: two
+    spellings would mean an allowlist entry permitting a name nothing checks."""
+    from aughor.actions.inbox import StagedProposal, gov_action_of
+    from aughor.integrations.operations import get_operation
+
+    declared = StagedProposal(connection_id="fixture", action_id="issue_refund")
+    assert gov_action_of(declared) == "kinetic.issue_refund"
+
+    integration = StagedProposal(connection_id="fixture", kind="integration",
+                                 grant_id="ic_1", action_id="slack.chat.postMessage")
+    assert gov_action_of(integration) == get_operation("slack.chat.postMessage").gov_action
+    assert gov_action_of(integration) == "integration.slack.slack.chat.postMessage"
+
+    # An operation retired from the roster since staging still names its row rather than
+    # raising — an audit line owes the reader which proposal it was about, nothing more.
+    gone = StagedProposal(connection_id="fixture", kind="integration",
+                          grant_id="ic_1", action_id="slack.chat.delete")
+    assert gov_action_of(gone) == "kinetic.slack.chat.delete"

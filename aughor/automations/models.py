@@ -106,11 +106,10 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # subchain step with no child names nothing, and "looking schedulable" is the
     # expensive kind of broken (K1: reject at parse, never surface).
     "subchain":       ("automation_id",),
-    # VA-11 — the grant this step spends, and the declared operation it spends it on.
-    # `grant_id`, not `conn_id`: `conn_id` already means the WAREHOUSE connection
-    # everywhere in this plane (`Automation.conn_id` is one), and one key with two
-    # meanings on one canvas is a collision the reader pays for, not the author.
-    "connection_call": ("grant_id", "operation"),
+    # DS-11 — WHOSE grant, and WHICH declared operation. Both at construction like every
+    # sibling: a step naming neither is a step that would ask a provider nothing on
+    # behalf of nobody, and "looking schedulable" is the expensive kind of broken.
+    "integration_call": ("connection_id", "operation"),
     # DS-12 — the ontology plane, as steps. Each names a GOVERNED object rather than
     # carrying SQL: a metric by the name Finance approved, a query by the id someone
     # vetted. That is the whole difference between this and a step that takes a string
@@ -235,7 +234,7 @@ class Effect(BaseModel):
     and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
-                  "slack_post", "subchain", "connection_call",
+                  "slack_post", "subchain", "integration_call",
                   "metric_value", "trusted_query"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
@@ -284,47 +283,6 @@ class Effect(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
-    def _known_operation(self) -> "Effect":
-        """VA-11 — a ``connection_call`` may only name an operation that exists here.
-
-        At parse, like every other refusal in this plane (K1: reject at parse, never
-        surface). An operation id is a closed set this deployment ships — a typo in one
-        is not a value that might work tomorrow, it is a step that can never run, and
-        discovering that at 07:00 costs a morning to learn what a save could have said.
-
-        A required param is checked as PRESENT-OR-BOUND: `{"$from": "step1.id"}` is not a
-        value yet and will not be one until the chain runs, so demanding a literal here
-        would refuse exactly the chains this wave exists to make possible (list the
-        messages, then read each one).
-        """
-        if self.kind != "connection_call":
-            return self
-        from aughor.integrations.operations import get_operation
-
-        # WHICH credential and WHICH operation are authored decisions, and this is where
-        # that is made true rather than merely documented. `BINDABLE_FIELDS` is a
-        # DECLARATION read by the rail and the vocabulary route — the engine resolves the
-        # whole config, so a `{"$from": …}` on `grant_id` would be substituted at 07:00
-        # and the chain would spend whatever grant an upstream value happened to name.
-        # Harmless on `bot_id` and `action_id`, whose objects are org-scoped; not harmless
-        # on a credential selector, so this kind refuses it at save.
-        for field in ("grant_id", "operation"):
-            if not isinstance(self.config.get(field), str):
-                raise ValueError(
-                    f"'{field}' must be written, not bound — which account a step spends "
-                    f"and what it spends it on cannot come from an upstream value")
-
-        operation = get_operation(self.operation)
-        if operation is None:
-            raise ValueError(f"unknown operation: '{self.operation}'")
-        params = self.params
-        missing = [p.label for p in operation.params
-                   if p.required and not str(params.get(p.name, "") or "").strip()]
-        if missing:
-            raise ValueError(f"'{operation.label}' needs {', '.join(missing)}")
-        return self
-
     @property
     def action_id(self) -> str:
         return str(self.config.get("action_id", ""))
@@ -343,16 +301,6 @@ class Effect(BaseModel):
     def query_id(self) -> str:
         """DS-12 — the vetted query a ``trusted_query`` step runs."""
         return str(self.config.get("query_id", ""))
-
-    @property
-    def grant_id(self) -> str:
-        """VA-11 — the user's provider grant a ``connection_call`` step spends."""
-        return str(self.config.get("grant_id", ""))
-
-    @property
-    def operation(self) -> str:
-        """VA-11 — the declared operation (``integrations/operations.py``) it spends it on."""
-        return str(self.config.get("operation", ""))
 
     @property
     def agent_id(self) -> str:

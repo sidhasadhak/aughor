@@ -13,6 +13,7 @@ into a 404 — the page says what happened and hands the person back.
 from __future__ import annotations
 
 import logging
+from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import HTMLResponse
@@ -241,49 +242,6 @@ def my_connections():
     return {"connections": [c.to_safe_dict() for c in store.list_connections(_user())]}
 
 
-# ── what a grant may be spent on ─────────────────────────────────────────────────
-
-@router.get("/integrations/operations")
-def operations(provider: str = ""):
-    """VA-11 consumer — the declared operations, each with the grants that can run it.
-
-    Served with the grants ATTACHED rather than as two lists the client joins, because
-    the join is a policy question: whether a particular grant may run a particular
-    operation is `scope_granted`'s answer, and a client re-deriving it would be a second
-    authority on consent that drifts the first time a provider changes how it reports
-    scopes.
-
-    The same shape the palette uses one level up — every row says whether it works HERE
-    and, when it does not, the sentence that fixes it.
-    """
-    from aughor.integrations.operations import operations_for, scope_granted
-
-    mine = [c for c in store.list_connections(_user()) if c.status == "active"]
-    out = []
-    for op in operations_for(provider):
-        grants = []
-        for conn in (c for c in mine if c.provider == op.provider):
-            ok = scope_granted(op, conn.scopes)
-            grants.append({
-                "grant_id": conn.id,
-                "account": conn.account,
-                "ready": ok,
-                "reason": "" if ok else f"this connection was not granted '{op.scope}'",
-            })
-        out.append({
-            "id": op.id,
-            "provider": op.provider,
-            "label": op.label,
-            "blurb": op.blurb,
-            "scope": op.scope,
-            "params": [{"name": p.name, "label": p.label, "required": p.required,
-                        "default": p.default} for p in op.params],
-            "publishes": list(op.publishes),
-            "grants": grants,
-        })
-    return {"operations": out}
-
-
 @router.post("/integrations/connections/{conn_id}/revoke")
 def revoke(conn_id: str):
     conn = store.get_connection(conn_id)
@@ -302,3 +260,69 @@ def revoke(conn_id: str):
         # believe. Named per provider, from the registry, never hardcoded.
         "provider_side": bool(provider and provider.revoke_url),
     }
+
+
+# ── what a grant may DO (DS-11) ──────────────────────────────────────────────────
+
+@router.get("/integrations/operations")
+def operations(connection_id: Optional[str] = None):
+    """The operation roster — served, never mirrored.
+
+    A sibling of `/automations/vocabulary` and for its reason: the ports, the published
+    keys and which of them are LISTS are what a step editor must agree with the engine
+    about, and a hand-copied contract rots in the worst direction (a key the server
+    accepts and the picker refuses). This repo has paid for that trap once already.
+
+    With ``connection_id`` the answer is scoped to that grant: only its provider's
+    operations, each carrying whether THIS grant can run it. Without one it is the whole
+    declared set, which is what a reader asking "what could this platform do for me"
+    wants — the catalog, not their catalog.
+    """
+    from aughor.integrations.operations import OPERATIONS, missing_scopes
+
+    conn = store.get_connection(connection_id) if connection_id else None
+    if connection_id and (conn is None or conn.user_id != _user()):
+        # 404 for someone else's grant, not 403 — the same rule `revoke` states: a 403
+        # confirms the row exists.
+        raise HTTPException(404, "unknown connection")
+
+    # The GRANT's own verdict, before any per-operation question. Read here rather than
+    # left to the caller because the component registry already answers it this way, and
+    # two surfaces reporting one grant's health differently is how a reader learns the
+    # product has two opinions about it.
+    grant_problem = ""
+    grant_state = "ready"
+    if conn is not None and conn.status == "revoked":
+        grant_state, grant_problem = "unavailable", "this grant was revoked — connect again"
+    elif conn is not None and conn.status == "needs_reconnect":
+        grant_state = "needs_setup"
+        grant_problem = (f"{conn.provider} refused this grant's refresh — reconnect it "
+                         f"under Integrations")
+
+    rows = []
+    for op in OPERATIONS:
+        if conn is not None and op.provider != conn.provider:
+            continue
+        lacking = missing_scopes(op, conn.scopes) if conn is not None else ()
+        rows.append({
+            "id": op.id, "provider": op.provider, "label": op.label,
+            "description": op.description, "writes": op.writes,
+            "params": [{"name": p.name, "label": p.label, "type": p.type,
+                        "required": p.required, "placeholder": p.placeholder,
+                        "bindable": p.bindable} for p in op.params],
+            "publishes": list(op.publishes),
+            # The half `/automations/vocabulary` cannot answer: which published key may
+            # be a `for_each` source. Before DS-11 nothing in the plane published a list
+            # at all, so the client's rule was "open set ⇒ fannable"; a closed set that
+            # contains one needs the list named.
+            "list_keys": list(op.list_keys),
+            # The grant's verdict wins: a scope sentence on a revoked grant would send
+            # someone to re-consent to a scope on an account that has to be reconnected
+            # first, which is the wrong door in the right words.
+            "availability": (grant_state if grant_problem
+                             else ("needs_setup" if lacking else "ready")),
+            "reason": (grant_problem or
+                       (f"this grant does not carry {', '.join(lacking)} — reconnect "
+                        f"{op.provider} and consent to it" if lacking else "")),
+        })
+    return {"operations": rows}

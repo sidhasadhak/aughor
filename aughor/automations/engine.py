@@ -349,10 +349,18 @@ def _stage_approval(effect: Effect, automation: Automation, *, alias: str, run_i
     """
     try:
         from aughor.actions.inbox import StagedProposal, stage_proposal
+        # DS-11's completion — the two shapes a governed write can have. `connection_id`
+        # stays the AUTOMATION's warehouse connection in both, because that is what the
+        # inbox filters, groups and purges by: putting a vault grant there would have
+        # hidden every integration proposal from the queue that exists to show them.
+        integration = effect.kind == "integration_call"
         staged = stage_proposal(StagedProposal(
             connection_id=automation.conn_id,
             schema_name=effect.config.get("schema_name") or "",
-            action_id=effect.action_id,
+            kind="integration" if integration else "declared_action",
+            grant_id=(str(effect.config.get("connection_id", "")) if integration else ""),
+            action_id=(str(effect.config.get("operation", "")) if integration
+                       else effect.action_id),
             # The RESOLVED params — what this step would actually have written. A proposal
             # freezes its params at stage time (RC-3), and freezing `{"$from": "step1.total"}`
             # would freeze a reference whose meaning moves, not a value a human can weigh.
@@ -854,65 +862,63 @@ def subchain_outcome(kind: str, child_id: str, child_name: str,
         data=published)
 
 
-def _dispatch_connection_call(effect: Effect, automation: Automation) -> EffectOutcome:
-    """VA-11 — spend a user's provider grant on one declared, read-only operation.
+#: DS-11 — the call seam's verdicts, mapped onto the outcome vocabulary this plane has
+#: always had. Written as a table rather than a chain of ifs because the mapping IS the
+#: contract between two planes, and the interesting half is which verdicts are terminal:
+#:
+#: * ``refused`` → ``dispatch_error``. A verdict, not a fault: an unknown operation, a
+#:   revoked grant, a missing scope and an un-allowlisted write all refuse identically
+#:   next attempt, so retrying is the #200 lesson repeated.
+#: * ``blocked`` → ``failed``. A usage cap sent nothing, so the same call is legitimate
+#:   once the window rolls over — which is what `failed` licenses and `dispatch_error`
+#:   does not. The same mapping `slack_post` already makes for a capped post.
+#: * ``uncertain`` → ``uncertain``. A write whose transport broke may have arrived, and
+#:   retrying a maybe-delivered write is the duplicate that status exists to prevent.
+#: * ``needs_approval`` → ``approval_required``. The one verdict here that is a QUESTION
+#:   rather than a fact: a person can answer it, so the call site stages a proposal and
+#:   the run PARKS on them (DS-8's machinery, reached through the inbox's second proposal
+#:   kind). Every other refusal describes a world no amount of looking at it changes.
+_CALL_STATUS: dict[str, str] = {
+    "executed": "executed", "refused": "dispatch_error", "blocked": "failed",
+    "failed": "failed", "uncertain": "uncertain",
+    "needs_approval": "approval_required",
+}
 
-    The wave that makes the vault CONSUMED. Everything it needs already existed and none
-    of it was reachable: the tokens sat encrypted behind a broker whose `fresh_access_token`
-    had zero callers, and `govern.outbound` had a cap, a span and an `EXTERNAL_CALL` event
-    waiting for a caller that spends a credential. This step is the caller.
 
-    The four refusals are four different statuses on purpose, because they are four
-    different people's problems:
+def _dispatch_integration(effect: Effect, automation: Automation) -> EffectOutcome:
+    """DS-11 — one step run under a user's own grant, through the one governed door.
 
-    * `invalid_params` — a required input resolved to nothing. The author's, and the run
-      canvas already reads that status as "this step was asked for something impossible".
-    * `dispatch_error` — the named grant cannot be used at all (revoked, dead upstream,
-      never consented to this scope) or a usage cap refused the call before it was made.
-      The object this step NAMES is unusable, exactly as an unknown Slack bot is.
-    * `failed` — the call went out and the provider refused it. Retryable, and the
-      retries this plane already performs are the right response.
-    * `executed` — with the operation's declared keys published into the chain, which is
-      what makes "list the messages, then read each one, then post" a chain rather than
-      three unrelated steps.
+    Everything that makes this governed happens in `integrations.call.call_operation`:
+    the grant's verdicts, the scope check, the approval gate for a write, the outbound
+    cap and span, the `EXTERNAL_CALL` event and the audit line. This function is the
+    translation layer and nothing else — deliberately, because the same call has to be
+    makeable from a route and from an agent later without either re-deriving the order
+    those gates run in.
 
-    A read that times out is `failed`, not `uncertain`: `uncertain` exists to stop a
-    maybe-delivered SEND from being retried into a duplicate, and re-reading a mailbox
-    duplicates nothing.
+    ``target`` is ``<connection>:<operation>``, and BOTH halves are load-bearing. DS-8's
+    live run found the general shape of this mistake the hard way: a dispatcher that
+    names its target after the thing it dispatched publishes the step's context where no
+    binding can reach it. The operation alone would also make two steps spending two
+    different grants look identical in a run history, which is the one question this
+    kind's history exists to answer.
     """
-    from aughor.govern.outbound import OutboundBlocked
-    from aughor.integrations.call import CallFailed, CallParamsMissing, CallRefused, call
-    from aughor.integrations.operations import get_operation
+    from aughor.integrations.call import call_operation
 
-    grant_id, operation_id = effect.grant_id, effect.operation
-    target = f"{grant_id}:{operation_id}"
-    operation = get_operation(operation_id)
-    label = operation.label if operation else operation_id
-
-    try:
-        data = call(operation_id, grant_id, effect.params)
-    except CallParamsMissing as exc:
-        return EffectOutcome(kind=effect.kind, target=target, status="invalid_params",
-                             message=str(exc))
-    except CallRefused as exc:
-        return EffectOutcome(kind=effect.kind, target=target, status="dispatch_error",
-                             message=str(exc))
-    except OutboundBlocked as exc:
-        # A budget, not a fault — and named as one. `govern.outbound` fails OPEN when it
-        # cannot READ a cap and closed when one says block, so arriving here means a cap
-        # deliberately refused this call.
-        return EffectOutcome(kind=effect.kind, target=target, status="dispatch_error",
-                             message=f"refused by a usage cap: {exc.reason}")
-    except CallFailed as exc:
-        return EffectOutcome(kind=effect.kind, target=target, status="failed",
-                             message=f"{label} failed: {exc}")
-
-    # `count` where the operation publishes one, so a run row says what came back rather
-    # than only that something did.
-    count = data.get("count")
-    detail = f" — {count} result{'' if count == 1 else 's'}" if isinstance(count, int) else ""
-    return EffectOutcome(kind=effect.kind, target=target, status="executed",
-                         message=f"{label}{detail}", data=dict(data))
+    conn_id = str(effect.config.get("connection_id", ""))
+    operation = str(effect.config.get("operation", ""))
+    target = f"{conn_id}:{operation}"
+    result = call_operation(conn_id, operation, effect.params,
+                            actor=acting_agent_ref(effect, automation))
+    status = _CALL_STATUS.get(result.status, "failed")
+    return EffectOutcome(
+        kind=effect.kind, target=target, status=status,
+        # The provider's own sentence, verbatim — the same contract the authored
+        # criterion message has. A paraphrase of "channel_not_found" helps nobody.
+        message=result.message,
+        # Published on SUCCESS only. A failed call's body is the provider's error, not
+        # this operation's declared keys, and publishing it would let a later step bind
+        # to a value that means something else entirely.
+        data=dict(result.data) if status == "executed" else {})
 
 
 @contextmanager
@@ -1044,7 +1050,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "agent_alert": _dispatch_agent_alert,
     "slack_post": _dispatch_slack_post,
     "subchain": _dispatch_subchain,
-    "connection_call": _dispatch_connection_call,
+    "integration_call": _dispatch_integration,
     "metric_value": _dispatch_metric_value,
     "trusted_query": _dispatch_trusted_query,
 }
@@ -1079,8 +1085,13 @@ def dry_sample(alias: str, effect: Effect, later: list[Effect]) -> dict:
     preview would report "upstream data unavailable" for a binding the engine will
     satisfy perfectly well at 09:00.
     """
-    from aughor.automations.dataflow import PUBLISHED_KEYS
-    keys = set(PUBLISHED_KEYS.get(effect.kind) or ())
+    # DS-11 — `published_keys(effect)`, not the kind table: an integration step's keys
+    # are its operation's, so a preview of a Gmail-list step must sample `items`/`count`
+    # and one of a read-a-message step must sample `snippet`. Reading the kind would have
+    # sampled the same (empty) set for both and reported every chained integration step
+    # as unavailable — the exact failure B2's own pre-check found in the eval harness.
+    from aughor.automations.dataflow import published_keys
+    keys = set(published_keys(effect) or ())
     for nxt in later:
         for ref in effect_refs(nxt):
             target, key = parse_ref(ref)
@@ -1926,6 +1937,10 @@ _PROPOSAL_TO_STATUS = {
     "rejected": "skipped", "expired": "skipped",
     "failed": "failed", "criterion_failed": "criterion_failed",
     "invalid_params": "invalid_params", "dispatch_error": "dispatch_error",
+    # DS-11's completion — a write a human approved whose transport then broke MAY have
+    # arrived. Letting it fall through to the `failed` default would license the retry
+    # that turns one approved post into two, which is the whole reason this status exists.
+    "uncertain": "uncertain",
 }
 
 
@@ -1952,6 +1967,30 @@ def _slice_prior(effects: list[EffectOutcome], counts: list) -> dict[int, list[E
         out[n] = effects[at:at + c]
         at += c
     return out
+
+
+#: How long a just-accepted proposal is treated as still executing rather than as finished.
+#: BOUNDED on purpose: the same shape — `accepted` with nothing recorded — is also what a
+#: process that died mid-write leaves behind, and holding on that forever would strand a run
+#: in `paused`, which is the one state this wave must never produce. Generous against a
+#: provider call and its retries, and short against a human's next look at the queue.
+ACCEPT_SETTLE_SECONDS = 120.0
+
+
+def _settling(proposal) -> bool:
+    """Is this proposal's write still in flight — resolved, but not yet reported?
+
+    Reads through `age_hours`, which returns a large sentinel for an unparseable value, so a
+    corrupt timestamp reads as OLD and the run proceeds. That is the safe direction here and
+    the opposite of the expiry check's: withholding a resume withholds the completion of work
+    a human already authorised, where withholding an accept withholds a write.
+    """
+    from aughor.util.time import age_hours
+    return (getattr(proposal, "status", "") == "accepted"
+            and not getattr(proposal, "outcome", None)
+            and not getattr(proposal, "status_message", "")
+            and age_hours(getattr(proposal, "resolved_at", "") or "") * 3600.0
+            < ACCEPT_SETTLE_SECONDS)
 
 
 def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
@@ -1995,6 +2034,19 @@ def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
     # (two parallel steps, or one fanned step over three channels); resuming after the first
     # answer would run the rest of the chain while a second governed write is still pending.
     if any(p.status == "pending" and not p.expired for p in proposals):
+        return None
+    # …or on a write a person has ALREADY authorised and which is happening right now.
+    #
+    # Found by a live run, and the green suite had agreed with it. `accept_proposal` resolves
+    # the row to `accepted`, THEN performs the write, THEN records its outcome — three
+    # statements with a real network call in the middle. The router's own resume runs after
+    # all three, but the heartbeat's sweep visits every parked run once a minute and does not:
+    # landing inside that window it saw `accepted`, mapped it to `executed` (which it is) and
+    # rewrote the step with an EMPTY outcome. The chain then continued, and every later step
+    # binding to the approved write's output resolved nothing — a governed write that
+    # happened, reported as one that produced nothing, which is precisely the failure the
+    # pause exists to prevent, one layer in.
+    if any(_settling(p) for p in proposals):
         return None
     # DS-9 — and on any nested run this one parked behind. A subchain step parks its parent
     # WITHOUT a proposal of its own: the human is being asked by the child, and the parent is

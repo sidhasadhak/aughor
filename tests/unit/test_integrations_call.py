@@ -1,218 +1,330 @@
-"""VA-11 consumer — the one path that spends a grant, exercised against a faux provider.
+"""DS-11 — the consumer: what happens when a grant is actually spent.
 
-`call._get` is the seam (one authorized GET): tests replace THAT, so resolution, the
-scope check, URL construction, the outbound cap and the response mapping all run their
-real code while nothing leaves the machine — the same arrangement `broker._post` has,
-for the same reason.
+``call.py`` is the only door to a user's token, so what is locked here is the ORDER of
+its gates and the fact that each one refuses BEFORE the thing it guards:
 
-What is asserted is the property each guard exists for. The wave's whole premise was
-that this plane was INERT — `fresh_access_token` had no callers — so the tests that
-matter are the ones proving the refusals happen BEFORE a token is spent, and that a call
-which does go out is countable afterwards.
+* a revoked or un-refreshable grant never reaches the network;
+* a scope the user did not consent to is refused HERE, with the scope named, rather
+  than sent and returned as the provider's own opaque 403;
+* a param the roster does not declare is refused rather than forwarded — an undeclared
+  ``cc`` silently dropped is a message the author believes was copied to someone;
+* a path value cannot leave its path segment (``../..`` addresses a message called
+  that, and nothing else);
+* the approval gate stops an un-allowlisted WRITE and does not touch a read;
+* the call rides ``govern.outbound``, so it is capped before the work and countable
+  after it;
+* Slack's ``200 {"ok": false}`` is a failure, because a body-level refusal read as
+  success is how an integration reports a message it never sent.
+
+``call._request`` is the seam (one HTTP call): tests replace THAT, so every gate above
+it runs its real code while nothing leaves the machine — the same choice
+``broker._post`` made, and the reason both are trustworthy under test.
 """
 from __future__ import annotations
-
-from urllib.parse import parse_qs, urlparse
 
 import pytest
 
 from aughor.integrations import call as callmod
 from aughor.integrations import store
-from aughor.integrations.models import Connection, ProviderApp
-from aughor.integrations.operations import get_operation, scope_granted
-
-GMAIL_LIST = "google.gmail.messages.list"
-GMAIL_GET = "google.gmail.messages.get"
-GMAIL_SCOPE = "https://www.googleapis.com/auth/gmail.readonly"
+from aughor.integrations.models import Connection
 
 
 @pytest.fixture(autouse=True)
 def _virgin_stores():
+    """The integration stores are SESSION-scoped tmp files — the ordering-dependent
+    failure `test_integrations_broker.py` documents. Cleaned on the way OUT as well:
+    a grant left behind here is an extra row in another file's component-registry
+    search, which is how that half of the rule was bought."""
     for s in (store._APPS, store._CONNS, store._PENDING):
         for d in list(s.all()):
             s.delete(d["id"])
     yield
+    for s in (store._APPS, store._CONNS, store._PENDING):
+        for d in list(s.all()):
+            s.delete(d["id"])
 
 
 @pytest.fixture
-def google(monkeypatch):
-    """An org app, a live grant, and a faux Gmail. Returns the recorder."""
-    store.save_app(ProviderApp(id="google", client_id="cid", client_secret="cs"))
-    conn = store.save_connection(Connection(
-        provider="google", user_id="u1", scopes=f"openid email {GMAIL_SCOPE}",
-        account="sales@example.com", access_token="at-1", refresh_token="rt-1",
-        # Far enough out that the broker does not try to refresh; refresh policy is the
-        # broker's own suite, and a test that accidentally exercises it is testing two
-        # things and will fail for the wrong reason.
-        expires_at="2099-01-01T00:00:00+00:00", status="active"))
+def grant():
+    """One live Google grant carrying exactly the scope its read operations need."""
+    return store.save_connection(Connection(
+        id="ic_google", provider="google", account="sales@example.com",
+        scopes="openid email https://www.googleapis.com/auth/gmail.readonly",
+        access_token="at-live", refresh_token="rt-live", status="active"))
+
+
+@pytest.fixture
+def slack_grant():
+    return store.save_connection(Connection(
+        id="ic_slack", provider="slack", account="Acme",
+        scopes="chat:write channels:read",
+        access_token="at-slack", status="active"))
+
+
+@pytest.fixture
+def wire(monkeypatch):
+    """A faux provider: records every request, answers from a queue."""
+    calls: list[dict] = []
+    queue: list[tuple[int, object]] = []
+
+    def _fake_request(method, url, *, headers, query, body):
+        calls.append({"method": method, "url": url, "headers": dict(headers),
+                      "query": dict(query or {}), "body": dict(body or {})})
+        return queue.pop(0) if queue else (200, {})
+
+    monkeypatch.setattr(callmod, "_request", _fake_request)
+    # The token is fetched through the broker; refresh policy is that module's contract
+    # and is proven in its own file. Here it is a fixed string, so what is asserted is
+    # what THIS module does with it.
+    monkeypatch.setattr(callmod, "_fresh_token", lambda cid: "at-live")
+    return {"calls": calls, "queue": queue}
+
+
+# ── the grant's own verdicts, before anything leaves ─────────────────────────────
+
+def test_a_revoked_grant_never_reaches_the_network(wire):
+    store.save_connection(Connection(id="ic_dead", provider="google", status="revoked"))
+    res = callmod.call_operation("ic_dead", "gmail.messages.list")
+    assert res.status == "refused" and "revoked" in res.message
+    assert wire["calls"] == [], "a revoked grant must not produce a request"
+
+
+def test_a_grant_awaiting_reconnection_names_the_door(wire):
+    store.save_connection(Connection(id="ic_stale", provider="google",
+                                     status="needs_reconnect"))
+    res = callmod.call_operation("ic_stale", "gmail.messages.list")
+    assert res.status == "refused"
+    assert "reconnect" in res.message.lower() and "Integrations" in res.message
+    assert wire["calls"] == []
+
+
+def test_an_operation_from_another_provider_is_refused(wire, grant):
+    """A Slack operation on a Google grant. Caught here rather than by Google answering
+    404 to a slack.com path — which could not happen, because the URL is the roster's,
+    but the pairing still has to be checked or the request would go out with the wrong
+    account's token in the header."""
+    res = callmod.call_operation(grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"})
+    assert res.status == "refused" and "google" in res.message
+    assert wire["calls"] == []
+
+
+def test_a_scope_the_user_declined_is_refused_with_the_scope_named(wire):
+    store.save_connection(Connection(id="ic_thin", provider="google",
+                                     scopes="openid email", status="active"))
+    res = callmod.call_operation("ic_thin", "gmail.messages.list")
+    assert res.status == "refused"
+    assert "gmail.readonly" in res.message and "reconnect" in res.message
+    assert wire["calls"] == []
+
+
+def test_a_grant_that_states_no_scopes_is_not_refused(wire, monkeypatch):
+    """Silence is not a measured absence. Several providers return no scope list at all,
+    and refusing on silence would dim every row on one that simply does not say — the
+    palette's own rule (only a measured zero dims), one plane over."""
+    store.save_connection(Connection(id="ic_quiet", provider="google", scopes="",
+                                     status="active"))
+    wire["queue"].append((200, {"messages": []}))
+    res = callmod.call_operation("ic_quiet", "gmail.messages.list")
+    assert res.status == "executed"
+
+
+# ── the params: only what the roster declares, and nothing that moves the path ───
+
+def test_an_undeclared_param_is_refused_not_dropped(wire, slack_grant):
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi", "cc": "boss@x.com"})
+    assert res.status == "refused" and "'cc'" in res.message
+    assert wire["calls"] == [], "an undeclared param must not be forwarded"
+
+
+def test_a_missing_required_param_is_refused(wire, slack_grant):
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x"})
+    assert res.status == "refused" and "text" in res.message
+    assert wire["calls"] == []
+
+
+def test_a_path_value_cannot_escape_its_segment(wire, grant):
+    """The whole guarantee of the closed URL set. A path param that could carry a `/`
+    would let a declared operation address an undeclared endpoint."""
+    wire["queue"].append((200, {"id": "x", "threadId": "t", "snippet": "s"}))
+    callmod.call_operation(grant.id, "gmail.messages.get", {"id": "../../admin"})
+    url = wire["calls"][0]["url"]
+    assert url == ("https://gmail.googleapis.com/gmail/v1/users/me/messages/"
+                   "..%2F..%2Fadmin")
+    # 8 — the two in `https://` and the six of the declared path. The value contributed
+    # none of its own, which is the entire guarantee.
+    assert url.count("/") == 8
+
+
+def test_declared_defaults_are_sent_and_the_token_rides_the_header(wire, grant):
+    wire["queue"].append((200, {"messages": []}))
+    callmod.call_operation(grant.id, "gmail.messages.list", {"q": "is:unread"})
+    sent = wire["calls"][0]
+    assert sent["query"] == {"q": "is:unread", "maxResults": 10}
+    assert sent["headers"]["Authorization"] == "Bearer at-live"
+
+
+# ── what comes back: declared keys only, bounded ────────────────────────────────
+
+def test_only_declared_keys_are_published(wire, grant):
+    wire["queue"].append((200, {
+        "messages": [{"id": "m1", "threadId": "t1", "internalDate": "170"}],
+        "nextPageToken": "np", "resultSizeEstimate": 41,
+    }))
+    res = callmod.call_operation(grant.id, "gmail.messages.list")
+    assert res.status == "executed"
+    assert res.data == {"items": [{"id": "m1", "threadId": "t1"}], "count": 1,
+                        "next_page_token": "np"}, \
+        "a provider adding a field must not silently widen what a chain carries"
+
+
+def test_a_provider_that_ignores_our_limit_is_refused_not_truncated(wire, grant):
+    """W2's law: a silently shortened list is a chain acting on part of the world while
+    its `count` describes all of it."""
+    wire["queue"].append((200, {"messages": [{"id": str(n)} for n in range(callmod.MAX_ITEMS + 1)]}))
+    res = callmod.call_operation(grant.id, "gmail.messages.list")
+    assert res.status == "refused" and "Lower this step's limit" in res.message
+
+
+def test_slacks_two_hundred_with_ok_false_is_a_failure(wire, slack_grant):
+    wire["queue"].append((200, {"ok": False, "error": "channel_not_found"}))
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#nope", "text": "hi"})
+    assert res.status == "failed" and "channel_not_found" in res.message
+
+
+def test_a_failed_call_publishes_nothing(wire, grant):
+    wire["queue"].append((403, {"error": {"message": "Insufficient Permission"}}))
+    res = callmod.call_operation(grant.id, "gmail.messages.list")
+    assert res.status == "failed" and "Insufficient Permission" in res.message
+    assert res.data == {}, "an error body is not this operation's declared keys"
+
+
+def test_an_unreadable_write_is_uncertain_and_an_unreadable_read_is_not(
+        wire, grant, slack_grant, monkeypatch):
+    """A transport failure MAY have delivered. For a write that is the difference
+    between a retry and a duplicate; for a read it is only a retry."""
+    def _boom(*a, **k):
+        raise ConnectionError("connection reset")
+    monkeypatch.setattr(callmod, "_request", _boom)
+    assert callmod.call_operation(grant.id, "gmail.messages.list").status == "failed"
+    assert callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                  {"channel": "#x", "text": "hi"}).status == "uncertain"
+
+
+# ── the two governance planes ───────────────────────────────────────────────────
+
+def test_a_usage_cap_blocks_before_the_work_and_says_nothing_was_sent(
+        wire, grant, monkeypatch):
+    from aughor.govern import outbound
+
+    class _Decision:
+        allowed = False
+        reason = "monthly call budget reached"
+
+    monkeypatch.setattr(outbound, "_cap_decision", lambda org, user: _Decision())
+    res = callmod.call_operation(grant.id, "gmail.messages.list")
+    assert res.status == "blocked" and "budget" in res.message
+    assert wire["calls"] == [], "the cap is consulted BEFORE the work, not after it"
+
+
+def test_the_call_is_countable_as_an_external_call(wire, grant, monkeypatch):
+    """A span alone leaves the cap plane blind — it reads session events, not spans.
+    That gap is exactly what made VA-9's deliverable 5 read as instrumented while
+    nothing could be metered."""
+    import aughor.obs.session_log as slog
     seen: list[dict] = []
-    queued: list[tuple[int, dict]] = []
+    real_emit = slog.emit
 
-    def _fake_get(url, token):
-        seen.append({"url": url, "token": token})
-        return queued.pop(0) if queued else (200, {})
+    def _capture(kind, **kw):
+        if kind == slog.EXTERNAL_CALL:
+            seen.append(kw)
+        return real_emit(kind, **kw)
 
-    monkeypatch.setattr(callmod, "_get", _fake_get)
-    return {"conn": conn, "seen": seen, "queued": queued}
-
-
-# ── refusals that spend nothing ──────────────────────────────────────────────────
-
-def test_an_unknown_operation_is_refused_before_any_token_is_fetched(google):
-    with pytest.raises(callmod.CallRefused, match="unknown operation"):
-        callmod.call("google.gmail.messages.burn", google["conn"].id)
-    assert google["seen"] == [], "a refused call must not reach the provider"
+    monkeypatch.setattr(slog, "emit", _capture)
+    wire["queue"].append((200, {"messages": []}))
+    callmod.call_operation(grant.id, "gmail.messages.list")
+    assert [e["name"] for e in seen] == ["google.gmail.messages.list"]
+    assert seen[0]["ok"] is True
+    assert seen[0]["payload"]["http_status"] == 200
 
 
-def test_a_grant_for_another_provider_is_refused_naming_both(google):
-    other = store.save_connection(Connection(provider="microsoft", user_id="u1",
-                                             access_token="at-x", status="active"))
-    with pytest.raises(callmod.CallRefused) as exc:
-        callmod.call(GMAIL_LIST, other.id)
-    # Both names, because a 401 from the wrong host names neither.
-    assert "google" in str(exc.value) and "microsoft" in str(exc.value)
-    assert google["seen"] == []
+def test_an_un_allowlisted_write_stops_and_a_read_does_not(wire, grant, slack_grant,
+                                                           monkeypatch):
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    wire["queue"].append((200, {"messages": []}))
+    assert callmod.call_operation(grant.id, "gmail.messages.list").status == "executed", \
+        "a read is audited and proceeds — the gate is for what CHANGES something"
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"})
+    # `needs_approval`, not `refused` — alone among the verdicts here it is a QUESTION a
+    # person can answer, and the automation plane turns exactly this one into a durable
+    # proposal and parks the run on them.
+    assert res.status == "needs_approval" and "approval" in res.message.lower()
+    assert len(wire["calls"]) == 1, "the refused write must never have been sent"
 
 
-@pytest.mark.parametrize("status,fragment", [
-    ("revoked", "revoked"),
-    ("needs_reconnect", "reconnect"),
-])
-def test_a_dead_grant_is_refused_with_the_sentence_that_fixes_it(google, status, fragment):
-    dead = store.save_connection(google["conn"].model_copy(update={"status": status}))
-    with pytest.raises(callmod.CallRefused, match=fragment):
-        callmod.call(GMAIL_LIST, dead.id)
-    assert google["seen"] == []
+def test_allowlisting_the_write_for_this_grant_lets_it_through(wire, slack_grant,
+                                                              monkeypatch):
+    """Scoped to the GRANT, which is the grain a person reasons about: approving
+    'this account may post to Slack' must not approve a second account's."""
+    from aughor.govern import actions as govern
+
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    govern.allow("integration.slack.slack.chat.postMessage", slack_grant.id,
+                 actor="tester")
+    wire["queue"].append((200, {"ok": True, "ts": "1.2", "channel": "C1"}))
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"})
+    assert res.status == "executed" and res.data == {"ts": "1.2", "channel": "C1"}
+
+    other = store.save_connection(Connection(id="ic_slack2", provider="slack",
+                                             scopes="chat:write", status="active"))
+    assert callmod.call_operation(other.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"}).status == "needs_approval"
 
 
-def test_a_scope_the_user_never_consented_to_is_refused_naming_the_scope(google):
-    """The receipt §3.4 asks for: a downgraded consent reads as a sentence, not a 403."""
-    narrowed = store.save_connection(
-        google["conn"].model_copy(update={"scopes": "openid email"}))
-    with pytest.raises(callmod.CallRefused) as exc:
-        callmod.call(GMAIL_LIST, narrowed.id)
-    assert GMAIL_SCOPE in str(exc.value)
-    assert google["seen"] == [], "the token must not be spent to be told this"
+def test_every_call_lands_in_the_audit_ledger_naming_the_grants_owner(wire, monkeypatch):
+    from aughor.govern import actions as govern
+
+    store.save_connection(Connection(
+        id="ic_owned", provider="google", user_id="u_amit",
+        scopes="https://www.googleapis.com/auth/gmail.readonly", status="active"))
+    wire["queue"].append((200, {"messages": []}))
+    callmod.call_operation("ic_owned", "gmail.messages.list", actor="agent:a1")
+    row = next(r for r in govern.recent_audit(50)
+               if r.get("action") == "integration.google.gmail.messages.list")
+    assert row["decision"] == "executed"
+    assert "u_amit" in row["detail"], "whose consent was spent is what this row is for"
+    assert row["scope"] == "ic_owned"
 
 
-def test_a_narrower_scope_that_merely_CONTAINS_the_required_one_is_not_enough():
-    """Graph's `Mail.ReadBasic` contains `Mail.Read` and grants strictly less.
-
-    A substring check would read a metadata-only grant as full mail access. This is the
-    reason `scope_granted` splits on the provider's own delimiter, and the assertion is
-    on the narrower-grant direction because that is the one that would leak.
-    """
-    outlook = get_operation("microsoft.outlook.messages.list")
-    assert outlook.scope == "Mail.Read"
-    assert not scope_granted(outlook, "Mail.ReadBasic offline_access")
-    assert scope_granted(outlook, "Mail.Read offline_access")
-
-
-def test_a_provider_that_reports_no_scopes_is_believed_rather_than_refused():
-    """`Connection.scopes` is read back from the token response and "" is its honest
-    value. Unknown is not the same as missing: refusing on it would make every provider
-    that omits `scope` unusable, and the provider is the authority on its own grant."""
-    assert scope_granted(get_operation(GMAIL_LIST), "")
+def test_a_human_accept_is_not_asked_to_pass_the_gate_again(wire, slack_grant,
+                                                            monkeypatch):
+    """The accept IS the approval. Asking again would refuse it forever — the proposal is
+    not allowlisted, and nothing about a person saying yes makes it so."""
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    wire["queue"].append((200, {"ok": True, "ts": "1.2", "channel": "C1"}))
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"},
+                                 actor="amit", approved=True)
+    assert res.status == "executed"
 
 
-def test_a_required_param_missing_at_call_time_is_its_own_refusal(google):
-    """Reported as `invalid_params` by the step, not as a dead connection — a BOUND
-    param that resolved to nothing is the author's problem, not the grant's."""
-    with pytest.raises(callmod.CallParamsMissing, match="Message id"):
-        callmod.call(GMAIL_GET, google["conn"].id, {"message_id": "  "})
-    assert google["seen"] == []
+def test_approving_bypasses_the_gate_and_nothing_else(wire, monkeypatch):
+    """An approval is permission, not a promise that the world stood still: a proposal can
+    sit for days and the account behind it can be revoked in the meantime."""
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    store.save_connection(Connection(id="ic_dead2", provider="slack", scopes="chat:write",
+                                     status="revoked"))
+    res = callmod.call_operation("ic_dead2", "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"}, approved=True)
+    assert res.status == "refused" and "revoked" in res.message
+    assert wire["calls"] == []
 
 
-# ── the call that does go out ────────────────────────────────────────────────────
-
-def test_params_are_encoded_into_the_declared_shape_and_cannot_escape_it(google):
-    google["queued"].append((200, {"messages": [{"id": "m1", "threadId": "t1"}]}))
-    callmod.call(GMAIL_LIST, google["conn"].id,
-                 {"q": "is:unread from:a&b", "max_results": "5"})
-    url = google["seen"][0]["url"]
-    q = parse_qs(urlparse(url).query)
-    assert urlparse(url).netloc == "gmail.googleapis.com"
-    # The ampersand rode inside the value rather than becoming a second parameter.
-    assert q["q"] == ["is:unread from:a&b"]
-    assert q["maxResults"] == ["5"]
-
-
-def test_a_path_param_cannot_climb_out_of_its_segment(google):
-    google["queued"].append((200, {"id": "m1"}))
-    callmod.call(GMAIL_GET, google["conn"].id, {"message_id": "../../tokens"})
-    path = urlparse(google["seen"][0]["url"]).path
-    assert path.endswith("/messages/..%2F..%2Ftokens"), path
-
-
-def test_the_step_publishes_declared_keys_and_never_the_provider_body(google):
-    google["queued"].append((200, {
-        "messages": [{"id": "m1", "threadId": "t1"}, {"id": "m2", "threadId": "t2"}],
-        "resultSizeEstimate": 47,
-        # A field nothing declared. It must not reach chain context, where a later step
-        # could bind it into a channel.
-        "internalAuthToken": "SHOULD-NOT-TRAVEL",
-    }))
-    data = callmod.call(GMAIL_LIST, google["conn"].id)
-    assert data["count"] == 2 and data["estimate"] == 47
-    assert [i["id"] for i in data["items"]] == ["m1", "m2"]
-    assert "SHOULD-NOT-TRAVEL" not in str(data)
-
-
-def test_gmail_headers_become_named_fields(google):
-    """Gmail returns headers as a LIST of {name, value} — the shape a dotted-path
-    mini-language could not have reached, which is why the mapper is a function."""
-    google["queued"].append((200, {
-        "id": "m1", "snippet": "quarterly numbers",
-        "payload": {"headers": [{"name": "Subject", "value": "Q3 review"},
-                                {"name": "From", "value": "cfo@example.com"}]},
-    }))
-    data = callmod.call(GMAIL_GET, google["conn"].id, {"message_id": "m1"})
-    assert data["subject"] == "Q3 review"
-    assert data["sender"] == "cfo@example.com"
-    assert data["snippet"] == "quarterly numbers"
-
-
-def test_the_bearer_token_comes_from_the_broker_not_off_the_record(google, monkeypatch):
-    """The one path that hands out a token is `fresh_access_token`, so refresh policy
-    cannot be remembered by one caller and forgotten by another."""
-    from aughor.integrations import broker
-    monkeypatch.setattr(broker, "fresh_access_token", lambda cid: f"fresh-for-{cid}")
-    google["queued"].append((200, {}))
-    callmod.call(GMAIL_LIST, google["conn"].id)
-    assert google["seen"][0]["token"] == f"fresh-for-{google['conn'].id}"
-
-
-def test_a_provider_refusal_is_a_failure_carrying_the_providers_own_words(google):
-    google["queued"].append((403, {"error": {"message": "Insufficient Permission"}}))
-    with pytest.raises(callmod.CallFailed) as exc:
-        callmod.call(GMAIL_LIST, google["conn"].id)
-    assert "Insufficient Permission" in str(exc.value)
-    assert exc.value.status == 403
-
-
-def test_a_failed_call_is_still_recorded_as_an_external_call(google, monkeypatch):
-    """A provider error recorded only on the success path is how a failing counterparty
-    stays invisible in exactly the week it matters. The raise happens INSIDE the span."""
-    events: list[dict] = []
-    from aughor.obs import session_log as slog
-    monkeypatch.setattr(slog, "emit",
-                        lambda kind, **kw: events.append({"kind": kind, **kw}))
-    google["queued"].append((500, {"error": "backend error"}))
-    with pytest.raises(callmod.CallFailed):
-        callmod.call(GMAIL_LIST, google["conn"].id)
-    external = [e for e in events if e["kind"] == slog.EXTERNAL_CALL]
-    assert external, "the failed call left no countable trace"
-    assert external[0]["ok"] is False
-    assert external[0]["name"] == f"google.{GMAIL_LIST}"
-
-
-def test_the_call_is_attributed_to_the_grants_owner(google, monkeypatch):
-    audited: list[dict] = []
-    from aughor.govern import actions as govern_actions
-    monkeypatch.setattr(govern_actions, "audit",
-                        lambda action, **kw: audited.append({"action": action, **kw}))
-    google["queued"].append((200, {}))
-    callmod.call(GMAIL_LIST, google["conn"].id)
-    assert audited and audited[0]["action"] == "integration.call"
-    assert audited[0]["actor"] == "u1"
-    assert GMAIL_LIST in audited[0]["detail"]
+def test_an_unknown_operation_is_a_refusal_not_a_crash(wire, grant):
+    assert callmod.call_operation(grant.id, "gmail.messages.delete").status == "refused"
+    assert callmod.call_operation("nope", "gmail.messages.list").status == "refused"

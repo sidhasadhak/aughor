@@ -538,18 +538,12 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # the child happened to end on. `executed` is the count a guard can read — "post the
     # summary only if the shared subchain actually did something".
     "subchain":       ("run_id", "outcome", "executed"),
-    # VA-11 — an OPEN set, and the second one in this table. One kind, many shapes: a
-    # Gmail list publishes `count`/`estimate`/`items`, a single message publishes
-    # `subject`/`sender`/`snippet`, and the keys belong to the OPERATION rather than to
-    # the kind this table is keyed by. Each operation declares its own `publishes`, which
-    # the rail draws as ports and `/integrations/operations` serves; making that a
-    # save-time refusal would mean keying this table by two things, and a table keyed by
-    # two things is two tables that will disagree.
-    #
-    # The open set is also what lets a step fan out over `{"$from": "step1.items"}`: a
-    # CLOSED published set is refused as a `for_each` source here, correctly, because
-    # every closed one in this plane is strings.
-    "connection_call": None,
+    # DS-11 — ``None`` at the KIND level because the honest answer is per OPERATION: a
+    # step that lists Gmail messages publishes `items`/`count`, one that reads a message
+    # publishes `snippet`. `published_keys(effect)` below returns that closed set, and it
+    # is what every validator reads; this entry is the fallback for a step whose operation
+    # is not (yet) in the roster.
+    "integration_call": None,
     # DS-12 — a governed number, its unit and its label. Closed, because unlike an
     # operation roster there is exactly one shape: every metric answers with a value.
     "metric_value":   ("value", "unit", "label"),
@@ -571,7 +565,13 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
 #: A trusted query publishes rows. Rather than reopen the set — which would give up the
 #: save-time refusal that makes an unknown key a design error instead of a 09:00
 #: surprise — the LIST-ness is declared beside the keys, so a fan over `q.rows` is
-#: accepted and a fan over `q.count` is still refused with the same sentence as before.
+#: accepted and a fan over `q.count` is still refused.
+#:
+#: DS-11 closed the same limit from the other side, per OPERATION, and its
+#: `list_published_keys()` is the one function every validator asks. This table is that
+#: function's answer for the kinds whose list-ness is a property of the KIND rather than
+#: of an operation — read BY it, never beside it, because two places that both say which
+#: keys are lists is two places that will disagree.
 LIST_PUBLISHED: dict[str, tuple[str, ...]] = {
     "trusted_query": ("rows",),
 }
@@ -598,22 +598,73 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # steps. Declaring a bindable field here would draw an edge the engine does not
     # follow, which is the exact picture B1 exists to prevent.
     "subchain":       (),
-    # VA-11 — the operation's own inputs, as one bound structure, exactly as a declared
-    # action's are. `grant_id` and `operation` are absent because they are authored
-    # decisions: an upstream value choosing which credential a step spends would be a
-    # chain picking its own counterparty.
-    #
-    # ⚠️ This table DECLARES; it does not enforce — `resolve()` walks the whole config, so
-    # every other kind here will happily substitute a binding into a field this tuple
-    # omits. For this kind that gap had teeth, so the refusal lives on `Effect` itself
-    # (`_known_operation`), where a save actually fails.
-    "connection_call": ("params",),
+    # DS-11 — the params bag, exactly as `kinetic_action` carries it: the individual
+    # inputs are the OPERATION's (a channel, a message id, a body), so the port a chain
+    # binds into is a key inside `params` and `collect_refs` walks it. Naming the inputs
+    # here instead would be a second, per-kind copy of a per-operation fact.
+    "integration_call": ("params",),
     # DS-12 — neither takes an input. Both name a governed object and read it; there is
     # no field an upstream value could reach, which is the point: a metric a chain could
     # re-point at runtime would not be the governed metric any more.
     "metric_value":   (),
     "trusted_query":  (),
 }
+
+
+def effect_kind(effect: Any) -> str:
+    """A step's ``kind``, whether it arrived as a model or a raw dict."""
+    return str((effect.get("kind") if isinstance(effect, dict)
+                else getattr(effect, "kind", "")) or "")
+
+
+def _operation_of(effect: Any):
+    """The declared operation an ``integration_call`` step names, or None.
+
+    Imported inside the function so the automation vocabulary can be read without
+    dragging the integrations plane into memory — the containment `palette._prereqs`
+    already uses on its stores, for the same reason.
+    """
+    from aughor.integrations.operations import get_operation
+    return get_operation(str(effect_config(effect).get("operation", "")))
+
+
+def published_keys(effect: Any) -> Optional[tuple[str, ...]]:
+    """What ONE STEP publishes: a closed tuple, or ``None`` for the open set.
+
+    DS-11 made this a function rather than a dict lookup. Every kind before it published
+    the same keys on every instance, so a table keyed by kind WAS the answer; an
+    integration step's keys are its operation's, which is a per-instance fact known at
+    save time. That is a strict gain, not a complication: `integration_call` is the first
+    kind whose remote outputs B1 can refuse an unknown key against, where the open-set
+    treatment (`kinetic_action`) has to accept anything.
+
+    An operation the roster does not know falls back to the OPEN set rather than to
+    "publishes nothing", so one refusal is reported once — `validate_chain` names the
+    unknown operation itself — instead of as a cascade of bindings onto a step that
+    "publishes nothing".
+    """
+    if effect_kind(effect) == "integration_call":
+        op = _operation_of(effect)
+        return op.publishes if op is not None else None
+    return PUBLISHED_KEYS.get(effect_kind(effect))
+
+
+def list_published_keys(effect: Any) -> tuple[str, ...]:
+    """Which of a step's published keys are LISTS — the ones `for_each` may fan over.
+
+    Empty for every kind that existed before DS-11, which is W2's measured premise
+    restated as code: *nothing in this plane published a list*, so a fan source could
+    only ever be a literal list or a binding onto the one open-set kind. A remote read
+    is the first honest list, and it says so here rather than by being open-set — an
+    open set would let a fan-out onto `snippet` through as well.
+    """
+    if effect_kind(effect) == "integration_call":
+        op = _operation_of(effect)
+        return op.list_keys if op is not None else ()
+    # DS-12 — a trusted query's `rows`. Answered here rather than from a second table
+    # keyed by kind: two places that both say which keys are lists is two places that
+    # will disagree, and this one is already what every validator reads.
+    return LIST_PUBLISHED.get(effect_kind(effect), ())
 
 
 def _malformed_any(value: Any) -> Optional[str]:
@@ -642,6 +693,46 @@ def _malformed_any(value: Any) -> Optional[str]:
     return None
 
 
+def _integration_problem(effect: Any, alias: str) -> Optional[str]:
+    """An ``integration_call`` step naming something the roster does not have, as a
+    sentence — or None. Non-integration steps are always fine here.
+
+    Two refusals, both at SAVE: an unknown OPERATION (the reference the whole kind is
+    built on), and an undeclared INPUT. The second is the same refusal `build_request`
+    makes at run time, moved to where it costs nothing: a param named `cc` that no
+    operation reads is a message the author believes was copied to someone.
+    """
+    if effect_kind(effect) != "integration_call":
+        return None
+    from aughor.integrations.operations import OPERATIONS, get_operation
+
+    cfg = effect_config(effect)
+    # WHICH connection and WHICH operation are authored decisions, refused here when they
+    # are not. `BINDABLE_FIELDS` declares `params` as this kind's only input port, but it
+    # DECLARES — `resolve()` walks the whole config, so a `{"$from": …}` on `connection_id`
+    # would be substituted at 07:00 and the step would spend whatever grant an upstream
+    # value happened to name. Harmless on an org-scoped `bot_id`; not harmless on a
+    # credential selector, which is why it is refused where a save actually fails.
+    for field in ("connection_id", "operation"):
+        if not isinstance(cfg.get(field), str):
+            return (f"step '{alias}' binds '{field}' — which account a step spends and "
+                    f"what it spends it on must be written, not read from an earlier step")
+    op_id = str(cfg.get("operation", ""))
+    op = get_operation(op_id)
+    if op is None:
+        known = ", ".join(o.id for o in OPERATIONS)
+        return (f"step '{alias}' names integration operation '{op_id}', which this "
+                f"deployment does not have — it offers {known}")
+    params = cfg.get("params")
+    if isinstance(params, dict):
+        declared = {p.name for p in op.params}
+        for key in params:
+            if key not in declared:
+                return (f"step '{alias}' sets '{key}', but '{op.id}' has no such input — "
+                        f"it takes {', '.join(sorted(declared)) or 'no inputs'}")
+    return None
+
+
 def validate_chain(effects: list) -> Optional[str]:
     """The error message for an unsatisfiable chain, or None when it is sound.
 
@@ -655,7 +746,9 @@ def validate_chain(effects: list) -> Optional[str]:
         LATER step is not a missing value, it is an impossible order, and saying so is
         the difference between a user fixing a name and a user fixing their mental model.
     """
-    seen: dict[str, str] = {}   # alias → effect kind, for the key check above
+    # DS-11 — alias → the EFFECT, not its kind. The key check reads `published_keys`,
+    # which is per-step now that an integration step's outputs are its operation's.
+    seen: dict[str, Any] = {}
     fanned: set[str] = set()    # W2 — aliases that run once per item
     guarded: set[str] = set()   # DS-6 — aliases with a non-empty `when`, routable-from
     for i, effect in enumerate(effects):
@@ -667,6 +760,13 @@ def validate_chain(effects: list) -> Optional[str]:
             problem = _malformed_any(candidate)
             if problem:
                 return f"step '{alias}': {problem}"
+        # DS-11 — the OPERATION is a reference like any other, so it is refused at save.
+        # An unknown one used to be unreachable (there was no such kind); leaving it
+        # unchecked would make it the one reference in this plane that surfaces at 09:00
+        # as a provider's 404 — K1's rule inverted, and B1's whole argument one field over.
+        problem = _integration_problem(effect, alias)
+        if problem:
+            return problem
         # DS-6 — the route. "Otherwise of s2" runs exactly when s2's guard was evaluated
         # and did NOT hold, so the target must exist, run earlier, and carry a guard
         # whose verdict is ONE verdict:
@@ -713,23 +813,25 @@ def validate_chain(effects: list) -> Optional[str]:
                 # save-time check and surface at 09:00 as a skipped step. Checked only
                 # for kinds with a CLOSED declared set; `None` (the declared-action kind) stays
                 # unchecked because its keys are the action's own outcome shape.
-                producer = seen[target]
+                producer_step = seen[target]
+                producer = effect_kind(producer_step)
                 # W2 — a fanned producer publishes `count`, whatever its kind: there are
                 # N per-item values and `{"$from": "step2.ts"}` could only mean one of
                 # them. Refusing beats picking the last silently.
-                declared = FAN_PUBLISHED if target in fanned else PUBLISHED_KEYS.get(producer)
+                fanning = target in fanned
+                declared = FAN_PUBLISHED if fanning else published_keys(producer_step)
                 key = parse_ref(ref)[1]
-                if (ref in source_refs and declared is not None
-                        and not publishes_list(producer, key)):
-                    fannable = LIST_PUBLISHED.get(producer, ())
-                    # DS-12 — when the producer DOES publish a list, name it: "fan out
-                    # over a literal list instead" is unhelpful advice to someone one
-                    # key away from the right answer.
-                    hint = (f"fan out over '{target}.{fannable[0]}' instead"
-                            if fannable else "fan out over a literal list instead")
+                # DS-11 — a closed set may now CONTAIN a list. Before it, no kind
+                # published one, so "closed" and "not iterable" were the same fact and
+                # the check could be written as one. A remote read publishes `items`, so
+                # the question is which KEY was named, not which kind produced it.
+                lists = () if fanning else list_published_keys(producer_step)
+                if ref in source_refs and declared is not None and key not in lists:
                     return (f"step '{alias}' fans out over '{ref}', but a {producer} step "
                             f"publishes {', '.join(declared) or 'nothing'} — "
-                            f"'{key}' is not a list; {hint}")
+                            + (f"only {', '.join(lists)} is a list"
+                               if lists else "none of it is a list")
+                            + "; fan out over a literal list instead")
                 if target in fanned and key not in FAN_PUBLISHED:
                     return (f"step '{alias}' binds to '{ref}', but step '{target}' runs "
                             f"once per item — it publishes only "
@@ -744,7 +846,7 @@ def validate_chain(effects: list) -> Optional[str]:
                 return (f"step '{alias}' refers to '{ref}', which runs AFTER it — "
                         f"a chain cannot run backwards")
             return f"step '{alias}' refers to unknown step '{target}' ({ref})"
-        seen[alias] = effect.get("kind", "") if isinstance(effect, dict) else getattr(effect, "kind", "")
+        seen[alias] = effect
         if is_fanned(effect):
             fanned.add(alias)
         if guard_clauses(effect):

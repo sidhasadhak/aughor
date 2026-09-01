@@ -36,6 +36,10 @@ def no_objects(monkeypatch):
     monkeypatch.setattr("aughor.notifications.store.list_triggers", lambda: [])
     monkeypatch.setattr("aughor.briefing.store.list_subscriptions", lambda *_a, **_k: [])
     monkeypatch.setattr("aughor.monitors.store.list_monitors", lambda *_a, **_k: [])
+    # DS-11 — and no connected accounts. Patched like every sibling rather than left to
+    # the real store: these files share session-scoped stores, so a grant another file
+    # created would make "a fresh clone" quietly untrue here.
+    monkeypatch.setattr("aughor.integrations.store.list_connections", lambda *_a, **_k: [])
 
 
 def _by_kind(rows: list[dict]) -> dict[str, dict]:
@@ -79,7 +83,7 @@ def test_adopted_kinds_are_not_offered():
 
 def test_a_measured_absence_dims_the_row_and_says_why(no_objects):
     rows = _by_kind(entries())
-    for kind in ("slack_post", "notify", "brief", "metric"):
+    for kind in ("slack_post", "notify", "brief", "metric", "integration_call"):
         assert rows[kind]["availability"] == NEEDS_SETUP, f"{kind} should need setup here"
         assert rows[kind]["reason"], f"{kind} dimmed without telling the reader why"
 
@@ -179,3 +183,26 @@ def test_every_icon_is_one_the_client_can_actually_draw():
     assert len(known) > 40, "icon names did not parse out of icon.tsx — the guard reads nothing"
     unknown = sorted({e.icon for e in ENTRIES} - known)
     assert not unknown, f"palette icons the client cannot draw: {unknown}"
+
+
+# ── DS-11 · the grant prerequisite ────────────────────────────────────────────
+
+def test_only_a_spendable_grant_lights_the_integration_row(monkeypatch, no_objects):
+    """A revoked grant is dead and a `needs_reconnect` one is a refusal the provider has
+    already made. Neither can be spent, so neither is the prerequisite being met — the
+    same rule the Slack probe applies to a disabled bot."""
+    from aughor.integrations.models import Connection
+
+    def _grants(*_a, **_k):
+        return [Connection(id="a", provider="google", status="revoked"),
+                Connection(id="b", provider="slack", status="needs_reconnect")]
+
+    monkeypatch.setattr("aughor.integrations.store.list_connections", _grants)
+    row = _by_kind(entries())["integration_call"]
+    assert row["availability"] == NEEDS_SETUP
+    assert "Integrations" in row["reason"], "the sentence names the door that fixes it"
+
+    monkeypatch.setattr("aughor.integrations.store.list_connections",
+                        lambda *_a, **_k: [Connection(id="c", provider="google",
+                                                      status="active")])
+    assert _by_kind(entries())["integration_call"]["availability"] == READY

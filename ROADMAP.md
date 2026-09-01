@@ -55,7 +55,7 @@ plane — see §7.
 | Query workbench | SE-0…SE-5a complete |
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
-| Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped but **unconsumed**; VA-9d, VA-10 open |
+| Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped and **consumed 2026-09-01** (DS-11's first half: an `integration_call` step spends a grant through govern.outbound); VA-9d, VA-10 open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
 | Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), parallel steps (`scheduling`, DS-7), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
@@ -138,8 +138,21 @@ Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
 `aughor/mcp/` today is a **server** exposing Aughor's tools, plus an HTTP client to Aughor's own
 API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.
 
-VA-9's own risk note calls this *"the largest new attack surface in the arc"*. **Agree the
-allowlist and the outbound-off-by-default posture with the user before starting.**
+VA-9's own risk note calls this *"the largest new attack surface in the arc"*. ~~Agree the
+allowlist and the outbound-off-by-default posture with the user before starting.~~
+
+> ✅ **POSTURE DECIDED 2026-09-01 (the user's call, asked before a line was written):
+> READ-ONLY TOOLS FIRST.** Ship discovery and read-only tool calls against an allowlisted
+> server; a tool the server declares as mutating is **listed and refused with a sentence**
+> until a later slice — listed, because a roster that hides what a server offers is the
+> catalogue-that-lies failure DS-10 exists to end, and refused, because the hardest
+> question in this wave is whether we trust a third party's own risk labelling, and
+> deferring it is cheaper than getting it wrong. Everything the DS-11 vault half
+> established still binds: every call rides `govern.outbound` (capped, spanned,
+> `EXTERNAL_CALL`), and OUR approval gate stays the policy authority when the write slice
+> lands. **What this decision does NOT settle** and the write slice must: whose declaration
+> of "read-only" is believed, and what a server that changes a tool's declaration after
+> registration is allowed to do.
 
 **Promoted in importance 2026-08-30:** the Langflow study (§4.2) found that the connector
 platforms which solve the OAuth problem — Arcade, Composio — expose their tools **over MCP**.
@@ -165,13 +178,17 @@ and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), br
   strings, `notify`/`brief`/`monitor`/`agent_alert` nothing at all, and only the
   declared-action kind has an OPEN outcome shape. So a source is a **literal list** or a
   binding onto that open kind, and fanning over a closed-set producer is refused at SAVE
-  rather than found at 09:00 as "cannot iterate a str".
-  **✅ CLOSED 2026-09-01 by DS-12**: that sentence was an INVENTORY, not a policy, and
-  `trusted_query` publishes `rows`. The fix declares list-ness per KEY beside the
-  published set (`dataflow.LIST_PUBLISHED`) rather than reopening the set — which would
-  have bought one list at the price of every unknown-key refusal on that kind — so a fan
-  over `q.rows` is accepted and a fan over `q.count` is still refused, now naming the key
-  that would have worked. The item is one more entry in the
+  rather than found at 09:00 as "cannot iterate a str". ⚠️ **Amended 2026-09-01 by
+  DS-11:** the measurement was true when taken and is not any more — an
+  `integration_call` step publishes `items`, a real list, in a CLOSED set. The rule is now
+  "a source is a literal list, a binding onto an open kind, or a binding onto a key the
+  producer DECLARES to be a list", which is strictly better: fanning over that step's
+  `count` is still refused, where an open set would have let it through.
+  **DS-12 closed the same limit from the other side**, for a key whose list-ness is a
+  property of the KIND rather than of an operation: a `trusted_query` publishes `rows`.
+  Its table is read BY `list_published_keys()` rather than sitting beside it, because two
+  places that both say which keys are lists is two places that will disagree. The item is
+  one more entry in the
   same accumulated context (`item.value` / `item.<field>`), so `resolve` needed no change
   and the canvas draws the source as an ordinary edge. The guard runs **per item** — a
   fan-out whose guard were checked once would be all-or-nothing, and "post the regions
@@ -208,7 +225,7 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   conditions are reported rather than enforced, because "disabled" and "not due" are the two
   states a design lives in before it goes live. Guards are reported, never decided.
 
-### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; CONSUMER SHIPPED)
+### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; CONSUMED by DS-11)
 
 > **State, measured 2026-08-30 (after `dadc6f63`).** Deliverables 1, 2 and 4 are BUILT:
 > `aughor/integrations/models.py` (the `Connection` object, Fernet under `AUGHOR_SECRET_KEY`,
@@ -219,6 +236,14 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 > `aughor/routers/integrations.py` imports the module, and `broker.fresh_access_token()` has
 > zero callers.** No effect kind, tool or connector runs under a user's grant. §7's recurring
 > failure, verbatim. The remaining work is a CONSUMER, not more vault.
+>
+> **Closed 2026-09-01 by DS-11's first half** (§3.7 Phase 3). The premise above was
+> re-measured before building and was still exactly true. An `integration_call` step now
+> spends a grant through `govern.outbound`; `fresh_access_token` has one production caller,
+> `integrations/call.py`, and that is deliberately the only one. Deliverable 3 — a live
+> end-to-end GOOGLE grant — is still not done and needs a Google account's consent, which
+> no test can stand in for; the network path either side of it is proven (a real call to
+> `gmail.googleapis.com`, refused by Google for the token it was given).
 
 > **The consumer shipped 2026-09-01.** The premise was re-measured first and still held to the
 > line: `fresh_access_token()` had exactly zero production callers, and `routers/integrations.py`
@@ -297,8 +322,9 @@ Slack, Microsoft) and the ask is covered; forty is a catalogue, not a milestone.
    🔑 **Decided 2026-08-30, from a live install failure: a card must offer the door THIS
    deployment can open.** Slack's OAuth needs an HTTPS callback; a laptop has none; so a
    freshly-cloned Aughor was being pointed at the one door it cannot open — to reach a
-   token **nothing consumes yet** (`broker.fresh_access_token()` still has zero callers,
-   §3.4's own note). Meanwhile RC-5's Slack app path — manifest + three tokens + Socket
+   token **nothing consumed yet** (`broker.fresh_access_token()` had zero callers then;
+   DS-11 gave it one on 2026-09-01, which does not change this card's argument — the door
+   a deployment cannot open is still the wrong door to offer). Meanwhile RC-5's Slack app path — manifest + three tokens + Socket
    Mode, an *outbound* socket, no callback, no tunnel — works on a laptop today and is
    what `slack_post` actually uses. The catalog now computes `oauth_ready` from the same
    callback `connect` would send, and routes to `Provider.alt_door` when it is false.
@@ -371,7 +397,7 @@ with no second process running and no environment variable set.
 
 ---
 
-### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.4)
+### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.5)
 
 > **Origin.** The user's 2026-08-31 directive — *"any & every agent that we spawn should be
 > created via langflow style visual editor… fork it, clone it or whatever… go all in… think
@@ -426,7 +452,10 @@ finishes a direction already chosen.
 >   vocabulary exists yet and only six `--chart-N` tokens do (`lint:palette` CVD-validates
 >   additions); colour stays direction+kind keyed. No structured `door` field is served —
 >   the reason sentence names the door until DS-11 gives it destinations (don't serve a
->   field nothing reads). A **failed availability probe leaves a row READY** — only a
+>   field nothing reads). ⚠️ **Still true after DS-11's first half (2026-09-01):** it added
+>   a destination (Integrations, named in the new row's sentence and in every dimmed
+>   integration component's) and still did NOT serve a structured field, because nothing
+>   navigates by one yet. The clause is now waiting on a READER, not on a destination. A **failed availability probe leaves a row READY** — only a
 >   measured zero dims; a dimmed row that would have worked is a lie the reader can't check.
 > - **DS-2** — `until_alias` truncates the effect list before the loop; an unknown alias
 >   walks the whole chain; steps past the cut are drawn, undecorated.
@@ -701,7 +730,12 @@ capability of this deployment, searchably, and nothing that isn't real.
 > on both connections. **Left open, chip-filed:** the non-placeable families are served but
 > not yet palette ROWS — that is DS-11's own sentence ("an allowlisted MCP server's tools
 > land on the palette as governed nodes"), and drawing them as steps before they can be
-> placed would teach a reader that a connector is a step.
+> placed would teach a reader that a connector is a step. ⚠️ **Half-closed 2026-09-01:**
+> DS-11's first half added a SEVENTH family, `integration`, whose rows are placeable —
+> each is an operation an `integration_call` step runs — so the registry's first
+> person-shaped family arrived already placeable rather than as a row a reader cannot use.
+> `mcp_tool`, `connector` and `platform_tool` are still served and still not placeable,
+> and the MCP half of DS-11 is what changes that for the first of them.
 
 **DS-11 · The VA-11 consumer and VA-9d, surfaced as components.** A vault `Connection`
 becomes a node ("as Google · sales@…") whose effects run under the user's grant through
@@ -712,6 +746,134 @@ with the user first). This is how the 400-component envy resolves: Composio/Arca
 catalog — the same one Langflow outsources to — arrives as governed rows under OUR
 approval gate and OUR vault. **Receipt:** a chain reads Gmail under the user's own grant
 and posts to Slack, every hop attributed, capped and audited.
+
+> **First half SHIPPED 2026-09-01 — the VA-11 consumer. The VA-9d half is NOT started**
+> (§3.1 requires the allowlist and outbound-off-by-default posture be agreed with the user
+> before a line of it exists; that conversation has not happened).
+>
+> **The premise, measured before building and exactly as §3.4 stated it:**
+> `broker.fresh_access_token()` had **zero** callers outside its own tests, and nothing
+> outside `routers/integrations.py` imported `aughor.integrations` at all. The vault
+> minted, refreshed, revoked and audited tokens that no capability could spend. Two new
+> modules end that: `integrations/operations.py` — what a grant may DO, as DATA in
+> `providers.py`'s shape — and `integrations/call.py`, the ONE door, so refresh policy,
+> the scope check, the approval gate, the outbound cap and the audit line cannot be
+> remembered by one caller and forgotten by the next.
+>
+> **The closed URL set is what keeps "no node is code" true here.** DS-13 is the wave that
+> lets a user declare an endpoint from a form; until then every URL this platform will
+> call on someone's behalf is in the repository. A param can never move the host or the
+> path — declared names land in the query or body, and the one path placeholder is
+> percent-encoded with an EMPTY safe set, so a message id of `../../admin` addresses a
+> message called that and reaches nothing else. An undeclared param is REFUSED, never
+> dropped: a silently discarded `cc` is a message the author believes was copied to
+> someone. Both refusals moved to SAVE (K1's rule) — `validate_chain` now refuses an
+> unknown operation naming the closed set, and an input the operation does not declare.
+>
+> **A scope is checked against what was GRANTED, not what was asked for** — and silence is
+> not a measured absence: a provider that returns no scope list at all leaves every row
+> lit, which is the palette's own rule (only a measured zero dims) one plane over.
+>
+> **The first closed published set in this plane, and the first LIST.** Every effect kind
+> before this published the same keys on every instance, so a table keyed by kind WAS the
+> answer; an integration step's keys are its OPERATION's, known at save time. So
+> `published_keys(effect)` became a function, and B1's unknown-key refusal finally reaches
+> a remote call where the open-set kinds must accept anything. It also amends W2's
+> premise, which was true when measured: *nothing in this plane published a list*, so its
+> rule could be written as "open set ⇒ fannable". A remote read is the first honest list —
+> `for_each` over `inbox.items` works and `for_each` over `inbox.count` is still refused
+> at save, which an open set could not have told apart. What each item carries is DECLARED
+> too: Graph's `/me/messages` returns whole messages, bodies included, and a run history
+> is stored and read by people.
+>
+> **A write the gate stops is a QUESTION, not a fact** — the one verdict in the call seam
+> a person can answer — so it comes back as its own `needs_approval` rather than as one of
+> the refusals beside it, and the automation plane parks the run on a human. **Shipped in
+> the same session as DS-11's completion** (below); the first half had left it as a
+> terminal refusal because the inbox knew one proposal kind.
+>
+> **Live receipts, driven in the browser against a real API.** The chain was authored on
+> the Design canvas (two SERVED pickers — grants from `/integrations/connections`,
+> operations and their ports from `/integrations/operations?connection_id=`, because
+> whether a grant carries an operation's scope is a fact about the PAIR), saved, and run:
+> both hops `executed`, the read publishing its declared keys only, the write bound to
+> `{"$from": "step1.count"}` and arriving as `3`. It also fired UNATTENDED on the
+> scheduler heartbeat. `for_each` over `inbox.items` fanned one read into three per-item
+> writes. With `AUGHOR_ACTION_APPROVAL=1` the read proceeded and the write stopped with
+> the gate's own sentence; allowlisting `integration.slack.slack.chat.postMessage` for
+> THAT grant let it through and left another grant refused. And the network path is real,
+> not stubbed: a step pointed at the unmodified `gmail.messages.get` reached
+> `gmail.googleapis.com` and came back with Google's own 401 verbatim in the run history.
+> The audit ledger carries one row per call (`read_only` for a read, `high` for a write,
+> scoped to the grant, naming its owner); `/activity` carries the `EXTERNAL_CALL` events
+> that make them countable.
+>
+> **Two defects the browser found and the green suite had agreed with:** the canvas drew
+> two integration steps — one reading Gmail, one posting to Slack — as two identical empty
+> boxes, because `effect_detail`'s allowlist had no key for the kind AND the design node's
+> three per-kind tables (`PRIMARY_FIELDS` / `KIND_ICON` / `KIND_HUE`) had no entry, so it
+> also fell back to `subchain`'s hue. The operation is safe on a picture by CONSTRUCTION
+> (a roster id, never authored text); the grant is not, and stays in the rail. And a
+> module-level cache on the grants hook meant a page that had once seen no connected
+> accounts kept saying so after one was connected in another tab.
+>
+> **Left open, chip-filed:** ownership of a grant is RECORDED on every audit line but not
+> ENFORCED — an automation fires from cron with no identified user, so a rule demanding
+> `conn.user_id == current_user_id()` would refuse every scheduled step on a multi-user
+> install. Discovery is scoped instead (the registry and the routes offer only the
+> caller's own grants). That is VA-10's to close. The chart series is six CVD-validated
+> tokens behind `lint:palette`, so this kind SHARES `--chart-4` with the declared action
+> rather than inventing a seventh: they are the two kinds the approval gate can stop.
+
+> **✅ DS-11 COMPLETE 2026-09-01 — the inbox learned a second proposal kind, so an
+> integration write PARKS on a human instead of refusing.** The gap the first half named
+> and left open, closed in the same session.
+>
+> **One inbox, one branch.** `staged_proposals` gained `kind` and `grant_id` (migration 3,
+> numbered off the LIVE store's `user_version=2` — the repo's own rule, and the one no
+> hermetic test can catch). Both columns default to what every existing row already means,
+> so there is no backfill and none is needed. `connection_id` keeps meaning the WAREHOUSE
+> connection in both kinds, deliberately: it is what the queue filters, groups and purges
+> by, and overloading it to carry a grant would have hidden every integration proposal from
+> the queue that exists to show them. The branch in `accept_proposal` sits AFTER the
+> resolve-once UPDATE, because expiry, the acceptance window, first-responder-wins and the
+> audit trail are properties of the QUEUE; only what the accept executes differs, which is
+> the smallest seam the two kinds can meet at. A second inbox was the alternative, and this
+> repo has found the same bug in that shape three times.
+>
+> **`approved=True` bypasses the GATE and nothing else.** The grant's verdicts, the scope
+> check and the params are all re-asked on accept — the same split the governed-write
+> executor makes, for its reason: a proposal can sit for days, and an approval is
+> permission, never a promise that the world stood still. A revoked account is not spent
+> because a human said yes.
+>
+> **No standing grant is minted, and the silence is SAID.** A standing grant is
+> target-bound to a declared action's coerced params; the standing permission for an
+> integration write is an allowlist entry on `(operation, account)`, with a door of its
+> own. The inbox card drops the checkbox for this kind and names that door instead —
+> offering a control that does nothing is worse than not offering one.
+>
+> **The defect the live run found, and the green suite had agreed with.** `accept_proposal`
+> resolves the row to `accepted`, THEN performs the write, THEN records its outcome — three
+> statements with a network call in the middle. The router's own resume runs after all
+> three; the HEARTBEAT's sweep visits every parked run once a minute and does not. Landing
+> inside that window it saw `accepted`, mapped it to `executed` (which it is) and rewrote
+> the step with an EMPTY outcome — a governed write that happened, reported as one that
+> produced nothing, with every later binding onto it resolving to nothing. **This is a
+> DS-8-era race, not a DS-11 one**; it took a live run with a heartbeat actually ticking to
+> surface, because every test resolved and resumed in one thread with nothing in between.
+> `resume_run` now holds while an accepted proposal has nothing recorded yet — BOUNDED at
+> 120s, because the same shape is what a process that died mid-write leaves behind and
+> holding forever would strand a run in `paused`, the one state DS-8 must never produce.
+>
+> **Live receipt:** with the gate armed, the chain parked with `finished_at: None` and step
+> 2 never dispatched; ONE row in NEEDS YOU (not the double-listing DS-8 had to fix), and
+> one card in the Inbox reading "slack.chat.postMessage · as slack · Aughor HQ" over the
+> RESOLVED params (`text: 3`, step 1's count — RC-3 freezes values, never references).
+> Accepting IN THE UI resumed the SAME run id to `fired` with both steps executed and the
+> resumed step publishing the write's real `{ts, channel}`. The audit ledger carries the
+> three rows the story needs: `blocked` by the automation, `approved` by the operator,
+> `executed` by the operator.
 
 **DS-12 · Ontology components — the moat.** Metrics, entities, cohorts and trusted queries
 as first-class typed nodes: "Revenue (metric)" publishes a typed series; "Churned accounts
@@ -1083,14 +1245,19 @@ NOW
         one step body driven by both orders; 2.7s parallel vs 5.1s ordered on the same
         chain, spans overlapping under one trace — receipts in §3.7 Phase 2
 
+  ✅ DS-11 COMPLETE 2026-09-01 (both halves of its VA-11 side) — the vault is consumed: an
+        `integration_call` step spends a user's grant through govern.outbound (cap, span,
+        EXTERNAL_CALL, audit), reads and writes are declared as DATA against a closed URL
+        set, a write passes the approval gate, and the palette/registry tell the truth
+        about which grant can run which operation. A gated write PARKS on a human through
+        the proposal inbox's second kind, and accepting it resumes the same run —
+        receipts in §3.7 Phase 3
+
 NEXT (order within a band is the user's knob)
-  ✅ VA-11 consumer  SHIPPED 2026-09-01 — `connection_call`: a declared, read-only operation
-        run under a user's grant through govern.outbound (cap before the work, span,
-        EXTERNAL_CALL event, audit line naming the grant's owner). The vault is CONSUMED;
-        its live Google receipt still waits on an OAuth client only the user can create — §3.4
-  S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
-                                   surfaced as palette rows by DS-11)
+                                   NOT started: §3.1 requires that posture be agreed with
+                                   the user first. DS-11's second half)
+  S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
   DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
   tool_grants column              (turn VA-9c's phantom into a stored grant — §1 honest limits;
                                    migration + store/create/patch surfaces; grants stay
@@ -1098,11 +1265,11 @@ NEXT (order within a band is the user's knob)
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
-LATER   DS-11 completion · ✅ DS-12 ontology components SHIPPED 2026-09-01
-        (metric_value + trusted_query; §3.2's list limit closed; the governed metric
-        value repaired — it had never computed) · ✅ DS-13 declarative customs
-        SHIPPED 2026-09-01 (the `http` side effect: a described call, filled and never
-        evaluated, credential encrypted at rest; the declared webhook joined
+LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
+        (metric_value + trusted_query; §3.2's list limit closed from the kind side; the
+        governed metric value repaired — it had never computed) · ✅ DS-13 declarative
+        customs SHIPPED 2026-09-01 (the `http` side effect: a described call, filled and
+        never evaluated, credential encrypted at rest; the declared webhook joined
         govern.outbound) · ✅ DS-14 chains-as-MCP-tools SHIPPED 2026-09-01
         (opt-in `exposed_as_tool` + migration 5; the 18 static tools are the version's,
         the automations are the deployment's)   (§3.7 Phase 3 COMPLETE)
@@ -1134,8 +1301,14 @@ the browser** · **measure the premise before building.**
    properly expressive, VA-11 makes it reach further — and W2 needs nothing from outside
    this repo, while VA-11's live receipt waits on a Google OAuth client only the user can
    create.
-3. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
-4. ✅ **DECIDED 2026-08-31 — the visual-editor question: the grammar, not the codebase.**
+3. ✅ **DECIDED 2026-09-01 — the MCP consumer's posture: read-only tools first.**
+   Allowlisted servers, discovery and read-only calls; a tool the server declares as
+   mutating is listed and refused with a sentence rather than hidden or trusted. The
+   question it defers on purpose — whose declaration of "read-only" is believed — is the
+   write slice's to answer, and is the reason this cut is the narrow one. Full note: §3.1.
+
+4. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
+5. ✅ **DECIDED 2026-08-31 — the visual-editor question: the grammar, not the codebase.**
    The user re-opened §4.2 with a mandate for total openness ("fork it… go all in… think
    years ahead"); the four-pass re-study confirmed the refusal (§4.2 addendum) and the
    vision landed as **Arc DS (§3.7)** — Langflow-class editing on our engine, then past

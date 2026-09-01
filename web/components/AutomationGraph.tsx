@@ -107,7 +107,11 @@ const LIVE_STATUS: Record<string, string> = {
 const KIND_ICON: Record<string, IconName> = {
   investigate: "search", slack_post: "send", notify: "bell",
   brief: "brief", kinetic_action: "bolt", monitor: "activity", agent_alert: "alert",
-  subchain: "layers", connection_call: "link",
+  subchain: "layers",
+  // DS-11 — the same glyph the palette row carries. A kind absent from this table falls
+  // back to the generic "process" gear, which is how a new kind ends up looking like
+  // scaffolding on the one surface built to make a chain read as roles.
+  integration_call: "key",
   metric_value: "metric", trusted_query: "table",
 };
 
@@ -429,11 +433,13 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   brief:          [{ field: "subscription_id", placeholder: "briefing subscription id" }],
   kinetic_action: [{ field: "action_id", placeholder: "declared action id" }],
   subchain:       [{ field: "automation_id", placeholder: "automation id" }],
-  // VA-11 — the operation first: it is what the step DOES, and the grant is which
-  // account it does it as. A node showing only the `ic_…` would name the credential and
-  // not the work.
-  connection_call: [{ field: "operation", placeholder: "operation id" },
-                    { field: "grant_id", placeholder: "connected account id" }],
+  // DS-11 — the OPERATION, and deliberately not the grant. Found by drawing a real
+  // chain: with no entry here a step that reads Gmail and one that posts to Slack
+  // rendered as two identical empty boxes, both headed "Use an integration". The
+  // account is chosen in the rail, from a picker over the reader's OWN grants — putting
+  // its id in a free-text box on the node would invite pasting one that is not theirs,
+  // and putting the email on the canvas is the spill `effect_detail` refuses.
+  integration_call: [{ field: "operation", placeholder: "pick one in the rail" }],
   metric_value:   [{ field: "metric", placeholder: "metric name" }],
   trusted_query:  [{ field: "query_id", placeholder: "trusted query id" }],
 };
@@ -444,24 +450,17 @@ const KIND_HUE: Record<string, string> = {
   investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
   brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
   subchain: "var(--chart-6)",
-  // VA-11 is the seventh kind, and the series had six. The accent it takes is NOT a
-  // seventh series colour — charts still fold to "Other" at six — but a kind accent
-  // added for exactly this: on a canvas every kind is on screen at once, so the chart's
-  // fold-to-grey would have rendered one step type as though it were disabled. It was
-  // chosen by the palette search rather than by eye and `lint:palette` holds it to a
-  // stricter separation bar than the six meet among themselves (>= 6 CVD / >= 15 normal
-  // against ALL six, not just an adjacent neighbour).
-  connection_call: "var(--chart-7)",
-  // DS-12's two kinds are the EIGHTH and NINTH, and the hue axis is out. The search that
-  // found `--chart-7` was re-run against all seven: in the one gap left (yellow/olive)
-  // the best light candidate clears the gate's floors by 1.4 and 0.1 units, and the best
-  // dark one is a different hue family from it — which breaks the rule that a slot keeps
-  // its family when the theme flips. A colour that passes its own bar by a rounding error
-  // is eyeballing with extra steps, so both take the documented fallback instead.
+  // DS-11 asked for a seventh hue and declined to invent one: "a palette decision with a
+  // validator to satisfy, not a side effect of adding an effect kind." That work is now
+  // done, so this kind takes the seventh rather than sharing the declared action's. The
+  // accent was chosen by the palette SEARCH in the one hue gap left, and `lint:palette`
+  // holds it to a stricter bar than the six meet among themselves: >= 6 CVD and >= 15
+  // normal-vision separation from ALL six, not merely from an adjacent neighbour.
   //
-  // The real fix is not a ninth hue: past seven, this map should key on the CLASS of node
-  // (ontology read · outbound call · governed write) rather than the kind, because that is
-  // what a reader is actually distinguishing. That is a design-system change, not a wave's.
+  // It is NOT a seventh chart series — charts still fold to "Other" at six and
+  // CHART_SERIES is untouched. On a canvas every kind is on screen at once, where the
+  // chart's fold-to-grey would render one step type as though it were disabled.
+  integration_call: "var(--chart-7)",
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {

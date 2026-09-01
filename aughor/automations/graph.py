@@ -314,12 +314,17 @@ def effect_detail(effect: Any) -> str:
     the vetted way to name it. A second labeller would be a second chance to spill.
     """
     cfg = getattr(effect, "config", {}) or {}
-    # VA-11 — `operation` is a declared id from `integrations/operations.py`, so it is a
-    # constant of this build rather than anything a person typed: safe to render, and the
-    # only field on a `connection_call` step that says what it would do. `grant_id` is
-    # deliberately NOT here — an opaque `ic_…` names nothing to a reader.
-    for key in ("action_id", "question", "subscription_id", "monitor_id", "rule_id",
-                "trigger_id", "channel", "operation", "metric", "query_id"):
+    # DS-11 — the OPERATION, not the grant. Found by drawing the canvas: two integration
+    # steps, one reading Gmail and one posting to Slack, rendered as two nodes both
+    # labelled "Use an integration" with nothing to tell them apart. The operation is safe
+    # to show by CONSTRUCTION — it is an id from the closed roster, never authored text —
+    # while the grant would put an account's email address on a picture that is read on
+    # screen and exported, which is exactly what this allowlist exists to stop.
+    #
+    # DS-12 — `metric` and `query_id` join it on the same ground: both are ids of governed
+    # objects this deployment declares, never anything a person typed into a config.
+    for key in ("action_id", "operation", "question", "subscription_id", "monitor_id",
+                "rule_id", "trigger_id", "channel", "metric", "query_id"):
         val = cfg.get(key)
         if isinstance(val, str) and val:
             return val if len(val) <= 80 else val[:80] + "…"

@@ -10,7 +10,51 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 
 ## [Unreleased]
 
+### Added
+- **An automation can act as a connected account (DS-11, first half).** A new
+  `integration_call` step spends a vault `Connection` — the OAuth grants VA-11 has been
+  minting, refreshing and revoking with nothing able to use them. What a grant may do is
+  declared as data in `aughor/integrations/operations.py` (six operations across Google,
+  Slack and Microsoft, each covered by that provider's default scopes), and every call
+  goes through one door, `aughor/integrations/call.py`: the grant's own verdicts first,
+  then a scope check against what the provider said was GRANTED, then the params built by
+  the roster, then the graduated approval gate for a write, then the call itself inside
+  `govern.outbound` — capped before the work, spanned, and recorded as an `EXTERNAL_CALL`
+  so it can be metered. Nothing an author types can move the host or the path: the URL set
+  is closed, path values are percent-encoded, and an undeclared input is refused rather
+  than forwarded.
+  The step's published keys are its OPERATION's rather than its kind's, which makes it the
+  first kind whose remote outputs an unknown binding is refused against at save — and the
+  first that publishes a real LIST, so `for_each` can fan over what a remote read returned
+  (fanning over its `count` is still refused). `GET /integrations/operations` serves the
+  roster with its ports, its published keys and which of them are lists; the component
+  registry gains an `integration` family with one row per (grant × operation), each saying
+  whether that grant can run it and why not; the palette row dims to "No connected
+  accounts" until one exists.
+- **An integration write can stop for a human (DS-11, complete).** The proposal inbox
+  learned a second kind, so a write the graduated gate refuses now PARKS the run on a
+  person instead of failing it: `staged_proposals` gains `kind` and `grant_id` (both
+  defaulting to what every existing row already means, so there is no backfill), and
+  `accept_proposal` branches after the resolve-once update — expiry, the acceptance
+  window and the audit trail stay properties of the queue, and only what the accept
+  executes differs. Accepting bypasses the GATE and nothing else: the grant's verdicts,
+  its scopes and the params are re-asked, because a proposal can sit for days and an
+  approval is permission rather than a promise that the world stood still. The inbox card
+  says whose account the write goes out as, and names the Approvals door instead of
+  offering a standing-grant checkbox that could not apply.
+
 ### Fixed
+- **A resumed automation no longer loses an approved write's output.** `accept_proposal`
+  resolves a proposal to `accepted`, performs the write, then records its outcome — three
+  statements with a network call in the middle. A router that resolves a proposal resumes
+  the run after all three, but the heartbeat's sweep visits every parked run once a minute
+  and could land inside that window: it saw `accepted`, mapped it to `executed` (which it
+  is) and rewrote the step with an empty outcome, so every later step binding to the
+  approved write's output resolved nothing. `resume_run` now waits while an accepted
+  proposal has nothing recorded yet, bounded at two minutes — the same shape is what a
+  process that died mid-write leaves behind, and holding forever would strand the run in
+  `paused`. Found by a live run with a heartbeat actually ticking; every test until then
+  resolved and resumed in one thread with nothing in between.
 - **Quick answers no longer fail on their second step with Gemini.** Google signs a
   thinking model's reasoning and returns the signature attached to the tool call it
   made; the same signature has to come back on every replay of that call, or the API

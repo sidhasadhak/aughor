@@ -289,3 +289,100 @@ def test_the_palette_keeps_its_bindable_ports_through_the_registry():
     palette = client.get("/automations/palette").json()["entries"]
     for e in palette:
         assert set(e["bindable"]) == set(BINDABLE_FIELDS.get(e["kind"], ()))
+
+
+# ── DS-11 · the grant family ──────────────────────────────────────────────────
+#
+# The first PERSON-shaped family: its membership is whichever accounts THIS user has
+# connected, so two people on one install see different rows. Everything else in the
+# roster is the same on every install of this version.
+
+@pytest.fixture
+def one_grant():
+    from aughor.integrations import store as istore
+    from aughor.integrations.models import Connection
+
+    for d in list(istore._CONNS.all()):
+        istore._CONNS.delete(d["id"])
+    istore.save_connection(Connection(
+        id="ic_reg", provider="google", account="sales@example.com",
+        scopes="https://www.googleapis.com/auth/gmail.readonly", status="active"))
+    yield
+    for d in list(istore._CONNS.all()):
+        istore._CONNS.delete(d["id"])
+
+
+def test_a_grant_becomes_rows_that_say_whose_consent_they_spend(one_grant):
+    rows = {c.id: c for c in components(family="integration")}
+    assert set(rows) == {"integration:ic_reg:gmail.messages.list",
+                         "integration:ic_reg:gmail.messages.get"}, \
+        "one row per (grant x operation) — a provider is not placeable, an operation is"
+    listing = rows["integration:ic_reg:gmail.messages.list"]
+    assert "as Google · sales@example.com" in listing.description
+    assert listing.availability == "ready" and listing.governed_by == "aughor.govern.outbound"
+    assert listing.outputs == ["items", "count", "next_page_token"], \
+        "the first family that can state a CLOSED set for a remote call"
+
+
+def test_a_write_row_names_the_gate_that_can_actually_stop_it():
+    from aughor.integrations import store as istore
+    from aughor.integrations.models import Connection
+
+    istore.save_connection(Connection(id="ic_w", provider="slack", account="Acme",
+                                      scopes="chat:write channels:read", status="active"))
+    try:
+        rows = {c.id: c for c in components(family="integration")}
+        assert rows["integration:ic_w:slack.chat.postMessage"].governed_by == \
+            "aughor.govern.actions"
+        assert rows["integration:ic_w:slack.conversations.list"].governed_by == \
+            "aughor.govern.outbound"
+    finally:
+        istore._CONNS.delete("ic_w")
+
+
+def test_a_scope_the_grant_lacks_dims_the_row_not_the_account():
+    """The same account may be able to read mail and not to post. One sentence per row is
+    what tells a reader which of the two they are looking at."""
+    from aughor.integrations import store as istore
+    from aughor.integrations.models import Connection
+
+    istore.save_connection(Connection(id="ic_thin", provider="slack", account="Acme",
+                                      scopes="channels:read", status="active"))
+    try:
+        rows = {c.id: c for c in components(family="integration")}
+        assert rows["integration:ic_thin:slack.conversations.list"].availability == "ready"
+        posting = rows["integration:ic_thin:slack.chat.postMessage"]
+        assert posting.availability == "needs_setup"
+        assert "chat:write" in posting.reason and "reconnect" in posting.reason
+    finally:
+        istore._CONNS.delete("ic_thin")
+
+
+def test_a_grant_the_provider_will_not_refresh_dims_every_one_of_its_rows():
+    from aughor.integrations import store as istore
+    from aughor.integrations.models import Connection
+
+    istore.save_connection(Connection(id="ic_stale", provider="google",
+                                      scopes="https://www.googleapis.com/auth/gmail.readonly",
+                                      status="needs_reconnect"))
+    istore.save_connection(Connection(id="ic_gone", provider="google",
+                                      status="revoked"))
+    try:
+        rows = [c for c in components(family="integration")]
+        stale = [c for c in rows if c.id.startswith("integration:ic_stale:")]
+        gone = [c for c in rows if c.id.startswith("integration:ic_gone:")]
+        assert stale and all(c.availability == "needs_setup" for c in stale)
+        assert all("reconnect" in c.reason for c in stale)
+        # Revoked is not a form away from working — nothing the reader fills in revives it.
+        assert gone and all(c.availability == "unavailable" for c in gone)
+    finally:
+        istore._CONNS.delete("ic_stale")
+        istore._CONNS.delete("ic_gone")
+
+
+def test_a_grant_is_not_scoped_to_a_warehouse_connection(one_grant):
+    """`conn_id` names a DATABASE. A grant belongs to a person, so it is present on every
+    connection and absent from none — the opposite of the declared-action family."""
+    a = {c.id for c in components(conn_id="fixture") if c.family == "integration"}
+    b = {c.id for c in components(conn_id="conn-with-nothing") if c.family == "integration"}
+    assert a == b and a, "a grant does not belong to one warehouse"

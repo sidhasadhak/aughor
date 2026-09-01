@@ -105,8 +105,15 @@ def vocabulary():
         # W2 — the fan-out's own vocabulary, fetched for the third time for the same
         # reason: the cap is enforced by the engine and by the model, and an authoring
         # form carrying its own copy would drift into offering a 200-item list the save
-        # then refuses. A step may SOURCE a fan-out only if its `publishes` above is
-        # `null` — the open set — because every closed set in this plane is strings.
+        # then refuses.
+        #
+        # ⚠️ DS-11 amended the rule this used to state. It read: "a step may SOURCE a
+        # fan-out only if its `publishes` is null — the open set — because every closed
+        # set in this plane is strings." The second half stopped being true the moment a
+        # remote read landed: `integration_call` publishes `items`, a real list, and its
+        # keys are its OPERATION's rather than its kind's — so it is `null` here (the
+        # kind cannot answer) and closed-with-a-list at `/integrations/operations`, which
+        # is where a fan-source picker for that kind must look.
         "for_each": {
             "max_items": MAX_FAN_OUT,
             "item_alias": ITEM_ALIAS,

@@ -11,6 +11,7 @@ family               read from
 ``platform_tool``    ``agent.platform_tools.platform_tools()``
 ``mcp_tool``         ``mcp.server.mcp``'s own tool manager
 ``declared_action``  the connection's ontology overlay (its declared writes)
+``integration``      the VA-11 vault's grants × ``integrations.operations``
 ===================  ==========================================================
 
 **Adapted, never copied.** Every collector calls the module that owns its family and
@@ -44,6 +45,11 @@ logger = logging.getLogger(__name__)
 
 FAMILIES: tuple[str, ...] = (
     "trigger", "effect", "connector", "platform_tool", "mcp_tool", "declared_action",
+    # DS-11 — the second DEPLOYMENT-SHAPED family, and the first PERSON-shaped one: its
+    # membership is whichever accounts this user has connected, so two people on one
+    # install see different rows. Last in the order because it reads last on the panel,
+    # under the capabilities every install shares.
+    "integration",
     # DS-12 — the ontology plane. Both are DEPLOYMENT-SHAPED like declared actions and
     # unlike the shipped families: their membership is what this install's semantic layer
     # holds, not what this version ships. They are the class of component a canvas
@@ -67,6 +73,11 @@ GOVERNORS: tuple[str, ...] = (
     "aughor.db.registry",            # connections, their secrets and their drivers
     "aughor.agent.platform_tools",   # the read-only platform roster the agent may call
     "aughor.mcp.server",             # the MCP surface, and everything it exposes outward
+    # DS-11 — every call that LEAVES the platform: the cap before the work, the span
+    # around it and the EXTERNAL_CALL event that makes it countable. It governs a READ
+    # under a user's grant; a WRITE under the same grant names the approval gate above,
+    # because that is the module that can actually stop one.
+    "aughor.govern.outbound",
     "aughor.semantic.metrics",       # the metric registry: its definition and its lifecycle
     "aughor.semantic.trusted_queries",  # the vetted-SQL store a trusted query is read from
 )
@@ -108,7 +119,7 @@ class Component(BaseModel):
     #: it — a layout, a favourite, a DS-14 tool name.
     id: str
     family: Literal["trigger", "effect", "connector", "platform_tool", "mcp_tool",
-                    "declared_action", "metric", "trusted_query"]
+                    "declared_action", "integration", "metric", "trusted_query"]
     kind: str
     label: str
     description: str = ""
@@ -338,6 +349,79 @@ def _declared_action_components(conn_id: Optional[str]) -> list[Component]:
     return out
 
 
+def _integration_components(conn_id: Optional[str]) -> list[Component]:
+    """DS-11 — one row per (grant × operation): "Gmail · list messages · as Google · sales@…".
+
+    The row is the pair, not the grant, for the reason `declared_action` folds a
+    connection into its id: a component is a thing that can be PLACED, and "Google" is not
+    placeable — "read Gmail as this Google account" is. It is also why the id carries
+    both halves; two grants on the same provider are two different capabilities, and a
+    surface that remembered one id for both would silently spend the wrong consent.
+
+    Ignores ``conn_id``: that argument names a WAREHOUSE connection, and a grant belongs
+    to a person, not to a database. Scoped to the caller instead — offering a reader
+    somebody else's consent would be the roster lying about who this deployment is for.
+
+    **Availability is the grant's own verdict, re-said in the palette's vocabulary**, and
+    it is measured rather than probed: `needs_reconnect` and `revoked` are states a
+    provider or a person already decided and wrote down, so reading them costs nothing
+    and cannot be wrong the way a live probe can.
+    """
+    # `missing_scopes` imported rather than re-derived: the roster and the call seam
+    # answering "this grant cannot do that" differently is the two-opinions failure this
+    # whole registry exists to end, one plane down.
+    from aughor.integrations.operations import missing_scopes, operations_for
+    from aughor.integrations.store import list_connections
+    from aughor.org.context import current_user_id
+
+    out: list[Component] = []
+    for conn in list_connections(current_user_id()):
+        who = f"as {conn.provider.title()}" + (f" · {conn.account}" if conn.account else "")
+        if conn.status == "revoked":
+            availability, reason = "unavailable", "this grant was revoked — connect again"
+        elif conn.status == "needs_reconnect":
+            availability, reason = ("needs_setup",
+                                    f"{conn.provider.title()} refused this grant's "
+                                    f"refresh — reconnect it under Integrations")
+        else:
+            availability, reason = "ready", ""
+        for n, op in enumerate(operations_for(conn.provider)):
+            lacking = missing_scopes(op, conn.scopes)
+            # A scope miss dims the ROW, not the grant: the same account may be able to
+            # read mail and not to post, and one sentence per row is what tells a reader
+            # which of the two they are looking at.
+            row_avail, row_reason = availability, reason
+            if lacking and availability == "ready":
+                row_avail = "needs_setup"
+                row_reason = (f"this grant does not carry {', '.join(lacking)} — "
+                              f"reconnect {conn.provider.title()} and consent to it")
+            out.append(Component(
+                id=f"integration:{conn.id}:{op.id}", family="integration", kind=op.id,
+                label=op.label, description=f"{who} — {op.description}".strip(" —"),
+                icon="key", priority=10 * (n + 1),
+                inputs=[ComponentPort(name=prm.name, label=prm.label, type=prm.type,
+                                      required=prm.required, placeholder=prm.placeholder,
+                                      bindable=prm.bindable)
+                        for prm in op.params],
+                # The CLOSED set, per operation — the first family that can state one for
+                # a remote call. `kinetic_action` and the two tool families report the
+                # open set because their payloads genuinely cannot be enumerated; an
+                # operation's can, so refusing an unknown binding at save is possible here
+                # and this is where a surface reads that it is.
+                outputs=list(op.publishes),
+                availability=row_avail, reason=row_reason,
+                # Not yet. An agent cannot propose an integration call — there is no
+                # proposal kind the inbox can honour for one (see `integrations.call`'s
+                # own note) — and claiming otherwise would promise DS-14 a surface that
+                # does not exist. It becomes true in the slice that teaches the inbox.
+                exposable_as_tool=False,
+                governed_by=("aughor.govern.actions" if op.writes
+                             else "aughor.govern.outbound"),
+                badges=[],
+            ))
+    return out
+
+
 def _metric_components(conn_id: Optional[str]) -> list[Component]:
     """The governed metrics this connection would actually compute.
 
@@ -410,6 +494,7 @@ _COLLECTORS: dict[str, Any] = {
     "platform_tool": _platform_tool_components,
     "mcp_tool": lambda conn_id: _mcp_tool_components(),
     "declared_action": _declared_action_components,
+    "integration": _integration_components,
     "metric": _metric_components,
     "trusted_query": _trusted_query_components,
 }

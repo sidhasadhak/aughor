@@ -52,7 +52,15 @@ class KineticResult:
         return {
             "executed": 200, "criterion_failed": 422, "invalid_params": 422,
             "approval_required": 428, "not_found": 404, "disabled": 404,
-            "dispatch_error": 502,
+            # Both mean "the far end refused", so both are 502 rather than the 400
+            # fallthrough — a 400 blames the caller for a counterparty's answer, and
+            # `failed` is a status the proposal inbox has always written.
+            "dispatch_error": 502, "failed": 502,
+            # 202, not 200 or 502 (DS-11's completion): an accepted integration write
+            # whose transport broke MAY have landed. 200 would assert it did and 502 that
+            # it did not; "accepted, outcome not yet known" is the one true thing to say,
+            # and it is what stops a caller from retrying a maybe-delivered write.
+            "uncertain": 202,
             # 410, not 400 (RC-3): the request was well-formed and the proposal was real —
             # its acceptance window closed. 400 would blame the caller for the clock, and a
             # client cannot tell "you sent nonsense" apart from "you were too late".

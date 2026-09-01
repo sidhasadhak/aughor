@@ -1,257 +1,365 @@
-"""VA-11 consumer — what a grant may actually be SPENT on, declared as data.
+"""DS-11 — what a grant may DO, declared as data.
 
-The vault was built and nothing reached it: `broker.fresh_access_token()` had zero
-callers outside its own tests, measured again 2026-09-01 before this module existed.
-The missing half was never more vault — it was a roster of things a held token is good
-for, and one path that spends one.
+`providers.py` says how to *get* a token. This says what a token may be *spent on*, in the
+same shape and for the same reason: an operation is forty lines of data — a method, a URL,
+the scopes it needs, its typed params and what it publishes — and a provider gains one by
+an entry here plus nothing.
 
-**Why a closed roster rather than a URL field.** An effect that took an arbitrary URL
-would be a request forgery surface wearing a credential, and it would put the choice of
-counterparty in authored config — where a `{"$from": …}` binding could reach it. Here
-the URL is a constant of this module, the params are declared and encoded, and the only
-thing authored config chooses is WHICH declared row runs. (The general HTTP-template
-component is DS-13's, behind its own form and its own review.)
+**The law this file exists to keep: a component references a governed capability; no node
+is code.** DS-13 is the wave that lets a *user* declare an HTTP component from a form.
+Until then the set of URLs this platform will call on a user's behalf is closed, reviewed
+and in the repository — so an author placing an integration step chooses from a roster,
+never types an endpoint. That is the difference between a palette and an SSRF surface.
 
-**Everything here is a READ.** A write performed under a user's grant belongs behind the
-graduated approval gate, which is the declared-action plane's job — and ROADMAP §3.4
-settles the reason in one line: two gates that can disagree is strictly worse than one.
-So this roster reads, and a chain that wants to write does it through a declared action
-or the Slack door, both of which already pass a gate.
+Three rules make the closed set actually closed:
 
-Adding a provider's operation is an entry in `OPERATIONS` plus a mapper — the same
-"adapters are DATA" correction that kept the vault itself a wave rather than a quarter
-(§3.4). The mapper is a function rather than a path expression because the shapes
-genuinely disagree: Gmail returns its headers as a LIST of ``{name, value}`` pairs, and
-a dotted-path mini-language that could reach into that would be a language, not data.
+1. **A param can never move the host or the path.** Declared params land in the query
+   string or the JSON body. The only exception is a ``{placeholder}`` in the URL, which
+   must be declared ``in_path`` and is percent-encoded with an EMPTY safe set — so a
+   message id of ``../../admin`` addresses a message literally called that, and reaches
+   nothing else. A ratchet asserts every placeholder is a declared path param.
+2. **Only declared params are sent.** An undeclared key is refused rather than forwarded:
+   forwarding it would make the caller, not this file, the author of the request.
+3. **Published keys are declared per operation** — including which of them are LISTS. That
+   is what lets `validate_chain` refuse `{"$from": "step1.snippet"}` on a step that lists
+   messages, and lets `for_each` fan over one that does. Before this, nothing in the
+   automation plane published a list at all (§3.2's measured limit); a remote read is the
+   first thing that honestly does.
+
+**Scopes are stated, not guessed.** Every operation here is covered by its provider's
+``default_scopes``, so the roster a fresh grant can run is the roster it was granted — a
+row that needs a scope the user never consented to is a row that dims with a sentence
+naming the scope, not one that fails at 09:00 with the provider's own 403.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Callable, Optional
+import re
+from typing import Any, Literal, Optional
+from urllib.parse import quote
+
+from pydantic import BaseModel, Field
+
+#: A `{placeholder}` in a URL template. Deliberately narrow — a name, nothing else — so a
+#: template can carry no expression, no nesting and no format spec.
+_PLACEHOLDER = re.compile(r"\{([a-z_][a-z0-9_]*)\}")
 
 
-@dataclass(frozen=True)
-class OperationParam:
-    """One declared input to an operation.
-
-    ``required`` is checked when the automation is SAVED (a binding counts as present),
-    so a step missing its message id is refused at authoring time rather than at 07:00 —
-    the same law every other config key in this plane follows.
-    """
+class OperationParam(BaseModel):
+    """One typed input to an operation — the port an author fills or binds."""
 
     name: str
-    label: str
+    label: str = ""
+    type: Literal["string", "number", "boolean", "object", "list"] = "string"
     required: bool = False
-    default: str = ""
-    #: What this becomes on the wire: a `{placeholder}` in the path, or a query key.
-    #: Named rather than inferred, because a param that silently lands in neither is a
-    #: field the form collects and the request never carries.
-    query_key: str = ""
+    #: Goes into the URL path rather than the query/body. Percent-encoded on the way in.
     in_path: bool = False
+    placeholder: str = ""
+    #: The value used when the author supplies none. Kept here rather than in the caller
+    #: so "what does this step do with nothing filled in" has one answer.
+    default: Any = None
+    #: May a chain BIND this input to an earlier step's output? True for every param
+    #: whose value is a datum (a message id, a channel, a body); false for the ones that
+    #: are a knob on the request itself (`limit`), because an edge onto a page size is a
+    #: picture of dataflow nobody meant to draw.
+    bindable: bool = True
 
 
-@dataclass(frozen=True)
-class Operation:
-    """One thing a grant can be spent on, and the shape of what comes back."""
+class ResultShape(BaseModel):
+    """How one provider's JSON becomes the keys a later step may read.
 
-    id: str
-    provider: str
+    Declarative — a dotted path, never a callable — for the same reason the params are:
+    the shape has to be *readable* by the registry and the validator, not only executable
+    by the dispatcher. `items_path` names the list a provider buries under its own noun
+    (`messages`, `channels`, `value`); `fields` names the scalars worth publishing.
+    """
+
+    #: Dotted path to the list this operation returns, if it returns one.
+    items_path: str = ""
+    #: The keys kept from each ITEM of that list. Not cosmetic — it is the bound on what
+    #: a remote read drags into a stored automation run: Graph's `/me/messages` returns
+    #: whole messages, bodies included, and a run history is read by people and kept.
+    #: Empty means the item is published as the provider sent it, which is only ever
+    #: declared for a list whose items are already two identifiers.
+    item_fields: tuple[str, ...] = ()
+    #: ``published key -> dotted path in the response body``.
+    fields: dict[str, str] = Field(default_factory=dict)
+
+
+class Operation(BaseModel):
+    """One thing a grant may do, at one provider."""
+
+    id: str                                   # "gmail.messages.list" — unique per provider
+    provider: str                             # "google" | "slack" | "microsoft"
     label: str
-    blurb: str
-    #: The scope the PROVIDER must have granted. Checked against the connection's own
-    #: `scopes` before the call, so a consent the user narrowed reads as a sentence
-    #: naming the missing scope instead of the provider's 403 three layers down.
-    scope: str
-    path: str
+    description: str = ""
+    method: Literal["GET", "POST"] = "GET"
+    #: The absolute URL, with at most `{placeholder}`s naming ``in_path`` params.
+    url: str
+    #: Scopes the provider must have granted. Checked against what the CONNECTION says was
+    #: granted (read back from the token response), never against what we asked for.
+    scopes: tuple[str, ...] = ()
     params: tuple[OperationParam, ...] = ()
-    #: Query params this operation always sends. Constants of the row, never authored.
-    fixed_query: tuple[tuple[str, str], ...] = ()
-    #: The keys the mapper publishes into the chain context. Advertised on the surface
-    #: so the rail can draw the ports; NOT a save-time refusal, because the effect kind's
-    #: published set is open (`PUBLISHED_KEYS`) — one kind, many shapes.
-    publishes: tuple[str, ...] = ()
-    #: Provider response → chain context. The one place a vendor's JSON is read.
-    respond: Callable[[dict], dict] = field(default=lambda body: {"ok": True})
+    result: ResultShape = Field(default_factory=ResultShape)
+    #: Does this operation CHANGE something at the provider? A write passes the graduated
+    #: approval gate before it is made; a read does not. Carried as a fact about the
+    #: operation rather than inferred from the HTTP verb, because a POST that searches
+    #: (which several of these APIs have) is not a write and gating it would teach an
+    #: operator that the gate fires on things that change nothing.
+    writes: bool = False
+    #: Risk tier for the approval gate — HIGH is what makes an un-allowlisted write stop.
+    risk: Literal["low", "medium", "high"] = "low"
+    #: This provider reports failure in the BODY, not the status line. Slack answers
+    #: `200 {"ok": false, "error": "channel_not_found"}`; treating that as success is the
+    #: classic way an integration reports a message it never sent. Measured off
+    #: `slackbots/post.py`, which already carries the same check.
+    ok_in_body: bool = False
 
+    # ── derived, so every reader agrees ──────────────────────────────────────────
 
-# ── response mappers ─────────────────────────────────────────────────────────────
-#
-# Each returns a flat dict of scalars plus, where the operation is a list, an `items`
-# list of dicts — which is what a `for_each` step fans over (W2 publishes `item.<key>`
-# from a dict item, so `item.id` and `item.subject` are readable without anything new).
+    @property
+    def publishes(self) -> tuple[str, ...]:
+        """What later steps may bind to. A CLOSED set — this is the first effect kind
+        whose keys are knowable at save time per instance, so B1's unknown-key refusal
+        finally covers a remote call."""
+        keys: list[str] = []
+        if self.result.items_path:
+            keys += ["items", "count"]
+        keys += list(self.result.fields)
+        return tuple(keys)
 
-def _gmail_list(body: dict) -> dict:
-    msgs = [m for m in (body.get("messages") or []) if isinstance(m, dict)]
-    return {
-        "count": len(msgs),
-        "items": [{"id": str(m.get("id", "")), "thread_id": str(m.get("threadId", ""))}
-                  for m in msgs],
-        # Gmail's own estimate of the total match, which is NOT len(items): the page
-        # size caps the list. A guard reading `count` is reading this page; one reading
-        # `estimate` is reading the mailbox. Publishing both beats picking for them.
-        "estimate": int(body.get("resultSizeEstimate") or 0),
-    }
+    @property
+    def list_keys(self) -> tuple[str, ...]:
+        """Which published keys are LISTS — the ones `for_each` may fan over. Everything
+        else is refused as a fan source at SAVE, exactly as W2 refuses a string today."""
+        return ("items",) if self.result.items_path else ()
 
+    @property
+    def path_params(self) -> tuple[str, ...]:
+        return tuple(m.group(1) for m in _PLACEHOLDER.finditer(self.url))
 
-def _gmail_message(body: dict) -> dict:
-    payload = body.get("payload") if isinstance(body.get("payload"), dict) else {}
-    headers = {str(h.get("name", "")).lower(): str(h.get("value", ""))
-               for h in (payload.get("headers") or []) if isinstance(h, dict)}
-    return {
-        "id": str(body.get("id", "")),
-        "subject": headers.get("subject", ""),
-        "sender": headers.get("from", ""),
-        "date": headers.get("date", ""),
-        # The snippet, not the body: this value lands in chain context and can be posted
-        # into a channel by a later step. A whole message body reaching Slack because a
-        # step bound the obvious-looking key is a disclosure nobody authored.
-        "snippet": str(body.get("snippet", "")),
-    }
+    @property
+    def gov_action(self) -> str:
+        """The name this operation is audited and allowlisted under.
 
-
-def _calendar_events(body: dict) -> dict:
-    items = [e for e in (body.get("items") or []) if isinstance(e, dict)]
-
-    def _when(side: dict) -> str:
-        # An all-day event carries `date`; a timed one carries `dateTime`. Reading only
-        # one of them makes half a calendar look empty.
-        return str(side.get("dateTime") or side.get("date") or "")
-
-    return {
-        "count": len(items),
-        "items": [{
-            "id": str(e.get("id", "")),
-            "summary": str(e.get("summary", "")),
-            "start": _when(e.get("start") if isinstance(e.get("start"), dict) else {}),
-            "end": _when(e.get("end") if isinstance(e.get("end"), dict) else {}),
-        } for e in items],
-    }
-
-
-def _graph_messages(body: dict) -> dict:
-    vals = [m for m in (body.get("value") or []) if isinstance(m, dict)]
-
-    def _sender(m: dict) -> str:
-        frm = m.get("from") if isinstance(m.get("from"), dict) else {}
-        addr = frm.get("emailAddress") if isinstance(frm.get("emailAddress"), dict) else {}
-        return str(addr.get("address", ""))
-
-    return {
-        "count": len(vals),
-        "items": [{
-            "id": str(m.get("id", "")),
-            "subject": str(m.get("subject", "")),
-            "sender": _sender(m),
-            "date": str(m.get("receivedDateTime", "")),
-        } for m in vals],
-    }
+        A property rather than an f-string at each call site because three modules now
+        spell it — the call seam gates on it, the proposal inbox audits an accept and a
+        reject under it, and an operator allowlists it by hand. Two spellings would mean
+        an allowlist entry that permits a name nothing checks, which looks exactly like a
+        gate that is working.
+        """
+        return f"integration.{self.provider}.{self.id}"
 
 
 # ── the roster ───────────────────────────────────────────────────────────────────
 #
-# Slack is deliberately absent. RC-5's bot door already posts into a channel with a
-# token a laptop can obtain, and Slack's OAuth needs an HTTPS callback it cannot
-# (`Provider.https_only`, measured against Slack's own docs). A second Slack door here
-# would offer the one that install cannot open — the exact failure the catalog's
-# `alt_door` rule was written to end.
+# Small on purpose. Six operations across the three providers VA-11 shipped, each covered
+# by that provider's `default_scopes`, each proving one shape: a list (the fan source), a
+# single fetch (a path param), and a write (the approval gate). Forty would be a
+# catalogue; these are the shapes every later row is a copy of.
 
-OPERATIONS: dict[str, Operation] = {op.id: op for op in [
+OPERATIONS: tuple[Operation, ...] = (
+    # ── Google ───────────────────────────────────────────────────────────────────
     Operation(
-        id="google.gmail.messages.list",
+        id="gmail.messages.list",
         provider="google",
-        label="List Gmail messages",
-        blurb="Search the mailbox; publishes the matching ids for a for-each step.",
-        scope="https://www.googleapis.com/auth/gmail.readonly",
-        path="https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        label="Gmail · list messages",
+        description="Message ids matching a Gmail search query, newest first.",
+        url="https://gmail.googleapis.com/gmail/v1/users/me/messages",
+        scopes=("https://www.googleapis.com/auth/gmail.readonly",),
         params=(
-            OperationParam("q", "Search query", default="is:unread newer_than:1d",
-                           query_key="q"),
-            OperationParam("max_results", "Max results", default="10",
-                           query_key="maxResults"),
+            OperationParam(name="q", label="Search", placeholder="is:unread newer_than:1d"),
+            OperationParam(name="maxResults", label="Limit", type="number", default=10,
+                           bindable=False),
         ),
-        publishes=("count", "estimate", "items"),
-        respond=_gmail_list,
+        result=ResultShape(items_path="messages", item_fields=("id", "threadId"),
+                           fields={"next_page_token": "nextPageToken"}),
     ),
     Operation(
-        id="google.gmail.messages.get",
+        id="gmail.messages.get",
         provider="google",
-        label="Read a Gmail message",
-        blurb="Subject, sender and snippet for one message id.",
-        scope="https://www.googleapis.com/auth/gmail.readonly",
-        path="https://gmail.googleapis.com/gmail/v1/users/me/messages/{message_id}",
+        label="Gmail · read a message",
+        description="One message's snippet and thread, by id — what a list step fans over.",
+        url="https://gmail.googleapis.com/gmail/v1/users/me/messages/{id}",
+        scopes=("https://www.googleapis.com/auth/gmail.readonly",),
         params=(
-            OperationParam("message_id", "Message id", required=True, in_path=True),
+            OperationParam(name="id", label="Message id", required=True, in_path=True,
+                           placeholder='{"$from": "step1.item.id"}'),
+            # `metadata` keeps the body out of our process entirely: this step exists to
+            # decide whether something is worth acting on, and the full MIME payload is
+            # both large and the most sensitive thing the grant can reach.
+            OperationParam(name="format", label="Format", default="metadata",
+                           bindable=False),
         ),
-        # `metadata` format, headers named: the full message would drag the body (and
-        # every attachment part) through a chain that asked for a subject line.
-        fixed_query=(("format", "metadata"), ("metadataHeaders", "Subject"),
-                     ("metadataHeaders", "From"), ("metadataHeaders", "Date")),
-        publishes=("id", "subject", "sender", "date", "snippet"),
-        respond=_gmail_message,
+        result=ResultShape(fields={"id": "id", "thread_id": "threadId",
+                                   "snippet": "snippet"}),
+    ),
+    # ── Slack ────────────────────────────────────────────────────────────────────
+    Operation(
+        id="slack.conversations.list",
+        provider="slack",
+        label="Slack · list channels",
+        description="Channels this grant can see.",
+        url="https://slack.com/api/conversations.list",
+        scopes=("channels:read",),
+        params=(
+            OperationParam(name="limit", label="Limit", type="number", default=100,
+                           bindable=False),
+        ),
+        result=ResultShape(items_path="channels",
+                           item_fields=("id", "name", "is_private")),
+        ok_in_body=True,
     ),
     Operation(
-        id="google.calendar.events.list",
-        provider="google",
-        label="List calendar events",
-        blurb="Upcoming events on the primary calendar.",
-        # NOT in Google's default consent (`providers.py` asks for gmail.readonly), and
-        # left that way on purpose: asking every user for a calendar they may never use
-        # is how a consent screen teaches people to stop reading it. A grant without it
-        # is refused with a sentence naming the scope — which is the honest half of the
-        # "provider downgraded the consent" path §3.4 asks this plane to handle.
-        scope="https://www.googleapis.com/auth/calendar.readonly",
-        path="https://www.googleapis.com/calendar/v3/calendars/primary/events",
+        id="slack.chat.postMessage",
+        provider="slack",
+        label="Slack · post a message",
+        description="Post into a channel as the connected Slack account.",
+        method="POST",
+        url="https://slack.com/api/chat.postMessage",
+        scopes=("chat:write",),
         params=(
-            OperationParam("time_min", "From (ISO-8601)", query_key="timeMin"),
-            OperationParam("max_results", "Max results", default="10",
-                           query_key="maxResults"),
+            OperationParam(name="channel", label="Channel", required=True,
+                           placeholder="#revenue or C0…"),
+            OperationParam(name="text", label="Message", required=True,
+                           placeholder='{"$from": "step1.answer"}'),
+            OperationParam(name="thread_ts", label="Reply in thread"),
         ),
-        fixed_query=(("singleEvents", "true"), ("orderBy", "startTime")),
-        publishes=("count", "items"),
-        respond=_calendar_events,
+        # The same two keys `slack_post` publishes, spelled the same way: two surfaces
+        # that post to Slack and name the thread root differently is a chain that breaks
+        # when its author swaps one door for the other.
+        result=ResultShape(fields={"ts": "ts", "channel": "channel"}),
+        writes=True,
+        risk="high",
+        ok_in_body=True,
     ),
+    # ── Microsoft ────────────────────────────────────────────────────────────────
     Operation(
-        id="microsoft.outlook.messages.list",
+        id="graph.messages.list",
         provider="microsoft",
-        label="List Outlook messages",
-        blurb="Recent mail through Microsoft Graph.",
-        scope="Mail.Read",
-        path="https://graph.microsoft.com/v1.0/me/messages",
+        label="Outlook · list messages",
+        description="Messages from the signed-in mailbox, newest first.",
+        url="https://graph.microsoft.com/v1.0/me/messages",
+        scopes=("Mail.Read",),
         params=(
-            OperationParam("top", "Max results", default="10", query_key="$top"),
+            OperationParam(name="$top", label="Limit", type="number", default=10,
+                           bindable=False),
+            OperationParam(name="$search", label="Search", placeholder='"project update"'),
         ),
-        fixed_query=(("$select", "id,subject,from,receivedDateTime"),
-                     ("$orderby", "receivedDateTime desc")),
-        publishes=("count", "items"),
-        respond=_graph_messages,
+        # The declared bound that matters most in this file: Graph returns WHOLE
+        # messages here, body included, and an automation run is stored and read by
+        # people. Four identifiers is what a chain needs to decide and to fan.
+        result=ResultShape(items_path="value",
+                           item_fields=("id", "subject", "receivedDateTime",
+                                        "webLink")),
     ),
-]}
+    Operation(
+        id="graph.me.get",
+        provider="microsoft",
+        label="Outlook · who am I",
+        description="The signed-in account — the cheapest proof a grant is alive.",
+        url="https://graph.microsoft.com/v1.0/me",
+        scopes=("User.Read",),
+        result=ResultShape(fields={"id": "id", "display_name": "displayName",
+                                   "mail": "mail"}),
+    ),
+)
+
+_BY_ID: dict[str, Operation] = {op.id: op for op in OPERATIONS}
 
 
 def get_operation(operation_id: str) -> Optional[Operation]:
-    return OPERATIONS.get(operation_id)
+    return _BY_ID.get(operation_id or "")
 
 
-def operations_for(provider_id: str = "") -> list[Operation]:
-    """The roster, optionally narrowed to one provider. Ordered as declared."""
-    return [op for op in OPERATIONS.values()
-            if not provider_id or op.provider == provider_id]
+def operations_for(provider_id: str) -> tuple[Operation, ...]:
+    """Every operation declared for one provider, in roster order."""
+    return tuple(op for op in OPERATIONS if op.provider == provider_id)
 
 
-def scope_granted(operation: Operation, granted: str) -> bool:
-    """Does this grant carry the scope the operation needs?
+# ── the two pure helpers the dispatcher and the tests share ──────────────────────
 
-    Space-separated membership, not a substring test. Graph is the standing example:
-    `Mail.ReadBasic` contains `Mail.Read` and is strictly NARROWER than it — a substring
-    check would read a metadata-only grant as full mail access and send the call anyway.
-    Membership over the provider's own delimiter cannot make that mistake.
+def missing_scopes(op: Operation, granted: str) -> tuple[str, ...]:
+    """Scopes this operation needs that the grant does not carry.
 
-    An EMPTY granted string means the provider told us nothing about what it granted
-    (`Connection.scopes` is read back from the token response and "" is its honest
-    value). Unknown is not the same as missing: refusing on it would make every
-    provider that omits `scope` unusable, so the call proceeds and the provider gets to
-    be the authority on its own permission — which it is.
+    ``granted`` is ``Connection.scopes`` — space-separated, read back from the provider's
+    own token response. **An EMPTY string returns nothing missing**, deliberately: several
+    providers return no scope list at all, and an unknown grant is not a measured absence.
+    Refusing on silence would dim every row on a provider that simply does not say — the
+    palette's own rule (only a measured zero dims) applied one plane over.
     """
-    if not granted:
-        return True
-    return operation.scope in granted.split()
+    if not (granted or "").strip():
+        return ()
+    have = set(granted.split())
+    return tuple(s for s in op.scopes if s not in have)
+
+
+def build_request(op: Operation, params: dict) -> tuple[str, dict, dict]:
+    """``(url, query, body)`` for one call — the whole of how a param reaches a provider.
+
+    Raises :class:`ValueError` with a sentence an author can act on when a required param
+    is absent or an undeclared one is supplied. Undeclared keys are REFUSED rather than
+    dropped: silently discarding `{"cc": …}` would send a message the author believes was
+    copied to someone, which is worse than not sending it.
+    """
+    declared = {p.name: p for p in op.params}
+    unknown = [k for k in params if k not in declared]
+    if unknown:
+        raise ValueError(
+            f"'{op.id}' has no input named '{unknown[0]}' — it takes "
+            f"{', '.join(declared) or 'no inputs'}")
+
+    values: dict[str, Any] = {}
+    for name, spec in declared.items():
+        val = params.get(name, spec.default)
+        if val is None or (isinstance(val, str) and not val.strip()):
+            if spec.required:
+                raise ValueError(f"'{op.id}' needs '{name}' ({spec.label or name})")
+            continue
+        values[name] = val
+
+    url = op.url
+    for name in op.path_params:
+        # `safe=""` — the encoding is the whole guarantee. A path param that could carry a
+        # `/` would let a declared operation address an undeclared endpoint, which is the
+        # closed set quietly opening.
+        url = url.replace("{" + name + "}", quote(str(values.pop(name, "")), safe=""))
+
+    query = {k: v for k, v in values.items() if op.method == "GET"}
+    body = {} if op.method == "GET" else dict(values)
+    return url, query, body
+
+
+def extract(op: Operation, payload: dict) -> dict:
+    """The provider's JSON as this operation's declared, published keys — and nothing else.
+
+    Nothing undeclared is published, so a later step can only bind to what the roster
+    already told its author about, and a provider that adds a field tomorrow does not
+    silently widen what a chain carries.
+    """
+    out: dict[str, Any] = {}
+    if op.result.items_path:
+        items = _dig(payload, op.result.items_path)
+        items = items if isinstance(items, list) else []
+        out["items"] = [_shrink(it, op.result.item_fields) for it in items]
+        out["count"] = len(items)
+    for key, path in op.result.fields.items():
+        got = _dig(payload, path)
+        out[key] = got if got is not None else ""
+    return out
+
+
+def _shrink(item: Any, keep: tuple[str, ...]) -> Any:
+    """One list item, reduced to its declared keys. A non-dict item (a bare id) is
+    published as-is — there is nothing to reduce and dropping it would lose the list."""
+    if not keep or not isinstance(item, dict):
+        return item
+    return {k: item.get(k) for k in keep if k in item}
+
+
+def _dig(payload: Any, path: str) -> Any:
+    cur = payload
+    for part in (path or "").split("."):
+        if not isinstance(cur, dict):
+            return None
+        cur = cur.get(part)
+    return cur
