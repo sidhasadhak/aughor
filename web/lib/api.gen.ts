@@ -9938,6 +9938,13 @@ export interface components {
          *     and different only in its subject: a monitor watches a warehouse metric on a connection,
          *     a rule watches what the agents are doing, fleet-wide.
          *
+         *     ``subchain`` (DS-9) runs another automation as one step. The child runs as if someone
+         *     pressed Run now — its own conditions are not re-asked, because a chain that INVOKES
+         *     another is stating when it should happen, and a child whose trigger is "every Monday"
+         *     would otherwise answer "not due" to every caller on every other day. The child keeps its
+         *     own run row (it belongs in its own history) but emits its steps under the PARENT's trace,
+         *     so one nested chain reads as one waterfall rather than two unrelated ones.
+         *
          *     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
          *     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
          *     the run still drains the one ask path, and the agent's instructions, document/pack scope
@@ -9963,7 +9970,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**

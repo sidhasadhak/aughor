@@ -243,8 +243,64 @@ def get_automation(automation_id: str) -> Optional[Automation]:
             conn.close()
 
 
+def _subchain_children(automation: Automation) -> list[str]:
+    return [e.automation_id for e in (automation.effects or [])
+            if e.kind == "subchain" and e.automation_id]
+
+
+def cycle_problem(automation: Automation) -> Optional[str]:
+    """DS-9 — the sentence explaining the cycle this save would create, or None.
+
+    Walked from the automation being saved, using its NEW effects for the root and the
+    stored effects for everything below it: a cycle is created by the edge you are adding,
+    so the question is always "does the rest of the library already lead back here".
+
+    Refused at SAVE rather than caught at run time, which is this plane's standing rule (K1:
+    reject at parse, never surface). A cycle discovered at 09:00 is not an error message —
+    it is a chain calling itself until something else gives out, holding a scheduler thread
+    the whole way down, and the automation that finally errors is rarely the one that is
+    wrong. Refusing the edge names the loop while the person who drew it is still looking
+    at it.
+
+    Breadth-first with a `seen` set, so a diamond (two steps invoking the same subchain) is
+    walked once and is NOT a cycle — sharing a subchain is the entire point of the wave.
+    """
+    root = automation.id
+    frontier = list(_subchain_children(automation))
+    if root in frontier:
+        return (f"'{automation.name or root}' would run itself — a chain cannot be its own "
+                f"subchain.")
+    seen: set[str] = set()
+    while frontier:
+        child_id = frontier.pop(0)
+        if child_id in seen:
+            continue
+        seen.add(child_id)
+        child = get_automation(child_id)
+        if child is None:
+            continue          # a dangling reference is the dispatcher's problem, not a cycle
+        for grandchild in _subchain_children(child):
+            if grandchild == root:
+                return (f"'{automation.name or root}' would run itself: it invokes "
+                        f"'{child.name or child_id}', which invokes it back.")
+            if grandchild not in seen:
+                frontier.append(grandchild)
+    return None
+
+
 def upsert_automation(automation: Automation) -> Automation:
-    """Create or update an automation (full replace by id)."""
+    """Create or update an automation (full replace by id).
+
+    DS-9 — refuses a save that would close a subchain cycle. Here rather than on the model,
+    because the question cannot be answered from the automation alone: it needs the rest of
+    the library, and a `model_validator` that read the store would fire on every load, every
+    fixture and every deserialisation from the DB. Here rather than only on the route,
+    because this is the one write path and a cycle written by any other caller is the same
+    cycle.
+    """
+    problem = cycle_problem(automation)
+    if problem:
+        raise ValueError(problem)
     now = now_iso_z()
     if not automation.created_at:
         automation = automation.model_copy(update={"created_at": now})

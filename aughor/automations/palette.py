@@ -88,6 +88,9 @@ ACTIONS: tuple[PaletteEntry, ...] = (
                  "Deliver a briefing subscription", "brief", 40),
     PaletteEntry("kinetic_action", "action", "Declared action",
                  "Run a declared, governed action — through its approval gate", "bolt", 50),
+    PaletteEntry("subchain", "action", "Run a chain",
+                 "Run another automation as one step — share a shape instead of "
+                 "authoring it twice", "layers", 60),
 )
 
 ENTRIES: tuple[PaletteEntry, ...] = TRIGGERS + ACTIONS
@@ -123,6 +126,12 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         from aughor.monitors.store import list_monitors
         return len(list_monitors(conn_id))
 
+    def automations() -> int:
+        from aughor.automations.store import list_automations
+        # Two, not one: the chain being authored cannot be its own subchain (that cycle is
+        # refused at save), so one automation on the connection means none to call.
+        return max(0, len(list_automations(conn_id=conn_id)) - 1)
+
     return {
         # The Slack sentence is the one the rail already shows, word for word: two
         # surfaces explaining the same absence differently is how a reader learns the
@@ -135,6 +144,12 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
                                         "create one first, then this step can deliver it."),
         "metric": _Prereq(monitors, "No monitors on this connection — create one first, "
                                     "then this trigger can delegate to it."),
+        # DS-9 — a subchain needs something to call. On a connection with a single
+        # automation the only chain available would be the one being edited, and a card
+        # offering "run a chain" whose only choice is itself is a card offering nothing
+        # (the palette's own law: it tells the truth about THIS deployment).
+        "subchain": _Prereq(automations, "No other automations on this connection — a "
+                                         "chain needs another chain to run."),
     }
 
 

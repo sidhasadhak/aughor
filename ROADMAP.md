@@ -591,6 +591,31 @@ resumes it; the trace shows one run with a human in its middle.
 save; child outcomes fold into the parent trace. Composition keeps the palette small while
 the library grows. **Receipt:** two chains share one "post with fallback" subchain.
 
+> **Shipped 2026-09-01.** A `subchain` effect kind whose child runs as if someone pressed
+> Run now — its own conditions are NOT re-asked (a shared chain triggered "every Monday"
+> that answers "not due" to every caller on every other day is not shared), while its
+> lifecycle gates still apply (`enabled=False` is a person saying this must not run, and
+> being called is not an exemption). The child keeps its own run row — a shared chain's
+> history is the one place every caller that used it is visible — but writes its steps under
+> the PARENT's trace, so a nested chain reads as one waterfall. That inheritance rides a
+> ContextVar rather than a parameter, because `Dispatch` is `(effect, automation)` and six
+> dispatchers would otherwise grow three arguments five of them ignore; DS-7's
+> `ContextThreadPoolExecutor` copies it into workers, so a subchain inside a parallel step
+> inherits exactly what a sequential one does. Cycles are refused at SAVE, on the store (the
+> one write path — the question needs the rest of the library, so it cannot live on the
+> model), breadth-first with a `seen` set so a DIAMOND is not mistaken for a loop: two steps
+> sharing one subchain is the entire point of the wave. The refusal reaches the author as a
+> 422, not a 500. A depth cap guards the shape a cycle check cannot see — a legal tree built
+> one honest edge at a time. **DS-8 met DS-9:** a child that parks on an approval parks its
+> PARENT, whose checkpoint records the child run rather than a proposal; resuming the child
+> wakes the parent, and the heartbeat's sweep now takes passes so a whole nested tower comes
+> unstuck on the tick that unblocked its leaf. **The defect that interaction hid:** the
+> parent's subchain step reports `approval_required`, so DS-8's staging fired for it too and
+> put a phantom proposal — for a step with no action to approve — on the parent's run, which
+> then blocked its own resume forever, because `resume_run` refuses to continue a run with a
+> pending proposal. A relayed wait now stages nothing. **Live receipt:** two chains sharing
+> one subchain, both fired, the shared chain's own history showing both callers.
+
 #### Phase 3 · The component economy (its first two waves ARE §3.4's consumer and §3.1's VA-9d)
 
 **DS-10 · One component registry.** Unify what already exists into a single typed roster
@@ -801,7 +826,7 @@ NEXT (order within a band is the user's knob; the inert-vault repair stays highe
                                    migration + store/create/patch surfaces; grants stay
                                    PROPOSE-only)
 
-THEN    DS-9 subchains                        (§3.7 Phase 2 — DS-8 durable pause SHIPPED)
+THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
 LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)

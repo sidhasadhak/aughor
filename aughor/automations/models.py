@@ -102,6 +102,10 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # sibling: an automation missing its channel would otherwise sit in the DB looking
     # schedulable and fail at 03:00, which is K1's lesson (reject at parse, never surface).
     "slack_post":     ("bot_id", "channel"),
+    # DS-9 — the chain this step runs. Required at construction like every sibling: a
+    # subchain step with no child names nothing, and "looking schedulable" is the
+    # expensive kind of broken (K1: reject at parse, never surface).
+    "subchain":       ("automation_id",),
 }
 
 
@@ -192,13 +196,20 @@ class Effect(BaseModel):
     and different only in its subject: a monitor watches a warehouse metric on a connection,
     a rule watches what the agents are doing, fleet-wide.
 
+    ``subchain`` (DS-9) runs another automation as one step. The child runs as if someone
+    pressed Run now — its own conditions are not re-asked, because a chain that INVOKES
+    another is stating when it should happen, and a child whose trigger is "every Monday"
+    would otherwise answer "not due" to every caller on every other day. The child keeps its
+    own run row (it belongs in its own history) but emits its steps under the PARENT's trace,
+    so one nested chain reads as one waterfall rather than two unrelated ones.
+
     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
     the run still drains the one ask path, and the agent's instructions, document/pack scope
     and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
-                  "slack_post"]
+                  "slack_post", "subchain"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
@@ -251,6 +262,11 @@ class Effect(BaseModel):
         return str(self.config.get("action_id", ""))
 
     @property
+    def automation_id(self) -> str:
+        """DS-9 — the chain a ``subchain`` step runs."""
+        return str(self.config.get("automation_id", ""))
+
+    @property
     def agent_id(self) -> str:
         """The user-defined agent THIS STEP runs as ("" = inherit the automation's).
 
@@ -272,7 +288,7 @@ class Effect(BaseModel):
     def target(self) -> str:
         """The referenced primitive, for run history and audit detail."""
         for key in ("action_id", "subscription_id", "trigger_id", "monitor_id", "rule_id",
-                    "question"):
+                    "automation_id", "question"):
             if self.config.get(key):
                 return str(self.config[key])[:200]
         return ""

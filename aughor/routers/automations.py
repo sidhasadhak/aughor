@@ -200,6 +200,21 @@ def _validation_detail(exc: ValidationError) -> list[dict]:
     return exc.errors(include_url=False, include_context=False)
 
 
+def _save(automation: Automation) -> dict:
+    """Persist, turning the store's integrity refusals into a 422 a form can render.
+
+    DS-9's subchain cycle check lives on the store (it is the one write path, and it needs
+    the rest of the library to answer). It raises `ValueError`, which would otherwise leave
+    the route as a 500 — "the server broke" for a mistake the author can see and fix in the
+    editor they are already looking at. Same shape, and the same lesson, as
+    `_validation_detail`: a refusal the user can act on must not arrive as a crash.
+    """
+    try:
+        return upsert_automation(automation).model_dump()
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
 @router.post("/automations")
 def create(body: CreateAutomationRequest):
     """Create an automation. A malformed condition or effect is rejected HERE, at construction —
@@ -208,7 +223,7 @@ def create(body: CreateAutomationRequest):
         automation = Automation(**body.model_dump())
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
-    return upsert_automation(automation).model_dump()
+    return _save(automation)
 
 
 @router.put("/automations/{automation_id}")
@@ -230,7 +245,7 @@ def update(automation_id: str, body: CreateAutomationRequest):
                                 last_status=existing.last_status)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
-    return upsert_automation(automation).model_dump()
+    return _save(automation)
 
 
 @router.delete("/automations/{automation_id}")

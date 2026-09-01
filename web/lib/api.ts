@@ -3381,7 +3381,7 @@ export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_ap
  *  adopted objects the engine writes when an existing monitor or alert rule migrates onto
  *  it — the model's own docstring says they are "not authored by hand". */
 export type EffectKind =
-  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post";
+  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3398,7 +3398,7 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   source_change: ["table"], entity_appears: ["table"],
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
-  slack_post: ["bot_id", "channel"],
+  slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a

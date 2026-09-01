@@ -153,7 +153,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # reads (`kinetic_actions`) and construct an Effect of the one governed-write
          # kind — identifiers all, and renaming any of them would stop testing the seam
          # it exercises. The prose in the file says "declared action".
-         "tests/unit/test_automations_parallel.py"),
+         "tests/unit/test_automations_parallel.py",
+         # DS-9's subchain suite, for the narrowest version of the same reason: ONE hit, the
+         # declared-action effect KIND, in the helper that builds the governed step its DS-8
+         # interaction tests need. Substituting a different kind to dodge the pattern would
+         # make the premise false — no other effect kind reaches an approval gate — so the
+         # choice is between spelling the wire and testing something that cannot happen.
+         "tests/unit/test_automations_subchain.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
@@ -203,6 +209,7 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # approval is ONE row on `/control-room/needs-human` (the wave made two of that
          # strip's sources describe the same decision), which it cannot assert without
          # naming the frozen path.
+         "tests/unit/test_automations_pause.py",
          "tests/unit/test_automations_pause.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",

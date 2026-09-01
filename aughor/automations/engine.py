@@ -37,6 +37,8 @@ import threading
 import time as _time
 import uuid as _uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
@@ -59,6 +61,40 @@ logger = logging.getLogger(__name__)
 
 ConditionProbe = Callable[[Condition, Automation], "tuple[bool, str]"]
 Dispatch = Callable[[Effect, Automation], EffectOutcome]
+
+#: DS-9 — how deep chains may nest. Cycles are refused at SAVE, so this is not the cycle
+#: guard; it is the guard for the shape a cycle check cannot see — a legal 40-deep tree
+#: that a person built one honest edge at a time. Each level holds a scheduler thread and
+#: runs a whole chain, so the cost is not linear in a way anyone would notice until it is.
+MAX_SUBCHAIN_DEPTH = 5
+
+
+@dataclass(frozen=True)
+class _ChainContext:
+    """DS-9 — what a nested run inherits from the run that invoked it.
+
+    A ContextVar rather than a parameter on ``Dispatch``, because ``Dispatch`` is
+    ``(effect, automation)`` and six dispatchers would otherwise grow three arguments five
+    of them ignore — the argument `_execute_step` already makes about `AWAIT_KEY`. It also
+    reaches the right place on its own under DS-7: the parallel driver submits through
+    `ContextThreadPoolExecutor`, which copies the context into each worker, so a subchain
+    inside a parallel step inherits exactly what a sequential one does.
+
+    ``trace_id`` is the PARENT's, so a nested chain's steps land in one waterfall instead of
+    two unrelated ones (the run id is still the trace id for a top-level run — VA-4d — and
+    this only ever overrides it downward). ``dispatch`` rides along because the child must
+    dispatch the way its parent does: a test that injected a double into the parent and got
+    the real Slack client in the child would be proving nothing about the chain it wrote.
+    """
+    trace_id: str = ""
+    depth: int = 0
+    dispatch: Optional[Dispatch] = None
+    sleeper: Optional[Callable[[float], None]] = None
+    rng: Optional[Callable[[], float]] = None
+
+
+_CHAIN: ContextVar[_ChainContext] = ContextVar("automation_chain", default=_ChainContext())
+
 
 #: Total wall-clock a single tick may spend sleeping between retries. A background tick holds a
 #: scheduler thread while it waits, so the retry budget is bounded regardless of what an operator
@@ -727,6 +763,96 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                                                  ("answer", run.headline)) if v})
 
 
+# ── DS-9 · a chain as a step ──────────────────────────────────────────────────
+
+def _dispatch_subchain(effect: Effect, automation: Automation) -> EffectOutcome:
+    """Run another automation as one step.
+
+    Composition is the point: "post it, and if that fails tell on-call" is one shape that
+    every chain in the library wants, and before this the only way to have it twice was to
+    author it twice — which is also how it comes to be authored differently in each place.
+
+    The child runs as if someone pressed **Run now**: its own conditions are not re-asked.
+    A chain that invokes another is stating WHEN it should happen, and a child whose trigger
+    is "every Monday 09:00" would answer "not due" to every caller on every other day —
+    a shared subchain that works only on Mondays is not a shared subchain. Its lifecycle
+    gates still apply, though, and deliberately: `enabled=False` and an expiry are a person
+    saying "this must not run", and a caller is not an exemption from that.
+
+    The child keeps its OWN run row — it belongs in its own history, and a shared subchain's
+    history is the one place you can see every caller that used it — but writes its steps
+    under the PARENT's trace, so a nested chain reads as one waterfall.
+    """
+    from aughor.automations.store import get_automation
+
+    ctx = _CHAIN.get()
+    child_id = effect.automation_id
+    if child_id == automation.id:
+        # Belt to the save-time cycle check's braces. A self-reference is the one cycle that
+        # needs no second automation to construct, so it is the one most likely to arrive
+        # through a path that never saw the validator (a fixture, a direct store write).
+        return EffectOutcome(kind=effect.kind, target=child_id, status="dispatch_error",
+                             message="a chain cannot run itself")
+    if ctx.depth >= MAX_SUBCHAIN_DEPTH:
+        return EffectOutcome(
+            kind=effect.kind, target=child_id, status="dispatch_error",
+            message=(f"subchains nested deeper than {MAX_SUBCHAIN_DEPTH} — refusing to go "
+                     f"further. This is not a cycle (those are refused when you save); it is "
+                     f"a legal tree that got too deep to run as one tick."))
+    child = get_automation(child_id)
+    if child is None:
+        return EffectOutcome(kind=effect.kind, target=child_id, status="dispatch_error",
+                             message=f"no automation '{child_id}' — it may have been deleted")
+
+    token = _CHAIN.set(_ChainContext(trace_id=ctx.trace_id, depth=ctx.depth + 1,
+                                     dispatch=ctx.dispatch, sleeper=ctx.sleeper, rng=ctx.rng))
+    try:
+        run = run_automation(child, manual=True, persist=True)
+    finally:
+        _CHAIN.reset(token)
+
+    return subchain_outcome(effect.kind, child_id, child.name, run)
+
+
+def subchain_outcome(kind: str, child_id: str, child_name: str,
+                     run: AutomationRun) -> EffectOutcome:
+    """What a subchain step reports, given what the child run actually did.
+
+    ONE mapping, called from the dispatcher and again from the resume — because a parent
+    parked on a child rewrites this step from the child's FINAL outcome, and two copies of
+    "what does a gated child mean" is how the live path and the resumed path come to
+    disagree about whether a chain succeeded.
+    """
+    executed = sum(1 for o in run.effects if o.status == "executed")
+    published = {"run_id": run.id, "outcome": run.outcome, "executed": executed}
+    if run.outcome == "paused":
+        # DS-8 met DS-9. The child stopped mid-chain for a human, so the parent has NOT
+        # finished this step — and a parent that walked on would run the steps after a
+        # governed write that has not happened yet, which is the exact failure a mid-chain
+        # approval exists to prevent, one level up. `approval_required` is the status the
+        # parent's driver parks on, and `child_run_id` is what the resume waits for.
+        return EffectOutcome(
+            kind=kind, target=child_id, status="approval_required",
+            message=f"'{child_name}' is waiting on a human: {run.reason}",
+            data={**published, "child_run_id": run.id})
+    if run.outcome in ("gated", "not_fired"):
+        # Not a failure of this step: the child declined to run, and `skipped` is this
+        # engine's word for exactly that. Folding it into `failed` would let a disabled
+        # subchain fire the parent's fallback and page on-call about a switch someone
+        # deliberately flipped.
+        return EffectOutcome(kind=kind, target=child_id, status="skipped",
+                             message=f"'{child_name}' did not run: {run.reason}",
+                             data=published)
+    if run.outcome == "error":
+        return EffectOutcome(kind=kind, target=child_id, status="failed",
+                             message=f"'{child_name}' failed: {run.error or run.reason}",
+                             data=published)
+    return EffectOutcome(
+        kind=kind, target=child_id, status="executed",
+        message=f"'{child_name}' ran {executed} step{'' if executed == 1 else 's'}",
+        data=published)
+
+
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "kinetic_action": _dispatch_kinetic,
     "notify": _dispatch_notify,
@@ -735,6 +861,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "monitor": _dispatch_monitor,
     "agent_alert": _dispatch_agent_alert,
     "slack_post": _dispatch_slack_post,
+    "subchain": _dispatch_subchain,
 }
 
 
@@ -872,7 +999,7 @@ def _run_effect(effect: Effect, automation: Automation, dispatch: Dispatch, *,
             sleep_budget[0] -= delay
 
 
-def run_automation(
+def _walk_automation(
     automation: Automation,
     *,
     now: Optional[datetime] = None,
@@ -966,6 +1093,13 @@ def run_automation(
     # that had already stopped caring. Nothing else changes: an unsupplied id is still
     # minted here, and the id is still the trace id.
     run_id = run_id or str(_uuid.uuid4())
+    # DS-9 — the trace this run's steps are written under. For a top-level run it IS the run
+    # id, unchanged since VA-4d ("clicking a run in Activity lands on exactly this run, with
+    # no second correlation key"). For a NESTED one it is the parent's, so an automation that
+    # invokes an automation reads as one waterfall with the child's steps inside it instead of
+    # two unrelated traces nobody can join. The run ROW keeps its own id either way — a child
+    # belongs in its own history too.
+    trace_id = _CHAIN.get().trace_id or run_id
     base = {
         "id": run_id,
         "automation_id": automation.id,
@@ -1238,7 +1372,7 @@ def run_automation(
                 outcome = _run_effect(bound_effect, automation, dispatch_fn, sleeper=sleeper,
                                       rng=rng, sleep_budget=sleep_budget)
             else:
-                with _step_span(effect, automation, label, run_id):
+                with _step_span(effect, automation, label, trace_id):
                     outcome = _run_effect(bound_effect, automation, dispatch_fn,
                                           sleeper=sleeper, rng=rng, sleep_budget=sleep_budget)
             step_ms = (_time.monotonic() - step_t0) * 1000.0
@@ -1256,7 +1390,15 @@ def run_automation(
             # straight to the thing that resolves it. Staged HERE, at the call site, for the
             # same reason the agent and the duration are stamped here: the dispatcher does not
             # know the run id, and the run id is half of the idempotency key.
-            if outcome.status == "approval_required" and not dry_run:
+            # DS-9 — but NOT when this step is only RELAYING a child's wait. A subchain step
+            # reports `approval_required` because the chain it invoked parked; the human is
+            # being asked by the child, which staged the proposal, and the parent is waiting
+            # for the child. Staging a second proposal here would put a phantom approval in
+            # the queue (for a step with no action to approve) and — worse — leave it pending
+            # forever, because nothing resolves it and `resume_run` refuses to continue a run
+            # with a pending proposal. The parent would never restart.
+            relayed = bool((outcome.data or {}).get("child_run_id"))
+            if outcome.status == "approval_required" and not dry_run and not relayed:
                 pid = _stage_approval(bound_effect, automation, alias=label, run_id=run_id,
                                       message=outcome.message)
                 if pid:
@@ -1516,14 +1658,71 @@ def run_automation(
                 # run, which reads `next_index` instead.
                 "done_aliases": done_snapshot,
                 "scheduling": "parallel" if scheduling_parallel else "ordered",
-                "proposal_ids": [str((o.data or {}).get("proposal_id") or "")
-                                 for o in waiting],
+                # Only the REAL ones. A subchain step waits without staging anything, so an
+                # unfiltered list would carry an empty string standing for a proposal that
+                # does not exist — and the next reader would have to know that.
+                "proposal_ids": [pid for pid in
+                                 (str((o.data or {}).get("proposal_id") or "") for o in waiting)
+                                 if pid],
+                # DS-9 — the nested runs this one is parked behind. A subchain step parks
+                # its parent without staging a proposal of its own: the human is being
+                # asked by the CHILD, and the parent is waiting for the child, not for the
+                # person. Two different things to wait on, so two lists.
+                "child_runs": [str((o.data or {}).get("child_run_id") or "")
+                               for o in waiting if (o.data or {}).get("child_run_id")],
                 "outcome_counts": [[n, c] for n, c in sorted(step_counts.items())],
             }), finished=False)
 
     return _finish(AutomationRun(**base, outcome="fired", reason=reason,
                                  conditions_fired=details, effects=outcomes,
                                  fallback_used=fallback_used))
+
+
+def run_automation(
+    automation: Automation,
+    *,
+    now: Optional[datetime] = None,
+    probe: Optional[ConditionProbe] = None,
+    dispatch: Optional[Dispatch] = None,
+    sleeper: Optional[Callable[[float], None]] = None,
+    rng: Optional[Callable[[], float]] = None,
+    persist: bool = True,
+    dry_run: bool = False,
+    manual: bool = False,
+    run_id: Optional[str] = None,
+    until_alias: Optional[str] = None,
+    resume: Optional[dict] = None,
+) -> AutomationRun:
+    """Run one automation. The public door; :func:`_walk_automation` is the chain itself.
+
+    All this adds is the NESTED-CHAIN context (DS-9): the trace a run writes under, how deep
+    it already is, and the dispatcher and clocks a child should inherit. It lives out here
+    rather than inside the walk for one reason — the walk returns from six places, and a
+    context that must be released on every one of them is a context that leaks from the
+    seventh. One ``try/finally`` around the whole thing cannot.
+
+    The run id is minted HERE so the context can name the trace before the walk begins;
+    everything else is passed through untouched. ``sleeper`` and ``rng`` default to ``None``
+    rather than to the real clock so an unset one can INHERIT from the invoking chain — a
+    child that reached for `time.sleep` while its parent was running under a test's stub
+    would put a real retry backoff inside a unit test.
+    """
+    parent = _CHAIN.get()
+    run_id = run_id or str(_uuid.uuid4())
+    dispatch = dispatch or parent.dispatch
+    sleeper = sleeper or parent.sleeper or _time.sleep
+    rng = rng or parent.rng or random.random
+    token = _CHAIN.set(_ChainContext(
+        # A top-level run's trace IS its run id (VA-4d); a nested one keeps its parent's.
+        trace_id=parent.trace_id or run_id,
+        depth=parent.depth, dispatch=dispatch, sleeper=sleeper, rng=rng))
+    try:
+        return _walk_automation(
+            automation, now=now, probe=probe, dispatch=dispatch, sleeper=sleeper, rng=rng,
+            persist=persist, dry_run=dry_run, manual=manual, run_id=run_id,
+            until_alias=until_alias, resume=resume)
+    finally:
+        _CHAIN.reset(token)
 
 
 # ── DS-8 · the other half of the pause ────────────────────────────────────────
@@ -1612,6 +1811,14 @@ def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
     # answer would run the rest of the chain while a second governed write is still pending.
     if any(p.status == "pending" and not p.expired for p in proposals):
         return None
+    # DS-9 — and on any nested run this one parked behind. A subchain step parks its parent
+    # WITHOUT a proposal of its own: the human is being asked by the child, and the parent is
+    # waiting for the child. Resuming on the proposals alone would restart a parent whose
+    # nested chain is still stopped in the middle.
+    for child_id in ((run.checkpoint or {}).get("child_runs") or []):
+        child = get_run(str(child_id))
+        if child is not None and child.outcome == "paused":
+            return None
     # Keyed by proposal id ONLY. A `call_id` lookup would look like a sensible fallback and
     # could never fire: `call_id` is the step LABEL, while `outcome.target` is whatever the
     # dispatcher named — the ACTION ID for a governed write. The id is on the outcome whenever
@@ -1633,6 +1840,19 @@ def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
     for o in run.effects:
         if o.status != "approval_required":
             rewritten.append(o)
+            continue
+        # DS-9 — a subchain step waits on a RUN, not on a proposal, so it is resolved from
+        # the child's final outcome through the very same mapping the live dispatch used.
+        child_run_id = str((o.data or {}).get("child_run_id") or "")
+        if child_run_id:
+            child_run = get_run(child_run_id)
+            if child_run is None:
+                rewritten.append(o.model_copy(update={
+                    "status": "skipped",
+                    "message": f"{o.message} — the nested run is no longer on record"}))
+            else:
+                rewritten.append(subchain_outcome(
+                    o.kind, o.target, child_run.automation_name or o.target, child_run))
             continue
         p = by_id.get(str((o.data or {}).get("proposal_id") or ""))
         if p is None:
@@ -1692,7 +1912,7 @@ def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
 
     logger.info("automation %s resuming run %s at step '%s'",
                 automation.id, run_id, step_alias)
-    return run_automation(
+    finished = run_automation(
         automation, run_id=run_id, persist=True,
         dispatch=dispatch, sleeper=sleeper, rng=rng,
         resume={
@@ -1703,6 +1923,30 @@ def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
             "prior_duration_ms": run.duration_ms,
         },
     )
+    # DS-9 — and now whatever was parked behind THIS run. A parent waiting on a nested chain
+    # has no proposal of its own, so nothing else would ever wake it on the resolving click;
+    # it would sit until the heartbeat swept it up. Recursion is bounded by nesting depth
+    # (`MAX_SUBCHAIN_DEPTH`), and cycles are refused at save.
+    if finished is not None and finished.outcome != "paused":
+        _wake_parents(run_id, dispatch=dispatch, sleeper=sleeper, rng=rng)
+    return finished
+
+
+def _wake_parents(child_run_id: str, *, dispatch: Optional[Dispatch] = None,
+                  sleeper: Callable[[float], None] = _time.sleep,
+                  rng: Callable[[], float] = random.random) -> None:
+    """Resume every run parked behind ``child_run_id`` (DS-9). Best-effort, like every other
+    wake: the child's own work is already committed, and a parent that fails to wake stays
+    `paused` for the heartbeat's sweep to find."""
+    from aughor.automations.store import paused_runs
+
+    for parent in paused_runs(limit=200):
+        if child_run_id in ((parent.checkpoint or {}).get("child_runs") or []):
+            try:
+                resume_run(parent.id, dispatch=dispatch, sleeper=sleeper, rng=rng)
+            except Exception:
+                logger.warning("automation %s: resuming parent run %s failed",
+                               parent.automation_id, parent.id, exc_info=True)
 
 
 def resume_parked_runs(conn_id: Optional[str] = None, limit: int = 100) -> int:
@@ -1727,11 +1971,20 @@ def resume_parked_runs(conn_id: Optional[str] = None, limit: int = 100) -> int:
     from aughor.automations.store import paused_runs
 
     moved = 0
-    for run in paused_runs(conn_id=conn_id, limit=limit):
-        try:
-            if resume_run(run.id) is not None:
-                moved += 1
-        except Exception:
-            logger.warning("automation %s: resuming parked run %s failed",
-                           run.automation_id, run.id, exc_info=True)
+    # DS-9 — passes, not one walk. Finishing a nested chain can make its PARENT resumable,
+    # and the parent may already have been visited (and correctly skipped) earlier in the
+    # same list. One pass per level of nesting resolves a whole tower on the tick that
+    # unblocked its leaf; the cap is the nesting cap, so this cannot spin.
+    for _ in range(MAX_SUBCHAIN_DEPTH + 1):
+        this_pass = 0
+        for run in paused_runs(conn_id=conn_id, limit=limit):
+            try:
+                if resume_run(run.id) is not None:
+                    this_pass += 1
+            except Exception:
+                logger.warning("automation %s: resuming parked run %s failed",
+                               run.automation_id, run.id, exc_info=True)
+        moved += this_pass
+        if not this_pass:
+            break
     return moved
