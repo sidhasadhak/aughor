@@ -8,6 +8,10 @@
  * normal-vision floor, contrast vs surface) on each mode. Change a color HERE
  * and in the CSS together, and let the gate arbitrate — never eyeball a palette.
  *
+ * CHART_KIND_ACCENT (--chart-7) is deliberately NOT part of CHART_SERIES: adding
+ * it there would raise every chart's series count and stop the "Other" fold at
+ * seven instead of six. It exists for surfaces that colour by KIND.
+ *
  * Both modes carry the same hue ORDER (blue, green, violet, orange/amber, cyan,
  * red) so a series keeps its hue family when the theme flips. The order is the
  * CVD-safety mechanism: it was chosen by exhaustive search as the passing
@@ -24,6 +28,22 @@ export type ChartMode = "light" | "dark";
 export const CHART_SERIES: Record<ChartMode, string[]> = {
   light: ["#1F77B4", "#2CA02C", "#9467BD", "#FF7F0E", "#17BECF", "#D62728"],
   dark: ["#569BD2", "#4BAB70", "#9B7BD4", "#C1882B", "#2BA8A9", "#DD6E6E"],
+};
+
+/**
+ * The kind accent — NOT a seventh series. Mirrors --chart-7.
+ *
+ * The automation canvas colours a step by its KIND, and a seventh effect kind
+ * shipped (VA-11's `connection_call`) with the series exhausted. Folding it into
+ * the de-emphasis gray was the chart rule's answer and the wrong one here: on a
+ * canvas every kind is visible at once, and grey reads as disabled, not as
+ * "seventh". So this is one more validated hue in the palette's one remaining
+ * gap, held to a stricter separation bar than the six carry among themselves —
+ * see the note in tokens-v2.css and the gate that enforces it.
+ */
+export const CHART_KIND_ACCENT: Record<ChartMode, string> = {
+  light: "#871E5F",
+  dark: "#9B2378",
 };
 
 /** The de-emphasis gray — the "Other" fold and the emphasis form's context

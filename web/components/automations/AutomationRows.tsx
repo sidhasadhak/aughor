@@ -43,6 +43,8 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
     desc: "Post into a channel as one of your bots — mentionable, and repliable in thread" },
   { value: "subchain", label: "Run a chain",
     desc: "Run another automation as one step — share a shape instead of authoring it twice" },
+  { value: "connection_call", label: "Read from a connected account",
+    desc: "Read Gmail, Calendar or Outlook under your own grant — capped, spanned and audited on every call" },
 ];
 
 export const CRON_PRESETS = [
@@ -499,7 +501,19 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
         {e.kind === "kinetic_action" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <input style={inputStyle} value={String(e.config.action_id ?? "")} onChange={ev => set({ action_id: ev.target.value })} placeholder="declared action id" />
-            <input style={inputStyle} value={String((e.config as { paramsText?: string }).paramsText ?? "")} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
+            <input style={inputStyle} value={paramsTextOf(e)} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
+          </div>
+        )}
+        {/* VA-11 — the operation's params are TEXT here for the same reason a declared
+            action's are: a half-typed JSON object is not an object, and a structured editor
+            would fight the person mid-keystroke. The operation declares its params typed and
+            `/integrations/operations` serves them, so a generated form is possible — it is
+            DS-11's, where the connection becomes a component and the rail can render one. */}
+        {e.kind === "connection_call" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <input style={inputStyle} value={String(e.config.operation ?? "")} onChange={ev => set({ operation: ev.target.value })} placeholder="operation, e.g. google.gmail.messages.list" />
+            <input style={inputStyle} value={String(e.config.grant_id ?? "")} onChange={ev => set({ grant_id: ev.target.value })} placeholder="connected account id" />
+            <input style={inputStyle} value={paramsTextOf(e)} onChange={ev => set({ paramsText: ev.target.value })} placeholder={'params JSON e.g. {"q": "is:unread"} or {"message_id": {"$from": "inbox.id"}}'} />
           </div>
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
@@ -522,18 +536,47 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
  * than each remembering to strip the field. Throws with a readable message; the caller
  * decides how to show it.
  */
+/**
+ * What the params editor shows: the text being typed, else the params already stored.
+ *
+ * Without the second half the field opens BLANK on an automation that has params, and
+ * `effectsForWire` then reads "untouched" as "{}" — so editing an automation's name
+ * through this form erased the params of every declared-action step in it. Fifth of the
+ * PUT-erase family in this subsystem, and the first one INSIDE an effect rather than
+ * around the record.
+ */
+function paramsTextOf(e: AutoEffect): string {
+  const cfg = e.config as Record<string, unknown> & { paramsText?: string };
+  if (typeof cfg.paramsText === "string") return cfg.paramsText;
+  const params = cfg.params;
+  return params && typeof params === "object" ? JSON.stringify(params) : "";
+}
+
+const PARAMS_AS_TEXT: Record<string, string> = {
+  kinetic_action: "Declared-action params must be valid JSON",
+  // VA-11 — the second kind whose params are authored as text. Keyed rather than
+  // `if/else`d so the third one is a row here, and so each kind's refusal names ITSELF:
+  // "Declared-action params must be valid JSON" on a Gmail step sends the reader looking
+  // for a declared action they never wrote.
+  connection_call: "Operation params must be valid JSON",
+};
+
 export function effectsForWire(effects: AutoEffect[]): AutoEffect[] {
   return effects.map(e => {
-    if (e.kind !== "kinetic_action") return e;
+    const complaint = PARAMS_AS_TEXT[e.kind];
+    if (!complaint) return e;
     const cfg = e.config as Record<string, unknown> & { paramsText?: string };
-    const raw = String(cfg.paramsText ?? "").trim() || "{}";
+    // No `paramsText` at all means the editor was never opened on this step — carry its
+    // stored `params` through untouched. Reading absence as "{}" is what erased them.
+    if (typeof cfg.paramsText !== "string") return e;
+    const raw = cfg.paramsText.trim() || "{}";
     const { paramsText: _omit, ...rest } = cfg;
     void _omit;
     let params: unknown;
     try {
       params = JSON.parse(raw);
     } catch {
-      throw new Error("Declared-action params must be valid JSON");
+      throw new Error(complaint);
     }
     // SPREAD, not a fresh literal. The version of this that lived in the form rebuilt
     // the effect as `{kind, config}` — which silently dropped `alias`, the key VA-4a's

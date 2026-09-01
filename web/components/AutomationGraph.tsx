@@ -107,7 +107,7 @@ const LIVE_STATUS: Record<string, string> = {
 const KIND_ICON: Record<string, IconName> = {
   investigate: "search", slack_post: "send", notify: "bell",
   brief: "brief", kinetic_action: "bolt", monitor: "activity", agent_alert: "alert",
-  subchain: "layers",
+  subchain: "layers", connection_call: "link",
 };
 
 const COL_W = 300;
@@ -428,6 +428,11 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   brief:          [{ field: "subscription_id", placeholder: "briefing subscription id" }],
   kinetic_action: [{ field: "action_id", placeholder: "declared action id" }],
   subchain:       [{ field: "automation_id", placeholder: "automation id" }],
+  // VA-11 — the operation first: it is what the step DOES, and the grant is which
+  // account it does it as. A node showing only the `ic_…` would name the credential and
+  // not the work.
+  connection_call: [{ field: "operation", placeholder: "operation id" },
+                    { field: "grant_id", placeholder: "connected account id" }],
 };
 
 /** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
@@ -436,6 +441,14 @@ const KIND_HUE: Record<string, string> = {
   investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
   brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
   subchain: "var(--chart-6)",
+  // VA-11 is the seventh kind, and the series had six. The accent it takes is NOT a
+  // seventh series colour — charts still fold to "Other" at six — but a kind accent
+  // added for exactly this: on a canvas every kind is on screen at once, so the chart's
+  // fold-to-grey would have rendered one step type as though it were disabled. It was
+  // chosen by the palette search rather than by eye and `lint:palette` holds it to a
+  // stricter separation bar than the six meet among themselves (>= 6 CVD / >= 15 normal
+  // against ALL six, not just an adjacent neighbour).
+  connection_call: "var(--chart-7)",
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {

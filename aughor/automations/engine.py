@@ -853,6 +853,67 @@ def subchain_outcome(kind: str, child_id: str, child_name: str,
         data=published)
 
 
+def _dispatch_connection_call(effect: Effect, automation: Automation) -> EffectOutcome:
+    """VA-11 — spend a user's provider grant on one declared, read-only operation.
+
+    The wave that makes the vault CONSUMED. Everything it needs already existed and none
+    of it was reachable: the tokens sat encrypted behind a broker whose `fresh_access_token`
+    had zero callers, and `govern.outbound` had a cap, a span and an `EXTERNAL_CALL` event
+    waiting for a caller that spends a credential. This step is the caller.
+
+    The four refusals are four different statuses on purpose, because they are four
+    different people's problems:
+
+    * `invalid_params` — a required input resolved to nothing. The author's, and the run
+      canvas already reads that status as "this step was asked for something impossible".
+    * `dispatch_error` — the named grant cannot be used at all (revoked, dead upstream,
+      never consented to this scope) or a usage cap refused the call before it was made.
+      The object this step NAMES is unusable, exactly as an unknown Slack bot is.
+    * `failed` — the call went out and the provider refused it. Retryable, and the
+      retries this plane already performs are the right response.
+    * `executed` — with the operation's declared keys published into the chain, which is
+      what makes "list the messages, then read each one, then post" a chain rather than
+      three unrelated steps.
+
+    A read that times out is `failed`, not `uncertain`: `uncertain` exists to stop a
+    maybe-delivered SEND from being retried into a duplicate, and re-reading a mailbox
+    duplicates nothing.
+    """
+    from aughor.govern.outbound import OutboundBlocked
+    from aughor.integrations.call import CallFailed, CallParamsMissing, CallRefused, call
+    from aughor.integrations.operations import get_operation
+
+    grant_id, operation_id = effect.grant_id, effect.operation
+    target = f"{grant_id}:{operation_id}"
+    operation = get_operation(operation_id)
+    label = operation.label if operation else operation_id
+
+    try:
+        data = call(operation_id, grant_id, effect.params)
+    except CallParamsMissing as exc:
+        return EffectOutcome(kind=effect.kind, target=target, status="invalid_params",
+                             message=str(exc))
+    except CallRefused as exc:
+        return EffectOutcome(kind=effect.kind, target=target, status="dispatch_error",
+                             message=str(exc))
+    except OutboundBlocked as exc:
+        # A budget, not a fault — and named as one. `govern.outbound` fails OPEN when it
+        # cannot READ a cap and closed when one says block, so arriving here means a cap
+        # deliberately refused this call.
+        return EffectOutcome(kind=effect.kind, target=target, status="dispatch_error",
+                             message=f"refused by a usage cap: {exc.reason}")
+    except CallFailed as exc:
+        return EffectOutcome(kind=effect.kind, target=target, status="failed",
+                             message=f"{label} failed: {exc}")
+
+    # `count` where the operation publishes one, so a run row says what came back rather
+    # than only that something did.
+    count = data.get("count")
+    detail = f" — {count} result{'' if count == 1 else 's'}" if isinstance(count, int) else ""
+    return EffectOutcome(kind=effect.kind, target=target, status="executed",
+                         message=f"{label}{detail}", data=dict(data))
+
+
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "kinetic_action": _dispatch_kinetic,
     "notify": _dispatch_notify,
@@ -862,6 +923,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "agent_alert": _dispatch_agent_alert,
     "slack_post": _dispatch_slack_post,
     "subchain": _dispatch_subchain,
+    "connection_call": _dispatch_connection_call,
 }
 
 

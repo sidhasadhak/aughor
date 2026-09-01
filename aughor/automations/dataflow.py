@@ -538,6 +538,18 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # the child happened to end on. `executed` is the count a guard can read — "post the
     # summary only if the shared subchain actually did something".
     "subchain":       ("run_id", "outcome", "executed"),
+    # VA-11 — an OPEN set, and the second one in this table. One kind, many shapes: a
+    # Gmail list publishes `count`/`estimate`/`items`, a single message publishes
+    # `subject`/`sender`/`snippet`, and the keys belong to the OPERATION rather than to
+    # the kind this table is keyed by. Each operation declares its own `publishes`, which
+    # the rail draws as ports and `/integrations/operations` serves; making that a
+    # save-time refusal would mean keying this table by two things, and a table keyed by
+    # two things is two tables that will disagree.
+    #
+    # The open set is also what lets a step fan out over `{"$from": "step1.items"}`: a
+    # CLOSED published set is refused as a `for_each` source here, correctly, because
+    # every closed one in this plane is strings.
+    "connection_call": None,
 }
 
 #: B1 — the config fields a step may BIND (`{"$from": …}`) per kind: the input ports.
@@ -557,6 +569,16 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # steps. Declaring a bindable field here would draw an edge the engine does not
     # follow, which is the exact picture B1 exists to prevent.
     "subchain":       (),
+    # VA-11 — the operation's own inputs, as one bound structure, exactly as a declared
+    # action's are. `grant_id` and `operation` are absent because they are authored
+    # decisions: an upstream value choosing which credential a step spends would be a
+    # chain picking its own counterparty.
+    #
+    # ⚠️ This table DECLARES; it does not enforce — `resolve()` walks the whole config, so
+    # every other kind here will happily substitute a binding into a field this tuple
+    # omits. For this kind that gap had teeth, so the refusal lives on `Effect` itself
+    # (`_known_operation`), where a save actually fails.
+    "connection_call": ("params",),
 }
 
 

@@ -202,7 +202,7 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   conditions are reported rather than enforced, because "disabled" and "not due" are the two
   states a design lives in before it goes live. Guards are reported, never decided.
 
-### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; UNCONSUMED)
+### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; CONSUMER SHIPPED)
 
 > **State, measured 2026-08-30 (after `dadc6f63`).** Deliverables 1, 2 and 4 are BUILT:
 > `aughor/integrations/models.py` (the `Connection` object, Fernet under `AUGHOR_SECRET_KEY`,
@@ -213,6 +213,44 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 > `aughor/routers/integrations.py` imports the module, and `broker.fresh_access_token()` has
 > zero callers.** No effect kind, tool or connector runs under a user's grant. §7's recurring
 > failure, verbatim. The remaining work is a CONSUMER, not more vault.
+
+> **The consumer shipped 2026-09-01.** The premise was re-measured first and still held to the
+> line: `fresh_access_token()` had exactly zero production callers, and `routers/integrations.py`
+> was still the only importer of the package. It now has one caller, deliberately one —
+> `integrations/call.py`, where refresh, the scope check, the cap, the span and the audit line
+> all live, so a second consumer inherits every one of them by construction instead of by
+> remembering. The step is the effect kind **`connection_call`**, and the roster it spends a
+> grant on is `integrations/operations.py`: four declared reads (Gmail list · Gmail message ·
+> Calendar events · Graph mail) with typed params, a required scope and a response mapper each.
+>
+> **Three laws it is built on, each refusing something a plausible version would have allowed.**
+> *A closed roster, not a URL field* — an effect taking an arbitrary URL is a request-forgery
+> surface wearing a credential, and a `{"$from": …}` binding could reach it; the host and path
+> are constants of the module and authored config chooses only the ROW. (The general HTTP
+> template is DS-13's, behind its own form.) *Reads only* — a write under a user's grant belongs
+> behind the approval gate, and §3.4's own line settles it: two gates that can disagree is
+> strictly worse than one. *The credential selector may not be bound* — `BINDABLE_FIELDS`
+> DECLARES the input ports but `resolve()` walks the whole config, so every other kind in the
+> plane will happily substitute a binding into a field its tuple omits; harmless on an
+> org-scoped `bot_id`, not harmless on a credential, so this kind refuses it on the model where
+> a save actually fails.
+>
+> **Measured, not assumed.** A closed published set is refused as a `for_each` source (correctly
+> — every closed one in this plane is strings), so the kind publishes an OPEN set: one kind
+> carries many operation shapes, and that is exactly what makes *list the messages → for each →
+> read it → post* expressible. DS-10's registry picked the seventh effect kind up with **no
+> registry edit at all**, which is the property that wave claimed and this is the first
+> independent exercise of it. The palette dims the row on a deployment with no grant and names
+> the door that fixes it, and a REVOKED grant does not light it — counting rows would have.
+>
+> **Left open, and honestly.** Deliverable 3's live receipt still waits on a Google OAuth client
+> only the user can create — every path here is proven against a faux provider at the one
+> seam (`call._get`), which is where the broker's own suite draws the same line. Any automation
+> author may name any grant id today; grant ids are unguessable and neither the palette nor
+> `/integrations/operations` exposes another user's, but ENFORCING that is VA-10's hardening
+> pass, not this wave's. And `connection_call` is the seventh effect kind while the design
+> system caps its series at six ("never a seventh hue"), so it takes the documented fallback
+> rather than an invented token — extending the ramp is the user's call.
 
 **Decision behind it (§6.1, user-approved 2026-08-30): Aughor owns the vault.** The Databricks
 precedent settled it — a Unity Catalog connection is a *securable object* ("Databricks stores
@@ -846,10 +884,11 @@ NOW
         one step body driven by both orders; 2.7s parallel vs 5.1s ordered on the same
         chain, spans overlapping under one trace — receipts in §3.7 Phase 2
 
-NEXT (order within a band is the user's knob; the inert-vault repair stays highest)
-  VA-11 consumer                  (an effect that SPENDS a Connection through govern.outbound;
-                                   the vault is built and nothing reaches it — §3.4; also DS-11's
-                                   first half)
+NEXT (order within a band is the user's knob)
+  ✅ VA-11 consumer  SHIPPED 2026-09-01 — `connection_call`: a declared, read-only operation
+        run under a user's grant through govern.outbound (cap before the work, span,
+        EXTERNAL_CALL event, audit line naming the grant's owner). The vault is CONSUMED;
+        its live Google receipt still waits on an OAuth client only the user can create — §3.4
   S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
                                    surfaced as palette rows by DS-11)

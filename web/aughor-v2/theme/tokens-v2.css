@@ -135,10 +135,19 @@
      them would spend real CVD headroom for no visible gain. What DOES move is
      the chrome below, which follows the new borders and text.
      Mirrored in charts/echarts/palette.ts; `lint:palette` validates both and
-     fails on drift. Six slots is the ceiling — past six the chart folds to
-     "Other" (--chart-deemph), never a seventh hue. */
+     fails on drift. Six slots is still the CHART ceiling — past six the chart
+     folds to "Other" (--chart-deemph), never a generated seventh series.
+     --chart-7 is NOT a seventh series and is absent from CHART_SERIES for that
+     reason. It is the role accent for surfaces that colour by KIND rather than
+     by series — the automation canvas, where every kind is on screen at once and
+     "fold the seventh into grey" would mean one step type rendering as disabled.
+     It was chosen the same way the six were (search, not eye) and is held to a
+     STRICTER bar than they are: >= 6 CVD / >= 15 normal-vision separation from
+     every one of the six, which the six do not all meet pairwise among
+     themselves. `lint:palette` enforces exactly that. */
   --chart-1: #569BD2; --chart-2: #4BAB70; --chart-3: #9B7BD4;
   --chart-4: #C1882B; --chart-5: #2BA8A9; --chart-6: #DD6E6E;
+  --chart-7: #9B2378;   /* kind accent only — min 17.4 CVD / 20.9 normal vs the six */
   --chart-deemph: #4E5A6A;
   --chart-threshold-warn:   #E0A45C;
   --chart-threshold-crit:   #F08A9C;
@@ -195,6 +204,7 @@
      validator, left alone by the re-skin. Chrome follows the new tokens. */
   --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #9467BD;
   --chart-4: #FF7F0E; --chart-5: #17BECF; --chart-6: #D62728;
+  --chart-7: #871E5F;   /* kind accent only — min 14.3 CVD / 19.0 normal vs the six */
   --chart-deemph: #B9C2CE;
   --chart-threshold-warn:   #A35B00;
   --chart-threshold-crit:   #B8283F;

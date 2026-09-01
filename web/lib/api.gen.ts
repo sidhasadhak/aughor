@@ -4511,6 +4511,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/integrations/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operations
+         * @description VA-11 consumer — the declared operations, each with the grants that can run it.
+         *
+         *     Served with the grants ATTACHED rather than as two lists the client joins, because
+         *     the join is a policy question: whether a particular grant may run a particular
+         *     operation is `scope_granted`'s answer, and a client re-deriving it would be a second
+         *     authority on consent that drifts the first time a provider changes how it reports
+         *     scopes.
+         *
+         *     The same shape the palette uses one level up — every row says whether it works HERE
+         *     and, when it does not, the sentence that fixes it.
+         */
+        get: operations["operations_integrations_operations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/{provider_id}/app": {
         parameters: {
             query?: never;
@@ -10021,7 +10050,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "connection_call";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**
@@ -20009,6 +20038,37 @@ export interface operations {
             path: {
                 conn_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operations_integrations_operations_get: {
+        parameters: {
+            query?: {
+                provider?: string;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

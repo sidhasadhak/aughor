@@ -122,6 +122,42 @@ describe("what the editor sends", () => {
     expect(wire.when).toEqual(act.when);
     expect(wire.config.params).toEqual({ amount: 5 });
   });
+
+  /* VA-11 — the params-erase, fifth of this subsystem's PUT-erase family and the first
+   * one INSIDE an effect. An automation loaded for editing arrives with `params` and no
+   * `paramsText`; reading that absence as "{}" meant fixing a typo in the NAME wiped the
+   * params of every step in it. Both kinds whose params are authored as text are pinned,
+   * because the shape is the table's, not either kind's. */
+  it("carries stored params through when the params editor was never opened", () => {
+    for (const kind of ["kinetic_action", "connection_call"] as const) {
+      const untouched: AutoEffect = {
+        kind,
+        config: kind === "kinetic_action"
+          ? { action_id: "a1", params: { amount: 5 } }
+          : { grant_id: "ic_1", operation: "google.gmail.messages.list",
+              params: { q: "is:unread" } },
+      };
+      const wire = effectsForWire([untouched])[0];
+      expect(wire.config.params).toEqual(untouched.config.params);
+      expect(wire.config.paramsText).toBeUndefined();
+    }
+  });
+
+  it("still parses the operation params a person did type, and blames the right kind", () => {
+    const call: AutoEffect = {
+      kind: "connection_call",
+      config: { grant_id: "ic_1", operation: "google.gmail.messages.get",
+                paramsText: '{"message_id": {"$from": "inbox.id"}}' },
+    };
+    // A binding survives the round trip — it is the only way to author the fanned read.
+    expect(effectsForWire([call])[0].config.params)
+      .toEqual({ message_id: { $from: "inbox.id" } });
+
+    const broken = { ...call, config: { ...call.config, paramsText: "{oops" } };
+    // Named for ITSELF: "Declared-action params…" on a Gmail step sends the reader
+    // hunting for a declared action they never wrote.
+    expect(() => effectsForWire([broken])).toThrow(/Operation params/);
+  });
 });
 
 /* ── DS-6 · the Otherwise editor ────────────────────────────────────────────────── */
