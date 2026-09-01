@@ -44,6 +44,11 @@ logger = logging.getLogger(__name__)
 
 FAMILIES: tuple[str, ...] = (
     "trigger", "effect", "connector", "platform_tool", "mcp_tool", "declared_action",
+    # DS-12 — the ontology plane. Both are DEPLOYMENT-SHAPED like declared actions and
+    # unlike the shipped families: their membership is what this install's semantic layer
+    # holds, not what this version ships. They are the class of component a canvas
+    # competitor cannot copy without a semantic layer to copy it from.
+    "metric", "trusted_query",
 )
 
 #: The display states a component may carry. **Empty by intent** — nothing in this
@@ -62,6 +67,8 @@ GOVERNORS: tuple[str, ...] = (
     "aughor.db.registry",            # connections, their secrets and their drivers
     "aughor.agent.platform_tools",   # the read-only platform roster the agent may call
     "aughor.mcp.server",             # the MCP surface, and everything it exposes outward
+    "aughor.semantic.metrics",       # the metric registry: its definition and its lifecycle
+    "aughor.semantic.trusted_queries",  # the vetted-SQL store a trusted query is read from
 )
 
 
@@ -101,7 +108,7 @@ class Component(BaseModel):
     #: it — a layout, a favourite, a DS-14 tool name.
     id: str
     family: Literal["trigger", "effect", "connector", "platform_tool", "mcp_tool",
-                    "declared_action"]
+                    "declared_action", "metric", "trusted_query"]
     kind: str
     label: str
     description: str = ""
@@ -331,6 +338,71 @@ def _declared_action_components(conn_id: Optional[str]) -> list[Component]:
     return out
 
 
+def _metric_components(conn_id: Optional[str]) -> list[Component]:
+    """The governed metrics this connection would actually compute.
+
+    SCOPED, and that is the whole subtlety: `list_metrics` shadows a global definition
+    with a connection-scoped one of the same name, so an unscoped roster would offer a
+    "revenue" that this connection has deliberately redefined. Asking without a
+    connection returns the global set, which is the honest answer to a question that
+    named no connection.
+
+    The lifecycle rides as availability rather than as a hidden filter: a DRAFT metric is
+    real and listed, and says it is a draft. Dropping it would make the roster disagree
+    with the Semantic Layer screen the reader just came from.
+    """
+    from aughor.semantic.metrics import list_metrics
+
+    metrics = list_metrics(connection_id=conn_id) if conn_id else list_metrics()
+    out: list[Component] = []
+    for n, m in enumerate(sorted(metrics, key=lambda x: x.name)):
+        approved = str(getattr(m, "status", "") or "draft") == "approved"
+        out.append(Component(
+            id=f"metric:{m.name}", family="metric", kind=m.name,
+            label=m.label or m.name,
+            description=(m.caveats or "")[:300],
+            icon="metric", priority=10 * (n + 1),
+            inputs=[], outputs=["value", "unit", "label"],
+            availability="ready" if approved else "needs_setup",
+            reason="" if approved else f"status: {getattr(m, 'status', 'draft')}",
+            # An automation step reads it; a model cannot call it directly. `get_metric`
+            # is the MCP tool that does, and it lives in the mcp_tool family already —
+            # claiming it twice would double-count one capability.
+            exposable_as_tool=False,
+            governed_by="aughor.semantic.metrics",
+        ))
+    return out
+
+
+def _trusted_query_components(conn_id: Optional[str]) -> list[Component]:
+    """The connection's vetted queries — the plane's only source of declared LISTS.
+
+    Connection-scoped with no global fallback, unlike metrics: a trusted query is verified
+    against the schema it was written for, and a global one would be a query vouched for
+    against tables another connection may not have. `list_trusted("")` returns everything,
+    so the empty case is passed through deliberately rather than by omission.
+    """
+    from aughor.semantic.trusted_queries import list_trusted
+
+    if not conn_id:
+        return []
+    out: list[Component] = []
+    for n, q in enumerate(sorted(list_trusted(conn_id), key=lambda x: x.question)):
+        out.append(Component(
+            id=f"trusted_query:{conn_id}:{q.id}", family="trusted_query", kind=q.id,
+            label=q.question or q.id,
+            description=(q.note or "")[:300],
+            icon="table", priority=10 * (n + 1),
+            inputs=[],
+            # `rows` is the first declared LIST in this plane (dataflow.LIST_PUBLISHED),
+            # which is what a `for_each` fans over.
+            outputs=["rows", "columns", "count"],
+            exposable_as_tool=False,
+            governed_by="aughor.semantic.trusted_queries",
+        ))
+    return out
+
+
 _COLLECTORS: dict[str, Any] = {
     "trigger": _automation_components,
     "effect": _automation_components,
@@ -338,6 +410,8 @@ _COLLECTORS: dict[str, Any] = {
     "platform_tool": _platform_tool_components,
     "mcp_tool": lambda conn_id: _mcp_tool_components(),
     "declared_action": _declared_action_components,
+    "metric": _metric_components,
+    "trusted_query": _trusted_query_components,
 }
 
 

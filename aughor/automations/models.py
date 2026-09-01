@@ -111,6 +111,14 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # everywhere in this plane (`Automation.conn_id` is one), and one key with two
     # meanings on one canvas is a collision the reader pays for, not the author.
     "connection_call": ("grant_id", "operation"),
+    # DS-12 — the ontology plane, as steps. Each names a GOVERNED object rather than
+    # carrying SQL: a metric by the name Finance approved, a query by the id someone
+    # vetted. That is the whole difference between this and a step that takes a string
+    # of SQL — there is no expression here for anyone to author, so there is none for
+    # anyone to inject, and the number a chain acts on is the number the registry
+    # defines rather than one an LLM re-derived.
+    "metric_value":   ("metric",),
+    "trusted_query":  ("query_id",),
 }
 
 
@@ -227,7 +235,8 @@ class Effect(BaseModel):
     and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
-                  "slack_post", "subchain", "connection_call"]
+                  "slack_post", "subchain", "connection_call",
+                  "metric_value", "trusted_query"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
@@ -324,6 +333,16 @@ class Effect(BaseModel):
     def automation_id(self) -> str:
         """DS-9 — the chain a ``subchain`` step runs."""
         return str(self.config.get("automation_id", ""))
+
+    @property
+    def metric(self) -> str:
+        """DS-12 — the governed metric a ``metric_value`` step reads."""
+        return str(self.config.get("metric", ""))
+
+    @property
+    def query_id(self) -> str:
+        """DS-12 — the vetted query a ``trusted_query`` step runs."""
+        return str(self.config.get("query_id", ""))
 
     @property
     def grant_id(self) -> str:

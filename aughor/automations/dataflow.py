@@ -550,7 +550,36 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # CLOSED published set is refused as a `for_each` source here, correctly, because
     # every closed one in this plane is strings.
     "connection_call": None,
+    # DS-12 — a governed number, its unit and its label. Closed, because unlike an
+    # operation roster there is exactly one shape: every metric answers with a value.
+    "metric_value":   ("value", "unit", "label"),
+    # DS-12 — and the first CLOSED set in this plane that contains a LIST. `rows` is
+    # what a `for_each` fans over; `columns` and `count` describe it without anyone
+    # having to iterate to find out. See LIST_PUBLISHED below — declaring the key is
+    # not enough on its own, because a closed set is otherwise refused as a fan source.
+    "trusted_query":  ("rows", "columns", "count"),
 }
+
+#: DS-12 — the published keys that are LISTS, and may therefore be fanned over.
+#:
+#: §3.2 carried this as an honest limit for three waves: "NOTHING in this plane
+#: publishes a list", so a `for_each` source could only be a literal list or a binding
+#: onto the one OPEN published set. That was not a policy — it was an inventory, and
+#: `validate_chain` encoded it by refusing every closed set as a fan source, correctly,
+#: because every closed set in this plane was strings.
+#:
+#: A trusted query publishes rows. Rather than reopen the set — which would give up the
+#: save-time refusal that makes an unknown key a design error instead of a 09:00
+#: surprise — the LIST-ness is declared beside the keys, so a fan over `q.rows` is
+#: accepted and a fan over `q.count` is still refused with the same sentence as before.
+LIST_PUBLISHED: dict[str, tuple[str, ...]] = {
+    "trusted_query": ("rows",),
+}
+
+
+def publishes_list(kind: str, key: str) -> bool:
+    """Is ``kind``'s published ``key`` a list a step may run once per item of?"""
+    return key in LIST_PUBLISHED.get(kind, ())
 
 #: B1 — the config fields a step may BIND (`{"$from": …}`) per kind: the input ports.
 #: Only fields whose consumption is a string the dispatcher reads; enumerated rather
@@ -579,6 +608,11 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # omits. For this kind that gap had teeth, so the refusal lives on `Effect` itself
     # (`_known_operation`), where a save actually fails.
     "connection_call": ("params",),
+    # DS-12 — neither takes an input. Both name a governed object and read it; there is
+    # no field an upstream value could reach, which is the point: a metric a chain could
+    # re-point at runtime would not be the governed metric any more.
+    "metric_value":   (),
+    "trusted_query":  (),
 }
 
 
@@ -685,10 +719,17 @@ def validate_chain(effects: list) -> Optional[str]:
                 # them. Refusing beats picking the last silently.
                 declared = FAN_PUBLISHED if target in fanned else PUBLISHED_KEYS.get(producer)
                 key = parse_ref(ref)[1]
-                if ref in source_refs and declared is not None:
+                if (ref in source_refs and declared is not None
+                        and not publishes_list(producer, key)):
+                    fannable = LIST_PUBLISHED.get(producer, ())
+                    # DS-12 — when the producer DOES publish a list, name it: "fan out
+                    # over a literal list instead" is unhelpful advice to someone one
+                    # key away from the right answer.
+                    hint = (f"fan out over '{target}.{fannable[0]}' instead"
+                            if fannable else "fan out over a literal list instead")
                     return (f"step '{alias}' fans out over '{ref}', but a {producer} step "
-                            f"publishes {', '.join(declared) or 'nothing'} — none of it is "
-                            f"a list; fan out over a literal list instead")
+                            f"publishes {', '.join(declared) or 'nothing'} — "
+                            f"'{key}' is not a list; {hint}")
                 if target in fanned and key not in FAN_PUBLISHED:
                     return (f"step '{alias}' binds to '{ref}', but step '{target}' runs "
                             f"once per item — it publishes only "

@@ -45,6 +45,10 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
     desc: "Run another automation as one step — share a shape instead of authoring it twice" },
   { value: "connection_call", label: "Read from a connected account",
     desc: "Read Gmail, Calendar or Outlook under your own grant — capped, spanned and audited on every call" },
+  { value: "metric_value", label: "Governed metric",
+    desc: "Read a metric by its approved definition — the number the registry defines, filters and caveats included" },
+  { value: "trusted_query", label: "Trusted query",
+    desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
 ];
 
 export const CRON_PRESETS = [
@@ -515,6 +519,20 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
             <input style={inputStyle} value={String(e.config.grant_id ?? "")} onChange={ev => set({ grant_id: ev.target.value })} placeholder="connected account id" />
             <input style={inputStyle} value={paramsTextOf(e)} onChange={ev => set({ paramsText: ev.target.value })} placeholder={'params JSON e.g. {"q": "is:unread"} or {"message_id": {"$from": "inbox.id"}}'} />
           </div>
+        )}
+        {/* DS-12 — one field each, and it is a NAME, not SQL. The governed object is
+            chosen from the registry (`/components?family=metric`), the same way the
+            declared-action picker reads the ontology route rather than making the
+            author remember an id. */}
+        {e.kind === "metric_value" && (
+          <input style={inputStyle} value={String(e.config.metric ?? "")}
+            onChange={ev => set({ metric: ev.target.value })}
+            placeholder="metric name, e.g. revenue" />
+        )}
+        {e.kind === "trusted_query" && (
+          <input style={inputStyle} value={String(e.config.query_id ?? "")}
+            onChange={ev => set({ query_id: ev.target.value })}
+            placeholder="trusted query id" />
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
           onChange={onChange} />

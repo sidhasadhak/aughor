@@ -108,6 +108,7 @@ const KIND_ICON: Record<string, IconName> = {
   investigate: "search", slack_post: "send", notify: "bell",
   brief: "brief", kinetic_action: "bolt", monitor: "activity", agent_alert: "alert",
   subchain: "layers", connection_call: "link",
+  metric_value: "metric", trusted_query: "table",
 };
 
 const COL_W = 300;
@@ -433,6 +434,8 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   // not the work.
   connection_call: [{ field: "operation", placeholder: "operation id" },
                     { field: "grant_id", placeholder: "connected account id" }],
+  metric_value:   [{ field: "metric", placeholder: "metric name" }],
+  trusted_query:  [{ field: "query_id", placeholder: "trusted query id" }],
 };
 
 /** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
@@ -449,6 +452,16 @@ const KIND_HUE: Record<string, string> = {
   // stricter separation bar than the six meet among themselves (>= 6 CVD / >= 15 normal
   // against ALL six, not just an adjacent neighbour).
   connection_call: "var(--chart-7)",
+  // DS-12's two kinds are the EIGHTH and NINTH, and the hue axis is out. The search that
+  // found `--chart-7` was re-run against all seven: in the one gap left (yellow/olive)
+  // the best light candidate clears the gate's floors by 1.4 and 0.1 units, and the best
+  // dark one is a different hue family from it — which breaks the rule that a slot keeps
+  // its family when the theme flips. A colour that passes its own bar by a rounding error
+  // is eyeballing with extra steps, so both take the documented fallback instead.
+  //
+  // The real fix is not a ninth hue: past seven, this map should key on the CLASS of node
+  // (ontology read · outbound call · governed write) rather than the kind, because that is
+  // what a reader is actually distinguishing. That is a design-system change, not a wave's.
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {

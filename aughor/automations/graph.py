@@ -319,7 +319,7 @@ def effect_detail(effect: Any) -> str:
     # only field on a `connection_call` step that says what it would do. `grant_id` is
     # deliberately NOT here — an opaque `ic_…` names nothing to a reader.
     for key in ("action_id", "question", "subscription_id", "monitor_id", "rule_id",
-                "trigger_id", "channel", "operation"):
+                "trigger_id", "channel", "operation", "metric", "query_id"):
         val = cfg.get(key)
         if isinstance(val, str) and val:
             return val if len(val) <= 80 else val[:80] + "…"

@@ -221,6 +221,86 @@ def delete_metric(name: str, sql: str | None = None, path: Path | None = None,
 
 # ── Quality validation + freshness ────────────────────────────────────────────
 
+# ── the governed value ───────────────────────────────────────────────────────────
+#
+# DS-12 — lifted here from `routers/metrics.py`, where it lived twice and ran zero
+# times. Both copies called `db.execute(query)` against a signature that has always
+# been `execute(hypothesis_id, sql)`, so both raised TypeError on every call: the
+# value route swallowed it into its `note` field ("Could not compute against …") and
+# the health scorecard swallowed it into `status: "unknown"`. A governed metric's
+# number — the thing the MCP tool's own docstring promises is "the exact governed
+# number, not an LLM re-derivation" — has never once been computed.
+#
+# They also disagreed about WHAT to compute. The value route applied the metric's
+# declared filters over its first table; the scorecard ran the bare aggregate with no
+# FROM and no filters. Two numbers for one governed definition is the failure this
+# module exists to prevent, so there is now one builder and one runner, here, beside
+# the definition they read.
+
+class MetricValue(BaseModel):
+    """One metric's current value, the SQL that produced it, and why it could not be."""
+
+    value: Optional[float] = None
+    sql: str = ""
+    error: str = ""
+
+
+def value_query(metric: "MetricDefinition") -> str:
+    """The governed value query for this metric.
+
+    A metric whose ``sql`` is already a full SELECT is run verbatim — it has stated its
+    own shape. Otherwise the aggregate expression is wrapped over the metric's first
+    table with its declared filters applied, because those filters ARE the definition:
+    revenue that includes cancelled orders is a different metric from the one Finance
+    approved, and computing it without them would answer the wrong question precisely.
+    """
+    expr = (metric.sql or "").strip()
+    if expr.lower().startswith("select"):
+        return expr
+    query = f"SELECT ({expr}) AS _v"
+    if metric.tables:
+        query += f" FROM {metric.tables[0]}"
+        if metric.filters:
+            query += " WHERE " + " AND ".join(metric.filters)
+    return query
+
+
+def compute_value(metric: "MetricDefinition", db) -> MetricValue:
+    """Run the governed query on an open connection. Never raises.
+
+    ``__metric_value__`` is an INTERNAL query label (dunder-wrapped, the convention
+    `_is_internal_query` reads and the one `__monitor_window__` already uses): this
+    reads a single aggregate, never rows, so there is nothing for the PII post-pass to
+    redact. A step that reads ROWS must not borrow this label.
+    """
+    query = value_query(metric)
+    try:
+        result = db.execute("__metric_value__", query)
+    except Exception as exc:                       # a connector that cannot run it at all
+        return MetricValue(sql=query, error=str(exc))
+    if getattr(result, "error", None):
+        return MetricValue(sql=query, error=str(result.error))
+    rows = getattr(result, "rows", None) or []
+    if not rows or rows[0] is None:
+        # A metric that legitimately matches no rows. Distinct from an error, and the
+        # caller renders it as such: "no value" is an answer, "could not ask" is not.
+        return MetricValue(sql=query)
+    first = rows[0]
+    raw = first[0] if isinstance(first, (list, tuple)) else list(first.values())[0]
+    # This layer hands back STRINGIFIED rows and spells SQL NULL as the literal "NULL"
+    # (the convention in `connectors/base.py` and four sibling call sites). An aggregate
+    # over zero matching rows is exactly that — an answer of "nothing", not a fault. The
+    # first version of this function called it a non-numeric value and reported an ERROR,
+    # which would have paged someone about a connection that was working perfectly.
+    if raw is None or (isinstance(raw, str) and raw.strip() in ("", "NULL")):
+        return MetricValue(sql=query)
+    try:
+        return MetricValue(value=float(raw), sql=query)
+    except (TypeError, ValueError):
+        return MetricValue(sql=query,
+                           error=f"{metric.name} returned a non-numeric value: {raw!r}")
+
+
 class QualityTestResult(BaseModel):
     test_sql: str
     passed: bool
