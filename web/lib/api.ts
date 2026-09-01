@@ -4087,12 +4087,20 @@ export interface StagedProposal {
   id: string;
   connection_id: string;
   schema_name: string;
+  /** DS-11's completion — what accepting this RUNS. `declared_action` is every proposal
+   *  written before it and stays the default; `integration` means `action_id` names a
+   *  declared OPERATION and `grant_id` names the connected account whose consent it
+   *  spends. */
+  kind: "declared_action" | "integration";
+  /** The connected account an `integration` proposal would act as. "" otherwise. */
+  grant_id: string;
   action_id: string;
   params: Record<string, unknown>;
   reasoning: string;
   proposer: string;
   source: string;
-  status: "pending" | "accepted" | "rejected" | "executed" | "failed" | "approval_required";
+  status: "pending" | "accepted" | "rejected" | "executed" | "failed"
+        | "approval_required" | "uncertain";
   status_message: string;
   outcome: Record<string, unknown>;
   created_at: string;

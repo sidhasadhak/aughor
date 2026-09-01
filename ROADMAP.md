@@ -138,8 +138,21 @@ Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
 `aughor/mcp/` today is a **server** exposing Aughor's tools, plus an HTTP client to Aughor's own
 API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.
 
-VA-9's own risk note calls this *"the largest new attack surface in the arc"*. **Agree the
-allowlist and the outbound-off-by-default posture with the user before starting.**
+VA-9's own risk note calls this *"the largest new attack surface in the arc"*. ~~Agree the
+allowlist and the outbound-off-by-default posture with the user before starting.~~
+
+> ✅ **POSTURE DECIDED 2026-09-01 (the user's call, asked before a line was written):
+> READ-ONLY TOOLS FIRST.** Ship discovery and read-only tool calls against an allowlisted
+> server; a tool the server declares as mutating is **listed and refused with a sentence**
+> until a later slice — listed, because a roster that hides what a server offers is the
+> catalogue-that-lies failure DS-10 exists to end, and refused, because the hardest
+> question in this wave is whether we trust a third party's own risk labelling, and
+> deferring it is cheaper than getting it wrong. Everything the DS-11 vault half
+> established still binds: every call rides `govern.outbound` (capped, spanned,
+> `EXTERNAL_CALL`), and OUR approval gate stays the policy authority when the write slice
+> lands. **What this decision does NOT settle** and the write slice must: whose declaration
+> of "read-only" is believed, and what a server that changes a tool's declaration after
+> registration is allowed to do.
 
 **Promoted in importance 2026-08-30:** the Langflow study (§4.2) found that the connector
 platforms which solve the OAuth problem — Arcade, Composio — expose their tools **over MCP**.
@@ -342,7 +355,7 @@ with no second process running and no environment variable set.
 
 ---
 
-### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.4)
+### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.5)
 
 > **Origin.** The user's 2026-08-31 directive — *"any & every agent that we spawn should be
 > created via langflow style visual editor… fork it, clone it or whatever… go all in… think
@@ -731,13 +744,11 @@ and posts to Slack, every hop attributed, capped and audited.
 > too: Graph's `/me/messages` returns whole messages, bodies included, and a run history
 > is stored and read by people.
 >
-> **What is deliberately NOT here: a pause.** A write the gate refuses returns a terminal
-> refusal, not the `approval_required` a step turns into a DS-8 proposal — because
-> `inbox.accept_proposal` resolves a proposal by loading a DECLARED ACTION and running the
-> one governed-write executor, so a proposal staged for an integration operation would be
-> presented to a human, accepted, and then fail with "declared action no longer exists". A
-> refusal a person can act on beats a proposal that cannot be honoured. **Filed for DS-11's
-> completion:** teach the inbox a second proposal kind.
+> **A write the gate stops is a QUESTION, not a fact** — the one verdict in the call seam
+> a person can answer — so it comes back as its own `needs_approval` rather than as one of
+> the refusals beside it, and the automation plane parks the run on a human. **Shipped in
+> the same session as DS-11's completion** (below); the first half had left it as a
+> terminal refusal because the inbox knew one proposal kind.
 >
 > **Live receipts, driven in the browser against a real API.** The chain was authored on
 > the Design canvas (two SERVED pickers — grants from `/integrations/connections`,
@@ -771,6 +782,56 @@ and posts to Slack, every hop attributed, capped and audited.
 > caller's own grants). That is VA-10's to close. The chart series is six CVD-validated
 > tokens behind `lint:palette`, so this kind SHARES `--chart-4` with the declared action
 > rather than inventing a seventh: they are the two kinds the approval gate can stop.
+
+> **✅ DS-11 COMPLETE 2026-09-01 — the inbox learned a second proposal kind, so an
+> integration write PARKS on a human instead of refusing.** The gap the first half named
+> and left open, closed in the same session.
+>
+> **One inbox, one branch.** `staged_proposals` gained `kind` and `grant_id` (migration 3,
+> numbered off the LIVE store's `user_version=2` — the repo's own rule, and the one no
+> hermetic test can catch). Both columns default to what every existing row already means,
+> so there is no backfill and none is needed. `connection_id` keeps meaning the WAREHOUSE
+> connection in both kinds, deliberately: it is what the queue filters, groups and purges
+> by, and overloading it to carry a grant would have hidden every integration proposal from
+> the queue that exists to show them. The branch in `accept_proposal` sits AFTER the
+> resolve-once UPDATE, because expiry, the acceptance window, first-responder-wins and the
+> audit trail are properties of the QUEUE; only what the accept executes differs, which is
+> the smallest seam the two kinds can meet at. A second inbox was the alternative, and this
+> repo has found the same bug in that shape three times.
+>
+> **`approved=True` bypasses the GATE and nothing else.** The grant's verdicts, the scope
+> check and the params are all re-asked on accept — the same split the governed-write
+> executor makes, for its reason: a proposal can sit for days, and an approval is
+> permission, never a promise that the world stood still. A revoked account is not spent
+> because a human said yes.
+>
+> **No standing grant is minted, and the silence is SAID.** A standing grant is
+> target-bound to a declared action's coerced params; the standing permission for an
+> integration write is an allowlist entry on `(operation, account)`, with a door of its
+> own. The inbox card drops the checkbox for this kind and names that door instead —
+> offering a control that does nothing is worse than not offering one.
+>
+> **The defect the live run found, and the green suite had agreed with.** `accept_proposal`
+> resolves the row to `accepted`, THEN performs the write, THEN records its outcome — three
+> statements with a network call in the middle. The router's own resume runs after all
+> three; the HEARTBEAT's sweep visits every parked run once a minute and does not. Landing
+> inside that window it saw `accepted`, mapped it to `executed` (which it is) and rewrote
+> the step with an EMPTY outcome — a governed write that happened, reported as one that
+> produced nothing, with every later binding onto it resolving to nothing. **This is a
+> DS-8-era race, not a DS-11 one**; it took a live run with a heartbeat actually ticking to
+> surface, because every test resolved and resumed in one thread with nothing in between.
+> `resume_run` now holds while an accepted proposal has nothing recorded yet — BOUNDED at
+> 120s, because the same shape is what a process that died mid-write leaves behind and
+> holding forever would strand a run in `paused`, the one state DS-8 must never produce.
+>
+> **Live receipt:** with the gate armed, the chain parked with `finished_at: None` and step
+> 2 never dispatched; ONE row in NEEDS YOU (not the double-listing DS-8 had to fix), and
+> one card in the Inbox reading "slack.chat.postMessage · as slack · Aughor HQ" over the
+> RESOLVED params (`text: 3`, step 1's count — RC-3 freezes values, never references).
+> Accepting IN THE UI resumed the SAME run id to `fired` with both steps executed and the
+> resumed step publishing the write's real `{ts, channel}`. The audit ledger carries the
+> three rows the story needs: `blocked` by the automation, `approved` by the operator,
+> `executed` by the operator.
 
 **DS-12 · Ontology components — the moat.** Metrics, entities, cohorts and trusted queries
 as first-class typed nodes: "Revenue (metric)" publishes a typed series; "Churned accounts
@@ -949,11 +1010,13 @@ NOW
         one step body driven by both orders; 2.7s parallel vs 5.1s ordered on the same
         chain, spans overlapping under one trace — receipts in §3.7 Phase 2
 
-  ✅ VA-11 consumer / DS-11 first half  SHIPPED 2026-09-01 — the vault is consumed: an
+  ✅ DS-11 COMPLETE 2026-09-01 (both halves of its VA-11 side) — the vault is consumed: an
         `integration_call` step spends a user's grant through govern.outbound (cap, span,
         EXTERNAL_CALL, audit), reads and writes are declared as DATA against a closed URL
         set, a write passes the approval gate, and the palette/registry tell the truth
-        about which grant can run which operation — receipts in §3.7 Phase 3
+        about which grant can run which operation. A gated write PARKS on a human through
+        the proposal inbox's second kind, and accepting it resumes the same run —
+        receipts in §3.7 Phase 3
 
 NEXT (order within a band is the user's knob)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
@@ -967,8 +1030,7 @@ NEXT (order within a band is the user's knob)
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
-LATER   DS-11 completion (the inbox's second proposal kind, so an integration write can
-        PARK on a human rather than refuse) · DS-12 ontology components · DS-13 declarative
+LATER   DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
         DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)
@@ -996,8 +1058,14 @@ the browser** · **measure the premise before building.**
    properly expressive, VA-11 makes it reach further — and W2 needs nothing from outside
    this repo, while VA-11's live receipt waits on a Google OAuth client only the user can
    create.
-3. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
-4. ✅ **DECIDED 2026-08-31 — the visual-editor question: the grammar, not the codebase.**
+3. ✅ **DECIDED 2026-09-01 — the MCP consumer's posture: read-only tools first.**
+   Allowlisted servers, discovery and read-only calls; a tool the server declares as
+   mutating is listed and refused with a sentence rather than hidden or trusted. The
+   question it defers on purpose — whose declaration of "read-only" is believed — is the
+   write slice's to answer, and is the reason this cut is the narrow one. Full note: §3.1.
+
+4. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
+5. ✅ **DECIDED 2026-08-31 — the visual-editor question: the grammar, not the codebase.**
    The user re-opened §4.2 with a mandate for total openness ("fork it… go all in… think
    years ahead"); the four-pass re-study confirmed the refusal (§4.2 addendum) and the
    vision landed as **Arc DS (§3.7)** — Langflow-class editing on our engine, then past

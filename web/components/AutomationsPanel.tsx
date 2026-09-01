@@ -34,6 +34,7 @@ import {
 import {
   CONDITION_KINDS, CRON_PRESETS, ConditionRow, EFFECT_KINDS, EffectRow,
   effectsForWire, ghostBtn, inputStyle, labelStyle, newCondition, newEffect,
+  useIntegrationGrants,
 } from "@/components/automations/AutomationRows";
 import { bindingRefs } from "@/lib/automationFlow";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
@@ -469,6 +470,15 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
   onReload: () => void; flash: (t: "ok" | "err", s: string) => void;
 }) {
   const [mintFor, setMintFor] = useState<Record<string, boolean>>({});
+  // DS-11's completion — the accounts, so an integration proposal can say WHOSE consent
+  // it spends in the words a person picked it by ("slack · Aughor HQ"), not as the id the
+  // step happens to store. A grant that is gone falls back to the id: unlovely, and still
+  // the honest answer to "which account was this?".
+  const accounts = useIntegrationGrants();
+  const accountLabel = (id: string) => {
+    const g = accounts.find(a => a.id === id);
+    return g ? `${g.provider}${g.account ? ` · ${g.account}` : ""}` : id;
+  };
   const pending = proposals.filter(p => p.status === "pending");
   const resolved = proposals.filter(p => p.status !== "pending");
 
@@ -508,6 +518,14 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
         <div key={p.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: 6, padding: "12px 14px", marginBottom: 10 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 13, fontWeight: 600 }}>{p.action_id}</span>
+            {/* DS-11's completion — WHOSE consent this would spend. A person approving a
+                write has to be told which account it goes out as; the card said only what
+                would be done, which reads the same for two different accounts. */}
+            {p.kind === "integration" && p.grant_id && (
+              <span style={{ fontSize: 11, color: "var(--amb4)" }}>
+                as {accountLabel(p.grant_id)}
+              </span>
+            )}
             <span style={{ fontSize: 11, color: "var(--t3)" }}>by {p.proposer}</span>
           </div>
           {p.reasoning && <div style={{ fontSize: 12, color: "var(--t2)", marginTop: 4 }}>{p.reasoning}</div>}
@@ -517,10 +535,20 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 10 }}>
             <Button variant="ghost" className="h-auto" onClick={() => accept(p)} style={{ fontSize: 11, padding: "3px 12px", background: "var(--blue3)", color: "#fff" }}>Accept</Button>
             <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => reject(p)} style={{ ...ghostBtn, color: "var(--red3)" }}>Reject</Button>
-            <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
-              <input type="checkbox" checked={!!mintFor[p.id]} onChange={e => setMintFor(m => ({ ...m, [p.id]: e.target.checked }))} />
-              also allow this target unattended
-            </label>
+            {/* A standing GRANT is target-bound to a declared action's coerced params; the
+                standing permission for an integration write is an allowlist entry on
+                (operation, account), which has a door of its own under Approvals. Offering
+                a checkbox that does nothing is worse than not offering one. */}
+            {p.kind === "integration" ? (
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>
+                to allow this account unattended, approve it under Approvals
+              </span>
+            ) : (
+              <label style={{ fontSize: 11, color: "var(--t3)", display: "flex", alignItems: "center", gap: 5, cursor: "pointer" }}>
+                <input type="checkbox" checked={!!mintFor[p.id]} onChange={e => setMintFor(m => ({ ...m, [p.id]: e.target.checked }))} />
+                also allow this target unattended
+              </label>
+            )}
           </div>
         </div>
       ))}

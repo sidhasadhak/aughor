@@ -26,14 +26,14 @@ executor uses, for the same reasons:
 6. **The audit line**, on every outcome, through the same ledger every other governed
    decision lands in.
 
-**What is deliberately NOT here: a pause.** A write refused by the gate returns
-``refused`` — terminal — and not the ``approval_required`` an automation step turns into a
-DS-8 inbox proposal. That is not an oversight: ``inbox.accept_proposal`` resolves a
-proposal by loading a DECLARED ACTION and running it through the one governed-write
-executor, so a proposal staged for an integration operation would be presented to a
-human, accepted, and then fail with "declared action no longer exists". A refusal a
-person can act on beats a proposal that cannot be honoured. Teaching the inbox a second
-proposal kind is its own slice, filed against DS-11's completion.
+**A write the gate stops is a QUESTION, not a fact** — and that is why it comes back as
+``needs_approval`` rather than as one of the refusals beside it. Every other refusal here
+describes the world (a revoked grant, a scope nobody consented to, an operation that does
+not exist), and no amount of a person looking at it changes the answer. This one is
+waiting for a human, so the automation plane turns it into a durable proposal and parks
+the run on them — DS-8's machinery, reached by a second proposal kind the inbox learned
+in DS-11's completion. On accept, the inbox calls back in here with ``approved=True``:
+the gate is not asked twice, and everything else is.
 
 **Known limit, stated rather than discovered (VA-10's to close).** The grant's owner is
 recorded on every audit line, but ownership is not ENFORCED here: an automation fires from
@@ -68,6 +68,9 @@ class CallResult:
     * ``executed`` — it happened, ``data`` carries the declared published keys.
     * ``refused`` — a verdict BEFORE the call. Terminal: identical inputs refuse
       identically, so a retry is the #200 lesson repeated.
+    * ``needs_approval`` — the graduated gate stopped a WRITE. Alone among the refusals
+      it is a question rather than a fact, because a person can answer it: the caller
+      stages a proposal and parks on them.
     * ``blocked`` — a usage cap stopped it. **Nothing was sent**, so a retry once the
       window rolls over is legitimate, which is why it is not ``refused``.
     * ``failed`` — the provider refused it.
@@ -102,8 +105,15 @@ def _request(method: str, url: str, *, headers: dict, query: dict,
 
 
 def call_operation(connection_id: str, operation_id: str, params: Optional[dict] = None, *,
-                   actor: str = "") -> CallResult:
-    """Run one declared operation under one user's grant. Never raises."""
+                   actor: str = "", approved: bool = False) -> CallResult:
+    """Run one declared operation under one user's grant. Never raises.
+
+    ``approved`` marks that a human already accepted this write in the proposal inbox, so
+    the gate is not asked again — the accept IS the approval. Exactly the flag and exactly
+    the reasoning the governed-write executor carries, and it bypasses the GATE only: the
+    grant's verdicts, the scope check and the params are re-checked on the way through,
+    because the world may have moved between staging and accepting.
+    """
     from aughor.integrations.operations import (
         build_request, extract, get_operation, missing_scopes,
     )
@@ -145,11 +155,18 @@ def call_operation(connection_id: str, operation_id: str, params: Optional[dict]
     # 4 — the approval gate, writes only. Named `integration.<provider>.<operation>` so an
     # allowlist entry reads as the thing it permits, and scoped to the GRANT, which is the
     # grain a person actually reasons about ("this account may post to Slack").
-    gov_action = f"integration.{op.provider}.{op.id}"
-    if op.writes:
+    gov_action = op.gov_action
+    if op.writes and approved:
+        _audit(gov_action, connection_id, "approved", actor, conn.user_id,
+               "human accept", True)
+    elif op.writes:
         refusal = _gate(gov_action, connection_id, actor=actor, risk=op.risk)
         if refusal:
-            return CallResult("refused", refusal)
+            # `needs_approval`, not `refused`, and the distinction is the whole of DS-11's
+            # completion: every other refusal here is a fact about the world that no human
+            # can change by looking at it, while this one is a question waiting for a
+            # person. The caller turns it into a durable proposal and PARKS.
+            return CallResult("needs_approval", refusal)
 
     try:
         token = _fresh_token(connection_id)

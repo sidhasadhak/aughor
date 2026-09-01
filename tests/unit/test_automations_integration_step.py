@@ -345,3 +345,161 @@ def test_a_binding_into_params_still_draws_as_a_data_edge():
                        "params": {"channel": "#revenue", "text": {"$from": "inbox.count"}}}))
     edges = data_edges_only(build_graph(chain))
     assert [(e["from"], e["to"], e["label"]) for e in edges] == [("inbox", "tell", "count")]
+
+
+# ── DS-11's completion · the write parks on a human ─────────────────────────────
+#
+# The gap the first half left, stated as its own section. A write the graduated gate
+# refuses is the ONE verdict here a person can answer, and before this it was reported as
+# a terminal error on a run that walked on — the exact shape DS-8 was built to end, one
+# effect kind over.
+
+def _post(alias="tell", **params) -> Effect:
+    return Effect(kind="integration_call", alias=alias,
+                  config={"connection_id": "ic_s", "operation": "slack.chat.postMessage",
+                          "params": {"channel": "#revenue", "text": "hi", **params}})
+
+
+@pytest.fixture
+def gate_on(monkeypatch):
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+
+
+def _proposals(run_id):
+    from aughor.actions.inbox import proposals_for_run
+    return proposals_for_run(run_id)
+
+
+def test_a_gated_write_parks_the_run_instead_of_failing_it(grants, wire, gate_on):
+    from aughor.automations.store import get_run
+
+    run = _run(_automation(_read(alias="inbox"), _post()), Dispatcher())
+
+    assert run.outcome == "paused", "a question a person can answer is not a failure"
+    assert run.finished_at is None, "a parked run has not finished"
+    assert [o.status for o in run.effects] == ["executed", "approval_required"]
+    staged = _proposals(run.id)
+    assert len(staged) == 1
+    assert staged[0].kind == "integration"
+    assert staged[0].grant_id == "ic_s", "the proposal names WHOSE consent it would spend"
+    assert staged[0].action_id == "slack.chat.postMessage"
+    assert staged[0].connection_id == "conn-int", \
+        "the WAREHOUSE connection — what the inbox filters and purges by"
+    assert staged[0].params == {"channel": "#revenue", "text": "hi"}
+    assert get_run(run.id).outcome == "paused"
+
+
+def test_the_params_frozen_on_the_proposal_are_the_RESOLVED_ones(grants, wire, gate_on):
+    """RC-3's rule: freezing `{"$from": …}` would freeze a reference whose meaning moves,
+    not a value a human can weigh."""
+    wire["queue"].append((200, {"messages": [{"id": "m1"}, {"id": "m2"}]}))
+    run = _run(_automation(_read(alias="inbox"),
+                           _post(text={"$from": "inbox.count"})), Dispatcher())
+    assert _proposals(run.id)[0].params["text"] == 2
+
+
+def test_accepting_it_performs_the_write_and_resumes_the_same_run(grants, wire, gate_on):
+    from aughor.actions.inbox import accept_proposal
+    from aughor.automations.engine import resume_run
+
+    wire["queue"].append((200, {"messages": [{"id": "m1"}]}))
+    parked = _run(_automation(_read(alias="inbox"), _post()), Dispatcher())
+    assert parked.outcome == "paused"
+    sent_before = len(wire["calls"])
+
+    wire["queue"].append((200, {"ok": True, "ts": "17.1", "channel": "C9"}))
+    result, _grant = accept_proposal(_proposals(parked.id)[0].id, actor="amit")
+    assert result.ok, result.message
+    assert len(wire["calls"]) == sent_before + 1, "the accept IS what sent it"
+
+    resumed = resume_run(parked.id, dispatch=Dispatcher())
+    assert resumed is not None
+    assert resumed.id == parked.id, "one run, one trace — a human in its middle"
+    assert resumed.outcome == "fired"
+    assert [o.status for o in resumed.effects] == ["executed", "executed"]
+    assert resumed.effects[1].data == {"ts": "17.1", "channel": "C9"}, \
+        "the resumed step publishes what the approved write actually returned"
+
+
+def test_the_accept_does_not_ask_the_gate_a_second_time(grants, wire, gate_on):
+    """The human's accept IS the approval. Asking again would refuse it forever — the
+    proposal is not allowlisted, and nothing about accepting it makes it so."""
+    from aughor.actions.inbox import accept_proposal
+
+    parked = _run(_automation(_post()), Dispatcher())
+    wire["queue"].append((200, {"ok": True, "ts": "1.1", "channel": "C1"}))
+    result, _ = accept_proposal(_proposals(parked.id)[0].id, actor="amit")
+    assert result.status == "executed"
+
+
+def test_the_accept_still_re_asks_everything_that_is_not_the_gate(grants, wire, gate_on):
+    """An approval is permission, not a promise that the world stood still: a proposal can
+    sit for days and the account behind it can be revoked in the meantime."""
+    from aughor.actions.inbox import accept_proposal
+    from aughor.integrations.models import Connection
+
+    parked = _run(_automation(_post()), Dispatcher())
+    istore.save_connection(Connection(id="ic_s", provider="slack", scopes="chat:write",
+                                      status="revoked"))
+    result, _ = accept_proposal(_proposals(parked.id)[0].id, actor="amit")
+    assert not result.ok and "revoked" in result.message
+    assert wire["calls"] == [], "a revoked grant is not spent because a human said yes"
+
+
+def test_rejecting_it_skips_the_step_and_the_chain_finishes(grants, wire, gate_on):
+    from aughor.actions.inbox import reject_proposal
+    from aughor.automations.engine import resume_run
+
+    wire["queue"].append((200, {"messages": []}))
+    parked = _run(_automation(_read(alias="inbox"), _post()), Dispatcher())
+    reject_proposal(_proposals(parked.id)[0].id, actor="amit")
+
+    resumed = resume_run(parked.id, dispatch=Dispatcher())
+    assert resumed.outcome == "fired"
+    assert [o.status for o in resumed.effects] == ["executed", "skipped"]
+    assert wire["calls"] == [c for c in wire["calls"] if "slack" not in c["url"]]
+
+
+def test_a_read_never_parks(grants, wire, gate_on):
+    """The gate is for what CHANGES something. A read that stopped for a human would make
+    every scheduled chain a queue of approvals nobody asked for."""
+    wire["queue"].append((200, {"messages": []}))
+    run = _run(_automation(_read()), Dispatcher())
+    assert run.outcome == "fired" and _proposals(run.id) == []
+
+
+def test_an_allowlisted_write_does_not_park_at_all(grants, wire, gate_on):
+    from aughor.govern import actions as govern
+
+    action = "integration.slack.slack.chat.postMessage"
+    govern.allow(action, "ic_s", actor="amit")
+    try:
+        wire["queue"].append((200, {"ok": True, "ts": "1.1", "channel": "C1"}))
+        run = _run(_automation(_post()), Dispatcher())
+        assert run.outcome == "fired"
+        assert _proposals(run.id) == [], "a standing approval is not a question"
+    finally:
+        # The allowlist is org-scoped LEDGER state, not a fixture: left behind, it makes
+        # every later test in this file describe a deployment where this write is already
+        # approved — which is how a test that proves the pause silently stops proving it.
+        govern.revoke(action, "ic_s")
+
+
+def test_an_accepted_write_whose_transport_broke_is_uncertain_not_executed(
+        grants, wire, gate_on, monkeypatch):
+    """One approved post becoming two is what this status exists to prevent, and the
+    resumed run has to carry the word rather than flatten it to `failed`."""
+    from aughor.actions.inbox import accept_proposal, get_proposal
+    from aughor.automations.engine import resume_run
+
+    parked = _run(_automation(_post()), Dispatcher())
+    pid = _proposals(parked.id)[0].id
+
+    def _boom(*a, **k):
+        raise ConnectionError("connection reset")
+    monkeypatch.setattr(callmod, "_request", _boom)
+    accept_proposal(pid, actor="amit")
+    assert get_proposal(pid).status == "uncertain"
+
+    resumed = resume_run(parked.id, dispatch=Dispatcher())
+    assert resumed.effects[0].status == "uncertain"

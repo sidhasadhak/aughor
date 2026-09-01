@@ -259,7 +259,10 @@ def test_an_un_allowlisted_write_stops_and_a_read_does_not(wire, grant, slack_gr
         "a read is audited and proceeds — the gate is for what CHANGES something"
     res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
                                  {"channel": "#x", "text": "hi"})
-    assert res.status == "refused" and "approval" in res.message.lower()
+    # `needs_approval`, not `refused` — alone among the verdicts here it is a QUESTION a
+    # person can answer, and the automation plane turns exactly this one into a durable
+    # proposal and parks the run on them.
+    assert res.status == "needs_approval" and "approval" in res.message.lower()
     assert len(wire["calls"]) == 1, "the refused write must never have been sent"
 
 
@@ -280,7 +283,7 @@ def test_allowlisting_the_write_for_this_grant_lets_it_through(wire, slack_grant
     other = store.save_connection(Connection(id="ic_slack2", provider="slack",
                                              scopes="chat:write", status="active"))
     assert callmod.call_operation(other.id, "slack.chat.postMessage",
-                                 {"channel": "#x", "text": "hi"}).status == "refused"
+                                 {"channel": "#x", "text": "hi"}).status == "needs_approval"
 
 
 def test_every_call_lands_in_the_audit_ledger_naming_the_grants_owner(wire, monkeypatch):
@@ -296,6 +299,30 @@ def test_every_call_lands_in_the_audit_ledger_naming_the_grants_owner(wire, monk
     assert row["decision"] == "executed"
     assert "u_amit" in row["detail"], "whose consent was spent is what this row is for"
     assert row["scope"] == "ic_owned"
+
+
+def test_a_human_accept_is_not_asked_to_pass_the_gate_again(wire, slack_grant,
+                                                            monkeypatch):
+    """The accept IS the approval. Asking again would refuse it forever — the proposal is
+    not allowlisted, and nothing about a person saying yes makes it so."""
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    wire["queue"].append((200, {"ok": True, "ts": "1.2", "channel": "C1"}))
+    res = callmod.call_operation(slack_grant.id, "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"},
+                                 actor="amit", approved=True)
+    assert res.status == "executed"
+
+
+def test_approving_bypasses_the_gate_and_nothing_else(wire, monkeypatch):
+    """An approval is permission, not a promise that the world stood still: a proposal can
+    sit for days and the account behind it can be revoked in the meantime."""
+    monkeypatch.setenv("AUGHOR_ACTION_APPROVAL", "1")
+    store.save_connection(Connection(id="ic_dead2", provider="slack", scopes="chat:write",
+                                     status="revoked"))
+    res = callmod.call_operation("ic_dead2", "slack.chat.postMessage",
+                                 {"channel": "#x", "text": "hi"}, approved=True)
+    assert res.status == "refused" and "revoked" in res.message
+    assert wire["calls"] == []
 
 
 def test_an_unknown_operation_is_a_refusal_not_a_crash(wire, grant):

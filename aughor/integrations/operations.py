@@ -137,6 +137,18 @@ class Operation(BaseModel):
     def path_params(self) -> tuple[str, ...]:
         return tuple(m.group(1) for m in _PLACEHOLDER.finditer(self.url))
 
+    @property
+    def gov_action(self) -> str:
+        """The name this operation is audited and allowlisted under.
+
+        A property rather than an f-string at each call site because three modules now
+        spell it — the call seam gates on it, the proposal inbox audits an accept and a
+        reject under it, and an operator allowlists it by hand. Two spellings would mean
+        an allowlist entry that permits a name nothing checks, which looks exactly like a
+        gate that is working.
+        """
+        return f"integration.{self.provider}.{self.id}"
+
 
 # ── the roster ───────────────────────────────────────────────────────────────────
 #
