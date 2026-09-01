@@ -3381,7 +3381,7 @@ export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_ap
  *  adopted objects the engine writes when an existing monitor or alert rule migrates onto
  *  it — the model's own docstring says they are "not authored by hand". */
 export type EffectKind =
-  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post";
+  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3398,7 +3398,7 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   source_change: ["table"], entity_appears: ["table"],
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
-  slack_post: ["bot_id", "channel"],
+  slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
@@ -3460,6 +3460,63 @@ export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
  *  deployment — bots, triggers, subscriptions, monitors — and its answer changes the
  *  moment a reader creates one. `availability` is why the palette can refuse to look the
  *  same on an install that can post to Slack and one that cannot. */
+/**
+ * DS-10 — one component: any capability this deployment has, in the one shape every
+ * family reports. `outputs: null` is the OPEN set (a component whose outputs cannot be
+ * enumerated), `[]` means it publishes nothing — the same distinction `publishes` draws
+ * on a palette entry, and a reader that collapses them will refuse a legal binding.
+ */
+export interface ComponentPort {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  secret: boolean;
+  placeholder: string;
+  visible_when: Record<string, unknown>;
+  bindable: boolean;
+}
+
+export type ComponentFamily =
+  | "trigger" | "effect" | "connector" | "platform_tool" | "mcp_tool" | "declared_action";
+
+export interface Component {
+  id: string;
+  family: ComponentFamily;
+  kind: string;
+  label: string;
+  description: string;
+  icon: string;
+  priority: number;
+  inputs: ComponentPort[];
+  outputs: string[] | null;
+  availability: "ready" | "needs_setup" | "unavailable";
+  reason: string;
+  badges: string[];
+  exposable_as_tool: boolean;
+  /** The module that governs using this component — the registry's law, on the wire. */
+  governed_by: string;
+}
+
+/** The whole roster, or one family of it, or whatever matches a word. */
+export async function getComponents(
+  opts: { connId?: string; family?: ComponentFamily; q?: string } = {},
+): Promise<{ components: Component[]; total: number; byFamily: Record<string, number> }> {
+  const p = new URLSearchParams();
+  if (opts.connId) p.set("conn_id", opts.connId);
+  if (opts.family) p.set("family", opts.family);
+  if (opts.q) p.set("q", opts.q);
+  const qs = p.toString();
+  const res = await fetch(`${getApiBase()}/components${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(`components: ${res.status}`);
+  const body = await res.json();
+  return {
+    components: (body.components ?? []) as Component[],
+    total: (body.total ?? 0) as number,
+    byFamily: (body.by_family ?? {}) as Record<string, number>,
+  };
+}
+
 export interface AutomationPaletteEntry {
   kind: string;
   group: "trigger" | "action";
@@ -3778,12 +3835,17 @@ export interface AutomationRun {
   started_at: string;
   finished_at: string | null;
   duration_ms: number;
-  outcome: "fired" | "not_fired" | "gated" | "error";
+  // DS-8 — `paused` is the one NON-TERMINAL outcome: the run reached a governed write that
+  // needs a human and stopped mid-chain. It ends when its proposal resolves, in this same
+  // row. Readers that branch on "did it work" must not fold it in with `error`.
+  outcome: "fired" | "not_fired" | "gated" | "error" | "paused";
   reason: string;
   conditions_fired: string[];
   effects: EffectOutcome[];
   fallback_used: boolean;
   error: string;
+  /** DS-8 — engine-internal resume state. Present only while `outcome === "paused"`. */
+  checkpoint?: Record<string, unknown>;
 }
 
 export type NewAutomation = {

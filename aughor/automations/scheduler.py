@@ -64,7 +64,7 @@ def tick_once() -> dict[str, int]:
     # A family per adopted kind, not one bucket: "the tick evaluated 40 automations" is not
     # an answer to "is the alert plane running", and a caller holding an external clock has
     # nothing else to read.
-    counts = {"automations": 0, "monitors": 0, "briefs": 0, "agent_alerts": 0}
+    counts = {"automations": 0, "monitors": 0, "briefs": 0, "agent_alerts": 0, "resumed": 0}
     for automation in automations:
         aid = str(automation.id)
         if aid.startswith(MONITOR_PREFIX):
@@ -80,6 +80,18 @@ def tick_once() -> dict[str, int]:
         except Exception as exc:
             logger.error("automation %s (%s) crashed the tick: %s",
                          automation.id, automation.name, exc)
+
+    # DS-8 — and the runs that are already going, waiting on a person. A parked run belongs
+    # to no automation's schedule (its conditions fired long ago; re-evaluating them would
+    # abandon it whenever they stopped holding), so nothing above would ever reach it. The
+    # routers that resolve a proposal resume it immediately; this is what makes the resume a
+    # property of the system rather than of whichever surface happened to be used.
+    try:
+        from aughor.automations.engine import resume_parked_runs
+        counts["resumed"] = resume_parked_runs()
+    except Exception as exc:
+        logger.warning("automation heartbeat could not resume parked runs: %s", exc)
+        counts["resumed"] = 0
     return counts
 
 

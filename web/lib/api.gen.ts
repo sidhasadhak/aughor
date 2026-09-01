@@ -1915,6 +1915,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Components
+         * @description Every capability of this deployment: triggers, effects, connectors, platform tools,
+         *     MCP tools, and the declared actions of one connection.
+         *
+         *     ``conn_id`` is what makes the answer deployment-shaped rather than version-shaped. Four
+         *     of the six families are the same on every install of this build; the prerequisite
+         *     readings (is there a Slack bot, a monitor, a subscription) and the declared actions are
+         *     not, and both need a connection to be true about.
+         *
+         *     ``q`` is a plain normalised substring over label · description · kind · family, the
+         *     same match the palette panel already makes — not a second, subtly different search on
+         *     the same rows.
+         */
+        get: operations["list_components_components_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/components/families": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Families
+         * @description The families and the display states a component may carry — the closed sets a
+         *     surface needs before it can render a filter it has never seen a value for.
+         */
+        get: operations["list_families_components_families_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections": {
         parameters: {
             query?: never;
@@ -9938,6 +9989,13 @@ export interface components {
          *     and different only in its subject: a monitor watches a warehouse metric on a connection,
          *     a rule watches what the agents are doing, fleet-wide.
          *
+         *     ``subchain`` (DS-9) runs another automation as one step. The child runs as if someone
+         *     pressed Run now — its own conditions are not re-asked, because a chain that INVOKES
+         *     another is stating when it should happen, and a child whose trigger is "every Monday"
+         *     would otherwise answer "not due" to every caller on every other day. The child keeps its
+         *     own run row (it belongs in its own history) but emits its steps under the PARENT's trace,
+         *     so one nested chain reads as one waterfall rather than two unrelated ones.
+         *
          *     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
          *     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
          *     the run still drains the one ask path, and the agent's instructions, document/pack scope
@@ -9963,7 +10021,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**
@@ -15758,6 +15816,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_components_components_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+                family?: string | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_families_components_families_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

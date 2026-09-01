@@ -102,7 +102,24 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # sibling: an automation missing its channel would otherwise sit in the DB looking
     # schedulable and fail at 03:00, which is K1's lesson (reject at parse, never surface).
     "slack_post":     ("bot_id", "channel"),
+    # DS-9 — the chain this step runs. Required at construction like every sibling: a
+    # subchain step with no child names nothing, and "looking schedulable" is the
+    # expensive kind of broken (K1: reject at parse, never surface).
+    "subchain":       ("automation_id",),
 }
+
+
+def required_keys(kind: str, *, family: str) -> tuple[str, ...]:
+    """The ``config`` keys a condition or effect of this kind must carry.
+
+    The public reading of the two tables above, added for DS-10's registry. Keyed by
+    FAMILY rather than by kind alone: the two maps are separate namespaces that happen not
+    to collide today (`metric` is a trigger, `monitor` is an effect), and a lookup that
+    fell through from one to the other would start answering confidently the first time
+    they did.
+    """
+    table = _CONDITION_REQUIRED if family == "trigger" else _EFFECT_REQUIRED
+    return tuple(table.get(kind, ()))
 
 
 class GuardClause(BaseModel):
@@ -192,13 +209,20 @@ class Effect(BaseModel):
     and different only in its subject: a monitor watches a warehouse metric on a connection,
     a rule watches what the agents are doing, fleet-wide.
 
+    ``subchain`` (DS-9) runs another automation as one step. The child runs as if someone
+    pressed Run now — its own conditions are not re-asked, because a chain that INVOKES
+    another is stating when it should happen, and a child whose trigger is "every Monday"
+    would otherwise answer "not due" to every caller on every other day. The child keeps its
+    own run row (it belongs in its own history) but emits its steps under the PARENT's trace,
+    so one nested chain reads as one waterfall rather than two unrelated ones.
+
     ``investigate`` accepts an OPTIONAL ``agent_id`` (Wave H1) — the user-defined agent the
     scheduled run answers *as*. It is a parameter on an existing effect kind, not a new kind:
     the run still drains the one ask path, and the agent's instructions, document/pack scope
     and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
-                  "slack_post"]
+                  "slack_post", "subchain"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
@@ -251,6 +275,11 @@ class Effect(BaseModel):
         return str(self.config.get("action_id", ""))
 
     @property
+    def automation_id(self) -> str:
+        """DS-9 — the chain a ``subchain`` step runs."""
+        return str(self.config.get("automation_id", ""))
+
+    @property
     def agent_id(self) -> str:
         """The user-defined agent THIS STEP runs as ("" = inherit the automation's).
 
@@ -272,7 +301,7 @@ class Effect(BaseModel):
     def target(self) -> str:
         """The referenced primitive, for run history and audit detail."""
         for key in ("action_id", "subscription_id", "trigger_id", "monitor_id", "rule_id",
-                    "question"):
+                    "automation_id", "question"):
             if self.config.get(key):
                 return str(self.config[key])[:200]
         return ""
@@ -424,10 +453,18 @@ class EffectOutcome(BaseModel):
 class AutomationRun(BaseModel):
     """One tick, always persisted — including the ticks that deliberately did nothing.
 
-    ``outcome`` distinguishes the four cases the monitor store collapses into "no row":
+    ``outcome`` distinguishes the five cases the monitor store collapses into "no row":
     ``fired`` (conditions held, effects ran), ``not_fired`` (conditions evaluated, none held),
     ``gated`` (disabled / expired / paused — conditions never evaluated), ``error`` (the tick
-    itself broke). ``reason`` carries the human sentence.
+    itself broke), and DS-8's ``paused`` (a step reached a governed write that needs a human,
+    and the run is PARKED mid-chain waiting for one). ``reason`` carries the human sentence.
+
+    DS-8 — ``paused`` is the first NON-TERMINAL outcome this model has ever had, and the
+    distinction matters to every reader: a paused run is not a run that finished badly, it is
+    a run that has not finished. It ends exactly once, when its proposal resolves — accepted
+    (the chain continues in THIS row), rejected, or expired. `gated` is the near neighbour and
+    is not the same thing: gated means the tick never started, paused means it started, did
+    real work, and stopped in the middle of the chain with that work already committed.
     """
     id: str = Field(default_factory=_new_id)
     automation_id: str
@@ -440,9 +477,25 @@ class AutomationRun(BaseModel):
     finished_at: Optional[str] = None
     duration_ms: int = 0
 
-    outcome: Literal["fired", "not_fired", "gated", "error"]
+    outcome: Literal["fired", "not_fired", "gated", "error", "paused"]
     reason: str = ""
     conditions_fired: list[str] = Field(default_factory=list)
     effects: list[EffectOutcome] = Field(default_factory=list)
     fallback_used: bool = False
     error: str = ""
+    #: DS-8 — everything the chain needs to pick itself up where it stopped, and nothing
+    #: else. The roadmap's definition is exact: *checkpoint = the persisted run + the
+    #: accumulated context*. The run row already holds every prior step's outcome, so what
+    #: has to be added is only what lives in engine LOCALS and would otherwise die with the
+    #: tick — the accumulated chain context, the guard verdicts the route reads, and where
+    #: to start again.
+    #:
+    #: Empty on every run that never paused, which is every run written before DS-8. Kept as
+    #: an open dict rather than a model because it is engine-internal bookkeeping that no
+    #: surface renders: giving it a public schema would invite a reader to depend on a shape
+    #: the engine must stay free to change.
+    #:
+    #: Keys: ``next_index`` (resume the ordered walk here) · ``context`` / ``verdicts`` (the
+    #: accumulated state, verbatim) · ``done_aliases`` (what the parallel frontier had already
+    #: completed) · ``proposal_id`` · ``step_index`` / ``step_alias`` (which step parked).
+    checkpoint: dict = Field(default_factory=dict)

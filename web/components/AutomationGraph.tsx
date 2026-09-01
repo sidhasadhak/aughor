@@ -107,6 +107,7 @@ const LIVE_STATUS: Record<string, string> = {
 const KIND_ICON: Record<string, IconName> = {
   investigate: "search", slack_post: "send", notify: "bell",
   brief: "brief", kinetic_action: "bolt", monitor: "activity", agent_alert: "alert",
+  subchain: "layers",
 };
 
 const COL_W = 300;
@@ -426,6 +427,7 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
                    { field: "message", placeholder: "message — or drag a port here" }],
   brief:          [{ field: "subscription_id", placeholder: "briefing subscription id" }],
   kinetic_action: [{ field: "action_id", placeholder: "declared action id" }],
+  subchain:       [{ field: "automation_id", placeholder: "automation id" }],
 };
 
 /** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
@@ -433,6 +435,7 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
 const KIND_HUE: Record<string, string> = {
   investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
   brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
+  subchain: "var(--chart-6)",
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {

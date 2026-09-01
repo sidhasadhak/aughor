@@ -561,9 +561,60 @@ per-flow; ours rides the governance plane that already exists (verdicts, audit, 
 expiry). **Receipt:** a chain proposing a governed write pauses; accepting in the inbox
 resumes it; the trace shows one run with a human in its middle.
 
+> **Shipped 2026-09-01.** `AutomationRun` gained `paused` — its first NON-TERMINAL outcome —
+> and a `checkpoint` (store migration 4, numbered off the live store's `user_version=3`)
+> carrying exactly what dies with a tick: the accumulated context, the guard verdicts, the
+> frontier's completed set, and per-step outcome counts so the flat `effects` list can be
+> re-attributed to steps on the way back. Both drivers park (the frontier stops scheduling and
+> lets what is in flight land); the resume seeds the SAME chain-walk body rather than adding a
+> second walker. A resume is not gated and does not re-evaluate conditions — a human who
+> approved a write is owed the rest of the chain, and a re-probe could answer differently and
+> abandon it half-executed. Accept, reject and expiry all end the wait; a refusal makes its
+> step `skipped`, and dependents skip through the unresolved-binding path that already existed.
+> **The layering forced the shape:** `aughor/actions/*` may not import `aughor/automations/*`
+> and `runners/*` may import neither, so the resume is called from the ROUTER (where the
+> automation→proposal purge cascade already lives) and swept every heartbeat by
+> `resume_parked_runs`, which makes resuming a property of the system rather than of whichever
+> surface was pressed. **Live receipt on the fixture connection:** a two-step chain parked with
+> `finished_at: None` and step 2 never dispatched; one row in NEEDS YOU carried Accept;
+> accepting IN THE UI resumed the same run id to `fired` with both steps executed and step 2
+> bound to step 1's approved output. **Two defects the live run found and the green suite had
+> agreed with:** a dispatcher names `target` after what it dispatched — the ACTION ID for a
+> governed write, not the step alias — so the resumed context was published where no binding
+> could reach it (the fixture set `target=alias`, hiding it from both sides); and `needs-human`
+> listed one approval twice, once as a pending proposal and once as a parked run, with Accept
+> on only one of the two cards. **Left open, chip-filed:** `AUGHOR_ACTION_APPROVAL` is unset by
+> default, so `guard()` returns immediately and the pause is unreachable on a default
+> deployment — the whole graduated-approval plane is complete and inert until that flips.
+
 **DS-9 · Subchains.** An automation invokes an automation as a step; cycles refused at
 save; child outcomes fold into the parent trace. Composition keeps the palette small while
 the library grows. **Receipt:** two chains share one "post with fallback" subchain.
+
+> **Shipped 2026-09-01.** A `subchain` effect kind whose child runs as if someone pressed
+> Run now — its own conditions are NOT re-asked (a shared chain triggered "every Monday"
+> that answers "not due" to every caller on every other day is not shared), while its
+> lifecycle gates still apply (`enabled=False` is a person saying this must not run, and
+> being called is not an exemption). The child keeps its own run row — a shared chain's
+> history is the one place every caller that used it is visible — but writes its steps under
+> the PARENT's trace, so a nested chain reads as one waterfall. That inheritance rides a
+> ContextVar rather than a parameter, because `Dispatch` is `(effect, automation)` and six
+> dispatchers would otherwise grow three arguments five of them ignore; DS-7's
+> `ContextThreadPoolExecutor` copies it into workers, so a subchain inside a parallel step
+> inherits exactly what a sequential one does. Cycles are refused at SAVE, on the store (the
+> one write path — the question needs the rest of the library, so it cannot live on the
+> model), breadth-first with a `seen` set so a DIAMOND is not mistaken for a loop: two steps
+> sharing one subchain is the entire point of the wave. The refusal reaches the author as a
+> 422, not a 500. A depth cap guards the shape a cycle check cannot see — a legal tree built
+> one honest edge at a time. **DS-8 met DS-9:** a child that parks on an approval parks its
+> PARENT, whose checkpoint records the child run rather than a proposal; resuming the child
+> wakes the parent, and the heartbeat's sweep now takes passes so a whole nested tower comes
+> unstuck on the tick that unblocked its leaf. **The defect that interaction hid:** the
+> parent's subchain step reports `approval_required`, so DS-8's staging fired for it too and
+> put a phantom proposal — for a step with no action to approve — on the parent's run, which
+> then blocked its own resume forever, because `resume_run` refuses to continue a run with a
+> pending proposal. A relayed wait now stages nothing. **Live receipt:** two chains sharing
+> one subchain, both fired, the shared chain's own history showing both callers.
 
 #### Phase 3 · The component economy (its first two waves ARE §3.4's consumer and §3.1's VA-9d)
 
@@ -575,6 +626,38 @@ inputs; outputs; dynamic field visibility; an "exposable as tool" flag that DS-1
 with the law kept: **a component references a governed capability.** Beta/Legacy live as
 registry metadata — display states, empty by intent. **Receipt:** the palette lists every
 capability of this deployment, searchably, and nothing that isn't real.
+
+> **Shipped 2026-09-01.** `aughor/components/` adapts five existing rosters at read time and
+> copies none of them: a registry holding its own table of effect kinds would be a second
+> place to add the seventh, and the seventh would reach exactly one of them. Served at
+> `/components` (with `conn_id`, `family`, `q`) and — the part that makes it one roster
+> rather than a sixth — `/automations/palette` is now served FROM it, losslessly, so "does
+> this kind exist" and "does it work here" have one answer instead of two that happen to
+> agree. **The law is checkable:** every row names in `governed_by` the MODULE that governs
+> its use (the approval gate for a declared write, the one engine for an automation step,
+> the connection registry for a connector), and a ratchet imports every distinct value — a
+> taxonomy nobody can check is how a roster starts describing a system that no longer
+> exists. Badges are the closed set `beta | legacy` with no members, which is what "empty by
+> intent" has to mean to be worth anything: metadata every surface reads, not a word one
+> renderer hard-codes later. **The premise was measured first, and the plan was wrong about
+> it:** connectors 17 ✓, platform tools 12 ✓, MCP tools 18 ✓, but "7 effect kinds" is now 8
+> (6 of them offerable — `monitor` and `agent_alert` are adopted, never authored), because
+> DS-9 moved that number three hours before this wave read it. **And a real capability was
+> missing from every surface:** the connector family is built from the full type set, not
+> `REGISTRY.supported_types()`, because the two KNOWLEDGE connectors (Notion, Confluence)
+> are configured, authenticated and synced by a live route while having no
+> `open_connection()` — so the builder list omits them, and `/connectors/types`, which is
+> built off that list, has never offered them. The registry reports all 17; closing the
+> picker gap is filed separately, because what it changes is a creation FORM, not a roster.
+> **Live receipt:** 59 components on the fixture connection across all six families —
+> including its two authored declared actions — with four rows dimmed and each saying why;
+> the same question on another connection answers 57 with none of those actions and a
+> different dimmed set; `q=notion` finds the connector nothing else lists; an unknown family
+> is a 422 naming the closed set; and the palette agrees with the registry field for field
+> on both connections. **Left open, chip-filed:** the non-placeable families are served but
+> not yet palette ROWS — that is DS-11's own sentence ("an allowlisted MCP server's tools
+> land on the palette as governed nodes"), and drawing them as steps before they can be
+> placed would teach a reader that a connector is a step.
 
 **DS-11 · The VA-11 consumer and VA-9d, surfaced as components.** A vault `Connection`
 becomes a node ("as Google · sales@…") whose effects run under the user's grant through
@@ -775,9 +858,9 @@ NEXT (order within a band is the user's knob; the inert-vault repair stays highe
                                    migration + store/create/patch surfaces; grants stay
                                    PROPOSE-only)
 
-THEN    DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
+THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
-LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
+LATER   DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
         DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)

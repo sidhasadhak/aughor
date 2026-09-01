@@ -116,6 +116,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # hiding the real name from the code that reads it.
          "aughor/automations/dataflow.py",
          "tests/unit/test_automations_dataflow.py",
+         # DS-8, same ground once more. Three hits survive in the durable-pause suite and
+         # every one is a name the running system uses: the effect kind `kinetic_action`,
+         # the live route `/kinetic-actions/inbox/{id}/reject` that the reject test presses,
+         # and `aughor.routers.kinetic`, the module the resume door lives in. Its prose says
+         # "governed write" throughout — the helper that builds one is `_governed`, and the
+         # imported router is bound as `actions_router` — so what is left cannot be reworded
+         # without spelling the wire differently from the way the wire is spelled.
+         "tests/unit/test_automations_pause.py",
          "web/lib/automationFlow",
          "web/components/AutomationGraph.tsx",
          # DS-1's palette is the sibling of those vocabulary tables and carries the kind
@@ -145,7 +153,20 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # reads (`kinetic_actions`) and construct an Effect of the one governed-write
          # kind — identifiers all, and renaming any of them would stop testing the seam
          # it exercises. The prose in the file says "declared action".
-         "tests/unit/test_automations_parallel.py"),
+         "tests/unit/test_automations_parallel.py",
+         # DS-9's subchain suite, for the narrowest version of the same reason: ONE hit, the
+         # declared-action effect KIND, in the helper that builds the governed step its DS-8
+         # interaction tests need. Substituting a different kind to dodge the pattern would
+         # make the premise false — no other effect kind reaches an approval gate — so the
+         # choice is between spelling the wire and testing something that cannot happen.
+         "tests/unit/test_automations_subchain.py",
+         # DS-10's registry and its suite, same ground as `dataflow.py` above and for the
+         # same two names: the declared-write effect KIND is the wire literal, and the
+         # ontology graph's attribute of declared writes is a real attribute this module
+         # reads by `getattr`. Both are spelled the way the running system spells them.
+         # Every sentence in either file says "declared write" or "declared action".
+         "aughor/components/registry.py",
+         "tests/unit/test_component_registry.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
@@ -190,7 +211,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "tests/unit/test_attention_broken_automations.py",
          # RC-3's expiry seam test, for the same reason: it asserts that a lapsed proposal
          # is absent from `/control-room/needs-human`, which it cannot do without naming it.
-         "tests/unit/test_kinetic_inbox_expiry.py"),
+         "tests/unit/test_kinetic_inbox_expiry.py",
+         # DS-8's durable-pause suite, same reason as all four above: it asserts that one
+         # approval is ONE row on `/control-room/needs-human` (the wave made two of that
+         # strip's sources describe the same decision), which it cannot assert without
+         # naming the frozen path.
+         "tests/unit/test_automations_pause.py",
+         "tests/unit/test_automations_pause.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",
     ),

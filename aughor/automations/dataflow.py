@@ -532,6 +532,12 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     "brief":          (),
     "monitor":        (),
     "agent_alert":    (),
+    # DS-9 — what a nested chain tells the steps after it. Facts ABOUT the child run, not
+    # the child's own step outputs: a chain publishes no single value (it may have five
+    # steps), and inventing one would make `{"$from": "sub.answer"}` mean whichever step
+    # the child happened to end on. `executed` is the count a guard can read — "post the
+    # summary only if the shared subchain actually did something".
+    "subchain":       ("run_id", "outcome", "executed"),
 }
 
 #: B1 — the config fields a step may BIND (`{"$from": …}`) per kind: the input ports.
@@ -546,6 +552,11 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "kinetic_action": ("params",),
     "monitor":        (),
     "agent_alert":    (),
+    # DS-9 — nothing. A child chain has no input port to bind INTO: it reads its own
+    # config, and there is no mechanism by which a parent's value would reach one of its
+    # steps. Declaring a bindable field here would draw an edge the engine does not
+    # follow, which is the exact picture B1 exists to prevent.
+    "subchain":       (),
 }
 
 

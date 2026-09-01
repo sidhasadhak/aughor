@@ -105,8 +105,14 @@ export function AutomationsPanel({ connId }: Props) {
       const run = await runAutomation(a.id, id);
       // Outcomes that emit no span at all — gated, not due — would otherwise leave the
       // canvas waiting for a step that is never going to start.
-      flash(run.outcome === "fired" ? "ok" : "err",
-            run.outcome === "fired" ? "Ran" : `Did not run — ${run.reason || run.outcome}`);
+      //
+      // DS-8 — `paused` is neither "ran" nor "did not run": the chain ran, did real work,
+      // and stopped in the middle for a person. Flashing it red as "Did not run" would tell
+      // the author their automation is broken at the exact moment it behaved correctly.
+      flash(run.outcome === "error" ? "err" : "ok",
+            run.outcome === "fired" ? "Ran"
+              : run.outcome === "paused" ? `Waiting on approval — ${run.reason}`
+              : `Did not run — ${run.reason || run.outcome}`);
     } catch (e) {
       flash("err", String((e as Error)?.message || e));
     } finally {
@@ -200,7 +206,7 @@ export function AutomationsPanel({ connId }: Props) {
   const onRun = async (a: Automation) => {
     try {
       const run = await runAutomation(a.id);
-      flash(run.outcome === "fired" ? "ok" : "err",
+      flash(run.outcome === "error" ? "err" : "ok",
         `${a.name}: ${run.outcome}${run.reason ? ` — ${run.reason}` : ""}`);
       await load();
       if (runsFor?.id === a.id) setRuns(await getAutomationRuns(a.id));

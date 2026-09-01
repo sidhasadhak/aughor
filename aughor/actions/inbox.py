@@ -311,6 +311,34 @@ def list_proposals(connection_id: Optional[str] = None, status: Optional[str] = 
             c.close()
 
 
+def proposals_for_run(run_id: str) -> list[StagedProposal]:
+    """Every proposal staged by one automation run (DS-8).
+
+    Deliberately NOT org-scoped, unlike :func:`list_proposals`. A run id is a UUID and needs
+    no disambiguation, while the resume path runs from wherever a proposal happened to be
+    resolved — an expiry sweep, a Slack tap, a background worker — and an org filter that
+    came back unset there would return nothing and silently strand a parked run holding an
+    approved write. Withholding rows here does not withhold a side effect; it withholds the
+    completion of one a human already authorised.
+
+    Reading is all this module does with a run. The *waking* of a parked run lives on the
+    automations side (`engine.resume_run`, swept by the heartbeat and called immediately by
+    the routers that resolve a proposal), because A already depends on K and K reaching back
+    for A's engine would close the cycle H5 exists to keep open.
+    """
+    if not run_id:
+        return []
+    with _LOCK:
+        c = _conn()
+        try:
+            rows = c.execute(
+                "SELECT * FROM staged_proposals WHERE run_id=? ORDER BY created_at", (run_id,),
+            ).fetchall()
+            return [_row(r) for r in rows]
+        finally:
+            c.close()
+
+
 def expire_stale(connection_id: Optional[str] = None) -> int:
     """Flip every lapsed pending proposal to ``expired``. Returns how many moved.
 

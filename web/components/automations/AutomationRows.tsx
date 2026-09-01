@@ -41,6 +41,8 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
     desc: "Run a declared, governed action — through its approval gate" },
   { value: "slack_post", label: "Post to Slack",
     desc: "Post into a channel as one of your bots — mentionable, and repliable in thread" },
+  { value: "subchain", label: "Run a chain",
+    desc: "Run another automation as one step — share a shape instead of authoring it twice" },
 ];
 
 export const CRON_PRESETS = [
