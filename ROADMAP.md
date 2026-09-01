@@ -165,7 +165,13 @@ and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), br
   strings, `notify`/`brief`/`monitor`/`agent_alert` nothing at all, and only the
   declared-action kind has an OPEN outcome shape. So a source is a **literal list** or a
   binding onto that open kind, and fanning over a closed-set producer is refused at SAVE
-  rather than found at 09:00 as "cannot iterate a str". The item is one more entry in the
+  rather than found at 09:00 as "cannot iterate a str".
+  **✅ CLOSED 2026-09-01 by DS-12**: that sentence was an INVENTORY, not a policy, and
+  `trusted_query` publishes `rows`. The fix declares list-ness per KEY beside the
+  published set (`dataflow.LIST_PUBLISHED`) rather than reopening the set — which would
+  have bought one list at the price of every unknown-key refusal on that kind — so a fan
+  over `q.rows` is accepted and a fan over `q.count` is still refused, now naming the key
+  that would have worked. The item is one more entry in the
   same accumulated context (`item.value` / `item.<field>`), so `resolve` needed no change
   and the canvas draws the source as an ordinary edge. The guard runs **per item** — a
   fan-out whose guard were checked once would be all-or-nothing, and "post the regions
@@ -714,6 +720,60 @@ nothing in the plane publishes lists. The component class no canvas competitor c
 without a semantic layer. **Receipt:** fan over a cohort and post one message per at-risk
 account, the cohort's definition one click away.
 
+> **Shipped 2026-09-01 — and the plan was wrong about its headline.** The premise was
+> measured before a line was written, the way DS-10's was. Metrics are real
+> (`semantic.MetricDefinition`, governed draft→approved, owner and thresholds); entities
+> are real (`OntologyEntity`, grain-verified tables); trusted queries are real
+> (`semantic.TrustedQuery`, stored and vetted). **Cohorts do not exist.** Every `cohort`
+> in the tree is a regex in a classifier, a word in a prompt, a demo string or a
+> SQL-alias blocklist entry — no model, no store, no id. So the wave shipped on what is
+> real, and the LIST that closes §3.2 comes from the trusted query, whose rows are
+> already a governed, reviewed row-set. A first-class Cohort object remains available as
+> its own wave if one is ever wanted; "churned accounts" is expressible today as a
+> trusted query, and inventing a second object to say the same thing would be the second
+> roster DS-10 exists to refuse.
+>
+> **Two kinds, and neither carries SQL.** `metric_value` names a metric; `trusted_query`
+> names a query id. That is the moat in one sentence: the number a chain acts on is the
+> one the registry DEFINES — filters, caveats and all — rather than one an author typed
+> or a model re-derived, and gaining row-lists cost the plane no expression surface at
+> all. The metric read is SCOPED to the automation's connection, because a
+> connection-scoped definition SHADOWS the global one of the same name; an unscoped read
+> computes the wrong "revenue" on a connection that deliberately redefined it, which the
+> suite now pins (600 vs 650 on the same fixture).
+>
+> **The substrate had to be repaired first, and it was broken in public.** Both
+> metric-evaluation paths in `routers/metrics.py` called `db.execute(query)` against a
+> signature that has always been `execute(hypothesis_id, sql)`. Each swallowed the
+> TypeError into a field that reads as a data problem — `value: null` with a note on the
+> value route, `status: "unknown"` on the health scorecard — so **the governed metric
+> value had never once been computed**, including through the MCP tool whose docstring
+> promises "the exact governed number, not an LLM re-derivation". Measured live before
+> the fix, and live after. The two copies also disagreed about WHAT to compute: one
+> applied the metric's declared filters, the other ran the bare aggregate. There is now
+> one builder and one runner, in `semantic/metrics.py` beside the definition they read.
+>
+> **Also repaired in passing:** `semantic/trusted_queries.py` was the last authored store
+> here with a hardcoded path, so a test that saved one wrote to the live
+> `data/trusted_queries.json`. `AUGHOR_TRUSTED_QUERIES_PATH` and its conftest redirect
+> landed in the SAME commit the automations plane started reading it — the rule this repo
+> bought with a suite run that destroyed real content.
+>
+> **Live receipt:** a real chain on `workspace` ran both steps — `trusted_query` executed
+> and published `{"rows": [{"total_orders": "112439"}], "columns": [...], "count": 1}`;
+> `metric_value` FAILED with "Revenue could not be computed: Binder Error", because the
+> two seeded metrics name a schema no connection on this install has. That second half is
+> the honest one: a governed number that cannot be computed here now says so with the
+> engine's own words instead of reporting null. The registry serves `metric` (2) and
+> `trusted_query` (11) as new deployment-shaped families, and the palette lights or dims
+> each row per connection.
+>
+> **Left open:** a metric publishes a SCALAR — the by-dimension series DS-12 imagined
+> needs a group-by the governed query builder does not have, and is deliberately a later
+> wave. Entities are served by neither kind: an entity node with no evaluation is a
+> label, and building a row query from `identity_key` + `active_filter` would be a new
+> SQL surface next door to the vetted one this wave just made available.
+
 **DS-13 · Declarative custom components.** Extension WITHOUT `exec()`: an HTTP-template
 component (endpoint · schema-typed input/output · secrets from the vault · dispatched
 through `govern.outbound`) plus pack-shipped component bundles via the skills/packs plane
@@ -722,6 +782,53 @@ through `govern.outbound`) plus pack-shipped component bundles via the skills/pa
 useful sliver of their catalog: `http_request` · `url_fetch` · `web_search` (a real gap in
 our tool roster today) · file parsing. **Receipt:** a user adds a PagerDuty component from
 a form, never writes Python, and the approval gate still owns its writes.
+
+> **Shipped 2026-09-01, and mostly by NOT building it.** The premise was measured first
+> and the substrate was already here: a declared action carries typed params, submission
+> criteria, a risk tier and the graduated approval gate; `PUT /ontology/kinetic-actions/{id}`
+> is already the form's write path behind `ONTOLOGY_EDIT`; `is_safe_webhook_url` already
+> guards SSRF; and `exec`/`eval` appear NOWHERE in `aughor/`, so the no-code-injection law
+> was already true rather than newly promised. Building a separate "custom component"
+> object with its own store and its own gate would have been the second policy authority
+> §3.4 refuses in one line.
+>
+> **So DS-13 is a fourth side-effect kind, `http`** — method, url, headers, an encrypted
+> auth header and a body TEMPLATE, filled and never evaluated. The existing `webhook` kind
+> posts AUGHOR's envelope (`{action, kind, params, config}`) to a URL, which is right for a
+> receiver written for us and useless for one that was not: PagerDuty wants PagerDuty's
+> body. A custom component's writes are governed the day it is authored, because it
+> inherits the plane it was added to.
+>
+> **Three guards, each for a failure a plausible version ships.** The SSRF check runs on
+> the FILLED url — guarding the template would approve `https://api.vendor.com/{path}` and
+> then send the request wherever `path` said, which is a guard-shaped comment. URL params
+> are percent-encoded, so a value carrying `/` cannot reshape the path it lands in.
+> Substitution is TOTAL: only declared params may appear, and an unknown placeholder is an
+> authoring error rather than a brace shipped to a vendor.
+>
+> **The credential is Fernet at rest and masked on the way out.** It matters more here than
+> anywhere else this platform holds a secret, because an ontology override is a FILE and
+> files here are tracked — ciphertext under `AUGHOR_SECRET_KEY` is what makes a declared
+> PagerDuty component safe to commit beside the entity it belongs to. Masked rather than
+> dropped, unlike a `Connection`'s tokens: this feeds an EDIT form, and a dropped field
+> makes "no key" and "a key you may not see" look identical. An unchanged (masked) value
+> carries the stored credential forward — the edit-form trap that otherwise replaces a key
+> with bullets the next time someone fixes a typo in the description.
+>
+> **Fixed in passing — the fourth sender that never joined VA-9a's seam.** That wave's own
+> note named `slackbots/post.py`, `slackbots/verify.py` and `notifications/executor.py` as
+> emitting no span and consulting no cap, and fixed them. `actions/executor.py`'s webhook
+> was missed: measured 2026-09-01, every other outbound sender in the tree imported
+> `external_call` and this one did not, so a declared action's webhook fired unbudgeted,
+> absent from the waterfall, and invisible to `observed_usage` — which reads session
+> events, not spans. Both it and the new `http` kind go through the seam now.
+>
+> **Left open, deliberately.** Pack-shipped component BUNDLES are a distribution channel,
+> not a component model: the packs plane already has the draft→promote gate they would
+> ride, so they are a clean wave of their own rather than a second half of this one. And
+> `web_search` is not a component — it is a vendor choice plus a key, which is a product
+> decision; `http_request`/`url_fetch` are simply *subsumed*, because "fetch a URL" is now
+> something a person declares from a form rather than something we ship code for.
 
 **DS-14 · B3 — chains as MCP tools** (absorbs the old LATER item). An enabled automation
 is exposable as a tool on our MCP server — external agents invoke it and inherit the whole
@@ -899,8 +1006,12 @@ NEXT (order within a band is the user's knob)
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
-LATER   DS-11 completion · DS-12 ontology components · DS-13 declarative
-        customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
+LATER   DS-11 completion · ✅ DS-12 ontology components SHIPPED 2026-09-01
+        (metric_value + trusted_query; §3.2's list limit closed; the governed metric
+        value repaired — it had never computed) · ✅ DS-13 declarative customs
+        SHIPPED 2026-09-01 (the `http` side effect: a described call, filled and never
+        evaluated, credential encrypted at rest; the declared webhook joined
+        govern.outbound) · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
         DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)
         VA-10 multi-user + admin  (hardening pass over everything above)

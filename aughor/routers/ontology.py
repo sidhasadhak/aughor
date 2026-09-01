@@ -567,7 +567,11 @@ def get_kinetic_actions(
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
-    return {aid: a.model_dump() for aid, a in graph.kinetic_actions.items()}
+    # DS-13 — masked, never raw. This feeds the authoring form, which must be able to show
+    # that a credential is SET without being able to read it back out.
+    from aughor.ontology.models import mask_action_secrets
+    return {aid: mask_action_secrets(a.model_dump())
+            for aid, a in graph.kinetic_actions.items()}
 
 
 @router.get("/ontology/entities/{entity_id}/segments")
@@ -866,13 +870,18 @@ def author_kinetic_action(
     silently dropped at overlay or discovered at execute."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)   # P4: mutating the semantic layer
-    from aughor.ontology.models import KineticAction
-    from aughor.ontology.overrides import OntologyOverride
+    from aughor.ontology.models import KineticAction, encrypt_action_secrets
+    from aughor.ontology.overrides import OntologyOverride, find_override
     effective = _resolve_schema(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields.get("kind"):
         raise HTTPException(status_code=400,
                             detail="a kinetic action requires a 'kind' (annotate|side_effect|query)")
+    # DS-13 — a declared component's credential is encrypted BEFORE it is validated and
+    # persisted, and an unchanged (masked) one is carried forward from what is stored. The
+    # override is a file: a plaintext key here would be a plaintext key in the repo.
+    prior = find_override(connection_id, effective, "action", action_id)
+    fields = encrypt_action_secrets(fields, getattr(prior, "fields", None) if prior else None)
     try:
         KineticAction.model_validate({**fields, "id": action_id})
     except Exception as e:

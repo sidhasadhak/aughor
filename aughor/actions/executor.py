@@ -28,6 +28,7 @@ import ast
 import operator
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+from urllib.parse import quote
 
 from aughor.ontology.models import KineticAction, SideEffect
 
@@ -168,17 +169,146 @@ Dispatch = Callable[[KineticAction, dict, str], dict]   # (action, coerced_param
 
 def _dispatch_webhook(se: SideEffect, action: KineticAction, params: dict) -> dict:
     """A self-contained, SSRF-guarded POST — reuses the ActionHub URL guard so a declared
-    webhook can never reach a private/internal target."""
+    webhook can never reach a private/internal target.
+
+    DS-13 — now through ``govern.outbound`` as well. VA-9a's own note named the three
+    senders that emitted no span and consulted no cap (`slackbots/post.py`,
+    `slackbots/verify.py`, `notifications/executor.py`) and fixed them; this one was the
+    fourth and was missed, so a declared action's webhook fired unbudgeted, absent from
+    the waterfall, and invisible to `observed_usage` — which reads session events, not
+    spans. Measured 2026-09-01: every other outbound sender in the tree imports
+    `external_call` and this file did not.
+    """
     url = (se.config or {}).get("url", "")
+    from aughor.govern.outbound import external_call
     from aughor.util.url_guard import is_safe_webhook_url
     if not url or not is_safe_webhook_url(url):
         raise KineticDispatchError("webhook url missing or blocked by the SSRF guard")
     import httpx
     body = {"action": action.id, "kind": se.kind, "params": params,
             "config": {k: v for k, v in (se.config or {}).items() if k != "url"}}
-    resp = httpx.post(url, json=body, timeout=10.0,
-                      headers=(se.config or {}).get("headers") or {})
+    with external_call("webhook", action.id) as extra:
+        resp = httpx.post(url, json=body, timeout=10.0,
+                          headers=(se.config or {}).get("headers") or {})
+        extra["ok"] = resp.is_success
+        extra["status"] = resp.status_code
     return {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
+
+
+# ── DS-13: the declarative custom component ──────────────────────────────────────
+#
+# Langflow's answer to "I need a component you did not ship" is a Python editor. Ours is
+# this: an `http` side effect that DESCRIBES a call — method, url, headers, an encrypted
+# auth header, a body template — and is filled, never evaluated. The no-code-injection law
+# holds by construction, because there is no code anywhere in the record to run.
+#
+# It rides the plane that already exists rather than a new one. A declared action carries
+# typed params, submission criteria, a risk tier and the graduated approval gate; adding a
+# fourth side-effect kind inherits every one of those, so a custom component's writes are
+# governed the same day it is authored. Building a parallel "custom component" object with
+# its own store and its own gate would have been the second policy authority §3.4 refuses.
+
+#: The response body a call may publish back into the chain. A vendor that answers with a
+#: megabyte of JSON must not put a megabyte into a run record that a canvas then renders.
+MAX_RESPONSE_CHARS = 4000
+
+#: Methods a declared component may use. A closed set, not a passthrough: TRACE and CONNECT
+#: have no business here, and an unknown verb is an authoring error worth failing at.
+_HTTP_METHODS = ("GET", "POST", "PUT", "PATCH", "DELETE")
+
+
+def _fill(value, params: dict, *, quote_for_url: bool = False):
+    """Substitute declared params into a template — strings, dicts and lists alike.
+
+    TOTAL and deterministic, the same rule `_fill_question` states one function down: only
+    DECLARED parameters can appear, and an unknown placeholder is an authoring error rather
+    than a stray brace shipped to a vendor's API. Non-string leaves pass through untouched,
+    so a template may carry real numbers and booleans instead of stringifying everything.
+
+    ``quote_for_url`` percent-encodes each substituted value. It is used for the URL and
+    nowhere else: a parameter carrying ``/`` or ``?`` must not be able to reshape the path
+    it lands in, and one carrying a host must not be able to move the request.
+    """
+    if isinstance(value, str):
+        if "{" not in value:
+            return value
+        safe = ({k: quote(str(v), safe="") for k, v in params.items()}
+                if quote_for_url else params)
+        try:
+            return value.format_map(safe)
+        except (KeyError, IndexError, ValueError) as e:
+            raise KineticDispatchError(
+                f"http side effect references something the action does not declare: {e}"
+            ) from e
+    if isinstance(value, dict):
+        return {k: _fill(v, params, quote_for_url=quote_for_url) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_fill(v, params, quote_for_url=quote_for_url) for v in value]
+    return value
+
+
+def _dispatch_http(se: SideEffect, action: KineticAction, params: dict) -> dict:
+    """One described call to a vendor's own API, governed like everything else that leaves.
+
+    The order matters and is the same order `govern.outbound` uses one layer down: refuse
+    what needs no network first, then let the seam check the cap, open the span and record
+    the EXTERNAL_CALL event.
+
+    The SSRF guard runs on the FILLED url, not the template. A guard that checked the
+    template would approve `https://api.vendor.com/{path}` and then send the request
+    wherever `path` said to — which is not a guard, it is a guard-shaped comment.
+    """
+    from aughor.govern.outbound import external_call
+    from aughor.secretvault import decrypt_secret
+    from aughor.util.url_guard import is_safe_webhook_url
+
+    cfg = se.config or {}
+    method = str(cfg.get("method", "POST")).upper()
+    if method not in _HTTP_METHODS:
+        raise KineticDispatchError(
+            f"http side effect method '{method}' is not one of {', '.join(_HTTP_METHODS)}")
+
+    url = _fill(str(cfg.get("url", "")), params, quote_for_url=True)
+    if not url or not is_safe_webhook_url(url):
+        raise KineticDispatchError("http url missing or blocked by the SSRF guard")
+
+    headers = {str(k): str(v) for k, v in (_fill(cfg.get("headers") or {}, params)).items()}
+    # The credential is decrypted HERE and nowhere else — it is never returned, never
+    # logged, and never part of the result this function publishes. At rest it is Fernet
+    # under AUGHOR_SECRET_KEY like every other secret this platform holds, which is what
+    # makes an override file safe to keep in git.
+    auth_header = str(cfg.get("auth_header", "") or "")
+    if auth_header:
+        secret = decrypt_secret(str(cfg.get("auth_secret", "") or "")) or ""
+        if not secret:
+            raise KineticDispatchError(
+                f"'{action.id}' declares the {auth_header} header but holds no secret for "
+                f"it — re-enter the credential")
+        headers[auth_header] = secret
+
+    body = _fill(cfg.get("body"), params) if cfg.get("body") is not None else None
+
+    import httpx
+    with external_call("http_component", action.id,
+                       attributes={"method": method}) as extra:
+        resp = httpx.request(method, url, headers=headers,
+                             json=body if body is not None else None, timeout=20.0)
+        extra["ok"] = resp.is_success
+        extra["status"] = resp.status_code
+
+    # The response is DATA, and it is capped. A vendor answering with a megabyte of JSON
+    # must not put a megabyte into a run record a canvas will render.
+    text = resp.text or ""
+    truncated = len(text) > MAX_RESPONSE_CHARS
+    out: dict = {"kind": se.kind, "http_status": resp.status_code, "ok": resp.is_success}
+    try:
+        parsed = resp.json()
+        out["response"] = parsed if not truncated else {"_truncated": True}
+    except Exception:
+        out["response_text"] = text[:MAX_RESPONSE_CHARS]
+    if truncated:
+        out["truncated"] = True
+    return out
 
 
 def _fill_question(template: str, params: dict) -> str:
@@ -271,6 +401,8 @@ def default_dispatch(action: KineticAction, params: dict, scope: str = "") -> di
         for se in action.side_effects:
             if se.kind in ("notify", "webhook"):
                 results.append(_dispatch_webhook(se, action, params))
+            elif se.kind == "http":
+                results.append(_dispatch_http(se, action, params))
             elif se.kind == "trigger_investigation":
                 results.append(_dispatch_trigger_investigation(se, action, params, scope))
             else:

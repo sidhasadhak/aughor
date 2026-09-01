@@ -166,7 +166,21 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # reads by `getattr`. Both are spelled the way the running system spells them.
          # Every sentence in either file says "declared write" or "declared action".
          "aughor/components/registry.py",
-         "tests/unit/test_component_registry.py"),
+         "tests/unit/test_component_registry.py",
+         # DS-13, the widest version of the same ground and the one file that could not
+         # avoid it: this module DEFINES `KineticAction`, `KineticResult` and
+         # `KineticDispatchError` and raises the last of them on every refusal. The
+         # remainder are wire literals the running system depends on — the idempotency key
+         # `kinetic:{id}`, and `kinetic.{id}`, which is the name the approval gate keys a
+         # grant on, so rewording it would silently un-grant every standing approval. Its
+         # prose says "declared action" throughout. Aliasing the type to dodge the pattern
+         # is the trade this file's neighbours already refused: readable code for a
+         # passing count.
+         "aughor/actions/executor.py",
+         # DS-13's suite, for the narrowest version: eight hits, every one the constructor
+         # or the exception `pytest.raises` matches on. A test of the executor's refusals
+         # has to name the exception the executor raises.
+         "tests/unit/test_declarative_http_component.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
@@ -354,7 +368,11 @@ BASELINE: dict[str, int] = {
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     "investigation_in_web": 617,
-    "kinetic": 402,
+    # DS-13 lowered this from 402: `aughor/actions/executor.py` and its new suite joined
+    # the exemption list above, and every hit they carry is a type name, an exception the
+    # tests match on, or a wire literal the approval gate keys grants by. What remains
+    # counted is prose, which is what this ratchet is for.
+    "kinetic": 362,
     "mindsdb": 0,
     "palantir": 6,
     "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
