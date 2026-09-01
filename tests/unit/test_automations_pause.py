@@ -581,3 +581,49 @@ def test_an_agent_s_proposal_still_gets_its_own_row():
 
     body = TestClient(app).get("/control-room/needs-human").json()
     assert [r for r in body["rows"] if r["id"] == loose.id and r["source"] == "kinetic_inbox"]
+
+
+# ── DS-11's completion · the window a live run found ───────────────────────────
+
+def test_a_resume_waits_while_an_accepted_write_is_still_in_flight():
+    """`accept_proposal` resolves the row to `accepted`, THEN performs the write, THEN
+    records its outcome — three statements with a network call in the middle. The router's
+    own resume runs after all three; the heartbeat's sweep does not, and landing inside
+    that window it saw `accepted`, mapped it to `executed` (which it is) and rewrote the
+    step with an EMPTY outcome. Every later step binding to the approved write's output
+    then resolved nothing.
+
+    Found by a live run — the green suite had agreed with it, because every test resolved
+    a proposal and resumed in one thread with nothing in between.
+    """
+    from types import SimpleNamespace
+
+    from aughor.automations.engine import ACCEPT_SETTLE_SECONDS, _settling
+    from aughor.util.time import now_iso_z
+
+    mid_write = SimpleNamespace(status="accepted", outcome={}, status_message="",
+                                resolved_at=now_iso_z())
+    assert _settling(mid_write), "a write in flight must hold the resume"
+
+    done = SimpleNamespace(status="executed", outcome={"ts": "1.1"}, status_message="",
+                           resolved_at=now_iso_z())
+    assert not _settling(done)
+
+    # A row that only LOOKS mid-write because a human accepted and the write returned
+    # nothing to publish is distinguished by its status, not by its emptiness.
+    accepted_empty = SimpleNamespace(status="accepted", outcome={},
+                                     status_message="posted", resolved_at=now_iso_z())
+    assert not _settling(accepted_empty)
+
+    # Bounded, and this is the half that matters: the same shape is what a process that
+    # died mid-write leaves behind, and holding forever would strand the run in `paused` —
+    # the one state this wave must never produce.
+    stale = SimpleNamespace(status="accepted", outcome={}, status_message="",
+                            resolved_at="2020-01-01T00:00:00Z")
+    assert not _settling(stale)
+    assert ACCEPT_SETTLE_SECONDS > 0
+
+    # An unparseable timestamp reads as OLD and the run proceeds — the safe direction
+    # here, and the opposite of the expiry check's.
+    assert not _settling(SimpleNamespace(status="accepted", outcome={},
+                                         status_message="", resolved_at="not-a-date"))

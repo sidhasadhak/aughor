@@ -314,8 +314,14 @@ def effect_detail(effect: Any) -> str:
     the vetted way to name it. A second labeller would be a second chance to spill.
     """
     cfg = getattr(effect, "config", {}) or {}
-    for key in ("action_id", "question", "subscription_id", "monitor_id", "rule_id",
-                "trigger_id", "channel"):
+    # DS-11 — the OPERATION, not the grant. Found by drawing the canvas: two integration
+    # steps, one reading Gmail and one posting to Slack, rendered as two nodes both
+    # labelled "Use an integration" with nothing to tell them apart. The operation is safe
+    # to show by CONSTRUCTION — it is an id from the closed roster, never authored text —
+    # while the grant would put an account's email address on a picture that is read on
+    # screen and exported, which is exactly what this allowlist exists to stop.
+    for key in ("action_id", "operation", "question", "subscription_id", "monitor_id",
+                "rule_id", "trigger_id", "channel"):
         val = cfg.get(key)
         if isinstance(val, str) and val:
             return val if len(val) <= 80 else val[:80] + "…"

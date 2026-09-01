@@ -4511,6 +4511,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/integrations/operations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Operations
+         * @description The operation roster — served, never mirrored.
+         *
+         *     A sibling of `/automations/vocabulary` and for its reason: the ports, the published
+         *     keys and which of them are LISTS are what a step editor must agree with the engine
+         *     about, and a hand-copied contract rots in the worst direction (a key the server
+         *     accepts and the picker refuses). This repo has paid for that trap once already.
+         *
+         *     With ``connection_id`` the answer is scoped to that grant: only its provider's
+         *     operations, each carrying whether THIS grant can run it. Without one it is the whole
+         *     declared set, which is what a reader asking "what could this platform do for me"
+         *     wants — the catalog, not their catalog.
+         */
+        get: operations["operations_integrations_operations_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/{provider_id}/app": {
         parameters: {
             query?: never;
@@ -10021,7 +10051,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**
@@ -20009,6 +20039,37 @@ export interface operations {
             path: {
                 conn_id: string;
             };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    operations_integrations_operations_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
             cookie?: never;
         };
         requestBody?: never;

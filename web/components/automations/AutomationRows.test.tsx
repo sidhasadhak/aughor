@@ -15,10 +15,41 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { EffectRow, effectsForWire } from "@/components/automations/AutomationRows";
+import { getIntegrationConnections, getIntegrationOperations } from "@/lib/api";
 import type { AutoEffect } from "@/lib/api";
 
 vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
+  // DS-11 — the two SERVED rosters the integration editor reads. Mocked rather than
+  // stubbed with a shape of this file's own invention: what is asserted below is that
+  // the row renders what the server said, so the fixture has to be the server's shape.
+  getIntegrationConnections: vi.fn(async () => [
+    { id: "ic_g", provider: "google", user_id: "", scopes: "", account: "sales@example.com",
+      token_type: "Bearer", expires_at: null, status: "active",
+      created_at: "", updated_at: "" },
+    { id: "ic_dead", provider: "slack", user_id: "", scopes: "", account: "Acme",
+      token_type: "Bearer", expires_at: null, status: "revoked",
+      created_at: "", updated_at: "" },
+    { id: "ic_stale", provider: "google", user_id: "", scopes: "", account: "ops@example.com",
+      token_type: "Bearer", expires_at: null, status: "needs_reconnect",
+      created_at: "", updated_at: "" },
+  ]),
+  getIntegrationOperations: vi.fn(async () => [
+    { id: "gmail.messages.list", provider: "google", label: "Gmail · list messages",
+      description: "", writes: false, publishes: ["items", "count"], list_keys: ["items"],
+      availability: "ready", reason: "",
+      params: [
+        { name: "q", label: "Search", type: "string", required: false,
+          placeholder: "is:unread", bindable: true },
+        { name: "maxResults", label: "Limit", type: "number", required: false,
+          placeholder: "", bindable: false },
+      ] },
+    { id: "gmail.messages.send", provider: "google", label: "Gmail · send",
+      description: "", writes: true, publishes: ["id"], list_keys: [],
+      availability: "needs_setup",
+      reason: "this grant does not carry gmail.send — reconnect google and consent to it",
+      params: [] },
+  ]),
   getAutomationVocabulary: vi.fn(async () => ({
     kinds: {
       slack_post: { publishes: ["ts", "channel"], bindable: ["message", "thread_ts", "channel"] },
@@ -165,5 +196,104 @@ describe("the Otherwise editor", () => {
     expect([...picker.querySelectorAll("option")].map(o => o.textContent))
       .toContain("ghost (missing)");
     expect((picker as HTMLSelectElement).value).toBe("ghost");
+  });
+});
+
+/* ── DS-11 · "Use an integration" ────────────────────────────────────────────────── */
+
+describe("the integration editor", () => {
+  const step = (config: Record<string, unknown> = {}): AutoEffect =>
+    ({ kind: "integration_call", alias: "inbox", config });
+
+  // `clearAllMocks` clears CALLS, not implementations — a `mockResolvedValue` set by one
+  // test outlives it. Re-establishing the default here rather than relying on the factory
+  // is what keeps these order-independent; the empty-grants case below overrides it and
+  // this puts it back.
+  const defaultGrants = vi.mocked(getIntegrationConnections).getMockImplementation()!;
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(getIntegrationConnections).mockImplementation(defaultGrants);
+  });
+
+  it("says the same sentence the palette does when nothing is connected", async () => {
+    vi.mocked(getIntegrationConnections).mockResolvedValue([]);
+    render(<EffectRow e={step()} agents={[]} bots={[]} onChange={vi.fn()} />);
+    expect(await screen.findByText(/No connected accounts/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Act as")).toBeNull();
+  });
+
+  it("offers only grants that can actually be spent", async () => {
+    render(<EffectRow e={step()} agents={[]} bots={[]} onChange={vi.fn()} />);
+    const picker = await screen.findByLabelText("Act as");
+    // A revoked grant is dead and a needs_reconnect one is a refusal the provider has
+    // already made — offering either is offering something that cannot work.
+    expect([...picker.querySelectorAll("option")].map(o => o.value))
+      .toEqual(["", "ic_g"]);
+    expect(screen.getByText("google · sales@example.com")).toBeInTheDocument();
+  });
+
+  it("fetches the operations for THAT grant, and renders its declared ports", async () => {
+    render(<EffectRow e={step({ connection_id: "ic_g", operation: "gmail.messages.list" })}
+      agents={[]} bots={[]} onChange={vi.fn()} />);
+    await waitFor(() => expect(getIntegrationOperations).toHaveBeenCalledWith("ic_g"));
+    expect(await screen.findByLabelText("Search")).toBeInTheDocument();
+    expect(screen.getByLabelText("Limit")).toBeInTheDocument();
+  });
+
+  it("renders the server's own sentence about a grant that lacks the scope", async () => {
+    render(<EffectRow e={step({ connection_id: "ic_g", operation: "gmail.messages.send" })}
+      agents={[]} bots={[]} onChange={vi.fn()} />);
+    expect(await screen.findByText(/does not carry gmail.send/)).toBeInTheDocument();
+  });
+
+  it("keeps a binding as an object rather than stringifying it", async () => {
+    // `String({$from: …})` renders "[object Object]" — an editor inviting someone to
+    // overwrite the wiring that makes the chain work.
+    const onChange = vi.fn();
+    render(<EffectRow e={step({ connection_id: "ic_g", operation: "gmail.messages.list",
+                                params: { q: { $from: "step1.answer" } } })}
+      agents={[]} bots={[]} onChange={onChange} />);
+    const field = await screen.findByLabelText("Search");
+    expect(field).toHaveValue('{"$from":"step1.answer"}');
+    fireEvent.change(field, { target: { value: '{"$from": "step1.q"}' } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ params: { q: { $from: "step1.q" } } }),
+    }));
+  });
+
+  it("keeps a grant the picker cannot offer, marked missing — never silently cleared", async () => {
+    // Revoked since, or someone else's. A `<select>` whose value matches no option
+    // renders as the placeholder, so the step would READ as one nobody configured and
+    // the next save would make that true.
+    render(<EffectRow e={step({ connection_id: "ic_gone", operation: "gmail.messages.list" })}
+      agents={[]} bots={[]} onChange={vi.fn()} />);
+    const picker = await screen.findByLabelText("Act as");
+    expect([...picker.querySelectorAll("option")].map(o => o.textContent))
+      .toContain("ic_gone (missing)");
+    expect((picker as HTMLSelectElement).value).toBe("ic_gone");
+    expect(screen.getByText(/an account you can no longer pick/)).toBeInTheDocument();
+  });
+
+  it("still shows an authored step when NOTHING is connected any more", async () => {
+    vi.mocked(getIntegrationConnections).mockResolvedValue([]);
+    render(<EffectRow e={step({ connection_id: "ic_gone", operation: "gmail.messages.list" })}
+      agents={[]} bots={[]} onChange={vi.fn()} />);
+    // The "connect one" sentence is for an EMPTY step; on a configured one it would hide
+    // what the step actually says and invite a save that drops it.
+    expect(await screen.findByLabelText("Act as")).toHaveValue("ic_gone");
+    expect(screen.queryByText(/No connected accounts/)).toBeNull();
+  });
+
+  it("clears the operation and its params when the grant changes", async () => {
+    // Params belong to an operation; carrying them across would send one operation's
+    // inputs to another, which the server refuses as undeclared — after the save.
+    const onChange = vi.fn();
+    render(<EffectRow e={step({ connection_id: "ic_g", operation: "gmail.messages.list",
+                                params: { q: "is:unread" } })}
+      agents={[]} bots={[]} onChange={onChange} />);
+    fireEvent.change(await screen.findByLabelText("Act as"), { target: { value: "" } });
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
+      config: expect.objectContaining({ connection_id: "", operation: "", params: {} }),
+    }));
   });
 });

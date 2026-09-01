@@ -40,7 +40,7 @@ import threading
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -57,14 +57,28 @@ _DB_PATH = resolve_db_path(
     Path(__file__).parent.parent.parent / "data" / "kinetic_inbox.db",
 )
 
-#: Forward-only. v2 adds `expires_at`; `add_column_if_missing` makes it a no-op on a fresh DB
-#: (which already gets the column from the CREATE TABLE below) and an ALTER on a live one.
-#: Numbered against the LIVE store's `PRAGMA user_version` (1 at time of writing), not the
-#: source comment — a migration numbered at or below the deployed version never runs, and no
-#: hermetic test can catch that.
+def _add_proposal_kind(c) -> None:
+    """DS-11's completion — a proposal gains a KIND, and an integration one its grant.
+
+    Both default to what every existing row already means, so no backfill exists and none
+    is needed: `declared_action` with an empty `grant_id` describes every proposal ever
+    staged before this.
+    """
+    add_column_if_missing(c, "staged_proposals", "kind",
+                          "TEXT NOT NULL DEFAULT 'declared_action'")
+    add_column_if_missing(c, "staged_proposals", "grant_id", "TEXT NOT NULL DEFAULT ''")
+
+
+#: Forward-only. v2 adds `expires_at`, v3 the proposal's kind; `add_column_if_missing` makes
+#: each a no-op on a fresh DB (which already gets the columns from the CREATE TABLE below)
+#: and an ALTER on a live one. Numbered against the LIVE store's `PRAGMA user_version`, not
+#: the source comment or this list's length — a migration numbered at or below the deployed
+#: version never runs, and no hermetic test can catch that.
 _MIGRATIONS: list = [
     Migration(2, "proposal expiry",
               lambda c: add_column_if_missing(c, "staged_proposals", "expires_at", "TEXT")),
+    # 3 — measured against the live store on 2026-09-01, which sat at 2.
+    Migration(3, "proposal kind + integration grant", _add_proposal_kind),
 ]
 
 #: Terminal statuses — a proposal in any of these is resolved and cannot be re-resolved.
@@ -114,11 +128,31 @@ def _deadline_from(created_at: str) -> str:
 
 
 class StagedProposal(BaseModel):
-    """One durable, resolve-once proposal — a declared action the agent proposed, awaiting a human."""
+    """One durable, resolve-once proposal — something governed, awaiting a human.
+
+    DS-11's completion gave it a second ``kind``. Everything about the queue is shared —
+    one inbox, one resolve-once UPDATE, one expiry, one audit trail — and what differs is
+    only WHAT the accept executes, which is the smallest seam the two can meet at. The
+    alternative was a second inbox, and this repo has three times found the same bug in
+    that shape ("five mutually-unaware eval surfaces, thirteen spellings of out of date").
+    """
     id: str = Field(default_factory=_new_id)
     org_id: str = ""
+    #: What accepting this RUNS. ``declared_action`` is every proposal written before
+    #: DS-11 and is the default, so a row from an older release reads correctly with no
+    #: backfill: `action_id` names a declared action on `connection_id`'s ontology.
+    #: ``integration`` means `action_id` names a declared OPERATION and `grant_id` names
+    #: the vault Connection whose consent it spends.
+    kind: Literal["declared_action", "integration"] = "declared_action"
+    #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
+    #: that declares it; for an integration, the automation's own. Unchanged in meaning on
+    #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
+    #: on, so overloading it to carry a grant would have hidden every integration proposal
+    #: from the queue that exists to show them.
     connection_id: str
     schema_name: str = ""
+    #: The vault grant an ``integration`` proposal spends. "" on a declared action.
+    grant_id: str = ""
     action_id: str
     params: dict = Field(default_factory=dict)          # the coerced, criteria-passing params
     reasoning: str = ""
@@ -128,9 +162,13 @@ class StagedProposal(BaseModel):
     # replayed run after a restart cannot duplicate a proposal.
     run_id: str = ""
     call_id: str = ""
-    status: str = "pending"                             # pending | accepted | rejected | executed | failed | approval_required
+    #: pending | accepted | rejected | executed | failed | approval_required | expired |
+    #: uncertain. `uncertain` (DS-11's completion) is an accepted write whose transport
+    #: broke: it MAY have arrived, and the resumed run carries the word rather than
+    #: flattening it to `failed`, which would license the retry that duplicates it.
+    status: str = "pending"
     status_message: str = ""                            # authored criterion / approval message, verbatim
-    outcome: dict = Field(default_factory=dict)         # the KineticResult outcome, when executed
+    outcome: dict = Field(default_factory=dict)         # what the executed write returned
     created_at: str = Field(default_factory=now_iso_z)
     #: When this proposal stops being acceptable. Stamped at stage time and then FIXED — the
     #: terms a human was offered do not move because an operator later retuned the default.
@@ -178,6 +216,8 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             org_id         TEXT NOT NULL DEFAULT '',
             connection_id  TEXT NOT NULL,
             schema_name    TEXT NOT NULL DEFAULT '',
+            kind           TEXT NOT NULL DEFAULT 'declared_action',
+            grant_id       TEXT NOT NULL DEFAULT '',
             action_id      TEXT NOT NULL,
             params         TEXT NOT NULL DEFAULT '{}',
             reasoning      TEXT NOT NULL DEFAULT '',
@@ -234,14 +274,14 @@ def stage_proposal(p: StagedProposal) -> StagedProposal:
                     return _row(existing)
             c.execute("""
                 INSERT INTO staged_proposals (
-                    id, org_id, connection_id, schema_name, action_id, params, reasoning,
-                    proposer, source, run_id, call_id, status, status_message, outcome, created_at,
-                    expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (p.id, p.org_id, p.connection_id, p.schema_name, p.action_id,
-                  json.dumps(p.params), p.reasoning, p.proposer, p.source, p.run_id, p.call_id,
-                  p.status, p.status_message, json.dumps(p.outcome), p.created_at,
-                  p.expires_at))
+                    id, org_id, connection_id, schema_name, kind, grant_id, action_id,
+                    params, reasoning, proposer, source, run_id, call_id, status,
+                    status_message, outcome, created_at, expires_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (p.id, p.org_id, p.connection_id, p.schema_name, p.kind, p.grant_id,
+                  p.action_id, json.dumps(p.params), p.reasoning, p.proposer, p.source,
+                  p.run_id, p.call_id, p.status, p.status_message, json.dumps(p.outcome),
+                  p.created_at, p.expires_at))
             c.commit()
             return p
         finally:
@@ -360,6 +400,27 @@ def expire_stale(connection_id: Optional[str] = None) -> int:
 
 # ── accept / reject (the resolve-once public API) ─────────────────────────────────
 
+def gov_action_of(p: StagedProposal) -> str:
+    """The name a proposal's decisions are audited under — one function, so accept,
+    reject and expiry cannot spell one proposal three ways.
+
+    An integration proposal reads its name off the OPERATION rather than composing one
+    here, because the call seam gates on that exact string: two spellings would mean an
+    allowlist entry permitting a name nothing checks, which looks identical to a gate
+    that is working. An operation retired from the roster since staging falls back to the
+    declared-action form — the audit line still says which row it was about, which is the
+    only thing an audit line owes anyone.
+    """
+    if p.kind == "integration":
+        from aughor.integrations.operations import get_operation
+        op = get_operation(p.action_id)
+        if op is not None:
+            return op.gov_action
+    return f"kinetic.{p.action_id}"
+
+
+
+
 def reject_proposal(proposal_id: str, *, actor: str) -> bool:
     """Reject a pending proposal — resolved with the actor, NO side effect. Returns False if it was
     already resolved (a no-op, not an error), so a double-reject is harmless."""
@@ -368,7 +429,7 @@ def reject_proposal(proposal_id: str, *, actor: str) -> bool:
         from aughor.govern import actions as govern
         p = get_proposal(proposal_id)
         if p:
-            govern.audit(f"kinetic.{p.action_id}", p.connection_id, "proposal_rejected",
+            govern.audit(gov_action_of(p), p.connection_id, "proposal_rejected",
                          actor=actor, detail=f"proposal {proposal_id}")
     return resolved
 
@@ -397,7 +458,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
     if p.expired:
         if _resolve_once(proposal_id, "expired", actor or "system:expiry"):
             from aughor.govern import actions as govern
-            govern.audit(f"kinetic.{p.action_id}", p.connection_id, "proposal_expired",
+            govern.audit(gov_action_of(p), p.connection_id, "proposal_expired",
                          actor=actor or "system:expiry",
                          detail=f"proposal {proposal_id} lapsed at {p.expires_at or '(legacy row)'}")
         return KineticResult("expired", False, p.action_id,
@@ -407,6 +468,13 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
     if not _resolve_once(proposal_id, "accepted", actor):
         return KineticResult("already_resolved", False, p.action_id,
                              message=f"proposal already {get_proposal(proposal_id).status}"), ""
+
+    # DS-11's completion — the ONE branch, and it sits AFTER the resolve-once UPDATE on
+    # purpose: expiry, the acceptance window, first-responder-wins and the audit trail are
+    # properties of the queue, not of what the queue happens to be holding. Only what the
+    # accept EXECUTES differs, which is the smallest seam the two kinds can meet at.
+    if p.kind == "integration":
+        return _accept_integration(p, actor=actor, mint_grant=mint_grant), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -433,6 +501,56 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
                                         owner_kind=owner_kind, owner_id=owner_id, created_by=actor)
         grant_id = grant.id if grant else ""
     return result, grant_id
+
+
+#: How a spent grant's verdict reads back on the proposal — and, through
+#: `engine._PROPOSAL_TO_STATUS`, on the step of the run that parked. `uncertain` survives
+#: intact rather than flattening to `failed`: a write whose transport broke after a human
+#: approved it MAY have arrived, and telling the run it failed is how one approved post
+#: becomes two.
+_CALL_TO_PROPOSAL: dict[str, str] = {
+    "executed": "executed", "uncertain": "uncertain",
+    "failed": "failed", "blocked": "failed",
+    "refused": "dispatch_error", "needs_approval": "dispatch_error",
+}
+
+
+def _accept_integration(p: StagedProposal, *, actor: str, mint_grant: bool = False):
+    """Run an accepted integration write, through the same one door the engine uses.
+
+    Returns what :func:`accept_proposal` returns for a declared action, so the two kinds
+    are indistinguishable to every caller of the inbox.
+
+    ``approved=True`` is the human's act, and it bypasses the GATE only — the grant's
+    verdicts, the scope check and the params are all re-asked, because a proposal can sit
+    for days and the account behind it can be revoked in the meantime. That is the same
+    split the governed-write executor makes with its own ``approved=True``: an approval is
+    permission, never a promise that the world stood still.
+
+    ``needs_approval`` coming back here would mean the gate refused a call it was told not
+    to judge; it is mapped to a terminal error rather than to another wait, because a
+    second proposal for a write a human has already accepted is a loop, not a question.
+    """
+    from aughor.actions.executor import KineticResult
+    from aughor.integrations.call import call_operation
+
+    result = call_operation(p.grant_id, p.action_id, p.params, actor=actor, approved=True)
+    status = _CALL_TO_PROPOSAL.get(result.status, "failed")
+    # No standing grant is minted, and the silence is said rather than implied. A standing
+    # grant is target-bound to a DECLARED action's coerced params (`grants.mint_from_action`
+    # takes the action object); the standing permission for an integration write is an
+    # allowlist entry on `(operation, grant)`, which is a different object with a door of
+    # its own. Building a second way to create one, from a return value that cannot even
+    # express it, is how a permission ends up half-created.
+    note = ""
+    if mint_grant:
+        note = (" — 'always allow' does not apply to an integration write: approve "
+                f"'{gov_action_of(p)}' for this account under Approvals to make it "
+                f"standing.")
+    _record_outcome(p.id, status, result.message, result.data)
+    return KineticResult(status, result.ok, p.action_id,
+                         message=(result.message or ("" if result.ok else status)) + note,
+                         outcome=dict(result.data or {}))
 
 
 def _owner_of(source: str) -> tuple[str, str]:

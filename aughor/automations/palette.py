@@ -91,6 +91,9 @@ ACTIONS: tuple[PaletteEntry, ...] = (
     PaletteEntry("subchain", "action", "Run a chain",
                  "Run another automation as one step — share a shape instead of "
                  "authoring it twice", "layers", 60),
+    PaletteEntry("integration_call", "action", "Use an integration",
+                 "Act as a connected account — read or post under the grant that "
+                 "account gave, capped and audited", "key", 70),
 )
 
 ENTRIES: tuple[PaletteEntry, ...] = TRIGGERS + ACTIONS
@@ -126,6 +129,16 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         from aughor.monitors.store import list_monitors
         return len(list_monitors(conn_id))
 
+    def grants() -> int:
+        from aughor.integrations.store import list_connections
+        from aughor.org.context import current_user_id
+        # ACTIVE only, and the same rule the Slack bot probe uses: a revoked grant and one
+        # the provider refuses to refresh cannot be spent, so neither is the prerequisite
+        # being met. Scoped to the caller — a grant is one person's consent, and offering
+        # a reader someone else's would be the palette lying about who this deployment is.
+        return sum(1 for c in list_connections(current_user_id())
+                   if c.status == "active")
+
     def automations() -> int:
         from aughor.automations.store import list_automations
         # Two, not one: the chain being authored cannot be its own subchain (that cycle is
@@ -150,6 +163,12 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         # (the palette's own law: it tells the truth about THIS deployment).
         "subchain": _Prereq(automations, "No other automations on this connection — a "
                                          "chain needs another chain to run."),
+        # DS-11 — the door this sentence names is the Integrations catalog, which is
+        # where a grant is made. The wave that built the vault could not write this row
+        # because nothing could spend a grant; the row exists now because something can.
+        "integration_call": _Prereq(
+            grants, "No connected accounts — connect one under Integrations, then this "
+                    "step can act as it."),
     }
 
 

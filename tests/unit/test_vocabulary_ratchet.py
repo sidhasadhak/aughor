@@ -124,6 +124,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # imported router is bound as `actions_router` — so what is left cannot be reworded
          # without spelling the wire differently from the way the wire is spelled.
          "tests/unit/test_automations_pause.py",
+         # DS-11's completion, same ground once more. Every hit in this file is a name the
+         # running system uses and none is prose: `KineticAction` (the ontology model the
+         # fixtures build), `graph.kinetic_actions` (the attribute the loader reads),
+         # `AUGHOR_KINETIC_INBOX_DB` (the env var, registered in conftest's redirect loop),
+         # and the two audited action names `gov_action_of` actually returns. Its own
+         # prose says "declared action" and "governed write" throughout.
+         "tests/unit/test_kinetic_inbox.py",
          "web/lib/automationFlow",
          "web/components/AutomationGraph.tsx",
          # DS-1's palette is the sibling of those vocabulary tables and carries the kind
@@ -354,7 +361,12 @@ BASELINE: dict[str, int] = {
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     "investigation_in_web": 617,
-    "kinetic": 402,
+    # 402 → 398: DS-11's completion reworded four prose hits in `actions/inbox.py` (a
+    # TYPE_CHECKING import and a string annotation that said nothing the docstring did
+    # not, a field comment naming a type where it meant a thing, and one docstring naming
+    # the executor's function where it meant the executor) and exempted the inbox suite,
+    # whose every hit is an identifier the running system uses.
+    "kinetic": 398,
     "mindsdb": 0,
     "palantir": 6,
     "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
