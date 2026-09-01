@@ -109,8 +109,6 @@ import pytest
 @pytest.fixture()
 def seeded_library(tmp_path, monkeypatch):
     """A two-entry trusted library, with the warrant sentence the promoter really writes."""
-    from aughor.semantic import trusted_queries as tq
-
     store = tmp_path / "trusted_queries.json"
     store.write_text(json.dumps([
         {"id": "tq1", "connection_id": "c1",

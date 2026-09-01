@@ -955,6 +955,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exposed Tools
+         * @description DS-14 — the automations this deployment offers as MCP tools.
+         *
+         *     Read by the MCP server at start, so what an outside agent can invoke is whatever the
+         *     owners OPTED IN — never every automation the API happens to hold.
+         *
+         *     Both flags must hold. `exposed_as_tool` is the intent and `enabled` is the switch, and
+         *     a chain someone deliberately switched off must not stay callable from outside: that
+         *     would make the off switch a lie for exactly the caller nobody is watching.
+         *
+         *     A name collision is refused HERE rather than left for the server to resolve, because
+         *     the two tools would be indistinguishable to the client that has to choose between
+         *     them. The first by creation order keeps the name and the rest are reported with the
+         *     reason, so the answer is one an operator can act on instead of a silently shorter list.
+         */
+        get: operations["exposed_tools_automations_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/vocabulary": {
         parameters: {
             query?: never;
@@ -13835,6 +13867,37 @@ export interface operations {
             query?: {
                 conn_id?: string | null;
                 limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exposed_tools_automations_tools_get: {
+        parameters: {
+            query?: {
+                conn_id?: string;
             };
             header?: never;
             path?: never;

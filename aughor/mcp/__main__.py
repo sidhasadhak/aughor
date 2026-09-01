@@ -7,8 +7,10 @@ deliberately not the API's :8000).
 from __future__ import annotations
 
 import argparse
+import asyncio
+import sys
 
-from aughor.mcp.server import mcp
+from aughor.mcp.server import mcp, register_automation_tools
 
 
 def main() -> None:
@@ -21,7 +23,28 @@ def main() -> None:
     )
     ap.add_argument("--host", default="127.0.0.1", help="HTTP host (with --http).")
     ap.add_argument("--port", type=int, default=8765, help="HTTP port (with --http; default 8765).")
+    ap.add_argument(
+        "--no-automations", action="store_true",
+        help="Skip registering this deployment's exposed automations as tools (DS-14).",
+    )
     args = ap.parse_args()
+
+    # DS-14 — the eighteen static tools are this VERSION's; the automations are this
+    # DEPLOYMENT's, so they are read once here, before the transport starts serving.
+    #
+    # Before rather than during: a client asks for the tool list immediately after
+    # connecting, and a tool registered after that answer is a tool the client will not
+    # see until it reconnects. Keeping the whole registration ahead of `run()` means the
+    # first `tools/list` is already complete and honest.
+    #
+    # Never fatal. `register_automation_tools` swallows its own failures and returns what
+    # it managed; a server that refused to start because the API was down would withhold
+    # the very tools you would use to find out why.
+    if not args.no_automations:
+        added = asyncio.run(register_automation_tools())
+        if added:
+            print(f"[aughor.mcp] exposed {len(added)} automation(s) as tools: "
+                  f"{', '.join(added)}", file=sys.stderr)
 
     if args.http:
         mcp.settings.host = args.host

@@ -836,6 +836,50 @@ governed path, because the server already fronts the real API. A2A agent cards r
 only if that protocol earns it. **Receipt:** Claude Desktop calls "daily-sales-report" and
 the run appears in Activity like any other.
 
+> **Shipped 2026-09-01.** An automation carries `exposed_as_tool` — OPT-IN, default off,
+> and `enabled` must hold too: a chain someone deliberately switched off staying callable
+> from outside would make the off switch a lie for exactly the caller nobody is watching.
+> `GET /automations/tools` is what the MCP server reads at start; the eighteen static
+> tools are what this VERSION can do, and these are what THIS deployment's people built,
+> so they are registered dynamically rather than by a decorator that cannot know their
+> names. The tool wraps `POST /automations/{id}/run` — the same route the web app's "Run
+> now" presses — which is the whole claim: **the caller changes, the governance does
+> not.** The chain lands in the one engine, writes the run row Activity reads, and a
+> governed write inside it still parks for the approval gate rather than firing because
+> the request arrived over MCP.
+>
+> **Three failures pinned, each of which looks correct until a tool is called.** Late
+> binding — a closure built inline in the loop captures the loop variable, so every
+> registered tool fires whichever automation was last (mutation-checked: `['a3','a3']`
+> instead of `['a1','a3']`). Shadowing — an automation named "Ask" must not replace the
+> governed `ask` path, so a colliding name is skipped, and two automations that would
+> answer to one name are refused at the ROUTE with a sentence naming the fix, because two
+> tools a client cannot tell apart is worse than one missing tool. And a dead API leaves
+> the static tools standing: those are the ones you would use to find out why it is down.
+>
+> **Two defects found by driving it, neither of which a unit test could have seen.**
+> `GET /automations/tools` was declared after `GET /automations/{automation_id}`, and
+> FastAPI matches in declaration order — so "tools" was read as an id and the route
+> answered "Automation not found". And `exposed_as_tool` was missing from
+> `CreateAutomationRequest`, so the PUT accepted it, echoed it back as true, and dropped
+> it on the way to the store: 200, and the flag never persisted. That is the HTTP spelling
+> of the half-added-column trap the store warns about one layer down.
+>
+> **The field landed everywhere at once** — model, DDL, migration 5, both halves of the
+> upsert, the row reader, the param builder and the request model, SEVEN places — because
+> this store has twice shipped a field with a model attribute and no column, and SQLite's
+> named binding ignores a key it has no column for. Migration 5 was numbered off
+> `PRAGMA user_version` on the deployed database, which read 4.
+>
+> **Live receipt:** an MCP client sees 19 tools — the eighteen static ones plus
+> `ds_6_receipt_revenue_routing`, described with its steps and the sentence that a governed
+> write in it stops for a human. Reverted after; nothing on this install is exposed.
+>
+> **Left open:** the tool list is read once at server start, so a chain exposed afterwards
+> needs a reconnect. MCP has a `tools/list_changed` notification for exactly this, and
+> wiring it needs a live client to prove against — its own small wave rather than an
+> untested paragraph here.
+
 #### Phase 4 · The authoring inversion
 
 **DS-15 · Conversation authors the canvas.** Describe the outcome in chat; the agent
@@ -1011,7 +1055,9 @@ LATER   DS-11 completion · ✅ DS-12 ontology components SHIPPED 2026-09-01
         value repaired — it had never computed) · ✅ DS-13 declarative customs
         SHIPPED 2026-09-01 (the `http` side effect: a described call, filled and never
         evaluated, credential encrypted at rest; the declared webhook joined
-        govern.outbound) · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
+        govern.outbound) · ✅ DS-14 chains-as-MCP-tools SHIPPED 2026-09-01
+        (opt-in `exposed_as_tool` + migration 5; the 18 static tools are the version's,
+        the automations are the deployment's)   (§3.7 Phase 3 COMPLETE)
         DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)
         VA-10 multi-user + admin  (hardening pass over everything above)

@@ -430,6 +430,15 @@ class Automation(BaseModel):
     )
 
     enabled: bool = True
+    #: DS-14 — may an external MCP client invoke this chain as a tool?
+    #:
+    #: OPT-IN, and default False on purpose. A deployment's automations are its private
+    #: machinery; exposing every one of them because the MCP server happens to front the
+    #: same API would be the opposite of the posture the rest of that server exists for.
+    #: `enabled` is a separate question and both must hold — a chain someone deliberately
+    #: switched off must not stay callable from outside, which would make the off switch a
+    #: lie for exactly the caller nobody is watching.
+    exposed_as_tool: bool = False
     paused_until: Optional[str] = Field(
         default=None,
         description="ISO-8601 UTC. While in the future the automation is muted: it does not "

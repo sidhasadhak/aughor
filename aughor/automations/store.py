@@ -56,6 +56,7 @@ CREATE TABLE IF NOT EXISTS automations (
     retry_backoff_seconds REAL NOT NULL DEFAULT 30.0,
     agent_id              TEXT NOT NULL DEFAULT '',
     scheduling            TEXT NOT NULL DEFAULT 'ordered',
+    exposed_as_tool       INTEGER NOT NULL DEFAULT 0,
     created_at            TEXT NOT NULL DEFAULT '',
     updated_at            TEXT NOT NULL DEFAULT '',
     last_run_at           TEXT,
@@ -157,6 +158,20 @@ def _add_run_checkpoint(conn: sqlite3.Connection) -> None:
 #: deployed database, not assumed from this file, which is the only way to number one.
 #: Version 3 numbered off the same fact one release later: the deployed store runs this
 #: file's migrations at boot, so it sits at 2 — the highest version listed here on main.
+def _add_exposed_as_tool(conn: sqlite3.Connection) -> None:
+    """DS-14's ``Automation.exposed_as_tool`` — whether an external MCP client may call it.
+
+    Added the way this store has learned to add things, and the lesson is written on the
+    two fields above: model + DDL + this migration + BOTH halves of the upsert, in one
+    commit. SQLite's named binding ignores a key with no column, so a half-added field
+    fails silently — the API echoes back a value the row never held, and nothing raises
+    until a reader needs it. Here that reader is an MCP server deciding what an outside
+    agent may invoke, which is the worst place in this codebase for a flag to be wrong.
+    """
+    add_column_if_missing(conn, "automations", "exposed_as_tool",
+                          "INTEGER NOT NULL DEFAULT 0")
+
+
 _MIGRATIONS: list[Migration] = [
     Migration(version=2, name="automation agent binding (VA-9b's missing column)",
               apply=_add_agent_binding),
@@ -169,6 +184,14 @@ _MIGRATIONS: list[Migration] = [
     #: a fresh database gets the column from the DDL above and passes either way.
     Migration(version=4, name="run checkpoint (DS-8: durable pause)",
               apply=_add_run_checkpoint),
+    #: Version 5, read off the LIVE store the same way its three predecessors were:
+    #: `PRAGMA user_version` on the deployed `data/automations.db` returns 4 (DS-8's
+    #: migration ran at its boot), so 5 is the next one that will actually execute. A
+    #: migration numbered at or below the deployed version is skipped forever and no
+    #: hermetic test can catch it — a fresh database takes the column from the DDL above
+    #: and passes either way.
+    Migration(version=5, name="tool exposure (DS-14: chains as MCP tools)",
+              apply=_add_exposed_as_tool),
 ]
 
 
@@ -197,6 +220,7 @@ _init_schema()
 def _row_to_automation(row: sqlite3.Row) -> Automation:
     d = dict(row)
     d["enabled"] = bool(d["enabled"])
+    d["exposed_as_tool"] = bool(d.get("exposed_as_tool", 0))
     d["conditions"] = json.loads(d["conditions"] or "[]")
     d["effects"] = json.loads(d["effects"] or "[]")
     d["fallback_effect"] = json.loads(d["fallback_effect"]) if d.get("fallback_effect") else None
@@ -209,6 +233,7 @@ def _automation_params(a: Automation) -> dict:
     p["effects"] = json.dumps([e.model_dump() for e in a.effects])
     p["fallback_effect"] = json.dumps(a.fallback_effect.model_dump()) if a.fallback_effect else None
     p["enabled"] = int(a.enabled)
+    p["exposed_as_tool"] = int(a.exposed_as_tool)
     return p
 
 
@@ -313,13 +338,13 @@ def upsert_automation(automation: Automation) -> Automation:
                 INSERT INTO automations (
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
-                    retry_backoff_seconds, agent_id, scheduling, created_at, updated_at,
-                    last_run_at, last_status
+                    retry_backoff_seconds, agent_id, scheduling, exposed_as_tool,
+                    created_at, updated_at, last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
-                    :retry_backoff_seconds, :agent_id, :scheduling, :created_at, :updated_at,
-                    :last_run_at, :last_status
+                    :retry_backoff_seconds, :agent_id, :scheduling, :exposed_as_tool,
+                    :created_at, :updated_at, :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET
                     -- `conn_id` belongs here like every other authored field. Left out,
@@ -342,6 +367,7 @@ def upsert_automation(automation: Automation) -> Automation:
                     retry_backoff_seconds=excluded.retry_backoff_seconds,
                     agent_id=excluded.agent_id,
                     scheduling=excluded.scheduling,
+                    exposed_as_tool=excluded.exposed_as_tool,
                     updated_at=excluded.updated_at,
                     last_run_at=excluded.last_run_at,
                     last_status=excluded.last_status

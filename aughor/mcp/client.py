@@ -152,6 +152,27 @@ class AughorClient:
             })
         return out
 
+    # ── DS-14: chains as tools ──────────────────────────────────────────────────
+    async def list_automation_tools(self) -> list[dict]:
+        """The automations this deployment offers as MCP tools.
+
+        Read at server start, so what an external agent can invoke is whatever the
+        deployment has OPTED IN — never every automation it happens to hold.
+        """
+        payload = await self._get("/automations/tools")
+        tools = payload.get("tools") if isinstance(payload, dict) else payload
+        return list(tools or [])
+
+    async def run_automation(self, automation_id: str) -> dict:
+        """Fire one automation through the SAME route the web app's "Run now" uses.
+
+        Not a private path for external callers: it lands in the one engine, records a run
+        row, and stops for the approval gate exactly as a scheduled tick would. That is the
+        whole claim of exposing a chain as a tool — the caller changes, the governance does
+        not.
+        """
+        return await self._post(f"/automations/{automation_id}/run")
+
     async def ask(
         self,
         question: str,
