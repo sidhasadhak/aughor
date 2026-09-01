@@ -522,7 +522,7 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
                 write has to be told which account it goes out as; the card said only what
                 would be done, which reads the same for two different accounts. */}
             {p.kind === "integration" && p.grant_id && (
-              <span style={{ fontSize: 11, color: "var(--amb4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
                 as {accountLabel(p.grant_id)}
               </span>
             )}
@@ -540,7 +540,7 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
                 (operation, account), which has a door of its own under Approvals. Offering
                 a checkbox that does nothing is worse than not offering one. */}
             {p.kind === "integration" ? (
-              <span style={{ fontSize: 11, color: "var(--t3)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 to allow this account unattended, approve it under Approvals
               </span>
             ) : (
