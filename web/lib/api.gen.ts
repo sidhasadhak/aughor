@@ -932,6 +932,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose
+         * @description DS-15 — describe an outcome, get a drawn chain with a dry-run receipt.
+         *
+         *     Creation by PROPOSAL, the shape every governed write here already has: nothing is
+         *     saved, the draft is refused by the same validators a save runs, and a human arms it.
+         *     The response is the authoring payload the canvas already knows how to render, so the
+         *     proposal arrives as an editable chain rather than as a message about one.
+         *
+         *     Declared BEFORE `/automations/{automation_id}` for the reason DS-14 learned the hard
+         *     way one route up: FastAPI matches in declaration order, and a static segment after the
+         *     path-parameter route is never reached.
+         */
+        post: operations["propose_automations_propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/runs": {
         parameters: {
             query?: never;
@@ -9739,6 +9768,11 @@ export interface components {
             enabled: boolean;
             /** Expires At */
             expires_at?: string | null;
+            /**
+             * Exposed As Tool
+             * @default false
+             */
+            exposed_as_tool: boolean;
             fallback_effect?: components["schemas"]["Effect"] | null;
             /**
              * Max Retries
@@ -10832,16 +10866,6 @@ export interface components {
             table_cols?: {
                 [key: string]: string[];
             } | null;
-        };
-        /** ProposeRequest */
-        ProposeRequest: {
-            /**
-             * Actor
-             * @default agent
-             */
-            actor: string;
-            /** Context */
-            context: string;
         };
         /**
          * QueryTemplate
@@ -12246,6 +12270,22 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * ProposeRequest
+         * @description DS-15 — what a person says, and which connection to ground it in.
+         */
+        aughor__routers__automations__ProposeRequest: {
+            /**
+             * Conn Id
+             * @description The connection the chain runs against.
+             */
+            conn_id: string;
+            /**
+             * Outcome
+             * @description What the chain should achieve, in the user's words.
+             */
+            outcome: string;
+        };
         /** LayoutRequest */
         aughor__routers__dashboard__LayoutRequest: {
             /** Connection Id */
@@ -12254,6 +12294,16 @@ export interface components {
             layout?: {
                 [key: string]: unknown;
             };
+        };
+        /** ProposeRequest */
+        aughor__routers__kinetic__ProposeRequest: {
+            /**
+             * Actor
+             * @default agent
+             */
+            actor: string;
+            /** Context */
+            context: string;
         };
     };
     responses: never;
@@ -13841,6 +13891,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_automations_propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__automations__ProposeRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -21171,7 +21254,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProposeRequest"];
+                "application/json": components["schemas"]["aughor__routers__kinetic__ProposeRequest"];
             };
         };
         responses: {

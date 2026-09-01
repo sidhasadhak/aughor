@@ -10,6 +10,7 @@ import {
   ConditionKind,
   EffectKind,
   NewAutomation,
+  proposeAutomation,
   StagedProposal,
   StandingGrant,
   getAutomations,
@@ -89,6 +90,10 @@ export function AutomationsPanel({ connId }: Props) {
 
   // form
   const [editing, setEditing] = useState<Automation | null>(null);
+  // DS-15 — a proposed chain waiting to be armed, and the sentence that asked for it.
+  const [draft, setDraft] = useState<NewAutomation | null>(null);
+  const [outcome, setOutcome] = useState("");
+  const [proposing, setProposing] = useState(false);
   /** The automation whose CANVAS fills the panel. The flow used to render as a 420px
    *  strip inside its list row — a workflow in a drawer. The frames the user pointed
    *  at (Langflow, VoltAgent) give the flow the whole room, and they are right: a
@@ -193,6 +198,36 @@ export function AutomationsPanel({ connId }: Props) {
     try { setRuns(await getAutomationRuns(a.id)); } catch { setRuns([]); }
   }, []);
 
+  /** DS-15 — ask the agent for a chain, then hand the draft to the form.
+   *
+   * A REFUSAL is rendered as a message, not an error: "nothing on this deployment can do
+   * that" is a considered answer, and the reason (which bot is missing, which kind is
+   * unavailable) is the useful half. Only a proposal opens the form.
+   */
+  const onPropose = async () => {
+    if (!outcome.trim() || !conn) return;
+    setProposing(true);
+    try {
+      const p = await proposeAutomation(outcome.trim(), conn);
+      if (p.verdict !== "proposed" || !p.draft) {
+        flash("err", p.reason || "nothing here can do that yet");
+        return;
+      }
+      setEditing(null);
+      setDraft(p.draft);
+      setView("form");
+      // The receipt in one line: the dry run walked the chain without dispatching.
+      const steps = (p.draft.effects || []).length;
+      flash("ok", `Proposed ${steps} step${steps === 1 ? "" : "s"} — dry-run checked, nothing saved yet.`
+        + (p.notes ? ` Note: ${p.notes}` : ""));
+      setOutcome("");
+    } catch (e) {
+      flash("err", (e as Error).message);
+    } finally {
+      setProposing(false);
+    }
+  };
+
   const onToggle = async (a: Automation) => {
     try { await setAutomationEnabled(a.id, !a.enabled); await load(); }
     catch { flash("err", "Could not toggle"); }
@@ -252,9 +287,30 @@ export function AutomationsPanel({ connId }: Props) {
         </div>
         <div style={{ flex: 1 }} />
         {view === "list" && (
-          <Button variant="ghost" className="h-auto" onClick={() => { setEditing(null); setView("form"); }} style={{ fontSize: 12, padding: "5px 12px" }}>
-            + New automation
-          </Button>
+          <>
+            {/* DS-15 — the other way in. Creation by PROPOSAL: describe the outcome, the
+                agent drafts a chain grounded in what this deployment actually has, and it
+                arrives as a seeded form with a dry-run receipt. Nothing is saved until the
+                person presses the same Create button they always would. */}
+            <input
+              className="aug-fs-sm"
+              placeholder="or describe it — e.g. post a Monday pipeline summary to #revenue"
+              value={outcome}
+              onChange={e => setOutcome(e.target.value)}
+              onKeyDown={e => { if (e.key === "Enter") void onPropose(); }}
+              style={{
+                width: 340, padding: "5px 10px", marginRight: 8,
+                borderRadius: "var(--r3)", border: "1px solid var(--b1)",
+                background: "var(--bg-1, var(--bg-2))", color: "var(--t1)",
+              }} />
+            <Button variant="ghost" className="h-auto aug-fs-sm" disabled={!outcome.trim() || proposing}
+              onClick={() => void onPropose()} style={{ padding: "5px 12px" }}>
+              {proposing ? "Drafting…" : "Propose"}
+            </Button>
+            <Button variant="ghost" className="h-auto" onClick={() => { setEditing(null); setDraft(null); setView("form"); }} style={{ fontSize: 12, padding: "5px 12px" }}>
+              + New automation
+            </Button>
+          </>
         )}
         {view === "form" && (
           <Button variant="ghost" onClick={() => setView("list")} className="h-auto p-0 font-normal" style={{ ...ghostBtn, fontSize: 12 }}>
@@ -310,7 +366,7 @@ export function AutomationsPanel({ connId }: Props) {
 
         {view === "form" && (
           <AutomationForm
-            conn={conn} initial={editing}
+            conn={conn} initial={editing} draft={draft}
             onCancel={() => setView("list")}
             onSaved={async () => { await load(); setView("list"); flash("ok", "Saved"); }}
             onError={t => flash("err", t)} />
@@ -556,18 +612,28 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
 
 // ── Author form ───────────────────────────────────────────────────────────────
 
-function AutomationForm({ conn, initial, onCancel, onSaved, onError }: {
+function AutomationForm({ conn, initial, draft, onCancel, onSaved, onError }: {
   conn: string; initial: Automation | null;
+  /** DS-15 — a PROPOSED chain to seed the fields with. Separate from `initial` on
+   *  purpose: `initial` means "editing a stored record" and the save branch keys on it,
+   *  so seeding through it would make the form PUT to an id the draft does not have.
+   *  A proposal is a new automation whose fields somebody else filled in first. */
+  draft?: NewAutomation | null;
   onCancel: () => void; onSaved: () => void; onError: (t: string) => void;
 }) {
-  const [name, setName] = useState(initial?.name ?? "");
-  const [logic, setLogic] = useState<"all" | "any">(initial?.condition_logic ?? "all");
+  // DS-15 — `initial` (a stored record being edited) wins, then `draft` (a proposal
+  // somebody asked the agent for), then an empty form. Only `initial` decides whether the
+  // save is a PUT or a POST, so a seeded draft still creates.
+  const seed = initial ?? draft ?? null;
+  const [name, setName] = useState(seed?.name ?? "");
+  const [logic, setLogic] = useState<"all" | "any">(
+    (seed?.condition_logic as "all" | "any") ?? "all");
   const [scheduling, setScheduling] = useState<"ordered" | "parallel">(
     initial?.scheduling ?? "ordered");
   const [conditions, setConditions] = useState<AutoCondition[]>(
-    initial?.conditions ?? [newCondition()]);
+    seed?.conditions ?? [newCondition()]);
   const [effects, setEffects] = useState<AutoEffect[]>(
-    initial?.effects ?? [newEffect()]);
+    seed?.effects ?? [newEffect()]);
   const [maxRetries, setMaxRetries] = useState(initial?.max_retries ?? 1);
   const [saving, setSaving] = useState(false);
   // The personas an `investigate` effect may run as (Wave H1). Empty when the

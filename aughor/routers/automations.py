@@ -59,6 +59,13 @@ class CreateAutomationRequest(BaseModel):
     exposed_as_tool: bool = False
 
 
+class ProposeRequest(BaseModel):
+    """DS-15 — what a person says, and which connection to ground it in."""
+
+    outcome: str = Field(description="What the chain should achieve, in the user's words.")
+    conn_id: str = Field(description="The connection the chain runs against.")
+
+
 class PauseRequest(BaseModel):
     until: Optional[str] = Field(
         default=None,
@@ -200,6 +207,33 @@ def all_runs(conn_id: Optional[str] = None, limit: int = 100):
     an id."""
     return {"runs": [r.model_dump()
                      for r in get_runs(conn_id=conn_id, limit=min(int(limit), 500))]}
+
+
+@router.post("/automations/propose")
+def propose(body: ProposeRequest):
+    """DS-15 — describe an outcome, get a drawn chain with a dry-run receipt.
+
+    Creation by PROPOSAL, the shape every governed write here already has: nothing is
+    saved, the draft is refused by the same validators a save runs, and a human arms it.
+    The response is the authoring payload the canvas already knows how to render, so the
+    proposal arrives as an editable chain rather than as a message about one.
+
+    Declared BEFORE `/automations/{automation_id}` for the reason DS-14 learned the hard
+    way one route up: FastAPI matches in declaration order, and a static segment after the
+    path-parameter route is never reached.
+    """
+    from aughor.automations.propose import propose_chain
+
+    proposal = propose_chain(body.outcome, conn_id=body.conn_id)
+    if proposal.verdict != "proposed":
+        # 200, not 4xx: "nothing here can do that" is an ANSWER to the question that was
+        # asked, and the reason is the useful half of it. A 422 would make the client
+        # render a failure where the server produced a considered refusal.
+        return {"verdict": proposal.verdict, "reason": proposal.reason,
+                "notes": proposal.notes, "draft": proposal.draft}
+    return {"verdict": "proposed", "draft": proposal.draft,
+            "dry_run": proposal.dry_run, "notes": proposal.notes,
+            "reason": ""}
 
 
 # NOTE: declared BEFORE `/automations/{automation_id}` on purpose — FastAPI

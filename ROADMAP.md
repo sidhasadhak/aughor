@@ -891,6 +891,54 @@ Assistant builds whole flows; coding agents author over MCP); ours is stronger b
 proposal-first already exists. **Receipt:** "post a Monday pipeline summary to #revenue"
 becomes a drawn, dry-run-proven chain awaiting one click.
 
+> **Shipped 2026-09-01.** `POST /automations/propose` takes a sentence and a connection and
+> returns a DRAFT — the same authoring payload the create form already renders — with a
+> dry-run receipt attached. Nothing is saved. The draft seeds the form through its own
+> prop rather than through `initial`, because `initial` means "editing a stored record"
+> and the save branch keys on it: seeding through it would have made the form PUT to an id
+> the draft does not have.
+>
+> **Three things make the draft honest rather than plausible.** It is offered only what
+> THIS deployment has — the prompt is built from the same palette the canvas reads, so a
+> kind the palette dims is named as unavailable WITH the reason, and the real ids (the
+> Slack bots that exist, the metrics that are defined, the vetted queries that are stored)
+> are listed with "never invent an id". A prompt assembled from a hand-written kind list
+> would drift from the one the save enforces, and the drift shows up as a proposal that
+> validates in the prompt and is refused by the code. It is refused by the SAME code a
+> save is refused by — the draft is constructed as an `Automation`, so every model
+> validator and `validate_chain` runs, and a chain the Save button would reject is never
+> drawn: that looks like work which is nearly done. And it fails CLOSED —
+> `actions/propose.py` fails open to `[]` because proposing an action garnishes an answer
+> somebody already asked for, whereas here the proposal IS the request, so a silent empty
+> would answer "nothing" to "build me a chain".
+>
+> **The draft carries no armed state.** No `enabled`, no `exposed_as_tool`, no id. A
+> proposal that arrived already armed — or already exposed as an MCP tool (DS-14, three
+> hours earlier) — would have made the decision the human is being asked to make.
+>
+> **Every test injects its provider.** This repo has already paid once for a suite that
+> reached a live model, so the rule is structural: `propose_chain` takes the provider as an
+> argument and resolves the default only when nobody passed one. An empty outcome is
+> refused before the model is reached at all, which is also the one live check that costs
+> nothing.
+>
+> **The one live call earned its cost.** Asked for "every Monday morning, check how revenue
+> is doing and post a short summary to Slack", the model drafted a correct chain — a Monday
+> cron, the governed `revenue` metric through DS-12's `metric_value`, an investigate, and a
+> `slack_post` naming a REAL bot id rather than an invented one — and got the BINDINGS
+> wrong in a way nothing could refuse: it wrote `"{\"$from\": \"step.key\"}"`, a STRING
+> holding the JSON of a binding. A string is a legal literal, so `validate_chain` passed
+> it, the dry run was clean, and the chain would have posted those characters to Slack. A
+> well-formed wrong answer, which §7 already ranks below an exception. Two fixes: the
+> prompt now shows the correct and incorrect shapes side by side, and a repair pass
+> un-stringifies an EXACT single-key `$from` object. A binding embedded in a SENTENCE is
+> deliberately left alone — the engine cannot interpolate one, so guessing at the author's
+> meaning would swap a visible mistake for an invisible one.
+>
+> **Left open:** the proposal seeds the FORM, not the Design canvas — the canvas renders a
+> stored automation, and giving it an unsaved one is its own change. The receipt's "drawn"
+> half is therefore the form plus the dry-run summary rather than nodes on a canvas.
+
 **DS-16 · The migration funnel.** An importer for Langflow (and archived-Flowise) flow
 JSON: model/prompt/agent/tool nodes map onto an agent record plus a chain; code-carrying
 nodes are REFUSED with a sentence naming the no-code-injection law and the declarative
@@ -1058,7 +1106,9 @@ LATER   DS-11 completion · ✅ DS-12 ontology components SHIPPED 2026-09-01
         govern.outbound) · ✅ DS-14 chains-as-MCP-tools SHIPPED 2026-09-01
         (opt-in `exposed_as_tool` + migration 5; the 18 static tools are the version's,
         the automations are the deployment's)   (§3.7 Phase 3 COMPLETE)
-        DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
+        ✅ DS-15 conversation-authors-canvas SHIPPED 2026-09-01 (propose → validate →
+        dry-run → a seeded form; nothing saved, nothing armed) · DS-16 migration
+        funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)
         VA-10 multi-user + admin  (hardening pass over everything above)
 ```

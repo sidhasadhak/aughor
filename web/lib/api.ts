@@ -3880,11 +3880,59 @@ export async function getAutomations(connId?: string): Promise<Automation[]> {
   return (await res.json()).automations;
 }
 
+/** DS-15 — describe an outcome, get a chain the canvas can render.
+ *
+ * Returns a VERDICT, not a chain: "nothing on this deployment can do that" is an answer
+ * to the question that was asked, and the caller renders the reason rather than an error.
+ * Nothing is saved — the draft becomes a seeded create form the person still has to arm.
+ */
+export type ChainProposal = {
+  verdict: "proposed" | "refused";
+  reason: string;
+  notes: string;
+  draft: NewAutomation | null;
+  dry_run?: Record<string, unknown>;
+};
+
+export async function proposeAutomation(outcome: string, conn_id: string): Promise<ChainProposal> {
+  const res = await fetch(`${getApiBase()}/automations/propose`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ outcome, conn_id }),
+  });
+  if (!res.ok) throw new Error("Could not reach the chain proposer");
+  return res.json();
+}
+
+/** The server's OWN reason a chain was refused, rather than a word standing in for it.
+ *
+ * The create path used to read `detail` purely to decide between two fixed strings —
+ * it looked at the reason and threw it away, so "step 'step2' refers to unknown step
+ * 'summary'" reached the user as "Invalid automation" and left them guessing which of
+ * their fields was wrong. Every refusal from this plane is authored to be actionable
+ * (`validate_chain` names the step AND the reference); discarding that is the client
+ * undoing the one thing the validator exists to provide.
+ *
+ * FastAPI's 422 nests its detail; a `detail` that is a list of field errors is folded
+ * into one line rather than rendered as "[object Object]".
+ */
+async function _automationError(res: Response, verb: "create" | "update"): Promise<string> {
+  const body = await res.json().catch(() => ({} as Record<string, unknown>));
+  const detail = (body as { detail?: unknown }).detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map(d => (typeof d === "string" ? d : String((d as { msg?: string }).msg ?? "")))
+      .filter(Boolean);
+    if (parts.length) return parts.join("; ");
+  }
+  return `Failed to ${verb} automation`;
+}
+
 export async function createAutomation(data: NewAutomation): Promise<Automation> {
   const res = await fetch(`${getApiBase()}/automations`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail ? "Invalid automation" : "Failed to create automation");
+  if (!res.ok) throw new Error(await _automationError(res, "create"));
   return res.json();
 }
 
@@ -3892,7 +3940,7 @@ export async function updateAutomation(id: string, data: NewAutomation): Promise
   const res = await fetch(`${getApiBase()}/automations/${id}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),
   });
-  if (!res.ok) throw new Error("Failed to update automation");
+  if (!res.ok) throw new Error(await _automationError(res, "update"));
   return res.json();
 }
 
