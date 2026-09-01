@@ -159,7 +159,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # interaction tests need. Substituting a different kind to dodge the pattern would
          # make the premise false — no other effect kind reaches an approval gate — so the
          # choice is between spelling the wire and testing something that cannot happen.
-         "tests/unit/test_automations_subchain.py"),
+         "tests/unit/test_automations_subchain.py",
+         # DS-10's registry and its suite, same ground as `dataflow.py` above and for the
+         # same two names: the declared-write effect KIND is the wire literal, and the
+         # ontology graph's attribute of declared writes is a real attribute this module
+         # reads by `getattr`. Both are spelled the way the running system spells them.
+         # Every sentence in either file says "declared write" or "declared action".
+         "aughor/components/registry.py",
+         "tests/unit/test_component_registry.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (

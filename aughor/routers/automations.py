@@ -116,8 +116,26 @@ def palette(conn_id: Optional[str] = None):
     `conn_id` scopes the objects that are themselves connection-scoped (subscriptions,
     monitors); omit it and those probes count across the workspace.
     """
-    from aughor.automations.palette import entries
-    return {"entries": entries(conn_id)}
+    # DS-10 — served FROM the one registry, not from a second reading of the same tables.
+    # The shape is unchanged (this is the canvas's wire contract), but the rows now come
+    # through `components()`, so "does this kind exist" and "does it work here" have
+    # exactly one answer on this deployment instead of two that happen to agree.
+    from aughor.components import components
+
+    out = []
+    for c in components(conn_id=conn_id):
+        if c.family not in ("trigger", "effect"):
+            continue
+        out.append({
+            "kind": c.kind,
+            "group": "trigger" if c.family == "trigger" else "action",
+            "label": c.label, "description": c.description,
+            "icon": c.icon, "priority": c.priority,
+            "publishes": c.outputs,
+            "bindable": [p.name for p in c.inputs if p.bindable],
+            "availability": c.availability, "reason": c.reason,
+        })
+    return {"entries": out}
 
 
 class LayoutRequest(BaseModel):

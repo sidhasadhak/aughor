@@ -109,6 +109,19 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
 }
 
 
+def required_keys(kind: str, *, family: str) -> tuple[str, ...]:
+    """The ``config`` keys a condition or effect of this kind must carry.
+
+    The public reading of the two tables above, added for DS-10's registry. Keyed by
+    FAMILY rather than by kind alone: the two maps are separate namespaces that happen not
+    to collide today (`metric` is a trigger, `monitor` is an effect), and a lookup that
+    fell through from one to the other would start answering confidently the first time
+    they did.
+    """
+    table = _CONDITION_REQUIRED if family == "trigger" else _EFFECT_REQUIRED
+    return tuple(table.get(kind, ()))
+
+
 class GuardClause(BaseModel):
     """W1 — one comparison in a step's ``when`` guard.
 

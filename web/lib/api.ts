@@ -3460,6 +3460,63 @@ export async function getAutomationVocabulary(): Promise<AutomationVocabulary> {
  *  deployment — bots, triggers, subscriptions, monitors — and its answer changes the
  *  moment a reader creates one. `availability` is why the palette can refuse to look the
  *  same on an install that can post to Slack and one that cannot. */
+/**
+ * DS-10 — one component: any capability this deployment has, in the one shape every
+ * family reports. `outputs: null` is the OPEN set (a component whose outputs cannot be
+ * enumerated), `[]` means it publishes nothing — the same distinction `publishes` draws
+ * on a palette entry, and a reader that collapses them will refuse a legal binding.
+ */
+export interface ComponentPort {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  secret: boolean;
+  placeholder: string;
+  visible_when: Record<string, unknown>;
+  bindable: boolean;
+}
+
+export type ComponentFamily =
+  | "trigger" | "effect" | "connector" | "platform_tool" | "mcp_tool" | "declared_action";
+
+export interface Component {
+  id: string;
+  family: ComponentFamily;
+  kind: string;
+  label: string;
+  description: string;
+  icon: string;
+  priority: number;
+  inputs: ComponentPort[];
+  outputs: string[] | null;
+  availability: "ready" | "needs_setup" | "unavailable";
+  reason: string;
+  badges: string[];
+  exposable_as_tool: boolean;
+  /** The module that governs using this component — the registry's law, on the wire. */
+  governed_by: string;
+}
+
+/** The whole roster, or one family of it, or whatever matches a word. */
+export async function getComponents(
+  opts: { connId?: string; family?: ComponentFamily; q?: string } = {},
+): Promise<{ components: Component[]; total: number; byFamily: Record<string, number> }> {
+  const p = new URLSearchParams();
+  if (opts.connId) p.set("conn_id", opts.connId);
+  if (opts.family) p.set("family", opts.family);
+  if (opts.q) p.set("q", opts.q);
+  const qs = p.toString();
+  const res = await fetch(`${getApiBase()}/components${qs ? `?${qs}` : ""}`);
+  if (!res.ok) throw new Error(`components: ${res.status}`);
+  const body = await res.json();
+  return {
+    components: (body.components ?? []) as Component[],
+    total: (body.total ?? 0) as number,
+    byFamily: (body.by_family ?? {}) as Record<string, number>,
+  };
+}
+
 export interface AutomationPaletteEntry {
   kind: string;
   group: "trigger" | "action";

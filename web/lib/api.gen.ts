@@ -1915,6 +1915,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/components": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Components
+         * @description Every capability of this deployment: triggers, effects, connectors, platform tools,
+         *     MCP tools, and the declared actions of one connection.
+         *
+         *     ``conn_id`` is what makes the answer deployment-shaped rather than version-shaped. Four
+         *     of the six families are the same on every install of this build; the prerequisite
+         *     readings (is there a Slack bot, a monitor, a subscription) and the declared actions are
+         *     not, and both need a connection to be true about.
+         *
+         *     ``q`` is a plain normalised substring over label · description · kind · family, the
+         *     same match the palette panel already makes — not a second, subtly different search on
+         *     the same rows.
+         */
+        get: operations["list_components_components_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/components/families": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Families
+         * @description The families and the display states a component may carry — the closed sets a
+         *     surface needs before it can render a filter it has never seen a value for.
+         */
+        get: operations["list_families_components_families_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/connections": {
         parameters: {
             query?: never;
@@ -15765,6 +15816,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_components_components_get: {
+        parameters: {
+            query?: {
+                conn_id?: string | null;
+                family?: string | null;
+                q?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_families_components_families_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
         };

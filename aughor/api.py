@@ -735,6 +735,7 @@ async def _start_automation_heartbeat() -> None:
 # ── Router registration ───────────────────────────────────────────────────────
 
 from aughor.routers import (
+    components,
     cron,
     system,
     agents,
@@ -784,6 +785,7 @@ from aughor.routers import (
 app.include_router(consistency.router)
 app.include_router(cron.router)
 app.include_router(system.router)
+app.include_router(components.router)
 app.include_router(investigations.router)
 app.include_router(canvas.router)
 app.include_router(workspace.router)

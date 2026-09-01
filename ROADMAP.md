@@ -627,6 +627,38 @@ with the law kept: **a component references a governed capability.** Beta/Legacy
 registry metadata — display states, empty by intent. **Receipt:** the palette lists every
 capability of this deployment, searchably, and nothing that isn't real.
 
+> **Shipped 2026-09-01.** `aughor/components/` adapts five existing rosters at read time and
+> copies none of them: a registry holding its own table of effect kinds would be a second
+> place to add the seventh, and the seventh would reach exactly one of them. Served at
+> `/components` (with `conn_id`, `family`, `q`) and — the part that makes it one roster
+> rather than a sixth — `/automations/palette` is now served FROM it, losslessly, so "does
+> this kind exist" and "does it work here" have one answer instead of two that happen to
+> agree. **The law is checkable:** every row names in `governed_by` the MODULE that governs
+> its use (the approval gate for a declared write, the one engine for an automation step,
+> the connection registry for a connector), and a ratchet imports every distinct value — a
+> taxonomy nobody can check is how a roster starts describing a system that no longer
+> exists. Badges are the closed set `beta | legacy` with no members, which is what "empty by
+> intent" has to mean to be worth anything: metadata every surface reads, not a word one
+> renderer hard-codes later. **The premise was measured first, and the plan was wrong about
+> it:** connectors 17 ✓, platform tools 12 ✓, MCP tools 18 ✓, but "7 effect kinds" is now 8
+> (6 of them offerable — `monitor` and `agent_alert` are adopted, never authored), because
+> DS-9 moved that number three hours before this wave read it. **And a real capability was
+> missing from every surface:** the connector family is built from the full type set, not
+> `REGISTRY.supported_types()`, because the two KNOWLEDGE connectors (Notion, Confluence)
+> are configured, authenticated and synced by a live route while having no
+> `open_connection()` — so the builder list omits them, and `/connectors/types`, which is
+> built off that list, has never offered them. The registry reports all 17; closing the
+> picker gap is filed separately, because what it changes is a creation FORM, not a roster.
+> **Live receipt:** 59 components on the fixture connection across all six families —
+> including its two authored declared actions — with four rows dimmed and each saying why;
+> the same question on another connection answers 57 with none of those actions and a
+> different dimmed set; `q=notion` finds the connector nothing else lists; an unknown family
+> is a 422 naming the closed set; and the palette agrees with the registry field for field
+> on both connections. **Left open, chip-filed:** the non-placeable families are served but
+> not yet palette ROWS — that is DS-11's own sentence ("an allowlisted MCP server's tools
+> land on the palette as governed nodes"), and drawing them as steps before they can be
+> placed would teach a reader that a connector is a step.
+
 **DS-11 · The VA-11 consumer and VA-9d, surfaced as components.** A vault `Connection`
 becomes a node ("as Google · sales@…") whose effects run under the user's grant through
 `govern.outbound` (cap before the work, span, `EXTERNAL_CALL` event) — the wave that makes
@@ -828,7 +860,7 @@ NEXT (order within a band is the user's knob; the inert-vault repair stays highe
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
-LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
+LATER   DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
         DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)
