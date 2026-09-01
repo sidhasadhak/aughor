@@ -75,7 +75,9 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     conditions_fired TEXT NOT NULL DEFAULT '[]',
     effects          TEXT NOT NULL DEFAULT '[]',
     fallback_used    INTEGER NOT NULL DEFAULT 0,
-    error            TEXT NOT NULL DEFAULT ''
+    error            TEXT NOT NULL DEFAULT '',
+    -- DS-8: the durable pause checkpoint (JSON). '{}' on every run that never parked.
+    checkpoint       TEXT NOT NULL DEFAULT '{}'
 );
 
 -- A3: last-committed source-version fingerprints, keyed PER AUTOMATION so two automations
@@ -135,6 +137,22 @@ def _add_scheduling(conn: sqlite3.Connection) -> None:
                           "TEXT NOT NULL DEFAULT 'ordered'")
 
 
+def _add_run_checkpoint(conn: sqlite3.Connection) -> None:
+    """DS-8's ``AutomationRun.checkpoint`` — the accumulated chain state a paused run
+    resumes from.
+
+    Added the way this store has learned to add things: model + DDL + migration + both
+    halves of the INSERT in ONE commit. Twice now a field has shipped here with a model
+    attribute and no column (VA-9b's `agent_id`, and `scheduling` was written this way
+    only because VA-9b had already taught the lesson), and the failure mode is the quiet
+    one — SQLite's named binding ignores a key with no column, so the API echoes back a
+    value the row never held and nothing raises until a reader needs it.
+
+    A paused run whose checkpoint did not persist is worse than that: it is a run that can
+    never be resumed, holding a proposal that can never be honoured."""
+    add_column_if_missing(conn, "automation_runs", "checkpoint", "TEXT NOT NULL DEFAULT '{}'")
+
+
 #: Version 2 because the live store reads `PRAGMA user_version = 1` — checked against the
 #: deployed database, not assumed from this file, which is the only way to number one.
 #: Version 3 numbered off the same fact one release later: the deployed store runs this
@@ -144,6 +162,13 @@ _MIGRATIONS: list[Migration] = [
               apply=_add_agent_binding),
     Migration(version=3, name="step scheduling (DS-7: ordered | parallel)",
               apply=_add_scheduling),
+    #: Version 4 read off the LIVE store the same way: `PRAGMA user_version` on the
+    #: deployed `data/automations.db` returns 3 (DS-7's migration ran at its boot), so 4
+    #: is the next one that will actually execute. A migration numbered at or below the
+    #: deployed version is silently skipped forever, and no hermetic test can catch it —
+    #: a fresh database gets the column from the DDL above and passes either way.
+    Migration(version=4, name="run checkpoint (DS-8: durable pause)",
+              apply=_add_run_checkpoint),
 ]
 
 
@@ -343,6 +368,9 @@ def _row_to_run(row: sqlite3.Row) -> AutomationRun:
     d["fallback_used"] = bool(d["fallback_used"])
     d["conditions_fired"] = json.loads(d["conditions_fired"] or "[]")
     d["effects"] = json.loads(d["effects"] or "[]")
+    # `.get`, not `[...]`: a row read through a connection opened before the migration ran
+    # has no such key, and a paused run is not worth crashing a history list over.
+    d["checkpoint"] = json.loads(d.get("checkpoint") or "{}")
     return AutomationRun(**d)
 
 
@@ -356,6 +384,7 @@ def append_run(run: AutomationRun) -> AutomationRun:
     p["conditions_fired"] = json.dumps(run.conditions_fired)
     p["effects"] = json.dumps([e.model_dump() for e in run.effects])
     p["fallback_used"] = int(run.fallback_used)
+    p["checkpoint"] = json.dumps(run.checkpoint or {})
 
     with _LOCK:
         conn = _connect()
@@ -363,11 +392,12 @@ def append_run(run: AutomationRun) -> AutomationRun:
             conn.execute("""
                 INSERT OR IGNORE INTO automation_runs (
                     id, automation_id, automation_name, conn_id, started_at, finished_at,
-                    duration_ms, outcome, reason, conditions_fired, effects, fallback_used, error
+                    duration_ms, outcome, reason, conditions_fired, effects, fallback_used,
+                    error, checkpoint
                 ) VALUES (
                     :id, :automation_id, :automation_name, :conn_id, :started_at, :finished_at,
                     :duration_ms, :outcome, :reason, :conditions_fired, :effects,
-                    :fallback_used, :error
+                    :fallback_used, :error, :checkpoint
                 )
             """, p)
             conn.execute(
@@ -419,6 +449,96 @@ def last_run(automation_id: str) -> Optional[AutomationRun]:
     'since last time' means and by the UI to explain the current state."""
     runs = get_runs(automation_id=automation_id, limit=1)
     return runs[0] if runs else None
+
+
+def get_run(run_id: str) -> Optional[AutomationRun]:
+    """One run by id — DS-8's resume path, which starts from a proposal holding a run id
+    and nothing else."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            row = conn.execute("SELECT * FROM automation_runs WHERE id = ?", (run_id,)).fetchone()
+        finally:
+            conn.close()
+    return _row_to_run(row) if row else None
+
+
+def update_run(run: AutomationRun) -> AutomationRun:
+    """Overwrite an existing run row in place — DS-8 only.
+
+    Every other write here is ``append_run``'s ``INSERT OR IGNORE``: a tick is a fact, and
+    a fact does not get edited. A PAUSED run is the one exception in the model, because it
+    is the one run that has not finished yet. Its resumption has to land in the SAME row —
+    that is the whole receipt ("the trace shows one run with a human in its middle"), and
+    the run id is also the trace id, so a second row would split one waterfall into two
+    and orphan the spans the first half already wrote.
+
+    Guarded by ``WHERE outcome = 'paused'`` for exactly the reason the proposal inbox
+    resolves under ``WHERE status = 'pending'``: two accepts racing (an HTTP click and a
+    Slack tap, a double-press, a replay) must not both resume the chain. The first UPDATE
+    moves the row off ``paused``, the second matches zero rows and is a no-op. Returns the
+    run unchanged either way; the caller learns which it was from ``rowcount``.
+    """
+    p = run.model_dump()
+    p["conditions_fired"] = json.dumps(run.conditions_fired)
+    p["effects"] = json.dumps([e.model_dump() for e in run.effects])
+    p["fallback_used"] = int(run.fallback_used)
+    p["checkpoint"] = json.dumps(run.checkpoint or {})
+
+    with _LOCK:
+        conn = _connect()
+        try:
+            cur = conn.execute("""
+                UPDATE automation_runs SET
+                    finished_at = :finished_at, duration_ms = :duration_ms,
+                    outcome = :outcome, reason = :reason, effects = :effects,
+                    fallback_used = :fallback_used, error = :error, checkpoint = :checkpoint
+                WHERE id = :id AND outcome = 'paused'
+            """, p)
+            moved = cur.rowcount
+            if moved:
+                conn.execute(
+                    "UPDATE automations SET last_run_at = ?, last_status = ? WHERE id = ?",
+                    (run.finished_at or run.started_at, run.outcome, run.automation_id),
+                )
+            conn.commit()
+        finally:
+            conn.close()
+
+    if not moved:
+        return run
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit(
+            "automation.run",
+            {"automation_id": run.automation_id, "automation_name": run.automation_name,
+             "outcome": run.outcome, "reason": run.reason[:200],
+             "effects": [e.status for e in run.effects], "resumed": True},
+            conn_id=run.conn_id,
+        )
+    except Exception:
+        logger.debug("automation.run resume emit failed", exc_info=True)
+    return run
+
+
+def paused_runs(conn_id: Optional[str] = None, limit: int = 100) -> list[AutomationRun]:
+    """Every run currently parked on a human (DS-8). The `needs human` view reads this
+    instead of scanning run history for an `approval_required` step, which is what it did
+    before a pause was durable — that scan could only ever see the last 200 runs, so a
+    busy deployment aged its own approvals out of the only view that listed them."""
+    clauses, params = ["outcome = 'paused'"], []
+    if conn_id:
+        clauses.append("conn_id = ?")
+        params.append(conn_id)
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                f"SELECT * FROM automation_runs WHERE {' AND '.join(clauses)} "
+                f"ORDER BY started_at DESC LIMIT ?", (*params, limit)).fetchall()
+        finally:
+            conn.close()
+    return [_row_to_run(r) for r in rows]
 
 
 # ── Probe baselines (A3) ──────────────────────────────────────────────────────

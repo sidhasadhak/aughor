@@ -52,7 +52,7 @@ from aughor.automations.models import (
     Effect,
     EffectOutcome,
 )
-from aughor.automations.store import append_run, last_run
+from aughor.automations.store import append_run, last_run, update_run
 from aughor.util.time import now_iso_z
 
 logger = logging.getLogger(__name__)
@@ -284,6 +284,57 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
 
 
 # ── effect dispatch ──────────────────────────────────────────────────────────────
+
+def _stage_approval(effect: Effect, automation: Automation, *, alias: str, run_id: str,
+                    message: str) -> str:
+    """DS-8 — turn a step's ``approval_required`` verdict into a durable inbox proposal.
+
+    Before this, a governed write inside an automation reached the executor, was refused for
+    want of an approval, and the refusal was recorded on the run as a status nobody could act
+    on: the run finished, the chain's later steps ran without it, and the only trace was a row
+    in `needs human` whose "resolve" link went to the automation rather than to anything that
+    could actually approve the write. There was no artefact to approve.
+
+    The proposal IS that artefact, and it is deliberately the same one the agent and the HTTP
+    surface stage — one inbox, one resolve-once UPDATE, one expiry, one audit trail. Nothing
+    here is a second approval mechanism; DS-8's whole claim is that the governance plane
+    already existed and the automation plane simply never reached it.
+
+    Idempotent by ``(run_id, call_id)``, which is what makes the pause safe to re-enter: the
+    scheduler may run this tick again after a crash between the dispatch and the run write, and
+    the second stage returns the row the first one made rather than asking a human to approve
+    the same write twice. ``call_id`` is the STEP LABEL, not the step index — a fanned step
+    stages one proposal per item (`send[2/3]`), and an index would have collapsed them.
+
+    Returns the proposal id, or "" if staging failed. A failure here must not take the run
+    down: the outcome is already recorded, and a run that parked without a proposal is
+    recoverable (the next tick stages it), while a run that crashed mid-chain is not.
+    """
+    try:
+        from aughor.actions.inbox import StagedProposal, stage_proposal
+        staged = stage_proposal(StagedProposal(
+            connection_id=automation.conn_id,
+            schema_name=effect.config.get("schema_name") or "",
+            action_id=effect.action_id,
+            # The RESOLVED params — what this step would actually have written. A proposal
+            # freezes its params at stage time (RC-3), and freezing `{"$from": "step1.total"}`
+            # would freeze a reference whose meaning moves, not a value a human can weigh.
+            params=effect.params,
+            reasoning=message,
+            proposer=acting_agent_ref(effect, automation) or "automation",
+            # `automation:<id>` — the label `inbox._owner_of` already parses, so a grant minted
+            # from this accept is owned by the automation and revoked with it.
+            source=f"automation:{automation.id}",
+            run_id=run_id, call_id=alias,
+        ))
+        return staged.id
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "staging an approval proposal is best-effort; the run parks either way "
+                      "and the next tick re-stages it",
+                 counter="automations.engine.stage_approval")
+        return ""
+
 
 def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
     """The governed write — routed through the ONE Wave-K executor, never around it.
@@ -834,6 +885,7 @@ def run_automation(
     manual: bool = False,
     run_id: Optional[str] = None,
     until_alias: Optional[str] = None,
+    resume: Optional[dict] = None,
 ) -> AutomationRun:
     """Run one automation through the full pipeline and return its :class:`AutomationRun`.
 
@@ -885,14 +937,24 @@ def run_automation(
     t0 = _time.monotonic()
     dispatch_fn = dispatch or default_dispatch
 
-    def _finish(run: AutomationRun) -> AutomationRun:
-        elapsed_ms = int((_time.monotonic() - t0) * 1000)
-        finished = (now + timedelta(milliseconds=elapsed_ms)).isoformat().replace("+00:00", "Z")
+    def _finish(run: AutomationRun, *, finished: bool = True) -> AutomationRun:
+        elapsed_ms = int((_time.monotonic() - t0) * 1000) + int(
+            (resume or {}).get("prior_duration_ms") or 0)
+        stamp = (now + timedelta(milliseconds=elapsed_ms)).isoformat().replace("+00:00", "Z")
         run = run.model_copy(update={
-            "finished_at": finished,
+            # DS-8 — a PAUSED run has no `finished_at`, because it has not finished. Stamping
+            # one would make every duration reader (the waterfall header, the run list, the
+            # slow-step view) report the length of the machine's half as though it were the
+            # length of the run, and a run that waited two days on a human would read as 40ms.
+            # `duration_ms` is still the work actually done so far, and the resume adds to it.
+            "finished_at": stamp if finished else None,
             "duration_ms": elapsed_ms,
         })
-        return append_run(run) if persist else run
+        if not persist:
+            return run
+        # A resumed run UPDATES the row it parked in — one run, one trace id, a human in
+        # its middle. `append_run` is INSERT OR IGNORE, so it would silently do nothing.
+        return update_run(run) if resume else append_run(run)
 
     # VA-4d — allocated up front so the run id can BE the trace id: clicking a run in
     # `Activity → Runs` then lands on exactly this AutomationRun, with no second
@@ -918,11 +980,25 @@ def run_automation(
 
     # 1 — lifecycle gates (side-effect-free, no warehouse)
     gate_reason = _gated(automation, now)
-    if gate_reason is not None and not dry_run:
+    if gate_reason is not None and not dry_run and not resume:
+        # DS-8 — a RESUME is not gated. The gates ask "should this automation start work
+        # now"; a resumed run started its work before the gate ever closed, and the human
+        # who approved its pending write is owed the rest of the chain. Pausing or expiring
+        # an automation must not strand a governed write a person already said yes to —
+        # that is a half-executed chain, which is worse than either finishing or not
+        # starting. Disabling still stops the NEXT tick, which is what disabling is for.
         return _finish(AutomationRun(**base, outcome="gated", reason=gate_reason))
 
     # 2 — conditions
-    if dry_run:
+    if resume:
+        # Already evaluated, in the tick that parked. Re-probing here would ask a warehouse
+        # the same question a second time and — worse — could answer it differently, so a
+        # run whose conditions had since stopped holding would abandon a chain mid-way with
+        # an approved write already committed.
+        fired = True
+        details = list((resume.get("conditions_fired") or []))
+        reason = str(resume.get("reason") or "")
+    elif dry_run:
         # Described, not evaluated. The reason line carries BOTH facts a reader needs:
         # that nothing was sent, and what WOULD gate this today — so a preview of a
         # paused automation still says it is paused instead of quietly pretending.
@@ -950,7 +1026,9 @@ def run_automation(
     # 4.1a — claim BEFORE the irreversible part. From here on a crash leaves durable
     # evidence that this period was attempted, so the next tick holds rather than
     # re-sending. Only outward effects are claimed (see OUTWARD_EFFECT_KINDS).
-    if persist and has_outward_effect(automation):
+    if persist and not resume and has_outward_effect(automation):
+        # Not on a resume: the tick that parked already claimed this period, and a second
+        # claim for the same period is exactly the double-send 4.1a exists to stop.
         claim_delivery(automation.id, started)
     sleep_budget = [MAX_RETRY_SLEEP_SECONDS]
 
@@ -960,13 +1038,19 @@ def run_automation(
     # answer from step 1 into the thread step 2 opened" expressible at all. Before this,
     # every effect received only (effect, automation, dispatch): there was no dataflow,
     # so a designed workflow could draw arrows the engine would not have followed.
-    context: dict[str, dict] = {}
+    # DS-8 — on a resume these two start from the checkpoint, not empty. They are the
+    # whole of what "accumulated context" means: everything the parked steps published for
+    # later steps to bind to, and the guard verdicts the routes read. Rebuilt from the run
+    # row rather than recomputed, because recomputing would mean re-running the steps that
+    # produced them — the one thing a durable pause exists to avoid.
+    context: dict[str, dict] = dict((resume or {}).get("checkpoint", {}).get("context") or {})
     outcomes: list[EffectOutcome] = []
     # DS-6 — each unfanned step's guard VERDICT: True (held, the step went on), False
     # (did not hold), or None/absent (never decided — upstream missing, or a comparison
     # that could not be made). The route reads exactly this, so it adds no second
     # dataflow: the guard's own references are already validated, awaited and drawn.
-    verdicts: dict[str, Optional[bool]] = {}
+    verdicts: dict[str, Optional[bool]] = dict(
+        (resume or {}).get("checkpoint", {}).get("verdicts") or {})
 
     # DS-2 — "run to here": walk the chain only as far as one step.
     #
@@ -1167,6 +1251,17 @@ def run_automation(
                 # each remembering to time themselves is six chances to forget, and a step
                 # with no duration is invisible in exactly the view built to find slow ones.
                 "duration_ms": round(step_ms, 1), "started_at": step_started, **fan})
+            # DS-8 — a governed write that needs a human becomes a durable proposal, and the
+            # proposal id rides on the outcome so the parked step on the run canvas links
+            # straight to the thing that resolves it. Staged HERE, at the call site, for the
+            # same reason the agent and the duration are stamped here: the dispatcher does not
+            # know the run id, and the run id is half of the idempotency key.
+            if outcome.status == "approval_required" and not dry_run:
+                pid = _stage_approval(bound_effect, automation, alias=label, run_id=run_id,
+                                      message=outcome.message)
+                if pid:
+                    outcome = outcome.model_copy(
+                        update={"data": {**(outcome.data or {}), "proposal_id": pid}})
             if dry_run:
                 guard = guard_clauses(effect)
                 fanned_note = (" · once per item at run time"
@@ -1211,6 +1306,22 @@ def run_automation(
     # and both canvases already read, so "may these overlap" and "is an edge drawn
     # between them" can never disagree. Forward references are refused at save, so the
     # graph is a DAG by construction and the frontier always progresses.
+    # DS-8 — the step that parked this run on a human, once one has. Set by whichever
+    # driver is walking; read once, below, to decide whether this tick FINISHED or merely
+    # stopped. `None` is the overwhelmingly common case and the only one before DS-8.
+    paused_at: Optional[tuple[int, str]] = None
+    done_snapshot: list[str] = []
+    # DS-8 — how many outcomes each step contributed. A fanned step contributes N, a
+    # skipped one contributes 1, an unreached one contributes none, so the flat `effects`
+    # list cannot be re-attributed to steps by position alone. Recorded on the checkpoint
+    # so a RESUME can slice the parked run's effects back into per-step buckets and
+    # reassemble the whole run in declared order — the property DS-7 established and that
+    # every reader of a run's effects (`group_outcomes`, both canvases) depends on.
+    step_counts: dict[int, int] = {}
+    cp: dict = (resume or {}).get("checkpoint") or {}
+    prior_by_index: dict[int, list] = (resume or {}).get("prior_by_index") or {}
+    start_index: int = int(cp.get("next_index") or 0) if resume else 0
+
     if scheduling_parallel:
         from concurrent.futures import FIRST_COMPLETED
         from concurrent.futures import wait as _fut_wait
@@ -1232,6 +1343,17 @@ def run_automation(
         results: dict[int, list[EffectOutcome]] = {}
         scheduled: set[int] = set()
         pending: dict = {}
+        if resume:
+            # DS-8 — the frontier picks up where it parked. A step the earlier tick
+            # completed is seeded as done, with its ORIGINAL outcomes in its slot, so the
+            # assembly below still emits one run in declared order; its published values
+            # are already in `context`, which is how the steps waiting on it can resolve
+            # without it running twice.
+            done_aliases |= {str(a) for a in (cp.get("done_aliases") or [])}
+            for n, e in enumerate(walked):
+                if alias_for(e, n) in done_aliases:
+                    scheduled.add(n)
+                    results[n] = list(prior_by_index.get(n) or [])
         # R5's declared-fan-out plane, entered BEFORE the pool so every submit copies
         # the label into its worker: a declared-action step dispatched inside this
         # region is checked by `assert_dispatchable` in the one governed executor, and
@@ -1243,8 +1365,14 @@ def run_automation(
                 thread_name_prefix="automation-step") as pool:
             while len(results) < len(walked):
                 with merge_lock:
-                    ready = [n for n in range(len(walked))
-                             if n not in scheduled and deps[n] <= done_aliases]
+                    # DS-8 — once a step has parked, schedule NOTHING further. Steps already
+                    # in flight are allowed to land (they are dispatched; abandoning their
+                    # outcomes would lose writes that really happened), but the frontier
+                    # stops advancing: a step downstream of the parked one must not run
+                    # before the human it is waiting on has answered.
+                    ready = [] if paused_at else [
+                        n for n in range(len(walked))
+                        if n not in scheduled and deps[n] <= done_aliases]
                     # A SNAPSHOT per scheduling round, not the live dicts: a ready
                     # step's dependencies are complete, so everything it may read is
                     # already in the copy — while the live dict may gain entries from
@@ -1263,6 +1391,11 @@ def run_automation(
                                       sleep_budget=[MAX_RETRY_SLEEP_SECONDS])
                     pending[fut] = n
                 if not pending:
+                    if paused_at:
+                        # Parked, and everything that was in flight has landed. The steps
+                        # with no entry in `results` have not run — which is the honest
+                        # record: they have not happened YET.
+                        break
                     # Unreachable by construction (forward refs are refused at save,
                     # so some incomplete step always has every dependency complete) —
                     # but a silent spin would be worse than a loud stop.
@@ -1279,21 +1412,46 @@ def run_automation(
                         if entry is not None:
                             context[step_alias] = entry
                         done_aliases.add(step_alias)
+                        # DS-8 — the FIRST park wins. Two steps can reach an approval in the
+                        # same round; each stages its own proposal (both are real writes
+                        # awaiting a real human), and the run resumes when the last of them
+                        # resolves, so which one is named as the parking step is only a
+                        # label. Keeping the first keeps it deterministic.
+                        if paused_at is None and any(
+                                o.status == "approval_required" for o in step_outcomes):
+                            paused_at = (n, step_alias)
         # Outcomes are assembled in DECLARED order whatever order the work finished
         # in: `group_outcomes` and every reader of a run's effects matches positions,
         # and a run history shuffled by scheduling luck would decorate the wrong cards.
+        done_snapshot = sorted(done_aliases)
         for n in range(len(walked)):
-            outcomes.extend(results[n])
+            step_counts[n] = len(results.get(n) or [])
+            # `.get` — a parked run leaves the steps beyond the frontier with no outcome
+            # at all, which is exactly right: they have not run.
+            outcomes.extend(results.get(n) or [])
     else:
         for i, effect in enumerate(walked):
+            if i < start_index:
+                # DS-8 — already run, in the tick that parked. Its outcomes are replayed into
+                # position (never re-dispatched: "prior steps never re-run" is the wave's
+                # whole claim) and its published context came back with the checkpoint.
+                outcomes.extend(prior_by_index.get(i) or [])
+                continue
             step_outcomes, entry, known, v = _execute_step(
                 i, effect, context=context, verdicts=verdicts, sleep_budget=sleep_budget)
             outcomes.extend(step_outcomes)
+            step_counts[i] = len(step_outcomes)
             alias = alias_for(effect, i)
             if known:
                 verdicts[alias] = v
             if entry is not None:
                 context[alias] = entry
+            # DS-8 — park. The remaining steps are not skipped and not failed; they are
+            # simply not yet run, so the walk STOPS rather than recording verdicts for
+            # work that has not happened.
+            if any(o.status == "approval_required" for o in step_outcomes):
+                paused_at = (i, alias)
+                break
 
     # 4 — fallback, only when EVERY effect failed to execute
     fallback_used = False
@@ -1307,7 +1465,14 @@ def run_automation(
     # because the reader stopped early would report a disaster they caused by asking a
     # question, and it is the one part of a preview that reads as a verdict.
     partial = until_alias is not None and len(walked) < len(automation.effects)
+    # DS-8 — nor can a PAUSED walk. `approval_required` is not `executed`, so a chain whose
+    # only outward step is a governed write would satisfy "everything attempted failed" the
+    # instant it parked — and fire the fallback to announce a disaster that is actually a
+    # human being asked a question. Exactly W1's lesson (a quiet morning is not an outage)
+    # one wave later, and the fallback still gets its chance: the resumed run runs this same
+    # block with the pause resolved.
     if (automation.fallback_effect is not None and attempted and not partial
+            and paused_at is None
             and all(o.status != "executed" for o in attempted)):
         fallback_used = True
         outcomes.append(_run_effect(automation.fallback_effect, automation, dispatch_fn,
@@ -1329,6 +1494,244 @@ def run_automation(
         tolerate(exc, "baseline commit is best-effort; the fired run is already recorded",
                  counter="automations.engine.baseline_commit")
 
+    if paused_at is not None:
+        # DS-8 — the run stopped, it did not finish. Baselines above were committed anyway
+        # and deliberately: this tick DID fire, and leaving the source change unconsumed
+        # would have the next heartbeat fire a second run for the same change and park a
+        # second proposal in front of the same human.
+        step_index, step_alias = paused_at
+        waiting = [o for o in outcomes if o.status == "approval_required"]
+        return _finish(AutomationRun(
+            **base, outcome="paused",
+            reason=(f"waiting on approval at '{step_alias}'"
+                    + (f" ({len(waiting)} writes)" if len(waiting) > 1 else "")),
+            conditions_fired=details, effects=outcomes, fallback_used=fallback_used,
+            checkpoint={
+                "next_index": step_index + 1,
+                "step_index": step_index, "step_alias": step_alias,
+                # The accumulated chain state, verbatim — the half of the checkpoint that
+                # lives only in this function's locals and would otherwise die with the tick.
+                "context": context, "verdicts": verdicts,
+                # The frontier's completed set, for a parallel resume. Empty on an ordered
+                # run, which reads `next_index` instead.
+                "done_aliases": done_snapshot,
+                "scheduling": "parallel" if scheduling_parallel else "ordered",
+                "proposal_ids": [str((o.data or {}).get("proposal_id") or "")
+                                 for o in waiting],
+                "outcome_counts": [[n, c] for n, c in sorted(step_counts.items())],
+            }), finished=False)
+
     return _finish(AutomationRun(**base, outcome="fired", reason=reason,
                                  conditions_fired=details, effects=outcomes,
                                  fallback_used=fallback_used))
+
+
+# ── DS-8 · the other half of the pause ────────────────────────────────────────
+#
+# A durable pause is only half a feature: parking is easy, and a run that parks and never
+# comes back is strictly worse than one that never paused, because it holds a governed
+# write hostage with no way to release it. This is the release.
+
+#: What a resolved proposal does to the step that was waiting on it. Rejected and expired
+#: both land on ``skipped`` — the engine's own definition of that status is "did not run,
+#: and that is not a failure of this step", which is exactly what a human declining a write
+#: is. Recording a refusal as ``failed`` would page whoever watches failures to tell them a
+#: person did their job.
+_PROPOSAL_TO_STATUS = {
+    "executed": "executed", "accepted": "executed",
+    "rejected": "skipped", "expired": "skipped",
+    "failed": "failed", "criterion_failed": "criterion_failed",
+    "invalid_params": "invalid_params", "dispatch_error": "dispatch_error",
+}
+
+
+def _slice_prior(effects: list[EffectOutcome], counts: list) -> dict[int, list[EffectOutcome]]:
+    """Re-attribute a parked run's flat ``effects`` list to the steps that produced it.
+
+    The list is assembled in declared order, and each step contributed a known number of
+    outcomes (one, N for a fan-out, none if it never ran), so the counts recorded on the
+    checkpoint slice it back apart exactly. Position alone could not: a fanned step and
+    three ordinary ones are both "four outcomes"."""
+    out: dict[int, list[EffectOutcome]] = {}
+    at = 0
+    for pair in counts or []:
+        # Checked rather than caught: this reads a JSON blob off a row that a previous
+        # release wrote, so a malformed entry is a real possibility — and swallowing it
+        # silently would drop a step's outcomes from the reassembled run without saying so.
+        if not isinstance(pair, (list, tuple)) or len(pair) != 2:
+            logger.warning("run checkpoint: skipping malformed outcome count %r", pair)
+            continue
+        n, c = pair
+        if not isinstance(n, int) or not isinstance(c, int) or c < 0:
+            logger.warning("run checkpoint: skipping non-integer outcome count %r", pair)
+            continue
+        out[n] = effects[at:at + c]
+        at += c
+    return out
+
+
+def resume_run(run_id: str, *, dispatch: Optional[Dispatch] = None,
+               sleeper: Callable[[float], None] = _time.sleep,
+               rng: Callable[[], float] = random.random) -> Optional[AutomationRun]:
+    """Continue a run that parked on an approval, in the SAME run row. Returns the finished
+    run, or ``None`` when this run is not resumable yet (or at all).
+
+    Called on every resolution of an automation-sourced proposal — accept, reject and expiry
+    alike — because all three END the wait, and only the wait is what the run was blocked on.
+    A rejected write does not abort the chain: it makes its step ``skipped``, which is a state
+    the engine has always had and every downstream step already handles (a step binding to a
+    skipped step's output resolves nothing and skips in turn, exactly as under a W1 guard).
+    Aborting instead would be a second, weaker semantics for the same shape.
+
+    **Nothing here re-runs a prior step.** The parked step's outcome is rewritten from the
+    proposal the human actually resolved — the inbox's accept already performed the write,
+    with ``approved=True``, through the one governed executor — and every step before it is
+    replayed into position from the run row. The chain restarts at ``next_index`` with the
+    checkpoint's context, so the only dispatches this makes are the ones that never happened.
+
+    ``dispatch`` is the same injection seam ``run_automation`` has always had, and the resume
+    needs it for the same reason the first half did: the second half of a chain dispatches
+    real sends, and a test that could not substitute for them could only prove the parking.
+    Production wakes (``_wake_parked_run``) pass nothing and get the real dispatcher.
+
+    Idempotent under a race by construction: two accepts landing together both call this, and
+    ``update_run``'s ``WHERE outcome = 'paused'`` lets exactly one of them move the row. The
+    loser's dispatches are the concern, not its write — so the *pending* check below is what
+    actually protects the second caller, and the UPDATE guard is the backstop underneath it.
+    """
+    from aughor.actions.inbox import proposals_for_run
+    from aughor.automations.store import get_automation, get_run
+
+    run = get_run(run_id)
+    if run is None or run.outcome != "paused":
+        return None
+
+    proposals = proposals_for_run(run_id)
+    # Still waiting on a person. A chain can park on more than one write in the same round
+    # (two parallel steps, or one fanned step over three channels); resuming after the first
+    # answer would run the rest of the chain while a second governed write is still pending.
+    if any(p.status == "pending" and not p.expired for p in proposals):
+        return None
+    # Keyed by proposal id ONLY. A `call_id` lookup would look like a sensible fallback and
+    # could never fire: `call_id` is the step LABEL, while `outcome.target` is whatever the
+    # dispatcher named — the ACTION ID for a governed write. The id is on the outcome whenever
+    # staging succeeded, and when it did not there is no proposal to find by any key.
+    by_id = {p.id: p for p in proposals}
+
+    cp = run.checkpoint or {}
+    automation = get_automation(run.automation_id)
+    if automation is None:
+        # Deleted while parked. The run cannot continue — but it must not stay `paused`
+        # forever either, because `paused` is a claim that someone can still act on it.
+        return update_run(run.model_copy(update={
+            "outcome": "error", "finished_at": now_iso_z(),
+            "reason": "automation was deleted while this run waited for approval",
+            "error": "automation not found", "checkpoint": {}}))
+
+    # 1 — rewrite the parked steps from what the human (or the clock) decided.
+    rewritten: list[EffectOutcome] = []
+    for o in run.effects:
+        if o.status != "approval_required":
+            rewritten.append(o)
+            continue
+        p = by_id.get(str((o.data or {}).get("proposal_id") or ""))
+        if p is None:
+            # Staging failed at park time (best-effort, by design) or the row was purged.
+            # The write never got a human, so it did not happen: `skipped`, said plainly.
+            rewritten.append(o.model_copy(update={
+                "status": "skipped",
+                "message": f"{o.message} — no proposal was staged for this step, so it "
+                           f"was never presented for approval"}))
+            continue
+        status = _PROPOSAL_TO_STATUS.get(p.status, "failed")
+        rewritten.append(o.model_copy(update={
+            "status": status,
+            "message": p.status_message or p.status,
+            "data": dict(p.outcome or {}) if status == "executed" else dict(o.data or {}),
+        }))
+
+    counts = cp.get("outcome_counts") or []
+    prior_by_index = _slice_prior(rewritten, counts)
+    # The ORIGINAL slices too, because "was this step waiting on a human" has to be asked of
+    # the run as it parked. The rewrite above replaces a resolved step's `data` with the
+    # executor's result, which drops the `proposal_id` that marked it — so asking the
+    # rewritten copy answers no for every step, including the one that just resumed.
+    orig_by_index = _slice_prior(list(run.effects), counts)
+
+    # 2 — publish the resolved step into the context the rest of the chain reads.
+    #
+    # Keyed by the step's ALIAS, taken from its position — never from `outcome.target`. A
+    # dispatcher sets `target` to whatever names the thing it dispatched, and for a governed
+    # write that is the ACTION ID: the step aliased `flag` records a target of
+    # `flag_order_for_review`. Publishing under the target put the approved step's result
+    # beyond the reach of `{"$from": "flag.id"}`, and the step waiting on it skipped with
+    # "upstream data unavailable" — a chain that had just been approved, reported as a chain
+    # missing its input. Found by running it, not by a test: the fixture dispatcher set
+    # `target` to the alias, so every assertion agreed with the bug.
+    #
+    # A fanned step publishes its COUNT and nothing else, exactly as `_execute_step` does:
+    # there are N per-item values and a `{"$from": "step2.ts"}` could only mean one of them.
+    context = dict(cp.get("context") or {})
+    for n, outs in prior_by_index.items():
+        if not (0 <= n < len(automation.effects)):
+            continue
+        # Only the steps that were WAITING get republished. Every other step's context entry
+        # came back with the checkpoint exactly as it published it, and rewriting one here
+        # from its recorded outcome would let this function's idea of "what a step publishes"
+        # drift from `_execute_step`'s, which is the one that has to stay authoritative.
+        if not any(o.status == "approval_required" for o in (orig_by_index.get(n) or [])):
+            continue
+        executed = [o for o in outs if o.status == "executed"]
+        if not executed:
+            continue
+        alias = alias_for(automation.effects[n], n)
+        context[alias] = ({"count": len(executed)} if outs[0].fan_count
+                          else dict(executed[-1].data or {}))
+    step_alias = str(cp.get("step_alias") or "")
+    cp = {**cp, "context": context}
+
+    logger.info("automation %s resuming run %s at step '%s'",
+                automation.id, run_id, step_alias)
+    return run_automation(
+        automation, run_id=run_id, persist=True,
+        dispatch=dispatch, sleeper=sleeper, rng=rng,
+        resume={
+            "checkpoint": cp,
+            "prior_by_index": prior_by_index,
+            "conditions_fired": list(run.conditions_fired),
+            "reason": run.reason,
+            "prior_duration_ms": run.duration_ms,
+        },
+    )
+
+
+def resume_parked_runs(conn_id: Optional[str] = None, limit: int = 100) -> int:
+    """Resume every parked run whose approvals have all been answered. Returns how many moved.
+
+    The completeness net under DS-8, and the reason the pause is safe to rely on. The routers
+    that resolve a proposal call :func:`resume_run` directly, so the common path is immediate
+    — but "the surface that resolved it remembered to wake the run" is a promise that gets
+    broken by the ordinary things: a process that dies between the resolve and the resume, a
+    proposal that lapses with nobody clicking anything, a new resolution surface added later
+    by someone who has never read this module.
+
+    A run left `paused` by any of those is the worst state this wave can produce: a chain
+    holding a governed write a human already approved, with nothing scheduled to finish it.
+    So the heartbeat that already visits every automation once a minute checks for them too.
+    That makes the router calls an optimisation rather than the mechanism — which is the only
+    arrangement in which "it resumed" is a property of the system rather than of a code path.
+
+    One run's failure never stops the rest, exactly as in `tick_once`: a chain whose second
+    half cannot dispatch must not hold up a different chain's approved write.
+    """
+    from aughor.automations.store import paused_runs
+
+    moved = 0
+    for run in paused_runs(conn_id=conn_id, limit=limit):
+        try:
+            if resume_run(run.id) is not None:
+                moved += 1
+        except Exception:
+            logger.warning("automation %s: resuming parked run %s failed",
+                           run.automation_id, run.id, exc_info=True)
+    return moved

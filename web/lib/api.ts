@@ -3778,12 +3778,17 @@ export interface AutomationRun {
   started_at: string;
   finished_at: string | null;
   duration_ms: number;
-  outcome: "fired" | "not_fired" | "gated" | "error";
+  // DS-8 — `paused` is the one NON-TERMINAL outcome: the run reached a governed write that
+  // needs a human and stopped mid-chain. It ends when its proposal resolves, in this same
+  // row. Readers that branch on "did it work" must not fold it in with `error`.
+  outcome: "fired" | "not_fired" | "gated" | "error" | "paused";
   reason: string;
   conditions_fired: string[];
   effects: EffectOutcome[];
   fallback_used: boolean;
   error: string;
+  /** DS-8 — engine-internal resume state. Present only while `outcome === "paused"`. */
+  checkpoint?: Record<string, unknown>;
 }
 
 export type NewAutomation = {

@@ -116,6 +116,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # hiding the real name from the code that reads it.
          "aughor/automations/dataflow.py",
          "tests/unit/test_automations_dataflow.py",
+         # DS-8, same ground once more. Three hits survive in the durable-pause suite and
+         # every one is a name the running system uses: the effect kind `kinetic_action`,
+         # the live route `/kinetic-actions/inbox/{id}/reject` that the reject test presses,
+         # and `aughor.routers.kinetic`, the module the resume door lives in. Its prose says
+         # "governed write" throughout — the helper that builds one is `_governed`, and the
+         # imported router is bound as `actions_router` — so what is left cannot be reworded
+         # without spelling the wire differently from the way the wire is spelled.
+         "tests/unit/test_automations_pause.py",
          "web/lib/automationFlow",
          "web/components/AutomationGraph.tsx",
          # DS-1's palette is the sibling of those vocabulary tables and carries the kind
@@ -190,7 +198,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "tests/unit/test_attention_broken_automations.py",
          # RC-3's expiry seam test, for the same reason: it asserts that a lapsed proposal
          # is absent from `/control-room/needs-human`, which it cannot do without naming it.
-         "tests/unit/test_kinetic_inbox_expiry.py"),
+         "tests/unit/test_kinetic_inbox_expiry.py",
+         # DS-8's durable-pause suite, same reason as all four above: it asserts that one
+         # approval is ONE row on `/control-room/needs-human` (the wave made two of that
+         # strip's sources describe the same decision), which it cannot assert without
+         # naming the frozen path.
+         "tests/unit/test_automations_pause.py"),
         "same screen as 'Agentic Ops' and 'Fleet'; it is 'Agents'. The /control-room/* "
         "routes are frozen contract until the P4 router rename",
     ),

@@ -382,7 +382,7 @@ def needs_human(limit: int = 100):
     `count` equals the sum of the per-source counts at read time — that
     equality is the CR4 gate.
     """
-    from aughor.automations.store import get_runs
+    from aughor.automations.store import get_runs, paused_runs
     from aughor.db.history import list_investigations
     from aughor.actions.inbox import expire_stale, list_proposals
 
@@ -406,8 +406,38 @@ def needs_human(limit: int = 100):
         expire_stale()
     except Exception:
         logger.warning("needs-human: expiry sweep failed", exc_info=True)
+    # DS-8 — a lapsed approval still ENDS the wait, so any run parked behind one is released
+    # here too. Without this, sweeping a proposal to `expired` would leave its automation run
+    # `paused` forever: the queue would look clean while a chain sat half-executed behind it,
+    # which is the precise illusion this strip exists to prevent.
+    try:
+        from aughor.automations.engine import resume_parked_runs
+        resume_parked_runs()
+    except Exception:
+        logger.warning("needs-human: parked-run resume failed", exc_info=True)
+    # DS-8 — which pending proposals a PARKED RUN already speaks for. Before this wave no
+    # automation ever staged a proposal, so Source A and Source C could never describe the
+    # same thing; now every automation approval is both a pending proposal AND a parked run,
+    # and listing both made one decision read as two waiting items — with the accept on only
+    # one of the two cards. The parked-run row wins because it carries the context that makes
+    # the decision answerable (which automation, which chain, which step), and resolving it
+    # goes through the very same proposal.
+    parked_proposals: set[str] = set()
+    parked = []
+    try:
+        parked = paused_runs(limit=limit)
+        for run in parked:
+            for effect in run.effects:
+                pid = str((effect.data or {}).get("proposal_id") or "")
+                if pid:
+                    parked_proposals.add(pid)
+    except Exception:
+        logger.warning("needs-human: parked-run read failed", exc_info=True)
+
     try:
         for p in list_proposals(status="pending", limit=limit):
+            if p.id in parked_proposals:
+                continue
             inbox_count += 1
             rows.append({
                 "source": "kinetic_inbox", "id": p.id,
@@ -451,27 +481,42 @@ def needs_human(limit: int = 100):
     except Exception:
         logger.warning("needs-human: paused-run read failed", exc_info=True)
 
-    # Source C — automation effects that stopped at approval_required.
+    # Source C — automation runs PARKED on an approval (DS-8).
+    #
+    # This used to scan the last 200 runs for an `approval_required` effect, which was the
+    # only thing available before a pause was durable — and it was wrong in both directions.
+    # It missed approvals on a busy deployment (a chain waiting three days aged out of a
+    # 200-row window while still waiting), and it listed approvals on runs that had long
+    # since finished around them, offering a "resolve" link to a chain nobody could continue.
+    # A parked run is now a queryable state, so the queue reads the state instead of guessing
+    # at it from history — and the resolve link points at the PROPOSAL, which is the thing
+    # that actually resolves it.
     approval_count = 0
     try:
-        for run in get_runs(limit=200):
-            for idx, effect in enumerate(run.effects):
+        for run in parked:
+            for effect in run.effects:
                 if effect.status != "approval_required":
                     continue
                 approval_count += 1
+                proposal_id = str((effect.data or {}).get("proposal_id") or "")
                 rows.append({
                     "source": "automation_approval",
-                    "id": f"{run.id}:{idx}",
+                    "id": proposal_id or f"{run.id}:{effect.target}",
                     "title": f"{run.automation_name or run.automation_id} — "
                              f"{effect.kind}: {effect.message[:140]}",
                     "connection_id": run.conn_id,
                     "since": run.started_at, "waiting_ms": _waiting_ms(run.started_at),
-                    "resolve": {"surface": "automation",
+                    # `inbox`, the same surface Source A names — this row IS a proposal in
+                    # that inbox, and a second word for one surface would make the strip
+                    # look like it had two. The id is the proposal's, so the panel resolves
+                    # it through the same accept/reject call it already makes for Source A.
+                    "resolve": {"surface": "inbox",
+                                "proposal_id": proposal_id,
                                 "automation_id": run.automation_id,
                                 "run_id": run.id},
                 })
     except Exception:
-        logger.warning("needs-human: automation-run read failed", exc_info=True)
+        logger.warning("needs-human: parked-run row build failed", exc_info=True)
 
     # Source D — agent alerts nobody has acknowledged (VA-6). A fired alert IS a thing
     # waiting on a person, and acknowledging it is the resolve action, so it belongs in the

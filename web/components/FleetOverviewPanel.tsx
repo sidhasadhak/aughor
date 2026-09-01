@@ -281,7 +281,12 @@ export function FleetOverviewPanel({ onOpenAgent, onOpenAttention, onOpenInvesti
         </div>
                   <div className="aug-text-ui" style={{ fontWeight: 600 }}>{row.title}</div>
                   <div style={{ display: "flex", gap: 6 }}>
-                    {row.source === "kinetic_inbox" ? (
+                    {/* DS-8 — an automation's approval resolves through the same proposal
+                        the agent's does, so it gets the same two buttons. Before the pause
+                        was durable this card could only "Open automation", which led to a
+                        panel with nothing on it that could approve anything. */}
+                    {row.source === "kinetic_inbox"
+                      || (row.source === "automation_approval" && row.resolve?.proposal_id) ? (
                       <>
                         <Button size="xs" variant="ghost" disabled={busy === row.id}
                           onClick={() => resolveInbox(row, "accept")}>Accept</Button>

@@ -10,12 +10,15 @@ would tell every deployment its actions are off.
 """
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from aughor.db.registry import BUILTIN_ID
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["kinetic"])
 
@@ -134,6 +137,37 @@ def propose_actions_route(
 
 # ── A4: the resolve-once proposal inbox + standing grants ─────────────────────────
 
+def _resume_parked_run(proposal_id: str) -> None:
+    """DS-8 — if this proposal was an automation's, let its parked run continue.
+
+    Here at the ROUTER, not inside the inbox, and the reason is structural: A already depends
+    on K (an automation's governed-write step runs through K's executor), so K reaching back
+    for A's engine would close the cycle H5 exists to keep open — there is a ratchet on it.
+    The application layer may import both planes, which is exactly where this codebase already
+    puts the other cascade between them (`DELETE /automations/{id}` purges the proposals an
+    automation staged).
+
+    Called unconditionally after a resolve, including on `already_resolved`: that status is
+    the losing half of a race, and the winner may have died between resolving the proposal and
+    resuming the run. `resume_run` is a no-op on a run that is not paused, so a redundant call
+    costs a row read and the recovery is worth more.
+
+    Best-effort. The governed write has already happened by the time this runs; raising here
+    would report a completed write as a failed one and invite the caller to retry it. A run
+    that fails to wake stays `paused` and the heartbeat's sweep picks it up within the minute.
+    """
+    try:
+        from aughor.actions.inbox import get_proposal
+        p = get_proposal(proposal_id)
+        if p is None or not p.run_id or not p.source.startswith("automation:"):
+            return
+        from aughor.automations.engine import resume_run
+        resume_run(p.run_id)
+    except Exception:
+        logger.warning("resuming the run parked on proposal %s failed", proposal_id,
+                       exc_info=True)
+
+
 @router.get("/kinetic-actions/inbox")
 def list_inbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None)):
     """The staged proposals for a connection (optionally filtered by status) — the review queue."""
@@ -148,6 +182,7 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
     the authored message; a re-accept of an already-resolved proposal returns 409."""
     from aughor.actions.inbox import accept_proposal
     result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant)
+    _resume_parked_run(proposal_id)
     if result.status == "not_found":
         raise HTTPException(status_code=404, detail="No such proposal")
     if result.status == "already_resolved":
@@ -165,7 +200,10 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
 def reject_inbox(proposal_id: str, body: RejectRequest):
     """Reject a staged proposal — resolved with the actor, no side effect. A re-reject is a no-op."""
     from aughor.actions.inbox import reject_proposal
-    return {"rejected": reject_proposal(proposal_id, actor=body.actor)}
+    rejected = reject_proposal(proposal_id, actor=body.actor)
+    if rejected:
+        _resume_parked_run(proposal_id)
+    return {"rejected": rejected}
 
 
 @router.get("/kinetic-actions/grants")

@@ -561,6 +561,32 @@ per-flow; ours rides the governance plane that already exists (verdicts, audit, 
 expiry). **Receipt:** a chain proposing a governed write pauses; accepting in the inbox
 resumes it; the trace shows one run with a human in its middle.
 
+> **Shipped 2026-09-01.** `AutomationRun` gained `paused` — its first NON-TERMINAL outcome —
+> and a `checkpoint` (store migration 4, numbered off the live store's `user_version=3`)
+> carrying exactly what dies with a tick: the accumulated context, the guard verdicts, the
+> frontier's completed set, and per-step outcome counts so the flat `effects` list can be
+> re-attributed to steps on the way back. Both drivers park (the frontier stops scheduling and
+> lets what is in flight land); the resume seeds the SAME chain-walk body rather than adding a
+> second walker. A resume is not gated and does not re-evaluate conditions — a human who
+> approved a write is owed the rest of the chain, and a re-probe could answer differently and
+> abandon it half-executed. Accept, reject and expiry all end the wait; a refusal makes its
+> step `skipped`, and dependents skip through the unresolved-binding path that already existed.
+> **The layering forced the shape:** `aughor/actions/*` may not import `aughor/automations/*`
+> and `runners/*` may import neither, so the resume is called from the ROUTER (where the
+> automation→proposal purge cascade already lives) and swept every heartbeat by
+> `resume_parked_runs`, which makes resuming a property of the system rather than of whichever
+> surface was pressed. **Live receipt on the fixture connection:** a two-step chain parked with
+> `finished_at: None` and step 2 never dispatched; one row in NEEDS YOU carried Accept;
+> accepting IN THE UI resumed the same run id to `fired` with both steps executed and step 2
+> bound to step 1's approved output. **Two defects the live run found and the green suite had
+> agreed with:** a dispatcher names `target` after what it dispatched — the ACTION ID for a
+> governed write, not the step alias — so the resumed context was published where no binding
+> could reach it (the fixture set `target=alias`, hiding it from both sides); and `needs-human`
+> listed one approval twice, once as a pending proposal and once as a parked run, with Accept
+> on only one of the two cards. **Left open, chip-filed:** `AUGHOR_ACTION_APPROVAL` is unset by
+> default, so `guard()` returns immediately and the pause is unreachable on a default
+> deployment — the whole graduated-approval plane is complete and inert until that flips.
+
 **DS-9 · Subchains.** An automation invokes an automation as a step; cycles refused at
 save; child outcomes fold into the parent trace. Composition keeps the palette small while
 the library grows. **Receipt:** two chains share one "post with fallback" subchain.
@@ -775,7 +801,7 @@ NEXT (order within a band is the user's knob; the inert-vault repair stays highe
                                    migration + store/create/patch surfaces; grants stay
                                    PROPOSE-only)
 
-THEN    DS-8 durable pause · DS-9 subchains   (§3.7 Phase 2)
+THEN    DS-9 subchains                        (§3.7 Phase 2 — DS-8 durable pause SHIPPED)
 
 LATER   DS-10 registry · DS-11 completion · DS-12 ontology components · DS-13 declarative
         customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)

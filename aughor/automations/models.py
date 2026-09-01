@@ -424,10 +424,18 @@ class EffectOutcome(BaseModel):
 class AutomationRun(BaseModel):
     """One tick, always persisted — including the ticks that deliberately did nothing.
 
-    ``outcome`` distinguishes the four cases the monitor store collapses into "no row":
+    ``outcome`` distinguishes the five cases the monitor store collapses into "no row":
     ``fired`` (conditions held, effects ran), ``not_fired`` (conditions evaluated, none held),
     ``gated`` (disabled / expired / paused — conditions never evaluated), ``error`` (the tick
-    itself broke). ``reason`` carries the human sentence.
+    itself broke), and DS-8's ``paused`` (a step reached a governed write that needs a human,
+    and the run is PARKED mid-chain waiting for one). ``reason`` carries the human sentence.
+
+    DS-8 — ``paused`` is the first NON-TERMINAL outcome this model has ever had, and the
+    distinction matters to every reader: a paused run is not a run that finished badly, it is
+    a run that has not finished. It ends exactly once, when its proposal resolves — accepted
+    (the chain continues in THIS row), rejected, or expired. `gated` is the near neighbour and
+    is not the same thing: gated means the tick never started, paused means it started, did
+    real work, and stopped in the middle of the chain with that work already committed.
     """
     id: str = Field(default_factory=_new_id)
     automation_id: str
@@ -440,9 +448,25 @@ class AutomationRun(BaseModel):
     finished_at: Optional[str] = None
     duration_ms: int = 0
 
-    outcome: Literal["fired", "not_fired", "gated", "error"]
+    outcome: Literal["fired", "not_fired", "gated", "error", "paused"]
     reason: str = ""
     conditions_fired: list[str] = Field(default_factory=list)
     effects: list[EffectOutcome] = Field(default_factory=list)
     fallback_used: bool = False
     error: str = ""
+    #: DS-8 — everything the chain needs to pick itself up where it stopped, and nothing
+    #: else. The roadmap's definition is exact: *checkpoint = the persisted run + the
+    #: accumulated context*. The run row already holds every prior step's outcome, so what
+    #: has to be added is only what lives in engine LOCALS and would otherwise die with the
+    #: tick — the accumulated chain context, the guard verdicts the route reads, and where
+    #: to start again.
+    #:
+    #: Empty on every run that never paused, which is every run written before DS-8. Kept as
+    #: an open dict rather than a model because it is engine-internal bookkeeping that no
+    #: surface renders: giving it a public schema would invite a reader to depend on a shape
+    #: the engine must stay free to change.
+    #:
+    #: Keys: ``next_index`` (resume the ordered walk here) · ``context`` / ``verdicts`` (the
+    #: accumulated state, verbatim) · ``done_aliases`` (what the parallel frontier had already
+    #: completed) · ``proposal_id`` · ``step_index`` / ``step_alias`` (which step parked).
+    checkpoint: dict = Field(default_factory=dict)

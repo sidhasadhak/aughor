@@ -172,8 +172,22 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                   <Button variant="secondary" size="xs"
                     onClick={() => onOpenInvestigation(row.id)}>Open & resume</Button>
                 )}
+                {/* DS-8 — an automation's approval is resolved the same way an agent's is,
+                    because it IS the same proposal in the same resolve-once inbox. Before
+                    the pause was durable this row could only offer "Open automation", which
+                    led to a panel with nothing on it that could approve anything: the row
+                    named a decision and then had no door for it. Accepting here resumes the
+                    parked chain from its checkpoint. */}
+                {row.source === "automation_approval" && row.resolve?.proposal_id && (
+                  <>
+                    <Button variant="secondary" size="xs" disabled={busy === row.id}
+                      onClick={() => resolveInbox(row, "accept")}>Accept</Button>
+                    <Button variant="ghost" size="xs" disabled={busy === row.id}
+                      onClick={() => resolveInbox(row, "reject")}>Reject</Button>
+                  </>
+                )}
                 {row.source === "automation_approval" && onOpenAutomations && (
-                  <Button variant="secondary" size="xs"
+                  <Button variant="ghost" size="xs"
                     onClick={onOpenAutomations}>Open automation</Button>
                 )}
                 {row.source === "agent_alert" && (
