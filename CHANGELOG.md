@@ -10,6 +10,28 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 
 ## [Unreleased]
 
+### Added
+- **An automation can act as a connected account (DS-11, first half).** A new
+  `integration_call` step spends a vault `Connection` — the OAuth grants VA-11 has been
+  minting, refreshing and revoking with nothing able to use them. What a grant may do is
+  declared as data in `aughor/integrations/operations.py` (six operations across Google,
+  Slack and Microsoft, each covered by that provider's default scopes), and every call
+  goes through one door, `aughor/integrations/call.py`: the grant's own verdicts first,
+  then a scope check against what the provider said was GRANTED, then the params built by
+  the roster, then the graduated approval gate for a write, then the call itself inside
+  `govern.outbound` — capped before the work, spanned, and recorded as an `EXTERNAL_CALL`
+  so it can be metered. Nothing an author types can move the host or the path: the URL set
+  is closed, path values are percent-encoded, and an undeclared input is refused rather
+  than forwarded.
+  The step's published keys are its OPERATION's rather than its kind's, which makes it the
+  first kind whose remote outputs an unknown binding is refused against at save — and the
+  first that publishes a real LIST, so `for_each` can fan over what a remote read returned
+  (fanning over its `count` is still refused). `GET /integrations/operations` serves the
+  roster with its ports, its published keys and which of them are lists; the component
+  registry gains an `integration` family with one row per (grant × operation), each saying
+  whether that grant can run it and why not; the palette row dims to "No connected
+  accounts" until one exists.
+
 ### Fixed
 - **Quick answers no longer fail on their second step with Gemini.** Google signs a
   thinking model's reasoning and returns the signature attached to the tool call it

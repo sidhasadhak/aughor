@@ -853,6 +853,60 @@ def subchain_outcome(kind: str, child_id: str, child_name: str,
         data=published)
 
 
+#: DS-11 — the call seam's verdicts, mapped onto the outcome vocabulary this plane has
+#: always had. Written as a table rather than a chain of ifs because the mapping IS the
+#: contract between two planes, and the interesting half is which verdicts are terminal:
+#:
+#: * ``refused`` → ``dispatch_error``. A verdict, not a fault: an unknown operation, a
+#:   revoked grant, a missing scope and an un-allowlisted write all refuse identically
+#:   next attempt, so retrying is the #200 lesson repeated.
+#: * ``blocked`` → ``failed``. A usage cap sent nothing, so the same call is legitimate
+#:   once the window rolls over — which is what `failed` licenses and `dispatch_error`
+#:   does not. The same mapping `slack_post` already makes for a capped post.
+#: * ``uncertain`` → ``uncertain``. A write whose transport broke may have arrived, and
+#:   retrying a maybe-delivered write is the duplicate that status exists to prevent.
+_CALL_STATUS: dict[str, str] = {
+    "executed": "executed", "refused": "dispatch_error", "blocked": "failed",
+    "failed": "failed", "uncertain": "uncertain",
+}
+
+
+def _dispatch_integration(effect: Effect, automation: Automation) -> EffectOutcome:
+    """DS-11 — one step run under a user's own grant, through the one governed door.
+
+    Everything that makes this governed happens in `integrations.call.call_operation`:
+    the grant's verdicts, the scope check, the approval gate for a write, the outbound
+    cap and span, the `EXTERNAL_CALL` event and the audit line. This function is the
+    translation layer and nothing else — deliberately, because the same call has to be
+    makeable from a route and from an agent later without either re-deriving the order
+    those gates run in.
+
+    ``target`` is ``<connection>:<operation>``, and BOTH halves are load-bearing. DS-8's
+    live run found the general shape of this mistake the hard way: a dispatcher that
+    names its target after the thing it dispatched publishes the step's context where no
+    binding can reach it. The operation alone would also make two steps spending two
+    different grants look identical in a run history, which is the one question this
+    kind's history exists to answer.
+    """
+    from aughor.integrations.call import call_operation
+
+    conn_id = str(effect.config.get("connection_id", ""))
+    operation = str(effect.config.get("operation", ""))
+    target = f"{conn_id}:{operation}"
+    result = call_operation(conn_id, operation, effect.params,
+                            actor=acting_agent_ref(effect, automation))
+    status = _CALL_STATUS.get(result.status, "failed")
+    return EffectOutcome(
+        kind=effect.kind, target=target, status=status,
+        # The provider's own sentence, verbatim — the same contract the authored
+        # criterion message has. A paraphrase of "channel_not_found" helps nobody.
+        message=result.message,
+        # Published on SUCCESS only. A failed call's body is the provider's error, not
+        # this operation's declared keys, and publishing it would let a later step bind
+        # to a value that means something else entirely.
+        data=dict(result.data) if status == "executed" else {})
+
+
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "kinetic_action": _dispatch_kinetic,
     "notify": _dispatch_notify,
@@ -862,6 +916,7 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "agent_alert": _dispatch_agent_alert,
     "slack_post": _dispatch_slack_post,
     "subchain": _dispatch_subchain,
+    "integration_call": _dispatch_integration,
 }
 
 
@@ -894,8 +949,13 @@ def dry_sample(alias: str, effect: Effect, later: list[Effect]) -> dict:
     preview would report "upstream data unavailable" for a binding the engine will
     satisfy perfectly well at 09:00.
     """
-    from aughor.automations.dataflow import PUBLISHED_KEYS
-    keys = set(PUBLISHED_KEYS.get(effect.kind) or ())
+    # DS-11 — `published_keys(effect)`, not the kind table: an integration step's keys
+    # are its operation's, so a preview of a Gmail-list step must sample `items`/`count`
+    # and one of a read-a-message step must sample `snippet`. Reading the kind would have
+    # sampled the same (empty) set for both and reported every chained integration step
+    # as unavailable — the exact failure B2's own pre-check found in the eval harness.
+    from aughor.automations.dataflow import published_keys
+    keys = set(published_keys(effect) or ())
     for nxt in later:
         for ref in effect_refs(nxt):
             target, key = parse_ref(ref)

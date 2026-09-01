@@ -108,6 +108,10 @@ const KIND_ICON: Record<string, IconName> = {
   investigate: "search", slack_post: "send", notify: "bell",
   brief: "brief", kinetic_action: "bolt", monitor: "activity", agent_alert: "alert",
   subchain: "layers",
+  // DS-11 — the same glyph the palette row carries. A kind absent from this table falls
+  // back to the generic "process" gear, which is how a new kind ends up looking like
+  // scaffolding on the one surface built to make a chain read as roles.
+  integration_call: "key",
 };
 
 const COL_W = 300;
@@ -428,6 +432,13 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   brief:          [{ field: "subscription_id", placeholder: "briefing subscription id" }],
   kinetic_action: [{ field: "action_id", placeholder: "declared action id" }],
   subchain:       [{ field: "automation_id", placeholder: "automation id" }],
+  // DS-11 — the OPERATION, and deliberately not the grant. Found by drawing a real
+  // chain: with no entry here a step that reads Gmail and one that posts to Slack
+  // rendered as two identical empty boxes, both headed "Use an integration". The
+  // account is chosen in the rail, from a picker over the reader's OWN grants — putting
+  // its id in a free-text box on the node would invite pasting one that is not theirs,
+  // and putting the email on the canvas is the spill `effect_detail` refuses.
+  integration_call: [{ field: "operation", placeholder: "pick one in the rail" }],
 };
 
 /** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
@@ -436,6 +447,13 @@ const KIND_HUE: Record<string, string> = {
   investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
   brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
   subchain: "var(--chart-6)",
+  // DS-11 — SHARED with the declared action, on purpose and stated rather than left to
+  // the fallback. The chart series is six CVD-validated tokens behind `lint:palette`; a
+  // seventh is a palette decision with a validator to satisfy, not a side effect of
+  // adding an effect kind. Of the six, this is the honest one to share: these are the
+  // two kinds whose step the approval gate can stop. Left unlisted it would have fallen
+  // back to `--chart-6` and collided with `subchain`, which groups nothing.
+  integration_call: "var(--chart-4)",
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {

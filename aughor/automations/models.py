@@ -106,6 +106,10 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # subchain step with no child names nothing, and "looking schedulable" is the
     # expensive kind of broken (K1: reject at parse, never surface).
     "subchain":       ("automation_id",),
+    # DS-11 — WHOSE grant, and WHICH declared operation. Both at construction like every
+    # sibling: a step naming neither is a step that would ask a provider nothing on
+    # behalf of nobody, and "looking schedulable" is the expensive kind of broken.
+    "integration_call": ("connection_id", "operation"),
 }
 
 
@@ -222,7 +226,7 @@ class Effect(BaseModel):
     and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
-                  "slack_post", "subchain"]
+                  "slack_post", "subchain", "integration_call"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.

@@ -20,9 +20,11 @@ import React from "react";
 
 import { Button } from "@/components/ui/button";
 import {
-  AUTOMATION_REQUIRED_KEYS, getAutomationVocabulary,
+  AUTOMATION_REQUIRED_KEYS, getAutomationVocabulary, getIntegrationConnections,
+  getIntegrationOperations,
   type AutoCondition, type AutoEffect, type ConditionKind, type EffectKind,
-  type AutomationVocabulary, type GuardClause, type SlackBotSummary, type UserAgent,
+  type AutomationVocabulary, type GuardClause, type IntegrationConnection,
+  type IntegrationOperation, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
 import { seedConfig, upstreamKeys } from "@/lib/automationFlow";
 
@@ -43,6 +45,9 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
     desc: "Post into a channel as one of your bots — mentionable, and repliable in thread" },
   { value: "subchain", label: "Run a chain",
     desc: "Run another automation as one step — share a shape instead of authoring it twice" },
+  { value: "integration_call", label: "Use an integration",
+    desc: "Act as a connected account — read or post under the grant that account gave, "
+        + "capped and audited" },
 ];
 
 export const CRON_PRESETS = [
@@ -423,6 +428,161 @@ export function ConditionRow({ c, onChange, onRemove }: {
   );
 }
 
+/* ── DS-11 · "Use an integration" ──────────────────────────────────────────────
+ *
+ * Two pickers and then the operation's own fields — and every one of those three is
+ * SERVED. The grants come from `/integrations/connections` (filtered to the caller by
+ * the route, so this cannot render somebody else's consent); the operations and their
+ * ports come from `/integrations/operations?connection_id=`, per grant, because whether
+ * a grant carries the scope an operation needs is a fact about the pair and only the
+ * server can answer it. A client that computed that itself would be the mirrored
+ * contract this plane keeps paying to avoid.
+ */
+
+/** This user's grants — a hook rather than a prop for `useAutomationVocabulary`'s
+ *  reason: the row renders on two surfaces and a prop is a thing one of them forgets
+ *  to pass.
+ *
+ *  Deliberately NOT module-cached the way the vocabulary is, and the difference is the
+ *  point: a vocabulary is a fact about this VERSION and cannot change while the page is
+ *  open, while a grant is mutable state a person edits elsewhere. A page that cached it
+ *  once would keep saying "No connected accounts" to someone who had just connected one
+ *  in another tab, with no way back but a reload. */
+export function useIntegrationGrants(): IntegrationConnection[] {
+  const [grants, setGrants] = React.useState<IntegrationConnection[]>([]);
+  React.useEffect(() => {
+    let live = true;
+    void getIntegrationConnections().catch(() => [])
+      .then(g => { if (live) setGrants(g); });
+    return () => { live = false; };
+  }, []);
+  return grants;
+}
+
+/** The operations ONE grant may run. Keyed by connection because the availability of a
+ *  row is a property of the pair — the same Google account may read mail and not send
+ *  it — and a roster cached across grants would show one account's answer for another.
+ *
+ *  Cached, unlike the grants above, because the only thing that moves a grant's roster
+ *  is re-consenting to different scopes — and that happens through the provider's own
+ *  consent screen, which navigates this page away and back. */
+const opsCache = new Map<string, Promise<IntegrationOperation[]>>();
+
+export function useIntegrationOperations(connectionId: string): IntegrationOperation[] {
+  // The loaded roster is stored WITH the grant it belongs to, and a mismatch reads as
+  // empty. Not a style point: holding a bare list would leave the previous account's
+  // operations on screen for the render between switching grants and the fetch landing —
+  // and an author who picks in that window picks an operation for the wrong consent.
+  const [loaded, setLoaded] =
+    React.useState<{ id: string; ops: IntegrationOperation[] }>({ id: "", ops: [] });
+  React.useEffect(() => {
+    if (!connectionId) return;
+    let cached = opsCache.get(connectionId);
+    if (!cached) {
+      cached = getIntegrationOperations(connectionId).catch(() => []);
+      opsCache.set(connectionId, cached);
+    }
+    let live = true;
+    void cached.then(o => { if (live) setLoaded({ id: connectionId, ops: o }); });
+    return () => { live = false; };
+  }, [connectionId]);
+  return loaded.id === connectionId ? loaded.ops : [];
+}
+
+export function IntegrationRows({ e, onChange }: {
+  e: AutoEffect; onChange: (e: AutoEffect) => void;
+}) {
+  const grants = useIntegrationGrants();
+  const connectionId = String(e.config.connection_id ?? "");
+  const ops = useIntegrationOperations(connectionId);
+  const operationId = String(e.config.operation ?? "");
+  const op = ops.find(o => o.id === operationId);
+  const params = (e.config.params ?? {}) as Record<string, unknown>;
+
+  const set = (patch: Record<string, unknown>) =>
+    onChange({ ...e, config: { ...e.config, ...patch } });
+  const setParam = (name: string, value: unknown) =>
+    set({ params: { ...params, [name]: value } });
+
+  // A grant that cannot be spent is not offered: `revoked` is dead and
+  // `needs_reconnect` is a refusal the provider already made. The sentence is the
+  // palette's own, word for word — two surfaces explaining one absence differently is
+  // how a reader learns the product has two opinions about it.
+  const usable = grants.filter(g => g.status === "active");
+  // A grant this step was AUTHORED against and the picker cannot offer — revoked since,
+  // or belonging to someone else. Kept and marked, never silently dropped: a `<select>`
+  // whose value matches no option renders as the placeholder, so a step that says "act
+  // as sales@…" would read as one nobody had configured yet, and the next save would
+  // make that true. The Otherwise picker states the same rule one field over, and this
+  // repo has already paid for a client that could not SEE a field dropping it.
+  const orphanGrant = !!connectionId && !usable.some(g => g.id === connectionId);
+  const orphanOp = !!operationId && ops.length > 0 && !op;
+  if (usable.length === 0 && !connectionId) {
+    return (
+      <div className="aug-fs-xs" style={{ color: "var(--amb4)", padding: "6px 0" }}>
+        No connected accounts — connect one under Integrations, then this step can act as it.
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <select style={inputStyle} value={connectionId} aria-label="Act as"
+        onChange={ev => set({ connection_id: ev.target.value, operation: "", params: {} })}>
+        <option value="">Act as…</option>
+        {usable.map(g => (
+          <option key={g.id} value={g.id}>
+            {g.provider}{g.account ? ` · ${g.account}` : ""}
+          </option>
+        ))}
+        {orphanGrant && <option value={connectionId}>{connectionId} (missing)</option>}
+      </select>
+      {connectionId && (
+        <select style={inputStyle} value={operationId} aria-label="Operation"
+          onChange={ev => set({ operation: ev.target.value, params: {} })}>
+          <option value="">Do what…</option>
+          {ops.map(o => (
+            <option key={o.id} value={o.id}>
+              {o.label}{o.writes ? " (write)" : ""}
+            </option>
+          ))}
+          {orphanOp && <option value={operationId}>{operationId} (missing)</option>}
+        </select>
+      )}
+      {orphanGrant && (
+        <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
+          This step acts as an account you can no longer pick — reconnect it under
+          Integrations, or choose another.
+        </div>
+      )}
+      {/* The server's own sentence about THIS pair. Rendered rather than paraphrased:
+          it names the scope that is missing and the door that grants it. */}
+      {op && op.availability !== "ready" && op.reason && (
+        <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>{op.reason}</div>
+      )}
+      {op?.writes && (
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          A write — it passes the approval gate before it runs.
+        </div>
+      )}
+      {op?.params.map(prm => (
+        <input key={prm.name} style={inputStyle}
+          aria-label={prm.label || prm.name}
+          value={fieldText(params[prm.name])}
+          onChange={ev => setParam(prm.name,
+            // Bindable fields accept a binding object; the rest are plain values. Same
+            // reason `slack_post`'s message is free text: a field whose value is
+            // `{"$from": "step1.answer"}` is the whole point of the chain, and
+            // `String(obj)` renders "[object Object]" — an editor inviting someone to
+            // overwrite the wiring that makes it work.
+            prm.bindable ? parseMessage(ev.target.value) : ev.target.value)}
+          placeholder={`${prm.label || prm.name}${prm.required ? "" : " (optional)"}`
+            + (prm.placeholder ? ` — e.g. ${prm.placeholder}` : "")} />
+      ))}
+    </div>
+  );
+}
+
 export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange, onRemove }: {
   e: AutoEffect; agents: UserAgent[];
   /** W1 — the step list this row belongs to, so its "Only if" picker can offer what the
@@ -496,6 +656,7 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
               placeholder={'message, or {"$from": "step1.answer"} to post an earlier step'} />
           </div>
         )}
+        {e.kind === "integration_call" && <IntegrationRows e={e} onChange={onChange} />}
         {e.kind === "kinetic_action" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <input style={inputStyle} value={String(e.config.action_id ?? "")} onChange={ev => set({ action_id: ev.target.value })} placeholder="declared action id" />

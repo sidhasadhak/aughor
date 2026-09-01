@@ -3381,7 +3381,8 @@ export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_ap
  *  adopted objects the engine writes when an existing monitor or alert rule migrates onto
  *  it — the model's own docstring says they are "not authored by hand". */
 export type EffectKind =
-  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain";
+  | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain"
+  | "integration_call";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3399,6 +3400,7 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
   slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
+  integration_call: ["connection_id", "operation"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
@@ -3667,6 +3669,60 @@ export async function revokeIntegrationConnection(connId: string): Promise<{
     { method: "POST" });
   if (!res.ok) throw new Error(`Could not revoke (${res.status})`);
   return res.json();
+}
+
+/* ── DS-11 · what a grant may DO ────────────────────────────────────────────── */
+
+/** One declared, typed input to an operation. */
+export interface IntegrationOperationParam {
+  name: string;
+  label: string;
+  type: string;
+  required: boolean;
+  placeholder: string;
+  /** May a chain bind this input to an earlier step's output? False for the knobs on
+   *  the request itself (a page size), because an edge onto one draws dataflow nobody
+   *  meant. */
+  bindable: boolean;
+}
+
+/** One thing a connected account may be asked to do.
+ *
+ *  FETCHED, never mirrored — the ports, the published keys and `list_keys` are what a
+ *  step editor has to agree with the engine about, and this repo has already paid once
+ *  for a hand-copied contract that rotted. */
+export interface IntegrationOperation {
+  id: string;
+  provider: string;
+  label: string;
+  description: string;
+  /** Changes something at the provider ⇒ it passes the approval gate before it runs. */
+  writes: boolean;
+  params: IntegrationOperationParam[];
+  publishes: string[];
+  /** Which published keys are LISTS — the ones a `for_each` may fan over. The rule the
+   *  client used before DS-11 ("open set ⇒ fannable") cannot answer this: an integration
+   *  step publishes a CLOSED set that contains a list. */
+  list_keys: string[];
+  availability: "ready" | "needs_setup" | "unavailable";
+  reason: string;
+}
+
+/** The declared roster, optionally narrowed to what ONE grant can run. */
+export async function getIntegrationOperations(connectionId?: string):
+    Promise<IntegrationOperation[]> {
+  const qs = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/integrations/operations${qs}`);
+  if (!res.ok) throw new Error(`Failed to load integration operations (${res.status})`);
+  return (await res.json()).operations ?? [];
+}
+
+/** This user's own grants. The route filters by caller, so this can never list
+ *  somebody else's consent. */
+export async function getIntegrationConnections(): Promise<IntegrationConnection[]> {
+  const res = await fetch(`${getApiBase()}/integrations/connections`);
+  if (!res.ok) throw new Error(`Failed to load connected accounts (${res.status})`);
+  return (await res.json()).connections ?? [];
 }
 
 /** The Slack app manifest to paste at api.slack.com, plus the steps that follow it.
