@@ -31,6 +31,7 @@ import {
 } from "@/lib/api";
 
 import { AgentSlackDoor } from "@/components/agentops/AgentSlackDoor";
+import { McpServersSection } from "@/components/McpServersSection";
 
 const inputStyle: React.CSSProperties = {
   width: "100%", padding: "7px 10px", borderRadius: "var(--r3)",
@@ -463,6 +464,10 @@ export function IntegrationsPanel() {
           </div>
         </div>
       ))}
+      {/* VA-9d — §3.4's item 4 puts it LAST, and the order is the argument: everything
+          above is "connect as me", an account a user grants us. This is "call out to
+          them", a third party an operator writes down. */}
+      <McpServersSection />
     </div>
   );
 }
