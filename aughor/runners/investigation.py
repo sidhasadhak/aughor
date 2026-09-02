@@ -96,6 +96,13 @@ class InvestigationRun:
     #: not because the answer is unavailable, but because nobody has waited to see it,
     #: and "" is the honest value for a question this call cannot answer yet.
     headline: str = ""
+    #: The report's executive summary, same availability rule as ``headline``. Carried
+    #: because the headline alone is a TITLE — a chain that posts a nightly briefing was
+    #: measured delivering 71 characters of "Revenue Analysis: …" while the trust warning
+    #: and every number sat in the 20KB report nobody opened. Only the deep path's
+    #: ``answer_report`` frame carries it; a run that streamed bare headline frames has no
+    #: summary to report and leaves this empty.
+    summary: str = ""
 
     @property
     def ok(self) -> bool:
@@ -214,6 +221,12 @@ def run_investigation(
                     if isinstance(report, dict) and report.get("headline"):
                         seen["headline"] = str(report["headline"])
                         seen["headline_is_final"] = "1"
+                    # The summary rides ONLY this frame — headline/headline_delta frames
+                    # carry the sentence being typed, never the report body. Captured
+                    # independently of the headline: a report with a summary and no
+                    # headline is still a report with a summary.
+                    if isinstance(report, dict) and report.get("executive_summary"):
+                        seen["summary"] = str(report["executive_summary"])
                 elif (kind in ("headline", "headline_delta") and payload.get("headline")
                         and not seen.get("headline_is_final")):
                     # The answer itself. Sniffed off the same stream as the ids above and
@@ -249,11 +262,13 @@ def run_investigation(
             return InvestigationRun("failed", seen["error"], basis="inline",
                                     investigation_id=seen.get("investigation_id", ""),
                                     receipt_id=seen.get("receipt_id", ""),
-                                    headline=seen.get("headline", ""))
+                                    headline=seen.get("headline", ""),
+                                    summary=seen.get("summary", ""))
         return InvestigationRun("executed", reason, basis="inline",
                                 investigation_id=seen.get("investigation_id", ""),
                                 receipt_id=seen.get("receipt_id", ""),
-                                headline=seen.get("headline", ""))
+                                headline=seen.get("headline", ""),
+                                summary=seen.get("summary", ""))
 
     # VA-13 — a caller that needs the ANSWER has to wait for it. Checked BEFORE the
     # submit, not after: `submit_background_tick` hands the work to the kernel loop and

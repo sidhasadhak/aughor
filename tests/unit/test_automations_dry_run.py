@@ -210,7 +210,8 @@ def test_a_real_run_is_untouched_by_any_of_this():
 
 def test_a_step_samples_the_keys_it_DECLARES():
     assert dry_sample("numbers", _investigate(), []) == {
-        "answer": "«numbers.answer»", "investigation_id": "«numbers.investigation_id»"}
+        "answer": "«numbers.answer»", "investigation_id": "«numbers.investigation_id»",
+        "summary": "«numbers.summary»"}
 
 
 def test_a_step_also_samples_whatever_a_LATER_step_asks_of_it():

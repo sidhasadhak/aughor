@@ -768,8 +768,15 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                          # nothing and post a blank message. Absent instead, so the
                          # binding raises `UnresolvedBinding` and the downstream step is
                          # SKIPPED with a reason — which is the honest outcome.
+                         #
+                         # `summary` is the report's executive summary, same absent-when-
+                         # empty rule. It exists because the headline is a title: the
+                         # nightly briefing chain was posting 71 characters of "Revenue
+                         # Analysis: …" while the trust warning and the numbers stayed in
+                         # a report Slack never saw.
                          data={k: v for k, v in (("investigation_id", _inv),
-                                                 ("answer", run.headline)) if v})
+                                                 ("answer", run.headline),
+                                                 ("summary", run.summary)) if v})
 
 
 # ── DS-9 · a chain as a step ──────────────────────────────────────────────────

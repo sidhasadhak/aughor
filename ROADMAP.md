@@ -174,7 +174,10 @@ and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), br
   free text (B1's law, one field over).
 - ~~**W2 · `for_each` on an effect**~~ — **SHIPPED 2026-08-30.** One step, N dispatches,
   one `EffectOutcome` each. 🔑 **The pre-check moved the scope again: NOTHING in this
-  plane publishes a list** — `investigate` publishes two strings, `slack_post` two
+  plane publishes a list** — `investigate` publishes two strings (three since
+  2026-09-02: `summary` carries the report's executive summary, because the nightly
+  briefing was measured posting a 71-character *title* while the trust warning and the
+  numbers sat in a 20KB report Slack never saw — still no list), `slack_post` two
   strings, `notify`/`brief`/`monitor`/`agent_alert` nothing at all, and only the
   declared-action kind has an OPEN outcome shape. So a source is a **literal list** or a
   binding onto that open kind, and fanning over a closed-set producer is refused at SAVE

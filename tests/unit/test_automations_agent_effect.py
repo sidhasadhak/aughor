@@ -195,3 +195,51 @@ def test_a_healthy_agent_binding_submits_as_that_agent(monkeypatch):
     # The agent is part of the identity of the work — it must reach the idempotency
     # key, or the same question as two personas would deduplicate onto one run.
     assert agent.id in submitted[0]["idem"], "the persona was dropped on the way to the runner"
+
+
+# ── the waited path publishes the report, not just its title ─────────────────────
+
+def test_a_waited_run_publishes_answer_AND_summary(monkeypatch):
+    """`answer` is the run's headline — a title. `summary` is the report's executive
+    summary — the trust warnings and the numbers. The nightly briefing chain was
+    measured posting the 71-character title while the ⚠ metric-drift warning sat in a
+    20KB report Slack never saw; a chain must be able to bind the part worth reading."""
+    import json as _json
+
+    from aughor.automations.engine import AWAIT_KEY
+
+    def fake_stream(req, request):
+        async def _gen():
+            for p in ({"type": "start", "investigation_id": "inv-42"},
+                      {"type": "answer_report", "investigation_id": "inv-42",
+                       "answer_report": {"headline": "Revenue Analysis: Sep 1st",
+                                         "executive_summary": "⚠ Trust check flagged the "
+                                         "evidence; revenue fell 97.98% to $3,405.74."}}):
+                yield f"data: {_json.dumps(p)}\n\n"
+
+        return _gen()
+
+    monkeypatch.setattr("aughor.routers.investigations.build_ask_stream", fake_stream)
+    effect = Effect(kind="investigate",
+                    config={"question": "what changed?", AWAIT_KEY: True})
+
+    outcome = _dispatch_investigate(effect, _automation())
+
+    assert outcome.status == "executed"
+    assert outcome.data["answer"] == "Revenue Analysis: Sep 1st"
+    assert outcome.data["summary"].startswith("⚠ Trust check")
+    assert outcome.data["investigation_id"] == "inv-42"
+
+
+def test_an_unwaited_run_publishes_no_summary(monkeypatch):
+    """Same rule as `answer`: a submitted run has produced nothing yet, and publishing
+    `summary: ""` would let a binding resolve to an empty string and post a blank
+    briefing. Absent instead, so the dependent step is SKIPPED with a reason."""
+    _capture_submit(monkeypatch)
+    effect = Effect(kind="investigate", config={"question": "q"})
+
+    outcome = _dispatch_investigate(effect, _automation())
+
+    assert outcome.status == "executed"
+    assert "summary" not in (outcome.data or {})
+    assert "answer" not in (outcome.data or {})

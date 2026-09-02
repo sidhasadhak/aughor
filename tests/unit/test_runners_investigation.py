@@ -376,6 +376,42 @@ def test_the_investigate_paths_answer_report_carries_the_headline(monkeypatch):
                                                  connection_id="conn-a", wait=True))
     assert run.status == "executed"
     assert run.headline == "51 orders vs a 740.9 prior average"
+    assert run.summary == "", "no executive_summary in the report means no summary — not None, not a fabrication"
+
+
+def test_the_answer_reports_executive_summary_rides_along(monkeypatch):
+    """The headline is a title; the report's executive summary is the content — the trust
+    warnings and the numbers. Measured live: a nightly briefing posted 71 characters of
+    'Revenue Analysis: …' while the ⚠ metric-drift warning sat in a 20KB report Slack
+    never saw. The drain must hand back both so a chain can post the one worth reading."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-9"},
+              {"type": "answer_report", "investigation_id": "inv-9",
+               "answer_report": {"headline": "Revenue Analysis: September 1st",
+                                 "executive_summary": "⚠ A trust check flagged the "
+                                 "evidence… revenue was $3,405.74, a 97.98% decrease.",
+                                 "sections": []}})
+
+    run = run_investigation(InvestigationRequest(question="what changed?",
+                                                 connection_id="conn-a", wait=True))
+    assert run.status == "executed"
+    assert run.headline == "Revenue Analysis: September 1st"
+    assert run.summary.startswith("⚠ A trust check")
+
+
+def test_a_headline_only_stream_reports_no_summary(monkeypatch):
+    """`headline`/`headline_delta` frames are a sentence being typed, not a report — a
+    path that never sent an `answer_report` has no summary, and inventing one from the
+    headline would defeat the absent-means-skip contract downstream."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "headline", "headline": "the whole answer"})
+
+    run = run_investigation(InvestigationRequest(question="q", connection_id="c",
+                                                 wait=True))
+    assert run.headline == "the whole answer"
+    assert run.summary == ""
 
 
 def test_a_typed_delta_never_overwrites_the_finished_answer(monkeypatch):

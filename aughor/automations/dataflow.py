@@ -525,7 +525,11 @@ def item_refs(effect: Any) -> list[str]:
 #: SAVE (the whole point of B1: the unknown KEY used to surface at 09:00 as a skipped
 #: step, a stack of honest machinery adding up to a silent no-op).
 PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
-    "investigate":    ("investigation_id", "answer"),
+    # `answer` is the run's headline — a title. `summary` is the report's executive
+    # summary — the trust warnings and the numbers. A briefing chain wants the second;
+    # both keep the absent-when-empty rule, so binding to either on a run that produced
+    # neither skips the dependent step with a reason instead of posting "".
+    "investigate":    ("investigation_id", "answer", "summary"),
     "slack_post":     ("ts", "channel"),
     "kinetic_action": None,
     "notify":         (),
