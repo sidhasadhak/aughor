@@ -167,6 +167,78 @@ class TestIntakeCoverageClamp:
         assert "no prior period" not in it.comparison_label
         assert note is not None
 
+    def test_a_window_ending_today_is_trimmed_to_the_last_complete_day(self):
+        """The 43-vs-1,733 shape, found live 2026-09-02: the 09:00 briefing compared
+        nine hours of today against all of yesterday and headlined a 97.5% collapse.
+        A day in progress cannot be a complete period."""
+        it = _intake(
+            observation_start="2026-08-27", observation_end="2026-09-02",
+            comparison_start="2026-08-20", comparison_end="2026-08-26",
+        )
+        note = _clamp_intake_to_coverage(it, "2025-01-01", "2026-09-02",
+                                         question="what changed in the last week?",
+                                         today="2026-09-02")
+        assert it.observation_end == "2026-09-01"
+        assert it.observation_start == "2026-08-27"
+        assert note and "day still in progress" in note
+        assert "false collapse" in note
+
+    def test_the_briefing_shape_cascades_to_full_prior_days(self):
+        """One-day observation = today, comparison = yesterday. After the trim the
+        comparison IS the observation — the tautology machinery must then hand back
+        the preceding complete day, so the briefing reports yesterday vs the day
+        before, both whole."""
+        it = _intake(
+            observation_start="2026-09-02", observation_end="2026-09-02",
+            comparison_start="2026-09-01", comparison_end="2026-09-01",
+        )
+        note = _clamp_intake_to_coverage(it, "2025-01-01", "2026-09-02",
+                                         question="What changed in theLook in the last day?",
+                                         today="2026-09-02")
+        assert (it.observation_start, it.observation_end) == ("2026-09-01", "2026-09-01")
+        assert (it.comparison_start, it.comparison_end) == ("2026-08-31", "2026-08-31")
+        assert it.no_prior_period is False
+        assert note and "day still in progress" in note
+
+    def test_a_closed_dataset_keeps_its_final_day(self):
+        """dmax far in the past ⇒ the terminal day is as complete as it will ever be.
+        Trimming it would erase real data on every run forever."""
+        it = _intake(
+            observation_start="2024-05-01", observation_end="2024-05-17",
+            comparison_start="2024-04-14", comparison_end="2024-04-30",
+        )
+        note = _clamp_intake_to_coverage(it, "2024-01-01", "2024-05-17",
+                                         today="2026-09-02")
+        assert it.observation_end == "2024-05-17"
+        assert not (note and "day still in progress" in note)
+
+    def test_a_question_that_pins_today_keeps_it_and_gets_the_warning(self):
+        """'September 2nd, 2026' asked ON September 2nd: the reader named the partial
+        day knowingly — the window stays, the note says PARTIAL."""
+        it = _intake(
+            observation_start="2026-09-02", observation_end="2026-09-02",
+            comparison_start="2026-09-01", comparison_end="2026-09-01",
+        )
+        note = _clamp_intake_to_coverage(
+            it, "2025-01-01", "2026-09-02",
+            question="how are orders on September 2nd, 2026?", today="2026-09-02")
+        assert it.observation_end == "2026-09-02"
+        assert note and "PARTIAL" in note
+
+    def test_a_reanchored_stale_window_lands_on_complete_days(self):
+        """The re-anchor pulls a mis-placed relative window to the data's most recent
+        point — which must be the last COMPLETE day when the data reaches today, or
+        the re-anchor reintroduces the artifact the trim exists to prevent."""
+        it = _intake(
+            observation_start="2026-05-01", observation_end="2026-06-30",
+            comparison_start="2026-03-01", comparison_end="2026-04-30",
+        )
+        note = _clamp_intake_to_coverage(it, "2025-01-01", "2026-09-02",
+                                         question="last 2 months of revenue?",
+                                         today="2026-09-02")
+        assert it.observation_end == "2026-09-01", "re-anchor must not land on the partial day"
+        assert note and "re-anchored" in note
+
     def test_duration_mismatch_relabels_and_warns(self):
         """The GMV brand-tier repro: a ~57-month observation whose 'prior 56 months'
         window was clipped to the ~3 real months that exist before the data starts.
