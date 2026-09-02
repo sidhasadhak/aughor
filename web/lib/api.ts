@@ -3982,6 +3982,38 @@ async function _automationError(res: Response, verb: "create" | "update"): Promi
   return `Failed to ${verb} automation`;
 }
 
+/** DS-16 — one translated node's fate, in the words the reader should see. */
+export interface ImportNodeReport {
+  node_id: string;
+  component: string;
+  disposition: "mapped" | "folded" | "dropped" | "refused";
+  detail: string;
+  step: string;
+}
+
+export interface ImportFlowResult {
+  verdict: "imported" | "nothing_mapped" | "unreadable";
+  source: string;
+  name: string;
+  draft: { conditions: AutoCondition[]; effects: AutoEffect[] } | null;
+  report: ImportNodeReport[];
+  suggested_agent: { name: string; instructions: string } | null;
+  reason: string;
+  /** Deployment-specific holes the create form still has to collect (e.g. bot_id). */
+  to_fill?: string[];
+}
+
+/** DS-16 — translate a Langflow/Flowise flow export. Nothing saved, nothing armed:
+ *  the draft seeds the canvas-first create view and the report is half the receipt. */
+export async function importForeignFlow(flow: unknown): Promise<ImportFlowResult> {
+  const res = await fetch(`${getApiBase()}/automations/import`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ flow }),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `import failed (${res.status})`);
+  return res.json();
+}
+
 export async function createAutomation(data: NewAutomation): Promise<Automation> {
   const res = await fetch(`${getApiBase()}/automations`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data),

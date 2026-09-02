@@ -1146,13 +1146,26 @@ becomes a drawn, dry-run-proven chain awaiting one click.
 > stored automation, and giving it an unsaved one is its own change. The receipt's "drawn"
 > half is therefore the form plus the dry-run summary rather than nodes on a canvas.
 
-**DS-16 · The migration funnel.** An importer for Langflow (and archived-Flowise) flow
-JSON: model/prompt/agent/tool nodes map onto an agent record plus a chain; code-carrying
-nodes are REFUSED with a sentence naming the no-code-injection law and the declarative
-alternative. Their format is the category's lingua franca and their users' exit path.
-Cheap after DS-10, pointless before; their flow format migrates in-engine upstream, so
-DS-16 tracks it release-by-release. **Receipt:** drop a Langflow JSON; get a governed
-chain plus an honest report of what was refused and why.
+~~**DS-16 · The migration funnel.**~~ — **SHIPPED 2026-09-02.** `import_flow.py` +
+`POST /automations/import` + an Import flow… door beside Propose. The structural fact the
+wave turns on: **every Langflow node carries its component's source in a `code` template
+field** (their engine exec()s it) — so the importer reads DECLARATIONS only, from an
+explicit allowlist table (their format migrates upstream; a table is what the quarterly
+release-tracking pass diffs). Model/agent nodes → `investigate` on the governed answer
+path (a pinned model id is DROPPED by name — model routing is the deployment's, never a
+flow file's); an Agent's system prompt arrives as a SUGGESTED agent record, never
+created; Prompt text folds into the downstream question; LLM→Slack edges become
+`{"$from": "<step>.summary"}` — the briefing's own binding; ChatInput/Output drop as
+conversation plumbing; code and open-HTTP nodes are REFUSED naming the law and the
+DS-13 declarative alternative. Validation constructs the real Automation with one honest
+carve-out: pydantic SKIPS the chain validator when a field fails, so deployment-specific
+holes (bot_id) are placeholder-filled for a second structural pass and returned as
+`to_fill` — the create form's incomplete gate collects them; structural failures still
+fail CLOSED. The REPORT renders BEFORE the canvas (the refusals are half the receipt).
+**Receipt, live 2026-09-02:** a six-node starter flow → report (dropped/folded/mapped/
+refused, each with its sentence) → seeded canvas: Trigger → Investigate → Post to Slack
+with the summary edge drawn, Create gated on "Action 2 needs bot_id", nothing saved.
+Archived-Flowise exports read through the same table.
 
 **DS-17 · Deploy is a menu of doors.** One Deploy control on the canvas enumerating what
 THIS deployment can open — schedule · webhook trigger (new, small: the trigger kinds grow
@@ -1324,8 +1337,9 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
         (opt-in `exposed_as_tool` + migration 5; the 18 static tools are the version's,
         the automations are the deployment's)   (§3.7 Phase 3 COMPLETE)
         ✅ DS-15 conversation-authors-canvas SHIPPED 2026-09-01 (propose → validate →
-        dry-run → a seeded form; nothing saved, nothing armed) · DS-16 migration
-        funnel · DS-17 deploy-as-doors
+        dry-run → a seeded form; nothing saved, nothing armed) · ✅ DS-16 migration
+        funnel SHIPPED 2026-09-02 (allowlist translation, code nodes refused by law,
+        report-before-canvas, to_fill holes for the form) · DS-17 deploy-as-doors
         (§3.7 Phase 4)
         VA-10 multi-user + admin  (hardening pass over everything above)
 ```

@@ -1,5 +1,5 @@
 "use client";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AutomationGraph } from "@/components/AutomationGraph";
 import {
@@ -7,6 +7,8 @@ import {
   AutomationRun,
   AutoCondition,
   AutoEffect,
+  importForeignFlow,
+  type ImportFlowResult,
   proposeAutomation,
   StagedProposal,
   StandingGrant,
@@ -221,6 +223,33 @@ export function AutomationsPanel({ connId }: Props) {
     }
   };
 
+  /** DS-16 — the migration funnel: a Langflow/Flowise export, translated. The report
+   *  is shown BEFORE the canvas — the refusals and their alternatives are half the
+   *  receipt, and a reader deciding whether the translation is faithful needs them in
+   *  front of the chain, not behind a toast. */
+  const [importReport, setImportReport] = useState<ImportFlowResult | null>(null);
+  const importFileRef = useRef<HTMLInputElement>(null);
+
+  const onImportFile = async (file: File) => {
+    let doc: unknown;
+    try { doc = JSON.parse(await file.text()); }
+    catch { flash("err", `${file.name} is not JSON — export the flow from the editor`); return; }
+    try { setImportReport(await importForeignFlow(doc)); }
+    catch (e) { flash("err", (e as Error).message); }
+  };
+
+  const openImportedDraft = () => {
+    const r = importReport;
+    if (!r?.draft) return;
+    setImportReport(null);
+    setCanvasFor(null);
+    setCreateName(r.name || "Imported flow");
+    setCreating({ seed: { conditions: r.draft.conditions, effects: r.draft.effects } });
+    setView("canvas");
+    const holes = r.to_fill?.length ? ` — still to fill: ${r.to_fill.join(", ")}` : "";
+    flash("ok", `Imported from ${r.source} — nothing saved yet${holes}.`);
+  };
+
   const onToggle = async (a: Automation) => {
     try { await setAutomationEnabled(a.id, !a.enabled); await load(); }
     catch { flash("err", "Could not toggle"); }
@@ -299,6 +328,19 @@ export function AutomationsPanel({ connId }: Props) {
               onClick={() => void onPropose()} style={{ padding: "5px 12px" }}>
               {proposing ? "Drafting…" : "Propose"}
             </Button>
+            <input ref={importFileRef} type="file" accept=".json,application/json"
+              style={{ display: "none" }}
+              onChange={e => {
+                const f = e.target.files?.[0];
+                e.target.value = "";
+                if (f) void onImportFile(f);
+              }} />
+            <Button variant="ghost" className="h-auto aug-fs-sm"
+              title="Translate a Langflow or Flowise flow export into a governed chain"
+              onClick={() => importFileRef.current?.click()}
+              style={{ padding: "5px 12px" }}>
+              Import flow…
+            </Button>
             <Button variant="ghost" className="h-auto"
               onClick={() => { setCanvasFor(null); setCreateName("Untitled automation");
                                setCreating({}); setView("canvas"); }}
@@ -320,6 +362,71 @@ export function AutomationsPanel({ connId }: Props) {
 
       {/* Body */}
       <div style={{ flex: 1, overflowY: "auto", padding: 20, position: "relative" }}>
+        {/* DS-16 — the translation report, shown BEFORE the canvas: the refusals and
+            their alternatives are half the receipt. */}
+        {importReport && (
+          <div data-testid="import-report" style={{ position: "absolute", inset: 0,
+            zIndex: 10, background: "var(--bg-0)", padding: "10px 16px",
+            display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="aug-fs-ui" style={{ fontWeight: 600 }}>
+                {importReport.verdict === "imported"
+                  ? `Translated “${importReport.name}” from ${importReport.source}`
+                  : importReport.verdict === "nothing_mapped"
+                    ? "Nothing in this flow mapped onto a governed step"
+                    : "Could not read this file"}
+              </span>
+              <span style={{ flex: 1 }} />
+              <Button variant="ghost" size="sm" className="aug-fs-sm"
+                onClick={() => setImportReport(null)}>Cancel</Button>
+              {importReport.verdict === "imported" && (
+                <Button variant="default" size="sm" className="aug-fs-sm"
+                  onClick={openImportedDraft}>
+                  Open on canvas — nothing saved yet
+                </Button>
+              )}
+            </div>
+            {importReport.reason && (
+              <div className="aug-fs-sm" style={{ color: "var(--t3)" }}>{importReport.reason}</div>
+            )}
+            {!!importReport.to_fill?.length && (
+              <div className="aug-fs-sm" style={{ color: "var(--amb4)" }}>
+                Still to fill on the canvas: {importReport.to_fill.join(" · ")}
+              </div>
+            )}
+            {importReport.suggested_agent && (
+              <div className="aug-fs-sm" style={{ padding: "8px 10px",
+                border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+                color: "var(--t2)" }}>
+                The flow&rsquo;s agent proposes a NEW agent record (nothing created):{" "}
+                <b>{importReport.suggested_agent.name}</b> —{" "}
+                <span style={{ color: "var(--t3)" }}>
+                  {importReport.suggested_agent.instructions.slice(0, 160)}
+                  {importReport.suggested_agent.instructions.length > 160 ? "…" : ""}
+                </span>{" "}
+                Create it from Agent Ops → Roster, then bind the step to it.
+              </div>
+            )}
+            <div style={{ flex: 1, overflowY: "auto", display: "flex",
+              flexDirection: "column", gap: 4 }}>
+              {importReport.report.map(row => (
+                <div key={row.node_id} className="aug-fs-sm" style={{ display: "flex",
+                  gap: 8, padding: "6px 9px", border: "1px solid var(--b1)",
+                  borderRadius: "var(--r2)", alignItems: "baseline" }}>
+                  <span style={{ flexShrink: 0, fontWeight: 600, color:
+                    row.disposition === "mapped" ? "var(--grn4)"
+                    : row.disposition === "refused" ? "var(--red4)"
+                    : "var(--t3)" }}>
+                    {row.disposition}
+                  </span>
+                  <span style={{ flexShrink: 0, fontFamily: "var(--font-mono)",
+                    color: "var(--t2)" }}>{row.component}</span>
+                  <span style={{ color: "var(--t3)" }}>{row.detail}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         {showSpinner && <div style={{ color: "var(--t3)", fontSize: 13 }}>Loading…</div>}
 
         {view === "list" && !showSpinner && (
