@@ -97,6 +97,11 @@ ACTIONS: tuple[PaletteEntry, ...] = (
     PaletteEntry("metric_value", "action", "Governed metric",
                  "Read a metric by its approved definition — the number the registry "
                  "defines, filters and caveats included", "metric", 80),
+    # VA-9d — LAST in the action order, and normally dimmed. The allowlist is the off
+    # state, so on a fresh clone this row says so and names the door that changes it.
+    PaletteEntry("mcp_call", "action", "Call an MCP tool",
+                 "Run a read-only tool on a server this deployment allows — capped, "
+                 "spanned and audited like any other outbound call", "plug", 95),
     PaletteEntry("trusted_query", "action", "Trusted query",
                  "Run a vetted query and publish its rows — the one output in this "
                  "plane a step can run once per item of", "table", 90),
@@ -159,6 +164,13 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         from aughor.semantic.metrics import list_metrics
         return len(list_metrics(connection_id=conn_id) if conn_id else list_metrics())
 
+    def mcp_servers() -> int:
+        """Servers that could actually be called. A DISABLED server is not one, and
+        counting rows would have said otherwise — the same distinction this module draws
+        for a revoked grant and a disabled Slack bot."""
+        from aughor.mcpservers.store import list_servers
+        return len(list_servers(include_disabled=False))
+
     def trusted() -> int:
         from aughor.semantic.trusted_queries import list_trusted
         return len(list_trusted(conn_id or ""))
@@ -192,6 +204,14 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         "metric_value": _Prereq(metrics, "No metrics defined for this connection — "
                                          "define one in the Semantic Layer, then this "
                                          "step can read its governed value."),
+        # VA-9d — the rule this module states, applied to a third party: a kind whose
+        # required config key NAMES another object is available only when at least one
+        # such object exists here. `server_id` names a row in the allowlist, and an empty
+        # allowlist is this wave's whole off state — so a fresh clone reads the truth
+        # rather than being offered a step whose picker would be empty.
+        "mcp_call": _Prereq(mcp_servers, "No MCP servers on this deployment — add one "
+                                         "under MCP servers, then this step can call its "
+                                         "read-only tools."),
         "trusted_query": _Prereq(trusted, "No trusted queries on this connection — "
                                           "promote a verified answer first, then this "
                                           "step can run it."),

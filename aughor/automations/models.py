@@ -118,6 +118,13 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # defines rather than one an LLM re-derived.
     "metric_value":   ("metric",),
     "trusted_query":  ("query_id",),
+    # VA-9d — WHICH allowlisted server, and WHICH of its discovered tools. Both at
+    # construction like every sibling: a step naming neither would ask nobody for nothing,
+    # and "looking schedulable" is the expensive kind of broken. Note what is NOT here —
+    # there is no url, no command and no transport. A step names a row in the allowlist; it
+    # cannot describe a destination, which is what keeps "no node is code" true across a
+    # boundary that leaves the platform.
+    "mcp_call":       ("server_id", "tool"),
 }
 
 
@@ -235,7 +242,7 @@ class Effect(BaseModel):
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
                   "slack_post", "subchain", "integration_call",
-                  "metric_value", "trusted_query"]
+                  "metric_value", "trusted_query", "mcp_call"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.

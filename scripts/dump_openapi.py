@@ -33,6 +33,22 @@ def _isolate_stores() -> None:
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))
 
+    # VA-9d — the DIRECTORY stores, which this dump never isolated: the docstring above
+    # said "every store honours its AUGHOR_*_DB override", and that sentence was the gap —
+    # a store keyed on a path had no pin here at all. Latent rather than bleeding (these
+    # write when USED, and a spec dump only imports and calls `app.openapi()`), but an
+    # unpinned MCP allowlist is the wrong one to leave latent: it is a list of outbound
+    # destinations. `tests/conftest.py` isolates exactly this family; the two are siblings
+    # and a new store belongs in BOTH.
+    #
+    # ⚠️ The DS-17 branch adds this same block. Whichever merges first, the second
+    # resolves to one copy — the lists are identical apart from AUGHOR_MCPSERVERS_DIR.
+    for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
+                     "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR", "AUGHOR_INTEGRATIONS_DIR",
+                     "AUGHOR_MCPSERVERS_DIR"):
+        os.environ.setdefault(_dir_env, tmp)
+    os.environ.setdefault("AUGHOR_QDRANT_PATH", os.path.join(tmp, "qdrant"))
+
 
 def main() -> None:
     _isolate_stores()

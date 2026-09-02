@@ -3382,7 +3382,9 @@ export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_ap
  *  it — the model's own docstring says they are "not authored by hand". */
 export type EffectKind =
   | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain"
-  | "integration_call" | "metric_value" | "trusted_query";
+  | "integration_call" | "metric_value" | "trusted_query"
+  // VA-9d — a read-only tool on an allowlisted foreign MCP server.
+  | "mcp_call";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3402,6 +3404,10 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
   integration_call: ["connection_id", "operation"],
   metric_value: ["metric"], trusted_query: ["query_id"],
+  // VA-9d — WHICH allowlisted server and WHICH of its discovered tools. Neither is
+  // bindable: a `$from` on either would turn a named destination back into an
+  // arbitrary one, and the save refuses it.
+  mcp_call: ["server_id", "tool"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a

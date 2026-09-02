@@ -556,6 +556,11 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # having to iterate to find out. See LIST_PUBLISHED below — declaring the key is
     # not enough on its own, because a closed set is otherwise refused as a fan source.
     "trusted_query":  ("rows", "columns", "count"),
+    # VA-9d — a foreign tool's TEXT, plus whether we had to cut it. Closed and small on
+    # purpose: this slice carries only text blocks (an image flattened into a chain context
+    # is a megabyte no downstream step can read), and `truncated` is published rather than
+    # implied so a step reading `text` can tell a whole answer from half of one.
+    "mcp_call":       ("text", "truncated"),
 }
 
 #: DS-12 — the published keys that are LISTS, and may therefore be fanned over.
@@ -612,6 +617,18 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # re-point at runtime would not be the governed metric any more.
     "metric_value":   (),
     "trusted_query":  (),
+    # VA-9d — the arguments bag, exactly as `integration_call` carries its `params`: the
+    # individual inputs are the TOOL's (its own JSON Schema), so the port a chain binds
+    # into is a key inside `arguments` and `collect_refs` walks it.
+    #
+    # ⚠️ `server_id` and `tool` are deliberately NOT bindable, and this is the DS-11 trap
+    # restated: `BINDABLE_FIELDS` DECLARES the input ports, but `resolve()` walks the WHOLE
+    # config, so every kind in this plane will happily substitute a binding into a field
+    # its tuple omits. Harmless on a channel name; not harmless on the two fields that
+    # choose WHICH third party gets called — an upstream value reaching them would turn a
+    # named destination back into an arbitrary one. Refused on the model, where a save
+    # actually fails.
+    "mcp_call":       ("arguments",),
 }
 
 
@@ -697,6 +714,53 @@ def _malformed_any(value: Any) -> Optional[str]:
     return None
 
 
+def _mcp_problem(effect: Any, alias: str) -> Optional[str]:
+    """A ``mcp_call`` step naming a server or tool this deployment cannot use, as a
+    sentence — or None. Non-MCP steps are always fine here.
+
+    Four refusals, all at SAVE, and all of them things the engine would otherwise discover
+    at 07:00 against somebody else's machine.
+
+    The first is the DS-11 trap restated, and it matters MORE here than it did there.
+    `BINDABLE_FIELDS` declares `arguments` as this kind's only input port, but it DECLARES —
+    `resolve()` walks the whole config — so a `{"$from": …}` on `server_id` would be
+    substituted at run time and the step would call whichever third party an upstream value
+    happened to name. That is not a worse version of the existing behaviour; it is an
+    arbitrary-destination call wearing a named one's clothes, which is exactly what the
+    allowlist exists to prevent.
+    """
+    if effect_kind(effect) != "mcp_call":
+        return None
+    from aughor.mcpservers import store as mcp_store
+    from aughor.mcpservers.discover import tool_named
+    from aughor.mcpservers.models import CALLABLE
+
+    cfg = effect_config(effect)
+    for field in ("server_id", "tool"):
+        if not isinstance(cfg.get(field), str):
+            return (f"step '{alias}' binds '{field}' — which server a step calls and which "
+                    f"tool it calls there must be written, not read from an earlier step")
+
+    server_id = str(cfg.get("server_id", ""))
+    server = mcp_store.get_server(server_id)
+    if server is None:
+        known = ", ".join(s.name or s.id for s in mcp_store.list_servers())
+        return (f"step '{alias}' names MCP server '{server_id}', which is not on this "
+                f"deployment's allowlist — it has {known or 'no servers registered'}")
+
+    tool_name = str(cfg.get("tool", ""))
+    tool = tool_named(server_id, tool_name)
+    if tool is None:
+        return (f"step '{alias}' names tool '{tool_name}' on '{server.name or server_id}', "
+                f"which its discovered roster does not have — run Discover if the server "
+                f"has changed")
+    if tool.disposition != CALLABLE:
+        # The roster's own sentence, at save. A chain that would always refuse at 07:00 is
+        # one that "looks schedulable", which is K1's expensive kind of broken.
+        return f"step '{alias}' calls '{tool_name}', which this deployment refuses: {tool.reason}"
+    return None
+
+
 def _integration_problem(effect: Any, alias: str) -> Optional[str]:
     """An ``integration_call`` step naming something the roster does not have, as a
     sentence — or None. Non-integration steps are always fine here.
@@ -769,6 +833,12 @@ def validate_chain(effects: list) -> Optional[str]:
         # unchecked would make it the one reference in this plane that surfaces at 09:00
         # as a provider's 404 — K1's rule inverted, and B1's whole argument one field over.
         problem = _integration_problem(effect, alias)
+        if problem:
+            return problem
+        # VA-9d — the same argument, across a boundary that leaves the platform. A step
+        # naming a server nobody allowlisted, or a tool this deployment refuses, is refused
+        # at save rather than at 07:00 against a third party's machine.
+        problem = _mcp_problem(effect, alias)
         if problem:
             return problem
         # DS-6 — the route. "Otherwise of s2" runs exactly when s2's guard was evaluated

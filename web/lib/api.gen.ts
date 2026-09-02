@@ -5632,6 +5632,107 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp-servers": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Servers
+         * @description Every server this deployment may reach. An EMPTY list is the normal fresh state.
+         */
+        get: operations["list_servers_mcp_servers_get"];
+        put?: never;
+        /**
+         * Create Server
+         * @description Write a server down. Nothing is contacted — see the module docstring.
+         */
+        post: operations["create_server_mcp_servers_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers/{server_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Update Server
+         * @description Replace the authored fields of a server, keeping its id, roster and timestamps.
+         *
+         *     An empty `auth_header` in the body means "leave it alone", not "clear it". The field is
+         *     never returned by any read — it is dropped, not masked — so a client round-tripping this
+         *     object cannot send back what it was never given, and treating the absence as a clear
+         *     would erase the credential on every rename. Clearing is `auth_header: "-"`, stated in
+         *     the model's own vocabulary rather than left as a trick.
+         */
+        put: operations["update_server_mcp_servers__server_id__put"];
+        post?: never;
+        /**
+         * Remove Server
+         * @description Forget a server and its roster. A step naming it will refuse at the door, by name.
+         */
+        delete: operations["remove_server_mcp_servers__server_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers/{server_id}/discover": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Discover Server
+         * @description Ask the server what it offers, classify every tool, replace the roster.
+         *
+         *     A server that is unreachable answers 502 rather than 500: the failure is upstream and
+         *     the sentence says whose. A 500 here would send a reader to read OUR logs about somebody
+         *     else's machine.
+         */
+        post: operations["discover_server_mcp_servers__server_id__discover_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers/{server_id}/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Server Health
+         * @description Can we reach it right now? A LIVE probe, unlike the roster — this is the button a
+         *     person presses when that is exactly the question, and a cached answer answers a
+         *     different one. It refreshes the roster on the way through, so a green health check and
+         *     a stale list cannot disagree.
+         */
+        get: operations["server_health_mcp_servers__server_id__health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/metastore/catalogs/{catalog_id}/volumes": {
         parameters: {
             query?: never;
@@ -10143,7 +10244,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query" | "mcp_call";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**
@@ -11142,6 +11243,53 @@ export interface components {
         RunNowRequest: {
             /** Run Id */
             run_id?: string | null;
+        };
+        /**
+         * ServerRequest
+         * @description The authored half of a server row.
+         *
+         *     Every field the model carries that a person may set is here. DS-14's lesson, in HTTP:
+         *     a field missing from the REQUEST model is accepted, echoed back, and silently dropped —
+         *     200, and the value never persisted. A new field on `McpServer` belongs here in the same
+         *     change.
+         */
+        ServerRequest: {
+            /** Args */
+            args?: string[];
+            /**
+             * Auth Header
+             * @default
+             */
+            auth_header: string;
+            /**
+             * Command
+             * @default
+             */
+            command: string;
+            /**
+             * Enabled
+             * @default true
+             */
+            enabled: boolean;
+            /** Env */
+            env?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+            /**
+             * Transport
+             * @default http
+             */
+            transport: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
         };
         /** SlackBotBody */
         SlackBotBody: {
@@ -22013,6 +22161,199 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_servers_mcp_servers_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    create_server_mcp_servers_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_server_mcp_servers__server_id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ServerRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_server_mcp_servers__server_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    discover_server_mcp_servers__server_id__discover_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    server_health_mcp_servers__server_id__health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Validation Error */

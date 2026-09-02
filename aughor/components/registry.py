@@ -55,6 +55,16 @@ FAMILIES: tuple[str, ...] = (
     # holds, not what this version ships. They are the class of component a canvas
     # competitor cannot copy without a semantic layer to copy it from.
     "metric", "trusted_query",
+    # VA-9d — tools on somebody ELSE's MCP server. A separate family from `mcp_tool`
+    # rather than more rows in it, because the two point in opposite directions: an
+    # `mcp_tool` is one WE serve outward, a `remote_tool` is one we may CALL. They have
+    # different governors, different threat models and different answers to "may this be
+    # placed on a canvas", and a flat family holding both would start answering
+    # confidently and wrongly the first time a surface asked.
+    #
+    # DEPLOYMENT-SHAPED and normally EMPTY: the allowlist is the off state, so a fresh
+    # clone reports no rows here because there is nowhere to go.
+    "remote_tool",
 )
 
 #: The display states a component may carry. **Empty by intent** — nothing in this
@@ -80,6 +90,12 @@ GOVERNORS: tuple[str, ...] = (
     "aughor.govern.outbound",
     "aughor.semantic.metrics",       # the metric registry: its definition and its lifecycle
     "aughor.semantic.trusted_queries",  # the vetted-SQL store a trusted query is read from
+    # VA-9d — the ONE door to a foreign MCP server: the allowlist check, the roster
+    # lookup, the read-only gate, then `govern.outbound`. Named here rather than naming
+    # `govern.outbound` directly, because the seam governs the CALL while this module
+    # governs whether there is one to make — and the refusals a reader wants explained
+    # (not allowlisted, not discovered, declared mutating) all live here.
+    "aughor.mcpservers.call",
 )
 
 
@@ -119,6 +135,7 @@ class Component(BaseModel):
     #: it — a layout, a favourite, a DS-14 tool name.
     id: str
     family: Literal["trigger", "effect", "connector", "platform_tool", "mcp_tool",
+                    "remote_tool",
                     "declared_action", "integration", "metric", "trusted_query"]
     kind: str
     label: str
@@ -311,6 +328,63 @@ def _mcp_tool_components() -> list[Component]:
     return out
 
 
+def _remote_tool_components() -> list[Component]:
+    """VA-9d — the tools on allowlisted foreign servers, as this deployment classified them.
+
+    Read from the STORED roster, not by discovering. The distinction is the whole of DS-10's
+    availability law applied to a third party: `_integration_components` says availability
+    is "measured rather than probed", and this is the same choice for a stronger reason —
+    probing here means opening a connection, or spawning a process, per render. A palette
+    that did that would be paying a subprocess for a picture.
+    """
+    from aughor.mcpservers import store as mcp_store
+    from aughor.mcpservers.models import CALLABLE
+
+    servers = {s.id: s for s in mcp_store.list_servers()}
+    out: list[Component] = []
+    for server_id, tools in mcp_store.all_rosters().items():
+        server = servers.get(server_id)
+        if server is None:
+            continue          # a roster whose server was deleted; the store purges these
+        for n, tool in enumerate(tools):
+            if server.enabled and tool.disposition == CALLABLE:
+                availability, reason = "ready", ""
+            elif not server.enabled:
+                # The SERVER's state dims every one of its rows; a tool's own disposition
+                # dims one. Two levels, the shape `_integration_components` already draws
+                # for a grant whose scope is missing versus a grant that was revoked.
+                availability, reason = "needs_setup", (
+                    f"'{server.name or server_id}' is switched off — turn it on to use "
+                    f"its tools.")
+            else:
+                # LISTED and refused, never hidden. A roster that hid what a server offers
+                # is the catalogue-that-lies failure this registry exists to end, and the
+                # sentence is the roster's own so three surfaces cannot word it three ways.
+                availability, reason = "unavailable", tool.reason
+            out.append(Component(
+                # Namespaced by SERVER, because two servers may both offer `search`. The
+                # id is what a layout, a favourite and a step will remember.
+                id=f"remote_tool:{server_id}:{tool.name}",
+                family="remote_tool", kind=tool.name,
+                label=tool.title or tool.name.replace("_", " "),
+                description=(tool.description or "").strip().split("\n")[0][:300],
+                icon="plug", priority=10 * (n + 1),
+                inputs=_ports_from_json_schema(tool.input_schema),
+                # The OPEN set: a foreign tool returns whatever it returns, and this slice
+                # carries only its text. Claiming a closed set would let `validate_chain`
+                # refuse a binding that would have worked.
+                outputs=None,
+                availability=availability, reason=reason,
+                # No. An agent proposing a call to a third party is a different wave with
+                # its own gate, and saying yes here would promise DS-14 a surface that
+                # does not exist.
+                exposable_as_tool=False,
+                governed_by="aughor.mcpservers.call",
+                badges=[],
+            ))
+    return out
+
+
 def _declared_action_components(conn_id: Optional[str]) -> list[Component]:
     """The connection's declared, governed writes.
 
@@ -493,6 +567,7 @@ _COLLECTORS: dict[str, Any] = {
     "connector": lambda conn_id: _connector_components(),
     "platform_tool": _platform_tool_components,
     "mcp_tool": lambda conn_id: _mcp_tool_components(),
+    "remote_tool": lambda conn_id: _remote_tool_components(),
     "declared_action": _declared_action_components,
     "integration": _integration_components,
     "metric": _metric_components,
