@@ -169,6 +169,47 @@ def _validate_agent_packs(pack_ids: Optional[list]) -> None:
                             detail=f"unknown pack id(s): {', '.join(missing)}")
 
 
+def _validate_agent_grants(tool_grants: Optional[list], connection_id: str,
+                           schema_scope: str = "") -> None:
+    """Refuse a grant that could never propose anything — at WRITE time, in the words
+    the runtime would use, instead of at ask time inside a background turn.
+
+    A grant NAMES a declared action (`propose_one` refuses ids outside the connection's
+    ontology roster); a wildcard would re-create the blanket grant target-bound standing
+    grants were built to avoid, so it is refused with that sentence. Existence is checked
+    only when the agent is BOUND to a connection — an unbound agent resolves its roster
+    on the ask's connection, and there is nothing to check against yet. The roster read
+    failing open mirrors `_validate_agent_packs`: a broken ontology load must not block
+    an agent save; the runtime's own `no_actions` refusal still holds.
+    """
+    if not tool_grants:
+        return
+    bad = [g for g in tool_grants if not isinstance(g, str) or not g.strip()]
+    if bad:
+        raise HTTPException(status_code=422, detail="a grant must be an action id")
+    if any(g.strip() == "*" for g in tool_grants):
+        raise HTTPException(
+            status_code=422,
+            detail="a grant names an action, never a roster — '*' would re-create the "
+                   "blanket grant that target-bound standing grants exist to avoid")
+    if not connection_id:
+        return
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_scope or None)
+        declared = set((getattr(graph, "kinetic_actions", None) or {}).keys()) if graph else set()
+    except Exception:
+        return
+    if not declared:
+        return
+    missing = [g for g in tool_grants if g not in declared]
+    if missing:
+        raise HTTPException(
+            status_code=422,
+            detail=(f"unknown action id(s) for this connection: {', '.join(sorted(missing))}. "
+                    f"Declared: {', '.join(sorted(declared)) or 'none'}"))
+
+
 class UserAgentCreate(BaseModel):
     name: str
     instructions: str = ""
@@ -176,6 +217,9 @@ class UserAgentCreate(BaseModel):
     schema_scope: str = ""
     doc_ids: list[str] = []
     pack_ids: list[str] = []
+    #: The declared actions this agent may PROPOSE, by id — never execute (VA-9c's rule,
+    #: now stored: the column landed 2026-09-02 after a season as a phantom).
+    tool_grants: list[str] = []
 
 
 class UserAgentPatch(BaseModel):
@@ -185,6 +229,7 @@ class UserAgentPatch(BaseModel):
     schema_scope: Optional[str] = None
     doc_ids: Optional[list[str]] = None
     pack_ids: Optional[list[str]] = None
+    tool_grants: Optional[list[str]] = None
     enabled: Optional[bool] = None
 
 
@@ -237,11 +282,13 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
 def create_user_agent(body: UserAgentCreate):
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
     _validate_agent_packs(body.pack_ids)
+    _validate_agent_grants(body.tool_grants, body.connection_id, body.schema_scope)
     from aughor.org.context import current_org_id
     from aughor.custom_agents import create_agent
     agent = create_agent(body.name, instructions=body.instructions,
                          connection_id=body.connection_id, schema_scope=body.schema_scope,
                          doc_ids=body.doc_ids, pack_ids=body.pack_ids,
+                         tool_grants=body.tool_grants,
                          owner=current_org_id() or "")
     return agent.model_dump()
 
@@ -259,10 +306,21 @@ def get_user_agent(agent_id: str):
 def patch_user_agent(agent_id: str, body: UserAgentPatch):
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
     _validate_agent_packs(body.pack_ids)
-    from aughor.custom_agents import update_agent
+    from aughor.custom_agents import get_agent, update_agent
+    if body.tool_grants is not None:
+        # Against the EFFECTIVE binding: a patch may change grants without restating the
+        # connection, and validating against "" would skip the roster check exactly when
+        # the agent is bound.
+        stored = get_agent(agent_id)
+        if stored is None:
+            raise HTTPException(status_code=404, detail="No such agent")
+        eff_conn = body.connection_id if body.connection_id is not None else stored.connection_id
+        eff_schema = body.schema_scope if body.schema_scope is not None else stored.schema_scope
+        _validate_agent_grants(body.tool_grants, eff_conn, eff_schema)
     agent = update_agent(agent_id, name=body.name, instructions=body.instructions,
                          connection_id=body.connection_id, schema_scope=body.schema_scope,
                          doc_ids=body.doc_ids, pack_ids=body.pack_ids,
+                         tool_grants=body.tool_grants,
                          enabled=body.enabled)
     if agent is None:
         raise HTTPException(status_code=404, detail="No such agent")

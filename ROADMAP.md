@@ -64,11 +64,12 @@ plane — see §7.
 
 **Honest limits, same date:** a fan-out has no
 list to read from any effect kind but the declared
-action's open outcome (§3.2); **`UserAgent.tool_grants` is a phantom** — consumed by
-`action_tools.py` and named in `GOVERNING_FIELDS`, but not a column, never loaded by
-`_row_to_agent`, absent from `_PATCHABLE`/`UserAgentCreate`/`UserAgentPatch`, so no agent can
-hold a grant and `propose_action` is unreachable everywhere (persisting it = a migration +
-six files); no user-scoped credential store anywhere; warehouse connections have **no
+action's open outcome (§3.2); ~~`UserAgent.tool_grants` is a phantom~~ — **RETIRED
+2026-09-02**: migration 6 stored the column, `_row_to_agent`/`_PATCHABLE`/create/patch all
+carry it, grants validate at write against the connection's declared roster (a `*` is
+refused by name — "a grant names an action, never a roster"), and `propose_action` is
+reachable end to end while staying PROPOSE-only; no user-scoped credential store anywhere;
+warehouse connections have **no
 owner**; no RBAC on `/agents/custom*`. (`telemetry.py`'s Langfuse backend, dead here on
 2026-08-30, has since been repaired to ride the OTel exporter — OA·LF-1.)
 
@@ -98,10 +99,10 @@ GFM/CSV tables, deep links.
 **Arc VA · the agent platform** — skills plane (VA-1), delegation (VA-2), OTLP (VA-3),
 automations dataflow + run canvas (VA-4a…4e), trace excellence (VA-5), agent alerting (VA-6),
 instruction/prompt management (VA-7), guardrail plane (VA-8), outbound seam (VA-9a),
-automations-run-as-agents (VA-9b), the propose-only action tool (VA-9c — **partial**: the
-law "a grant is permission to PROPOSE, never to EXECUTE" and the `propose_action` tool are
-live, but `tool_grants` is a phantom field — §1 honest limits — so no agent can yet hold a
-grant; the tool correctly serves nothing rather than a tool that always refuses).
+automations-run-as-agents (VA-9b), the propose-only action tool (VA-9c — **completed
+2026-09-02**: the law "a grant is permission to PROPOSE, never to EXECUTE" and the
+`propose_action` tool were live from the start; `tool_grants` is now a stored column, so an
+agent can hold a grant across restarts and the tool serves its roster).
 
 **VA-12/13/14 (2026-08-30)** — canvas authoring (Add Trigger / Add Action), the
 `investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
@@ -496,8 +497,8 @@ finishes a direction already chosen.
 > - **DS-5** — shipped as the **Map** tab ("Design" is the automation button AND its
 >   canvas mode; "Canvas" is Data Canvas). Zero server cost: two undeclared wire fields
 >   (`SlackBotSummary.agent_id`, `Automation.agent_id`) + three client filters bought
->   every relation. It deliberately draws **no grants spoke** — `tool_grants` is a
->   phantom (§1 honest limits).
+>   every relation. It deliberately drew **no grants spoke** while `tool_grants` was a
+>   phantom; the column landed 2026-09-02, so the spoke is now buildable (unbuilt).
 
 > **DS-1R · Canvas-first, decided by the user 2026-09-02 and SHIPPED same day** — *"the
 > actual workflow should be the primary driver.. Design may read from the actual
@@ -1306,9 +1307,9 @@ NEXT (order within a band is the user's knob)
                                    three bespoke QdrantClient call sites joined the
                                    seam — §3.6)
   DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
-  tool_grants column              (turn VA-9c's phantom into a stored grant — §1 honest limits;
-                                   migration + store/create/patch surfaces; grants stay
-                                   PROPOSE-only)
+  ✅ tool_grants column SHIPPED 2026-09-02  (migration 6 + store/create/patch + write-time
+                                   roster validation + the editor's grants list; grants
+                                   stay PROPOSE-only — §1 limit retired)
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 

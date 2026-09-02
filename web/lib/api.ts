@@ -5531,6 +5531,9 @@ export interface UserAgent {
   schema_scope: string;
   doc_ids: string[];
   pack_ids: string[];
+  /** VA-9c — declared actions this agent may PROPOSE (never execute). Stored since
+   *  2026-09-02; before that the field was a phantom and always []. */
+  tool_grants: string[];
   owner: string;
   enabled: boolean;
   last_eval: { passed: number; total: number; at: string } | null;
@@ -5614,9 +5617,26 @@ export async function listUserAgents(): Promise<UserAgent[]> {
   return res.json();
 }
 
+/** VA-9c — the declared-action roster grants pick from (keys are the grantable ids).
+ *  Empty on any failure: a broken ontology read must not take the agent editor down,
+ *  and an empty roster renders as its own honest sentence. */
+export async function getActionRoster(
+  connId: string, schema?: string,
+): Promise<Record<string, { title?: string; description?: string }>> {
+  try {
+    const qs = new URLSearchParams({ connection_id: connId });
+    if (schema) qs.set("schema_name", schema);
+    const res = await fetch(`${getApiBase()}/ontology/kinetic-actions?${qs}`);
+    if (!res.ok) return {};
+    return await res.json();
+  } catch {
+    return {};
+  }
+}
+
 export async function createUserAgent(body: {
   name: string; instructions?: string; connection_id?: string; schema_scope?: string;
-  doc_ids?: string[]; pack_ids?: string[];
+  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[];
 }): Promise<UserAgent> {
   const res = await fetch(`${getApiBase()}/agents/custom`, {
     method: "POST", headers: { "Content-Type": "application/json" },
@@ -5660,7 +5680,7 @@ export async function createUserAgentFromTemplate(body: {
 
 export async function patchUserAgent(agentId: string, body: {
   name?: string; instructions?: string; connection_id?: string; schema_scope?: string;
-  doc_ids?: string[]; pack_ids?: string[]; enabled?: boolean;
+  doc_ids?: string[]; pack_ids?: string[]; tool_grants?: string[]; enabled?: boolean;
 }): Promise<UserAgent> {
   const res = await fetch(`${getApiBase()}/agents/custom/${encodeURIComponent(agentId)}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" },
