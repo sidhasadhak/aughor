@@ -30,6 +30,7 @@ import {
   createUserAgentFromTemplate, deleteAgentGolden, deleteUserAgent,
   evaluateUserAgent, getAgentGuardrails, getAgentObservability, getAgents,
   getConnections, getJobs,
+  getActionRoster,
   getLlmConfig, getPacks, listAgentGoldens, listAgentRevisions,
   listAgentTemplates, listDocuments, listUserAgents, patchAgent, patchUserAgent,
   restoreAgentRevision, setAgentGuardrails,
@@ -368,6 +369,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
     name: agent.name, instructions: agent.instructions,
     connection_id: agent.connection_id, schema_scope: agent.schema_scope,
     doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
+    tool_grants: agent.tool_grants,
   });
   const [connections, setConnections] = useState<Connection[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
@@ -385,6 +387,18 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
     listAgentGoldens(agent.id).then(setGoldens).catch(() => {});
   }, [agent.id]);
 
+  // VA-9c — the declared-action roster grants pick from, keyed to the CONNECTION the
+  // form currently shows (not the saved one): picking a connection immediately offers
+  // that connection's actions, the same read the runtime's propose tool will do.
+  const [roster, setRoster] = useState<Record<string, { title?: string }>>({});
+  useEffect(() => {
+    if (!form.connection_id) { setRoster({}); return; }
+    let live = true;
+    getActionRoster(form.connection_id, form.schema_scope || undefined)
+      .then(r => { if (live) setRoster(r); });
+    return () => { live = false; };
+  }, [form.connection_id, form.schema_scope]);
+
   // Re-seed the form when the SAVED configuration moves under it — which happens on a
   // restore. Without this the fields keep showing the configuration that was just replaced,
   // and the next "Save changes" quietly undoes the restore the user asked for. Keyed on
@@ -394,6 +408,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
       name: agent.name, instructions: agent.instructions,
       connection_id: agent.connection_id, schema_scope: agent.schema_scope,
       doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
+      tool_grants: agent.tool_grants,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent.config_rev]);
@@ -430,7 +445,7 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
     finally { setEvaluating(false); }
   };
 
-  const toggleIn = (key: "doc_ids" | "pack_ids", id: string) =>
+  const toggleIn = (key: "doc_ids" | "pack_ids" | "tool_grants", id: string) =>
     setForm(f => ({ ...f, [key]: f[key].includes(id)
       ? f[key].filter(x => x !== id) : [...f[key], id] }));
 
@@ -503,6 +518,54 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
           </div>
         </div>
       )}
+
+      {/* VA-9c — grants: which declared actions this agent may PROPOSE. The copy says
+          propose-never-execute in place, because the difference is the entire approvals
+          plane and a checkbox is exactly where someone decides without reading a spec. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+        <span className="aug-label">Actions this agent may propose</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          A grant lets the agent PROPOSE the action — every proposal still waits in the
+          inbox for a human to accept. Nothing here lets it execute.
+        </span>
+        {!form.connection_id ? (
+          <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+            Bind a connection first — grants name that connection&rsquo;s declared actions.
+          </span>
+        ) : (() => {
+          // Union with current grants, so an action UNdeclared since it was granted
+          // stays visible (and removable) instead of silently vanishing from the form
+          // while still governing the agent.
+          const ids = [...new Set([...Object.keys(roster), ...form.tool_grants])].sort();
+          return ids.length === 0 ? (
+            <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
+              No declared actions on this connection yet — declare one in the ontology
+              (Actions), then grant it here.
+            </span>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 130,
+              overflowY: "auto", padding: "8px 10px", border: "1px solid var(--b1)",
+              borderRadius: "var(--r2)" }}
+              data-testid="agent-grants">
+              {ids.map(id => (
+                <label key={id} className="aug-fs-sm"
+                  style={{ display: "flex", alignItems: "center", gap: 8,
+                  color: "var(--t2)", cursor: "pointer" }}>
+                  <input type="checkbox" checked={form.tool_grants.includes(id)}
+                    onChange={() => toggleIn("tool_grants", id)} />
+                  <span style={{ fontFamily: "var(--font-mono)" }}>{id}</span>
+                  {roster[id]?.title ? (
+                    <span style={{ color: "var(--t3)", overflow: "hidden",
+                      textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{roster[id].title}</span>
+                  ) : !(id in roster) && (
+                    <span style={{ color: "var(--amb4)" }}>no longer declared</span>
+                  )}
+                </label>
+              ))}
+            </div>
+          );
+        })()}
+      </div>
 
       {/* the agent's own regression suite */}
       <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",

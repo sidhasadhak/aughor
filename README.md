@@ -145,7 +145,8 @@ aughor/
 | `AUGHOR_CODER_MODEL` / `AUGHOR_NARRATOR_MODEL` | — | Per-role models (Settings → Models overrides env) |
 | `AUGHOR_FALLBACK_BACKENDS` | Settings choice | Pin the failover chain order (`none` disables it) |
 | `AUGHOR_DEFAULT_POSTGRES_DSN` | — | Pre-loads a Postgres connection on startup |
-| `AUGHOR_QDRANT_URL` | `http://localhost:6333` | Vector store for semantic search (`semantic` extra) |
+| `AUGHOR_QDRANT_PATH` | `data/qdrant` | Embedded vector store for semantic search (`semantic` extra) — in-process, no server |
+| `AUGHOR_QDRANT_URL` | — | Set to pin a Qdrant *server* instead of the embedded store (e.g. `http://localhost:6333`) |
 
 **Before exposing Aughor beyond `localhost`,** read [SECURITY.md](SECURITY.md) — the defaults assume a trusted single-user machine (`AUGHOR_API_KEY` gates requests when set; `AUGHOR_CORS_ORIGINS` scopes browsers; `AUGHOR_SECRET_KEY` encrypts stored credentials).
 
@@ -160,7 +161,7 @@ uv sync                                   # serving core only
 | Extra | Adds | Without it |
 |---|---|---|
 | `export` | PDF / PowerPoint reports | Export answers **501**, naming the extra |
-| `semantic` | Semantic search over past analyses | Reads return no hits, writes no-op (also needs Qdrant) |
+| `semantic` | Semantic search over past analyses (embedded Qdrant — no server needed) | Reads return no hits, writes no-op |
 | `fastread` | Faster bulk table reads (polars) | Falls back to DuckDB automatically |
 | `warehouse` | Snowflake, BigQuery, MySQL | Those connectors are unavailable |
 | `crm`, `cloud-storage`, `knowledge-sync` | Stripe/HubSpot/Salesforce, Azure Blob, Confluence/Notion | Those connectors are unavailable |

@@ -33,6 +33,7 @@ import {
   Handle,
   MarkerType,
   MiniMap,
+  type OnConnectEnd,
   Panel,
   Position,
   ReactFlow,
@@ -43,7 +44,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import {
-  AutomationAuthor, updatePayload, type Draft,
+  blankDraft, DesignControls, StepInspector, updatePayload, type Draft,
 } from "@/components/automations/AutomationAuthor";
 import {
   AutomationPalette, PALETTE_DRAG_TYPE, readPaletteDrag,
@@ -63,8 +64,9 @@ import {
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, ELSE_FIELD, FAN_FIELD, GUARD_FIELD,
-  guardSentences, layoutToPersist, liveStatuses, pasteEffect, producedByAlias,
-  rootAliases, viewportCenter, visibleFields, type LiveStatus, type Vocabulary,
+  guardSentences, landPrebound, layoutToPersist, liveStatuses, pasteEffect,
+  producedByAlias, rootAliases, viewportCenter, visibleFields,
+  type EdgeDrop, type LiveStatus, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 import {
@@ -750,10 +752,27 @@ const NODE_TYPES = {
 
 /* ═══════════════════ the component ═══════════════════ */
 
-export function AutomationGraph({ automationId, automation, onSaved, liveRunId }: {
-  automationId: string;
-  /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent ⇒ read-only. */
+export function AutomationGraph({ automationId, automation, create, onCreated, header,
+                                  onSaved, liveRunId }: {
+  /** Absent ⇒ the canvas is authoring something that does not exist yet (create mode). */
+  automationId?: string;
+  /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent with `create` ⇒
+   *  canvas-first creation; absent without it ⇒ read-only. */
   automation?: Automation;
+  /** DS-1R — canvas-first creation: the connection the new automation will belong to,
+   *  and (for a DS-15 proposal) the draft to start from instead of a blank canvas. */
+  create?: { connId: string; seed?: Draft };
+  /** Create mode's exit: the record the server now holds. */
+  onCreated?: (a: Automation) => void;
+  /** DS-1R — the ONE header row. The canvas owns it so the identity, the mode and the
+   *  design's verbs share a single strip instead of stacking ("layer after layer…
+   *  the main workflow is getting out of focus" — the user, 2026-09-02). */
+  header?: {
+    name: string; enabled?: boolean; onBack: () => void;
+    onRunNow?: () => void; running?: boolean;
+    /** Present ⇒ the name is editable in place (create mode). */
+    onName?: (name: string) => void;
+  };
   onSaved?: () => void;
   /** DS-3 — a run happening NOW, named by whoever started it. While this is set the
    *  canvas watches that run's own spans as they are written; when it clears, the
@@ -788,7 +807,11 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
    * One state, one stack, one meaning for "the last thing I did".
    */
   const [history, setHistory] = useState<History<CanvasState>>(() => initHistory({
-    draft: { conditions: automation?.conditions ?? [], effects: automation?.effects ?? [] },
+    draft: automation
+      ? { conditions: automation.conditions, effects: automation.effects }
+      // Create mode starts from the seed (a DS-15 proposal) or the blank canvas —
+      // the trigger node alone, which is the user's own picture of "new automation".
+      : create?.seed ?? blankDraft(),
     positions: {},
   }));
   const draft = history.present.draft;
@@ -827,15 +850,15 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
     getAutomationVocabulary().then(v => setVocab(v.kinds)).catch(() => setVocab({}));
   }, []);
 
-  const authoring = !!automation && mode === "design";
+  const authoring = (!!automation || !!create) && mode === "design";
   // Kept in a ref so the key listener can read it without being rebuilt on every edit.
   useEffect(() => { authoringRef.current = authoring; }, [authoring]);
 
   // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
   useEffect(() => {
     // A preview owns the canvas while it is up; refetching here would replace it with
-    // the last REAL run the moment it was shown.
-    if (mode !== "execution" || preview) return;
+    // the last REAL run the moment it was shown. No id ⇒ nothing stored to fetch.
+    if (mode !== "execution" || preview || !automationId) return;
     let live = true;
     getAutomationGraph(automationId, runId || "latest")
       .then((g) => { if (live) { setGraph(g); setError(""); } })
@@ -854,6 +877,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
    * never persist, holds here by construction rather than by a flag.
    */
   useEffect(() => {
+    if (!automationId) return;          // an unsaved chain has no stored arrangement
     let live = true;
     getAutomationLayout(automationId)
       .then(saved => {
@@ -882,6 +906,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
   const persistLayout = useCallback((
     layout: Record<string, { x: number; y: number }>, alive: Set<string>,
   ) => {
+    if (!automationId) return;          // arrangements persist per stored id only
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       void saveAutomationLayout(automationId, layoutToPersist(layout, alive)).catch(() => {});
@@ -1066,6 +1091,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
 
   useEffect(() => {
     if (!pendingBind || observed !== null) return;
+    if (!automationId) { setObserved({}); return; }   // never run ⇒ nothing observed
     let live = true;
     getAutomationGraph(automationId, "latest")
       .then(g => { if (live) setObserved(producedByAlias(g)); })
@@ -1176,6 +1202,31 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
 
   /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
   const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
+  /** DS-1 P2 — the rail's second section. The runs list used to appear on its own the
+   *  moment execution mode opened; it is now a section a reader opens and collapses
+   *  like the palette (entering execution still opens it — the old behaviour, now
+   *  dismissable). Sections are exclusive: runs lives in execution, palette in design,
+   *  and switching sections closes the other — which is also what makes "every section
+   *  switch clears search" true for free, because the palette remounts fresh. */
+  const [runsOpen, setRunsOpen] = useState(false);
+  /** DS-1 P1 — the edge someone dropped on empty canvas: producer, key, and where it
+   *  landed. While set, the palette shows only consumers and the next add lands
+   *  pre-bound to it. Cleared by the banner's ×, the palette closing, or the add. */
+  const [edgeDrop, setEdgeDrop] = useState<EdgeDrop | null>(null);
+
+  /** The gesture half of P1 — everything it decides lives in `landPrebound`, because
+   *  jsdom cannot drive a ReactFlow drag (measured four times) and the law has to be
+   *  testable without one. Fires on EVERY connection end; the guards keep it to the
+   *  one case that means "offer me a consumer": a gives port released over nothing. */
+  const onConnectEnd = useCallback<OnConnectEnd>((_event, cs) => {
+    if (!authoringRef.current) return;
+    if (!cs.fromHandle || cs.toNode) return;          // landed on a node — onConnect owns it
+    const h = cs.fromHandle;
+    if (h.type !== "source" || !h.id?.startsWith("out:")) return;
+    if (!h.nodeId || h.nodeId === "__trigger") return; // the trigger's spine is not a value
+    setEdgeDrop({ from: h.nodeId, key: h.id.slice(4), at: cs.to ?? null });
+    setPalette("action");
+  }, []);
   // Captured from `onInit` rather than `useReactFlow`, which would need this canvas
   // wrapped in a provider it does not otherwise want.
   const rf = useRef<ReactFlowInstance | null>(null);
@@ -1205,18 +1256,32 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
       // the position is filed under the same name the node is about to be drawn with.
       const alias = `step${draft.effects.length + 1}`;
       const pane = paneRef.current?.getBoundingClientRect();
-      const at = position
+      // DS-1 P1 — a pre-bound add prefers WHERE THE EDGE WAS RELEASED: the reader
+      // already pointed at the place; the viewport centre is for adds with no gesture.
+      const at = position ?? edgeDrop?.at
         ?? (rf.current && pane
           ? viewportCenter(rf.current.getViewport(),
                            { width: pane.width, height: pane.height }, NODE_W)
           : null);
+      // DS-1 P1 — landing from an edge drop appends AND wires in one act (and so one
+      // undo). Computed against the same draft the alias was, outside the updater —
+      // React may run updaters twice, and `landPrebound` is not free to run twice
+      // against two different presents.
+      const landed = edgeDrop && vocab
+        ? landPrebound(draft, vocab, newEffectOf(placement.kind as AutoEffect["kind"]),
+                       { from: edgeDrop.from, key: edgeDrop.key })
+        : null;
+      if (landed?.error) {
+        setNotice(landed.error);
+        window.setTimeout(() => setNotice(""), 3200);
+      }
       // The step and where it landed are ONE act, so they are one entry: an undo that
       // removed the step but kept its coordinate would leave a ghost for the next add
       // to inherit.
       setHistory(h => {
         const nextPositions = at ? { ...h.present.positions, [alias]: at } : h.present.positions;
         const next = {
-          draft: {
+          draft: landed ? landed.draft : {
             ...h.present.draft,
             effects: [...h.present.draft.effects,
                       newEffectOf(placement.kind as AutoEffect["kind"])],
@@ -1226,8 +1291,14 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
         if (at) persistLayout(nextPositions, new Set([...Object.keys(nextPositions), alias]));
         return pushHistory(h, next);
       });
+      // An open-set drop cannot know its key at drag time — park the connection for
+      // the picker, exactly as a node-to-node `out:*` drag does (DS-4's machinery).
+      if (landed && !landed.error && edgeDrop?.key === "*" && landed.field) {
+        setPendingBind({ from: edgeDrop.from, to: landed.alias, field: landed.field });
+      }
+      setEdgeDrop(null);
     },
-    [draft.effects.length, persistLayout],
+    [draft, edgeDrop, vocab, persistLayout],
   );
 
   const patchField = useCallback((alias: string, field: string, value: unknown) => {
@@ -1401,14 +1472,49 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 6 }}>
+      {/* DS-1R — ONE strip: identity · mode · truth chips · the design's verbs. The
+          rail and the second header row died into it, so the workflow below gets the
+          room ("the actual workflow should be the primary driver" — user, 2026-09-02). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 6,
+        minWidth: 0 }}>
+        {header && (
+          <>
+            <Button variant="ghost" size="sm" className="aug-fs-sm"
+              onClick={header.onBack} style={{ color: "var(--t3)", flexShrink: 0 }}>
+              ← Automations
+            </Button>
+            {header.onName ? (
+              <input
+                className="aug-fs-ui"
+                aria-label="Name this automation"
+                value={header.name}
+                onChange={e => header.onName?.(e.target.value)}
+                placeholder="Name this automation"
+                style={{ fontWeight: 600, background: "var(--bg-1)",
+                  border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+                  padding: "3px 8px", color: "var(--t1)", width: 200 }}
+              />
+            ) : (
+              <span className="aug-fs-ui" style={{ fontWeight: 600, overflow: "hidden",
+                textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{header.name}</span>
+            )}
+            {header.enabled !== undefined && (
+              <span className="aug-fs-xs" style={{ flexShrink: 0,
+                color: header.enabled ? "var(--grn4)" : "var(--t4)" }}>
+                ● {header.enabled ? "enabled" : "disabled"}
+              </span>
+            )}
+          </>
+        )}
         <div style={{ display: "inline-flex", gap: 2, padding: 2,
           border: "1px solid var(--b1)", borderRadius: "var(--r-chip)",
           background: "var(--bg-1)" }}>
           {(["design", "execution"] as const).map((m) => (
             <Button key={m} variant={mode === m ? "secondary" : "ghost"} size="xs"
+              // An unsaved chain has no runs; Execution opens there only for a preview.
+              disabled={m === "execution" && !automationId && !preview}
               onClick={() => {
-                setMode(m); setPreview(null);
+                setMode(m); setPreview(null); setRunsOpen(m === "execution");
                 if (m === "design") setRunId("");
               }}>
               {m === "design" ? "Design" : "Execution"}
@@ -1433,14 +1539,78 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
             {graph.run_reason ? ` — ${graph.run_reason}` : ""}
           </span>
         )}
+        <span style={{ flex: 1 }} />
+        {(automation || create) && mode === "design" && (
+          <DesignControls
+            automation={automation ?? null}
+            connId={create?.connId ?? automation?.conn_id ?? ""}
+            name={header?.name ?? automation?.name ?? ""}
+            draft={draft}
+            onDraft={d => setDraft(d)}
+            onSaved={(created) => {
+              if (created) { onCreated?.(created); return; }
+              setReloadKey(k => k + 1); onSaved?.();
+            }}
+            onPreview={(g) => { setPreview(g); setMode("execution"); }}
+          />
+        )}
+        {header?.onRunNow && (
+          <Button variant="ghost" size="sm" className="aug-fs-xs" style={{ flexShrink: 0 }}
+            disabled={header.running} onClick={header.onRunNow}>
+            {header.running ? "Running…" : "Run now"}
+          </Button>
+        )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
-        {mode === "execution" && !preview && (graph?.runs?.length ?? 0) > 0 && (
+        {/* DS-1 P2 — the rail: one slim strip of sections beside the canvas. Palette
+            in design, Runs in execution (opening Runs takes you there); the active
+            section re-clicked collapses. Versions joins when a store for it exists —
+            the ledger's rule is "once there is more than one section", and there are
+            exactly two. */}
+        {(authoring || !!automationId) && (
+          <div data-testid="canvas-rail" style={{ width: 34, flexShrink: 0,
+            display: "flex", flexDirection: "column", gap: 4, alignItems: "center",
+            paddingTop: 2 }}>
+            {(!!automation || !!create) && (
+              <Button variant={palette ? "secondary" : "ghost"} size="icon-sm"
+                aria-label={palette ? "Collapse the palette" : "Open the palette"}
+                title="Palette"
+                onClick={() => {
+                  if (palette) { setPalette(null); setEdgeDrop(null); return; }
+                  setRunsOpen(false);
+                  if (mode !== "design") { setMode("design"); setPreview(null); setRunId(""); }
+                  setPalette("all");
+                }}>
+                <Icon name="layers" size={14} />
+              </Button>
+            )}
+            {!!automationId && (
+              <Button variant={runsOpen && mode === "execution" ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label={runsOpen && mode === "execution"
+                  ? "Collapse the runs list" : "Open the runs list"}
+                title="Runs"
+                onClick={() => {
+                  if (runsOpen && mode === "execution") { setRunsOpen(false); return; }
+                  setPalette(null); setEdgeDrop(null);
+                  setMode("execution"); setPreview(null); setRunsOpen(true);
+                }}>
+                <Icon name="history" size={14} />
+              </Button>
+            )}
+          </div>
+        )}
+        {mode === "execution" && runsOpen && !preview && graph && (
           <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
                         border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
             <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
               runs
             </div>
+            {(graph.runs?.length ?? 0) === 0 && (
+              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px" }}>
+                no runs yet
+              </div>
+            )}
             {(graph?.runs ?? []).map((r) => {
               const active = (runId || graph?.run_id) === r.id;
               return (
@@ -1466,8 +1636,12 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
           <AutomationPalette
             connId={automation?.conn_id}
             only={palette === "all" ? undefined : palette}
+            bindFilter={edgeDrop
+              ? { ref: `${edgeDrop.from}.${edgeDrop.key === "*" ? "…" : edgeDrop.key}` }
+              : undefined}
+            onClearBindFilter={() => setEdgeDrop(null)}
             onAdd={addFromPalette}
-            onClose={() => setPalette(null)}
+            onClose={() => { setPalette(null); setEdgeDrop(null); }}
           />
         )}
 
@@ -1487,7 +1661,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
                addFromPalette(placement, rf.current?.screenToFlowPosition(
                  { x: e.clientX, y: e.clientY }));
              }}
-             style={{ flex: 1, minWidth: 0, minHeight: 220,
+             style={{ flex: 1, minWidth: 0, minHeight: 220, position: "relative",
                       border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
           {mode === "design" ? (
             <ReactFlow
@@ -1497,6 +1671,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
               edges={edgesLive ? design.edges : []}
               nodeTypes={NODE_TYPES}
               onConnect={onConnect}
+              onConnectEnd={onConnectEnd}
               onNodeDragStop={(_e, n) => {
                 // A move is an edit: same stack, so one undo means "the last thing I
                 // did" whether that was typing or dragging. Coalesced per node, so
@@ -1625,17 +1800,22 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
               )}
             </ReactFlow>
           )}
-        </div>
 
-        {authoring && (
-          <AutomationAuthor
-            onPreview={(g) => { setPreview(g); setMode("execution"); }}
-            automation={automation!}
-            draft={draft}
-            onDraft={setDraft}
-            onSaved={() => { setReloadKey(k => k + 1); onSaved?.(); }}
-          />
-        )}
+          {/* DS-1R — the design panel as a LENS: the selected node's richer widgets
+              (kind selects, "Post as…", agent pickers, guard editors), floating at the
+              canvas edge. It reads the selection and writes the same draft; nothing
+              edits "everything" any more — the workflow is the one primary editor. */}
+          {authoring && selectedAlias && (
+            <StepInspector
+              draft={draft}
+              onDraft={d => setDraft(d)}
+              selection={selectedAlias}
+              logicLabel={(automation?.condition_logic ?? "all") === "all"
+                ? "all match" : "any match"}
+              onClose={() => setSelectedAlias(null)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

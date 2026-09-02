@@ -55,7 +55,7 @@ const SCALE = new Set([11, 12, 13, 15, 18, 22, 28]);
 
 /** One-way ratchet: raw on-scale font-size literals still awaiting an aug-fs-* class.
  *  LOWER this as they are converted; never raise it. */
-const FONT_SIZE_BASELINE = 1180;
+const FONT_SIZE_BASELINE = 1176;
 
 const RADIUS_RULES = [
   {

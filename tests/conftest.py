@@ -105,6 +105,12 @@ for _env, _file in (
     ("AUGHOR_SAMPLES_DB", "samples.duckdb"),
     # R14 — the query-popularity counter store (born hermetic like the R11 tree).
     ("AUGHOR_POPULARITY_DB", "popularity.db"),
+    # S1 — the embedded semantic index (a DIRECTORY, like vocabulary). Unpinned, the
+    # suite would open qdrant local mode at <state dir>/qdrant — hermetic only via
+    # AUGHOR_STATE_DIR; this names it explicitly so the isolation survives any future
+    # default change, and because local mode takes an exclusive lock a leaked default
+    # would also contend with a running API, not just dirty its data.
+    ("AUGHOR_QDRANT_PATH", "qdrant"),
     # Briefing-cockpit — user-authored dashboard cards (born hermetic).
     ("AUGHOR_DASHBOARD_DB", "dashboard_cards.db"),
     # Wave A1 — automations + their run history (born hermetic).

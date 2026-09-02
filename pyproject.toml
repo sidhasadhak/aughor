@@ -67,12 +67,15 @@ dependencies = [
 fastread = [
     "polars>=1.0.0",
 ]
-# Semantic search / RAG. `qdrant-client` is 3 MB but drags 39 MB of grpc, and it already
-# needs a Qdrant server (`AUGHOR_QDRANT_URL`, default localhost:6333) — so a deployment
-# without that server carries 42 MB for a feature it cannot use. Every entry point in
-# `semantic/vector_store.py` checks `available()` and degrades to "empty index": reads
-# return nothing, writes no-op. A CONNECTION failure still raises, because a configured
-# index that is down is an outage worth surfacing, not a silent no-op.
+# Semantic search / RAG. `qdrant-client` is 3 MB but drags 39 MB of grpc — kept an
+# extra so lean/serverless installs (pgvector rides psycopg2, already in the serving
+# set) don't carry it. With the extra installed no server is needed any more (S1):
+# the seam runs qdrant EMBEDDED at AUGHOR_QDRANT_PATH unless AUGHOR_QDRANT_URL pins a
+# server — so `uv sync --all-extras` (the documented setup) gets working semantic
+# search with no second process. Every entry point in `semantic/vector_store.py`
+# checks `available()` and degrades to "empty index": reads return nothing, writes
+# no-op. A CONNECTION failure still raises, because a configured index that is down
+# is an outage worth surfacing, not a silent no-op.
 semantic = [
     "qdrant-client>=1.9.0",
 ]

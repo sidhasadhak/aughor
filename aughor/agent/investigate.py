@@ -4190,7 +4190,7 @@ def _preceding_window(obs_start: str, obs_end: str, dmin: str):
     return prev_start.isoformat(), prev_end.isoformat()
 
 
-def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
+def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = "", today: str = ""):
     """Deterministically fit the intake's windows to the data that actually exists.
     The LLM-retry path merely *asks* for a correction; this enforces it. Returns a
     coverage note (str) when anything was adjusted, else None.
@@ -4211,8 +4211,10 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
       variation" as a finding (the Direkteingabe specimen, 2026-08-19).
     - When the available history is short (<~45 days), the label says so and the
       note tells the planner to use a daily/weekly grain and skip MoM/YoY.
+    - A window ending on the wall-clock TODAY — a day still FILLING — is trimmed to end
+      at the last complete day (`today` is injectable for tests). See the guard below.
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime, timedelta, timezone
 
     if not dmin or not dmax or getattr(intake, "cross_sectional", False):
         return None
@@ -4238,6 +4240,50 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
         # window, so the label is rewritten to describe the one the report will carry.
         intake.observation_label = _window_label(os_, oe_)
 
+    # ── Terminal partial-day guard (the 43-vs-1,733 shape, found live 2026-09-02) ──
+    # A window ending on the wall-clock TODAY compares a day still FILLING against
+    # complete ones: the 09:00 daily briefing measured "orders fell 97.5%" from nine
+    # hours of today vs all of yesterday — and the trailing-partial guard below the
+    # call site is MONTH-grain, so a one-day window sails past it with one bucket.
+    # While a day is in progress it cannot be a complete period, so windows end at the
+    # last complete day. Fires ONLY when the data actually reaches today: a closed
+    # dataset's final day is as complete as it will ever be, and trimming it would
+    # erase real data on every run forever. A question that PINS the period (an
+    # explicit year — "September 2nd, 2026") keeps its window and gets the warning
+    # instead: the reader asked about today knowing it is today.
+    _today = (today or "")[:10] or datetime.now(timezone.utc).date().isoformat()
+    _partial_anchor_max = dmax[:10]
+    try:
+        if dmax[:10] >= _today and dmin[:10] < _today:
+            _last_complete = (datetime.fromisoformat(_today)
+                              - timedelta(days=1)).date().isoformat()
+            _partial_anchor_max = min(dmax[:10], _last_complete)
+            _oe_p = (intake.observation_end or "")[:10]
+            _os_p = (intake.observation_start or "")[:10]
+            if _oe_p >= _today:
+                if _question_pins_period(question, _os_p, _oe_p):
+                    notes.append(
+                        f"the observation window ends on {_today}, a day still in progress — "
+                        f"kept because the question names it explicitly, but totals for that "
+                        f"day are PARTIAL and must not be read as a decline against complete days"
+                    )
+                else:
+                    intake.observation_end = _last_complete
+                    if _os_p > _last_complete:
+                        intake.observation_start = _last_complete
+                    intake.observation_label = _window_label(
+                        intake.observation_start[:10], _last_complete)
+                    notes.append(
+                        f"the observation window ended on {_today}, a day still in progress "
+                        f"({dmax[:10]} is the data's latest point) — it now ends at the last "
+                        f"complete day {_last_complete}: totals over a partial day read as a "
+                        f"false collapse against complete days"
+                    )
+    except (ValueError, TypeError) as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "the partial-day trim is best-effort on malformed dates; the window "
+                 "stays as the clip step left it", counter="intake.partial_day_parse_failed")
+
     # ── Re-anchor a mis-placed RELATIVE window to the data's most-recent point ──
     # The LLM picks observation dates for a "last N / recent / trailing" framing, but it
     # sometimes anchors to an OLDER window that happens to sit inside the data (e.g. "last
@@ -4249,7 +4295,9 @@ def _clamp_intake_to_coverage(intake, dmin, dmax, question: str = ""):
         _os0 = (intake.observation_start or "")[:10]
         _oe0 = (intake.observation_end or "")[:10]
         if _os0 and _oe0 and not _question_pins_period(question, _os0, _oe0):
-            _dmax_d = datetime.fromisoformat(dmax[:10])
+            # The partial-day ceiling, not raw dmax: re-anchoring a stale window onto a
+            # day still in progress would reintroduce the artifact the guard above trims.
+            _dmax_d = datetime.fromisoformat(_partial_anchor_max)
             _dmin_d = datetime.fromisoformat(dmin[:10])
             _oe_d = datetime.fromisoformat(_oe0)
             _os_d = datetime.fromisoformat(_os0)

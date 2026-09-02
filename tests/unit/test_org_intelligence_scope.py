@@ -1,37 +1,30 @@
 """Org-intelligence scoping — the Hub is a scoped surface and must not blend
 every connection's (or schema's) promoted insights together; the unscoped
-org-wide view is the Org layer's job. Hermetic: Qdrant is faked."""
+org-wide view is the Org layer's job.
+
+Hermetic at the SEAM: `list_org_intelligence` reads `vector_store.scroll_points`
+(S1 — it stopped building its own QdrantClient, which kept it pointed at
+localhost:6333 whatever backend actually held the index), so that function is
+what the fake replaces. The subject here is the scoping/sort logic, not the
+backend; the seam itself is proven end-to-end in test_vector_store_embedded."""
 from __future__ import annotations
 
-
-class _FakePoint:
-    def __init__(self, pid: int, payload: dict):
-        self.id = pid
-        self.payload = payload
-
-
-class _FakeQdrant:
-    _POINTS = [
-        _FakePoint(1, {"insight_id": "a", "text": "t1", "connection_id": "conn1",
-                       "schema": "sales", "promoted_at": "2026-07-02"}),
-        _FakePoint(2, {"insight_id": "b", "text": "t2", "connection_id": "conn1",
-                       "schema": "ops", "promoted_at": "2026-07-03"}),
-        _FakePoint(3, {"insight_id": "c", "text": "t3", "connection_id": "conn2",
-                       "schema": "sales", "promoted_at": "2026-07-04"}),
-        # promoted before scoping existed — no connection_id/schema recorded
-        _FakePoint(4, {"insight_id": "legacy", "text": "t4", "promoted_at": "2026-07-01"}),
-    ]
-
-    def __init__(self, url: str):
-        pass
-
-    def scroll(self, collection_name, limit, offset, with_payload, with_vectors):
-        return list(self._POINTS), None
+_POINTS = [
+    {"id": "1", "payload": {"insight_id": "a", "text": "t1", "connection_id": "conn1",
+                            "schema": "sales", "promoted_at": "2026-07-02"}},
+    {"id": "2", "payload": {"insight_id": "b", "text": "t2", "connection_id": "conn1",
+                            "schema": "ops", "promoted_at": "2026-07-03"}},
+    {"id": "3", "payload": {"insight_id": "c", "text": "t3", "connection_id": "conn2",
+                            "schema": "sales", "promoted_at": "2026-07-04"}},
+    # promoted before scoping existed — no connection_id/schema recorded
+    {"id": "4", "payload": {"insight_id": "legacy", "text": "t4",
+                            "promoted_at": "2026-07-01"}},
+]
 
 
 def _patched(monkeypatch):
-    import qdrant_client
-    monkeypatch.setattr(qdrant_client, "QdrantClient", _FakeQdrant)
+    monkeypatch.setattr("aughor.semantic.vector_store.scroll_points",
+                        lambda collection, limit=10_000: list(_POINTS))
 
 
 def test_unscoped_returns_everything_newest_first(monkeypatch):

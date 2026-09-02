@@ -11420,6 +11420,11 @@ export interface components {
              * @default
              */
             schema_scope: string;
+            /**
+             * Tool Grants
+             * @default []
+             */
+            tool_grants: string[];
         };
         /** UserAgentFromTemplate */
         UserAgentFromTemplate: {
@@ -11457,6 +11462,8 @@ export interface components {
             pack_ids?: string[] | null;
             /** Schema Scope */
             schema_scope?: string | null;
+            /** Tool Grants */
+            tool_grants?: string[] | null;
         };
         /**
          * UserMessage

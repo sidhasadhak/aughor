@@ -482,3 +482,11 @@ def test_investigate_answer_is_a_DECLARED_key():
     inv = Effect(kind="investigate", alias="numbers", config={"question": "sales?"})
     auto = _automation(inv, _effect(message={"$from": "numbers.answer"}))
     assert auto.effects[1].config["message"] == {"$from": "numbers.answer"}
+
+
+def test_investigate_summary_is_a_DECLARED_key():
+    """`answer` is a title; `summary` is the report's executive summary — what a nightly
+    briefing actually wants to post. Declared, so the binding validates at save."""
+    inv = Effect(kind="investigate", alias="numbers", config={"question": "sales?"})
+    auto = _automation(inv, _effect(message={"$from": "numbers.summary"}))
+    assert auto.effects[1].config["message"] == {"$from": "numbers.summary"}

@@ -67,6 +67,14 @@ _MIGRATIONS = [
     Migration(5, "purpose (short routing line for delegation rosters)",
               lambda c: add_column_if_missing(c, "user_agents", "purpose",
                                               "TEXT NOT NULL DEFAULT ''")),
+    # tool_grants column — the field VA-9c declared on the model, GOVERNING_FIELDS
+    # counted, config_rev hashed, revisions recorded and action_tools consumed, while
+    # this store never persisted it: every agent answered [] and no grant could survive
+    # a restart (§1 honest limits, retired 2026-09-02). Verified against the live store
+    # before numbering: user_version was 5, one agent row.
+    Migration(6, "tool_grants (actions this agent may PROPOSE, by id)",
+              lambda c: add_column_if_missing(c, "user_agents", "tool_grants",
+                                              "TEXT NOT NULL DEFAULT '[]'")),
 ]
 
 _legacy_checked = False
@@ -124,6 +132,8 @@ def _row_to_agent(row: sqlite3.Row) -> UserAgent:
         connection_id=row["connection_id"], schema_scope=row["schema_scope"],
         doc_ids=json.loads(row["doc_ids"] or "[]"),
         pack_ids=json.loads(row["pack_ids"] or "[]"),
+        tool_grants=(json.loads(row["tool_grants"] or "[]")
+                     if "tool_grants" in row.keys() else []),
         owner=row["owner"], enabled=bool(row["enabled"]),
         last_eval=json.loads(row["last_eval"]) if row["last_eval"] else None,
         created_at=row["created_at"], updated_at=row["updated_at"],
@@ -137,22 +147,25 @@ def _now() -> str:
 def create_agent(name: str, *, instructions: str = "", purpose: str = "",
                  connection_id: str = "",
                  schema_scope: str = "", doc_ids: Optional[list[str]] = None,
-                 pack_ids: Optional[list[str]] = None, owner: str = "") -> UserAgent:
+                 pack_ids: Optional[list[str]] = None,
+                 tool_grants: Optional[list[str]] = None, owner: str = "") -> UserAgent:
     agent = UserAgent(
         id=f"ua_{uuid.uuid4().hex[:12]}", name=name.strip(),
         instructions=instructions, purpose=purpose, connection_id=connection_id,
         schema_scope=schema_scope, doc_ids=list(doc_ids or []),
-        pack_ids=list(pack_ids or []), owner=owner,
+        pack_ids=list(pack_ids or []), tool_grants=list(tool_grants or []),
+        owner=owner,
         enabled=True, created_at=_now(), updated_at=_now(),
     )
     with _connect() as conn:
         conn.execute(
             "INSERT INTO user_agents (id, name, instructions, purpose, connection_id,"
-            " schema_scope, doc_ids, pack_ids, owner, enabled, created_at, updated_at)"
-            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            " schema_scope, doc_ids, pack_ids, tool_grants, owner, enabled,"
+            " created_at, updated_at)"
+            " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (agent.id, agent.name, agent.instructions, agent.purpose,
              agent.connection_id, agent.schema_scope, json.dumps(agent.doc_ids),
-             json.dumps(agent.pack_ids),
+             json.dumps(agent.pack_ids), json.dumps(agent.tool_grants),
              agent.owner, int(agent.enabled), agent.created_at, agent.updated_at),
         )
     from aughor.custom_agents.revisions import record_revision
@@ -173,7 +186,7 @@ def list_agents() -> list[UserAgent]:
 
 
 _PATCHABLE = ("name", "instructions", "purpose", "connection_id", "schema_scope",
-              "doc_ids", "pack_ids", "enabled")
+              "doc_ids", "pack_ids", "tool_grants", "enabled")
 
 
 def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
@@ -200,7 +213,7 @@ def update_agent(agent_id: str, **fields) -> Optional[UserAgent]:
     sets, params = [], []
     for k, v in updates.items():
         sets.append(f"{k} = ?")
-        if k in ("doc_ids", "pack_ids"):
+        if k in ("doc_ids", "pack_ids", "tool_grants"):
             params.append(json.dumps(list(v)))
         elif k == "enabled":
             params.append(int(bool(v)))

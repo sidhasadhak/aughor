@@ -10,10 +10,8 @@ from __future__ import annotations
 
 import datetime
 import hashlib
-import os
 
 ORG_INTEL_COLLECTION = "org_intelligence"
-_QDRANT_URL = os.getenv("AUGHOR_QDRANT_URL", "http://localhost:6333")
 
 
 # ── Qdrant helpers ─────────────────────────────────────────────────────────────
@@ -120,24 +118,16 @@ def list_org_intelligence(
     and appear only in the unscoped view.
     """
     try:
-        from qdrant_client import QdrantClient
+        # Through the seam, not a bespoke QdrantClient: this was one of the three
+        # call sites that read AUGHOR_QDRANT_URL themselves, so it kept talking to
+        # localhost:6333 on deployments whose index had moved (pgvector, or S1's
+        # embedded path) and answered [] as if nothing had ever been promoted.
+        from aughor.semantic.vector_store import scroll_points
 
-        client = QdrantClient(url=_QDRANT_URL)
-        results: list[dict] = []
-        offset = None
-        while True:
-            batch, next_offset = client.scroll(
-                collection_name=ORG_INTEL_COLLECTION,
-                limit=100,
-                offset=offset,
-                with_payload=True,
-                with_vectors=False,
-            )
-            for p in batch:
-                results.append({"id": str(p.id), **p.payload})
-            if next_offset is None:
-                break
-            offset = next_offset
+        results: list[dict] = [
+            {"id": p["id"], **p["payload"]}
+            for p in scroll_points(ORG_INTEL_COLLECTION)
+        ]
         if connection_id:
             results = [r for r in results if r.get("connection_id") == connection_id]
         if schema:
@@ -149,15 +139,8 @@ def list_org_intelligence(
 
 def delete_org_insight(point_id: str) -> bool:
     """Delete a promoted insight from the org collection by its numeric point id."""
+    from aughor.semantic.vector_store import delete_ids
     try:
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import PointIdsList
-
-        client = QdrantClient(url=_QDRANT_URL)
-        client.delete(
-            collection_name=ORG_INTEL_COLLECTION,
-            points_selector=PointIdsList(points=[int(point_id)]),
-        )
-        return True
-    except Exception:
+        return delete_ids(ORG_INTEL_COLLECTION, [int(point_id)])
+    except ValueError:
         return False

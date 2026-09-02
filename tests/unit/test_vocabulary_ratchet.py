@@ -82,7 +82,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "tests/unit/test_platform_tools.py",
          # CI-4's tests construct /ask request shapes carrying the frozen `insight_id`
          # field — the same reason test_converse_route_off_state is exempt.
-         "tests/unit/test_ci4_depth_as_tool.py"),
+         "tests/unit/test_ci4_depth_as_tool.py",
+         # S1's embedded-seam test drives org intelligence end-to-end, whose frozen
+         # payload key is `insight_id` and whose API is `delete_org_insight` — the
+         # same verbatim-identifier ground as the rows above.
+         "tests/unit/test_vector_store_embedded.py"),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
@@ -108,6 +112,13 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # it here would hide the real name from the code that reads it.
          "aughor/agent/action_tools.py",
          "tests/unit/test_agent_action_grants.py",
+         # tool_grants (2026-09-02), same ground again: the grants validator reads
+         # `graph.kinetic_actions` (the real attribute), the store test fakes that same
+         # attribute, and api.ts spells the frozen `/ontology/kinetic-actions` route.
+         # Everything reader-facing in all three says 'actions'.
+         "aughor/routers/agents.py",
+         "tests/unit/test_user_agents.py",
+         "web/lib/api.ts",
          # B1, same ground again: the effect KIND is the wire literal "kinetic_action",
          # and these files spell the wire — the vocabulary tables (PUBLISHED_KEYS /
          # BINDABLE_FIELDS keys), the canvas's per-kind maps, and the fixtures that
@@ -380,7 +391,10 @@ BASELINE: dict[str, int] = {
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
     # exception the tests match on, or a wire literal the approval gate keys grants by.
     # The number below is what remains COUNTED after both — measured, not added up.
-    "kinetic": 358,
+    # 2026-09-02: 358 → 348. api.ts joined the exempt list (every hit is a frozen wire
+    # literal — the `kinetic_action` kind, the `kinetic_inbox` source, the
+    # `/ontology/kinetic-actions` route), which removed its ten counted hits.
+    "kinetic": 348,
     "mindsdb": 0,
     "palantir": 6,
     "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history

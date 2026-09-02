@@ -61,6 +61,32 @@ def test_update_missing_agent_returns_none():
     assert update_agent("ua_nope", name="x") is None
 
 
+def test_tool_grants_survive_the_store():
+    """The phantom's tombstone. `tool_grants` was declared on the model, hashed into
+    `config_rev`, counted in GOVERNING_FIELDS and consumed by `action_tools` — while
+    this store never wrote or read it, so every agent answered [] after any restart
+    and no grant could actually exist. This test fails on that store."""
+    a = create_agent("Ops Analyst", connection_id="",
+                     tool_grants=["refund_orders", "post_note"])
+    got = get_agent(a.id)
+    assert got is not None
+    assert got.tool_grants == ["refund_orders", "post_note"]
+
+    updated = update_agent(a.id, tool_grants=["post_note"])
+    assert updated.tool_grants == ["post_note"]
+    assert get_agent(a.id).tool_grants == ["post_note"]
+
+    # Grants are governing configuration: the revision machinery must hand them back
+    # on a restore, or "put it back how it was" silently keeps the new powers.
+    from aughor.custom_agents.revisions import list_revisions, revision_config
+    revs = list_revisions(a.id)
+    assert len(revs) >= 2
+    oldest = revision_config(a.id, revs[-1]["version"])
+    assert oldest["tool_grants"] == ["refund_orders", "post_note"]
+    restored = update_agent(a.id, **oldest)
+    assert restored.tool_grants == ["refund_orders", "post_note"]
+
+
 # ── Context seams ─────────────────────────────────────────────────────────────
 
 def test_brief_block_active_and_inactive():
@@ -186,6 +212,53 @@ def test_route_validation(client, monkeypatch):
     monkeypatch.setattr(idx, "get_document", lambda d: {"doc_id": d})
     r = client.post("/agents/custom", json={"name": "x", "doc_ids": ["d-ok"]})
     assert r.status_code == 201
+
+
+def test_tool_grants_ride_the_wire(client, monkeypatch):
+    """The half-added-column HTTP trap (DS-14's lesson): a field absent from the
+    request model is accepted, silently dropped, and echoed back empty. Before the
+    column landed, this POST produced an agent whose grants were [] on the very next
+    GET. Unbound on purpose — an unbound agent's roster is the ask's business."""
+    _flag(monkeypatch, True)
+    r = client.post("/agents/custom", json={
+        "name": "Proposer", "tool_grants": ["refund_orders"]})
+    assert r.status_code == 201, r.text
+    agent_id = r.json()["id"]
+    assert r.json()["tool_grants"] == ["refund_orders"]
+    assert client.get(f"/agents/custom/{agent_id}").json()["tool_grants"] == ["refund_orders"]
+
+    r = client.patch(f"/agents/custom/{agent_id}", json={"tool_grants": []})
+    assert r.status_code == 200 and r.json()["tool_grants"] == []
+
+
+def test_a_wildcard_grant_is_refused_with_the_reason(client, monkeypatch):
+    """'Named actions, never a whole roster' — a '*' would re-create the blanket grant
+    that target-bound standing grants exist to avoid, so it dies at the write."""
+    _flag(monkeypatch, True)
+    r = client.post("/agents/custom", json={"name": "Greedy", "tool_grants": ["*"]})
+    assert r.status_code == 422
+    assert "never a roster" in r.text
+
+
+def test_bound_grants_are_checked_against_the_declared_roster(monkeypatch):
+    """The write-time half of `propose_one`'s runtime refusal: a bound agent's grant
+    must name an action its connection actually declares, and the 422 carries the
+    roster so the fix is one read away."""
+    from types import SimpleNamespace
+
+    from fastapi import HTTPException
+
+    from aughor.routers.agents import _validate_agent_grants
+    import aughor.ontology.store as ost
+    monkeypatch.setattr(ost, "load_latest_ontology", lambda c, s=None: SimpleNamespace(
+        kinetic_actions={"refund_orders": object(), "post_note": object()}))
+
+    _validate_agent_grants(["refund_orders"], "conn-a")          # declared → passes
+    _validate_agent_grants(["anything_at_all"], "")              # unbound → shape-only
+    with pytest.raises(HTTPException) as exc:
+        _validate_agent_grants(["issue_refund"], "conn-a")
+    assert "unknown action id" in str(exc.value.detail)
+    assert "refund_orders" in str(exc.value.detail)
 
 
 # ── /ask agent resolution ─────────────────────────────────────────────────────

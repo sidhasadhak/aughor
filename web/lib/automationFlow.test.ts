@@ -854,3 +854,72 @@ describe("visibleFields — a binding is wiring, and wiring must draw", () => {
     expect(fields.map(f => f.field)).toEqual(["channel", "message"]);
   });
 });
+
+/* ── DS-1 P1 · the edge dropped on empty canvas ─────────────────────────────── */
+
+describe("landPrebound — the palette choice lands wired to the dropped edge", () => {
+  const P1_VOCAB: Vocabulary = {
+    ...VOCAB,
+    metric_value: { publishes: ["value", "unit", "label"], bindable: [] },
+  };
+
+  it("canConsume is the filter's whole law: an input port exists", async () => {
+    const { canConsume } = await import("@/lib/automationFlow");
+    expect(canConsume(P1_VOCAB, "slack_post")).toBe(true);
+    expect(canConsume(P1_VOCAB, "kinetic_action")).toBe(true);
+    expect(canConsume(P1_VOCAB, "metric_value")).toBe(false);
+    expect(canConsume(P1_VOCAB, "no_such_kind")).toBe(false);
+  });
+
+  it("appends AND binds in one result, through applyConnect's own law", async () => {
+    const { landPrebound } = await import("@/lib/automationFlow");
+    const base = draft(eff("investigate", { question: "q" }, "numbers"));
+    const r = landPrebound(base, P1_VOCAB, eff("slack_post", { channel: "#c" }),
+                           { from: "numbers", key: "answer" });
+    expect(r.error).toBe("");
+    expect(r.alias).toBe("step2");
+    expect(r.field).toBe("message");
+    expect(r.draft.effects[1].config.message).toEqual({ $from: "numbers.answer" });
+  });
+
+  it("the wire goes to the FIRST declared input port — where the eye goes", async () => {
+    const { bindTargetField } = await import("@/lib/automationFlow");
+    expect(bindTargetField(P1_VOCAB, "slack_post")).toBe("message");
+    expect(bindTargetField(P1_VOCAB, "metric_value")).toBeNull();
+  });
+
+  it("an open-set drop appends unbound and names the field for the key picker", async () => {
+    // "*" cannot know its key at drag time; pre-writing `{"$from": "act.*"}` would be
+    // a binding the engine resolves to nothing. The caller parks it for the picker.
+    const { landPrebound } = await import("@/lib/automationFlow");
+    const base = draft(eff("kinetic_action", { action_id: "a" }, "act"));
+    const r = landPrebound(base, P1_VOCAB, eff("slack_post", { channel: "#c" }),
+                           { from: "act", key: "*" });
+    expect(r.error).toBe("");
+    expect(r.field).toBe("message");
+    expect(r.draft.effects[1].config.message).toBeUndefined();
+  });
+
+  it("a consumer-less kind still lands — unwired, and says so", async () => {
+    // The filter should prevent this, but the gate must not trust the filter: a step
+    // someone forced through arrives on the canvas rather than vanishing, with the
+    // sentence naming why it carries no wire.
+    const { landPrebound } = await import("@/lib/automationFlow");
+    const base = draft(eff("investigate", { question: "q" }, "numbers"));
+    const r = landPrebound(base, P1_VOCAB, eff("metric_value", { metric: "revenue" }),
+                           { from: "numbers", key: "answer" });
+    expect(r.draft.effects).toHaveLength(2);
+    expect(r.error).toMatch(/no input to bind/);
+  });
+
+  it("a refused wire keeps the step and reports applyConnect's sentence", async () => {
+    // Same shape as a hand-dragged refusal: the step is real, the wire is not.
+    const { landPrebound } = await import("@/lib/automationFlow");
+    const base = draft(eff("investigate", { question: "q" }, "numbers"));
+    const r = landPrebound(base, P1_VOCAB, eff("slack_post", { channel: "#c" }),
+                           { from: "numbers", key: "no_such_key" });
+    expect(r.draft.effects).toHaveLength(2);
+    expect(r.draft.effects[1].config.message).toBeUndefined();
+    expect(r.error).toMatch(/has no 'no_such_key'/);
+  });
+});

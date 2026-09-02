@@ -64,11 +64,12 @@ plane — see §7.
 
 **Honest limits, same date:** a fan-out has no
 list to read from any effect kind but the declared
-action's open outcome (§3.2); **`UserAgent.tool_grants` is a phantom** — consumed by
-`action_tools.py` and named in `GOVERNING_FIELDS`, but not a column, never loaded by
-`_row_to_agent`, absent from `_PATCHABLE`/`UserAgentCreate`/`UserAgentPatch`, so no agent can
-hold a grant and `propose_action` is unreachable everywhere (persisting it = a migration +
-six files); no user-scoped credential store anywhere; warehouse connections have **no
+action's open outcome (§3.2); ~~`UserAgent.tool_grants` is a phantom~~ — **RETIRED
+2026-09-02**: migration 6 stored the column, `_row_to_agent`/`_PATCHABLE`/create/patch all
+carry it, grants validate at write against the connection's declared roster (a `*` is
+refused by name — "a grant names an action, never a roster"), and `propose_action` is
+reachable end to end while staying PROPOSE-only; no user-scoped credential store anywhere;
+warehouse connections have **no
 owner**; no RBAC on `/agents/custom*`. (`telemetry.py`'s Langfuse backend, dead here on
 2026-08-30, has since been repaired to ride the OTel exporter — OA·LF-1.)
 
@@ -98,10 +99,10 @@ GFM/CSV tables, deep links.
 **Arc VA · the agent platform** — skills plane (VA-1), delegation (VA-2), OTLP (VA-3),
 automations dataflow + run canvas (VA-4a…4e), trace excellence (VA-5), agent alerting (VA-6),
 instruction/prompt management (VA-7), guardrail plane (VA-8), outbound seam (VA-9a),
-automations-run-as-agents (VA-9b), the propose-only action tool (VA-9c — **partial**: the
-law "a grant is permission to PROPOSE, never to EXECUTE" and the `propose_action` tool are
-live, but `tool_grants` is a phantom field — §1 honest limits — so no agent can yet hold a
-grant; the tool correctly serves nothing rather than a tool that always refuses).
+automations-run-as-agents (VA-9b), the propose-only action tool (VA-9c — **completed
+2026-09-02**: the law "a grant is permission to PROPOSE, never to EXECUTE" and the
+`propose_action` tool were live from the start; `tool_grants` is now a stored column, so an
+agent can hold a grant across restarts and the tool serves its roster).
 
 **VA-12/13/14 (2026-08-30)** — canvas authoring (Add Trigger / Add Action), the
 `investigate → slack_post` chain with wait-when-consumed, and the Slack app manifest generated
@@ -174,7 +175,10 @@ and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), br
   free text (B1's law, one field over).
 - ~~**W2 · `for_each` on an effect**~~ — **SHIPPED 2026-08-30.** One step, N dispatches,
   one `EffectOutcome` each. 🔑 **The pre-check moved the scope again: NOTHING in this
-  plane publishes a list** — `investigate` publishes two strings, `slack_post` two
+  plane publishes a list** — `investigate` publishes two strings (three since
+  2026-09-02: `summary` carries the report's executive summary, because the nightly
+  briefing was measured posting a 71-character *title* while the trust warning and the
+  numbers sat in a 20KB report Slack never saw — still no list), `slack_post` two
   strings, `notify`/`brief`/`monitor`/`agent_alert` nothing at all, and only the
   declared-action kind has an OPEN outcome shape. So a source is a **literal list** or a
   binding onto that open kind, and fanning over a closed-set producer is refused at SAVE
@@ -361,7 +365,27 @@ Default to visible-metadata, gated-payloads.
 
 ---
 
-### 3.6 · S1 — Qdrant installs WITH the app, not beside it (raised by the user, 2026-08-30)
+### 3.6 · ~~S1 — Qdrant installs WITH the app, not beside it~~ — **SHIPPED 2026-09-02**
+
+> **Built as directed below: the third branch.** `_client()` opens qdrant-client's
+> in-process local mode at `AUGHOR_QDRANT_PATH` (default `<state_dir()>/qdrant`, so the
+> suite's temp `AUGHOR_STATE_DIR` and any data/ move carry it) whenever no URL is pinned
+> and no Postgres is configured; `backend()` still answers `qdrant` for both shapes
+> because every operation is identical — only the client differs. The exclusive-lock
+> constraint became the design: ONE serialized client per path for the life of the
+> process (request threads and kernel job threads share this seam), a lock-contention
+> error that names the one-writer rule, and the env name in `tests/conftest.py` the same
+> commit. **Receipt:** the embedded suite runs a real upsert→ranked-search→filter→
+> scroll→delete roundtrip on a temp path — no server, no port, no env var.
+> **Found while joining:** THREE call sites built their own `QdrantClient` from
+> `AUGHOR_QDRANT_URL` (org-intelligence list + delete, doc-chunk delete), so on any
+> deployment whose index wasn't at localhost:6333 they read/deleted against a server
+> holding nothing. All three now ride the seam; `scroll_points`/`delete_ids` were added
+> to it (with pgvector twins) because a listed row must be addressable.
+> An operator with an existing server (this repo's author included) pins
+> `AUGHOR_QDRANT_URL` — the embedded default would otherwise hide those vectors.
+
+### The original S1 case (raised by the user, 2026-08-30)
 
 **Measured, not recalled.** `uv sync` / `pip install '.[semantic]'` installs the *client only*
 — `pyproject.toml` concedes it in its own comment: `qdrant-client` "already needs a Qdrant
@@ -473,8 +497,24 @@ finishes a direction already chosen.
 > - **DS-5** — shipped as the **Map** tab ("Design" is the automation button AND its
 >   canvas mode; "Canvas" is Data Canvas). Zero server cost: two undeclared wire fields
 >   (`SlackBotSummary.agent_id`, `Automation.agent_id`) + three client filters bought
->   every relation. It deliberately draws **no grants spoke** — `tool_grants` is a
->   phantom (§1 honest limits).
+>   every relation. It deliberately drew **no grants spoke** while `tool_grants` was a
+>   phantom; the column landed 2026-09-02, so the spoke is now buildable (unbuilt).
+
+> **DS-1R · Canvas-first, decided by the user 2026-09-02 and SHIPPED same day** — *"the
+> actual workflow should be the primary driver.. Design may read from the actual
+> workflow.. while creating the automation itself, the workflow screen should be the
+> starting point.. a blank canvas with only the trigger node placed by default."* Measured
+> against the code, the complaint was exact: the VA-12 rail and the canvas were two
+> synchronized FULL editors of one draft, and the rail (340px, permanent) predated the
+> node faces growing real editors. What shipped: the rail and the create/edit form are
+> RETIRED · the canvas is full-bleed under ONE header strip (identity · mode · dirty ·
+> Discard · Dry run · Save · Run now) · the rail's richer widgets survive as a
+> **StepInspector** — a lens that opens on the SELECTED node only (trigger ⇒ the WHEN
+> editor, step ⇒ that step's widgets) · **+ New automation lands on a blank canvas with
+> the trigger node pre-placed**, name edited in the header, Save = create (`POST
+> /automations/dry-run` already took unsaved chains, so Dry run works before the record
+> exists) · a DS-15 proposal now seeds the CANVAS, not a form — closing that wave's
+> "left open". Token-ratchet baseline 1180→1176 (the dead form paid it).
 
 **DS-1 · The component palette** — the discovery surface, and the part the user singled
 out. Specced from a source-level dissection of theirs (sidebar component tree, hooks and
@@ -499,12 +539,17 @@ constants read at v1.12.0) before this was written.
   disabled-with-reason rows · Beta shown / Legacy hidden by default, both persisted ·
   loading skeletons matching row geometry · badge text folded into the accessible name
   (WCAG 2.5.3 label-in-name) and the panel `inert` while hidden.
-- **P1 — the killer interaction, the port-compatibility filter:** drop an edge on empty
-  canvas → the palette opens filtered to steps that can bind that type, a banner names the
-  active filter (with ×-to-clear), and choosing an entry lands the node **pre-bound to the
-  dragged edge**. Cheap here: B1's drag-time refusals already know every port's type.
-  Also P1: singleton/constraint reasons (one trigger node; one fan-out per step) and the
-  three-key sort (priority → search score → name).
+- ~~**P1 — the killer interaction, the port-compatibility filter**~~ — **SHIPPED
+  2026-09-02**, straight into DS-1R's canvas-first shape. `onConnectEnd` (a gives port
+  released over nothing) opens the palette filtered to consumers, a banner names the
+  offered value with ×-to-clear, and the chosen entry lands at the RELEASE POINT wired
+  through `landPrebound` — which runs `applyConnect`, never beside it, so the pre-bind
+  obeys exactly the hand-drag refusals. An `out:*` drop appends unbound and parks the
+  connection for DS-4's key picker. Triggers are out by construction (the "one trigger
+  node" constraint surfaced as the filter); the three-key sort landed as priority →
+  match-place (label-prefix < label < description) → name. The law is pure and
+  jsdom-tested because the gesture is not drivable there (nor by the browser tool —
+  4× measured); the drag itself is the one manual receipt.
 - **P2:** a slim segmented rail once there is more than one section — **Palette · Runs ·
   Versions**, library-above / this-chain-below, active re-click collapses, feature
   re-click returns to Palette, every section switch clears search. When VA-9d lands, adopt
@@ -1257,11 +1302,14 @@ NEXT (order within a band is the user's knob)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
                                    NOT started: §3.1 requires that posture be agreed with
                                    the user first. DS-11's second half)
-  S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
+  ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
+                                   AUGHOR_QDRANT_PATH; one serialized client per path;
+                                   three bespoke QdrantClient call sites joined the
+                                   seam — §3.6)
   DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
-  tool_grants column              (turn VA-9c's phantom into a stored grant — §1 honest limits;
-                                   migration + store/create/patch surfaces; grants stay
-                                   PROPOSE-only)
+  ✅ tool_grants column SHIPPED 2026-09-02  (migration 6 + store/create/patch + write-time
+                                   roster validation + the editor's grants list; grants
+                                   stay PROPOSE-only — §1 limit retired)
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 

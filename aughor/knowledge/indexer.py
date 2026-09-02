@@ -129,21 +129,18 @@ def _ensure_collection() -> None:
 
 
 def _delete_doc_chunks(doc_id: str) -> None:
-    """Delete all Qdrant points belonging to a document."""
+    """Delete all vector points belonging to a document.
+
+    Through the seam (`delete_by_filter`), not a bespoke QdrantClient: the old
+    hand-built client read AUGHOR_QDRANT_URL itself, so on a pgvector or embedded
+    deployment it deleted from a server that held nothing while the real index kept
+    the chunks it claimed to drop."""
     try:
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import Filter, FieldCondition, MatchValue
-        import os
-        client = QdrantClient(url=os.getenv("AUGHOR_QDRANT_URL", "http://localhost:6333"))
-        client.delete(
-            collection_name=DOCS_COLLECTION,
-            points_selector=Filter(
-                must=[FieldCondition(key="doc_id", match=MatchValue(value=doc_id))]
-            ),
-        )
+        from aughor.semantic.vector_store import delete_by_filter, match_filter
+        delete_by_filter(DOCS_COLLECTION, match_filter("doc_id", doc_id))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "Qdrant chunk deletion is best-effort; registry deregister still proceeds and stale vectors are harmless", counter="indexer.delete_chunks")
+        tolerate(exc, "vector chunk deletion is best-effort; registry deregister still proceeds and stale vectors are harmless", counter="indexer.delete_chunks")
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

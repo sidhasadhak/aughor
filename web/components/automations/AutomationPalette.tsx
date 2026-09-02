@@ -54,11 +54,26 @@ function matches(entry: AutomationPaletteEntry, query: string): boolean {
   return norm(`${entry.label} ${entry.description} ${entry.kind}`).includes(q);
 }
 
-/** The server's curated order first, then alphabetical — the same three-key idea the
- *  reference palette uses, minus the search score a substring match does not produce. */
-function ordered(entries: AutomationPaletteEntry[]): AutomationPaletteEntry[] {
+/** DS-1 P1 — where the query hit, as a rank. A substring match produces no fuzzy
+ *  score, but it does produce a PLACE: a label that starts with the query beats one
+ *  that merely contains it, which beats a hit buried in the description. Exported
+ *  because a sort key that is wrong is invisible on nine rows and decisive on ninety. */
+export function searchScore(entry: AutomationPaletteEntry, query: string): number {
+  if (!query) return 0;
+  const q = norm(query);
+  const label = norm(entry.label);
+  if (label.startsWith(q)) return 0;
+  if (label.includes(q)) return 1;
+  return 2;
+}
+
+/** The reference palette's three-key sort, honestly: priority → search score → name. */
+function ordered(entries: AutomationPaletteEntry[], query: string): AutomationPaletteEntry[] {
   return [...entries].sort((a, b) =>
-    a.priority !== b.priority ? a.priority - b.priority : a.label.localeCompare(b.label));
+    a.priority !== b.priority ? a.priority - b.priority
+    : searchScore(a, query) !== searchScore(b, query)
+      ? searchScore(a, query) - searchScore(b, query)
+      : a.label.localeCompare(b.label));
 }
 
 /** What a row hands to the canvas on a drag, and the smallest thing the add gate needs.
@@ -152,12 +167,20 @@ export interface AutomationPaletteProps {
   /** Show only this group. The on-canvas "Add Trigger" / "Add Action" buttons open the
    *  palette already narrowed, which is what those buttons always meant. */
   only?: PaletteGroup;
+  /** DS-1 P1 — an edge was dropped on empty canvas: show only steps that can CONSUME
+   *  it (an input port exists), with a banner naming the value being offered. Triggers
+   *  are out by construction — a trigger cannot take a binding — which is the
+   *  "one trigger node" constraint surfaced as a filter instead of a refusal. */
+  bindFilter?: { ref: string };
+  /** ×-to-clear on the banner: drop the filter, keep the palette. */
+  onClearBindFilter?: () => void;
   /** The ONE add gate — click and drop both arrive here (drop with a position). */
   onAdd: (placement: PalettePlacement, position?: { x: number; y: number }) => void;
   onClose: () => void;
 }
 
-export function AutomationPalette({ connId, only, onAdd, onClose }: AutomationPaletteProps) {
+export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
+                                    onAdd, onClose }: AutomationPaletteProps) {
   const [entries, setEntries] = React.useState<AutomationPaletteEntry[] | null>(null);
   const [failed, setFailed] = React.useState(false);
   const [query, setQuery] = React.useState("");
@@ -181,12 +204,15 @@ export function AutomationPalette({ connId, only, onAdd, onClose }: AutomationPa
   // survive into Triggers and silently hide everything in it.
   React.useEffect(() => { setQuery(""); }, [only]);
 
-  const groups: PaletteGroup[] = only ? [only] : ["trigger", "action"];
+  const groups: PaletteGroup[] = bindFilter ? ["action"]
+    : only ? [only] : ["trigger", "action"];
   // Scoped to the half being SHOWN before the search is applied — found by driving it:
   // computing the empty state over every entry meant a query matching only the other
   // half ("channel", with Triggers open) rendered no rows, no heading and no message,
   // which reads as a broken panel rather than an empty result.
-  const inScope = (entries ?? []).filter(e => !only || e.group === only);
+  const inScope = (entries ?? []).filter(e =>
+    bindFilter ? (e.group === "action" && e.bindable.length > 0)
+               : (!only || e.group === only));
   const shown = inScope.filter(e => matches(e, query));
 
   return (
@@ -214,6 +240,31 @@ export function AutomationPalette({ connId, only, onAdd, onClose }: AutomationPa
         </Button>
       </div>
 
+      {bindFilter && (
+        // The active filter, NAMED — a silently narrowed list reads as a small platform.
+        <div
+          className="aug-fs-xs"
+          data-testid="palette-bind-banner"
+          style={{ display: "flex", alignItems: "center", gap: 6, margin: "0 6px 4px",
+            padding: "4px 7px", borderRadius: "var(--r2)",
+            border: "1px solid color-mix(in srgb, var(--chart-2) 45%, transparent)",
+            background: "color-mix(in srgb, var(--chart-2) 9%, var(--bg-1))",
+            color: "var(--t2)" }}>
+          <Icon name="link" size={11} />
+          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            can bind <span style={{ fontFamily: "var(--font-mono)",
+              color: "var(--chart-2)" }}>{bindFilter.ref}</span>
+          </span>
+          {onClearBindFilter && (
+            <Button variant="ghost" size="icon-xs" aria-label="Clear the binding filter"
+              style={{ marginLeft: "auto", width: 16, height: 16 }}
+              onClick={onClearBindFilter}>
+              <Icon name="close" size={10} />
+            </Button>
+          )}
+        </div>
+      )}
+
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 6px" }}>
         {entries === null ? (
           <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "6px 4px" }}>
@@ -226,7 +277,7 @@ export function AutomationPalette({ connId, only, onAdd, onClose }: AutomationPa
           </div>
         ) : (
           groups.map((group) => {
-            const rows = ordered(shown.filter(e => e.group === group));
+            const rows = ordered(shown.filter(e => e.group === group), query);
             if (!rows.length) return null;
             return (
               <div key={group} style={{ marginTop: 4 }}>
