@@ -152,6 +152,12 @@ for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR
                  # the SAME COMMIT as aughor/integrations/store.py (the rule a live-data
                  # write bought).
                  "AUGHOR_INTEGRATIONS_DIR",
+                 # VA-9d — the MCP allowlist and the tool rosters discovered against it,
+                 # added in the SAME COMMIT as aughor/mcpservers/store.py. An unpinned
+                 # allowlist is worse than an unpinned cache: a test that registers a
+                 # server would leave a real outbound destination in the developer's
+                 # live data/.
+                 "AUGHOR_MCPSERVERS_DIR",
                  # DS-17 — webhook-door tokens live under this dir, in the same commit as
                  # aughor/automations/webhooks.py for the same reason. (The automations
                  # RECORDS are SQLite under AUGHOR_AUTOMATIONS_DB, isolated above; this is

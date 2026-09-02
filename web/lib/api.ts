@@ -3388,7 +3388,9 @@ export type ConditionKind =
  *  it — the model's own docstring says they are "not authored by hand". */
 export type EffectKind =
   | "investigate" | "brief" | "notify" | "kinetic_action" | "slack_post" | "subchain"
-  | "integration_call" | "metric_value" | "trusted_query";
+  | "integration_call" | "metric_value" | "trusted_query"
+  // VA-9d — a read-only tool on an allowlisted foreign MCP server.
+  | "mcp_call";
 
 /**
  * The `config` keys each kind REQUIRES, mirroring `_CONDITION_REQUIRED` and
@@ -3412,6 +3414,10 @@ export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
   integration_call: ["connection_id", "operation"],
   metric_value: ["metric"], trusted_query: ["query_id"],
+  // VA-9d — WHICH allowlisted server and WHICH of its discovered tools. Neither is
+  // bindable: a `$from` on either would turn a named destination back into an
+  // arbitrary one, and the save refuses it.
+  mcp_call: ["server_id", "tool"],
 };
 
 /** A Slack bot record, tokens masked by the server (`to_safe_dict`). Never carries a
@@ -3628,6 +3634,130 @@ export interface IntegrationProvider {
    *  provider's error page. */
   https_only: boolean;
   connection: IntegrationConnection | null;
+}
+
+/* ── VA-9d · MCP servers this deployment may CALL ──────────────────────────────
+ *
+ * The mirror of the provider catalog above: those are accounts a USER grants us, these
+ * are third-party servers an OPERATOR writes down. The list is normally EMPTY, and that
+ * is the posture rather than an empty state to apologise for — an allowlist with nothing
+ * in it is how a fresh deployment reaches nothing at all.
+ */
+
+/** One tool on an allowlisted server, as the deployment classified it. `disposition` is
+ *  OUR verdict, not the server's word, and `reason` is the server-authored sentence that
+ *  explains a refusal — rendered verbatim, because the read-only-first posture lives in
+ *  those words and a client that re-worded them would be re-deciding it. */
+export interface McpToolRow {
+  server_id: string;
+  name: string;
+  title: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  disposition: "callable" | "refused_mutating";
+  reason: string;
+  read_only_hint: boolean | null;
+  destructive_hint: boolean | null;
+  discovered_at: string;
+}
+
+/** One allowlisted server, plus the roster last discovered against it.
+ *
+ *  `discovered_at` rides in the same object deliberately: a cached remote list rendered
+ *  as if it were live is the failure the pair exists to prevent, so a surface can never
+ *  show the tools without being handed their age. `""` means never discovered.
+ *
+ *  There is no `auth_header` — the server DROPS it rather than masking it, so this
+ *  interface could not carry a credential if it tried. `has_auth` is the only thing a
+ *  reader needs. */
+export interface McpServerRow {
+  id: string;
+  name: string;
+  transport: "stdio" | "http";
+  command: string;
+  args: string[];
+  env: Record<string, string>;
+  url: string;
+  has_auth: boolean;
+  enabled: boolean;
+  created_at: string;
+  updated_at: string;
+  discovered_at: string;
+  tool_count: number;
+  callable_count: number;
+  tools: McpToolRow[];
+}
+
+export interface McpServerInput {
+  name: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  url?: string;
+  /** Blank means "leave the stored one alone" on an update; "-" clears it. */
+  auth_header?: string;
+  enabled?: boolean;
+}
+
+export async function listMcpServers(): Promise<{ servers: McpServerRow[] }> {
+  const res = await fetch(`${getApiBase()}/mcp-servers`);
+  if (!res.ok) throw new Error(`Failed to load MCP servers (${res.status})`);
+  return res.json();
+}
+
+export async function createMcpServer(body: McpServerInput): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await _mcpError(res, "add that server"));
+  return res.json();
+}
+
+export async function updateMcpServer(id: string, body: McpServerInput): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}`, {
+    method: "PUT", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(await _mcpError(res, "save that server"));
+  return res.json();
+}
+
+export async function deleteMcpServer(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to remove that server");
+}
+
+/** Ask the server what it offers and replace its roster. Separate from creating it, and
+ *  deliberately: a POST that also went out and talked to the server would make "save this
+ *  address" and "run something against it" one gesture. */
+export async function discoverMcpServer(id: string): Promise<McpServerRow> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/discover`, { method: "POST" });
+  if (!res.ok) throw new Error(await _mcpError(res, "reach that server"));
+  return res.json();
+}
+
+export async function mcpServerHealth(id: string): Promise<{
+  server_id: string; ok: boolean; reason: string;
+  tool_count: number; callable_count: number; detail?: string;
+}> {
+  const res = await fetch(`${getApiBase()}/mcp-servers/${id}/health`);
+  if (!res.ok) throw new Error(await _mcpError(res, "reach that server"));
+  return res.json();
+}
+
+/** The server's own sentence, not a status code. A 400 here is the model's transport rule
+ *  ("a stdio server needs a `command` to run") and a 502 is the third party being
+ *  unreachable — both are things a reader can act on, and "Request failed (502)" is not. */
+async function _mcpError(res: Response, what: string): Promise<string> {
+  try {
+    const body = await res.json();
+    const detail = body?.detail;
+    if (typeof detail === "string" && detail) return detail;
+  } catch {
+    /* fall through to the generic sentence */
+  }
+  return `Could not ${what} (${res.status})`;
 }
 
 export async function getIntegrationsCatalog(): Promise<{

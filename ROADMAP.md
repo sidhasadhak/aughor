@@ -55,7 +55,7 @@ plane — see §7.
 | Query workbench | SE-0…SE-5a complete |
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
-| Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped and **consumed 2026-09-01** (DS-11's first half: an `integration_call` step spends a grant through govern.outbound); VA-9d, VA-10 open |
+| Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped and **consumed 2026-09-01** (DS-11's first half: an `integration_call` step spends a grant through govern.outbound); **VA-9d first slice shipped 2026-09-02** — an allowlisted MCP server's read-only tools, discovered, classified and callable as an `mcp_call` step (§3.1); its write slice and UI, and VA-10, remain open |
 | Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
 | Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), parallel steps (`scheduling`, DS-7), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
@@ -134,10 +134,75 @@ Phase 1; also fixed there and worth naming: `PUT /automations/{id}` was erasing
 
 ## 3 · ACTIVE — Arc VA remaining, Arc DS, plus substrate
 
-### 3.1 · VA-9d — the MCP consumer
+### 3.1 · VA-9d — the MCP consumer (FIRST SLICE SHIPPED 2026-09-02)
 
-`aughor/mcp/` today is a **server** exposing Aughor's tools, plus an HTTP client to Aughor's own
-API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.
+~~`aughor/mcp/` today is a **server** exposing Aughor's tools, plus an HTTP client to Aughor's own
+API. A generic consumer — stdio + SSE, registry, discovery, health — does not exist.~~
+
+> **The premise was re-measured before building, and for once it held exactly.** The
+> `mcp_tool` component family looked like the place it would be wrong — but
+> `_mcp_tool_components()` reads `aughor.mcp.server`'s OWN tool manager, so it re-reports
+> what we serve, never a foreign roster. A repo-wide sweep for `stdio_client`, `sse_client`,
+> `streamablehttp_client` and `ClientSession` found **zero** first-party hits, and
+> `client.py`'s `_stream_sse` is Aughor's own SSE framing, not the protocol's. Two things
+> were better prepared than the paragraph admitted: the SDK client is already a dependency
+> (`mcp>=1.28.0`, its `stdio`/`sse`/`streamable_http` transports installed and unused), and
+> `govern/outbound.py`'s docstring already names the counterparty — *"later an MCP server
+> id"* — and says outright that VA-9a *"comes before that one"*. The seam was built for
+> this slice.
+>
+> **Shipped: `aughor/mcpservers/`** — `models` (the record + `classify`) · `store` (the
+> allowlist and the rosters discovered against it) · `session` (stdio + streamable HTTP,
+> transport only) · `discover` (tools/list, classification, health) · `call` (THE door).
+> Plus `GET/POST/PUT/DELETE /mcp-servers`, discover and health routes, a `remote_tool`
+> component family, and the `mcp_call` effect kind so a chain can name one.
+>
+> **The posture's own sentence had a hole, and the protocol filled it.** "A tool the server
+> declares as mutating is listed and refused" does not say what to do with a tool that
+> declares NOTHING — which is what most real MCP tools do, so reading it as "refuse the
+> flagged ones, allow the rest" would have allowed almost everything. The specification
+> settles it rather than leaving it to taste: `readOnlyHint` is documented *"Default:
+> false"* and `destructiveHint` *"Default: true"*, so **silence is not an absent answer, it
+> IS the answer "may modify, possibly destructively"**. An unannotated tool is listed and
+> refused exactly like a declared-mutating one. `classify()` is the single place that
+> decides, and a contradiction (`readOnly` AND `destructive`) takes the restrictive reading.
+>
+> **The allowlist is the off state — no flag.** `FLAG_DEFAULT` has been empty since the
+> flag endgame, and a switch somebody must remember to leave closed is the control this repo
+> already replaced once. A fresh clone reaches nothing because there is nowhere to go, and
+> the only way to add a destination is a human writing one down. That also settles the
+> trust question the SDK raises (*"clients should never make tool use decisions based on
+> ToolAnnotations received from untrusted servers"*): what makes a server trusted here is
+> that a person put it in the table — so the allowlist does real work rather than decorating.
+>
+> **🔴 The defect that only driving it could find.** Discovery was capped and spanned and
+> recorded **nothing**. `session_log.emit` drops any event with no ambient trace — correctly,
+> and by its own docstring — and a chain step inherits the run's trace (VA-4d made the run id
+> the trace id) while a discovery pressed from a ROUTE has none. So the step path audited
+> perfectly and the route path was silent, which is the wrong way round: discovery is the
+> most audit-worthy act on this surface, being the one that first opens a connection — or
+> spawns a process — against a newly written-down destination. Fixed by binding a trace in
+> `discover()` and `call()` rather than at the route, because the route is not the only
+> caller. **The test that should have caught it was the same shape as the bug**: it spied on
+> `external_call` and proved the wrapper was entered, which was never the claim. Rewritten to
+> assert the ambient trace at emission, and verified to FAIL with the fix reverted.
+>
+> **Receipt, live 2026-09-02** (a real MCP server over a real stdio subprocess, deleted
+> after): empty allowlist → `/mcp-servers` returns `[]` and the palette dims `mcp_call` with
+> the door named → register (nothing contacted; a stdio row with no `command` is a 400 in the
+> model's own words) → Discover → **3 tools, 1 callable here** → saving a chain step naming
+> `delete_everything` is **refused at SAVE** with the roster's own sentence → the read-only
+> one saves, runs, and publishes `{"text": "It is bright and 21C in Lisbon.", "truncated":
+> false}` → and both calls land in the live ledger as `EXTERNAL_CALL` beside Slack's:
+> `mcp:<id>.tools/list` and `mcp:<id>.tools/call:read_the_weather`.
+>
+> **Left open (the write slice, and §3.1's own deferred question):** whose declaration of
+> "read-only" is believed, and what a server that changes a tool's declaration after
+> registration may do. Also unbuilt here: a UI (`+ Custom MCP` in the connectors catalog and
+> the palette's per-server rail rows, §3.7 Phase 1's P2 note), OAuth-authenticated servers
+> (the `auth_header` is a single opaque forwarded value, not an auth implementation), and
+> non-text tool results — images and embedded resources are dropped rather than flattened,
+> deliberately, because a partial answer that looks whole is worse than a missing one.
 
 VA-9's own risk note calls this *"the largest new attack surface in the arc"*. ~~Agree the
 allowlist and the outbound-off-by-default posture with the user before starting.~~
@@ -792,9 +857,11 @@ catalog — the same one Langflow outsources to — arrives as governed rows und
 approval gate and OUR vault. **Receipt:** a chain reads Gmail under the user's own grant
 and posts to Slack, every hop attributed, capped and audited.
 
-> **First half SHIPPED 2026-09-01 — the VA-11 consumer. The VA-9d half is NOT started**
-> (§3.1 requires the allowlist and outbound-off-by-default posture be agreed with the user
-> before a line of it exists; that conversation has not happened).
+> **First half SHIPPED 2026-09-01 — the VA-11 consumer. The VA-9d half's FIRST SLICE
+> shipped 2026-09-02** (the posture conversation happened on 2026-09-01, §6.3): an
+> allowlisted server's read-only tools are discovered, classified, served as `remote_tool`
+> components and callable as an `mcp_call` step through `govern.outbound`. What is still
+> open is the WRITE slice and the UI — receipts and left-opens in §3.1.
 >
 > **The premise, measured before building and exactly as §3.4 stated it:**
 > `broker.fresh_access_token()` had **zero** callers outside its own tests, and nothing
@@ -1380,14 +1447,22 @@ NOW
         receipts in §3.7 Phase 3
 
 NEXT (order within a band is the user's knob)
-  VA-9d  MCP consumer             (NOT started, but NO LONGER BLOCKED — the posture was
-                                   DECIDED 2026-09-01: read-only tools first, allowlisted
-                                   servers, a declared-mutating tool LISTED and refused
-                                   with a sentence (§3.1, §6.3). This band still said
-                                   "posture first" until 2026-09-02; nothing waits on the
-                                   user. DS-11's second half, and §3.1's own note makes it
-                                   the delivery mechanism for the most-wanted feature here:
-                                   Arcade and Composio expose their connectors over MCP.)
+  ✅ VA-9d FIRST SLICE SHIPPED 2026-09-02 — the allowlist IS the off state (no flag; an
+                                   empty registry reaches nothing). Discovery + health + the
+                                   read-only gate + `mcp_call` as a chain step, every hop
+                                   through govern.outbound. The protocol's own defaults
+                                   settled the case the posture sentence left open: a tool
+                                   that declares NOTHING is refused, because `readOnlyHint`
+                                   is documented "Default: false". 🔴 Found by driving it:
+                                   discovery was capped and spanned and recorded NOTHING —
+                                   no ambient trace, and `emit` drops those. DS-11's second
+                                   half; §3.1 carries the receipt.
+                                   ⚠️ The posture was DECIDED 2026-09-01 (§3.1, §6.3) — this
+                                   band said "agree it with the user first" for a further
+                                   day, which is a resolved item reading as a blocked one.
+                                   NEXT for this arc: the write slice (whose declaration of
+                                   "read-only" do we believe?) and the UI (`+ Custom MCP` in
+                                   the connectors catalog, per-server palette rows).
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
@@ -1423,10 +1498,10 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 ### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
 
 **Keyed on the user** (a decision or credential only they hold):
-- ~~**VA-9d posture**~~ — **NOT a debt: decided 2026-09-01** (§3.1, §6.3). This line and §5's
-  NEXT band both still said "needs sign-off" a day after the call was made, which is the
-  ledger's own failure mode — a resolved item that keeps reading as blocked is worse than an
-  unlisted one, because it stops work that could have started.
+- ~~**VA-9d posture**~~ — **NOT a debt: decided 2026-09-01** (§3.1, §6.3), and the first
+  slice shipped 2026-09-02. This line and §5's band both still read "needs sign-off" a
+  day after the call was made — the ledger's own worst failure mode, because a resolved
+  item that keeps reading as blocked stops work that could have started.
 - **VA-10's privacy default** — §6.4, the ONE open decision left in §6: may an admin read a
   user's prompts, or only their metadata? VA-10 stalls on it, VA-9d does not.
 - **VA-11's live Google receipt** — needs an OAuth client only the user can create.

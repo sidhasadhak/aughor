@@ -964,6 +964,37 @@ def _dispatch_integration(effect: Effect, automation: Automation) -> EffectOutco
         data=dict(result.data) if status == "executed" else {})
 
 
+def _dispatch_mcp_call(effect: Effect, automation: Automation) -> EffectOutcome:
+    """VA-9d — one tool on an allowlisted foreign MCP server, through the one door.
+
+    Everything that makes this governed happens in `mcpservers.call.call`: the allowlist
+    check, the roster lookup, the read-only gate, the outbound cap and span, and the
+    `EXTERNAL_CALL` event. This is the translation layer and nothing else — the same
+    argument `_dispatch_integration` makes, and for the same reason: the day an agent may
+    call one of these, it must not re-derive the order those gates run in.
+
+    ``target`` is ``<server>:<tool>``, both halves load-bearing. The tool alone would make
+    two steps calling two different third parties look identical in a run history, which is
+    the one question this kind's history exists to answer.
+    """
+    from aughor.mcpservers.call import call as mcp_call
+
+    server_id = str(effect.config.get("server_id", ""))
+    tool = str(effect.config.get("tool", ""))
+    args = effect.config.get("arguments")
+    result = mcp_call(server_id, tool, dict(args) if isinstance(args, dict) else {})
+    status = _CALL_STATUS.get(result.status, "failed")
+    return EffectOutcome(
+        kind=effect.kind, target=f"{server_id}:{tool}", status=status,
+        message=result.message,
+        # Published on SUCCESS only — a failed call's message is the server's error, not
+        # this tool's output, and publishing it would let a later step bind to a value
+        # that means something else entirely. `truncated` rides along so a step reading
+        # `text` can tell a whole answer from half of one.
+        data=({"text": result.text, "truncated": result.truncated}
+              if status == "executed" else {}))
+
+
 @contextmanager
 def _warehouse(automation: Automation):
     """The automation's own data connection, closed on every path.
@@ -1096,6 +1127,10 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "integration_call": _dispatch_integration,
     "metric_value": _dispatch_metric_value,
     "trusted_query": _dispatch_trusted_query,
+    # VA-9d — reuses `_CALL_STATUS` unchanged, and the two interesting rows are already
+    # right: `refused` → `dispatch_error` (terminal — retrying a refusal never changes it)
+    # and `blocked` → `failed` (retriable — a cap window rolls over).
+    "mcp_call": _dispatch_mcp_call,
 }
 
 

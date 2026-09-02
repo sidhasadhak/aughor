@@ -46,6 +46,8 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
     desc: "Post into a channel as one of your bots — mentionable, and repliable in thread" },
   { value: "subchain", label: "Run a chain",
     desc: "Run another automation as one step — share a shape instead of authoring it twice" },
+  { value: "mcp_call", label: "Call an MCP tool",
+    desc: "Run a read-only tool on a server this deployment allows — capped, spanned and audited like any other outbound call" },
   { value: "integration_call", label: "Use an integration",
     desc: "Act as a connected account — read or post under the grant that account gave, "
         + "capped and audited" },

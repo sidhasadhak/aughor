@@ -42,15 +42,19 @@ def _isolate_stores() -> None:
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))
 
-    # DS-17 — the DIRECTORY stores, which this dump did not isolate at all. The docstring
-    # above says "every store honours its AUGHOR_*_DB override", and that sentence was the
-    # bug: a store whose env is a PATH rather than a `_DB` fell straight through and wrote
-    # into the developer's live `data/` on every `npm run gen:api`. `tests/conftest.py`
-    # already isolates exactly this family for exactly this reason — the two lists are
-    # siblings, and a new store belongs in both.
+    # The DIRECTORY stores, which this dump never isolated: the docstring above said
+    # "every store honours its AUGHOR_*_DB override", and that sentence was the gap — a
+    # store keyed on a path had no pin here at all. Latent rather than bleeding (these
+    # write when USED, and a spec dump only imports and calls `app.openapi()`), but an
+    # unpinned MCP allowlist is the wrong one to leave latent: it is a list of outbound
+    # destinations. `tests/conftest.py` isolates exactly this family; the two are siblings
+    # and a new store belongs in BOTH.
+    #
+    # DS-17 added AUGHOR_AUTOMATIONS_DIR here and VA-9d added AUGHOR_MCPSERVERS_DIR; this
+    # is the union, which is what the merge of the two waves means.
     for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
                      "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR", "AUGHOR_INTEGRATIONS_DIR",
-                     "AUGHOR_AUTOMATIONS_DIR"):
+                     "AUGHOR_AUTOMATIONS_DIR", "AUGHOR_MCPSERVERS_DIR"):
         os.environ.setdefault(_dir_env, tmp)
     # A DIRECTORY too, and one that takes an EXCLUSIVE lock in local mode — so an unpinned
     # default here does not merely dirty `data/`, it contends with a running API.
