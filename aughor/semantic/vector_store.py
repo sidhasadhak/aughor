@@ -1,9 +1,18 @@
-"""The semantic-index seam — Qdrant or pgvector behind one interface.
+"""The semantic-index seam — embedded Qdrant, a Qdrant server, or pgvector behind one interface.
 
-Two backends, selected by deployment shape rather than code changes:
+Three backends, selected by deployment shape rather than code changes (S1, §3.6):
 
-* **Qdrant** — the self-hosted/local default (``AUGHOR_QDRANT_URL``, default
-  ``localhost:6333``). Explicitly setting that env var pins this backend.
+* **Embedded Qdrant** — the local default when nothing is pinned. ``qdrant-client``'s
+  in-process on-disk mode (``QdrantClient(path=…)``) at ``AUGHOR_QDRANT_PATH``
+  (default ``<state dir>/qdrant``): same API, no port, no daemon, no second install
+  step — a fresh clone gets semantic search from ``uv sync`` alone. Local mode holds
+  an EXCLUSIVE lock on its directory, so the API process is the single writer — the
+  same one-writer rule ``data/system.db`` already lives by — and this module keeps
+  exactly one client per path (serialized: request threads and kernel job threads
+  both reach this seam).
+* **Qdrant server** — explicitly setting ``AUGHOR_QDRANT_URL`` pins it; self-hosted
+  deployments (and any machine with an existing server holding vectors) keep exactly
+  today's behaviour.
 * **pgvector** — chosen automatically when ``AUGHOR_DB_URL`` names a Postgres and no
   Qdrant URL was pinned. The index rides IN the platform's one managed database:
   no second service, ~0 MB of bundle (psycopg2 is already in the serving set), and
@@ -11,13 +20,15 @@ Two backends, selected by deployment shape rather than code changes:
   index — a finding deleted relationally can no longer survive as a stray vector,
   which is the drift class the Qdrant purge hooks existed to chase.
 
-The availability contract is unchanged from the trim's design and applies to both:
+The availability contract is unchanged from the trim's design and applies to all:
 an ABSENT capability (package not installed / no database configured) degrades —
 reads answer like an empty index, writes no-op — while a CONFIGURED backend that is
 down RAISES, because an outage is worth surfacing and a deployment choice is not.
+For the embedded backend "down" means the directory's lock is held by another
+process, and the error says which rule was broken rather than leaking portalocker's.
 
 Filters: callers use :func:`match_filter` (a neutral exact-match on one payload
-key — the only shape the codebase has ever needed). The Qdrant backend also accepts
+key — the only shape the codebase has ever needed). The Qdrant backends also accept
 raw ``qdrant_client`` Filter objects for compatibility.
 """
 from __future__ import annotations
@@ -26,10 +37,12 @@ import hashlib
 import json
 import logging
 import os
+import threading
 
 logger = logging.getLogger(__name__)
 
 QDRANT_URL_ENV = "AUGHOR_QDRANT_URL"
+QDRANT_PATH_ENV = "AUGHOR_QDRANT_PATH"
 VECTOR_DIM = 768  # nomic-embed-text
 
 _PG_SCHEMA = "store_semantic"
@@ -49,11 +62,14 @@ def match_filter(key: str, value) -> dict:
 def backend() -> str:
     """Which backend this process uses: 'qdrant', 'pgvector', or '' (none).
 
-    An explicit AUGHOR_QDRANT_URL pins Qdrant — self-hosted deployments keep exactly
-    today's behaviour. Otherwise a Postgres AUGHOR_DB_URL means pgvector: the index
-    belongs in the database the deployment already has. With neither, Qdrant's
-    localhost default applies when the client package is present (the historical
-    local-dev shape), else there is no index."""
+    An explicit AUGHOR_QDRANT_URL pins the Qdrant server — self-hosted deployments
+    (and a laptop with an existing server holding vectors) keep exactly that
+    behaviour. Otherwise a Postgres AUGHOR_DB_URL means pgvector: the index belongs
+    in the database the deployment already has. With neither, Qdrant runs EMBEDDED
+    (`_client()` opens local mode at AUGHOR_QDRANT_PATH) when the client package is
+    present, else there is no index. Both Qdrant shapes answer 'qdrant' here —
+    every operation in this module is identical across them; only `_client()`
+    differs — so callers switching on the name need never know which one runs."""
     if os.getenv(QDRANT_URL_ENV):
         return "qdrant"
     url = os.getenv("AUGHOR_DB_URL", "")
@@ -86,7 +102,50 @@ def available() -> bool:
     return False
 
 
-# ── Qdrant backend plumbing (unchanged) ──────────────────────────────────────
+# ── Qdrant backend plumbing ──────────────────────────────────────────────────
+
+def _embedded_path() -> str:
+    """Where the embedded index lives: AUGHOR_QDRANT_PATH, else `<state dir>/qdrant`.
+
+    Rides `state_dir()` rather than a literal `data/` so the whole-deployment moves
+    (and the test suite's temp AUGHOR_STATE_DIR) carry the index with them — the
+    property every store guard in test_store_hermeticity exists to keep."""
+    p = os.getenv(QDRANT_PATH_ENV, "")
+    if p:
+        return p
+    from aughor.db.paths import state_dir
+    return str(state_dir() / "qdrant")
+
+
+class _Serialized:
+    """One lock around every method of the embedded client.
+
+    Local mode mutates in-process state with no locking of its own, and this seam is
+    reached from request threads and kernel job threads at once. Server/pgvector
+    backends need none of this — their concurrency is the server's job."""
+
+    def __init__(self, inner, lock: threading.RLock):
+        self._inner, self._lock = inner, lock
+
+    def __getattr__(self, name):
+        attr = getattr(self._inner, name)
+        if not callable(attr):
+            return attr
+
+        def _call(*a, **kw):
+            with self._lock:
+                return attr(*a, **kw)
+        return _call
+
+
+#: One client per embedded path, for the life of the process. Local mode takes an
+#: exclusive lock on its directory, so a second QdrantClient(path=…) — even in the
+#: same process — is refused by qdrant itself; per-path caching is what makes the
+#: lock a property instead of a crash. Keyed by path so a test pointing
+#: AUGHOR_QDRANT_PATH somewhere fresh gets a fresh index, not the first one opened.
+_embedded: dict[str, _Serialized] = {}
+_embedded_guard = threading.Lock()
+
 
 def _client():
     try:
@@ -97,7 +156,25 @@ def _client():
             "  uv pip install -e '.[semantic]'  — or call vector_store.available() first "
             "and degrade, which is what every function in this module does."
         ) from exc
-    return QdrantClient(url=os.getenv(QDRANT_URL_ENV, "http://localhost:6333"))
+    url = os.getenv(QDRANT_URL_ENV)
+    if url:
+        return QdrantClient(url=url)
+    path = _embedded_path()
+    with _embedded_guard:
+        client = _embedded.get(path)
+        if client is None:
+            try:
+                inner = QdrantClient(path=path)
+            except Exception as exc:
+                raise SemanticIndexUnavailable(
+                    f"the embedded semantic index at {path!r} could not be opened — "
+                    "most likely another process holds its exclusive lock. One process "
+                    "per index directory (the same one-writer rule as data/system.db): "
+                    "run through the API, or point AUGHOR_QDRANT_PATH at a throwaway "
+                    "directory, or pin AUGHOR_QDRANT_URL at a server."
+                ) from exc
+            client = _embedded[path] = _Serialized(inner, threading.RLock())
+    return client
 
 
 def _qdrant_filter(query_filter):
@@ -357,6 +434,66 @@ def scroll_payloads(collection: str, limit: int = 10_000) -> list[dict]:
         return [r.payload for r in records if r.payload]
     except Exception:
         return []
+
+
+def scroll_points(collection: str, limit: int = 10_000) -> list[dict]:
+    """All points as ``[{id: str, payload: dict}]`` — `scroll_payloads` plus the id.
+
+    Exists for the callers that DELETE by id afterwards (org intelligence's list →
+    remove flow): a payload without its point id is a row you can read but never
+    address. Empty list on any error, same contract as `scroll_payloads`."""
+    try:
+        if backend() == "pgvector":
+            conn = _pg()
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT id, payload FROM vectors WHERE collection = %s LIMIT %s",
+                            (collection, limit))
+                rows = [{"id": str(i), "payload": p} for i, p in cur.fetchall()]
+                cur.close()
+                return rows
+            finally:
+                conn.close()
+        client = _client()
+        out: list[dict] = []
+        offset = None
+        while len(out) < limit:
+            records, offset = client.scroll(
+                collection_name=collection, limit=min(1000, limit - len(out)),
+                offset=offset, with_payload=True, with_vectors=False,
+            )
+            out.extend({"id": str(r.id), "payload": r.payload or {}} for r in records)
+            if offset is None:
+                break
+        return out
+    except Exception:
+        return []
+
+
+def delete_ids(collection: str, ids: list) -> bool:
+    """Delete points by id. True when the backend accepted the delete; False on error
+    (an id that never existed is not an error — deletes are idempotent)."""
+    try:
+        wanted = [int(i) for i in ids]
+        if not wanted:
+            return True
+        if backend() == "pgvector":
+            conn = _pg()
+            try:
+                cur = conn.cursor()
+                cur.execute("DELETE FROM vectors WHERE collection = %s AND id = ANY(%s)",
+                            (collection, wanted))
+                cur.close()
+                conn.commit()
+                return True
+            finally:
+                conn.close()
+        from qdrant_client.models import PointIdsList
+        _client().delete(collection_name=collection,
+                         points_selector=PointIdsList(points=wanted))
+        return True
+    except Exception:
+        return False
 
 
 def _hash_id(s: str) -> int:

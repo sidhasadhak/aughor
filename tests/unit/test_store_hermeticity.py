@@ -110,6 +110,15 @@ def test_schema_fingerprint_cache_is_isolated():
     assert "aughor-test-stores" in str(schema_cache._CACHE_PATH)
 
 
+def test_embedded_qdrant_path_is_isolated():
+    """S1 — the embedded semantic index is a lock-holding DIRECTORY, so a leak here
+    is worse than dirty data: local mode's exclusive lock would also contend with a
+    running API. Resolved per call (never captured at import), so the conftest
+    assignment is what every open sees."""
+    from aughor.semantic import vector_store
+    assert "aughor-test-stores" in vector_store._embedded_path()
+
+
 def test_purge_resolves_the_SAME_dir_as_the_stores_it_deletes_from():
     """The second half of the incident: purge.py held its own Path("data"), so it UNLINKED
     from the live dir even when the store it was purging had been redirected. A redirect that

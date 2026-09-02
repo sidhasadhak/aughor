@@ -364,7 +364,27 @@ Default to visible-metadata, gated-payloads.
 
 ---
 
-### 3.6 · S1 — Qdrant installs WITH the app, not beside it (raised by the user, 2026-08-30)
+### 3.6 · ~~S1 — Qdrant installs WITH the app, not beside it~~ — **SHIPPED 2026-09-02**
+
+> **Built as directed below: the third branch.** `_client()` opens qdrant-client's
+> in-process local mode at `AUGHOR_QDRANT_PATH` (default `<state_dir()>/qdrant`, so the
+> suite's temp `AUGHOR_STATE_DIR` and any data/ move carry it) whenever no URL is pinned
+> and no Postgres is configured; `backend()` still answers `qdrant` for both shapes
+> because every operation is identical — only the client differs. The exclusive-lock
+> constraint became the design: ONE serialized client per path for the life of the
+> process (request threads and kernel job threads share this seam), a lock-contention
+> error that names the one-writer rule, and the env name in `tests/conftest.py` the same
+> commit. **Receipt:** the embedded suite runs a real upsert→ranked-search→filter→
+> scroll→delete roundtrip on a temp path — no server, no port, no env var.
+> **Found while joining:** THREE call sites built their own `QdrantClient` from
+> `AUGHOR_QDRANT_URL` (org-intelligence list + delete, doc-chunk delete), so on any
+> deployment whose index wasn't at localhost:6333 they read/deleted against a server
+> holding nothing. All three now ride the seam; `scroll_points`/`delete_ids` were added
+> to it (with pgvector twins) because a listed row must be addressable.
+> An operator with an existing server (this repo's author included) pins
+> `AUGHOR_QDRANT_URL` — the embedded default would otherwise hide those vectors.
+
+### The original S1 case (raised by the user, 2026-08-30)
 
 **Measured, not recalled.** `uv sync` / `pip install '.[semantic]'` installs the *client only*
 — `pyproject.toml` concedes it in its own comment: `qdrant-client` "already needs a Qdrant
@@ -1260,7 +1280,10 @@ NEXT (order within a band is the user's knob)
   VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
                                    NOT started: §3.1 requires that posture be agreed with
                                    the user first. DS-11's second half)
-  S1  Qdrant embedded by default  (installs WITH the app, not beside it — §3.6)
+  ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
+                                   AUGHOR_QDRANT_PATH; one serialized client per path;
+                                   three bespoke QdrantClient call sites joined the
+                                   seam — §3.6)
   DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
   tool_grants column              (turn VA-9c's phantom into a stored grant — §1 honest limits;
                                    migration + store/create/patch surfaces; grants stay

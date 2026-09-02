@@ -82,7 +82,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "tests/unit/test_platform_tools.py",
          # CI-4's tests construct /ask request shapes carrying the frozen `insight_id`
          # field — the same reason test_converse_route_off_state is exempt.
-         "tests/unit/test_ci4_depth_as_tool.py"),
+         "tests/unit/test_ci4_depth_as_tool.py",
+         # S1's embedded-seam test drives org intelligence end-to-end, whose frozen
+         # payload key is `insight_id` and whose API is `delete_org_insight` — the
+         # same verbatim-identifier ground as the rows above.
+         "tests/unit/test_vector_store_embedded.py"),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
