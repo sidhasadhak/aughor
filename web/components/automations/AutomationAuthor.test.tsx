@@ -11,7 +11,8 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
-  AutomationAuthor, sameDraft, updatePayload,
+  blankDraft, createPayload, DesignControls, incompleteOf, sameDraft, StepInspector,
+  updatePayload,
 } from "@/components/automations/AutomationAuthor";
 import type { Automation, AutoCondition, AutoEffect } from "@/lib/api";
 
@@ -130,6 +131,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   getSlackBots: vi.fn(async () => []),
   getAutomationVocabulary: vi.fn(async () => ({ kinds: {}, guardOps: [] })),
   updateAutomation: vi.fn(async () => ({})),
+  createAutomation: vi.fn(async () => ({ id: "new-1", name: "Seeded" })),
   dryRunAutomationDraft: vi.fn(async () => ({ run: {}, graph: { nodes: [], edges: [] } })),
 }));
 
@@ -142,8 +144,8 @@ describe("Dry run", () => {
     const { dryRunAutomationDraft } = await import("@/lib/api");
     const a = automation();
     const draft = { conditions: a.conditions, effects: a.effects };
-    render(<AutomationAuthor automation={a} draft={draft} onDraft={() => {}}
-      onSaved={() => {}} onPreview={() => {}} />);
+    render(<DesignControls automation={a} connId={a.conn_id} name={a.name} draft={draft}
+      onDraft={() => {}} onSaved={() => {}} onPreview={() => {}} />);
 
     fireEvent.click(await screen.findByText("Dry run"));
     await waitFor(() => expect(dryRunAutomationDraft).toHaveBeenCalled());
@@ -155,7 +157,8 @@ describe("Dry run", () => {
     // Save and Discard are for a dirty draft; a preview is not. An untouched design is
     // still one nobody has ever seen run, which is the whole question.
     const a = automation();
-    render(<AutomationAuthor automation={a} draft={{ conditions: a.conditions, effects: a.effects }}
+    render(<DesignControls automation={a} connId={a.conn_id} name={a.name}
+      draft={{ conditions: a.conditions, effects: a.effects }}
       onDraft={() => {}} onSaved={() => {}} onPreview={() => {}} />);
     expect(await screen.findByText("Dry run")).toBeInTheDocument();
     expect(screen.queryByText("Save design")).not.toBeInTheDocument();
@@ -164,9 +167,90 @@ describe("Dry run", () => {
   it("hands the graph up rather than storing it — a preview has no id to refetch by", async () => {
     const seen: unknown[] = [];
     const a = automation();
-    render(<AutomationAuthor automation={a} draft={{ conditions: a.conditions, effects: a.effects }}
+    render(<DesignControls automation={a} connId={a.conn_id} name={a.name}
+      draft={{ conditions: a.conditions, effects: a.effects }}
       onDraft={() => {}} onSaved={() => {}} onPreview={(g) => seen.push(g)} />);
     fireEvent.click(await screen.findByText("Dry run"));
     await waitFor(() => expect(seen).toHaveLength(1));
+  });
+});
+
+/* ── DS-1R · canvas-first creation ──────────────────────────────────────────── */
+
+describe("the create payload", () => {
+  it("starts from the model's own defaults — a blank canvas must not invent a policy", () => {
+    const p = createPayload("warehouse", "Nightly digest",
+      { conditions: [cond()], effects: [eff()] });
+    expect(p.conn_id).toBe("warehouse");
+    expect(p.name).toBe("Nightly digest");
+    expect(p.enabled).toBe(true);
+    expect(p.scheduling).toBe("ordered");
+    expect(p.max_retries).toBe(1);
+    expect(p.fallback_effect).toBeNull();
+  });
+
+  it("the blank canvas is the trigger node alone", () => {
+    const d = blankDraft();
+    expect(d.conditions).toHaveLength(1);
+    expect(d.effects).toHaveLength(0);
+  });
+});
+
+describe("what blocks a save", () => {
+  it("a stepless draft is named before the server has to refuse it", () => {
+    expect(incompleteOf(blankDraft())).toContain("add at least one action");
+  });
+
+  it("a filled chain is clean", () => {
+    expect(incompleteOf({ conditions: [cond()], effects: [eff()] })).toEqual([]);
+  });
+
+  it("create mode offers Create, gated on the same truth", async () => {
+    render(<DesignControls automation={null} connId="warehouse" name="New one"
+      draft={blankDraft()} onDraft={() => {}} onSaved={() => {}} onPreview={() => {}} />);
+    const btn = await screen.findByText("Create automation");
+    expect(btn).toBeDisabled();
+  });
+
+  it("a seeded create is savable and POSTs createPayload", async () => {
+    const { createAutomation } = await import("@/lib/api");
+    render(<DesignControls automation={null} connId="warehouse" name="Seeded"
+      draft={{ conditions: [cond()], effects: [eff()] }}
+      onDraft={() => {}} onSaved={() => {}} onPreview={() => {}} />);
+    fireEvent.click(await screen.findByText("Create automation"));
+    await waitFor(() => expect(createAutomation).toHaveBeenCalled());
+    expect(vi.mocked(createAutomation).mock.calls[0][0].name).toBe("Seeded");
+  });
+});
+
+/* ── DS-1R · the inspector is a LENS on the selection ───────────────────────── */
+
+describe("StepInspector", () => {
+  it("shows exactly the selected step, not the whole chain", async () => {
+    const draft = {
+      conditions: [cond()],
+      effects: [eff({ config: { trigger_id: "t1" } }),
+                eff({ alias: "second", config: { trigger_id: "t2" } })],
+    };
+    render(<StepInspector draft={draft} onDraft={() => {}} selection="second"
+      logicLabel="all match" onClose={() => {}} />);
+    expect(await screen.findByText("second")).toBeInTheDocument();
+    // One EffectRow means one kind <select>; the whole-chain rail rendered one per step.
+    expect(screen.getAllByDisplayValue(/Notify/i)).toHaveLength(1);
+  });
+
+  it("the trigger selection edits the WHEN half", async () => {
+    const draft = { conditions: [cond()], effects: [eff()] };
+    render(<StepInspector draft={draft} onDraft={() => {}} selection="__trigger"
+      logicLabel="all match" onClose={() => {}} />);
+    expect(await screen.findByText("When (all match)")).toBeInTheDocument();
+    expect(screen.getByText("Add Trigger")).toBeInTheDocument();
+  });
+
+  it("a selection that no longer exists renders nothing rather than someone else's step", () => {
+    const draft = { conditions: [cond()], effects: [eff()] };
+    const { container } = render(<StepInspector draft={draft} onDraft={() => {}}
+      selection="ghost" logicLabel="all match" onClose={() => {}} />);
+    expect(container.querySelector("[data-testid=step-inspector]")).toBeNull();
   });
 });

@@ -499,6 +499,22 @@ finishes a direction already chosen.
 >   every relation. It deliberately draws **no grants spoke** — `tool_grants` is a
 >   phantom (§1 honest limits).
 
+> **DS-1R · Canvas-first, decided by the user 2026-09-02 and SHIPPED same day** — *"the
+> actual workflow should be the primary driver.. Design may read from the actual
+> workflow.. while creating the automation itself, the workflow screen should be the
+> starting point.. a blank canvas with only the trigger node placed by default."* Measured
+> against the code, the complaint was exact: the VA-12 rail and the canvas were two
+> synchronized FULL editors of one draft, and the rail (340px, permanent) predated the
+> node faces growing real editors. What shipped: the rail and the create/edit form are
+> RETIRED · the canvas is full-bleed under ONE header strip (identity · mode · dirty ·
+> Discard · Dry run · Save · Run now) · the rail's richer widgets survive as a
+> **StepInspector** — a lens that opens on the SELECTED node only (trigger ⇒ the WHEN
+> editor, step ⇒ that step's widgets) · **+ New automation lands on a blank canvas with
+> the trigger node pre-placed**, name edited in the header, Save = create (`POST
+> /automations/dry-run` already took unsaved chains, so Dry run works before the record
+> exists) · a DS-15 proposal now seeds the CANVAS, not a form — closing that wave's
+> "left open". Token-ratchet baseline 1180→1176 (the dead form paid it).
+
 **DS-1 · The component palette** — the discovery surface, and the part the user singled
 out. Specced from a source-level dissection of theirs (sidebar component tree, hooks and
 constants read at v1.12.0) before this was written.

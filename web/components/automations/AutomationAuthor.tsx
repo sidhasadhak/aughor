@@ -1,20 +1,21 @@
 "use client";
 
 /**
- * VA-12 · authoring on the canvas — Add Trigger, Add Action.
+ * VA-12 → DS-1R · authoring is the canvas; these are its two satellites.
  *
- * The last structural gap against VoltAgent, and smaller than it looked: measured before
- * building, `POST /automations` and `PUT /automations/{id}` already existed, the model
- * already validated every kind at construction, and `AutomationsPanel` already had a form
- * with "+ add condition" / "+ add effect". What was missing was not authoring — it was
- * authoring WHERE THE WORK IS. You looked at the graph in one place and edited it in
- * another, so the picture never answered "what happens if I add a step here".
+ * This file used to render a 340px rail that edited EVERY trigger and step beside the
+ * canvas. That rail predates the node faces growing real editors (inline fields, bind
+ * chips, guard strips, ports) — by DS-7 it was a second full editor of the same draft,
+ * and the user named the cost precisely: "layer after layer… the main workflow is
+ * getting out of focus" (2026-09-02). The workflow is now the one primary editor, and
+ * what survives of the rail is exactly what the canvas cannot carry:
  *
- * So this is a rail that docks beside the canvas, in the same shape as the run canvas's
- * timeline rail: the thing you are reading on the left, an index you can act on at the
- * right. It renders `ConditionRow` / `EffectRow` — the SAME editors the form uses, moved
- * to `AutomationRows` for exactly this reason. Two editors for one model is how a picture
- * and the thing it edits come to disagree.
+ * - `DesignControls` — Save · Discard · Dry run · the dirty/incomplete truth, docked in
+ *   the HEADER so it never scrolls away and costs no width.
+ * - `StepInspector` — the richer widgets (kind selects, "Post as…", agent pickers,
+ *   guard editors) for ONE selected node at a time, floating over the canvas edge.
+ *   It reads the selection and writes the same draft: the design panel is a lens on
+ *   the workflow, never a second author.
  *
  * ── THE PUT TAKES A WHOLE AUTOMATION ─────────────────────────────────────────
  * `CreateAutomationRequest` is the body for both create and update, and its `enabled`
@@ -30,10 +31,10 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import {
-  ConditionRow, EffectRow, effectsForWire, labelStyle, missingKeys, newCondition, newEffect,
+  ConditionRow, EffectRow, effectsForWire, labelStyle, missingKeys, newCondition,
 } from "@/components/automations/AutomationRows";
 import {
-  dryRunAutomationDraft, getSlackBots, listUserAgents, updateAutomation,
+  createAutomation, dryRunAutomationDraft, getSlackBots, listUserAgents, updateAutomation,
   type Automation, type AutomationGraphData, type AutoCondition, type AutoEffect,
   type NewAutomation, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
@@ -42,6 +43,13 @@ import {
 export interface Draft {
   conditions: AutoCondition[];
   effects: AutoEffect[];
+}
+
+/** The draft a blank canvas starts from: the trigger node with one schedule, no steps
+ *  yet. One condition rather than zero because the model requires it and because an
+ *  automation IS "when this, do that" — the when half always exists. */
+export function blankDraft(): Draft {
+  return { conditions: [newCondition()], effects: [] };
 }
 
 /** Deep-equal enough for a dirty check over two small plain-JSON lists.
@@ -85,13 +93,63 @@ export function updatePayload(a: Automation, draft: Draft): NewAutomation {
   };
 }
 
-export function AutomationAuthor({ automation, draft, onDraft, onSaved, onPreview }: {
-  automation: Automation;
+/** The payload a canvas-born automation is created with. The defaults are the model's
+ *  own (enabled, ordered, one retry) — a blank canvas must not invent a policy. */
+export function createPayload(connId: string, name: string, draft: Draft): NewAutomation {
+  return {
+    conn_id: connId,
+    name,
+    description: "",
+    conditions: draft.conditions,
+    condition_logic: "all",
+    effects: effectsForWire(draft.effects),
+    fallback_effect: null,
+    enabled: true,
+    paused_until: null,
+    expires_at: null,
+    max_retries: 1,
+    retry_backoff_seconds: 30,
+    scheduling: "ordered",
+  };
+}
+
+/** Every row the server would reject, named by position — checked here rather than
+ *  discovered from a 422, because the error names a config key and a key says nothing
+ *  about which of five steps is carrying it. A stepless draft is named too: the model
+ *  requires at least one action, and a blank canvas should say so before Save does. */
+export function incompleteOf(draft: Draft): string[] {
+  const out: string[] = [];
+  draft.conditions.forEach((c, i) => {
+    const m = missingKeys(c);
+    if (m.length) out.push(`Trigger ${i + 1} needs ${m.join(", ")}`);
+  });
+  draft.effects.forEach((e, i) => {
+    const m = missingKeys(e);
+    if (m.length) out.push(`Action ${i + 1} needs ${m.join(", ")}`);
+  });
+  if (draft.effects.length === 0) out.push("add at least one action");
+  return out;
+}
+
+/**
+ * Save · Discard · Dry run — the design's verbs, docked in the canvas header.
+ *
+ * `automation` is null while the canvas is authoring something that does not exist yet
+ * (canvas-first creation): Save then POSTs `createPayload` and hands the new record up,
+ * and Dry run walks the same unsaved payload — `POST /automations/dry-run` has taken an
+ * unsaved chain since B2, which is what made "try it before it exists" free here.
+ */
+export function DesignControls({ automation, connId, name, draft, onDraft, onSaved, onPreview }: {
+  automation: Automation | null;
+  /** Create mode: the connection the new automation belongs to. */
+  connId: string;
+  /** Create mode: the name the header input currently holds. */
+  name: string;
   draft: Draft;
   onDraft: (d: Draft) => void;
-  /** Called after a successful save, so the canvas can refetch the SERVER's graph — which
-   *  is the authority again the moment there is nothing pending. */
-  onSaved: () => void;
+  /** After a successful save. Create mode passes the NEW record so the caller can leave
+   *  create mode and let the server's copy become the authority. */
+  onSaved: (created?: Automation) => void;
   /** B2 — hand the canvas a preview graph to draw. Not stored anywhere, so the canvas
    *  holds it directly rather than refetching by id. */
   onPreview: (g: AutomationGraphData) => void;
@@ -99,45 +157,28 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved, onPrevie
   const [saving, setSaving] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [error, setError] = useState("");
-  const [agents, setAgents] = useState<UserAgent[]>([]);
-  const [bots, setBots] = useState<SlackBotSummary[]>([]);
-  useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
-  useEffect(() => { getSlackBots().then(setBots).catch(() => setBots([])); }, []);
 
-  const stored: Draft = useMemo(
-    () => ({ conditions: automation.conditions, effects: automation.effects }), [automation]);
-  const dirty = !sameDraft(draft, stored);
+  const stored: Draft | null = useMemo(
+    () => automation
+      ? { conditions: automation.conditions, effects: automation.effects }
+      : null,
+    [automation]);
+  const dirty = stored ? !sameDraft(draft, stored) : true;
+  const incomplete = useMemo(() => incompleteOf(draft), [draft]);
 
-  /** Every row the server would reject, named by position. Checked HERE rather than
-   *  discovered from a 422: the error names a config key, and a key says nothing about
-   *  which of five steps is carrying it. */
-  const incomplete = useMemo(() => {
-    const out: string[] = [];
-    draft.conditions.forEach((c, i) => {
-      const m = missingKeys(c);
-      if (m.length) out.push(`Trigger ${i + 1} needs ${m.join(", ")}`);
-    });
-    draft.effects.forEach((e, i) => {
-      const m = missingKeys(e);
-      if (m.length) out.push(`Action ${i + 1} needs ${m.join(", ")}`);
-    });
-    return out;
-  }, [draft]);
+  const payload = (): NewAutomation =>
+    automation ? updatePayload(automation, draft)
+               : createPayload(connId, name.trim() || "Untitled automation", draft);
 
-  /** B2 — walk the DRAFT, dispatching nothing.
-   *
-   *  The draft, not the stored record: "try it before you arm it" is worth most on the
-   *  edit you have not committed. The payload is `updatePayload`'s, so what is previewed
-   *  is exactly what Save would send — a second assembly here could preview a design the
-   *  save does not make.
-   *
-   *  Offered whether or not the draft is dirty, unlike Save/Discard: a design nobody has
-   *  touched today is still one nobody has ever seen run. */
+  /** B2 — walk the DRAFT, dispatching nothing. The payload is exactly what Save would
+   *  send — a second assembly here could preview a design the save does not make.
+   *  Offered whether or not the draft is dirty: a design nobody has touched today is
+   *  still one nobody has ever seen run. */
   const dryRun = async () => {
     setPreviewing(true);
     setError("");
     try {
-      const { graph } = await dryRunAutomationDraft(updatePayload(automation, draft));
+      const { graph } = await dryRunAutomationDraft(payload());
       onPreview(graph);
     } catch (e) {
       setError((e as Error).message || "Dry run failed");
@@ -150,8 +191,12 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved, onPrevie
     setSaving(true);
     setError("");
     try {
-      await updateAutomation(automation.id, updatePayload(automation, draft));
-      onSaved();
+      if (automation) {
+        await updateAutomation(automation.id, payload());
+        onSaved();
+      } else {
+        onSaved(await createAutomation(payload()));
+      }
     } catch (e) {
       setError((e as Error).message || "Save failed");
     } finally {
@@ -159,103 +204,130 @@ export function AutomationAuthor({ automation, draft, onDraft, onSaved, onPrevie
     }
   };
 
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}
+         data-testid="design-controls">
+      {/* The blocking truth rides the row, compact; the full list is on the button's
+          tooltip. An empty draft's "add at least one action" is a starting state, not
+          an error — it shows dimmer. */}
+      {(error || (dirty && incomplete.length > 0)) && (
+        <span className="aug-fs-xs"
+          title={incomplete.join(" · ")}
+          style={{ color: error ? "var(--red4)" : "var(--amb4)",
+                   overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                   maxWidth: 260 }}>
+          {error || incomplete[0]}{!error && incomplete.length > 1 ? ` · +${incomplete.length - 1}` : ""}
+        </span>
+      )}
+      {dirty && !automation && null /* create mode is always "dirty"; no chip needed */}
+      {dirty && automation && (
+        <span className="aug-fs-xs" style={{ color: "var(--amb4)" }}>unsaved</span>
+      )}
+      {dirty && automation && (
+        <Button variant="ghost" size="xs" disabled={saving || previewing}
+          onClick={() => { setError(""); if (stored) onDraft(stored); }}>
+          Discard
+        </Button>
+      )}
+      <Button variant="ghost" size="xs"
+        disabled={saving || previewing || incomplete.length > 0}
+        title={incomplete.length ? incomplete.join(" · ") : "Walk the chain — inert, nothing is sent"}
+        onClick={dryRun}>
+        {previewing ? "Walking…" : "Dry run"}
+      </Button>
+      {(dirty || !automation) && (
+        <Button variant="default" size="xs"
+          disabled={saving || previewing || incomplete.length > 0}
+          title={incomplete.length ? incomplete.join(" · ") : undefined}
+          onClick={save}>
+          {saving ? "Saving…" : automation ? "Save design" : "Create automation"}
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The selected node's editor, floating at the canvas edge — the design panel as a LENS.
+ *
+ * Shows exactly one thing: the trigger node's conditions, or one step's full widget set
+ * (kind select, "Post as…", agent picker, guards, for-each). It reads the canvas's
+ * selection and writes the canvas's draft; deselecting closes it. This is the half of
+ * the old rail the node faces genuinely cannot carry — selects and pickers need more
+ * room than a node row — scoped to the one node being asked about.
+ */
+export function StepInspector({ draft, onDraft, selection, logicLabel, onClose }: {
+  draft: Draft;
+  onDraft: (d: Draft) => void;
+  /** "__trigger" or a step alias (`step3`, or an explicit alias). */
+  selection: string;
+  /** "all match" / "any match" — the automation's own words for the trigger header. */
+  logicLabel: string;
+  onClose: () => void;
+}) {
+  const [agents, setAgents] = useState<UserAgent[]>([]);
+  const [bots, setBots] = useState<SlackBotSummary[]>([]);
+  useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
+  useEffect(() => { getSlackBots().then(setBots).catch(() => setBots([])); }, []);
+
+  const aliasAt = (e: AutoEffect, i: number) => (e.alias?.trim() ? e.alias.trim() : `step${i + 1}`);
+  const index = selection === "__trigger"
+    ? -1
+    : draft.effects.findIndex((e, i) => aliasAt(e, i) === selection);
+  if (selection !== "__trigger" && index < 0) return null;
+
   const setCond = (i: number, c: AutoCondition) =>
     onDraft({ ...draft, conditions: draft.conditions.map((x, j) => (j === i ? c : x)) });
   const setEff = (i: number, e: AutoEffect) =>
     onDraft({ ...draft, effects: draft.effects.map((x, j) => (j === i ? e : x)) });
 
   return (
-    <div style={{
-      width: 340, flexShrink: 0, display: "flex", flexDirection: "column",
-      border: "1px solid var(--border)", borderRadius: "var(--r-chip)",
-      background: "var(--bg-1)", overflow: "hidden",
-    }}>
-      <div style={{ padding: "8px 10px", borderBottom: "1px solid var(--b1)",
-        display: "flex", alignItems: "center", gap: 6 }}>
-        <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>Design</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-          {draft.conditions.length} triggers · {draft.effects.length} actions
+    <div
+      data-testid="step-inspector"
+      style={{
+        position: "absolute", top: 8, right: 8, bottom: 8, width: 312, zIndex: 5,
+        display: "flex", flexDirection: "column",
+        border: "1px solid var(--border)", borderRadius: "var(--r3)",
+        background: "var(--bg-1)", boxShadow: "var(--shadow-md)", overflow: "hidden",
+      }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6,
+        padding: "8px 10px", borderBottom: "1px solid var(--b1)" }}>
+        <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>
+          {selection === "__trigger" ? `When (${logicLabel})` : selection}
         </span>
-        {dirty && (
-          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--amb4)" }}>
-            unsaved
-          </span>
-        )}
+        <Button variant="ghost" size="icon-xs" aria-label="Close the inspector"
+          style={{ marginLeft: "auto" }} onClick={onClose}>
+          <Icon name="close" size={12} />
+        </Button>
       </div>
 
-      <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px 4px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 6 }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>
-            When {automation.condition_logic === "all" ? "(all match)" : "(any match)"}
-          </label>
-          <Button variant="ghost" size="xs" className="aug-fs-xs"
-            style={{ marginLeft: "auto", color: "var(--blue4)" }}
-            onClick={() => onDraft({ ...draft, conditions: [...draft.conditions, newCondition()] })}>
-            <Icon name="plus" size={11} /> Add Trigger
-          </Button>
-        </div>
-        {draft.conditions.map((c, i) => (
-          <ConditionRow key={i} c={c} onChange={cc => setCond(i, cc)}
-            // The model requires at least one of each, so the last row has no remove
-            // control at all rather than one that fails at save. A disabled affordance
-            // still teaches that the action exists.
-            onRemove={draft.conditions.length > 1
-              ? () => onDraft({ ...draft,
-                  conditions: draft.conditions.filter((_, j) => j !== i) })
-              : undefined} />
-        ))}
-
-        <div style={{ display: "flex", alignItems: "center", gap: 6, margin: "14px 0 6px" }}>
-          {/* DS-7 — the header tells the truth about scheduling (edited on the form,
-              like `condition_logic` above): "in order" on a parallel chain would teach
-              a reader an order the frontier does not keep. */}
-          <label style={{ ...labelStyle, marginBottom: 0 }}>
-            Then {automation.scheduling === "parallel"
-              ? "(in parallel — as the arrows allow)" : "(in order)"}
-          </label>
-          <Button variant="ghost" size="xs" className="aug-fs-xs"
-            style={{ marginLeft: "auto", color: "var(--blue4)" }}
-            onClick={() => onDraft({ ...draft, effects: [...draft.effects, newEffect()] })}>
-            <Icon name="plus" size={11} /> Add Action
-          </Button>
-        </div>
-        {draft.effects.map((e, i) => (
-          <EffectRow key={i} e={e} agents={agents} bots={bots} siblings={draft.effects} index={i}
-            onChange={ee => setEff(i, ee)}
-            onRemove={draft.effects.length > 1
-              ? () => onDraft({ ...draft, effects: draft.effects.filter((_, j) => j !== i) })
-              : undefined} />
-        ))}
-      </div>
-
-      <div style={{ borderTop: "1px solid var(--b1)", padding: "8px 10px",
-        display: "flex", flexDirection: "column", gap: 6 }}>
-        {(dirty || error) && incomplete.length > 0 && (
-          <div className="aug-fs-xs" style={{ color: "var(--amb4)" }}>
-            {incomplete.join(" · ")}
-          </div>
+      <div style={{ flex: 1, overflowY: "auto", padding: "10px 10px 6px" }}>
+        {selection === "__trigger" ? (
+          <>
+            {draft.conditions.map((c, i) => (
+              <ConditionRow key={i} c={c} onChange={cc => setCond(i, cc)}
+                // The model requires at least one, so the last row has no remove
+                // control at all rather than one that fails at save.
+                onRemove={draft.conditions.length > 1
+                  ? () => onDraft({ ...draft,
+                      conditions: draft.conditions.filter((_, j) => j !== i) })
+                  : undefined} />
+            ))}
+            <Button variant="ghost" size="xs" className="aug-fs-xs"
+              style={{ color: "var(--blue4)" }}
+              onClick={() => onDraft({ ...draft, conditions: [...draft.conditions, newCondition()] })}>
+              <Icon name="plus" size={11} /> Add Trigger
+            </Button>
+          </>
+        ) : (
+          <>
+            <label style={{ ...labelStyle }}>everything this step takes</label>
+            <EffectRow e={draft.effects[index]} agents={agents} bots={bots}
+              siblings={draft.effects} index={index}
+              onChange={ee => setEff(index, ee)}
+              onRemove={undefined /* removal lives on the node face — one door */} />
+          </>
         )}
-        {error && <div className="aug-fs-xs" style={{ color: "var(--red4)" }}>{error}</div>}
-        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-          {dirty && (
-            <>
-              <Button variant="default" size="xs"
-                disabled={saving || previewing || incomplete.length > 0}
-                onClick={save}>
-                {saving ? "Saving…" : "Save design"}
-              </Button>
-              <Button variant="ghost" size="xs" disabled={saving || previewing}
-                onClick={() => { setError(""); onDraft(stored); }}>
-                Discard
-              </Button>
-            </>
-          )}
-          <Button variant="ghost" size="xs" style={{ marginLeft: dirty ? "auto" : undefined }}
-            disabled={saving || previewing || incomplete.length > 0}
-            onClick={dryRun}>
-            {previewing ? "Walking…" : "Dry run"}
-          </Button>
-        </div>
       </div>
     </div>
   );

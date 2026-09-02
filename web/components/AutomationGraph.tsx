@@ -43,7 +43,7 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import {
-  AutomationAuthor, updatePayload, type Draft,
+  blankDraft, DesignControls, StepInspector, updatePayload, type Draft,
 } from "@/components/automations/AutomationAuthor";
 import {
   AutomationPalette, PALETTE_DRAG_TYPE, readPaletteDrag,
@@ -750,10 +750,27 @@ const NODE_TYPES = {
 
 /* ═══════════════════ the component ═══════════════════ */
 
-export function AutomationGraph({ automationId, automation, onSaved, liveRunId }: {
-  automationId: string;
-  /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent ⇒ read-only. */
+export function AutomationGraph({ automationId, automation, create, onCreated, header,
+                                  onSaved, liveRunId }: {
+  /** Absent ⇒ the canvas is authoring something that does not exist yet (create mode). */
+  automationId?: string;
+  /** The record itself. Present ⇒ Design mode is AUTHORABLE. Absent with `create` ⇒
+   *  canvas-first creation; absent without it ⇒ read-only. */
   automation?: Automation;
+  /** DS-1R — canvas-first creation: the connection the new automation will belong to,
+   *  and (for a DS-15 proposal) the draft to start from instead of a blank canvas. */
+  create?: { connId: string; seed?: Draft };
+  /** Create mode's exit: the record the server now holds. */
+  onCreated?: (a: Automation) => void;
+  /** DS-1R — the ONE header row. The canvas owns it so the identity, the mode and the
+   *  design's verbs share a single strip instead of stacking ("layer after layer…
+   *  the main workflow is getting out of focus" — the user, 2026-09-02). */
+  header?: {
+    name: string; enabled?: boolean; onBack: () => void;
+    onRunNow?: () => void; running?: boolean;
+    /** Present ⇒ the name is editable in place (create mode). */
+    onName?: (name: string) => void;
+  };
   onSaved?: () => void;
   /** DS-3 — a run happening NOW, named by whoever started it. While this is set the
    *  canvas watches that run's own spans as they are written; when it clears, the
@@ -788,7 +805,11 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
    * One state, one stack, one meaning for "the last thing I did".
    */
   const [history, setHistory] = useState<History<CanvasState>>(() => initHistory({
-    draft: { conditions: automation?.conditions ?? [], effects: automation?.effects ?? [] },
+    draft: automation
+      ? { conditions: automation.conditions, effects: automation.effects }
+      // Create mode starts from the seed (a DS-15 proposal) or the blank canvas —
+      // the trigger node alone, which is the user's own picture of "new automation".
+      : create?.seed ?? blankDraft(),
     positions: {},
   }));
   const draft = history.present.draft;
@@ -827,15 +848,15 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
     getAutomationVocabulary().then(v => setVocab(v.kinds)).catch(() => setVocab({}));
   }, []);
 
-  const authoring = !!automation && mode === "design";
+  const authoring = (!!automation || !!create) && mode === "design";
   // Kept in a ref so the key listener can read it without being rebuilt on every edit.
   useEffect(() => { authoringRef.current = authoring; }, [authoring]);
 
   // The EXECUTION graph stays the server's; fetched only when that mode is on screen.
   useEffect(() => {
     // A preview owns the canvas while it is up; refetching here would replace it with
-    // the last REAL run the moment it was shown.
-    if (mode !== "execution" || preview) return;
+    // the last REAL run the moment it was shown. No id ⇒ nothing stored to fetch.
+    if (mode !== "execution" || preview || !automationId) return;
     let live = true;
     getAutomationGraph(automationId, runId || "latest")
       .then((g) => { if (live) { setGraph(g); setError(""); } })
@@ -854,6 +875,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
    * never persist, holds here by construction rather than by a flag.
    */
   useEffect(() => {
+    if (!automationId) return;          // an unsaved chain has no stored arrangement
     let live = true;
     getAutomationLayout(automationId)
       .then(saved => {
@@ -882,6 +904,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
   const persistLayout = useCallback((
     layout: Record<string, { x: number; y: number }>, alive: Set<string>,
   ) => {
+    if (!automationId) return;          // arrangements persist per stored id only
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(() => {
       void saveAutomationLayout(automationId, layoutToPersist(layout, alive)).catch(() => {});
@@ -1066,6 +1089,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
 
   useEffect(() => {
     if (!pendingBind || observed !== null) return;
+    if (!automationId) { setObserved({}); return; }   // never run ⇒ nothing observed
     let live = true;
     getAutomationGraph(automationId, "latest")
       .then(g => { if (live) setObserved(producedByAlias(g)); })
@@ -1401,12 +1425,47 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
 
   return (
     <div style={{ height: "100%", minHeight: 260, display: "flex", flexDirection: "column" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 6 }}>
+      {/* DS-1R — ONE strip: identity · mode · truth chips · the design's verbs. The
+          rail and the second header row died into it, so the workflow below gets the
+          room ("the actual workflow should be the primary driver" — user, 2026-09-02). */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingBottom: 6,
+        minWidth: 0 }}>
+        {header && (
+          <>
+            <Button variant="ghost" size="sm" className="aug-fs-sm"
+              onClick={header.onBack} style={{ color: "var(--t3)", flexShrink: 0 }}>
+              ← Automations
+            </Button>
+            {header.onName ? (
+              <input
+                className="aug-fs-ui"
+                aria-label="Name this automation"
+                value={header.name}
+                onChange={e => header.onName?.(e.target.value)}
+                placeholder="Name this automation"
+                style={{ fontWeight: 600, background: "var(--bg-1)",
+                  border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+                  padding: "3px 8px", color: "var(--t1)", width: 200 }}
+              />
+            ) : (
+              <span className="aug-fs-ui" style={{ fontWeight: 600, overflow: "hidden",
+                textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{header.name}</span>
+            )}
+            {header.enabled !== undefined && (
+              <span className="aug-fs-xs" style={{ flexShrink: 0,
+                color: header.enabled ? "var(--grn4)" : "var(--t4)" }}>
+                ● {header.enabled ? "enabled" : "disabled"}
+              </span>
+            )}
+          </>
+        )}
         <div style={{ display: "inline-flex", gap: 2, padding: 2,
           border: "1px solid var(--b1)", borderRadius: "var(--r-chip)",
           background: "var(--bg-1)" }}>
           {(["design", "execution"] as const).map((m) => (
             <Button key={m} variant={mode === m ? "secondary" : "ghost"} size="xs"
+              // An unsaved chain has no runs; Execution opens there only for a preview.
+              disabled={m === "execution" && !automationId && !preview}
               onClick={() => {
                 setMode(m); setPreview(null);
                 if (m === "design") setRunId("");
@@ -1432,6 +1491,27 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
             last run {graph.run_outcome}
             {graph.run_reason ? ` — ${graph.run_reason}` : ""}
           </span>
+        )}
+        <span style={{ flex: 1 }} />
+        {(automation || create) && mode === "design" && (
+          <DesignControls
+            automation={automation ?? null}
+            connId={create?.connId ?? automation?.conn_id ?? ""}
+            name={header?.name ?? automation?.name ?? ""}
+            draft={draft}
+            onDraft={d => setDraft(d)}
+            onSaved={(created) => {
+              if (created) { onCreated?.(created); return; }
+              setReloadKey(k => k + 1); onSaved?.();
+            }}
+            onPreview={(g) => { setPreview(g); setMode("execution"); }}
+          />
+        )}
+        {header?.onRunNow && (
+          <Button variant="ghost" size="sm" className="aug-fs-xs" style={{ flexShrink: 0 }}
+            disabled={header.running} onClick={header.onRunNow}>
+            {header.running ? "Running…" : "Run now"}
+          </Button>
         )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
@@ -1487,7 +1567,7 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
                addFromPalette(placement, rf.current?.screenToFlowPosition(
                  { x: e.clientX, y: e.clientY }));
              }}
-             style={{ flex: 1, minWidth: 0, minHeight: 220,
+             style={{ flex: 1, minWidth: 0, minHeight: 220, position: "relative",
                       border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
           {mode === "design" ? (
             <ReactFlow
@@ -1625,17 +1705,22 @@ export function AutomationGraph({ automationId, automation, onSaved, liveRunId }
               )}
             </ReactFlow>
           )}
-        </div>
 
-        {authoring && (
-          <AutomationAuthor
-            onPreview={(g) => { setPreview(g); setMode("execution"); }}
-            automation={automation!}
-            draft={draft}
-            onDraft={setDraft}
-            onSaved={() => { setReloadKey(k => k + 1); onSaved?.(); }}
-          />
-        )}
+          {/* DS-1R — the design panel as a LENS: the selected node's richer widgets
+              (kind selects, "Post as…", agent pickers, guard editors), floating at the
+              canvas edge. It reads the selection and writes the same draft; nothing
+              edits "everything" any more — the workflow is the one primary editor. */}
+          {authoring && selectedAlias && (
+            <StepInspector
+              draft={draft}
+              onDraft={d => setDraft(d)}
+              selection={selectedAlias}
+              logicLabel={(automation?.condition_logic ?? "all") === "all"
+                ? "all match" : "any match"}
+              onClose={() => setSelectedAlias(null)}
+            />
+          )}
+        </div>
       </div>
     </div>
   );

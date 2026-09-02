@@ -7,16 +7,11 @@ import {
   AutomationRun,
   AutoCondition,
   AutoEffect,
-  ConditionKind,
-  EffectKind,
-  NewAutomation,
   proposeAutomation,
   StagedProposal,
   StandingGrant,
   getAutomations,
   getConnections,
-  createAutomation,
-  updateAutomation,
   deleteAutomation,
   setAutomationEnabled,
   pauseAutomation,
@@ -27,23 +22,15 @@ import {
   rejectProposal,
   getGrants,
   revokeGrant,
-  listUserAgents,
-  getSlackBots,
-  type SlackBotSummary,
-  type UserAgent,
 } from "@/lib/api";
-import {
-  CONDITION_KINDS, CRON_PRESETS, ConditionRow, EFFECT_KINDS, EffectRow,
-  effectsForWire, ghostBtn, inputStyle, labelStyle, newCondition, newEffect,
-  useIntegrationGrants,
-} from "@/components/automations/AutomationRows";
+import { ghostBtn, useIntegrationGrants } from "@/components/automations/AutomationRows";
 import { bindingRefs } from "@/lib/automationFlow";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 
 // ── Vocabulary (mirrors the backend Literals) ────────────────────────────────────
 
-type View = "list" | "runs" | "inbox" | "form" | "canvas";
+type View = "list" | "runs" | "inbox" | "canvas";
 
 const OUTCOME_COLOR: Record<string, string> = {
   fired:     "var(--grn3)",
@@ -89,10 +76,13 @@ export function AutomationsPanel({ connId }: Props) {
   const [proposals, setProposals] = useState<StagedProposal[]>([]);
   const [grants, setGrants] = useState<StandingGrant[]>([]);
 
-  // form
-  const [editing, setEditing] = useState<Automation | null>(null);
-  // DS-15 — a proposed chain waiting to be armed, and the sentence that asked for it.
-  const [draft, setDraft] = useState<NewAutomation | null>(null);
+  // DS-1R — canvas-first creation ("while creating the automation itself, the workflow
+  // screen should be the starting point… a blank canvas with only the trigger node
+  // placed by default" — the user, 2026-09-02). `creating` holds the seed a new canvas
+  // starts from: a DS-15 proposal's chain, or nothing for the blank canvas.
+  const [creating, setCreating] =
+    useState<{ seed?: { conditions: AutoCondition[]; effects: AutoEffect[] } } | null>(null);
+  const [createName, setCreateName] = useState("");
   const [outcome, setOutcome] = useState("");
   const [proposing, setProposing] = useState(false);
   /** The automation whose CANVAS fills the panel. The flow used to render as a 420px
@@ -199,11 +189,12 @@ export function AutomationsPanel({ connId }: Props) {
     try { setRuns(await getAutomationRuns(a.id)); } catch { setRuns([]); }
   }, []);
 
-  /** DS-15 — ask the agent for a chain, then hand the draft to the form.
+  /** DS-15 — ask the agent for a chain, then draw the draft on a fresh canvas.
    *
    * A REFUSAL is rendered as a message, not an error: "nothing on this deployment can do
    * that" is a considered answer, and the reason (which bot is missing, which kind is
-   * unavailable) is the useful half. Only a proposal opens the form.
+   * unavailable) is the useful half. Only a proposal opens the canvas — where a person
+   * sees the chain as it will run, edits it in place, and presses the same Create.
    */
   const onPropose = async () => {
     if (!outcome.trim() || !conn) return;
@@ -214,9 +205,10 @@ export function AutomationsPanel({ connId }: Props) {
         flash("err", p.reason || "nothing here can do that yet");
         return;
       }
-      setEditing(null);
-      setDraft(p.draft);
-      setView("form");
+      setCanvasFor(null);
+      setCreateName(p.draft.name || "Proposed automation");
+      setCreating({ seed: { conditions: p.draft.conditions, effects: p.draft.effects } });
+      setView("canvas");
       // The receipt in one line: the dry run walked the chain without dispatching.
       const steps = (p.draft.effects || []).length;
       flash("ok", `Proposed ${steps} step${steps === 1 ? "" : "s"} — dry-run checked, nothing saved yet.`
@@ -268,10 +260,10 @@ export function AutomationsPanel({ connId }: Props) {
       {/* Header */}
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px 0", borderBottom: "1px solid var(--bg-3)" }}>
         <div style={{ display: "flex", gap: 2 }}>
-          {([...TABS, ...(view === "form" ? (["form"] as View[]) : [])]).map(v => (
+          {TABS.map(v => (
             <Button
               key={v} variant="ghost"
-              onClick={() => view !== "form" && setView(v)}
+              onClick={() => setView(v)}
               className="h-auto"
               style={{
                 padding: "6px 14px", fontSize: 12, borderRadius: 0, fontWeight: 500,
@@ -281,8 +273,7 @@ export function AutomationsPanel({ connId }: Props) {
               }}>
               {v === "list" ? "Automations" :
                v === "runs" ? "Runs" :
-               v === "inbox" ? <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 11 }}>{pendingCount}</span>}</> :
-               "Edit"}
+               <>Inbox {pendingCount > 0 && <span style={{ marginLeft: 4, background: "var(--red3)", color: "#fff", borderRadius: 8, padding: "1px 5px", fontSize: 11 }}>{pendingCount}</span>}</>}
             </Button>
           ))}
         </div>
@@ -308,15 +299,13 @@ export function AutomationsPanel({ connId }: Props) {
               onClick={() => void onPropose()} style={{ padding: "5px 12px" }}>
               {proposing ? "Drafting…" : "Propose"}
             </Button>
-            <Button variant="ghost" className="h-auto" onClick={() => { setEditing(null); setDraft(null); setView("form"); }} style={{ fontSize: 12, padding: "5px 12px" }}>
+            <Button variant="ghost" className="h-auto"
+              onClick={() => { setCanvasFor(null); setCreateName("Untitled automation");
+                               setCreating({}); setView("canvas"); }}
+              style={{ fontSize: 12, padding: "5px 12px" }}>
               + New automation
             </Button>
           </>
-        )}
-        {view === "form" && (
-          <Button variant="ghost" onClick={() => setView("list")} className="h-auto p-0 font-normal" style={{ ...ghostBtn, fontSize: 12 }}>
-            ← Cancel
-          </Button>
         )}
       </div>
 
@@ -335,7 +324,8 @@ export function AutomationsPanel({ connId }: Props) {
 
         {view === "list" && !showSpinner && (
           automations.length === 0
-            ? <EmptyState onAdd={() => { setEditing(null); setView("form"); }}
+            ? <EmptyState onAdd={() => { setCanvasFor(null); setCreateName("Untitled automation");
+                                         setCreating({}); setView("canvas"); }}
                 elsewhere={elsewhere} />
             : <>
                 <MiniStatRow>
@@ -347,7 +337,7 @@ export function AutomationsPanel({ connId }: Props) {
                   {automations.map(a => (
                     <AutomationCard key={a.id} a={a}
                       onToggle={() => onToggle(a)} onPause={() => onPause(a)} onRun={() => onRun(a)}
-                      onEdit={() => { setEditing(a); setView("form"); }} onDelete={() => onDelete(a)}
+                      onEdit={() => { setCreating(null); setCanvasFor(a); setView("canvas"); }} onDelete={() => onDelete(a)}
                       onRuns={() => openRuns(a)}
                       onCanvas={() => { setCanvasFor(a); setView("canvas"); }} />
                   ))}
@@ -365,48 +355,41 @@ export function AutomationsPanel({ connId }: Props) {
             onReload={loadInbox} flash={flash} />
         )}
 
-        {view === "form" && (
-          <AutomationForm
-            conn={conn} initial={editing} draft={draft}
-            onCancel={() => setView("list")}
-            onSaved={async () => { await load(); setView("list"); flash("ok", "Saved"); }}
-            onError={t => flash("err", t)} />
-        )}
-
-        {view === "canvas" && canvasFor && (
-          // The canvas gets the ROOM. Height is the panel's, not a strip's; the list is
-          // one ← away. `canvasFor` is re-read from the loaded list after a save so the
-          // header chip and the next open reflect what is now stored.
+        {view === "canvas" && (canvasFor || creating) && (
+          // The canvas gets the ROOM — full-bleed, one header strip (the graph's own),
+          // no rail. `canvasFor` is re-read from the loaded list after a save so the
+          // header chip and the next open reflect what is now stored; `creating` is the
+          // canvas-first birth of a record that does not exist yet.
           <div style={{ position: "absolute", inset: 0, display: "flex",
             flexDirection: "column", background: "var(--bg-0)", padding: "10px 16px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 10, paddingBottom: 8 }}>
-              <Button variant="ghost" size="sm" className="aug-fs-sm"
-                onClick={() => setView("list")} style={{ color: "var(--t3)" }}>
-                ← Automations
-              </Button>
-              <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{canvasFor.name}</span>
-              <span className="aug-fs-xs" style={{
-                color: canvasFor.enabled ? "var(--grn4)" : "var(--t4)" }}>
-                ● {canvasFor.enabled ? "enabled" : "disabled"}
-              </span>
-              <span style={{ flex: 1 }} />
-              {/* DS-3 — the canvas's own Run now NAMES the run before starting it. The
-                  request does not return until the chain is over, so a run the client
-                  cannot name is a run it can only be told about. The list's button is
-                  unchanged: nothing is watching there. */}
-              <Button variant="ghost" size="sm" className="aug-fs-xs" disabled={!!liveRun}
-                onClick={() => runLive(canvasFor)}>
-                {liveRun ? "Running…" : "Run now"}
-              </Button>
-            </div>
-            <div style={{ flex: 1, minHeight: 0 }}>
+            {canvasFor ? (
               <AutomationGraph
                 automationId={canvasFor.id}
                 automation={automations.find(x => x.id === canvasFor.id) ?? canvasFor}
+                header={{
+                  name: canvasFor.name, enabled: canvasFor.enabled,
+                  onBack: () => setView("list"),
+                  // DS-3 — the canvas's own Run now NAMES the run before starting it.
+                  // The request does not return until the chain is over, so a run the
+                  // client cannot name is a run it can only be told about.
+                  onRunNow: () => void runLive(canvasFor), running: !!liveRun,
+                }}
                 onSaved={load}
                 liveRunId={liveRun}
               />
-            </div>
+            ) : (
+              <AutomationGraph
+                create={{ connId: conn, seed: creating?.seed }}
+                header={{
+                  name: createName, onName: setCreateName,
+                  onBack: () => { setCreating(null); setView("list"); },
+                }}
+                onCreated={async (a) => {
+                  setCreating(null); setCanvasFor(a);
+                  await load(); flash("ok", `Created "${a.name}"`);
+                }}
+              />
+            )}
           </div>
         )}
       </div>
@@ -634,147 +617,6 @@ function InboxView({ conn, proposals, grants, onReload, flash }: {
           ))}
         </>
       )}
-    </div>
-  );
-}
-
-// ── Author form ───────────────────────────────────────────────────────────────
-
-function AutomationForm({ conn, initial, draft, onCancel, onSaved, onError }: {
-  conn: string; initial: Automation | null;
-  /** DS-15 — a PROPOSED chain to seed the fields with. Separate from `initial` on
-   *  purpose: `initial` means "editing a stored record" and the save branch keys on it,
-   *  so seeding through it would make the form PUT to an id the draft does not have.
-   *  A proposal is a new automation whose fields somebody else filled in first. */
-  draft?: NewAutomation | null;
-  onCancel: () => void; onSaved: () => void; onError: (t: string) => void;
-}) {
-  // DS-15 — `initial` (a stored record being edited) wins, then `draft` (a proposal
-  // somebody asked the agent for), then an empty form. Only `initial` decides whether the
-  // save is a PUT or a POST, so a seeded draft still creates.
-  const seed = initial ?? draft ?? null;
-  const [name, setName] = useState(seed?.name ?? "");
-  const [logic, setLogic] = useState<"all" | "any">(
-    (seed?.condition_logic as "all" | "any") ?? "all");
-  const [scheduling, setScheduling] = useState<"ordered" | "parallel">(
-    initial?.scheduling ?? "ordered");
-  const [conditions, setConditions] = useState<AutoCondition[]>(
-    seed?.conditions ?? [newCondition()]);
-  const [effects, setEffects] = useState<AutoEffect[]>(
-    seed?.effects ?? [newEffect()]);
-  const [maxRetries, setMaxRetries] = useState(initial?.max_retries ?? 1);
-  const [saving, setSaving] = useState(false);
-  // The personas an `investigate` effect may run as (Wave H1). Empty when the
-  // roster is empty — the picker then simply doesn't render, and
-  // an unbound deep-analysis run is still the default.
-  const [agents, setAgents] = useState<UserAgent[]>([]);
-  const [bots, setBots] = useState<SlackBotSummary[]>([]);
-  useEffect(() => { listUserAgents().then(setAgents).catch(() => setAgents([])); }, []);
-  useEffect(() => { getSlackBots().then(setBots).catch(() => setBots([])); }, []);
-
-  const setCond = (i: number, c: AutoCondition) => setConditions(cs => cs.map((x, j) => j === i ? c : x));
-  const setEff = (i: number, e: AutoEffect) => setEffects(es => es.map((x, j) => j === i ? e : x));
-
-  const save = async () => {
-    if (!conn) { onError("No connection selected"); return; }
-    if (!name.trim()) { onError("Name is required"); return; }
-    // `paramsText` → parsed `params`, in the one place both surfaces share.
-    let builtEffects: AutoEffect[];
-    try { builtEffects = effectsForWire(effects); }
-    catch (err) { onError((err as Error).message); return; }
-
-    // Every field the form does not edit is CARRIED from the record. The PUT takes a
-    // whole automation and `CreateAutomationRequest`'s defaults fill whatever the
-    // payload omits — so the old shape of this payload was silently resetting
-    // `description`, `enabled`, `paused_until`, `expires_at`, `retry_backoff_seconds`
-    // and the fallback on every form edit: a paused automation came back armed because
-    // somebody fixed a typo in its name. Fourth of its family in this subsystem
-    // (`AutomationAuthor`'s header documents the same trap for the canvas rail).
-    const payload: NewAutomation = {
-      conn_id: conn, name: name.trim(), conditions, condition_logic: logic,
-      effects: builtEffects, max_retries: maxRetries, scheduling,
-      ...(initial ? {
-        description: initial.description,
-        fallback_effect: initial.fallback_effect,
-        enabled: initial.enabled,
-        paused_until: initial.paused_until,
-        expires_at: initial.expires_at,
-        retry_backoff_seconds: initial.retry_backoff_seconds,
-      } : {}),
-    };
-    setSaving(true);
-    try {
-      if (initial) await updateAutomation(initial.id, payload);
-      else await createAutomation(payload);
-      onSaved();
-    } catch (e) {
-      onError((e as Error).message || "Save failed");
-    } finally { setSaving(false); }
-  };
-
-  return (
-    <div style={{ maxWidth: 640 }}>
-      <div style={{ marginBottom: 16 }}>
-        <label style={labelStyle}>Name</label>
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Refund spike watch" />
-      </div>
-
-      {/* Conditions */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>When</label>
-          {conditions.length > 1 && (
-            <select value={logic} onChange={e => setLogic(e.target.value as "all" | "any")}
-              style={{ ...inputStyle, width: "auto", padding: "3px 8px", fontSize: 11 }}>
-              <option value="all">all match</option>
-              <option value="any">any match</option>
-            </select>
-          )}
-        </div>
-        {conditions.map((c, i) => (
-          <ConditionRow key={i} c={c} onChange={cc => setCond(i, cc)}
-            onRemove={conditions.length > 1 ? () => setConditions(cs => cs.filter((_, j) => j !== i)) : undefined} />
-        ))}
-        <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setConditions(cs => [...cs, newCondition()])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add condition</Button>
-      </div>
-
-      {/* Effects */}
-      <div style={{ marginBottom: 16 }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8 }}>
-          <label style={{ ...labelStyle, marginBottom: 0 }}>Then</label>
-          {/* DS-7 — scheduling is authored HERE, beside the list it governs, the same
-              way `condition_logic` sits beside its conditions. "In order" is the
-              default every existing automation keeps; "in parallel" runs steps as
-              their arrows allow — a step waits only for the steps it reads. */}
-          <select value={scheduling} aria-label="Step scheduling" className="aug-fs-xs"
-            onChange={e => setScheduling(e.target.value as "ordered" | "parallel")}
-            style={{ ...inputStyle, width: "auto", padding: "3px 8px", fontSize: undefined }}>
-            <option value="ordered">in order</option>
-            <option value="parallel">in parallel — as the arrows allow</option>
-          </select>
-        </div>
-        {effects.map((e, i) => (
-          <EffectRow key={i} e={e} agents={agents} bots={bots} siblings={effects} index={i}
-            onChange={ee => setEff(i, ee)}
-            onRemove={effects.length > 1 ? () => setEffects(es => es.filter((_, j) => j !== i)) : undefined} />
-        ))}
-        <Button variant="ghost" className="h-auto p-0 font-normal" onClick={() => setEffects(es => [...es, newEffect()])} style={{ ...ghostBtn, color: "var(--blue3)", marginTop: 2 }}>+ add effect</Button>
-      </div>
-
-      <div style={{ marginBottom: 20, display: "flex", gap: 16, alignItems: "center" }}>
-        <div>
-          <label style={labelStyle}>Retries per effect</label>
-          <input type="number" min={0} max={5} value={maxRetries} onChange={e => setMaxRetries(Math.max(0, Math.min(5, Number(e.target.value))))}
-            style={{ ...inputStyle, width: 80 }} />
-        </div>
-      </div>
-
-      <div style={{ display: "flex", gap: 10 }}>
-        <Button onClick={save} disabled={saving} style={{ background: "var(--blue3)", color: "#fff", fontSize: 13, padding: "7px 18px" }}>
-          {saving ? "Saving…" : initial ? "Save changes" : "Create automation"}
-        </Button>
-        <Button variant="ghost" onClick={onCancel} className="font-normal" style={{ ...ghostBtn, fontSize: 13 }}>Cancel</Button>
-      </div>
     </div>
   );
 }
