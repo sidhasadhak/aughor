@@ -179,10 +179,10 @@ describe("Dry run", () => {
 
 describe("the create payload", () => {
   it("starts from the model's own defaults — a blank canvas must not invent a policy", () => {
-    const p = createPayload("warehouse", "Nightly digest",
+    const p = createPayload("warehouse", "Nightly briefing",
       { conditions: [cond()], effects: [eff()] });
     expect(p.conn_id).toBe("warehouse");
-    expect(p.name).toBe("Nightly digest");
+    expect(p.name).toBe("Nightly briefing");
     expect(p.enabled).toBe(true);
     expect(p.scheduling).toBe("ordered");
     expect(p.max_retries).toBe(1);

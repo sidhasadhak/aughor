@@ -1202,6 +1202,13 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
 
   /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
   const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
+  /** DS-1 P2 — the rail's second section. The runs list used to appear on its own the
+   *  moment execution mode opened; it is now a section a reader opens and collapses
+   *  like the palette (entering execution still opens it — the old behaviour, now
+   *  dismissable). Sections are exclusive: runs lives in execution, palette in design,
+   *  and switching sections closes the other — which is also what makes "every section
+   *  switch clears search" true for free, because the palette remounts fresh. */
+  const [runsOpen, setRunsOpen] = useState(false);
   /** DS-1 P1 — the edge someone dropped on empty canvas: producer, key, and where it
    *  landed. While set, the palette shows only consumers and the next add lands
    *  pre-bound to it. Cleared by the banner's ×, the palette closing, or the add. */
@@ -1507,7 +1514,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
               // An unsaved chain has no runs; Execution opens there only for a preview.
               disabled={m === "execution" && !automationId && !preview}
               onClick={() => {
-                setMode(m); setPreview(null);
+                setMode(m); setPreview(null); setRunsOpen(m === "execution");
                 if (m === "design") setRunId("");
               }}>
               {m === "design" ? "Design" : "Execution"}
@@ -1555,12 +1562,55 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
         )}
       </div>
       <div style={{ flex: 1, minHeight: 220, display: "flex", gap: 8 }}>
-        {mode === "execution" && !preview && (graph?.runs?.length ?? 0) > 0 && (
+        {/* DS-1 P2 — the rail: one slim strip of sections beside the canvas. Palette
+            in design, Runs in execution (opening Runs takes you there); the active
+            section re-clicked collapses. Versions joins when a store for it exists —
+            the ledger's rule is "once there is more than one section", and there are
+            exactly two. */}
+        {(authoring || !!automationId) && (
+          <div data-testid="canvas-rail" style={{ width: 34, flexShrink: 0,
+            display: "flex", flexDirection: "column", gap: 4, alignItems: "center",
+            paddingTop: 2 }}>
+            {(!!automation || !!create) && (
+              <Button variant={palette ? "secondary" : "ghost"} size="icon-sm"
+                aria-label={palette ? "Collapse the palette" : "Open the palette"}
+                title="Palette"
+                onClick={() => {
+                  if (palette) { setPalette(null); setEdgeDrop(null); return; }
+                  setRunsOpen(false);
+                  if (mode !== "design") { setMode("design"); setPreview(null); setRunId(""); }
+                  setPalette("all");
+                }}>
+                <Icon name="layers" size={14} />
+              </Button>
+            )}
+            {!!automationId && (
+              <Button variant={runsOpen && mode === "execution" ? "secondary" : "ghost"}
+                size="icon-sm"
+                aria-label={runsOpen && mode === "execution"
+                  ? "Collapse the runs list" : "Open the runs list"}
+                title="Runs"
+                onClick={() => {
+                  if (runsOpen && mode === "execution") { setRunsOpen(false); return; }
+                  setPalette(null); setEdgeDrop(null);
+                  setMode("execution"); setPreview(null); setRunsOpen(true);
+                }}>
+                <Icon name="history" size={14} />
+              </Button>
+            )}
+          </div>
+        )}
+        {mode === "execution" && runsOpen && !preview && graph && (
           <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
                         border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
             <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
               runs
             </div>
+            {(graph.runs?.length ?? 0) === 0 && (
+              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px" }}>
+                no runs yet
+              </div>
+            )}
             {(graph?.runs ?? []).map((r) => {
               const active = (runId || graph?.run_id) === r.id;
               return (
