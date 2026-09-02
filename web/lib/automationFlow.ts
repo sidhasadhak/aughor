@@ -330,6 +330,65 @@ export function applyConnect(draft: Draft, vocab: Vocabulary, c: {
   return { draft: { ...draft, effects }, error: "" };
 }
 
+/* ── DS-1 P1 · an edge dropped on empty canvas ──────────────────────────────────
+ *
+ * The killer interaction the ledger promised: drag from a step's gives port, release
+ * over nothing, and the palette opens showing only what can CONSUME that value — then
+ * the chosen step lands already wired to the dragged edge. The filter and the landing
+ * are pure here for the same reason everything else in this module is: jsdom cannot
+ * drive a ReactFlow drag (measured four times), so the law has to be testable without
+ * one. The canvas contributes only the gesture.
+ */
+
+/** What a drop on empty canvas carries: the producer, the key, and where it landed
+ *  (flow coordinates from `onConnectEnd`'s connection state; null when unknowable). */
+export interface EdgeDrop {
+  from: string;
+  key: string;
+  at: { x: number; y: number } | null;
+}
+
+/** Whether a kind can CONSUME a dropped edge — the palette filter's entire law.
+ *  A kind with no input ports (metric_value, trusted_query, the no-output notifiers)
+ *  cannot take the value, and offering it would draw an edge the engine won't follow.
+ *  Port TYPES stay out of this on purpose: every bindable field takes a string today,
+ *  and the type→hue vocabulary is DS-10's (the ledger defers it there). */
+export function canConsume(vocab: Vocabulary, kind: string): boolean {
+  return (vocab[kind]?.bindable ?? []).length > 0;
+}
+
+/** The field a pre-bind lands on: the kind's FIRST declared input port — the same
+ *  order the node face draws them, so the wire goes where the eye goes. */
+export function bindTargetField(vocab: Vocabulary, kind: string): string | null {
+  return vocab[kind]?.bindable?.[0] ?? null;
+}
+
+/**
+ * Append a palette choice AND wire it to the dropped edge — one act, one undo.
+ *
+ * Runs through `applyConnect`, never beside it: the pre-bind must obey exactly the
+ * refusals a hand-dragged edge obeys (unknown key, backwards chain), or the palette
+ * becomes a door around the law. An open-set drop (`key === "*"`) appends unbound and
+ * reports the field, so the caller can park the connection for the key picker — the
+ * same parking a node-to-node `out:*` drag does.
+ */
+export function landPrebound(
+  draft: Draft, vocab: Vocabulary, effect: AutoEffect,
+  drop: { from: string; key: string },
+): { draft: Draft; alias: string; field: string | null; error: string } {
+  const appended = { ...draft, effects: [...draft.effects, effect] };
+  const alias = aliasFor(effect, draft.effects.length);
+  const field = bindTargetField(vocab, effect.kind);
+  if (!field) {
+    return { draft: appended, alias, field: null,
+             error: `${effect.kind} has no input to bind — added unwired` };
+  }
+  if (drop.key === "*") return { draft: appended, alias, field, error: "" };
+  const r = applyConnect(appended, vocab,
+                         { fromAlias: drop.from, key: drop.key, toAlias: alias, field });
+  return { draft: r.error ? appended : r.draft, alias, field, error: r.error };
+}
+
 /* ── DS-4 · duplicating and pasting a step ──────────────────────────────────────
  *
  * The sharp edge in this whole wave. A step's name is POSITIONAL — `aliasFor` derives

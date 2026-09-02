@@ -33,6 +33,7 @@ import {
   Handle,
   MarkerType,
   MiniMap,
+  type OnConnectEnd,
   Panel,
   Position,
   ReactFlow,
@@ -63,8 +64,9 @@ import {
 } from "@/lib/api";
 import {
   aliasFor, applyConnect, clearBinding, draftToFlow, ELSE_FIELD, FAN_FIELD, GUARD_FIELD,
-  guardSentences, layoutToPersist, liveStatuses, pasteEffect, producedByAlias,
-  rootAliases, viewportCenter, visibleFields, type LiveStatus, type Vocabulary,
+  guardSentences, landPrebound, layoutToPersist, liveStatuses, pasteEffect,
+  producedByAlias, rootAliases, viewportCenter, visibleFields,
+  type EdgeDrop, type LiveStatus, type Vocabulary,
 } from "@/lib/automationFlow";
 import type { AutoCondition, AutoEffect } from "@/lib/api";
 import {
@@ -1200,6 +1202,24 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
 
   /* ── DS-1 · the palette, and the one gate everything it offers goes through ── */
   const [palette, setPalette] = useState<PaletteGroup | "all" | null>(null);
+  /** DS-1 P1 — the edge someone dropped on empty canvas: producer, key, and where it
+   *  landed. While set, the palette shows only consumers and the next add lands
+   *  pre-bound to it. Cleared by the banner's ×, the palette closing, or the add. */
+  const [edgeDrop, setEdgeDrop] = useState<EdgeDrop | null>(null);
+
+  /** The gesture half of P1 — everything it decides lives in `landPrebound`, because
+   *  jsdom cannot drive a ReactFlow drag (measured four times) and the law has to be
+   *  testable without one. Fires on EVERY connection end; the guards keep it to the
+   *  one case that means "offer me a consumer": a gives port released over nothing. */
+  const onConnectEnd = useCallback<OnConnectEnd>((_event, cs) => {
+    if (!authoringRef.current) return;
+    if (!cs.fromHandle || cs.toNode) return;          // landed on a node — onConnect owns it
+    const h = cs.fromHandle;
+    if (h.type !== "source" || !h.id?.startsWith("out:")) return;
+    if (!h.nodeId || h.nodeId === "__trigger") return; // the trigger's spine is not a value
+    setEdgeDrop({ from: h.nodeId, key: h.id.slice(4), at: cs.to ?? null });
+    setPalette("action");
+  }, []);
   // Captured from `onInit` rather than `useReactFlow`, which would need this canvas
   // wrapped in a provider it does not otherwise want.
   const rf = useRef<ReactFlowInstance | null>(null);
@@ -1229,18 +1249,32 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
       // the position is filed under the same name the node is about to be drawn with.
       const alias = `step${draft.effects.length + 1}`;
       const pane = paneRef.current?.getBoundingClientRect();
-      const at = position
+      // DS-1 P1 — a pre-bound add prefers WHERE THE EDGE WAS RELEASED: the reader
+      // already pointed at the place; the viewport centre is for adds with no gesture.
+      const at = position ?? edgeDrop?.at
         ?? (rf.current && pane
           ? viewportCenter(rf.current.getViewport(),
                            { width: pane.width, height: pane.height }, NODE_W)
           : null);
+      // DS-1 P1 — landing from an edge drop appends AND wires in one act (and so one
+      // undo). Computed against the same draft the alias was, outside the updater —
+      // React may run updaters twice, and `landPrebound` is not free to run twice
+      // against two different presents.
+      const landed = edgeDrop && vocab
+        ? landPrebound(draft, vocab, newEffectOf(placement.kind as AutoEffect["kind"]),
+                       { from: edgeDrop.from, key: edgeDrop.key })
+        : null;
+      if (landed?.error) {
+        setNotice(landed.error);
+        window.setTimeout(() => setNotice(""), 3200);
+      }
       // The step and where it landed are ONE act, so they are one entry: an undo that
       // removed the step but kept its coordinate would leave a ghost for the next add
       // to inherit.
       setHistory(h => {
         const nextPositions = at ? { ...h.present.positions, [alias]: at } : h.present.positions;
         const next = {
-          draft: {
+          draft: landed ? landed.draft : {
             ...h.present.draft,
             effects: [...h.present.draft.effects,
                       newEffectOf(placement.kind as AutoEffect["kind"])],
@@ -1250,8 +1284,14 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
         if (at) persistLayout(nextPositions, new Set([...Object.keys(nextPositions), alias]));
         return pushHistory(h, next);
       });
+      // An open-set drop cannot know its key at drag time — park the connection for
+      // the picker, exactly as a node-to-node `out:*` drag does (DS-4's machinery).
+      if (landed && !landed.error && edgeDrop?.key === "*" && landed.field) {
+        setPendingBind({ from: edgeDrop.from, to: landed.alias, field: landed.field });
+      }
+      setEdgeDrop(null);
     },
-    [draft.effects.length, persistLayout],
+    [draft, edgeDrop, vocab, persistLayout],
   );
 
   const patchField = useCallback((alias: string, field: string, value: unknown) => {
@@ -1546,8 +1586,12 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
           <AutomationPalette
             connId={automation?.conn_id}
             only={palette === "all" ? undefined : palette}
+            bindFilter={edgeDrop
+              ? { ref: `${edgeDrop.from}.${edgeDrop.key === "*" ? "…" : edgeDrop.key}` }
+              : undefined}
+            onClearBindFilter={() => setEdgeDrop(null)}
             onAdd={addFromPalette}
-            onClose={() => setPalette(null)}
+            onClose={() => { setPalette(null); setEdgeDrop(null); }}
           />
         )}
 
@@ -1577,6 +1621,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
               edges={edgesLive ? design.edges : []}
               nodeTypes={NODE_TYPES}
               onConnect={onConnect}
+              onConnectEnd={onConnectEnd}
               onNodeDragStop={(_e, n) => {
                 // A move is an edit: same stack, so one undo means "the last thing I
                 // did" whether that was typing or dragging. Coalesced per node, so

@@ -538,12 +538,17 @@ constants read at v1.12.0) before this was written.
   disabled-with-reason rows · Beta shown / Legacy hidden by default, both persisted ·
   loading skeletons matching row geometry · badge text folded into the accessible name
   (WCAG 2.5.3 label-in-name) and the panel `inert` while hidden.
-- **P1 — the killer interaction, the port-compatibility filter:** drop an edge on empty
-  canvas → the palette opens filtered to steps that can bind that type, a banner names the
-  active filter (with ×-to-clear), and choosing an entry lands the node **pre-bound to the
-  dragged edge**. Cheap here: B1's drag-time refusals already know every port's type.
-  Also P1: singleton/constraint reasons (one trigger node; one fan-out per step) and the
-  three-key sort (priority → search score → name).
+- ~~**P1 — the killer interaction, the port-compatibility filter**~~ — **SHIPPED
+  2026-09-02**, straight into DS-1R's canvas-first shape. `onConnectEnd` (a gives port
+  released over nothing) opens the palette filtered to consumers, a banner names the
+  offered value with ×-to-clear, and the chosen entry lands at the RELEASE POINT wired
+  through `landPrebound` — which runs `applyConnect`, never beside it, so the pre-bind
+  obeys exactly the hand-drag refusals. An `out:*` drop appends unbound and parks the
+  connection for DS-4's key picker. Triggers are out by construction (the "one trigger
+  node" constraint surfaced as the filter); the three-key sort landed as priority →
+  match-place (label-prefix < label < description) → name. The law is pure and
+  jsdom-tested because the gesture is not drivable there (nor by the browser tool —
+  4× measured); the drag itself is the one manual receipt.
 - **P2:** a slim segmented rail once there is more than one section — **Palette · Runs ·
   Versions**, library-above / this-chain-below, active re-click collapses, feature
   re-click returns to Palette, every section switch clears search. When VA-9d lands, adopt

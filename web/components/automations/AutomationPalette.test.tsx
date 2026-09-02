@@ -178,3 +178,48 @@ describe("when the palette itself cannot load", () => {
     expect(await screen.findByText(/Could not load the palette/)).toBeTruthy();
   });
 });
+
+/* ── DS-1 P1 · the binding filter ───────────────────────────────────────────── */
+
+describe("the binding filter", () => {
+  const CONSUMERLESS = ENTRY({
+    kind: "metric_value", label: "Governed metric", icon: "gauge", priority: 30,
+    publishes: ["value", "unit", "label"], bindable: [],
+  });
+
+  it("shows only steps with an input port, and names the value on a banner", async () => {
+    getAutomationPalette.mockImplementation(async () => [...ROWS, CONSUMERLESS]);
+    mount({ bindFilter: { ref: "numbers.answer" } });
+    expect(await screen.findByTestId("palette-bind-banner")).toHaveTextContent("numbers.answer");
+    expect(screen.getByTestId("palette-row-notify")).toBeInTheDocument();
+    // No input port ⇒ not offered: an edge onto it is one the engine will not follow.
+    expect(screen.queryByTestId("palette-row-metric_value")).not.toBeInTheDocument();
+    // A trigger cannot consume anything — the whole group is out by construction.
+    expect(screen.queryByTestId("palette-row-schedule")).not.toBeInTheDocument();
+  });
+
+  it("the banner's × clears the filter and keeps the palette", async () => {
+    const onClear = vi.fn();
+    mount({ bindFilter: { ref: "numbers.answer" }, onClearBindFilter: onClear });
+    fireEvent.click(await screen.findByLabelText("Clear the binding filter"));
+    expect(onClear).toHaveBeenCalled();
+  });
+
+  it("no filter, no banner — a narrowed list must never be silent about it", async () => {
+    mount();
+    await screen.findByTestId("palette-row-notify");
+    expect(screen.queryByTestId("palette-bind-banner")).not.toBeInTheDocument();
+  });
+});
+
+describe("the three-key sort", () => {
+  it("a label hit outranks a description hit at equal priority", async () => {
+    const { searchScore } = await import("@/components/automations/AutomationPalette");
+    const labelHit = ENTRY({ label: "Post to Slack" });
+    const descHit = ENTRY({ label: "Notify", description: "post through a trigger" });
+    expect(searchScore(labelHit, "post")).toBeLessThan(searchScore(descHit, "post"));
+    // And a prefix beats a mere substring.
+    expect(searchScore(labelHit, "post")).toBeLessThan(
+      searchScore(ENTRY({ label: "Repost" }), "post"));
+  });
+});
