@@ -3374,7 +3374,13 @@ export async function getDigest(connId: string, period: "week" | "day" = "week")
 // proposal inbox + standing grants (A4). Every route self-gates on `automations.engine`
 // (and the inbox on `automations.proposals`) → a 404 means the plane is off.
 
-export type ConditionKind = "schedule" | "metric" | "source_change" | "entity_appears";
+export type ConditionKind =
+  | "schedule" | "metric" | "source_change" | "entity_appears"
+  // DS-17. Named for what it is from the chain's side: something outside calls it. The
+  // OUTBOUND `webhook` in the notifications and declared-action kind sets is a different
+  // idea entirely (a URL Aughor posts TO); the two never meet because every lookup in
+  // this plane is family-scoped.
+  | "webhook";
 /** The effect kinds a PERSON may author.
  *
  *  Narrower than the server's `Literal` on purpose: `monitor` and `agent_alert` are
@@ -3397,6 +3403,10 @@ export type EffectKind =
 export const AUTOMATION_REQUIRED_KEYS: Record<string, string[]> = {
   schedule: ["cron"], metric: ["monitor_id"],
   source_change: ["table"], entity_appears: ["table"],
+  // DS-17 — deliberately empty. A webhook trigger is configured by issuing a URL under
+  // Deploy, which is a deployment act, not a field on the canvas; an entry here would
+  // make the create form's incomplete gate demand a value nobody can type.
+  webhook: [],
   investigate: ["question"], brief: ["subscription_id"],
   notify: ["trigger_id"], kinetic_action: ["action_id"],
   slack_post: ["bot_id", "channel"], subchain: ["automation_id"],
@@ -4039,6 +4049,60 @@ export async function setAutomationEnabled(id: string, enabled: boolean): Promis
   const res = await fetch(`${getApiBase()}/automations/${id}/enabled?enabled=${enabled}`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to toggle automation");
   return res.json();
+}
+
+/* ── DS-17 · Deploy is a menu of doors ─────────────────────────────────────────── */
+
+/** One way into a chain from outside it, and whether it is open.
+ *
+ *  Four states, not the palette's three: a door has a POSITION. `open` means traffic
+ *  comes through now; `closed` means everything is in place and one gesture opens it.
+ *  `reason` is the server's sentence and is rendered verbatim — the alt-door rule lives
+ *  in those words (a Slack door that said "connect via OAuth" would be correctly SHAPED
+ *  and point a self-hosted install at a door Slack will not open for it), so a client
+ *  that re-worded them would be re-deciding what this deployment can do. */
+export interface AutomationDoor {
+  kind: "schedule" | "webhook" | "slack" | "mcp_tool";
+  label: string;
+  description: string;
+  icon: string;
+  priority: number;
+  state: "open" | "closed" | "needs_setup" | "unavailable";
+  reason: string;
+  detail: string;
+}
+
+export async function getAutomationDoors(
+  id: string,
+): Promise<{ doors: AutomationDoor[]; summary: string }> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/doors`);
+  if (!res.ok) throw new Error("Failed to read the deploy doors");
+  return res.json();
+}
+
+/** The MCP-tool flag alone. A sibling of `setAutomationEnabled`, deliberately: sending the
+ *  whole record to flip one boolean is how `exposed_as_tool` was once accepted, echoed back
+ *  as true, and dropped on the way to the store. */
+export async function setAutomationExposed(id: string, exposed: boolean): Promise<Automation> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/exposed?exposed=${exposed}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error("Failed to toggle the MCP tool");
+  return res.json();
+}
+
+/** Mint (or rotate) this chain's webhook token. The plaintext is in THIS response and
+ *  nowhere else, ever — so a caller that drops it has rotated, not read. */
+export async function issueAutomationWebhook(
+  id: string,
+): Promise<{ automation_id: string; token: string; url: string; header: string }> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/webhook`, { method: "POST" });
+  if (!res.ok) throw new Error((await res.text()) || "Failed to issue the webhook URL");
+  return res.json();
+}
+
+export async function revokeAutomationWebhook(id: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/automations/${id}/webhook`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to revoke the webhook URL");
 }
 
 export async function pauseAutomation(id: string, until: string | null): Promise<Automation> {

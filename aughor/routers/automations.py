@@ -427,6 +427,13 @@ def remove(automation_id: str):
     from aughor.actions import grants, inbox
     grants.purge_owner("automation", automation_id)
     inbox.purge_source(f"automation:{automation_id}")
+    # DS-17 — and its webhook token, for the same reason: it is the automation's property.
+    # The route already refuses a token whose automation is gone, so this is not a hole
+    # being closed — it is a credential not being left behind, which is what the same
+    # cascade does for a grant. Found by driving the receipt: deleting the chain left the
+    # row sitting there with nothing to open.
+    from aughor.automations.webhooks import revoke_webhook_token
+    revoke_webhook_token(automation_id)
     return {"deleted": automation_id}
 
 
@@ -436,6 +443,88 @@ def set_enabled(automation_id: str, enabled: bool = True):
     if a is None:
         raise HTTPException(status_code=404, detail="Automation not found")
     return a.model_dump()
+
+
+@router.post("/automations/{automation_id}/exposed")
+def set_exposed(automation_id: str, exposed: bool = True):
+    """DS-17 — flip only the MCP-tool flag (`enabled`'s sibling, and shaped like it).
+
+    Not the full PUT, deliberately. `exposed_as_tool` is the field that was once accepted,
+    echoed back as true and dropped because `CreateAutomationRequest` did not carry it; a
+    Deploy menu that had to send the whole automation to flip one boolean would re-enter
+    that trap on every click, and the PUT-erase family says a surface eventually sends one
+    field short. A query param rather than a body, to mirror `/enabled` exactly — two
+    sibling switches with two different call shapes is a papercut with no upside.
+    """
+    from aughor.automations.store import set_automation_exposed
+    a = set_automation_exposed(automation_id, exposed)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    return a.model_dump()
+
+
+@router.get("/automations/{automation_id}/doors")
+def automation_doors(automation_id: str):
+    """DS-17 — every way into this chain from outside, and which of them are open.
+
+    The states are the palette's plus one: a door has a POSITION, so `ready` splits into
+    `open` (traffic comes through now) and `closed` (in place, one gesture away). Reading
+    this opens nothing — the verbs are the routes beside it.
+    """
+    from aughor.automations.doors import doors, summary
+    a = get_automation(automation_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    rows = doors(a)
+    return {"doors": rows, "summary": summary(rows)}
+
+
+@router.post("/automations/{automation_id}/webhook")
+def issue_webhook(automation_id: str, request: Request):
+    """DS-17 — mint this chain's webhook token and return it ONCE.
+
+    The plaintext is in this response and nowhere else, ever: every later read is a
+    comparison. Re-calling rotates, which is what makes rotation a thing an operator will
+    actually do — and it is the only remedy for a leaked token, so it must not be buried.
+
+    Refused when the chain has no `webhook` trigger, and that refusal is load-bearing
+    rather than tidy. A token fires a chain through the same path Run now uses, which
+    deliberately BYPASSES the schedule — so a token issued for a chain that has no webhook
+    trigger would be a way to run any scheduled chain on demand, unauthenticated. The
+    trigger on the canvas is the author's consent to being called; without it there is none.
+    """
+    a = get_automation(automation_id)
+    if a is None:
+        raise HTTPException(status_code=404, detail="Automation not found")
+    if not any(c.kind == "webhook" for c in (a.conditions or [])):
+        raise HTTPException(
+            status_code=409,
+            detail="This chain has no Webhook trigger — add one on the canvas first.")
+
+    from aughor.automations.webhooks import issue_webhook_token
+    token = issue_webhook_token(automation_id)
+    return {
+        "automation_id": automation_id,
+        "token": token,
+        # The whole URL, assembled server-side from the request the caller actually
+        # reached us on. A client building it from a hardcoded host is how a copied URL
+        # comes to point at localhost from someone else's machine.
+        "url": str(request.url_for("call_webhook", automation_id=automation_id)),
+        "header": "Authorization: Bearer <token>",
+        "shown_once": True,
+    }
+
+
+@router.delete("/automations/{automation_id}/webhook")
+def revoke_webhook(automation_id: str):
+    """DS-17 — delete this chain's token. The trigger stays on the canvas.
+
+    Revocation is deletion, not a flag: a revoked row is one somebody can un-revoke, and
+    the absence IS the state the door reads. The chain keeps its Webhook trigger because
+    design and deployment are different questions — which is the whole of this wave.
+    """
+    from aughor.automations.webhooks import revoke_webhook_token
+    return {"automation_id": automation_id, "revoked": revoke_webhook_token(automation_id)}
 
 
 @router.post("/automations/{automation_id}/pause")

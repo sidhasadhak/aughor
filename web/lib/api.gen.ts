@@ -1087,6 +1087,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/{automation_id}/doors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Automation Doors
+         * @description DS-17 — every way into this chain from outside, and which of them are open.
+         *
+         *     The states are the palette's plus one: a door has a POSITION, so `ready` splits into
+         *     `open` (traffic comes through now) and `closed` (in place, one gesture away). Reading
+         *     this opens nothing — the verbs are the routes beside it.
+         */
+        get: operations["automation_doors_automations__automation_id__doors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/{automation_id}/dry-run": {
         parameters: {
             query?: never;
@@ -1123,6 +1147,33 @@ export interface paths {
         put?: never;
         /** Set Enabled */
         post: operations["set_enabled_automations__automation_id__enabled_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/exposed": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Exposed
+         * @description DS-17 — flip only the MCP-tool flag (`enabled`'s sibling, and shaped like it).
+         *
+         *     Not the full PUT, deliberately. `exposed_as_tool` is the field that was once accepted,
+         *     echoed back as true and dropped because `CreateAutomationRequest` did not carry it; a
+         *     Deploy menu that had to send the whole automation to flip one boolean would re-enter
+         *     that trap on every click, and the PUT-erase family says a surface eventually sends one
+         *     field short. A query param rather than a body, to mirror `/enabled` exactly — two
+         *     sibling switches with two different call shapes is a papercut with no upside.
+         */
+        post: operations["set_exposed_automations__automation_id__exposed_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1239,6 +1290,44 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/{automation_id}/webhook": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Issue Webhook
+         * @description DS-17 — mint this chain's webhook token and return it ONCE.
+         *
+         *     The plaintext is in this response and nowhere else, ever: every later read is a
+         *     comparison. Re-calling rotates, which is what makes rotation a thing an operator will
+         *     actually do — and it is the only remedy for a leaked token, so it must not be buried.
+         *
+         *     Refused when the chain has no `webhook` trigger, and that refusal is load-bearing
+         *     rather than tidy. A token fires a chain through the same path Run now uses, which
+         *     deliberately BYPASSES the schedule — so a token issued for a chain that has no webhook
+         *     trigger would be a way to run any scheduled chain on demand, unauthenticated. The
+         *     trigger on the canvas is the author's consent to being called; without it there is none.
+         */
+        post: operations["issue_webhook_automations__automation_id__webhook_post"];
+        /**
+         * Revoke Webhook
+         * @description DS-17 — delete this chain's token. The trigger stays on the canvas.
+         *
+         *     Revocation is deletion, not a flag: a revoked row is one somebody can un-revoke, and
+         *     the absence IS the state the door reads. The chain keeps its Webhook trigger because
+         *     design and deployment are different questions — which is the whole of this wave.
+         */
+        delete: operations["revoke_webhook_automations__automation_id__webhook_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -4538,6 +4627,34 @@ export interface paths {
         get: operations["health_health_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hooks/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Call Webhook
+         * @description Run the chain this token belongs to. Returns its run, exactly as Run now does.
+         *
+         *     The body is ignored on purpose. A webhook payload is untrusted data from outside the
+         *     deployment, and a chain reads its inputs from governed objects — a metric, a vetted
+         *     query, a connection's rows — never from the request that woke it. Threading a caller's
+         *     JSON into the chain context would open a binding path from the public internet into
+         *     every downstream step's config, which is the request-forgery shape §3.4 refuses for
+         *     `connection_call`'s URL. If a payload is ever wanted it needs its own declared, typed
+         *     port, not a passthrough.
+         */
+        post: operations["call_webhook_hooks__automation_id__post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -9724,6 +9841,17 @@ export interface components {
          *     already-tested alert conditions become available to any effect, not just to an alert.
          *     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
          *     fires when a new key shows up in a table.
+         *
+         *     ``webhook`` (DS-17) fires when something outside this deployment calls the chain's own
+         *     URL. It is the only kind whose cause is not something the engine can observe on a tick,
+         *     which is why its probe reads the RUN rather than the world — see ``evaluate_conditions``.
+         *
+         *     ⚠️ ``webhook`` is a trigger kind and also, unrelatedly, a declared-action kind
+         *     (``ontology/models.py``) and a notification-destination kind (``notifications/models.py``).
+         *     Those two are OUTBOUND — a URL Aughor posts to; this one is INBOUND — a URL Aughor is
+         *     posted to. The three never meet because every lookup in this plane is family-scoped
+         *     (``required_keys(kind, family=…)``); a flat kind→handler map added anywhere would start
+         *     answering confidently and wrongly.
          */
         Condition: {
             /** Config */
@@ -9734,7 +9862,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "schedule" | "metric" | "source_change" | "entity_appears";
+            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook";
         };
         /**
          * Context
@@ -14199,6 +14327,37 @@ export interface operations {
             };
         };
     };
+    automation_doors_automations__automation_id__doors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     dry_run_stored_automations__automation_id__dry_run_post: {
         parameters: {
             query?: {
@@ -14236,6 +14395,39 @@ export interface operations {
         parameters: {
             query?: {
                 enabled?: boolean;
+            };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_exposed_automations__automation_id__exposed_post: {
+        parameters: {
+            query?: {
+                exposed?: boolean;
             };
             header?: never;
             path: {
@@ -14439,6 +14631,68 @@ export interface operations {
             query?: {
                 limit?: number;
             };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    issue_webhook_automations__automation_id__webhook_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_webhook_automations__automation_id__webhook_delete: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 automation_id: string;
@@ -20207,6 +20461,39 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    call_webhook_hooks__automation_id__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
