@@ -80,6 +80,13 @@ def discover(server: McpServer) -> tuple[list[McpTool], str]:
 
     tools = [_classify_one(server.id, t) for t in raw]
     store.save_roster(server.id, tools)
+    # A declaration that moved takes its grant with it, here, before any surface renders the
+    # new roster — see `store.revoke_stale_grants` for why the door checks again anyway.
+    dropped = store.revoke_stale_grants(server.id, tools)
+    if dropped:
+        logger.info("discovery revoked %d grant(s) on %s whose declaration changed: %s",
+                    len(dropped), server.name or server.id,
+                    ", ".join(sorted(g.tool_name for g in dropped)))
     return tools, ""
 
 
@@ -135,6 +142,11 @@ def tool_named(server_id: str, tool_name: str) -> Optional[McpTool]:
     that re-discovered first would let a server change a tool's declaration between the
     human reading "read-only" on the palette and the engine calling it. The roster is what
     was reviewed; a change to it must go through a discovery somebody ran.
+
+    The write slice leans on exactly this property. A grant pins the declaration it was
+    given for, and the door compares it against THIS row — so the comparison is against
+    what a human could have read, never against whatever the server happens to say at the
+    moment of the call.
     """
     tools, _ = store.get_roster(server_id)
     return next((t for t in tools if t.name == tool_name), None)

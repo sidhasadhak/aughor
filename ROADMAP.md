@@ -196,6 +196,29 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > false}` → and both calls land in the live ledger as `EXTERNAL_CALL` beside Slack's:
 > `mcp:<id>.tools/list` and `mcp:<id>.tools/call:read_the_weather`.
 >
+> ✅ **SHIPPED 2026-09-02 — the write slice, built to the decision below.** `McpToolGrant`
+> + `grant_verdict()` (models) · a `mcp_tool_grants.json` store beside the roster, so no new
+> env var and no migration · the door's fifth gate · `GET/PUT/DELETE /mcp-servers/{id}/
+> grants[/{tool}]` · grant controls on the catalog roster · the save-time check and the
+> palette both taught the same thing. 35 tests, the two load-bearing ones verified to FAIL
+> with the fix reverted.
+>
+> 🔴 **The premise in the decision's own wording was wrong, and measuring it first is what
+> caught it.** "Reusing `tool_grants`" is not possible: that column's subject is an AGENT,
+> its object is an ontology action id validated against a connection's declared actions, and its verb is
+> PROPOSE. This grant's subject is the deployment, its object is a `(server, tool)` pair on
+> somebody else's machine, and its verb is CALL — and it must carry a PINNED DECLARATION,
+> which that column has nowhere to put. The principle survived the premise intact; only the
+> storage moved. `McpToolGrant`'s docstring carries the distinction so the noun stops
+> inviting the confusion.
+>
+> 🔴 **A second gap the build found: `writes` reached the SPAN and not the LEDGER.**
+> `external_call` sends `attributes` to mlflow and emits `payload={"operation", **extra}` —
+> two destinations — and the operation string is `tools/call:<name>` for reads and writes
+> alike. So the audit trail this slice is accountable to could not tell a granted mutation
+> from a read. Same class as the read-only slice's missing trace: capped, spanned, and
+> unrecorded. Fixed on the `extra`, and the test asserts the ledger rather than the wrapper.
+>
 > ✅ **DECIDED 2026-09-02 (the user's call, §6.6) — the write slice's two questions.**
 > *Whose declaration of "read-only" is believed:* **nobody's but ours.** A server's
 > annotation is DISPLAYED and ADVISORY; what authorizes a mutating call is an explicit
@@ -1482,12 +1505,16 @@ NEXT (order within a band is the user's knob)
                                    ⚠️ The posture was DECIDED 2026-09-01 (§3.1, §6.3) — this
                                    band said "agree it with the user first" for a further
                                    day, which is a resolved item reading as a blocked one.
-                                   NEXT for this arc: the write slice — ✅ its two questions
-                                   DECIDED 2026-09-02 (§6.6): our per-tool grant authorizes,
-                                   their label is advisory, and a changed declaration revokes
-                                   the grant. Buildable now, waiting on nothing. Plus the UI
-                                   (`+ Custom MCP` in the connectors catalog, per-server
-                                   palette rows).
+  ✅ VA-9d WRITE SLICE SHIPPED 2026-09-02 — the grant plane. Our per-tool ratification
+                                   authorizes a mutating call, their `readOnlyHint` is
+                                   advisory, and a changed declaration revokes the grant
+                                   (pinned at discovery, scoped to the tool that moved,
+                                   fail-closed). `uncertain` arrived with it, as the
+                                   read-only slice promised it would. 🔴 Two premises broke
+                                   under measurement: `tool_grants` was the wrong column,
+                                   and `writes` reached the span but not the ledger — §3.1
+                                   carries both. Still unbuilt: OAuth-authenticated servers,
+                                   non-text tool results.
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
