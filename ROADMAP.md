@@ -1380,9 +1380,14 @@ NOW
         receipts in §3.7 Phase 3
 
 NEXT (order within a band is the user's knob)
-  VA-9d  MCP consumer             (posture first — allowlist + outbound off by default;
-                                   NOT started: §3.1 requires that posture be agreed with
-                                   the user first. DS-11's second half)
+  VA-9d  MCP consumer             (NOT started, but NO LONGER BLOCKED — the posture was
+                                   DECIDED 2026-09-01: read-only tools first, allowlisted
+                                   servers, a declared-mutating tool LISTED and refused
+                                   with a sentence (§3.1, §6.3). This band still said
+                                   "posture first" until 2026-09-02; nothing waits on the
+                                   user. DS-11's second half, and §3.1's own note makes it
+                                   the delivery mechanism for the most-wanted feature here:
+                                   Arcade and Composio expose their connectors over MCP.)
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
@@ -1418,7 +1423,12 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 ### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
 
 **Keyed on the user** (a decision or credential only they hold):
-- **VA-9d posture** — allowlist + outbound-off-by-default needs sign-off before build (§3.1).
+- ~~**VA-9d posture**~~ — **NOT a debt: decided 2026-09-01** (§3.1, §6.3). This line and §5's
+  NEXT band both still said "needs sign-off" a day after the call was made, which is the
+  ledger's own failure mode — a resolved item that keeps reading as blocked is worse than an
+  unlisted one, because it stops work that could have started.
+- **VA-10's privacy default** — §6.4, the ONE open decision left in §6: may an admin read a
+  user's prompts, or only their metadata? VA-10 stalls on it, VA-9d does not.
 - **VA-11's live Google receipt** — needs an OAuth client only the user can create.
 - **Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.
 - **One manual drag** — P1's edge-drop gesture: no tooling here can drive a ReactFlow drag
@@ -1446,8 +1456,11 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 - **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
-  bare-import path escaping both the .env pin and test isolation (chip filed; suspect:
-  non-`*_DB` path envs missing from `dump_openapi`'s hermetic set).
+  bare-import path escaping both the .env pin and test isolation (chip filed). ⚠️ The
+  suspect this line named — non-`*_DB` path envs missing from `dump_openapi`'s hermetic set
+  — was **TESTED AND CLEARED 2026-09-02 (DS-17)**: the gap was real and is now fixed, but
+  reproducing the old shape did NOT recreate the directory (these stores write when USED,
+  and a spec dump only imports and calls `app.openapi()`). The cause is still unfound.
 
 **House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
 ratchet battery on your own diff in a clean worktree · seven frontend gates + `gen:api` on route
