@@ -1306,7 +1306,9 @@ NEXT (order within a band is the user's knob)
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
                                    seam — §3.6)
-  DS-1 leftovers                  (P1 port-compatibility filter · P2 rail — §3.7 Phase 1 ledger)
+  ✅ DS-1 leftovers SHIPPED 2026-09-02  (P1 edge-drop → pre-bound palette filter · P2
+                                   Palette·Runs rail — §3.7 Phase 1 ledger; landed into
+                                   DS-1R's canvas-first shape, same day)
   ✅ tool_grants column SHIPPED 2026-09-02  (migration 6 + store/create/patch + write-time
                                    roster validation + the editor's grants list; grants
                                    stay PROPOSE-only — §1 limit retired)
@@ -1327,6 +1329,40 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
         (§3.7 Phase 4)
         VA-10 multi-user + admin  (hardening pass over everything above)
 ```
+
+### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
+
+**Keyed on the user** (a decision or credential only they hold):
+- **VA-9d posture** — allowlist + outbound-off-by-default needs sign-off before build (§3.1).
+- **VA-11's live Google receipt** — needs an OAuth client only the user can create.
+- **Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.
+- **One manual drag** — P1's edge-drop gesture: no tooling here can drive a ReactFlow drag
+  (4× measured); the law is pure-tested, the gesture wants one human receipt.
+- Working-tree odds: modified `customers.yaml` · untracked `data/ontology_overrides/fixture/` ·
+  stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
+
+**Buildable** (flagged, unscheduled — pull forward at will):
+- **Report-quality deep dive, 7 of 8 defects still live** (2026-08-19 catalogue; the partial-day
+  guard closed one). Worst first: repair-instruction text ships inside customer PDFs
+  (`confidence_justification`); `_orchestration_plan` dropped by LangGraph on 144/144 reports;
+  the dead confidence floor (zero-row run shipped HIGH); grounding check lacks derivation
+  credit; deep follow-up posts no session_id.
+- **Explorer partial-day sibling** — canvas trend charts still end on today's false dip
+  (the investigate-path guard landed 2026-09-02; chip filed).
+- **Connectors picker hides Notion + Confluence** — real, synced, never offered (DS-10 chip).
+- **Monitors' `notification_channel` unwired** since the Arc OA retirement — monitors fire,
+  can't route.
+- **The propose plane has an empty roster on this deployment** — theLook declares zero
+  actions, so tool_grants/`propose_action` are live plumbing with nothing to bite; declaring
+  one action is the ten-minute end-to-end receipt.
+- **DS-6/DS-7 receipt automations pollute Attention daily** — enabled fixtures with
+  deliberately-missing ids (`sb_missing`, trigger `744ec96b`) re-fail every 09:00.
+- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study).
+- **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
+- **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
+- **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
+  bare-import path escaping both the .env pin and test isolation (chip filed; suspect:
+  non-`*_DB` path envs missing from `dump_openapi`'s hermetic set).
 
 **House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
 ratchet battery on your own diff in a clean worktree · seven frontend gates + `gen:api` on route
