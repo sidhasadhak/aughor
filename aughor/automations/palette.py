@@ -68,6 +68,18 @@ class PaletteEntry:
 TRIGGERS: tuple[PaletteEntry, ...] = (
     PaletteEntry("schedule", "trigger", "Schedule",
                  "Fire on a cron cadence", "clock", 10),
+    # DS-17 — beside `schedule` on purpose: these two are the CAUSE triggers (something
+    # asked for this run), while the three below are claims about the world changing.
+    #
+    # Always ready, and by this module's stated rule rather than as an exception: its
+    # required-key tuple is empty, so there is no object that could be missing. What CAN
+    # be missing is the URL, and that is deliberately not a palette question — issuing one
+    # is a deployment act behind the Deploy door, so a chain can be drawn with a webhook
+    # trigger long before anyone decides to open it. Dimming this row on "no URL yet"
+    # would refuse the design because the deployment had not happened, which is the
+    # inversion DS-17 exists to undo.
+    PaletteEntry("webhook", "trigger", "Webhook",
+                 "Fire when something calls this chain's URL", "link", 15),
     PaletteEntry("metric", "trigger", "Metric",
                  "Delegate to an existing monitor by id", "gauge", 20),
     PaletteEntry("source_change", "trigger", "Source change",

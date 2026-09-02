@@ -276,9 +276,31 @@ def default_probe(cond: Condition, automation: Automation) -> tuple[bool, str]:
     raise ProbeUnavailable(f"condition kind '{cond.kind}' has no probe wired")
 
 
+#: DS-17 — what asked for a run the clock did not ask for. `manual` decides whether the
+#: externally-driven triggers fire; these decide only what the run history SAYS, and the
+#: two are separate because a wrong sentence in the record is the expensive kind of wrong:
+#: it is read months later by someone who cannot re-run the tick to check it.
+#:
+#: Two maps rather than one, and the difference was found by driving it. A webhook call on
+#: a chain that ALSO has a cron logged `schedule(0 9 * * *): called` — nobody called the
+#: schedule. What actually happened to it is that it was not consulted, which is the same
+#: thing "run now, by hand" has always meant on that line.
+_WEBHOOK_ASKED_BY: dict[str, str] = {
+    "hand":    "run now, by hand",
+    "webhook": "called",
+    "parent":  "run by the parent chain",
+}
+_SCHEDULE_SKIPPED_BY: dict[str, str] = {
+    "hand":    "run now, by hand",
+    "webhook": "cron not consulted — called by its webhook",
+    "parent":  "cron not consulted — run by the parent chain",
+}
+
+
 def evaluate_conditions(automation: Automation, *, now: datetime,
                         probe: Optional[ConditionProbe] = None,
-                        manual: bool = False) -> tuple[bool, list[str], str]:
+                        manual: bool = False,
+                        via: str = "hand") -> tuple[bool, list[str], str]:
     """Evaluate every condition under ``condition_logic``. Returns ``(fired, details, reason)``.
 
     Deliberately evaluates ALL conditions rather than short-circuiting: the run history is meant to
@@ -296,13 +318,27 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
     of the WORLD, and a human pressing a button has not changed any of them. Firing a
     "when revenue drops 20%" automation because someone was curious would deliver an
     alert about a drop that never happened.
+
+    **DS-17 · ``webhook`` sits on the same side of that line as ``schedule``.** Both name a
+    CAUSE rather than a claim about the world, and neither can be observed on a tick: the
+    engine cannot look at the warehouse and learn that someone called a URL a moment ago.
+    So its probe reads the RUN — did anything outside the clock ask for this? — which is
+    exactly what ``manual`` already carries, and it is why a webhook trigger needs no probe
+    in ``default_probe`` at all. Pressing Run now therefore fires a webhook-triggered chain,
+    for the same reason it fires a scheduled one: the button is the answer to the question
+    the trigger asks. On a heartbeat tick nothing asked, so the chain stays quiet.
     """
     probe_fn = probe or default_probe
+    skipped = _SCHEDULE_SKIPPED_BY.get(via, _SCHEDULE_SKIPPED_BY["hand"])
+    asked = _WEBHOOK_ASKED_BY.get(via, _WEBHOOK_ASKED_BY["hand"])
     results: list[tuple[bool, str]] = []
     for cond in automation.conditions:
         if cond.kind == "schedule":
-            results.append((True, f"schedule({cond.cron}): run now, by hand")
+            results.append((True, f"schedule({cond.cron}): {skipped}")
                            if manual else _schedule_fired(cond, automation, now))
+        elif cond.kind == "webhook":
+            results.append((True, f"webhook: {asked}") if manual
+                           else (False, "webhook: waiting to be called"))
         else:
             results.append(probe_fn(cond, automation))
 
@@ -823,7 +859,7 @@ def _dispatch_subchain(effect: Effect, automation: Automation) -> EffectOutcome:
     token = _CHAIN.set(_ChainContext(trace_id=ctx.trace_id, depth=ctx.depth + 1,
                                      dispatch=ctx.dispatch, sleeper=ctx.sleeper, rng=ctx.rng))
     try:
-        run = run_automation(child, manual=True, persist=True)
+        run = run_automation(child, manual=True, via="parent", persist=True)
     finally:
         _CHAIN.reset(token)
 
@@ -1213,6 +1249,7 @@ def _walk_automation(
     persist: bool = True,
     dry_run: bool = False,
     manual: bool = False,
+    via: str = "hand",
     run_id: Optional[str] = None,
     until_alias: Optional[str] = None,
     resume: Optional[dict] = None,
@@ -1348,7 +1385,7 @@ def _walk_automation(
     else:
         try:
             fired, details, reason = evaluate_conditions(automation, now=now, probe=probe,
-                                                         manual=manual)
+                                                         manual=manual, via=via)
         except Exception as exc:
             logger.warning("automation %s condition evaluation failed: %s",
                            automation.id, exc)
@@ -1892,6 +1929,7 @@ def run_automation(
     persist: bool = True,
     dry_run: bool = False,
     manual: bool = False,
+    via: str = "hand",
     run_id: Optional[str] = None,
     until_alias: Optional[str] = None,
     resume: Optional[dict] = None,
@@ -1922,7 +1960,7 @@ def run_automation(
     try:
         return _walk_automation(
             automation, now=now, probe=probe, dispatch=dispatch, sleeper=sleeper, rng=rng,
-            persist=persist, dry_run=dry_run, manual=manual, run_id=run_id,
+            persist=persist, dry_run=dry_run, manual=manual, via=via, run_id=run_id,
             until_alias=until_alias, resume=resume)
     finally:
         _CHAIN.reset(token)
