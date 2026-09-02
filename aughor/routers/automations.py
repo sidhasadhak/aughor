@@ -243,6 +243,62 @@ def propose(body: ProposeRequest):
             "reason": ""}
 
 
+class ImportFlowRequest(BaseModel):
+    #: The flow document, verbatim — whatever the Langflow/Flowise editor exported.
+    flow: dict
+
+
+@router.post("/automations/import")
+def import_foreign_flow(body: ImportFlowRequest):
+    """DS-16 — the migration funnel: a Langflow (or archived-Flowise) flow, translated.
+
+    Model/prompt/agent/tool nodes map onto a draft chain (plus a suggested agent record);
+    code-carrying nodes are REFUSED with the no-code-injection law and the declarative
+    alternative named. Nothing is saved and nothing runs — the draft seeds the same
+    canvas-first create view a DS-15 proposal does, and the per-node report IS half the
+    receipt. Declared before `/automations/{automation_id}` (FastAPI declaration order).
+    """
+    from aughor.automations.import_flow import import_flow
+    from aughor.automations.models import Automation
+
+    result = import_flow(body.flow)
+    if result.verdict != "imported":
+        # 200, not 4xx — same reasoning as /propose: "nothing mapped" with each refusal
+        # named is an answer, not a failure.
+        return result.model_dump()
+    # DS-15's law, with the importer's one honest exception: validate by CONSTRUCTING
+    # the real Automation (every model validator plus the chain validator), failing
+    # CLOSED on anything STRUCTURAL — an unknown binding, a cycle, a kind that does not
+    # exist. A MISSING REQUIRED KEY is different: a translation cannot know this
+    # deployment's bot_id, and the create canvas's incomplete gate exists precisely to
+    # collect it — so those become "to fill" notes and the draft still seeds.
+    #
+    # Two passes, deliberately: pydantic SKIPS the Automation-level chain validator when
+    # a field validator fails, so a missing key would MASK a broken binding — the first
+    # construction names the holes, the second runs with the holes placeholder-filled so
+    # the chain law actually gets its turn.
+    from aughor.automations.models import required_keys
+
+    to_fill: list[str] = []
+    filled = []
+    for i, e in enumerate(result.draft["effects"], start=1):
+        cfg = dict(e.get("config") or {})
+        for key in required_keys(str(e.get("kind") or ""), family="effect"):
+            if not cfg.get(key):
+                to_fill.append(f"Action {i} needs {key}")
+                cfg[key] = "…"          # a visible placeholder, never a plausible value
+        filled.append({**e, "config": cfg})
+    try:
+        Automation(conn_id="import-preview", name=result.name or "Imported flow",
+                   conditions=result.draft["conditions"], effects=filled)
+    except Exception as exc:
+        return {**result.model_dump(), "verdict": "nothing_mapped", "draft": None,
+                "reason": f"the translated chain failed the save-time validators: {exc}"}
+    # The draft that seeds carries the HOLES, not the placeholders — a "…" that reached
+    # a saved chain would be a message posted to a real channel.
+    return {**result.model_dump(), "to_fill": to_fill}
+
+
 # NOTE: declared BEFORE `/automations/{automation_id}` on purpose — FastAPI
 # matches routes in declaration order, so a static segment that comes after the
 # path-parameter route is never reached: `/automations/tools` was answering
