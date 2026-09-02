@@ -409,6 +409,29 @@ def set_automation_enabled(automation_id: str, enabled: bool) -> Optional[Automa
     return get_automation(automation_id)
 
 
+def set_automation_exposed(automation_id: str, exposed: bool) -> Optional[Automation]:
+    """DS-17 — flip only the MCP-tool flag.
+
+    A sibling of `set_automation_enabled` rather than a trip through the full PUT, and the
+    reason is on the record: `exposed_as_tool` is the field that was already once accepted,
+    echoed back as true, and dropped on the way here because a request model did not carry
+    it. A Deploy menu that had to send the whole automation to flip one boolean would be
+    re-entering that trap every time — and the PUT-erase family (five occurrences) says a
+    surface sending a record it did not author eventually sends one field short.
+    """
+    with _LOCK:
+        conn = _connect()
+        try:
+            conn.execute(
+                "UPDATE automations SET exposed_as_tool = ?, updated_at = ? WHERE id = ?",
+                (int(exposed), now_iso_z(), automation_id),
+            )
+            conn.commit()
+        finally:
+            conn.close()
+    return get_automation(automation_id)
+
+
 def pause_automation(automation_id: str, until_iso: Optional[str]) -> Optional[Automation]:
     """Mute until ``until_iso`` (or clear the mute with None). Distinct from disabling:
     a pause has an end, and the run history keeps saying *why* nothing fired."""

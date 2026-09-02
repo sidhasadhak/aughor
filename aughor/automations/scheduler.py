@@ -136,7 +136,8 @@ def _run_one(automation) -> None:
     _work()              # no-loop fallback
 
 
-def trigger_now(automation_id: str, run_id: Optional[str] = None) -> Optional[AutomationRun]:
+def trigger_now(automation_id: str, run_id: Optional[str] = None,
+                via: str = "hand") -> Optional[AutomationRun]:
     """Run one automation immediately (synchronous, for the API test endpoint).
 
     Unlike the heartbeat this does NOT skip a disabled or paused automation — it runs it through
@@ -148,6 +149,11 @@ def trigger_now(automation_id: str, run_id: Optional[str] = None) -> Optional[Au
     or a source change describes the world, and nobody changed the world by clicking.
     The lifecycle gates above are untouched for the reason in the paragraph above: a
     disabled automation should say it is disabled, not run.
+
+    ``via`` (DS-17) names what asked, for the run history only — ``"hand"`` (Run now) or
+    ``"webhook"`` (the chain's own URL was called). It changes no decision: a webhook
+    arrival is an external ask exactly as a button press is, and both must clear the same
+    lifecycle gates, which is why the webhook route calls THIS rather than the engine.
     """
     try:
         from aughor.automations.engine import run_automation
@@ -159,7 +165,7 @@ def trigger_now(automation_id: str, run_id: Optional[str] = None) -> Optional[Au
         if automation is None:
             return None
         with using_org(get_connection_org(automation.conn_id) or ""):
-            return run_automation(automation, manual=True, run_id=run_id)
+            return run_automation(automation, manual=True, via=via, run_id=run_id)
     except Exception as exc:
         logger.error("trigger_now failed for automation %s: %s", automation_id, exc)
         return None
@@ -183,6 +189,31 @@ def start() -> None:
         logger.info("Automation heartbeat started (every %ds)", TICK_SECONDS)
     except Exception as exc:
         logger.warning("Automation heartbeat failed to start (non-fatal): %s", exc)
+
+
+def clock() -> tuple[str, str]:
+    """DS-17 — what drives the tick HERE, as ``(state, detail)``. Measured, not assumed.
+
+    Three answers, and the middle one is the whole reason this exists:
+
+    - ``("heartbeat", …)`` — the in-process interval job is running; nothing else needed.
+    - ``("external", …)`` — a serverless deployment, where in-process schedulers are OFF by
+      design (`api.py`'s lifespan) and an outside clock calls ``GET /cron/tick``. The
+      schedule door is open here too, but for a different reason, and a surface that only
+      knew how to look for a thread would tell a Vercel deployment its schedules are dead
+      while they fire every minute.
+    - ``("stopped", …)`` — neither. `start()` swallows its own failure as non-fatal (a
+      correct choice: an API that refuses to boot because APScheduler could not start is
+      worse than one that serves), so this is a state a deployment can genuinely be in and
+      nothing else reports it. A schedule door that read `open` here would be the palette's
+      original sin — offering something that quietly does nothing.
+    """
+    import os
+    if _started:
+        return "heartbeat", f"in-process heartbeat, every {TICK_SECONDS}s"
+    if os.environ.get("VERCEL"):
+        return "external", "serverless — an external cron calls GET /cron/tick"
+    return "stopped", "no clock is running in this process"
 
 
 def stop() -> None:

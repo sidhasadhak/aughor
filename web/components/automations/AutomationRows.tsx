@@ -30,6 +30,7 @@ import { seedConfig, upstreamKeys } from "@/lib/automationFlow";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
+  { value: "webhook",        label: "Webhook",        desc: "Fire when something calls this chain's URL" },
   { value: "metric",         label: "Metric",         desc: "Delegate to an existing monitor by id" },
   { value: "source_change",  label: "Source change",  desc: "A table's rows changed (add / delete / backfill)" },
   { value: "entity_appears", label: "New entity",     desc: "A new key appeared in a table" },
@@ -427,6 +428,14 @@ export function ConditionRow({ c, onChange, onRemove }: {
         )}
         {(c.kind === "source_change" || c.kind === "entity_appears") && (
           <input style={inputStyle} value={String(c.config.table ?? "")} onChange={e => set({ table: e.target.value })} placeholder="table (schema.table)" />
+        )}
+        {/* DS-17 — the one trigger with nothing to fill in. An empty cell would read as a
+            field that failed to render, so it says where the configuration actually is:
+            issuing the URL is a deployment act and lives behind Deploy. */}
+        {c.kind === "webhook" && (
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: "26px" }}>
+            Nothing to fill in — issue this chain&apos;s URL under Deploy.
+          </span>
         )}
       </div>
       {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}

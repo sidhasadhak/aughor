@@ -189,7 +189,16 @@ _API_KEY = os.environ.get("AUGHOR_API_KEY", "")
 _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 # Liveness + API docs stay open so health probes and the schema browser work
 # even when the key is set.
-_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json")
+#
+# DS-17 — `/hooks/` joins them, and it is the only entry here that is exempt while doing
+# something rather than reporting something. It carries its OWN credential: a per-chain
+# webhook token, constant-time compared, that runs exactly one automation through the same
+# lifecycle gates as Run now. That is a strictly NARROWER grant than the shared key, which
+# opens the whole API — so the alternative (make a third party hold `AUGHOR_API_KEY` in
+# order to call one chain) is the less safe one. The prefix is its own for this reason:
+# this list matches by `startswith`, and hanging the public door under `/automations/`
+# would have exempted every read, write and delete on that surface with it.
+_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/")
 
 
 def api_key_configured() -> bool:
@@ -781,6 +790,7 @@ from aughor.routers import (
     integrations,
     slackbots,
     mcpservers as mcpservers_router,
+    hooks,
 )
 
 app.include_router(consistency.router)
@@ -828,5 +838,6 @@ app.include_router(evals.router)  # Wave E3 — eval suites/runs (gated on eval.
 app.include_router(charts.router)  # RC-2 — the chart door for surfaces that cannot draw (Slack)
 app.include_router(automations.router)  # Wave A — condition→effect (self-gates on automations.engine)
 app.include_router(mcpservers_router.router)  # VA-9d — the MCP allowlist (an empty one reaches nothing)
+app.include_router(hooks.router)        # DS-17 — the inbound webhook door (own token; see _AUTH_EXEMPT)
 app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log
 app.include_router(control_room.router)  # Wave CR3/CR4 — fleet overview + needs-a-human (views only)

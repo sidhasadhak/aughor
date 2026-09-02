@@ -1234,12 +1234,80 @@ refused, each with its sentence) → seeded canvas: Trigger → Investigate → 
 with the summary edge drawn, Create gated on "Action 2 needs bot_id", nothing saved.
 Archived-Flowise exports read through the same table.
 
-**DS-17 · Deploy is a menu of doors.** One Deploy control on the canvas enumerating what
-THIS deployment can open — schedule · webhook trigger (new, small: the trigger kinds grow
-by one) · Slack door (RC-5) · MCP tool (DS-14) — each an existing plane, each honouring
-the alt-door rule. Deploying an agent has always meant binding doors; say it on the
-surface where the behaviour lives. **Receipt:** a finished chain goes live on a schedule
-and as an MCP tool from one menu, no other screen involved.
+~~**DS-17 · Deploy is a menu of doors.**~~ — **SHIPPED 2026-09-02.** One Deploy control on
+the canvas enumerating what THIS deployment can open — schedule · webhook (new) · Slack
+(RC-5) · MCP tool (DS-14). `automations/doors.py` + `GET /automations/{id}/doors`, with the
+verbs on routes beside it: `/enabled`, a new `/exposed` sibling, and the webhook token's
+issue/revoke. Reading the menu opens nothing.
+
+> **The contract is the palette's plus one axis, and that axis is the product.** The palette
+> answers *can this be placed here* (`ready | needs_setup | unavailable`); a door also has a
+> POSITION, so `ready` splits into **`open`** (traffic comes through now) and **`closed`**
+> (everything is in place, one gesture away). A reader looking at a finished chain wants to
+> know which of those two they are looking at, and three states cannot say. `closed` is
+> deliberately not an error hue either — nothing is wrong with a door nobody has opened.
+>
+> **The alt-door rule turned out to live in the WORDS, not the shape.** Both places it bites
+> were bought by earlier waves. The **clock** is not always a thread: on serverless the
+> in-process heartbeat is off by design and an external cron drives `/cron/tick`, so a door
+> that looked for the thread would tell a Vercel deployment its schedules are dead while they
+> fire every minute — hence `scheduler.clock()`, which also reports the state nothing else in
+> the product reports (no clock running at all, because `start()` swallows its own failure as
+> non-fatal). And **Slack is not OAuth here**: Slack rejects `http://localhost` callbacks, so
+> the sentence names the manifest path — Socket Mode, an outbound socket, no tunnel. The test
+> for that asserts the sentence contains "socket mode" and *not* "oauth", because a door
+> reading "connect via OAuth" is correctly SHAPED and points a self-hosted install at a door
+> that will not open for it.
+>
+> **The webhook trigger is the fifth kind, and its config is empty on purpose.** Every other
+> trigger is configured by NAMING something (a cron, a monitor, a table); a webhook is
+> configured by ISSUING A URL — a deployment act, behind the door. So the step is complete the
+> moment it is placed, and a chain that has one but no URL is a chain whose door is shut. Its
+> probe reads the RUN rather than the world, because the engine cannot look at the warehouse
+> and learn that someone called a URL: it is `manual`, exactly as `schedule` is, which is why
+> Run now fires a webhook chain and a heartbeat tick does not.
+>
+> **Three refusals the security shape rests on.** The token is refused for a chain with no
+> webhook trigger — `manual` bypasses the cron by design, so a token on a schedule-only chain
+> would be an unauthenticated "run this scheduled job now" button, and the trigger on the
+> canvas IS the author's consent to being called (checked at issue AND at call, because a
+> route is the boundary and a trigger can be removed afterwards). The **body is ignored** —
+> a payload from the public internet must not reach a step's config, which is the
+> request-forgery shape §3.4 already refuses for `connection_call`. And every credential
+> failure returns ONE sentence, or the route is an oracle for which automation ids exist.
+>
+> **Its own prefix, `/hooks/{id}`, because `_AUTH_EXEMPT` matches by `startswith`.** Hanging
+> the public door under `/automations/` would have exempted every read, write and delete on
+> that surface along with it. It is the only exempt entry that DOES something rather than
+> reporting something, and it carries a strictly narrower grant than the shared key it is
+> exempt from: one chain, through the same lifecycle gates as Run now.
+>
+> **Receipt, live 2026-09-02** (a real chain on theLook, deleted after): created not-live →
+> `Not live`, four doors each with its sentence → `/enabled` + `/exposed` → **`Live on 2
+> doors`**, and `GET /automations/tools` really offered `ds_17_receipt_deploy_as_doors` → URL
+> issued → `Live on 3 doors`, with the token absent from the doors response → an
+> unauthenticated `POST /hooks/{id}` **fired the chain** (`webhook: called`), while no token,
+> a wrong token and an unknown id all returned the same 401 sentence → rotate invalidated the
+> old token → revoke returned the door to `closed`. The best line came from the heartbeat a
+> minute later: `not_fired — webhook: waiting to be called`, which is the probe's whole design
+> stated by the system rather than by a test.
+>
+> **Two defects found by driving it, neither visible to a unit test.** A webhook call on a
+> chain that also had a cron logged `schedule(0 9 * * *): called` — nobody called the
+> schedule; what happened to it is that it was not consulted, so the `via` map split in two.
+> And deleting a chain left its token row behind, so the DELETE cascade that already purges
+> grants and proposals now purges the credential too.
+>
+> **Swept in passing:** `scripts/dump_openapi.py` isolated only `AUGHOR_*_DB` names, so a
+> store keyed on a DIRECTORY had no pin at all during `npm run gen:api`. Measured before
+> claiming it: no directory store writes during a spec dump today (reproduced with the old
+> shape — the stray `data/qdrant/` of 2026-09-02 was NOT this script), so it closes a latent
+> hole rather than a bleeding one. `tests/conftest.py` and this list are siblings now.
+>
+> **Left open:** the MCP tool list is read once at MCP server start, so a chain exposed from
+> this menu needs a client reconnect — the door says so in its own sentence rather than
+> leaving an operator to debug a client behaving exactly as designed. `tools/list_changed` is
+> the fix and still wants a live client to prove against (DS-14's own left-open, unchanged).
 
 **Revisit triggers — §4.2's verdict is falsifiable.** Any of these is "new facts" and the
 question reopens without ceremony: upstream ships default-on sandboxed execution AND a
@@ -1419,8 +1487,11 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
         ✅ DS-15 conversation-authors-canvas SHIPPED 2026-09-01 (propose → validate →
         dry-run → a seeded form; nothing saved, nothing armed) · ✅ DS-16 migration
         funnel SHIPPED 2026-09-02 (allowlist translation, code nodes refused by law,
-        report-before-canvas, to_fill holes for the form) · DS-17 deploy-as-doors
-        (§3.7 Phase 4)
+        report-before-canvas, to_fill holes for the form) · ✅ DS-17 deploy-as-doors
+        SHIPPED 2026-09-02 (one Deploy menu: schedule · webhook (the fifth trigger kind,
+        with the repo's one publicly-reachable route) · Slack · MCP tool, each `open |
+        closed | needs_setup | unavailable` with the alt-door sentence — §3.7 Phase 4;
+        **§3.7 is now COMPLETE**)
         VA-10 multi-user + admin  (hardening pass over everything above)
 ```
 
@@ -1431,6 +1502,8 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   slice shipped 2026-09-02. This line and §5's band both still read "needs sign-off" a
   day after the call was made — the ledger's own worst failure mode, because a resolved
   item that keeps reading as blocked stops work that could have started.
+- **VA-10's privacy default** — §6.4, the ONE open decision left in §6: may an admin read a
+  user's prompts, or only their metadata? VA-10 stalls on it, VA-9d does not.
 - **VA-11's live Google receipt** — needs an OAuth client only the user can create.
 - **Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.
 - **One manual drag** — P1's edge-drop gesture: no tooling here can drive a ReactFlow drag
@@ -1458,8 +1531,11 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
 - **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
-  bare-import path escaping both the .env pin and test isolation (chip filed; suspect:
-  non-`*_DB` path envs missing from `dump_openapi`'s hermetic set).
+  bare-import path escaping both the .env pin and test isolation (chip filed). ⚠️ The
+  suspect this line named — non-`*_DB` path envs missing from `dump_openapi`'s hermetic set
+  — was **TESTED AND CLEARED 2026-09-02 (DS-17)**: the gap was real and is now fixed, but
+  reproducing the old shape did NOT recreate the directory (these stores write when USED,
+  and a spec dump only imports and calls `app.openapi()`). The cause is still unfound.
 
 **House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
 ratchet battery on your own diff in a clean worktree · seven frontend gates + `gen:api` on route

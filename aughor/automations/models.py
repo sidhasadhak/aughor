@@ -42,6 +42,13 @@ _CONDITION_REQUIRED: dict[str, tuple[str, ...]] = {
     "metric":         ("monitor_id",),
     "source_change":  ("table",),
     "entity_appears": ("table",),
+    # DS-17 — the webhook trigger requires NOTHING, and that is the wave's point rather
+    # than an oversight. Every other trigger is configured by naming something (a cron, a
+    # monitor, a table); a webhook is configured by ISSUING A URL, which is a deployment
+    # act and lives behind the Deploy door. So the step is complete the moment it is
+    # placed, and a chain that has one but has never been given a URL is a chain whose
+    # DOOR is shut — a distinction the create form would flatten if it demanded a key here.
+    "webhook":        (),
 }
 
 
@@ -53,8 +60,19 @@ class Condition(BaseModel):
     already-tested alert conditions become available to any effect, not just to an alert.
     ``source_change`` fires when a table's cheap source version advanced (A3). ``entity_appears``
     fires when a new key shows up in a table.
+
+    ``webhook`` (DS-17) fires when something outside this deployment calls the chain's own
+    URL. It is the only kind whose cause is not something the engine can observe on a tick,
+    which is why its probe reads the RUN rather than the world — see ``evaluate_conditions``.
+
+    ⚠️ ``webhook`` is a trigger kind and also, unrelatedly, a declared-action kind
+    (``ontology/models.py``) and a notification-destination kind (``notifications/models.py``).
+    Those two are OUTBOUND — a URL Aughor posts to; this one is INBOUND — a URL Aughor is
+    posted to. The three never meet because every lookup in this plane is family-scoped
+    (``required_keys(kind, family=…)``); a flat kind→handler map added anywhere would start
+    answering confidently and wrongly.
     """
-    kind: Literal["schedule", "metric", "source_change", "entity_appears"]
+    kind: Literal["schedule", "metric", "source_change", "entity_appears", "webhook"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -85,6 +103,8 @@ class Condition(BaseModel):
             return f"schedule({self.cron})"
         if self.kind == "metric":
             return f"metric({self.monitor_id})"
+        if self.kind == "webhook":
+            return "webhook"       # nothing to name — the URL is the whole configuration
         return f"{self.kind}({self.table})"
 
 

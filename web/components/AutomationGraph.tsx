@@ -46,6 +46,7 @@ import "@xyflow/react/dist/style.css";
 import {
   blankDraft, DesignControls, StepInspector, updatePayload, type Draft,
 } from "@/components/automations/AutomationAuthor";
+import { DeployMenu } from "@/components/automations/DeployMenu";
 import {
   AutomationPalette, PALETTE_DRAG_TYPE, readPaletteDrag,
   type PaletteGroup, type PalettePlacement,
@@ -693,6 +694,7 @@ function conditionLine(c: { kind: string; config: Record<string, unknown> }): st
   if (c.kind === "metric") return `monitor ${c.config.monitor_id ?? ""} fires`;
   if (c.kind === "source_change") return `${c.config.table ?? "a table"} changes`;
   if (c.kind === "entity_appears") return `new key in ${c.config.table ?? "a table"}`;
+  if (c.kind === "webhook") return "when its URL is called";
   return c.kind;
 }
 
@@ -1553,6 +1555,13 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
             }}
             onPreview={(g) => { setPreview(g); setMode("execution"); }}
           />
+        )}
+        {/* DS-17 — one Deploy control, on the surface where the behaviour lives. Only for
+            a SAVED chain: every door binds something to a stored record, so a draft has
+            nothing to deploy and offering the menu would be offering an empty answer. */}
+        {automationId && mode === "design" && (
+          <DeployMenu automationId={automationId}
+            onChanged={() => { setReloadKey(k => k + 1); onSaved?.(); }} />
         )}
         {header?.onRunNow && (
           <Button variant="ghost" size="sm" className="aug-fs-xs" style={{ flexShrink: 0 }}

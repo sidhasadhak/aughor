@@ -157,7 +157,13 @@ for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR
                  # allowlist is worse than an unpinned cache: a test that registers a
                  # server would leave a real outbound destination in the developer's
                  # live data/.
-                 "AUGHOR_MCPSERVERS_DIR"):
+                 "AUGHOR_MCPSERVERS_DIR",
+                 # DS-17 — webhook-door tokens live under this dir, in the same commit as
+                 # aughor/automations/webhooks.py for the same reason. (The automations
+                 # RECORDS are SQLite under AUGHOR_AUTOMATIONS_DB, isolated above; this is
+                 # the file-store sibling, and the two are deliberately separate stores —
+                 # the token must not ride the record that every reader can GET.)
+                 "AUGHOR_AUTOMATIONS_DIR"):
     os.environ[_dir_env] = _test_stores_dir                    # assigned, not setdefault
 
 # R11 — the per-column config store is a YAML file tree (data/ontology_column_config/)
