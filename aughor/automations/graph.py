@@ -320,8 +320,11 @@ def effect_detail(effect: Any) -> str:
     # to show by CONSTRUCTION — it is an id from the closed roster, never authored text —
     # while the grant would put an account's email address on a picture that is read on
     # screen and exported, which is exactly what this allowlist exists to stop.
+    #
+    # DS-12 — `metric` and `query_id` join it on the same ground: both are ids of governed
+    # objects this deployment declares, never anything a person typed into a config.
     for key in ("action_id", "operation", "question", "subscription_id", "monitor_id",
-                "rule_id", "trigger_id", "channel"):
+                "rule_id", "trigger_id", "channel", "metric", "query_id"):
         val = cfg.get(key)
         if isinstance(val, str) and val:
             return val if len(val) <= 80 else val[:80] + "…"

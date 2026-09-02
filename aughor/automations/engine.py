@@ -43,7 +43,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    BRANCH_SKIP, FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, FanRefused, UnresolvedBinding,
+    BRANCH_SKIP, FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, MAX_FAN_OUT, FanRefused,
+    UnresolvedBinding,
     alias_for, effect_refs, else_target, evaluate_guard_verdict, fan_items, fan_source,
     guard_clauses, is_binding, item_context, item_refs, parse_ref, render_clause, resolve,
 )
@@ -920,6 +921,126 @@ def _dispatch_integration(effect: Effect, automation: Automation) -> EffectOutco
         data=dict(result.data) if status == "executed" else {})
 
 
+@contextmanager
+def _warehouse(automation: Automation):
+    """The automation's own data connection, closed on every path.
+
+    The org is NOT bound here: `scheduler.py` binds it around the whole run (DATA-06,
+    because a background tick carries no request context), and a second binder inside one
+    step would be a second authority on which tenant the run belongs to.
+    """
+    from aughor.db.connection import open_connection_for
+
+    db = open_connection_for(automation.conn_id)
+    try:
+        yield db
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "closing an automation step's db handle is best-effort; the "
+                          "result is already computed", counter="automation.db_close")
+
+
+def _dispatch_metric_value(effect: Effect, automation: Automation) -> EffectOutcome:
+    """DS-12 — read a GOVERNED metric, by the name someone approved.
+
+    The step carries a name, never SQL. That is the moat this wave is named for: the
+    number a chain acts on is the one the metric registry defines — filters, caveats and
+    all — rather than one an LLM re-derived or an author typed into a config field. A
+    chain that guards on `revenue.value` is guarding on Finance's revenue.
+
+    The value comes from `semantic.metrics.compute_value`, which is the ONE place that
+    knows how to turn a definition into a query. Before DS-12 there were two, they
+    disagreed, and — measured live — neither had ever run.
+    """
+    from aughor.semantic.metrics import compute_value, get_metric
+
+    name = effect.metric
+    # SCOPED to the automation's connection, because a connection-scoped definition
+    # SHADOWS the global one of the same name (the one rule `list_metrics` states). An
+    # unscoped read here would compute the global "revenue" on a connection that has
+    # deliberately redefined it — the exact class of silently-wrong number a governed
+    # metric registry exists to prevent.
+    metric = get_metric(name, connection_id=automation.conn_id)
+    if metric is None:
+        return EffectOutcome(kind=effect.kind, target=name, status="dispatch_error",
+                             message=f"unknown metric: {name}")
+    try:
+        with _warehouse(automation) as db:
+            computed = compute_value(metric, db)
+    except KeyError:
+        return EffectOutcome(kind=effect.kind, target=name, status="dispatch_error",
+                             message=f"unknown connection: {automation.conn_id}")
+    if computed.error:
+        return EffectOutcome(kind=effect.kind, target=name, status="failed",
+                             message=f"{metric.label} could not be computed: {computed.error}")
+    unit = metric.unit or ""
+    shown = "no value" if computed.value is None else f"{computed.value:g}{unit}"
+    return EffectOutcome(
+        kind=effect.kind, target=name, status="executed",
+        message=f"{metric.label} = {shown}",
+        # `value` may be None — a metric whose filters matched nothing has an answer,
+        # and a guard reading it with `falsy` is the honest way to ask "did we get one".
+        data={"value": computed.value, "unit": unit, "label": metric.label})
+
+
+def _dispatch_trusted_query(effect: Effect, automation: Automation) -> EffectOutcome:
+    """DS-12 — run a VETTED query and publish its rows: the plane's first declared list.
+
+    §3.2 carried "nothing in this plane publishes a list" as an honest limit, so a
+    `for_each` could only fan over a literal. This is the step that closes it, and it
+    closes it with the safe half of the problem: the SQL is stored, reviewed and named by
+    id, so gaining row-lists costs the plane no expression surface at all.
+
+    The row cap REFUSES rather than truncates, which is W2's law one plane over: a chain
+    that fans over the first 50 of 4,000 rows sends fifty messages and reads as though it
+    sent all of them. The label is NOT the internal dunder form `compute_value` uses —
+    these are ROWS, and the PII/audit post-pass must stay armed for them.
+    """
+    from aughor.semantic.trusted_queries import list_trusted
+
+    query_id = effect.query_id
+    match = next((q for q in list_trusted(automation.conn_id) if q.id == query_id), None)
+    if match is None:
+        # Scoped to THIS automation's connection: a trusted query is verified against the
+        # schema it was written for, and running one against another connection is how a
+        # vetted query stops being vetted.
+        return EffectOutcome(kind=effect.kind, target=query_id, status="dispatch_error",
+                             message=f"no trusted query '{query_id}' on this connection")
+
+    cap = MAX_FAN_OUT
+    try:
+        with _warehouse(automation) as db:
+            # cap + 1, so "there were more" is a fact rather than an inference from a
+            # result that happens to be exactly full.
+            result = db.execute_bounded(
+                f"automation:{automation.id}:{effect.alias or effect.kind}",
+                match.sql, cap + 1)
+    except KeyError:
+        return EffectOutcome(kind=effect.kind, target=query_id, status="dispatch_error",
+                             message=f"unknown connection: {automation.conn_id}")
+    if getattr(result, "error", None):
+        return EffectOutcome(kind=effect.kind, target=query_id, status="failed",
+                             message=f"'{match.question}' failed: {result.error}")
+
+    columns = list(getattr(result, "columns", None) or [])
+    raw = list(getattr(result, "rows", None) or [])
+    if len(raw) > cap:
+        return EffectOutcome(
+            kind=effect.kind, target=query_id, status="failed",
+            message=(f"'{match.question}' returned more than {cap} rows — refused rather "
+                     f"than truncated, because acting on the first {cap} reads as acting "
+                     f"on all of them; narrow the query or add a LIMIT to it"))
+
+    rows = [dict(zip(columns, r)) if isinstance(r, (list, tuple)) else dict(r) for r in raw]
+    return EffectOutcome(
+        kind=effect.kind, target=query_id, status="executed",
+        message=f"'{match.question}' — {len(rows)} row{'' if len(rows) == 1 else 's'}",
+        data={"rows": rows, "columns": columns, "count": len(rows)})
+
+
 _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "kinetic_action": _dispatch_kinetic,
     "notify": _dispatch_notify,
@@ -930,6 +1051,8 @@ _DISPATCHERS: dict[str, Callable[[Effect, Automation], EffectOutcome]] = {
     "slack_post": _dispatch_slack_post,
     "subchain": _dispatch_subchain,
     "integration_call": _dispatch_integration,
+    "metric_value": _dispatch_metric_value,
+    "trusted_query": _dispatch_trusted_query,
 }
 
 

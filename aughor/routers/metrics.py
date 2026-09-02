@@ -11,6 +11,7 @@ from aughor.licensing import Capability, gate
 
 from aughor.semantic.metrics import (
     MetricDefinition,
+    compute_value,
     delete_metric,
     get_metric,
     list_metrics,
@@ -265,35 +266,15 @@ async def get_metric_value(name: str, conn_id: str):
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
 
-    # Build the GOVERNED value query from the metric's parts: the aggregate expression
-    # over its table, with its declared filters applied (e.g. revenue = SUM(total_amount)
-    # WHERE status <> 'cancelled' — net-of-cancelled, the governed definition). A metric
-    # whose sql is already a full SELECT is run verbatim.
-    expr = (metric.sql or "").strip()
-    if expr.lower().startswith("select"):
-        query = expr
-    else:
-        query = f"SELECT ({expr}) AS _v"
-        if metric.tables:
-            query += f" FROM {metric.tables[0]}"
-            if metric.filters:
-                query += " WHERE " + " AND ".join(metric.filters)
-
+    # The query and the run both live in `semantic/metrics.py` — see the note there.
+    # This route and the health scorecard each had their own copy, each called
+    # `db.execute(query)` against a two-argument signature, and each swallowed the
+    # resulting TypeError into a field that reads as "the data could not answer":
+    # value=null with a note here, status="unknown" there. Neither had ever computed a
+    # number, and their two query builders did not even agree on which number.
     def _work():
         try:
-            qr = db.execute(query)
-            rows = qr.rows if qr else []
-            if rows and rows[0] is not None:
-                raw = rows[0][0] if isinstance(rows[0], (list, tuple)) else list(rows[0].values())[0]
-                try:
-                    return float(raw), None
-                except (TypeError, ValueError):
-                    return None, None
-            return None, None
-        except Exception as exc:
-            # A bare-aggregate metric on an ambiguous (e.g. multi-schema) connection can't
-            # be auto-computed — report that honestly rather than 500-ing.
-            return None, str(exc)
+            return compute_value(metric, db)
         finally:
             try:
                 db.close()
@@ -303,18 +284,20 @@ async def get_metric_value(name: str, conn_id: str):
                          counter="metrics.value.close")
 
     loop = asyncio.get_running_loop()
-    value, err = await loop.run_in_executor(None, _work)
+    computed = await loop.run_in_executor(None, _work)
     out = {
         "name": metric.name,
         "label": metric.label,
-        "value": value,
+        "value": computed.value,
         "unit": metric.unit,
-        "sql": query,
+        "sql": computed.sql,
         "filters": metric.filters,
         "caveats": metric.caveats,
     }
-    if err:
-        out["note"] = f"Could not compute against '{conn_id}': {err}"
+    if computed.error:
+        # A bare-aggregate metric on an ambiguous (e.g. multi-schema) connection can't
+        # be auto-computed — report that honestly rather than 500-ing.
+        out["note"] = f"Could not compute against '{conn_id}': {computed.error}"
     return out
 
 
@@ -338,15 +321,11 @@ async def get_health_scorecard(conn_id: str):
         results = []
         for metric in _targeted:
             try:
-                qr = db.execute(f"SELECT ({metric.sql}) AS _v")
-                rows = qr.rows if qr else []
-                current: Optional[float] = None
-                if rows and rows[0]:
-                    raw = rows[0][0] if isinstance(rows[0], (list, tuple)) else list(rows[0].values())[0]
-                    try:
-                        current = float(raw)
-                    except (TypeError, ValueError):
-                        current = None
+                # The SAME governed query the value route runs — filters included. The
+                # copy that stood here ran the bare aggregate with no FROM and no
+                # filters, so on the day it started working it would have scored a
+                # metric against a number its own definition excludes.
+                current = compute_value(metric, db).value
 
                 if current is None:
                     status = "unknown"

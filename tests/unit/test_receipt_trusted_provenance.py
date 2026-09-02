@@ -109,8 +109,6 @@ import pytest
 @pytest.fixture()
 def seeded_library(tmp_path, monkeypatch):
     """A two-entry trusted library, with the warrant sentence the promoter really writes."""
-    from aughor.semantic import trusted_queries as tq
-
     store = tmp_path / "trusted_queries.json"
     store.write_text(json.dumps([
         {"id": "tq1", "connection_id": "c1",
@@ -122,7 +120,12 @@ def seeded_library(tmp_path, monkeypatch):
          "sql": "SELECT reason, count(*) FROM returns GROUP BY reason",
          "tables": ["returns"], "note": EVAL_WARRANT, "tags": ["from_eval"]},
     ]))
-    monkeypatch.setattr(tq, "_PATH", store)
+    # DS-13 — the store resolves `AUGHOR_TRUSTED_QUERIES_PATH` per call now, rather than
+    # holding a module-level `_PATH`. This fixture predates that: it was doing its own
+    # isolation precisely because the module had none, which is the hole that env var
+    # closed. Setting the env keeps the fixture's real job — controlling the CONTENT this
+    # test reads — while leaving the isolation to conftest.
+    monkeypatch.setenv("AUGHOR_TRUSTED_QUERIES_PATH", str(store))
     return store
 
 

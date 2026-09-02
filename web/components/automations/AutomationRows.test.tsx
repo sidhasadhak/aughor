@@ -153,6 +153,34 @@ describe("what the editor sends", () => {
     expect(wire.when).toEqual(act.when);
     expect(wire.config.params).toEqual({ amount: 5 });
   });
+
+  /* The params-erase, fifth of this subsystem's PUT-erase family and the first one
+   * INSIDE an effect. An automation loaded for editing arrives with `params` and no
+   * `paramsText`; reading that absence as "{}" meant fixing a typo in the NAME wiped the
+   * params of every declared-action step in it. */
+  it("carries stored params through when the params editor was never opened", () => {
+    const untouched: AutoEffect = {
+      kind: "kinetic_action",
+      config: { action_id: "a1", params: { amount: 5 } },
+    };
+    const wire = effectsForWire([untouched])[0];
+    expect(wire.config.params).toEqual({ amount: 5 });
+    expect(wire.config.paramsText).toBeUndefined();
+  });
+
+  it("leaves a kind with a generated params form entirely alone", () => {
+    /* `integration_call` builds its params from the operation's declared inputs, so they
+     * are already a real object. Running it through the TEXT path would stringify a
+     * structure that was never a string — which is why it is absent from the table that
+     * drives that path, and why this asserts the object survives untouched. */
+    const generated: AutoEffect = {
+      kind: "integration_call",
+      config: { connection_id: "ic_1", operation: "gmail.messages.list",
+                params: { q: "is:unread", max_results: 10 } },
+    };
+    const wire = effectsForWire([generated])[0];
+    expect(wire.config.params).toEqual({ q: "is:unread", max_results: 10 });
+  });
 });
 
 /* ── DS-6 · the Otherwise editor ────────────────────────────────────────────────── */

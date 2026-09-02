@@ -94,6 +94,12 @@ ACTIONS: tuple[PaletteEntry, ...] = (
     PaletteEntry("integration_call", "action", "Use an integration",
                  "Act as a connected account — read or post under the grant that "
                  "account gave, capped and audited", "key", 70),
+    PaletteEntry("metric_value", "action", "Governed metric",
+                 "Read a metric by its approved definition — the number the registry "
+                 "defines, filters and caveats included", "metric", 80),
+    PaletteEntry("trusted_query", "action", "Trusted query",
+                 "Run a vetted query and publish its rows — the one output in this "
+                 "plane a step can run once per item of", "table", 90),
 )
 
 ENTRIES: tuple[PaletteEntry, ...] = TRIGGERS + ACTIONS
@@ -145,6 +151,18 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         # refused at save), so one automation on the connection means none to call.
         return max(0, len(list_automations(conn_id=conn_id)) - 1)
 
+    def metrics() -> int:
+        # DS-12 — scoped, because `list_metrics` shadows a global definition with a
+        # connection-scoped one and the palette must count what THIS connection would
+        # actually run. Unscoped it would light the row using another connection's
+        # metric, which is the palette telling the truth about somewhere else.
+        from aughor.semantic.metrics import list_metrics
+        return len(list_metrics(connection_id=conn_id) if conn_id else list_metrics())
+
+    def trusted() -> int:
+        from aughor.semantic.trusted_queries import list_trusted
+        return len(list_trusted(conn_id or ""))
+
     return {
         # The Slack sentence is the one the rail already shows, word for word: two
         # surfaces explaining the same absence differently is how a reader learns the
@@ -169,6 +187,14 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         "integration_call": _Prereq(
             grants, "No connected accounts — connect one under Integrations, then this "
                     "step can act as it."),
+        # DS-12 — both name a governed object, so both follow this module's one rule:
+        # available exactly when at least one such object exists here.
+        "metric_value": _Prereq(metrics, "No metrics defined for this connection — "
+                                         "define one in the Semantic Layer, then this "
+                                         "step can read its governed value."),
+        "trusted_query": _Prereq(trusted, "No trusted queries on this connection — "
+                                          "promote a verified answer first, then this "
+                                          "step can run it."),
     }
 
 

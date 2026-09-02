@@ -19,7 +19,21 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-_PATH = Path(__file__).parent.parent.parent / "data" / "trusted_queries.json"
+_DEFAULT_PATH = Path(__file__).parent.parent.parent / "data" / "trusted_queries.json"
+
+
+def _path() -> Path:
+    """The vetted-query file, honouring ``AUGHOR_TRUSTED_QUERIES_PATH``.
+
+    DS-12 — added when the automations plane started READING this store, because until
+    then it was the last authored file here with a hardcoded path: a test that saved a
+    trusted query wrote to the live ``data/trusted_queries.json``. Same non-hermeticity
+    class as the glossary and the metrics catalog, both of which this repo already fixed
+    after a suite run destroyed real content. Resolved per call, like the metrics
+    catalog, so it always reflects the current env rather than the one at import.
+    """
+    from aughor.db.sqlite_util import resolve_db_path
+    return resolve_db_path("AUGHOR_TRUSTED_QUERIES_PATH", _DEFAULT_PATH)
 
 # Generic words that shouldn't drive matching.
 _STOP = frozenset({
@@ -45,10 +59,10 @@ def _tokens(text: str) -> set[str]:
 
 
 def _load_raw() -> list[dict]:
-    if not _PATH.exists():
+    if not _path().exists():
         return []
     try:
-        return json.loads(_PATH.read_text()) or []
+        return json.loads(_path().read_text()) or []
     except Exception:
         return []
 
@@ -70,10 +84,10 @@ def list_trusted(connection_id: str = "") -> list[TrustedQuery]:
 def save_trusted(tq: TrustedQuery) -> None:
     raw = [d for d in _load_raw() if d.get("id") != tq.id]
     raw.append(tq.model_dump())
-    _PATH.parent.mkdir(parents=True, exist_ok=True)
-    tmp = _PATH.with_suffix(".tmp")
+    _path().parent.mkdir(parents=True, exist_ok=True)
+    tmp = _path().with_suffix(".tmp")
     tmp.write_text(json.dumps(raw, indent=2))
-    tmp.replace(_PATH)
+    tmp.replace(_path())
 
 
 def delete_trusted(tq_id: str) -> bool:
@@ -81,7 +95,7 @@ def delete_trusted(tq_id: str) -> bool:
     kept = [d for d in raw if d.get("id") != tq_id]
     if len(kept) == len(raw):
         return False
-    _PATH.write_text(json.dumps(kept, indent=2))
+    _path().write_text(json.dumps(kept, indent=2))
     return True
 
 

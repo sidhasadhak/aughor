@@ -932,6 +932,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose
+         * @description DS-15 — describe an outcome, get a drawn chain with a dry-run receipt.
+         *
+         *     Creation by PROPOSAL, the shape every governed write here already has: nothing is
+         *     saved, the draft is refused by the same validators a save runs, and a human arms it.
+         *     The response is the authoring payload the canvas already knows how to render, so the
+         *     proposal arrives as an editable chain rather than as a message about one.
+         *
+         *     Declared BEFORE `/automations/{automation_id}` for the reason DS-14 learned the hard
+         *     way one route up: FastAPI matches in declaration order, and a static segment after the
+         *     path-parameter route is never reached.
+         */
+        post: operations["propose_automations_propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/runs": {
         parameters: {
             query?: never;
@@ -947,6 +976,38 @@ export interface paths {
          *     an id.
          */
         get: operations["all_runs_automations_runs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/automations/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Exposed Tools
+         * @description DS-14 — the automations this deployment offers as MCP tools.
+         *
+         *     Read by the MCP server at start, so what an outside agent can invoke is whatever the
+         *     owners OPTED IN — never every automation the API happens to hold.
+         *
+         *     Both flags must hold. `exposed_as_tool` is the intent and `enabled` is the switch, and
+         *     a chain someone deliberately switched off must not stay callable from outside: that
+         *     would make the off switch a lie for exactly the caller nobody is watching.
+         *
+         *     A name collision is refused HERE rather than left for the server to resolve, because
+         *     the two tools would be indistinguishable to the client that has to choose between
+         *     them. The first by creation order keeps the name and the rest are reported with the
+         *     reason, so the answer is one an operator can act on instead of a silently shorter list.
+         */
+        get: operations["exposed_tools_automations_tools_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -9708,6 +9769,11 @@ export interface components {
             enabled: boolean;
             /** Expires At */
             expires_at?: string | null;
+            /**
+             * Exposed As Tool
+             * @default false
+             */
+            exposed_as_tool: boolean;
             fallback_effect?: components["schemas"]["Effect"] | null;
             /**
              * Max Retries
@@ -10051,7 +10117,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call";
+            kind: "investigate" | "brief" | "notify" | "kinetic_action" | "monitor" | "agent_alert" | "slack_post" | "subchain" | "integration_call" | "metric_value" | "trusted_query";
             /** When */
             when?: components["schemas"]["GuardClause"][];
             /**
@@ -10801,16 +10867,6 @@ export interface components {
             table_cols?: {
                 [key: string]: string[];
             } | null;
-        };
-        /** ProposeRequest */
-        ProposeRequest: {
-            /**
-             * Actor
-             * @default agent
-             */
-            actor: string;
-            /** Context */
-            context: string;
         };
         /**
          * QueryTemplate
@@ -12215,6 +12271,22 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /**
+         * ProposeRequest
+         * @description DS-15 — what a person says, and which connection to ground it in.
+         */
+        aughor__routers__automations__ProposeRequest: {
+            /**
+             * Conn Id
+             * @description The connection the chain runs against.
+             */
+            conn_id: string;
+            /**
+             * Outcome
+             * @description What the chain should achieve, in the user's words.
+             */
+            outcome: string;
+        };
         /** LayoutRequest */
         aughor__routers__dashboard__LayoutRequest: {
             /** Connection Id */
@@ -12223,6 +12295,16 @@ export interface components {
             layout?: {
                 [key: string]: unknown;
             };
+        };
+        /** ProposeRequest */
+        aughor__routers__kinetic__ProposeRequest: {
+            /**
+             * Actor
+             * @default agent
+             */
+            actor: string;
+            /** Context */
+            context: string;
         };
     };
     responses: never;
@@ -13831,11 +13913,75 @@ export interface operations {
             };
         };
     };
+    propose_automations_propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__automations__ProposeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     all_runs_automations_runs_get: {
         parameters: {
             query?: {
                 conn_id?: string | null;
                 limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exposed_tools_automations_tools_get: {
+        parameters: {
+            query?: {
+                conn_id?: string;
             };
             header?: never;
             path?: never;
@@ -21109,7 +21255,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ProposeRequest"];
+                "application/json": components["schemas"]["aughor__routers__kinetic__ProposeRequest"];
             };
         };
         responses: {

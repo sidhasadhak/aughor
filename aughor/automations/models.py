@@ -110,6 +110,14 @@ _EFFECT_REQUIRED: dict[str, tuple[str, ...]] = {
     # sibling: a step naming neither is a step that would ask a provider nothing on
     # behalf of nobody, and "looking schedulable" is the expensive kind of broken.
     "integration_call": ("connection_id", "operation"),
+    # DS-12 — the ontology plane, as steps. Each names a GOVERNED object rather than
+    # carrying SQL: a metric by the name Finance approved, a query by the id someone
+    # vetted. That is the whole difference between this and a step that takes a string
+    # of SQL — there is no expression here for anyone to author, so there is none for
+    # anyone to inject, and the number a chain acts on is the number the registry
+    # defines rather than one an LLM re-derived.
+    "metric_value":   ("metric",),
+    "trusted_query":  ("query_id",),
 }
 
 
@@ -226,7 +234,8 @@ class Effect(BaseModel):
     and connection binding are applied by that path, not re-implemented here.
     """
     kind: Literal["investigate", "brief", "notify", "kinetic_action", "monitor", "agent_alert",
-                  "slack_post", "subchain", "integration_call"]
+                  "slack_post", "subchain", "integration_call",
+                  "metric_value", "trusted_query"]
     #: VA-4a — this step's name, for `{"$from": "<alias>.<key>"}` references. Defaults to
     #: its 1-based position (`step1`, `step2`, …) so an existing automation gains
     #: referable steps without being rewritten.
@@ -282,6 +291,16 @@ class Effect(BaseModel):
     def automation_id(self) -> str:
         """DS-9 — the chain a ``subchain`` step runs."""
         return str(self.config.get("automation_id", ""))
+
+    @property
+    def metric(self) -> str:
+        """DS-12 — the governed metric a ``metric_value`` step reads."""
+        return str(self.config.get("metric", ""))
+
+    @property
+    def query_id(self) -> str:
+        """DS-12 — the vetted query a ``trusted_query`` step runs."""
+        return str(self.config.get("query_id", ""))
 
     @property
     def agent_id(self) -> str:
@@ -359,6 +378,15 @@ class Automation(BaseModel):
     )
 
     enabled: bool = True
+    #: DS-14 — may an external MCP client invoke this chain as a tool?
+    #:
+    #: OPT-IN, and default False on purpose. A deployment's automations are its private
+    #: machinery; exposing every one of them because the MCP server happens to front the
+    #: same API would be the opposite of the posture the rest of that server exists for.
+    #: `enabled` is a separate question and both must hold — a chain someone deliberately
+    #: switched off must not stay callable from outside, which would make the off switch a
+    #: lie for exactly the caller nobody is watching.
+    exposed_as_tool: bool = False
     paused_until: Optional[str] = Field(
         default=None,
         description="ISO-8601 UTC. While in the future the automation is muted: it does not "

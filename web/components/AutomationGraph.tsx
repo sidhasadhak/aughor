@@ -112,6 +112,7 @@ const KIND_ICON: Record<string, IconName> = {
   // back to the generic "process" gear, which is how a new kind ends up looking like
   // scaffolding on the one surface built to make a chain read as roles.
   integration_call: "key",
+  metric_value: "metric", trusted_query: "table",
 };
 
 const COL_W = 300;
@@ -439,6 +440,8 @@ const PRIMARY_FIELDS: Record<string, { field: string; placeholder: string }[]> =
   // its id in a free-text box on the node would invite pasting one that is not theirs,
   // and putting the email on the canvas is the spill `effect_detail` refuses.
   integration_call: [{ field: "operation", placeholder: "pick one in the rail" }],
+  metric_value:   [{ field: "metric", placeholder: "metric name" }],
+  trusted_query:  [{ field: "query_id", placeholder: "trusted query id" }],
 };
 
 /** The kind's accent — one hue per kind so a chain reads as a sequence of ROLES the
@@ -447,13 +450,17 @@ const KIND_HUE: Record<string, string> = {
   investigate: "var(--chart-1)", slack_post: "var(--chart-2)", notify: "var(--chart-3)",
   brief: "var(--chart-5)", kinetic_action: "var(--chart-4)",
   subchain: "var(--chart-6)",
-  // DS-11 — SHARED with the declared action, on purpose and stated rather than left to
-  // the fallback. The chart series is six CVD-validated tokens behind `lint:palette`; a
-  // seventh is a palette decision with a validator to satisfy, not a side effect of
-  // adding an effect kind. Of the six, this is the honest one to share: these are the
-  // two kinds whose step the approval gate can stop. Left unlisted it would have fallen
-  // back to `--chart-6` and collided with `subchain`, which groups nothing.
-  integration_call: "var(--chart-4)",
+  // DS-11 asked for a seventh hue and declined to invent one: "a palette decision with a
+  // validator to satisfy, not a side effect of adding an effect kind." That work is now
+  // done, so this kind takes the seventh rather than sharing the declared action's. The
+  // accent was chosen by the palette SEARCH in the one hue gap left, and `lint:palette`
+  // holds it to a stricter bar than the six meet among themselves: >= 6 CVD and >= 15
+  // normal-vision separation from ALL six, not merely from an adjacent neighbour.
+  //
+  // It is NOT a seventh chart series — charts still fold to "Other" at six and
+  // CHART_SERIES is untouched. On a canvas every kind is on screen at once, where the
+  // chart's fold-to-grey would render one step type as though it were disabled.
+  integration_call: "var(--chart-7)",
 };
 
 function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {

@@ -323,3 +323,122 @@ async def read_run_span(
     This read is AUDITED: Aughor journals who read whose run, because payload access is
     governed rather than merely permitted."""
     return await _client.run_span(trace_id, span_id)
+
+
+# ── DS-14: an enabled automation, exposed as a tool ──────────────────────────────
+#
+# The eighteen tools above are STATIC — they are what this version of Aughor can do, and
+# they are the same on every install. An automation is the opposite: it is what THIS
+# deployment's people built, it appears and disappears at runtime, and no decorator can
+# know its name. So these are registered dynamically at server start from the one route
+# that says which chains their owners opted in.
+#
+# Opt-in, never automatic. A deployment's automations are its private machinery; exposing
+# every one of them to any MCP client because the server happens to front the API would
+# be the opposite of the governed posture the rest of this file exists for.
+#
+# The tool is a thin wrapper over `POST /automations/{id}/run` — the SAME route the web
+# app's "Run now" presses. That is the whole design: the caller changes, the governance
+# does not. The chain runs in the one engine, writes a run row that Activity reads, and a
+# governed write inside it still parks for the approval gate (DS-8) rather than firing
+# because the request arrived over MCP.
+
+import logging as _logging
+import re as _re
+
+_log = _logging.getLogger("aughor.mcp")
+
+#: A tool name an MCP client will accept, derived from the automation's own name.
+_SLUG_OK = _re.compile(r"[^a-z0-9_]+")
+
+
+def automation_tool_name(name: str) -> str:
+    """The MCP tool name for an automation, from the name a person gave it.
+
+    Their words, not an id: an agent choosing between tools reads the name, and
+    ``run_a1671c53`` tells it nothing. Non-identifier characters collapse to underscores
+    so "DS-6 receipt: revenue routing" becomes ``ds_6_receipt_revenue_routing``.
+    """
+    slug = _SLUG_OK.sub("_", (name or "").strip().lower()).strip("_")
+    return slug or "automation"
+
+
+async def register_automation_tools(client: "AughorClient | None" = None) -> list[str]:
+    """Register one tool per exposed automation. Returns the names actually registered.
+
+    Never raises. An MCP server that refuses to start because the API is down — or because
+    one automation has an awkward name — is worse than one that starts with its eighteen
+    static tools and says what it could not add: the static tools are the ones a client
+    needs to diagnose the outage.
+
+    A name that collides with an existing tool is SKIPPED rather than allowed to shadow it.
+    Shadowing `ask` with someone's automation called "Ask" would silently replace the
+    governed answer path with a chain, which is the kind of substitution nobody would think
+    to look for.
+    """
+    api = client or _client
+    try:
+        exposed = await api.list_automation_tools()
+    except Exception as exc:                       # the API is down, or the route is old
+        _log.warning("could not read the exposed automations: %s", exc)
+        return []
+
+    taken = set(getattr(mcp._tool_manager, "_tools", {}) or {})
+    added: list[str] = []
+    for row in exposed:
+        automation_id = str(row.get("id") or "")
+        if not automation_id:
+            continue
+        name = str(row.get("tool_name") or "") or automation_tool_name(str(row.get("name") or ""))
+        if name in taken:
+            _log.warning("automation tool %r collides with an existing tool — skipped", name)
+            continue
+        mcp.add_tool(_automation_runner(api, automation_id), name=name,
+                     description=_automation_description(row))
+        taken.add(name)
+        added.append(name)
+    return added
+
+
+def _automation_description(row: dict) -> str:
+    """What an agent reads when deciding whether to call this chain.
+
+    The steps are named, because "runs an automation" is not a description anyone can
+    choose on. A model picking between tools needs to know this one posts to Slack.
+    """
+    described = str(row.get("description") or "").strip()
+    steps = ", ".join(str(s) for s in (row.get("steps") or []) if s)
+    parts = [described or f"Run the '{row.get('name')}' automation."]
+    if steps:
+        parts.append(f"Steps: {steps}.")
+    parts.append("Runs through Aughor's governed path — the run appears in Activity, and a "
+                 "governed write inside it stops for human approval rather than firing.")
+    return " ".join(parts)
+
+
+def _automation_runner(api: "AughorClient", automation_id: str):
+    """One no-argument tool that fires one chain.
+
+    A factory rather than a lambda in the loop: a closure built inline would capture the
+    LOOP variable, so every registered tool would run whichever automation happened to be
+    last — the classic late-binding bug, and one that would look like the right number of
+    tools right up until a client called one.
+
+    No arguments, because an automation is not a function: it carries its own trigger and
+    its own step config, and inventing parameters here would be a second authoring surface
+    for a chain that already has one.
+    """
+    async def _run() -> dict:
+        run = await api.run_automation(automation_id)
+        # A compact verdict, not the whole run record: the caller wants to know whether it
+        # fired and what happened, and the full row is in Activity where it belongs.
+        return {
+            "outcome": run.get("outcome"),
+            "reason": run.get("reason"),
+            "run_id": run.get("id"),
+            "steps": [{"kind": e.get("kind"), "status": e.get("status"),
+                       "message": e.get("message")}
+                      for e in (run.get("effects") or [])],
+        }
+
+    return _run

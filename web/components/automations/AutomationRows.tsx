@@ -48,6 +48,10 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
   { value: "integration_call", label: "Use an integration",
     desc: "Act as a connected account — read or post under the grant that account gave, "
         + "capped and audited" },
+  { value: "metric_value", label: "Governed metric",
+    desc: "Read a metric by its approved definition — the number the registry defines, filters and caveats included" },
+  { value: "trusted_query", label: "Trusted query",
+    desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
 ];
 
 export const CRON_PRESETS = [
@@ -660,8 +664,22 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
         {e.kind === "kinetic_action" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
             <input style={inputStyle} value={String(e.config.action_id ?? "")} onChange={ev => set({ action_id: ev.target.value })} placeholder="declared action id" />
-            <input style={inputStyle} value={String((e.config as { paramsText?: string }).paramsText ?? "")} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
+            <input style={inputStyle} value={paramsTextOf(e)} onChange={ev => set({ paramsText: ev.target.value })} placeholder='params JSON e.g. {"amount": 500}' />
           </div>
+        )}
+        {/* DS-12 — one field each, and it is a NAME, not SQL. The governed object is
+            chosen from the registry (`/components?family=metric`), the same way the
+            declared-action picker reads the ontology route rather than making the
+            author remember an id. */}
+        {e.kind === "metric_value" && (
+          <input style={inputStyle} value={String(e.config.metric ?? "")}
+            onChange={ev => set({ metric: ev.target.value })}
+            placeholder="metric name, e.g. revenue" />
+        )}
+        {e.kind === "trusted_query" && (
+          <input style={inputStyle} value={String(e.config.query_id ?? "")}
+            onChange={ev => set({ query_id: ev.target.value })}
+            placeholder="trusted query id" />
         )}
         <GuardRows e={e} siblings={siblings ?? [e]} index={siblings ? index : 0}
           onChange={onChange} />
@@ -683,18 +701,49 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
  * than each remembering to strip the field. Throws with a readable message; the caller
  * decides how to show it.
  */
+/**
+ * What the params editor shows: the text being typed, else the params already stored.
+ *
+ * Without the second half the field opens BLANK on an automation that has params, and
+ * `effectsForWire` then reads "untouched" as "{}" — so editing an automation's name
+ * through this form erased the params of every declared-action step in it. Fifth of the
+ * PUT-erase family in this subsystem, and the first one INSIDE an effect rather than
+ * around the record.
+ */
+function paramsTextOf(e: AutoEffect): string {
+  const cfg = e.config as Record<string, unknown> & { paramsText?: string };
+  if (typeof cfg.paramsText === "string") return cfg.paramsText;
+  const params = cfg.params;
+  return params && typeof params === "object" ? JSON.stringify(params) : "";
+}
+
+/** The kinds whose params are authored as free TEXT, and what to say when the text is
+ *  not JSON. Keyed rather than `if/else`d so a second one is a row here, and so each
+ *  kind's refusal names ITSELF rather than borrowing another kind's noun.
+ *
+ *  `integration_call` is deliberately ABSENT: DS-11 gives it a generated form built from
+ *  the operation's declared params, so its `params` is already a real object and running
+ *  it through the text path would stringify a structure that was never a string. */
+const PARAMS_AS_TEXT: Record<string, string> = {
+  kinetic_action: "Declared-action params must be valid JSON",
+};
+
 export function effectsForWire(effects: AutoEffect[]): AutoEffect[] {
   return effects.map(e => {
-    if (e.kind !== "kinetic_action") return e;
+    const complaint = PARAMS_AS_TEXT[e.kind];
+    if (!complaint) return e;
     const cfg = e.config as Record<string, unknown> & { paramsText?: string };
-    const raw = String(cfg.paramsText ?? "").trim() || "{}";
+    // No `paramsText` at all means the editor was never opened on this step — carry its
+    // stored `params` through untouched. Reading absence as "{}" is what erased them.
+    if (typeof cfg.paramsText !== "string") return e;
+    const raw = cfg.paramsText.trim() || "{}";
     const { paramsText: _omit, ...rest } = cfg;
     void _omit;
     let params: unknown;
     try {
       params = JSON.parse(raw);
     } catch {
-      throw new Error("Declared-action params must be valid JSON");
+      throw new Error(complaint);
     }
     // SPREAD, not a fresh literal. The version of this that lived in the form rebuilt
     // the effect as `{kind, config}` — which silently dropped `alias`, the key VA-4a's

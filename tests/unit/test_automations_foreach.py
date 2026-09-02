@@ -287,10 +287,45 @@ def test_item_on_an_unfanned_step_is_refused_at_save():
 
 
 def test_fanning_over_a_closed_producer_is_refused_at_save():
-    """`slack_post` publishes two strings. Neither is a list, and that is knowable now."""
+    """`slack_post` publishes two strings. Neither is a list, and that is knowable now.
+
+    DS-11 and DS-12 both taught this check that a closed set may CONTAIN a list, from
+    opposite sides — per operation and per kind. The sentence is unchanged for a producer
+    that publishes none: `slack_post` publishes two strings, so "none of it is a list"
+    remains exactly right, and the refusal still names the step and the reference.
+    """
     err = validate_chain([_post(alias="first"),
                           _post(alias="second", source={"$from": "first.ts"})])
-    assert err and "none of it is a list" in err
+    assert err
+    assert "none of it is a list" in err
+    assert "second" in err and "first.ts" in err
+
+
+def test_fanning_over_a_DECLARED_list_is_accepted(monkeypatch):
+    """DS-12 — §3.2's honest limit, closed.
+
+    "Nothing in this plane publishes a list" was an inventory, not a policy, and
+    `validate_chain` encoded it by refusing every closed published set as a fan source.
+    A trusted query publishes rows, so the list-ness is declared beside the keys and the
+    refusal consults it — without reopening the set, which would have given up the
+    save-time check on unknown keys to gain one list.
+    """
+    q = Effect(kind="trusted_query", alias="accounts", config={"query_id": "tq_1"})
+    fan = _post(alias="tell", source={"$from": "accounts.rows"},
+                message={"$from": "item.name"})
+    assert validate_chain([q, fan]) is None
+
+
+def test_fanning_over_a_NON_list_key_of_the_same_step_is_still_refused():
+    """The declaration is per KEY, not per kind — `count` sits beside `rows` in the same
+    published set and iterating it would send one message per digit. The refusal points
+    at the key that would have worked, which is the whole reason to name it."""
+    q = Effect(kind="trusted_query", alias="accounts", config={"query_id": "tq_1"})
+    err = validate_chain([q, _post(alias="tell", source={"$from": "accounts.count"})])
+    assert err and "fans out over 'accounts.count'" in err
+    # The message names the key that WOULD have worked — unhelpful advice otherwise, to
+    # someone one key away from the right answer.
+    assert "only rows is a list" in err
 
 
 def test_binding_to_a_fanned_step_per_item_value_is_refused_at_save():

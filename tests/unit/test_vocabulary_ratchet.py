@@ -173,7 +173,21 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # reads by `getattr`. Both are spelled the way the running system spells them.
          # Every sentence in either file says "declared write" or "declared action".
          "aughor/components/registry.py",
-         "tests/unit/test_component_registry.py"),
+         "tests/unit/test_component_registry.py",
+         # DS-13, the widest version of the same ground and the one file that could not
+         # avoid it: this module DEFINES `KineticAction`, `KineticResult` and
+         # `KineticDispatchError` and raises the last of them on every refusal. The
+         # remainder are wire literals the running system depends on — the idempotency key
+         # `kinetic:{id}`, and `kinetic.{id}`, which is the name the approval gate keys a
+         # grant on, so rewording it would silently un-grant every standing approval. Its
+         # prose says "declared action" throughout. Aliasing the type to dodge the pattern
+         # is the trade this file's neighbours already refused: readable code for a
+         # passing count.
+         "aughor/actions/executor.py",
+         # DS-13's suite, for the narrowest version: eight hits, every one the constructor
+         # or the exception `pytest.raises` matches on. A test of the executor's refusals
+         # has to name the exception the executor raises.
+         "tests/unit/test_declarative_http_component.py"),
         "a physics metaphor for governed writes; they are 'actions'",
     ),
     "persona": (
@@ -361,12 +375,12 @@ BASELINE: dict[str, int] = {
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     "investigation_in_web": 617,
-    # 402 → 398: DS-11's completion reworded four prose hits in `actions/inbox.py` (a
-    # TYPE_CHECKING import and a string annotation that said nothing the docstring did
-    # not, a field comment naming a type where it meant a thing, and one docstring naming
-    # the executor's function where it meant the executor) and exempted the inbox suite,
-    # whose every hit is an identifier the running system uses.
-    "kinetic": 398,
+    # Lowered twice over, by two waves that landed together. DS-11's completion reworded
+    # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
+    # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
+    # exception the tests match on, or a wire literal the approval gate keys grants by.
+    # The number below is what remains COUNTED after both — measured, not added up.
+    "kinetic": 358,
     "mindsdb": 0,
     "palantir": 6,
     "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history

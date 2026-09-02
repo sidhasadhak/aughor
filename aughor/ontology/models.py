@@ -308,8 +308,90 @@ class SideEffect(BaseModel):
     opaque here; the executor validates it per kind — for ``trigger_investigation`` it carries the
     ``question`` (``{param}`` placeholders filled from the action's declared parameters) and
     optionally ``connection_id`` / ``schema_name`` / ``agent_id``."""
-    kind: Literal["notify", "webhook", "trigger_investigation"]
+    #: DS-13 — ``http`` is the declarative custom component: a real call to a vendor's own
+    #: API, described rather than coded. ``webhook`` posts AUGHOR's envelope
+    #: (``{action, kind, params, config}``) to a URL, which is right for a receiver written
+    #: for us and useless for one that was not — PagerDuty wants PagerDuty's body. ``http``
+    #: carries method, headers, an encrypted auth header and a body TEMPLATE, so the same
+    #: plane that governs a declared write can now perform one against a service nobody
+    #: here wrote an adapter for. Still no ``exec``: a template is filled, never evaluated.
+    kind: Literal["notify", "webhook", "trigger_investigation", "http"]
     config: dict = Field(default_factory=dict)
+
+
+#: DS-13 — the config keys of an ``http`` side effect that hold a CREDENTIAL.
+#:
+#: Encrypted on the way into an override file and masked on the way out, which is the same
+#: arrangement `ProviderApp.client_secret` and the Slack bot tokens already use. It matters
+#: more here than in either: an ontology override is a FILE, and files in this repo are
+#: tracked. Ciphertext under ``AUGHOR_SECRET_KEY`` — which is not in git — is what makes a
+#: declared PagerDuty component safe to commit alongside the entity it belongs to.
+HTTP_SECRET_FIELDS = ("auth_secret",)
+
+
+def encrypt_action_secrets(fields: dict, previous: Optional[dict] = None) -> dict:
+    """Encrypt the credentials in an authored action, carrying forward unchanged ones.
+
+    A form that shows a masked secret sends the MASK back when the person edits the
+    description and not the key. Storing that would replace the credential with a row of
+    bullets and break the component at 03:00 — the edit-form trap this codebase has met on
+    every secret-bearing record it owns. A masked or empty incoming value therefore keeps
+    what is already stored, and only a genuinely new value is encrypted.
+    """
+    from aughor.secretvault import encrypt_secret, is_encrypted, is_masked
+
+    prior = {}
+    for se in (previous or {}).get("side_effects", []) or []:
+        if isinstance(se, dict):
+            prior[str(se.get("kind", ""))] = se.get("config") or {}
+
+    out = dict(fields)
+    effects = []
+    for se in out.get("side_effects", []) or []:
+        if not isinstance(se, dict) or se.get("kind") != "http":
+            effects.append(se)
+            continue
+        cfg = dict(se.get("config") or {})
+        for key in HTTP_SECRET_FIELDS:
+            value = cfg.get(key)
+            if value is None or is_masked(value) or value == "":
+                kept = (prior.get("http") or {}).get(key)
+                if kept:
+                    cfg[key] = kept
+                else:
+                    cfg.pop(key, None)
+            elif not is_encrypted(value):
+                cfg[key] = encrypt_secret(str(value))
+        effects.append({**se, "config": cfg})
+    if "side_effects" in out:
+        out["side_effects"] = effects
+    return out
+
+
+def mask_action_secrets(dumped: dict) -> dict:
+    """The API-facing form of a declared action: credentials masked, never returned.
+
+    Masked rather than dropped, unlike `Connection`'s token fields, and the difference is
+    the surface: this feeds an EDIT form, which must be able to show that a credential is
+    set without being able to read it. A dropped field would make "no key" and "a key you
+    may not see" look identical, and the author would re-enter it every time.
+    """
+    from aughor.secretvault import mask_secret
+
+    out = dict(dumped)
+    effects = []
+    for se in out.get("side_effects", []) or []:
+        if not isinstance(se, dict) or se.get("kind") != "http":
+            effects.append(se)
+            continue
+        cfg = dict(se.get("config") or {})
+        for key in HTTP_SECRET_FIELDS:
+            if cfg.get(key):
+                cfg[key] = mask_secret(str(cfg[key]))
+        effects.append({**se, "config": cfg})
+    if "side_effects" in out:
+        out["side_effects"] = effects
+    return out
 
 
 class KineticAction(BaseModel):

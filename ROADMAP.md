@@ -183,8 +183,12 @@ and as of 2026-08-31 every clause of it is closed: guards (W1), fan-out (W2), br
   `integration_call` step publishes `items`, a real list, in a CLOSED set. The rule is now
   "a source is a literal list, a binding onto an open kind, or a binding onto a key the
   producer DECLARES to be a list", which is strictly better: fanning over that step's
-  `count` is still refused, where an open set would have let it through. The item is one
-  more entry in the
+  `count` is still refused, where an open set would have let it through.
+  **DS-12 closed the same limit from the other side**, for a key whose list-ness is a
+  property of the KIND rather than of an operation: a `trusted_query` publishes `rows`.
+  Its table is read BY `list_published_keys()` rather than sitting beside it, because two
+  places that both say which keys are lists is two places that will disagree. The item is
+  one more entry in the
   same accumulated context (`item.value` / `item.<field>`), so `resolve` needed no change
   and the canvas draws the source as an ordinary edge. The guard runs **per item** — a
   fan-out whose guard were checked once would be all-or-nothing, and "post the regions
@@ -221,7 +225,7 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
   conditions are reported rather than enforced, because "disabled" and "not due" are the two
   states a design lives in before it goes live. Guards are reported, never decided.
 
-### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; CONSUMED 2026-09-01 by DS-11)
+### 3.4 · VA-11 — the credential becomes a governed object (1·2·4 SHIPPED `dadc6f63`; CONSUMED by DS-11)
 
 > **State, measured 2026-08-30 (after `dadc6f63`).** Deliverables 1, 2 and 4 are BUILT:
 > `aughor/integrations/models.py` (the `Connection` object, Fernet under `AUGHOR_SECRET_KEY`,
@@ -240,6 +244,44 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 > end-to-end GOOGLE grant — is still not done and needs a Google account's consent, which
 > no test can stand in for; the network path either side of it is proven (a real call to
 > `gmail.googleapis.com`, refused by Google for the token it was given).
+
+> **The consumer shipped 2026-09-01.** The premise was re-measured first and still held to the
+> line: `fresh_access_token()` had exactly zero production callers, and `routers/integrations.py`
+> was still the only importer of the package. It now has one caller, deliberately one —
+> `integrations/call.py`, where refresh, the scope check, the cap, the span and the audit line
+> all live, so a second consumer inherits every one of them by construction instead of by
+> remembering. The step is the effect kind **`connection_call`**, and the roster it spends a
+> grant on is `integrations/operations.py`: four declared reads (Gmail list · Gmail message ·
+> Calendar events · Graph mail) with typed params, a required scope and a response mapper each.
+>
+> **Three laws it is built on, each refusing something a plausible version would have allowed.**
+> *A closed roster, not a URL field* — an effect taking an arbitrary URL is a request-forgery
+> surface wearing a credential, and a `{"$from": …}` binding could reach it; the host and path
+> are constants of the module and authored config chooses only the ROW. (The general HTTP
+> template is DS-13's, behind its own form.) *Reads only* — a write under a user's grant belongs
+> behind the approval gate, and §3.4's own line settles it: two gates that can disagree is
+> strictly worse than one. *The credential selector may not be bound* — `BINDABLE_FIELDS`
+> DECLARES the input ports but `resolve()` walks the whole config, so every other kind in the
+> plane will happily substitute a binding into a field its tuple omits; harmless on an
+> org-scoped `bot_id`, not harmless on a credential, so this kind refuses it on the model where
+> a save actually fails.
+>
+> **Measured, not assumed.** A closed published set is refused as a `for_each` source (correctly
+> — every closed one in this plane is strings), so the kind publishes an OPEN set: one kind
+> carries many operation shapes, and that is exactly what makes *list the messages → for each →
+> read it → post* expressible. DS-10's registry picked the seventh effect kind up with **no
+> registry edit at all**, which is the property that wave claimed and this is the first
+> independent exercise of it. The palette dims the row on a deployment with no grant and names
+> the door that fixes it, and a REVOKED grant does not light it — counting rows would have.
+>
+> **Left open, and honestly.** Deliverable 3's live receipt still waits on a Google OAuth client
+> only the user can create — every path here is proven against a faux provider at the one
+> seam (`call._get`), which is where the broker's own suite draws the same line. Any automation
+> author may name any grant id today; grant ids are unguessable and neither the palette nor
+> `/integrations/operations` exposes another user's, but ENFORCING that is VA-10's hardening
+> pass, not this wave's. And `connection_call` is the seventh effect kind while the design
+> system caps its series at six ("never a seventh hue"), so it takes the documented fallback
+> rather than an invented token — extending the ramp is the user's call.
 
 **Decision behind it (§6.1, user-approved 2026-08-30): Aughor owns the vault.** The Databricks
 precedent settled it — a Unity Catalog connection is a *securable object* ("Databricks stores
@@ -840,6 +882,60 @@ nothing in the plane publishes lists. The component class no canvas competitor c
 without a semantic layer. **Receipt:** fan over a cohort and post one message per at-risk
 account, the cohort's definition one click away.
 
+> **Shipped 2026-09-01 — and the plan was wrong about its headline.** The premise was
+> measured before a line was written, the way DS-10's was. Metrics are real
+> (`semantic.MetricDefinition`, governed draft→approved, owner and thresholds); entities
+> are real (`OntologyEntity`, grain-verified tables); trusted queries are real
+> (`semantic.TrustedQuery`, stored and vetted). **Cohorts do not exist.** Every `cohort`
+> in the tree is a regex in a classifier, a word in a prompt, a demo string or a
+> SQL-alias blocklist entry — no model, no store, no id. So the wave shipped on what is
+> real, and the LIST that closes §3.2 comes from the trusted query, whose rows are
+> already a governed, reviewed row-set. A first-class Cohort object remains available as
+> its own wave if one is ever wanted; "churned accounts" is expressible today as a
+> trusted query, and inventing a second object to say the same thing would be the second
+> roster DS-10 exists to refuse.
+>
+> **Two kinds, and neither carries SQL.** `metric_value` names a metric; `trusted_query`
+> names a query id. That is the moat in one sentence: the number a chain acts on is the
+> one the registry DEFINES — filters, caveats and all — rather than one an author typed
+> or a model re-derived, and gaining row-lists cost the plane no expression surface at
+> all. The metric read is SCOPED to the automation's connection, because a
+> connection-scoped definition SHADOWS the global one of the same name; an unscoped read
+> computes the wrong "revenue" on a connection that deliberately redefined it, which the
+> suite now pins (600 vs 650 on the same fixture).
+>
+> **The substrate had to be repaired first, and it was broken in public.** Both
+> metric-evaluation paths in `routers/metrics.py` called `db.execute(query)` against a
+> signature that has always been `execute(hypothesis_id, sql)`. Each swallowed the
+> TypeError into a field that reads as a data problem — `value: null` with a note on the
+> value route, `status: "unknown"` on the health scorecard — so **the governed metric
+> value had never once been computed**, including through the MCP tool whose docstring
+> promises "the exact governed number, not an LLM re-derivation". Measured live before
+> the fix, and live after. The two copies also disagreed about WHAT to compute: one
+> applied the metric's declared filters, the other ran the bare aggregate. There is now
+> one builder and one runner, in `semantic/metrics.py` beside the definition they read.
+>
+> **Also repaired in passing:** `semantic/trusted_queries.py` was the last authored store
+> here with a hardcoded path, so a test that saved one wrote to the live
+> `data/trusted_queries.json`. `AUGHOR_TRUSTED_QUERIES_PATH` and its conftest redirect
+> landed in the SAME commit the automations plane started reading it — the rule this repo
+> bought with a suite run that destroyed real content.
+>
+> **Live receipt:** a real chain on `workspace` ran both steps — `trusted_query` executed
+> and published `{"rows": [{"total_orders": "112439"}], "columns": [...], "count": 1}`;
+> `metric_value` FAILED with "Revenue could not be computed: Binder Error", because the
+> two seeded metrics name a schema no connection on this install has. That second half is
+> the honest one: a governed number that cannot be computed here now says so with the
+> engine's own words instead of reporting null. The registry serves `metric` (2) and
+> `trusted_query` (11) as new deployment-shaped families, and the palette lights or dims
+> each row per connection.
+>
+> **Left open:** a metric publishes a SCALAR — the by-dimension series DS-12 imagined
+> needs a group-by the governed query builder does not have, and is deliberately a later
+> wave. Entities are served by neither kind: an entity node with no evaluation is a
+> label, and building a row query from `identity_key` + `active_filter` would be a new
+> SQL surface next door to the vetted one this wave just made available.
+
 **DS-13 · Declarative custom components.** Extension WITHOUT `exec()`: an HTTP-template
 component (endpoint · schema-typed input/output · secrets from the vault · dispatched
 through `govern.outbound`) plus pack-shipped component bundles via the skills/packs plane
@@ -849,11 +945,102 @@ useful sliver of their catalog: `http_request` · `url_fetch` · `web_search` (a
 our tool roster today) · file parsing. **Receipt:** a user adds a PagerDuty component from
 a form, never writes Python, and the approval gate still owns its writes.
 
+> **Shipped 2026-09-01, and mostly by NOT building it.** The premise was measured first
+> and the substrate was already here: a declared action carries typed params, submission
+> criteria, a risk tier and the graduated approval gate; `PUT /ontology/kinetic-actions/{id}`
+> is already the form's write path behind `ONTOLOGY_EDIT`; `is_safe_webhook_url` already
+> guards SSRF; and `exec`/`eval` appear NOWHERE in `aughor/`, so the no-code-injection law
+> was already true rather than newly promised. Building a separate "custom component"
+> object with its own store and its own gate would have been the second policy authority
+> §3.4 refuses in one line.
+>
+> **So DS-13 is a fourth side-effect kind, `http`** — method, url, headers, an encrypted
+> auth header and a body TEMPLATE, filled and never evaluated. The existing `webhook` kind
+> posts AUGHOR's envelope (`{action, kind, params, config}`) to a URL, which is right for a
+> receiver written for us and useless for one that was not: PagerDuty wants PagerDuty's
+> body. A custom component's writes are governed the day it is authored, because it
+> inherits the plane it was added to.
+>
+> **Three guards, each for a failure a plausible version ships.** The SSRF check runs on
+> the FILLED url — guarding the template would approve `https://api.vendor.com/{path}` and
+> then send the request wherever `path` said, which is a guard-shaped comment. URL params
+> are percent-encoded, so a value carrying `/` cannot reshape the path it lands in.
+> Substitution is TOTAL: only declared params may appear, and an unknown placeholder is an
+> authoring error rather than a brace shipped to a vendor.
+>
+> **The credential is Fernet at rest and masked on the way out.** It matters more here than
+> anywhere else this platform holds a secret, because an ontology override is a FILE and
+> files here are tracked — ciphertext under `AUGHOR_SECRET_KEY` is what makes a declared
+> PagerDuty component safe to commit beside the entity it belongs to. Masked rather than
+> dropped, unlike a `Connection`'s tokens: this feeds an EDIT form, and a dropped field
+> makes "no key" and "a key you may not see" look identical. An unchanged (masked) value
+> carries the stored credential forward — the edit-form trap that otherwise replaces a key
+> with bullets the next time someone fixes a typo in the description.
+>
+> **Fixed in passing — the fourth sender that never joined VA-9a's seam.** That wave's own
+> note named `slackbots/post.py`, `slackbots/verify.py` and `notifications/executor.py` as
+> emitting no span and consulting no cap, and fixed them. `actions/executor.py`'s webhook
+> was missed: measured 2026-09-01, every other outbound sender in the tree imported
+> `external_call` and this one did not, so a declared action's webhook fired unbudgeted,
+> absent from the waterfall, and invisible to `observed_usage` — which reads session
+> events, not spans. Both it and the new `http` kind go through the seam now.
+>
+> **Left open, deliberately.** Pack-shipped component BUNDLES are a distribution channel,
+> not a component model: the packs plane already has the draft→promote gate they would
+> ride, so they are a clean wave of their own rather than a second half of this one. And
+> `web_search` is not a component — it is a vendor choice plus a key, which is a product
+> decision; `http_request`/`url_fetch` are simply *subsumed*, because "fetch a URL" is now
+> something a person declares from a form rather than something we ship code for.
+
 **DS-14 · B3 — chains as MCP tools** (absorbs the old LATER item). An enabled automation
 is exposable as a tool on our MCP server — external agents invoke it and inherit the whole
 governed path, because the server already fronts the real API. A2A agent cards ride later
 only if that protocol earns it. **Receipt:** Claude Desktop calls "daily-sales-report" and
 the run appears in Activity like any other.
+
+> **Shipped 2026-09-01.** An automation carries `exposed_as_tool` — OPT-IN, default off,
+> and `enabled` must hold too: a chain someone deliberately switched off staying callable
+> from outside would make the off switch a lie for exactly the caller nobody is watching.
+> `GET /automations/tools` is what the MCP server reads at start; the eighteen static
+> tools are what this VERSION can do, and these are what THIS deployment's people built,
+> so they are registered dynamically rather than by a decorator that cannot know their
+> names. The tool wraps `POST /automations/{id}/run` — the same route the web app's "Run
+> now" presses — which is the whole claim: **the caller changes, the governance does
+> not.** The chain lands in the one engine, writes the run row Activity reads, and a
+> governed write inside it still parks for the approval gate rather than firing because
+> the request arrived over MCP.
+>
+> **Three failures pinned, each of which looks correct until a tool is called.** Late
+> binding — a closure built inline in the loop captures the loop variable, so every
+> registered tool fires whichever automation was last (mutation-checked: `['a3','a3']`
+> instead of `['a1','a3']`). Shadowing — an automation named "Ask" must not replace the
+> governed `ask` path, so a colliding name is skipped, and two automations that would
+> answer to one name are refused at the ROUTE with a sentence naming the fix, because two
+> tools a client cannot tell apart is worse than one missing tool. And a dead API leaves
+> the static tools standing: those are the ones you would use to find out why it is down.
+>
+> **Two defects found by driving it, neither of which a unit test could have seen.**
+> `GET /automations/tools` was declared after `GET /automations/{automation_id}`, and
+> FastAPI matches in declaration order — so "tools" was read as an id and the route
+> answered "Automation not found". And `exposed_as_tool` was missing from
+> `CreateAutomationRequest`, so the PUT accepted it, echoed it back as true, and dropped
+> it on the way to the store: 200, and the flag never persisted. That is the HTTP spelling
+> of the half-added-column trap the store warns about one layer down.
+>
+> **The field landed everywhere at once** — model, DDL, migration 5, both halves of the
+> upsert, the row reader, the param builder and the request model, SEVEN places — because
+> this store has twice shipped a field with a model attribute and no column, and SQLite's
+> named binding ignores a key it has no column for. Migration 5 was numbered off
+> `PRAGMA user_version` on the deployed database, which read 4.
+>
+> **Live receipt:** an MCP client sees 19 tools — the eighteen static ones plus
+> `ds_6_receipt_revenue_routing`, described with its steps and the sentence that a governed
+> write in it stops for a human. Reverted after; nothing on this install is exposed.
+>
+> **Left open:** the tool list is read once at server start, so a chain exposed afterwards
+> needs a reconnect. MCP has a `tools/list_changed` notification for exactly this, and
+> wiring it needs a live client to prove against — its own small wave rather than an
+> untested paragraph here.
 
 #### Phase 4 · The authoring inversion
 
@@ -865,6 +1052,54 @@ permission to PROPOSE). Even Langflow no longer assumes the canvas is the author
 Assistant builds whole flows; coding agents author over MCP); ours is stronger because
 proposal-first already exists. **Receipt:** "post a Monday pipeline summary to #revenue"
 becomes a drawn, dry-run-proven chain awaiting one click.
+
+> **Shipped 2026-09-01.** `POST /automations/propose` takes a sentence and a connection and
+> returns a DRAFT — the same authoring payload the create form already renders — with a
+> dry-run receipt attached. Nothing is saved. The draft seeds the form through its own
+> prop rather than through `initial`, because `initial` means "editing a stored record"
+> and the save branch keys on it: seeding through it would have made the form PUT to an id
+> the draft does not have.
+>
+> **Three things make the draft honest rather than plausible.** It is offered only what
+> THIS deployment has — the prompt is built from the same palette the canvas reads, so a
+> kind the palette dims is named as unavailable WITH the reason, and the real ids (the
+> Slack bots that exist, the metrics that are defined, the vetted queries that are stored)
+> are listed with "never invent an id". A prompt assembled from a hand-written kind list
+> would drift from the one the save enforces, and the drift shows up as a proposal that
+> validates in the prompt and is refused by the code. It is refused by the SAME code a
+> save is refused by — the draft is constructed as an `Automation`, so every model
+> validator and `validate_chain` runs, and a chain the Save button would reject is never
+> drawn: that looks like work which is nearly done. And it fails CLOSED —
+> `actions/propose.py` fails open to `[]` because proposing an action garnishes an answer
+> somebody already asked for, whereas here the proposal IS the request, so a silent empty
+> would answer "nothing" to "build me a chain".
+>
+> **The draft carries no armed state.** No `enabled`, no `exposed_as_tool`, no id. A
+> proposal that arrived already armed — or already exposed as an MCP tool (DS-14, three
+> hours earlier) — would have made the decision the human is being asked to make.
+>
+> **Every test injects its provider.** This repo has already paid once for a suite that
+> reached a live model, so the rule is structural: `propose_chain` takes the provider as an
+> argument and resolves the default only when nobody passed one. An empty outcome is
+> refused before the model is reached at all, which is also the one live check that costs
+> nothing.
+>
+> **The one live call earned its cost.** Asked for "every Monday morning, check how revenue
+> is doing and post a short summary to Slack", the model drafted a correct chain — a Monday
+> cron, the governed `revenue` metric through DS-12's `metric_value`, an investigate, and a
+> `slack_post` naming a REAL bot id rather than an invented one — and got the BINDINGS
+> wrong in a way nothing could refuse: it wrote `"{\"$from\": \"step.key\"}"`, a STRING
+> holding the JSON of a binding. A string is a legal literal, so `validate_chain` passed
+> it, the dry run was clean, and the chain would have posted those characters to Slack. A
+> well-formed wrong answer, which §7 already ranks below an exception. Two fixes: the
+> prompt now shows the correct and incorrect shapes side by side, and a repair pass
+> un-stringifies an EXACT single-key `$from` object. A binding embedded in a SENTENCE is
+> deliberately left alone — the engine cannot interpolate one, so guessing at the author's
+> meaning would swap a visible mistake for an invisible one.
+>
+> **Left open:** the proposal seeds the FORM, not the Design canvas — the canvas renders a
+> stored automation, and giving it an unsaved one is its own change. The receipt's "drawn"
+> half is therefore the form plus the dry-run summary rather than nodes on a canvas.
 
 **DS-16 · The migration funnel.** An importer for Langflow (and archived-Flowise) flow
 JSON: model/prompt/agent/tool nodes map onto an agent record plus a chain; code-carrying
@@ -1030,9 +1265,17 @@ NEXT (order within a band is the user's knob)
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
-LATER   DS-12 ontology components · DS-13 declarative
-        customs · DS-14 chains-as-MCP-tools   (§3.7 Phase 3)
-        DS-15 conversation-authors-canvas · DS-16 migration funnel · DS-17 deploy-as-doors
+LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
+        (metric_value + trusted_query; §3.2's list limit closed from the kind side; the
+        governed metric value repaired — it had never computed) · ✅ DS-13 declarative
+        customs SHIPPED 2026-09-01 (the `http` side effect: a described call, filled and
+        never evaluated, credential encrypted at rest; the declared webhook joined
+        govern.outbound) · ✅ DS-14 chains-as-MCP-tools SHIPPED 2026-09-01
+        (opt-in `exposed_as_tool` + migration 5; the 18 static tools are the version's,
+        the automations are the deployment's)   (§3.7 Phase 3 COMPLETE)
+        ✅ DS-15 conversation-authors-canvas SHIPPED 2026-09-01 (propose → validate →
+        dry-run → a seeded form; nothing saved, nothing armed) · DS-16 migration
+        funnel · DS-17 deploy-as-doors
         (§3.7 Phase 4)
         VA-10 multi-user + admin  (hardening pass over everything above)
 ```

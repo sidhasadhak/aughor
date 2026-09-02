@@ -50,6 +50,20 @@ class CreateAutomationRequest(BaseModel):
     #: run as their arrows allow). An authored field like `condition_logic` above, so
     #: the PUT carries it and a rename cannot silently re-serialise a parallel chain.
     scheduling: str = "ordered"
+    #: DS-14 — may an external MCP client invoke this chain? Authored, so it rides the PUT
+    #: like `scheduling` above. Missing from this model the field was accepted, echoed back
+    #: as True by the response model, and dropped on the way to the store: the PUT answered
+    #: 200 and the flag never persisted. Found by driving it live, and it is the SAME shape
+    #: as the half-added-column trap the store warns about one layer down — a request model
+    #: that silently ignores a key is the HTTP spelling of a named binding that does.
+    exposed_as_tool: bool = False
+
+
+class ProposeRequest(BaseModel):
+    """DS-15 — what a person says, and which connection to ground it in."""
+
+    outcome: str = Field(description="What the chain should achieve, in the user's words.")
+    conn_id: str = Field(description="The connection the chain runs against.")
 
 
 class PauseRequest(BaseModel):
@@ -200,6 +214,80 @@ def all_runs(conn_id: Optional[str] = None, limit: int = 100):
     an id."""
     return {"runs": [r.model_dump()
                      for r in get_runs(conn_id=conn_id, limit=min(int(limit), 500))]}
+
+
+@router.post("/automations/propose")
+def propose(body: ProposeRequest):
+    """DS-15 — describe an outcome, get a drawn chain with a dry-run receipt.
+
+    Creation by PROPOSAL, the shape every governed write here already has: nothing is
+    saved, the draft is refused by the same validators a save runs, and a human arms it.
+    The response is the authoring payload the canvas already knows how to render, so the
+    proposal arrives as an editable chain rather than as a message about one.
+
+    Declared BEFORE `/automations/{automation_id}` for the reason DS-14 learned the hard
+    way one route up: FastAPI matches in declaration order, and a static segment after the
+    path-parameter route is never reached.
+    """
+    from aughor.automations.propose import propose_chain
+
+    proposal = propose_chain(body.outcome, conn_id=body.conn_id)
+    if proposal.verdict != "proposed":
+        # 200, not 4xx: "nothing here can do that" is an ANSWER to the question that was
+        # asked, and the reason is the useful half of it. A 422 would make the client
+        # render a failure where the server produced a considered refusal.
+        return {"verdict": proposal.verdict, "reason": proposal.reason,
+                "notes": proposal.notes, "draft": proposal.draft}
+    return {"verdict": "proposed", "draft": proposal.draft,
+            "dry_run": proposal.dry_run, "notes": proposal.notes,
+            "reason": ""}
+
+
+# NOTE: declared BEFORE `/automations/{automation_id}` on purpose — FastAPI
+# matches routes in declaration order, so a static segment that comes after the
+# path-parameter route is never reached: `/automations/tools` was answering
+# "Automation not found" because `tools` was being read as an id.
+@router.get("/automations/tools")
+def exposed_tools(conn_id: str = ""):
+    """DS-14 — the automations this deployment offers as MCP tools.
+
+    Read by the MCP server at start, so what an outside agent can invoke is whatever the
+    owners OPTED IN — never every automation the API happens to hold.
+
+    Both flags must hold. `exposed_as_tool` is the intent and `enabled` is the switch, and
+    a chain someone deliberately switched off must not stay callable from outside: that
+    would make the off switch a lie for exactly the caller nobody is watching.
+
+    A name collision is refused HERE rather than left for the server to resolve, because
+    the two tools would be indistinguishable to the client that has to choose between
+    them. The first by creation order keeps the name and the rest are reported with the
+    reason, so the answer is one an operator can act on instead of a silently shorter list.
+    """
+    from aughor.automations.store import list_automations
+    from aughor.mcp.server import automation_tool_name
+
+    rows = [a for a in list_automations(conn_id=conn_id or None)
+            if getattr(a, "exposed_as_tool", False) and a.enabled]
+    tools: list[dict] = []
+    refused: list[dict] = []
+    taken: set[str] = set()
+    for a in sorted(rows, key=lambda x: (x.created_at or "", x.id)):
+        name = automation_tool_name(a.name)
+        if name in taken:
+            refused.append({"id": a.id, "name": a.name, "tool_name": name,
+                            "reason": f"another exposed automation already answers to "
+                                      f"'{name}' — rename one of them"})
+            continue
+        taken.add(name)
+        tools.append({
+            "id": a.id, "name": a.name, "tool_name": name,
+            "description": a.description or "",
+            "conn_id": a.conn_id,
+            # The steps, so the tool's description can say what the chain DOES. A model
+            # choosing between tools cannot choose on "runs an automation".
+            "steps": [e.kind for e in (a.effects or [])],
+        })
+    return {"tools": tools, "refused": refused}
 
 
 @router.get("/automations/{automation_id}")

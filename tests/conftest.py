@@ -214,7 +214,11 @@ os.environ.setdefault("AUGHOR_AUTOSEED", "false")
 import shutil as _shutil  # noqa: E402
 
 _repo_data = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
-for _env, _file in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml"), ("AUGHOR_METRICS_PATH", "metrics.json")):
+for _env, _file in (("AUGHOR_GLOSSARY_PATH", "glossary.yaml"), ("AUGHOR_METRICS_PATH", "metrics.json"),
+                    # DS-12 — the vetted-query store, added the same commit the automations
+                    # plane started reading it. It was the last authored file here with a
+                    # hardcoded path, so a test that saved one wrote to live data/.
+                    ("AUGHOR_TRUSTED_QUERIES_PATH", "trusted_queries.json")):
     _dst = os.path.join(_test_stores_dir, _file)
     _src = os.path.join(_repo_data, _file)
     if os.path.exists(_src) and not os.path.exists(_dst):

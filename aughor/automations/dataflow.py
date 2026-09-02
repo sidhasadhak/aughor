@@ -544,7 +544,42 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # is what every validator reads; this entry is the fallback for a step whose operation
     # is not (yet) in the roster.
     "integration_call": None,
+    # DS-12 — a governed number, its unit and its label. Closed, because unlike an
+    # operation roster there is exactly one shape: every metric answers with a value.
+    "metric_value":   ("value", "unit", "label"),
+    # DS-12 — and the first CLOSED set in this plane that contains a LIST. `rows` is
+    # what a `for_each` fans over; `columns` and `count` describe it without anyone
+    # having to iterate to find out. See LIST_PUBLISHED below — declaring the key is
+    # not enough on its own, because a closed set is otherwise refused as a fan source.
+    "trusted_query":  ("rows", "columns", "count"),
 }
+
+#: DS-12 — the published keys that are LISTS, and may therefore be fanned over.
+#:
+#: §3.2 carried this as an honest limit for three waves: "NOTHING in this plane
+#: publishes a list", so a `for_each` source could only be a literal list or a binding
+#: onto the one OPEN published set. That was not a policy — it was an inventory, and
+#: `validate_chain` encoded it by refusing every closed set as a fan source, correctly,
+#: because every closed set in this plane was strings.
+#:
+#: A trusted query publishes rows. Rather than reopen the set — which would give up the
+#: save-time refusal that makes an unknown key a design error instead of a 09:00
+#: surprise — the LIST-ness is declared beside the keys, so a fan over `q.rows` is
+#: accepted and a fan over `q.count` is still refused.
+#:
+#: DS-11 closed the same limit from the other side, per OPERATION, and its
+#: `list_published_keys()` is the one function every validator asks. This table is that
+#: function's answer for the kinds whose list-ness is a property of the KIND rather than
+#: of an operation — read BY it, never beside it, because two places that both say which
+#: keys are lists is two places that will disagree.
+LIST_PUBLISHED: dict[str, tuple[str, ...]] = {
+    "trusted_query": ("rows",),
+}
+
+
+def publishes_list(kind: str, key: str) -> bool:
+    """Is ``kind``'s published ``key`` a list a step may run once per item of?"""
+    return key in LIST_PUBLISHED.get(kind, ())
 
 #: B1 — the config fields a step may BIND (`{"$from": …}`) per kind: the input ports.
 #: Only fields whose consumption is a string the dispatcher reads; enumerated rather
@@ -568,6 +603,11 @@ BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     # binds into is a key inside `params` and `collect_refs` walks it. Naming the inputs
     # here instead would be a second, per-kind copy of a per-operation fact.
     "integration_call": ("params",),
+    # DS-12 — neither takes an input. Both name a governed object and read it; there is
+    # no field an upstream value could reach, which is the point: a metric a chain could
+    # re-point at runtime would not be the governed metric any more.
+    "metric_value":   (),
+    "trusted_query":  (),
 }
 
 
@@ -621,7 +661,10 @@ def list_published_keys(effect: Any) -> tuple[str, ...]:
     if effect_kind(effect) == "integration_call":
         op = _operation_of(effect)
         return op.list_keys if op is not None else ()
-    return ()
+    # DS-12 — a trusted query's `rows`. Answered here rather than from a second table
+    # keyed by kind: two places that both say which keys are lists is two places that
+    # will disagree, and this one is already what every validator reads.
+    return LIST_PUBLISHED.get(effect_kind(effect), ())
 
 
 def _malformed_any(value: Any) -> Optional[str]:
@@ -664,6 +707,16 @@ def _integration_problem(effect: Any, alias: str) -> Optional[str]:
     from aughor.integrations.operations import OPERATIONS, get_operation
 
     cfg = effect_config(effect)
+    # WHICH connection and WHICH operation are authored decisions, refused here when they
+    # are not. `BINDABLE_FIELDS` declares `params` as this kind's only input port, but it
+    # DECLARES — `resolve()` walks the whole config, so a `{"$from": …}` on `connection_id`
+    # would be substituted at 07:00 and the step would spend whatever grant an upstream
+    # value happened to name. Harmless on an org-scoped `bot_id`; not harmless on a
+    # credential selector, which is why it is refused where a save actually fails.
+    for field in ("connection_id", "operation"):
+        if not isinstance(cfg.get(field), str):
+            return (f"step '{alias}' binds '{field}' — which account a step spends and "
+                    f"what it spends it on must be written, not read from an earlier step")
     op_id = str(cfg.get("operation", ""))
     op = get_operation(op_id)
     if op is None:

@@ -58,6 +58,17 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
   const [risk, setRisk] = useState("high");
   const [params, setParams] = useState('[{"name": "amount_eur", "data_type": "NUMERIC", "required": true}]');
   const [criteria, setCriteria] = useState('[{"expr": "amount_eur <= 10000", "message": "Refunds over EUR 10,000 need finance sign-off."}]');
+  // DS-13 — the declarative custom component. Named fields rather than a JSON blob, which
+  // is the whole claim: the competitor's "new component" opens a Python editor and this
+  // opens a form. `params` and `criteria` above stay JSON because they are lists of a
+  // shape this panel has always taken that way; the call itself is the thing DS-13
+  // promises you can describe without writing anything executable.
+  const [httpUrl, setHttpUrl] = useState("");
+  const [httpMethod, setHttpMethod] = useState("POST");
+  const [httpAuthHeader, setHttpAuthHeader] = useState("");
+  const [httpSecret, setHttpSecret] = useState("");
+  const [httpHeaders, setHttpHeaders] = useState('{"Content-Type": "application/json"}');
+  const [httpBody, setHttpBody] = useState('{"summary": "{amount_eur}"}');
 
   const load = useCallback(() => {
     apiFetch(`/ontology/kinetic-actions?connection_id=${encodeURIComponent(connectionId)}`)
@@ -71,8 +82,21 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
       const body: any = { kind, description, risk };
       if (params.trim()) body.params = JSON.parse(params);
       if (criteria.trim()) body.submission_criteria = JSON.parse(criteria);
+      if (kind === "side_effect" && httpUrl.trim()) {
+        const config: any = { url: httpUrl.trim(), method: httpMethod };
+        if (httpHeaders.trim()) config.headers = JSON.parse(httpHeaders);
+        if (httpBody.trim()) config.body = JSON.parse(httpBody);
+        if (httpAuthHeader.trim()) {
+          config.auth_header = httpAuthHeader.trim();
+          // Sent ONLY when the person typed one. Left empty, the server carries the
+          // stored credential forward — a form that posts back the mask it was showing
+          // would otherwise overwrite the key with bullets.
+          if (httpSecret.trim()) config.auth_secret = httpSecret.trim();
+        }
+        body.side_effects = [{ kind: "http", config }];
+      }
       await put(`/ontology/kinetic-actions/${encodeURIComponent(id)}?connection_id=${encodeURIComponent(connectionId)}`, body);
-      setId(""); load();
+      setId(""); setHttpSecret(""); load();
     } catch (e: any) { setErr(String(e.message || e)); }
   };
 
@@ -80,7 +104,7 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
     <div>
       <Err e={err} />
       {Object.keys(actions).length === 0
-        ? <div style={hint}>No declared actions yet. Enable the <code>kinetic.actions</code> flag and author one below.</div>
+        ? <div style={hint}>No declared actions yet — author one below.</div>
         : Object.values(actions).map((a: any) => (
           <div key={a.id} style={card}>
             <div style={{ fontWeight: 600, fontSize: 13 }}>{a.id} <span style={{ color: "var(--t3)", fontWeight: 400 }}>· {a.kind} · {a.risk}</span></div>
@@ -90,6 +114,17 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
             </div>
             {(a.submission_criteria || []).map((c: any, i: number) => (
               <div key={i} style={{ fontSize: 11, color: "var(--t3)" }}>must satisfy: <code>{c.expr}</code></div>
+            ))}
+            {/* DS-13 — what the action DOES. The credential arrives masked from the
+                server (`mask_action_secrets`); this renders whatever it was given and
+                never asks for the raw value. */}
+            {(a.side_effects || []).map((se: any, i: number) => (
+              <div key={`se${i}`} className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                {se.kind === "http"
+                  ? <>calls <code>{String(se.config?.method || "POST")} {String(se.config?.url || "")}</code>
+                    {se.config?.auth_secret ? <> · key <code>{String(se.config.auth_secret)}</code></> : null}</>
+                  : <>side effect: <code>{se.kind}</code></>}
+              </div>
             ))}
           </div>
         ))}
@@ -114,6 +149,28 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
         <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={params} onChange={e => setParams(e.target.value)} />
         <label style={hint}>submission criteria (JSON) — each message is shown verbatim on failure</label>
         <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={criteria} onChange={e => setCriteria(e.target.value)} />
+        {kind === "side_effect" && (
+          <>
+            <label style={hint}>the call this action makes — described, never coded</label>
+            <div style={{ display: "flex", gap: 6 }}>
+              <select style={{ ...input, width: 110 }} value={httpMethod} onChange={e => setHttpMethod(e.target.value)}>
+                {["POST", "GET", "PUT", "PATCH", "DELETE"].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+              <input style={{ ...input, flex: 1 }} placeholder="https://events.pagerduty.com/v2/enqueue"
+                value={httpUrl} onChange={e => setHttpUrl(e.target.value)} />
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              <input style={{ ...input, flex: 1 }} placeholder="auth header (e.g. Authorization)"
+                value={httpAuthHeader} onChange={e => setHttpAuthHeader(e.target.value)} />
+              <input style={{ ...input, flex: 1 }} type="password" placeholder="credential — stored encrypted"
+                value={httpSecret} onChange={e => setHttpSecret(e.target.value)} />
+            </div>
+            <label style={hint}>headers (JSON)</label>
+            <textarea style={{ ...input, minHeight: 36, fontFamily: "monospace" }} value={httpHeaders} onChange={e => setHttpHeaders(e.target.value)} />
+            <label style={hint}>body (JSON) — {"{param}"} placeholders are filled from the declared params</label>
+            <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={httpBody} onChange={e => setHttpBody(e.target.value)} />
+          </>
+        )}
         <Button variant="default" size="sm" disabled={!id.trim()} onClick={save}>Save action</Button>
       </div>
     </div>
