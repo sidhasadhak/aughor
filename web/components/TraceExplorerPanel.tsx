@@ -17,6 +17,8 @@
 import type { TraceFilters } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+import { soleSqlOfEvents } from "@/lib/verdictSql";
+
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { StatusChip } from "@/components/brief/StatusChip";
@@ -61,6 +63,7 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   const [note, setNote] = useState("");
   const [verdicts, setVerdicts] = useState<FindingVerdict[]>([]);
   const [verdictBusy, setVerdictBusy] = useState(false);
+  const [correctedSql, setCorrectedSql] = useState("");
   const [runFeedback, setRunFeedback] = useState<TraceFeedback | null>(null);
   const [logs, setLogs] = useState<TraceLogs | null>(null);
   /** Session replay: how many events the run has "reached". null = show all,
@@ -111,6 +114,16 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
   }, [selected]);
 
   const invId = detail?.measured ? detail.investigation_id : null;
+  // MI-3 — the SQL a verdict on this run is ABOUT. `tool_call` events carry the executed
+  // statement as `payload.input`; MI-1's `audit_log.trace_id` is the durable twin of this,
+  // but the events are already loaded here so no round trip is needed.
+  //
+  // Only when ONE distinct statement ran. A run that issued several has no single query
+  // its finding rests on, and naming one would be a fabricated attribution — a wrong
+  // training pair is worse than a missing one (§3.9's reward-integrity law applies to the
+  // corpus, not just the grader).
+  const runSql = useMemo(
+    () => (detail?.measured ? soleSqlOfEvents(detail.events) : ""), [detail]);
   const connId = detail?.measured ? detail.conn_id : null;
 
   const loadVerdicts = useCallback(() => {
@@ -192,8 +205,14 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
       await recordVerdict({
         verdict, investigationId: invId, connectionId: connId ?? "",
         note, headline: headlineOf(detail),
+        // Without these a verdict here is a label with nothing to learn from: measured
+        // 2026-09-03, every `correct` row in the store had an empty `corrected_sql`
+        // because chat was the only surface that sent one.
+        sqlSource: runSql,
+        correctedSql: verdict === "correct" ? correctedSql.trim() : "",
       });
       setNote("");
+      setCorrectedSql("");
       loadVerdicts();
     } finally {
       setVerdictBusy(false);
@@ -687,6 +706,19 @@ export function TraceExplorerPanel({ focusInvestigationId, focusTraceId }: {
                       Record a verdict on this run&apos;s finding — it lands in the
                       verify store and feeds the closed loop. Uses the note above.
                     </div>
+                    {/* The correction itself, not just the fact that one was needed. A
+                        `correct` verdict with no corrected SQL is a judgement without a
+                        lesson — the exporter drops it rather than invent a preference,
+                        so without this field this surface could only ever produce
+                        accepts. Offered only when ONE statement ran, because otherwise
+                        there is no single query this would be correcting. */}
+                    {runSql && (
+                      <textarea className="aug-input aug-fs-sm font-code" rows={3}
+                        value={correctedSql}
+                        placeholder="Optional: the SQL that WOULD have been right (used with “Needs correction”)"
+                        onChange={e => setCorrectedSql(e.target.value)}
+                        style={{ width: "100%", marginBottom: 8 }} />
+                    )}
                     <div style={{ display: "flex", gap: 8, marginBottom: 18 }}>
                       <Button variant="secondary" size="sm" disabled={verdictBusy}
                         onClick={() => submitVerdict("accept")}>Accept</Button>

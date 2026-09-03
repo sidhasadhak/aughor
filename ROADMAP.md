@@ -1581,7 +1581,18 @@ worked.
   both fields) but **`ExplorationReport.tsx:196` and `TraceExplorerPanel.tsx:192` call
   `recordVerdict` without them**, so verdicts from the exploration report — plausibly the
   highest-volume surface — can never become training pairs however diligently anyone
-  grades. **Two call sites, and worth more per line than the exporters.** OPEN · `staged_proposals`
+  grades. **Two call sites, and worth more per line than the exporters.**
+  ✅ **FIXED 2026-09-04.** Both surfaces now send the structural payload, and the trace
+  explorer gained the corrected-SQL field it needed to produce a preference pair at all
+  (without it, that surface could only ever yield accepts). The selection rule lives in
+  `web/lib/verdictSql.ts` because it must be IDENTICAL wherever a verdict is recorded, and
+  it is deliberately conservative: **attribute only when exactly one statement could be
+  meant.** A chain whose headline synthesises several queries has no single statement its
+  finding rests on, and naming the last would be a fabricated attribution — a wrong
+  training pair teaches a falsehood with full confidence, which is worse than a missing
+  one. §3.9's reward-integrity law is about the corpus, not only the grader. Distinct
+  statements are counted rather than events, so a retried identical query stays
+  attributable. 8 unit tests on the rule itself. · `staged_proposals`
   (accepted · rejected · executed · failed, resolver named) · `evidence_claims`
   (validated · disputed, downstream fate) · `guardrail` events (allow AND block) ·
   `automation_runs` (fired · not_fired · gated · error · paused, no-ops included) ·
