@@ -1367,6 +1367,91 @@ which doubles as a checklist of mistakes for §3.4 to avoid (their seeded-PRNG F
 derivation is the class example; ours was audited clean 2026-08-31 — no derivation step
 exists to get wrong).
 
+### 3.8 · Canvas parity — the primitive gap, and why our nodes drag badly
+
+Both halves of this band came out of one comparison against Langflow on 2026-09-03, prompted
+by the user. §4.2's refusal is untouched: this is **palette parity and canvas feel**, the
+"standing upkeep" §4.2 already asks for, not a re-proposal of their codebase.
+
+#### 3.8a · The primitive gap — MEASURED, not estimated
+
+Counted from **their repo** (`docs/docs/Components/*.mdx`), because docs.langflow.org renders
+client-side and returns an empty body to a fetch — a page that looks present and answers
+nothing is the measurement trap this document keeps paying for.
+
+| | Langflow | Aughor |
+|---|---|---|
+| Core component pages | **43** (34 real + 9 index pages) | — |
+| Vendor **bundles** | **76** | — |
+| Droppable palette entries | ~34 | **15** (5 triggers + 10 actions) |
+
+**The raw gap is the wrong number and must not be quoted on its own.** 76 of their ~110 pages
+are vendor bundles — OpenAI, Anthropic, Chroma, Composio, Docling. That is the job our
+`connector` + `integration` families already do, and ours are **deployment-shaped**: membership
+is what this install has connected, not what the version ships. Counting those as missing
+components counts our architecture as a deficit.
+
+**The real gap is general dataflow primitives**, and it is worth having a position on each
+rather than a backlog:
+
+- **Control flow** — `If-Else`, `Smart Router`. We have per-step `when` guards and W2 for-each,
+  but nothing that branches to a *different path*. The strongest candidate: a conditional
+  router is the one primitive whose absence forces a person to build two chains.
+- **Data shaping** — `Type Convert`, `Parser`, `Split Text`, `Structured Output`,
+  `Smart Transform`, `Dynamic Create Data`. B1 gave us typed ports; nothing *transforms*
+  between steps. Second-strongest, and the one that decides whether ports stay expressive.
+- **File I/O** — `Read File`, `Write File`, `File System`.
+- **LLM as a component** — `Language Model`, `Embedding Model`, `Prompt Template`,
+  `LLM Selector`. We have the whole plane; it is not droppable, it lives inside
+  `investigate`/`brief`. Exposing it is a posture question, not a build: a droppable raw LLM
+  step is an ungoverned generation path, which is the §4.2 structural objection in miniature.
+- **Misc** — `Calculator`, `Current Date`, `Notify/Listen`.
+
+**Already ours under other names** (do not build twice): `Run Flow`=`subchain` ·
+`Batch Run`=W2 for-each · `MCP Tools`=`mcp_call` · `Human Input`≈DS-8 durable pause ·
+`Guardrails`/`Policies`≈the govern plane · `Knowledge Base`/`Message History`≈semantic + KB.
+
+**REFUSED outright:** `Python Interpreter`. DS-16 already refuses code nodes by law, and a
+palette entry that executes arbitrary Python is the write-path-outside-`govern/` objection
+§4.2 closes on.
+
+#### 3.8b · Why our nodes drag badly — ROOT-CAUSED 2026-09-03
+
+**`AutomationGraph.tsx` passes `nodes={design.nodes}` to ReactFlow with no `onNodesChange`.**
+That breaks the controlled-mode contract: position changes never flow back to our array, and
+are committed only at `onNodeDragStop`. Any parent re-render mid-drag regenerates the node
+array from the *stale* `positions` state.
+
+🔑 **The tell was already in our own code, read as a library quirk.** The DS-4 comment at
+`AutomationGraph.tsx:1161` says the library *"reports its measurements only through
+`onNodesChange`, which this canvas never receives (probed: it does not fire here at all)"*. It
+does not fire **because it was never passed**. A missing prop was diagnosed as a library
+limitation and worked around by measuring the DOM per render — and that workaround is itself a
+jank source: a dependency-less `useEffect` reading `offsetWidth`/`offsetHeight` for every
+`.react-flow__node` on every render plus a rAF, which forces synchronous layout.
+
+Three supporting measurements:
+- **`GraphCanvas.tsx` wires `onNodesChange` (3 hits). `AutomationGraph.tsx` — the authoring
+  canvas people actually drag on — has zero.** `AgentMap.tsx` has `nodesDraggable` and no
+  handler: the same defect, second site.
+- **Zero `memo(` across all five of our canvas files.** Langflow memoises six sub-components
+  inside `GenericNode` alone (`RenderInputParameters`, `NodeIcon`, `NodeName`,
+  `CustomNodeStatus`, `NodeDescription`, `NodeOutputs`).
+- Langflow's `flowStore.ts:422` is the textbook pattern:
+  `onNodesChange: (changes) => ({ nodes: applyNodeChanges(changes, get().nodes) })`.
+
+Even adding `React.memo` first would not help: each node's `data` is rebuilt with fresh
+closures (`onPatch`, `onClear`, `onDuplicate`) every time the `design` memo re-runs, so props
+always differ. **Order matters — wire the change channel, stabilise `data`, then memoise.**
+
+**The fix pays twice:** once `onNodesChange` is live, measurements arrive through the channel
+the DS-4 comment wished for, and that DOM-measuring workaround can likely be deleted outright.
+
+⚠️ **Not yet reproduced empirically.** The browser tool cannot drive ReactFlow pointer
+interactions (measured 4×), so this is a code-level diagnosis. A React Profiler trace during a
+drag would show the re-render storm directly, and is the receipt to get before claiming the fix
+worked.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -1505,6 +1590,13 @@ NEXT (order within a band is the user's knob)
                                    ⚠️ The posture was DECIDED 2026-09-01 (§3.1, §6.3) — this
                                    band said "agree it with the user first" for a further
                                    day, which is a resolved item reading as a blocked one.
+  🆕 §3.8 CANVAS PARITY (2026-09-03, from the user's Langflow comparison) — two halves:
+                                   the PRIMITIVE gap (measured: their 34 core components vs our
+                                   15 palette entries; their other 76 pages are vendor bundles,
+                                   which is our connector/integration family and NOT a deficit)
+                                   and the DRAG defect (`AutomationGraph` passes `nodes` with no
+                                   `onNodesChange`; zero `memo(` on any canvas). The drag is the
+                                   smaller fix and the bigger felt difference — take it first.
   ✅ VA-9d WRITE SLICE SHIPPED 2026-09-02 — the grant plane. Our per-tool ratification
                                    authorizes a mutating call, their `readOnlyHint` is
                                    advisory, and a changed declaration revokes the grant
@@ -1618,6 +1710,14 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   the `[export]` extra (`pyproject.toml:85-90`). So this is an INSTALL gap on this machine
   (the documented setup is `uv sync --all-extras`), not a code defect: the function already
   degrades to `None` and callers fall back to their table/prose, by design.
+- 🆕 **Canvas drag is not fluid** — ROOT-CAUSED 2026-09-03 (§3.8b): `AutomationGraph.tsx`
+  passes `nodes` with **no `onNodesChange`**, so positions never flow back and any mid-drag
+  re-render resets them; zero `memo(` on any of the five canvases; a dependency-less
+  `useEffect` forces layout every render. `AgentMap.tsx` has the same missing handler. Our own
+  DS-4 comment read the missing prop as a library quirk and worked around it.
+- 🆕 **The primitive gap** — §3.8a: no conditional router and no data-shaping steps are the two
+  absences that make a person build two chains or leave the canvas. Measured, with a position
+  on each; `Python Interpreter` is REFUSED rather than missing.
 - **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
