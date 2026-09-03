@@ -1486,6 +1486,267 @@ interactions (measured 4×), so this is a code-level diagnosis. A React Profiler
 drag would show the re-render storm directly, and is the receipt to get before claiming the fix
 worked.
 
+### 3.9 · Arc MI — the Machine-Intelligence arc (adopted 2026-09-03; decisions §6.7 · §6.8)
+
+> **Origin.** The user's 2026-09-02 directive: *"a never-ending learning process through
+> which models can be made smarter as more and more users start using the platform…
+> smaller LLMs will themselves act like specific engines for specific agents… micro LLMs
+> will be the new agents… start recording the learnings from each and every activity that
+> goes on in the platform and turn it into Machine intelligence."* The same-day audit
+> (both TangleML repos read end-to-end, nothing executed; every recording surface in
+> `aughor/` inventoried with file:line receipts; the retention, prompt-window and
+> trace-input claims re-verified by hand) reframed the ask: **capture is already rich;
+> grading, keeping and exporting are the gaps.** The case, the scenario storyboards and
+> the NVIDIA-RL read live in the session memo (artifacts `35b2c8fa` / `b387d309`, memory
+> `arc-mi-flywheel-and-tangleml-verdict`); everything load-bearing is restated here so
+> this section stands alone.
+>
+> **The thesis, corrected where measurement disagrees.** Frontier per-token prices have
+> historically fallen — but the constraints *measured here* are request RATE (the real
+> ceiling — see Transport), hourly `:free` provider-health flips the failover chain
+> silently absorbs, latency on high-volume narrow calls, and payload custody (a local
+> model is the only inference that never leaves the box). Micro models relieve all four.
+> The economics that makes "micro-LLMs as the agents" real is **one small base, N LoRA
+> adapters** — an agent's specialization is megabytes, hot-swapped over a shared 1–8B
+> base. And the moat compounds: §0's ontology→agent loop gains a second loop around it,
+> **experience→model** — a student trained on OUR schemas, OUR ontology definitions and
+> OUR corrections beats any generic corpus at being this platform. §7's law generalizes:
+> a capability ships when something consumes it; **data ships when something GRADES it.**
+> Ungraded logs are exhaust. Graded logs are training sets. The models are how the
+> ledger's capital gets spent; models depreciate, the graded ledger compounds.
+
+**Laws that bind every MI wave (standing, not per-slice):**
+
+- **The lawful lane first.** Nothing trains on payloads outside §6.7's TRAINING ANNEX
+  (✅ decided 2026-09-03): an org-level opt-in carrying a retention class, a purpose
+  tag, and PII scrub at export. §6.4's reading half (2026-09-02) governs an admin's
+  eyes; the annex governs machine consumption — two different acts, each with its own
+  law. The NL2SQL loop needs neither: question, SQL, outcome and human verdicts are
+  already durable work artifacts — which is why it goes first.
+- **A verdict pins its evidence.** Graded runs become permanent; ungraded exhaust keeps
+  expiring on the 14-day sweep. Retention follows grading, not the other way round.
+- **Reward integrity precedes optimization.** Before any training consumes a signal,
+  hand-audit the verifier against 50–100 real outputs. A guard hole is a policy exploit
+  waiting to be learned (`E1-quoted-identifier`, found 2026-09-02, is the live class:
+  "Guards clean" over an always-false predicate). Good rewards measure the real task,
+  are hard to game, and fail visibly when wrong.
+- **The ratchet gates every promotion.** A model/adapter version ships only when it meets
+  baseline on the held-out golden set with no regression on safety, latency or cost —
+  the eval plane's graduation law extended to weights. Every escalation the cascade
+  takes is automatically next version's most valuable training row.
+- **No model id in `aughor/`** (standing law, unchanged). Serving rides the provider
+  chain as config; local inference rides library runtimes (Ollama / llama.cpp / vLLM),
+  never a hand-rolled one. The cascade is the failover seam pointed at economics.
+- **Store hygiene, paid for repeatedly:** a new store's env name lands in
+  `tests/conftest.py` AND `scripts/dump_openapi.py` in the same commit (a dir-keyed
+  store needs the directory family too — paid again 2026-09-02) · one writer per
+  `data/` · migrations numbered off the LIVE `PRAGMA user_version`, per-statement
+  execute, portable SQL only.
+- **The ledger is in the box; weights never are.** Every deployment shape keeps full
+  function: laptop installs may open a local-model door; serverless points the same
+  binding at a remote endpoint; the repo and installer carry zero weights.
+- **Catalogue-timestamp discipline.** The measured facts below are dated 2026-09-02.
+  Re-measure before building on them — this ledger has been stale the same evening it
+  was written before.
+
+**What is true today (measured 2026-09-02, file:line receipts in the audit):**
+
+- **Guard verdicts are computed and never persisted** — `sql/trust_checks.py` returns
+  `E1-*` issues; `emit_guard_receipt` fans out to SSE + a ContextVar only. The best
+  free supervision signal on the platform is discarded at birth. (`eval_run_results.fired`
+  proves the column shape is already understood — it exists only on the eval path.)
+- **`session_events` expires in 14 days** (`AUGHOR_SESSION_LOG_KEEP_DAYS=14`,
+  `obs/session_log.py:698`) while `finding_verdicts`, `staged_proposals` and
+  `evidence_claims` are unbounded — a late verdict's join target is already deleted.
+- **Attribution is dead on arrival:** `session_events.user_id` at 0 of 8,198 rows,
+  `agent_id` at 0 of 7,365.
+- **`automation_runs` cannot reach the LLM calls it caused** — no `trace_id`; and its
+  INSERT drops the model's existing `agent_id` (the half-added-field class, again).
+- **Feedback is split and invisible:** `chat.feedback` keys on turn_id, `trace.feedback`
+  on trace_id; neither is in `KIND_CATEGORY`, so neither reaches the governance feed.
+- **The strong verdict surfaces already exist:** `finding_verdicts` (accept · correct ·
+  reject, **with `corrected_sql`** — ready-made preference pairs) · `staged_proposals`
+  (accepted · rejected · executed · failed, resolver named) · `evidence_claims`
+  (validated · disputed, downstream fate) · `guardrail` events (allow AND block) ·
+  `automation_runs` (fired · not_fired · gated · error · paused, no-ops included) ·
+  the eval plane + git-sha'd ratchet baselines · `audit_log` (every executed SQL:
+  full text, row_count, duration, error, trace_id).
+- **Reasoning traces already exist ungraded:** `episodes_*.jsonl` (think → SQL →
+  observation) — the closest thing to training data the runtime writes today.
+- **Payload custody is deliberate and uniform** — prompts/completions reach no durable
+  sink and no export unless an operator opens the self-expiring capture window
+  (default 20 calls / 15 min, caps 200 / 120, 2,000-char cap, reads audited via
+  `trace.payload_access`). **One exception, found by reading:** `new_trace()` puts the
+  user's *question* on the OTLP wire (`langfuse.trace.input`) regardless of the window.
+
+#### MI-0 · The custody law: the training annex — ✅ DECIDED 2026-09-03 (§6.7); the gate remains
+
+The decision half landed with §6.7: **payloads are trainable only under an org-level
+opt-in carrying a retention class, a purpose tag, and PII scrub at export; work
+artifacts (questions, SQL, result summaries, verdicts) are lawful training inputs,
+org-scoped by default.** (§6.4's 2026-09-02 reading half governs an admin's eyes; this
+annex governs machine consumption — deliberately separate acts.) What remains of MI-0
+is its one piece of code: `langfuse.trace.input`'s question attribute — an *export*,
+not a read, so no break-glass ever fires on it today — must obey the same custody
+classes, with a test.
+**Receipt:** §6.7's dated stamp (✅ landed); the trace-input gate test (open — rides
+MI-1's wave).
+
+#### MI-1 · Grade what already runs (substrate-sized)
+
+- **Persist guard verdicts at the execution chokepoint** — the one seam every connector
+  and both the quick and deep paths already pass (the capability-misses-a-connector
+  lesson, ×3, decides the placement). Rows `(ts, trace_id, sql_digest, pattern,
+  subject, phase, org_id)` beside `audit_log` in `AUGHOR_AUDIT_DB` (an existing store:
+  migration rules above apply).
+- **`automation_runs` gains `trace_id`**, and the INSERT carries the `agent_id` the
+  model already declares — a chain run can finally reach the `llm_call` rows it caused
+  (`session_events` got `job_id`/`charter_id` in m10 precisely for this join; this is
+  the reciprocal key).
+- **Both feedback kinds enter `KIND_CATEGORY`** — and find out why the
+  `uncategorized_kinds` ratchet wasn't already flagging them (a guard blind to its own
+  population is a standing failure class; treat the silence as its own defect).
+- **Wire attribution:** thread `user_id`/`agent_id` through the session-log emitters;
+  measure after — the receipt is nonzero on new rows, not the code existing.
+
+**Receipt:** ONE live SQL query walks run → executed SQL → guard fires → human verdict.
+Today that query cannot be written. Before/after row counts published in the PR.
+
+#### MI-2 · A verdict pins its evidence (substrate-sized)
+
+`session_events.pinned_at` (ledger migration — numbered off the LIVE store). The
+verdict writers — `finding_verdicts`, `staged_proposals` resolution, both feedback
+doors — pin the run's rows by trace_id/investigation_id at verdict time. The amortized
+sweeper skips pinned rows; the 14-day default for ungraded exhaust stands.
+**Receipt:** a synthetic 15-day-old graded run survives the sweep; its ungraded
+neighbor doesn't. Sweeper timing measured before/after (it runs inline on write).
+
+#### MI-3 · The dataset plane (Tangle's schema, our law — §4.5)
+
+New store `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR` for snapshot files — the
+THREE-registration law applies, same commit. The ported ideas (§4.5): content-addressed
+**`dataset_data`** (hash, size, uri, created_at, deleted_at — bytes dedup by reference;
+provenance survives purging the bytes) · **`dataset_node`** (name, version, task,
+kind ∈ {sft, dpo, golden}, data_id, parent_id — slots and clone-lineage) ·
+**`dataset_lineage`** (dataset → the runs, verdicts and guard rows that fed it).
+Exporters run as kernel jobs (budget-metered, one writer, idempotent):
+
+- **SFT pairs** from accepted findings — question + ontology/briefing context → SQL.
+- **DPO pairs** from `correct` verdicts — `sql_source` rejected vs `corrected_sql`
+  chosen. The platform has been collecting preference data without calling it that.
+- **Golden sets** — held-out accepts across difficulty bands, registered in the evals
+  plane, never trained on. `scripts/quality_sweep.py` graduates from a laptop script
+  into an exporter.
+
+PII scrub at export via the existing `security/pii` seam; aggressive dedupe; a small
+human-audited seed set kept apart from everything generated. **Synthetic bootstrap is
+allowed only through the same graders** — generated question/SQL pairs scored by the
+real guard battery and real execution before entry; synthetic is fuel, never ground
+truth (volume is currently the scarce input; this is the honest accelerator).
+**Receipt:** the same dataset exported twice yields the same content hash; a provenance
+query walks dataset → runs → verdicts; a golden set shows up in the evals plane.
+
+#### MI-4 · First distillation: NL2SQL, rented
+
+**Entry gates (measured, not vibes):** ≥1,000 SFT pairs · ≥150 DPO pairs · a golden set
+≥150 spanning difficulty bands · guard-verdict rows flowing ≥30 days. Until the gates
+pass, this slice does not start — the ledger keeps accruing either way.
+
+- **Train:** LoRA SFT, then DPO on the correction pairs. Rented first — a managed
+  fine-tune API or a single rented GPU with the standard open stack; owning hardware is
+  explicitly out of scope. Adapters land in the **artifacts ledger** as versioned
+  `model_adapter` records (the VA-7 pattern: append-only, supersession, restore writes
+  forward) — provenance from adapter → dataset hash → source runs is two joins.
+- **Evaluate:** the existing evals plane + ratchet. Promotion law above. No new harness
+  — the removed-harness lesson stands.
+- **Serve:** one more OpenAI-compatible binding in the LLM config — localhost (Ollama)
+  or a rented endpoint, same seam, id from config, hardcoded nowhere.
+- **Route:** the cascade — micro first on eligible task tags, escalation on guard fire /
+  low confidence / execution error / timeout. The guards that grade the flywheel also
+  catch its student; every escalation is labeled into MI-3.
+
+**Receipt:** a ratchet A/B where the adapter meets baseline on the golden set at
+measured cost and latency (the memo's illustrative numbers replaced by real ones), and
+a live Trust Receipt naming the cascade hop it rode.
+
+#### MI-5 · The deployment posture: ledger in the box, model as a door, adapters as releases
+
+- **MI-1…3 are default-ON for every install.** Day-one learning IS the ledger — pure
+  SQLite, zero compute, every deployment shape. A fresh install starts accruing graded
+  pairs from its first query, before any model exists to spend them.
+- **Local inference is a door, never a bundle** (DS-17 grammar: `open | needs_setup |
+  unavailable` + the alt-door sentence): "enable local model — pulls ~X GB via Ollama,
+  needs Y RAM," default off, size disclosed, one click. Serverless deployments show the
+  same door pointing at a remote binding. Weights never enter the repo or installer —
+  even a 0.6–1B base is 0.5–1.5 GB quantized, and an untuned base meets users at its
+  worst; first impressions are a one-shot resource.
+- **Shared adapters ship as versioned release artifacts** (`aughor-sql-v1`, `-v2`, …)
+  trained on our own pilot data — and on opted-in, scrubbed contributions under §6.7's
+  annex (**§6.8: decided YES 2026-09-03**; contribution stays strictly per-deployment
+  opt-in — nothing leaves a deployment that didn't say so). An install pulls them the
+  way it pulls packs; org-private adapters layer on top. This is the origin directive
+  made mechanical: *"models made smarter as more and more users start using the
+  platform"* — a fresh install starts with the distilled experience of every deployment
+  before it, and its own ledger immediately feeds the next version.
+
+**Receipt:** a fresh laptop install reaches a working micro door in one click with size
+disclosed; a serverless deploy reaches the same behavior via remote binding; a release
+carries an adapter an install can pull, and the local ratchet re-verifies it there.
+
+#### MI-6 · RLVR, only after the plateau (gated, optional)
+
+**Trigger:** the MI-4 ratchet flat across two consecutive dataset versions — SFT+DPO
+has stopped paying before any RL machinery is considered (the lightest-fix ladder:
+prompt/tool → SFT → DPO → RLVR). **Recipe when triggered:** GRPO on an adapter over the
+same 1–8B base — a single rented GPU suffices for the rehearsal (NVIDIA's 2026-07
+guide, verified against the full text). Reward starts **binary and deterministic**:
+executed cleanly + guards clean + golden-answer match where one exists — never a naive
+`rows > 0` (zero rows is sometimes the right answer; the always-false-predicate class
+proves it). Hand-audit the reward on 50–100 real outputs first (law above); inspect
+for reward hacking at every checkpoint. The environment is the platform's own loop —
+the evals plane grows into the gym; evals and environments are two sides of one system.
+Harness (TRL GRPO / veRL / NeMo Gym) chosen then by health, not now by brand.
+**Receipt:** a rehearsal report — the reward audit sheet, before/after golden delta,
+and the hack-inspection notes — before any promoted weight.
+
+**Traps this arc must not re-pay** (the short list; each is a standing memory):
+
+- Tests that spend the LLM budget (`_ENABLED` read at import) — exporters and trainers
+  get the same import-time discipline.
+- Two caps for one population — exporter jobs are metered under the SAME budget the
+  kernel jobs plane already enforces, not a parallel one.
+- An editable install poisons worktree probes — training/export scripts pin
+  `PYTHONPATH="$PWD"` like every other bare script.
+- A proxy is not the measure — "cost saved" comes from provider invoices and measured
+  latency, not token arithmetic.
+- Non-hermetic `data/` is real data loss (×2) — the learning store follows the same
+  isolation laws as every store before it.
+- The catalogue rots — every "true today" bullet above carries its date; re-measure at
+  each slice's pre-check (every DS wave moved its own scope at the pre-check).
+
+**Sequencing and dependencies.** Drafting met the collision this document warns about,
+at pre-flight: VA-9d's write slice (#427) and §3.8 canvas parity (#428) landed on main
+while this section was being written, and §6.4 got its stamp the same evening — caught
+by re-checking `origin/main` before committing, which is the standing lesson doing its
+job (this section was renumbered from 3.8 to 3.9 in the reconciliation). As reconciled:
+MI-0 is decision-sized on its own (§6.7's annex). MI-1 and MI-2 are substrate-sized —
+three migrations and a categorization — and may ride alongside any band. MI-3 follows
+both. MI-4 starts only at its measured gates. MI-5's door ships with MI-4's first
+serving; adapters-as-releases is cleared by §6.8 (YES, 2026-09-03). MI-6 waits on a
+measured plateau.
+**Non-goals for the whole arc:** a GPU fleet · weights in the repo/installer ·
+online/continual learning on live traffic · a second eval harness · a foreign pipeline
+runtime (§4.5) · any training on payloads outside §6.7's annex.
+
+**Falsifiers — this arc is droppable by measurement.** If after ~90 days of MI-1…3 on
+real usage the graded-pair rate cannot plausibly reach MI-4's gates, the distillation
+premise is unproven HERE — stop at the ledger (independently worth having: it is the
+audit surface §6.4's break-glass requires and the report-quality measurement substrate)
+and re-measure the premise before spending a training dollar. If frontier price/rate
+movements make the cascade's savings < 2× at MI-4's pre-check, MI-4 re-scopes to a
+latency/custody play or parks. If a foreign runtime ships releases + auth AND we by
+then own training volume, §4.5's factory question reopens.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -1570,6 +1831,32 @@ governance plane. Adopting the runtime would mean two answer paths. What was imp
 study is the *feature inventory*, not the stack — Arc VA is the result.
 
 ---
+
+### 4.5 · TangleML as a runtime — REFUSED; its schema PORTED (2026-09-02)
+
+Studied at the user's prompt (both repos read end-to-end, nothing executed). What it is:
+the continuation of Cloud Pipelines by KFP v1's co-author, matured in Shopify's Search &
+Discovery team, Apache-2.0, genuinely active (~6 contributors) — a visual-first pipeline
+platform over containerized CLI components with content-based cross-run caching.
+**Refused as anything that runs here:** pre-release (zero backend releases; the README's
+`stable` branch nine months behind master; backend effectively single-maintainer), the
+OSS build ships **no authentication** (every request is hard-coded "admin"),
+**plaintext secrets** in its DB, arbitrary-container execution with read-write host
+mounts as the product — and a foreign flow engine is §8 by name. It also contains none
+of what Arc MI needs: no dataset versioning, no eval tracking, no LLM machinery.
+
+**Ported instead — five schema ideas into MI-3 (§3.9)** (all from
+`cloud_pipelines_backend/backend_types_sql.py`, 8 tables, ~546 lines): the
+artifact-slot / content-hashed-bytes split (dedup by reference; provenance survives
+purging via `had_data_in_past` + `deleted_at`) · cache_key = hash(step spec + input
+content hashes) with attach-to-RUNNING dedup of concurrent identical jobs · the
+execution-ancestor closure table (O(1) run-scoped lineage, no recursive CTEs) ·
+three-table producer/input/output lineage · clone-lineage + indexed annotation k/v
+with a typed filter language (the minimum viable experiment tracker).
+
+**Falsifier:** ships real releases + auth, AND we own enough training volume that a
+containerized offline *factory* (beside the product, never in it) beats rented
+fine-tuning — then the factory question reopens, against Flyte/Metaflow as controls.
 
 ## 5 · Sequencing
 
@@ -1673,6 +1960,17 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
         VA-10 multi-user + admin  (hardening pass over everything above) — ✅ UNBLOCKED
                                    2026-09-02: §6.4 decided (visible metadata, gated payloads,
                                    break-glass audited and visible to the user). §3.5 carries it.
+
+ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first target NL2SQL,
+        training rented, not owned
+        MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
+        MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
+             may ride alongside any band above
+        MI-3 dataset plane (learning store; Tangle's schema per §4.5)
+        MI-4 NL2SQL adapter — starts ONLY at measured gates (≥1,000 SFT · ≥150 DPO ·
+             golden ≥150 · verdicts flowing ≥30 days); rented training; ratchet-gated
+        MI-5 ledger-in-the-box · model-as-a-door · adapters-as-releases (§6.8 ✅)
+        MI-6 RLVR rehearsal — only after a measured SFT+DPO plateau (×2 versions)
 ```
 
 ### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
@@ -1847,6 +2145,22 @@ the browser** · **measure the premise before building.**
    untrusted-annotation warning asks for. A declaration that changes after registration
    revokes that tool's grant and refuses the next call until a human re-ratifies — pinned at
    discovery, scoped to the tool that moved, fail-closed. Full note: §3.1.
+7. ✅ **DECIDED 2026-09-03 — Arc MI enters the queue, and the training annex is law.**
+   Both clauses stamped YES by the user. **(a) Adoption:** §3.9 is active; first
+   distillation target NL2SQL (ground truth is free: execution outcomes + guard fires +
+   human corrections with `corrected_sql`); training rented, not owned; MI-1/MI-2 are
+   substrate-sized and may ride the next wave. **(b) The training annex to §6.4:** the
+   2026-09-02 decision governs an admin's *reading*; this clause governs *machine
+   consumption* — payloads are trainable only under an org-level opt-in carrying a
+   retention class, a purpose tag, and PII scrub at export; work artifacts (questions,
+   SQL, result summaries, verdicts) are lawful training inputs, org-scoped. The NL2SQL
+   loop needs nothing from this clause.
+8. ✅ **DECIDED 2026-09-03 — the community flywheel: YES to both halves.** (a) Releases
+   may ship shared task adapters (`aughor-sql-vN`) trained on our own pilot data.
+   (b) A deployment may OPT IN to contribute scrubbed graded pairs under 7(b)'s annex.
+   The yes does not change the default posture: contribution is strictly opt-in —
+   nothing leaves a deployment that didn't say so. This is the mechanical form of the
+   origin directive ("smarter as more users use the platform"), now deliberate.
 
 ---
 
@@ -1871,7 +2185,9 @@ the browser** · **measure the premise before building.**
 A second application · a TS runtime · an n8n dependency · a low-code flow engine (adopting a
 foreign one, that is — Arc DS's visual authoring over our own engine is §3.7, not this) · a
 canvas for anything without a producer/consumer relation (an agent record still gets a form;
-its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/`.
+its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/` · a GPU fleet ·
+model weights in the repo or installer (Arc MI ships the ledger in the box and adapters as
+release artifacts, §3.9) · online/continual learning on live traffic.
 
 ---
 
