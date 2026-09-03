@@ -119,8 +119,8 @@ def emit_guard_receipt(guard: str, action: str, detail: str = "",
     mean a bare platform, an automation tick and the quick path silently recorded
     nothing. This seam is the one every producer already calls, so recording here needs
     no registration and no producer can miss it. The no-op contract above is narrowed
-    honestly: the write is trace-gated, so a caller outside a run still pays only a
-    contextvar lookup, but a guard that fires inside one now costs a row.
+    honestly: a guard that FIRES now costs a row, in or out of a run. Only fires pay it —
+    a platform whose guards stay quiet still writes nothing.
     """
     _record_guard_verdict(guard, action, detail, before)
     sink = _COLLECTOR.get()

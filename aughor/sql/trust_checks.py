@@ -113,9 +113,14 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
     these checks (the quick path, the deep path, the executor and the trust scope) and a
     fifth is the eval plane; recording at each would be five chances to miss one — the same
     shape as the capability that missed a connector three times. `phase` names which caller
-    ran it, so the durable row can tell an execution-time fire from a speculative one.
-    Persistence is trace-gated and best-effort, so the pure-AST contract above still holds:
-    no trace (tests, scripts, evals outside a run) writes nothing and costs one lookup."""
+    ran it, and carries the weight now that every fire is kept: it is what separates
+    production supervision from `eval` and from a speculative `validate`. A site that
+    forgets it degrades to the default label, never to silence.
+
+    The write is best-effort and never raises, so the "never raises" half of the contract
+    above holds exactly. It is no longer free, though — a FIRE costs a row wherever it
+    happens (~1% of statements, measured). That is deliberate: gating on an ambient trace
+    discarded ~85% of fires, because only the ask door binds one."""
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
     except Exception:

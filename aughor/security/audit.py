@@ -253,14 +253,23 @@ class GuardVerdicts:
         trace_id: str | None = None,
         org_id: str | None = None,
     ) -> None:
-        """Persist one guard fire. Best-effort and TRACE-GATED; never raises.
+        """Persist one guard fire. Best-effort; never raises.
 
-        A verdict with no trace is dropped rather than written orphaned — the same law
-        the session log already applies, for the same reason: this row exists to be
-        JOINED (run -> executed SQL -> guard fire -> human verdict), and a row that can
-        reach none of those is noise that makes the table look healthier than it is.
-        That gating is also what keeps the check free for tests, scripts and the eval
-        plane's `guard.e1_semantics`, which call the same pure functions outside a run.
+        **Written whether or not a trace is bound**, and the first version of this got
+        that wrong. It dropped trace-less fires by analogy with the session log's law —
+        but that law is about session EVENTS, which are meaningless outside the run they
+        describe. A guard verdict is not an event; it is a standalone labeled example
+        (this SQL, this verdict), which is precisely what MI-3's dataset plane consumes.
+        Measured on the live deployment the day the gate shipped: 189 audit rows, 28 with
+        a trace — `bind_trace` is bound at the ask door, so the workbench and the
+        on-demand validate endpoint carry none. The gate would have discarded ~85% of the
+        signal in a slice whose entire purpose is to stop discarding it. `trace_id` is ''
+        when absent; the run -> SQL -> fire join still works for the runs that have one,
+        and the rest still join to `audit_log` on the `sql_digest` column.
+
+        `phase` is what keeps the mixed population usable — `execute`, `validate`, `deep`
+        and `eval` fires are all real, but only some are production supervision, and
+        MI-3 must be able to tell them apart.
 
         Guarding must never cost a query its answer: every failure here is tolerated,
         exactly like the audit write it sits beside.
@@ -269,8 +278,6 @@ class GuardVerdicts:
             if trace_id is None:
                 from aughor.telemetry import current_trace_id
                 trace_id = current_trace_id()
-            if not trace_id:
-                return
             from aughor.org.context import current_org_id
             c = _connect()
             try:

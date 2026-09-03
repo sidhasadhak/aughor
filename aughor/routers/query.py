@@ -1001,7 +1001,8 @@ def query_validate(body: _QueryValidateRequest, request: Request):
             # answer paths): uncapped scan, cached per connection, fail-open to the heuristic.
             from aughor.sql.trust_checks import connection_column_types, run_trust_checks
             col_types = connection_column_types(body.conn_id, db) or None
-            trust_findings = [f.to_dict() for f in run_trust_checks(sql, col_types=col_types, dialect=dialect)]
+            trust_findings = [f.to_dict() for f in run_trust_checks(
+                sql, col_types=col_types, dialect=dialect, phase="validate")]
         except Exception as exc:
             tolerate(exc, "validate: trust checks", counter="validate.trust")
     finally:

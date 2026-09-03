@@ -1612,6 +1612,20 @@ start.
 > a defect the band had predicted in the abstract and got exactly right in the concrete:
 > the `uncategorized_kinds` ratchet was blind *by construction*, not by omission.
 
+> **Corrected the same day, by driving it instead of testing it.** The first cut gated the
+> write on an ambient trace, reasoning by analogy with the session log's drop-trace-less-
+> events law. Wrong analogy: that law is about session EVENTS, meaningless outside the run
+> they describe, whereas a guard verdict is a standalone labeled example — exactly what
+> MI-3 consumes. Running the live `/query/validate` proved it: the guard fired
+> (`E1-quoted-identifier` on `row_id`) and persisted **nothing**. Measured on the live
+> deployment: **189 audit rows that day, 28 with a trace — `bind_trace` is bound only at
+> the ask door**, so the workbench and the validate endpoint carry none. The gate would
+> have discarded ~85% of the signal in the slice whose whole purpose is to stop discarding
+> it. Every fire is now kept, `trace_id` empty when absent, and `phase` (`execute` ·
+> `validate` · `deep` · `trust_scope` · `eval`) carries the weight of separating production
+> supervision from the eval plane's own cases — a dataset built from an unlabelled
+> population would train on its own benchmark.
+
 - ✅ **Persist guard verdicts at the execution chokepoint** — the one seam every connector
   and both the quick and deep paths already pass (the capability-misses-a-connector
   lesson, ×3, decides the placement). Rows `(ts, trace_id, sql_digest, pattern,

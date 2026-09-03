@@ -2602,7 +2602,8 @@ def _answer_core(
                 # TIMESTAMP footgun from a DATE column merely named `*_at`/`*_ts` (WP-1f: the DATE
                 # false positive the name heuristic would raise otherwise).
                 _e1_ct = connection_column_types(connection_id, db)
-                _e1_hits = run_trust_checks(final_sql, col_types=_e1_ct or None, dialect=db.dialect)
+                _e1_hits = run_trust_checks(final_sql, col_types=_e1_ct or None,
+                                            dialect=db.dialect, phase="deep")
                 if _e1_hits:
                     _e1_msgs = "; ".join(t.message for t in _e1_hits[:2])
                     _grounded_headline = (

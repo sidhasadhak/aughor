@@ -41,12 +41,30 @@ def test_a_guard_fire_is_persisted_under_its_trace():
     assert rows[0]["phase"] == "execute"
 
 
-def test_a_verdict_with_no_trace_is_dropped_not_orphaned():
-    """The same law the session log applies. A row that can join to nothing is noise
-    that makes the table look healthier than it is — and this gating is what keeps the
-    checks free for the eval plane, which runs them outside any trace."""
-    GuardVerdicts.record(pattern="E1-untraced-probe", subject="x", sql="SELECT 1")
-    assert GuardVerdicts.recent(pattern="E1-untraced-probe") == []
+def test_a_verdict_with_no_trace_is_still_kept():
+    """The first cut of this dropped trace-less fires, by analogy with the session log.
+    Wrong analogy: that law is about session EVENTS, meaningless outside their run. A
+    guard verdict is a standalone labeled example, which is what MI-3 consumes. Measured
+    live the day the gate shipped — 189 audit rows, 28 traced — it would have thrown away
+    ~85% of the signal, because only the ask door binds a trace."""
+    GuardVerdicts.record(pattern="E1-untraced-probe", subject="x", phase="validate",
+                         sql="SELECT 1")
+    rows = GuardVerdicts.recent(pattern="E1-untraced-probe")
+    assert len(rows) == 1
+    assert rows[0]["trace_id"] == "", "absent trace must be empty, not invented"
+    assert rows[0]["phase"] == "validate"
+
+
+def test_phase_separates_production_supervision_from_the_eval_plane():
+    """Every fire is kept now, so `phase` is what stops a dataset built from this table
+    containing the benchmark cases it will be measured against."""
+    from aughor.sql.trust_checks import run_trust_checks
+
+    sql = "SELECT * FROM shipments WHERE dispatched_ts BETWEEN '2026-03-01' AND '2026-03-31'"
+    run_trust_checks(sql, col_types={"shipments.dispatched_ts": "TIMESTAMP"}, phase="eval")
+    phases = {r["phase"] for r in GuardVerdicts.recent(pattern="E1-date-boundary", limit=500)
+              if r["subject"] == "dispatched_ts"}
+    assert phases == {"eval"}, f"the eval plane's fire is not labelled: {phases}"
 
 
 def test_trust_checks_persist_from_the_shared_seam_not_the_callers():

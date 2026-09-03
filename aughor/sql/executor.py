@@ -300,7 +300,8 @@ def execute_guarded(
             _ct = connection_column_types(getattr(conn, "_connection_id", ""), conn) or None
             return [f"{t.pattern}: {t.message}"
                     for t in run_trust_checks(final_sql, col_types=_ct,
-                                              dialect=getattr(conn, "dialect", "duckdb"))]
+                                              dialect=getattr(conn, "dialect", "duckdb"),
+                                              phase="execute")]
         except Exception as _exc:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "E1 live checks are advisory; result proceeds uncaveated",
