@@ -1827,7 +1827,20 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
   was always the branch (§3.8a). ⏳ Survives it: **nothing in the canvas SETS `$as`** — API and
   the DS-16 import funnel only, not the binding chip.
-- **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
+- ~~**DS-5 Map grants spoke**~~ — **DRAWN 2026-09-03**, closing the last undrawn spoke of the
+  DS-5 spec ("its doors; its automations; its tool grants and connections"). One node per
+  granted action on the reach side, edged from the agent, pointing at **Attention** — the
+  file's own law is that only destinations which exist are offered, and a proposal lands in
+  the inbox, so that is the honest one rather than a link to the semantic layer.
+  🔑 **Every card says "may PROPOSE · a human accepts before anything runs", and that sentence
+  is the reason the spoke is safe to draw at all.** A card titled with an action id, sitting on
+  the outward side of an agent, is read as *"this agent does that"* unless it says otherwise —
+  and the whole design of this plane is that it does not. A test fails if the wording goes.
+  It could not have been drawn earlier: before the `tool_grants` column landed (2026-09-02)
+  every agent answered `[]`, so the spoke would have rendered an empty truth. Six tests, two
+  mutation-verified. `MAP_META` is a `Record<MapKind, …>`, so adding the kind made the
+  renderer's half a compile error rather than a silent omission — the type system catching the
+  partial add that this arc keeps paying for.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
   bare-import path escaping both the .env pin and test isolation (chip filed). ⚠️ The
