@@ -133,3 +133,82 @@ def test_connection_column_types_caches_id_less_by_path():
     conn._path = "data/some_fixture.duckdb"                    # a stable path stands in as the key
     trust_checks.connection_column_types("", conn)
     assert "data/some_fixture.duckdb" in trust_checks._COLTYPE_CACHE
+
+
+# ── E1-quoted-identifier: `WHERE 'id' = 165428` ───────────────────────────────────
+#
+# Reported from the SQL editor on a live BigQuery run (2026-09-02): the badge read
+# "Guards clean" and the warehouse then refused the job with "No matching signature for
+# operator =". The badge was honest about what it checks — fan-out, value-domain, grain,
+# trust, never syntax — and still read as a clean bill of health on a query that could not
+# run, because `E1-text-numeric-compare` requires a Column on one side and quoting `id`
+# turned it into a three-character string. Nothing in the battery looked at the case where
+# the column reference was never a column.
+#
+# The severity is not the BigQuery error. A strict engine refusing is the SAFE outcome; a
+# coercing one runs the query, the predicate is a constant that is always false, and the
+# analyst reads zero rows as a fact about the world.
+
+_BUG = "SELECT * FROM order_items WHERE 'id' = 165428"
+
+
+def _quoted(sql: str, col_types=None):
+    return [f for f in run_trust_checks(sql, col_types=col_types, dialect="bigquery")
+            if f.pattern == "E1-quoted-identifier"]
+
+
+def test_the_reported_query_is_caught():
+    hits = _quoted(_BUG)
+    assert len(hits) == 1
+    assert hits[0].subject == "id"
+
+
+def test_it_fires_whichever_side_the_quoted_word_is_on():
+    assert _quoted("SELECT * FROM t WHERE 165428 = 'id'")
+
+
+def test_it_fires_on_range_comparisons_too_not_only_equality():
+    assert _quoted("SELECT * FROM t WHERE 'created_at' > 20240101")
+
+
+def test_the_caveat_names_the_ZERO_ROW_outcome_not_only_the_engine_error():
+    """The engine error is the safe half. A caveat that mentioned only "BigQuery rejects
+    this" would leave a reader on DuckDB believing the guard did not apply to them."""
+    msg = _quoted(_BUG)[0].message
+    assert "zero rows" in msg
+
+
+def test_column_types_SHARPEN_the_suggestion_but_are_not_required():
+    """The module's rule is that the text/numeric checks skip rather than guess. This one
+    has nothing to guess about — two literals compared is a bug whatever the schema says —
+    so types only improve the wording, and their absence must not silence it."""
+    with_types = _quoted(_BUG, {"order_items.id": "INT64"})[0].message
+    without = _quoted(_BUG)[0].message
+    assert "Did you mean the column `id`" in with_types
+    assert "If `id` is a column, remove the quotes" in without
+
+
+# ── precision: the idioms it must never flag ──────────────────────────────────────
+
+def test_the_1_equals_1_placeholder_is_not_flagged():
+    """Idiomatic in generated SQL. Numeric vs numeric is not a type mismatch."""
+    assert not _quoted("SELECT * FROM t WHERE 1 = 1")
+
+
+def test_an_ordinary_string_filter_is_not_flagged():
+    assert not _quoted("SELECT * FROM t WHERE status = 'shipped'")
+    assert not _quoted("SELECT * FROM t WHERE zip = '02134'")
+
+
+def test_string_compared_to_string_is_left_alone():
+    """Ambiguous — could be a deliberate constant. Precision over reach."""
+    assert not _quoted("SELECT * FROM t WHERE 'a' = 'b'")
+
+
+def test_an_explicit_cast_is_not_flagged():
+    assert not _quoted("SELECT * FROM t WHERE CAST(id AS STRING) = '5'")
+
+
+def test_a_quoted_word_outside_a_comparison_is_not_flagged():
+    assert not _quoted("SELECT 'id' AS label FROM t")
+    assert not _quoted("SELECT * FROM t WHERE status IN ('a','b')")
