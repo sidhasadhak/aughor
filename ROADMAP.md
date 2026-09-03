@@ -1911,7 +1911,14 @@ NEXT (order within a band is the user's knob)
                                    ⚠️ The posture was DECIDED 2026-09-01 (§3.1, §6.3) — this
                                    band said "agree it with the user first" for a further
                                    day, which is a resolved item reading as a blocked one.
-  🆕 §3.8 CANVAS PARITY (2026-09-03, from the user's Langflow comparison) — two halves:
+  ✅ §3.8 CANVAS PARITY SHIPPED 2026-09-03 (`e3a56b5c`, #428) — BOTH halves. The drag defect
+                                   fixed (`onNodesChange` wired, handlers out of `data`, memo
+                                   last — that order is load-bearing) and data shaping shipped
+                                   as `$as` on the binding. 🔴 The conditional-router half of
+                                   the gap was my own FALSE claim: DS-6's `else_of` already was
+                                   the branch. ⏳ Survives it: `AgentMap.tsx` has the same
+                                   missing handler, the drag fix owes a Profiler receipt, and
+                                   nothing in the canvas SETS `$as` yet. Original note:
                                    the PRIMITIVE gap (measured: their 34 core components vs our
                                    15 palette entries; their other 76 pages are vendor bundles,
                                    which is our connector/integration family and NOT a deficit)
@@ -2157,7 +2164,12 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   mutation-verified. `MAP_META` is a `Record<MapKind, …>`, so adding the kind made the
   renderer's half a compile error rather than a silent omission — the type system catching the
   partial add that this arc keeps paying for.
-- **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
+- ~~**Runs rail lists every per-minute `not_fired` tick**~~ — **FIXED 2026-09-03** (`4f30bf58`,
+  #432). Measured first: **99 of the last 100 runs were `not_fired`**. Adjacent quiet ticks now
+  stack with a ×N badge — the stacking rule this project applies on every canvas, brought to a
+  list. It collapses and does not hide: only a tick that did nothing at all collapses, adjacency
+  is kept rather than globally filtered, and a group claims a shared reason only when every tick
+  in it gives the same one.
 - ~~**Stray `data/qdrant/` appeared 2026-09-02** despite the server pin~~ — **CAUSE FOUND
   2026-09-03: `aughor/cli.py` never read `.env`.**
   The chain, proven statically: `.env` was read by `api.py` and `semantic/kb_retriever.py`
@@ -2189,7 +2201,8 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-02: NONE open. All six are decided.** Kept as a register, not a queue —
+> **Status 2026-09-03: NONE open. All EIGHT are decided** (§6.7 and §6.8 stamped with Arc MI
+> on 2026-09-03). Kept as a register, not a queue —
 > each entry records the reasoning so a settled question is not re-litigated, and so no band
 > elsewhere in this document can go on reading as blocked once the call has been made. If you
 > arrived here looking for what the user still owes, the answer is *nothing*; what remains is
