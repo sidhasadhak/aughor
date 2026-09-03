@@ -810,6 +810,36 @@ function ScopeChips({ domains, total, active, onChange }: {
 // the user can still inspect *why* there's no data.
 const _NO_DATA_RE = /(returned no data|no data (found|available|to report|for)|0 \w+ (were |was )?found|null values for all|no rows (returned|found|matched)|query (failed|errored)|no matching (rows|records|data)|empty result set)/i;
 
+/** How the explorer's phase should READ to a person, given whether work survived it.
+ *
+ * The stored phase is untouched — `failed` stays `failed` in the record, because
+ * `canvas_needs_resume`, `is_unfinished` and the boot recovery all key on it. This decides
+ * only the WORD and the colour on screen.
+ *
+ * **Why "failed" was the wrong word here.** A run that ends without completing is recorded
+ * as `failed` whatever the cause, and the engine's own most common reason is *"cancelled
+ * (budget exceeded or stopped) — progress saved"*. Rendering that in red as FAILED
+ * overstates what the engine actually recorded, and it did real damage: a deployment with
+ * 54 findings and a grounded briefing read as broken, and the reasonable response was to
+ * throw the lot away and start again.
+ *
+ * **What is NOT softened.** A run that ended with nothing behind it still reads `failed`,
+ * in red, because there is nothing to keep and it genuinely wants attention. The split is
+ * the one already in the data — did this connection end up with work or not — so no
+ * judgement is being invented to make a number look better.
+ */
+export function explorerPhaseLabel(
+  phase: string | undefined, hasWork: boolean,
+): { text: string; tone: "good" | "warn" | "bad" | "busy" } {
+  if (phase === "complete") return { text: "complete", tone: "good" };
+  if (phase !== "failed") return { text: phase ?? "unknown", tone: "busy" };
+  return hasWork
+    // Accurate and not alarming: the run stopped short, the work stands.
+    ? { text: "incomplete", tone: "warn" }
+    : { text: "failed", tone: "bad" };
+}
+
+
 export function isDegenerateFinding(insight: ExplorationInsight): boolean {
   const f = (insight.finding || "").trim();
   if (!f) return true;
@@ -2701,14 +2731,14 @@ export function BriefingPanel({
         </span>
         {explorerStatus ? (
           <>
-            <span style={{
-              fontSize: 11,
-              color: explorerStatus.phase === "complete" ? "var(--grn4)" :
-                     explorerStatus.phase === "failed" ? "var(--red4)" :
-                     explorerStatus.paused ? "var(--amb4)" : "var(--blue4)",
+            <span className="aug-fs-xs" style={{
+              color: explorerStatus.paused ? "var(--amb4)" : {
+                good: "var(--grn4)", warn: "var(--amb4)",
+                bad: "var(--red4)", busy: "var(--blue4)",
+              }[explorerPhaseLabel(explorerStatus.phase, hasFindings).tone],
               fontWeight: 500,
             }}>
-              {explorerStatus.phase}
+              {explorerPhaseLabel(explorerStatus.phase, hasFindings).text}
               {explorerStatus.paused && " (paused)"}
             </span>
             {/* A terminal phase with work behind it must say BOTH. "failed" alone is what
@@ -2722,7 +2752,7 @@ export function BriefingPanel({
                 invite the reader to reconcile two things that were never the same. */}
             {explorerStatus.phase === "failed" && hasFindings && (
               <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
-                · earlier findings kept — Trigger Intel adds to them
+                · the last run stopped short; earlier findings are kept
               </span>
             )}
             {/* No run counters here: queries_executed is the CURRENT run's number while
