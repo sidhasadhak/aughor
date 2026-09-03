@@ -205,3 +205,71 @@ describe("the edges", () => {
     expect(edges.find(e => e.id === "e:bot:b1")!.from).toBe("agent");
   });
 });
+
+/* ── DS-5 · the grants spoke ─────────────────────────────────────────────────
+ *
+ * The last undrawn spoke of the DS-5 spec ("its doors; its automations; its tool grants
+ * and connections"). It could not be drawn until 2026-09-02, when the column that stores
+ * grants landed — before that every agent answered `[]` and no grant survived a restart,
+ * so a spoke here would have rendered an empty truth.
+ *
+ * The load-bearing claim is not that the nodes appear. It is that **each one says
+ * PROPOSE**: a card titled with an action id, sitting on the outward side of an agent, is
+ * read as "this agent does that" unless the card says otherwise — and the entire design of
+ * this plane is that it does not.
+ */
+describe("toMapFlow — the grants spoke", () => {
+  const withGrants = (tool_grants?: string[]) => toMapFlow({
+    agent: {
+      id: "ua_1", name: "Analyst", enabled: true, connection_id: "c1",
+      schema_scope: "", doc_ids: ["d1"], pack_ids: [], tool_grants,
+    },
+    bots: [], automations: [], alerts: [],
+  });
+
+  it("draws one node per granted action", () => {
+    const { nodes } = withGrants(["flag_order_for_review", "reprice_sku"]);
+    const grants = nodes.filter(n => n.kind === "grant");
+    expect(grants.map(g => g.title)).toEqual(["flag_order_for_review", "reprice_sku"]);
+  });
+
+  it("says PROPOSE on every one of them", () => {
+    // The whole reason this spoke is safe to draw. Losing this sentence turns the map into
+    // a claim that the agent acts on its own.
+    const { nodes } = withGrants(["flag_order_for_review"]);
+    for (const g of nodes.filter(n => n.kind === "grant")) {
+      expect(g.detail).toMatch(/PROPOSE/);
+      expect(g.detail).toMatch(/human accepts/);
+    }
+  });
+
+  it("points at Attention — where what it proposes actually arrives", () => {
+    // The file's own law: only destinations that exist are offered. A proposal lands in
+    // the inbox, so this is the honest one rather than a link to the semantic layer.
+    const { nodes } = withGrants(["flag_order_for_review"]);
+    expect(nodes.find(n => n.kind === "grant")?.target).toEqual({ to: "attention" });
+  });
+
+  it("draws the grant LEAVING the agent, like the other outward relations", () => {
+    const { edges } = withGrants(["flag_order_for_review"]);
+    const e = edges.find(x => x.to === "grant:flag_order_for_review");
+    expect(e).toMatchObject({ from: "agent" });
+    // Not dashed: the agent genuinely holds this grant, unlike a chain that merely
+    // delegates one step to it.
+    expect(e?.dashed).toBeFalsy();
+  });
+
+  it("draws NOTHING when an agent has no grants — the common case", () => {
+    // An empty spoke would be a heading with nothing under it, claiming a capability
+    // plane the agent has not been given.
+    for (const arg of [undefined, []]) {
+      expect(withGrants(arg as string[] | undefined).nodes
+        .some(n => n.kind === "grant")).toBe(false);
+    }
+  });
+
+  it("skips a blank id rather than drawing an untitled card", () => {
+    const { nodes } = withGrants(["", "reprice_sku"]);
+    expect(nodes.filter(n => n.kind === "grant").map(g => g.title)).toEqual(["reprice_sku"]);
+  });
+});

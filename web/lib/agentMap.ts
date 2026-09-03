@@ -24,7 +24,7 @@
 
 export type MapKind =
   | "agent" | "connection" | "documents" | "packs"
-  | "chat" | "slack" | "automation" | "alert";
+  | "chat" | "slack" | "automation" | "alert" | "grant";
 
 /** Where clicking a node goes. Only destinations that actually exist are offered — a node
  *  that opens nothing is honest; one that opens the wrong place is not. */
@@ -65,6 +65,11 @@ export interface AgentWorld {
     id: string; name: string; enabled: boolean;
     connection_id: string; schema_scope: string;
     doc_ids: string[]; pack_ids: string[];
+    /** DS-5's grants spoke. The action ids this agent may PROPOSE — never execute.
+     *  Undrawable until 2026-09-02, when the column that stores them landed (before
+     *  that every agent answered `[]` and no grant survived a restart), which is why
+     *  this arrived after the rest of the map. */
+    tool_grants?: string[];
   };
   /** The connection's human name, when the roster has been read. Falls back to the id. */
   connectionName?: string;
@@ -217,6 +222,27 @@ export function toMapFlow(world: AgentWorld, layout: MapLayout = {}): {
       id: `alert:${rule.id}`, kind: "alert", title: rule.name,
       detail: rule.enabled ? "watches this agent" : "paused",
       muted: !rule.enabled,
+      target: { to: "attention" },
+    });
+  }
+
+  /* ── what it may PROPOSE (DS-5's grants spoke) ──
+   *
+   * Drawn on the reach side because a grant is something the agent can DO, and drawn at
+   * all because until the `tool_grants` column landed there was nothing to draw: every
+   * agent answered `[]` and no grant survived a restart.
+   *
+   * 🔑 **Every one of these says PROPOSE.** A node titled with an action id, sitting on
+   * the outward side of an agent, is read as "this agent does that" unless the card says
+   * otherwise — and the whole design of this plane is that it does NOT. The proposal
+   * stops for a human, which is also why `attention` is the honest destination: it is
+   * where what this grant produces actually arrives.
+   */
+  for (const actionId of (agent.tool_grants ?? [])) {
+    if (!actionId) continue;
+    reach.push({
+      id: `grant:${actionId}`, kind: "grant", title: actionId,
+      detail: "may PROPOSE · a human accepts before anything runs",
       target: { to: "attention" },
     });
   }

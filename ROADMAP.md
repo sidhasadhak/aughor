@@ -2041,15 +2041,43 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   `claude/report-quality-audience-split` as *"pushed, NOT merged"*, and this branch IS that
   fix. The pointer was dropped rather than carried, because a ledger line naming a branch
   that has landed is the exact failure this entry is about.
-- **Explorer partial-day sibling** — canvas trend charts still end on today's false dip
-  (the investigate-path guard landed 2026-09-02; chip filed).
-- **Connectors picker hides Notion + Confluence** — real, synced, never offered (DS-10 chip).
-  ✅ **ROOT-CAUSED 2026-09-02, and it is one line.** Not a backend gap: `list_connector_types`
-  (`routers/system.py:324`) returns them with `category: "knowledge"`, and no server-side filter
-  drops them. The frontend does: `CATEGORY_ORDER` (`web/components/AddDataPanel.tsx:63`) lists
-  only `built-in`, `warehouse`, `api`, and the render maps **only** those (`:621`) — so every
-  `knowledge` connector falls out. Their `META` labels already exist (`:59-60`), which is why a
-  grep finds them and the UI does not. **Fix: add a `knowledge` row to `CATEGORY_ORDER`.**
+- ~~**Explorer partial-day sibling**~~ — **FIXED 2026-09-03.** The baseline TREND axis
+  (`explorer/manifest_query.cell_to_sql`) had **no upper bound on its time axis at all**:
+  `WHERE ts IS NOT NULL GROUP BY 1 ORDER BY 1`, so the final point of every canvas trend was
+  today-so-far. It now drops the unfinished bucket, carrying the investigate guard's two
+  conditions rather than re-deriving them: **only when the data reaches today** (a closed
+  dataset's last bucket is final — trimming it would erase real data on every render, which is
+  what keeps every demo and fixture set whole) and **only when a complete bucket would remain**
+  (an empty chart reads as a fact about the business rather than about the calendar).
+  🔑 The cutoff is `date_trunc(<grain>, CURRENT_DATE)` **in SQL, not a Python literal** — the
+  warehouse's idea of now, in its own timezone. A literal would be this process's idea of
+  today, and the two disagree for several hours a day. Grain-aware, so a monthly trend drops
+  the whole current month rather than one day of it. `seasonality`, `yoy`, `headline` and
+  `dimension` are untouched and tested to stay so. Eleven tests, three conditions each
+  mutation-verified.
+  ✅ **And the ORIGINAL guard's live receipt, which was owed since 2026-09-02**: today's 09:00
+  briefing fired and reported *"1,769 orders on September 2nd, a 58.8% increase over the
+  previous day"* — a complete day against the preceding complete day. The defect it replaced
+  led with "orders fell 97.5%" from nine hours of today (43) against all of yesterday (1,733).
+  The window guard holds live.
+- **Notion + Confluence are built and unreachable** — and the two diagnoses this line carried
+  before were both WRONG. 🔴 **Re-measured 2026-09-03 by driving the live API**, which is what
+  finally settled it: `GET /connectors/types` emits **no `knowledge` category at all**.
+  - The 2026-09-02 entry blamed the frontend's `CATEGORY_ORDER` and called it "one line". That
+    was read off the static `CATEGORIES` map. The route builds its list from
+    `["duckdb", "postgres"] + REGISTRY.supported_types()`, and **`_register_defaults` never
+    registers notion or confluence** — its own comment says why: *"not DB connectors —
+    `open_connection()` is not called on them"*. They feed the documents pipeline.
+  - So adding the `knowledge` row draws an **empty heading**, which reads as "we support this
+    and you have none". It was added, driven, and reverted the same hour.
+  🔑 **Twice now, a static lookup table was read as though it were the route's output.** The
+  live call took one command and overturned both answers. *A proxy is not the measure* — and a
+  registry map is a proxy for a registry.
+  **What it actually needs is a DECISION, not a line**: does a Notion source belong in "Add
+  data" (where a person expects tables) or on the documents surface? The connectors import
+  cleanly and have no route, no registration and no UI — the complete-and-inert shape §7 names.
+  ✅ A guard now exists either way: `tests/unit/test_connector_categories.py` fails if the
+  server emits a category nothing draws, AND if the panel draws one the server never emits.
 - ~~**Monitors' `notification_channel` unwired**~~ — **THIS LINE WAS FALSE. Re-measured
   2026-09-02:** the field was wired by **#349 (`f4c25426`, OA·N8-0)**, which is where
   `aughor/monitors/notify.py` came from. `dispatch_alert(alert)` is called on the alert-commit
@@ -2057,9 +2085,25 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   destination, not a channel *kind*), delivery is `fire_action`, and a unit test covers it.
   Monitors CAN route. Third instance of the week's lesson — this one deterred work that had
   already shipped a fortnight earlier.
-- **The propose plane has an empty roster on this deployment** — theLook declares zero
-  actions, so tool_grants/`propose_action` are live plumbing with nothing to bite; declaring
-  one action is the ten-minute end-to-end receipt.
+- ~~**The propose plane has an empty roster on this deployment**~~ — **the claim was false as
+  written, and the receipt is now taken. Measured live 2026-09-03, per connection:**
+  `workspace` **1** · `fixture` **2** (a DS-8 receipt from 2026-09-01) · theLook **0**. So the
+  plane already had something to bite on two connections; what was true is narrower — *theLook*
+  declared none. Fifth line this week whose wording outlived its measurement.
+  ✅ **Receipt taken on theLook**: one `annotate` action (`flag_order_for_review`) declared
+  through `PUT /ontology/kinetic-actions`. It reaches every consumer — the roster returns it,
+  and `GET /components?conn_id=8233e4fd` now carries `declared_action: 1`, `availability=ready`,
+  its `order_id` param drawn as a port, `exposable_as_tool=true`, `governed_by=
+  aughor.govern.actions`, and `risk=high` by the model's fail-safe default (an unclassified
+  declared action stops for a human rather than auto-firing).
+  🔴 **The chain was NOT driven to a staged proposal, deliberately.** `POST
+  /kinetic-actions/propose` runs a proposer **LLM call** on the `fast` binding, and spending the
+  user's tokens is not something a receipt gets to do unasked. What is proven is that a
+  declaration reaches the palette, the ports and the tool-exposure flag; what is unproven here
+  is the LLM proposal step, which has its own unit coverage (`test_kinetic_propose.py`).
+  ⚠️ The declaration is a reversible override file
+  (`data/ontology_overrides/8233e4fd/thelook/action/flag_order_for_review.yaml`), untracked like
+  its `fixture` sibling. Delete it to restore the previous state.
 - ~~**DS-6/DS-7 receipt automations pollute Attention daily**~~ — **CLOSED 2026-09-02.** The
   10 offending fixtures were deleted; `automation_runs` 26,298 → **3,010** and the heartbeat
   write rate ~11/min → **1.0/min**. Deletion cascades runs, probe_state and layouts; real
@@ -2067,30 +2111,74 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   ⚠️ Two DISABLED fixtures remain by choice — `W1 guard check`, `W2 fan-out check` — same class,
   zero cost because disabled. Ask before deleting. ⚠️ No `VACUUM` yet (needs an exclusive lock,
   the API was running): the file is still 12.1 MB.
-- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study). **Re-measured
-  2026-09-02: true, and the reason is not the one recorded.** Not "a renderPM backend is
-  absent" — `reportlab` and `svglib` do not import here **at all**, because both live only in
-  the `[export]` extra (`pyproject.toml:85-90`). So this is an INSTALL gap on this machine
-  (the documented setup is `uv sync --all-extras`), not a code defect: the function already
-  degrades to `None` and callers fall back to their table/prose, by design.
-- 🆕 **Canvas drag is not fluid** — ROOT-CAUSED 2026-09-03 (§3.8b): `AutomationGraph.tsx`
-  passes `nodes` with **no `onNodesChange`**, so positions never flow back and any mid-drag
-  re-render resets them; zero `memo(` on any of the five canvases; a dependency-less
-  `useEffect` forces layout every render. `AgentMap.tsx` has the same missing handler. Our own
-  DS-4 comment read the missing prop as a library quirk and worked around it.
-- 🆕 **The primitive gap** — §3.8a: **data shaping is the only first-order gap left.** The
-  conditional-router half of this line was FALSE and is struck in §3.8a — DS-6's `else_of` is
-  already the branch. `dataflow.resolve` returns `produced[key]` and nothing else, so a binding
-  names a key and cannot cast, format, split or reshape it. `Python Interpreter` is REFUSED
-  rather than missing.
-- **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
+- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study). Re-measured twice, and
+  **the second correction is the one that mattered — my first was also incomplete.**
+  ✅ The install half stands (2026-09-02): `reportlab` and `svglib` live only in the `[export]`
+  extra (`pyproject.toml:85-90`) and do not import here; the documented setup is
+  `uv sync --all-extras`, and **CI installs them, which is why CI never saw what follows.**
+  🔴 **"Degrades by design" was WRONG (2026-09-03) — it was masking a defect that ships to
+  customers.** `document._chart_or_table` blanks the TABLE's caption whenever a chart block
+  exists, because the chart is meant to carry the title — and in the PDF it does, from the SVG,
+  needing no raster. `slides.py` renders a chart slide only `if b.png`. So on any install
+  without the backend the PPTX dropped the chart **and** the table arrived with an empty
+  caption: **an untitled table in a customer's deck.** Not a degraded picture — a missing
+  title, silently, on the format that goes out to people. **FIXED**: the renderer that drops
+  the chart hands the caption to the table that follows, spends it once, and never displaces a
+  table's own title.
+  🔑 **The repair belongs in the RENDERER, not in `document.py`** — the block layer is
+  format-agnostic and was right to blank the caption, because the PDF really does draw it.
+  Only the renderer knows it dropped the picture. Deliberately NOT a "chart unavailable"
+  slide: the numbers arrive on the next slide, so a line about our own plumbing tells a
+  customer nothing they cannot see. Six tests, two mutation-verified.
+  🔑 **The lesson: I read the FUNCTION and called it benign; the defect was in the PATH.**
+  `svg_to_png` really does degrade cleanly — and two layers up, something else had already
+  given away the title on the strength of a chart that would not arrive.
+  ⏳ Installing the `[export]` extra here would restore the PICTURES too; that is the user's
+  environment to change, and the deck is honest without it.
+- ~~**Canvas drag is not fluid**~~ — **FIXED and MERGED 2026-09-03** (`e3a56b5c`, #428; §3.8b).
+  ⏳ Two things survive it: **`AgentMap.tsx` has the same missing handler** and was left for a
+  separate change, and the fix has **no empirical receipt** — the browser tool cannot drive
+  ReactFlow pointer interactions, so a React Profiler trace during a real drag is still owed.
+- ~~**The primitive gap**~~ — **CLOSED 2026-09-03** (`e3a56b5c`, #428). Data shaping shipped as
+  `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
+  was always the branch (§3.8a). ⏳ Survives it: **nothing in the canvas SETS `$as`** — API and
+  the DS-16 import funnel only, not the binding chip.
+- ~~**DS-5 Map grants spoke**~~ — **DRAWN 2026-09-03**, closing the last undrawn spoke of the
+  DS-5 spec ("its doors; its automations; its tool grants and connections"). One node per
+  granted action on the reach side, edged from the agent, pointing at **Attention** — the
+  file's own law is that only destinations which exist are offered, and a proposal lands in
+  the inbox, so that is the honest one rather than a link to the semantic layer.
+  🔑 **Every card says "may PROPOSE · a human accepts before anything runs", and that sentence
+  is the reason the spoke is safe to draw at all.** A card titled with an action id, sitting on
+  the outward side of an agent, is read as *"this agent does that"* unless it says otherwise —
+  and the whole design of this plane is that it does not. A test fails if the wording goes.
+  It could not have been drawn earlier: before the `tool_grants` column landed (2026-09-02)
+  every agent answered `[]`, so the spoke would have rendered an empty truth. Six tests, two
+  mutation-verified. `MAP_META` is a `Record<MapKind, …>`, so adding the kind made the
+  renderer's half a compile error rather than a silent omission — the type system catching the
+  partial add that this arc keeps paying for.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
-- **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
-  bare-import path escaping both the .env pin and test isolation (chip filed). ⚠️ The
-  suspect this line named — non-`*_DB` path envs missing from `dump_openapi`'s hermetic set
-  — was **TESTED AND CLEARED 2026-09-02 (DS-17)**: the gap was real and is now fixed, but
-  reproducing the old shape did NOT recreate the directory (these stores write when USED,
-  and a spec dump only imports and calls `app.openapi()`). The cause is still unfound.
+- ~~**Stray `data/qdrant/` appeared 2026-09-02** despite the server pin~~ — **CAUSE FOUND
+  2026-09-03: `aughor/cli.py` never read `.env`.**
+  The chain, proven statically: `.env` was read by `api.py` and `semantic/kb_retriever.py`
+  and **nothing on the general import path**, so a process starting at the CLI — the
+  installed console script — saw no `AUGHOR_QDRANT_URL`. Without that pin
+  `vector_store._client()` takes the embedded branch at `_embedded_path()` →
+  `state_dir()/qdrant` → **`data/qdrant`**. And `aughor investigate` reaches the store
+  through `agent.bootstrap` (`delete_by_filter` / `match_filter`) — real operations, and
+  these stores write when USED, which is exactly why the DS-17 suspect could be real and
+  still not reproduce it: a spec dump only imports.
+  🔑 **Fixed at the ENTRYPOINT, not in the library modules.** `kb_retriever` had already
+  patched itself the same way — and patching one call site is precisely why the gap
+  survived, because the next path in did not go through it.
+  🔑 **And the repo already had an opinion about WHERE**: `test_env_isolation` refuses a
+  module-level load outside its allowlist, so the load sits in the `click.group()` callback
+  every command passes through and no test that merely imports the module runs. The
+  existing ratchet caught the first attempt and was right.
+  ✅ `tests/unit/test_entrypoints_load_dotenv.py` guards the CLASS — every process
+  entrypoint reads `.env`, honours `AUGHOR_SKIP_DOTENV`, and the console-script target
+  stays covered — plus a canary on the premise (the set of `.env` readers) so the next
+  reader re-derives the reasoning instead of trusting it.
 
 **House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
 ratchet battery on your own diff in a clean worktree · seven frontend gates + `gen:api` on route

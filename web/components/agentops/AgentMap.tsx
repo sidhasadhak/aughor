@@ -51,6 +51,10 @@ const MAP_META: Record<MapKind, { icon: IconName; color: string }> = {
   slack: { icon: "send", color: "var(--chart-2)" },
   automation: { icon: "bolt", color: "var(--chart-3)" },
   alert: { icon: "shield", color: "var(--chart-4)" },
+  // DS-5's grants spoke. `hand` rather than `key`: this is something the agent OFFERS,
+  // not something it unlocks — the proposal stops for a human either way, and the card's
+  // own line says so.
+  grant: { icon: "hand", color: "var(--chart-4)" },
 };
 
 interface MapNodeData extends Record<string, unknown> {
@@ -166,6 +170,7 @@ export function AgentMap({
         id: agent.id, name: agent.name, enabled: agent.enabled,
         connection_id: agent.connection_id, schema_scope: agent.schema_scope,
         doc_ids: agent.doc_ids, pack_ids: agent.pack_ids,
+        tool_grants: agent.tool_grants,
       },
       connectionName: connections.find(c => c.id === agent.connection_id)?.name,
       bots, automations, alerts,

@@ -448,6 +448,21 @@ class SchemaExplorer:
         self._state["tables_total"] = self._status.tables_total
         self._state["columns_total"] = self._status.columns_total
         self._state["started_at"] = self._status.started_at
+        # The REASON, mirrored beside the phase it explains. Without this the phase
+        # survived a restart and the explanation did not: `/status` reported
+        # `phase: "failed", error: null` for a connection whose failure had been recorded
+        # in memory and thrown away on the next boot, and `_restored_error` could only
+        # derive a reason from per-schema failures — so a SINGLE-schema connection was
+        # structurally incapable of ever saying what went wrong. A terminal state nobody
+        # can explain is one people fix by starting over, which costs a full re-run.
+        #
+        # Written on every save (not only on failure) so a recovered run CLEARS it: a
+        # stale reason outliving the failure it describes would be worse than none, since
+        # it reads as a fresh diagnosis of a run that actually succeeded.
+        if self._status.error:
+            self._state["error"] = str(self._status.error)
+        else:
+            self._state.pop("error", None)
         # Persist negative knowledge (columns/tables the generator invented that don't
         # exist) so a connection LEARNS them once instead of re-paying tokens to
         # re-discover the same dead names (e.g. line_total, customer_id, ecommerce.*)
@@ -1090,6 +1105,10 @@ class SchemaExplorer:
             self._state["queries_executed"] = self._status.queries_executed
             self._state["started_at"] = self._status.started_at
             self._state["completed_at"] = self._status.completed_at
+            # A completed run has no failure to report. Cleared explicitly rather than
+            # left to `_save_state`, because this block writes the terminal record and a
+            # reader of it should not have to know which of two writers won.
+            self._state.pop("error", None)
             self._state["domain_intel_skipped"] = self._status.domain_intel_skipped
             self._state["domain_intel_note"] = self._status.domain_intel_note
             # WP-6 — stamp the connection-level schema fingerprint this run covered, so the

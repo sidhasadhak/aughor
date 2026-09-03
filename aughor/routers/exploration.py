@@ -296,7 +296,17 @@ def _restored_error(state: dict) -> str | None:
     be said out loud.
 
     The live explorer sets its own `error`; this is the restored path only.
+
+    **The recorded reason wins.** `_save_state` now mirrors `error` beside the phase, so a
+    single-schema failure can finally say what happened — before that this function's
+    per-schema derivation was the ONLY source, and a connection with no `per_schema` (every
+    single-schema one) reported `phase: "failed", error: null` forever. The per-schema
+    sentence stays as the fallback, because a partly-failed run still reports COMPLETE and
+    that remains the only place its failures can be said out loud.
     """
+    recorded = str(state.get("error") or "").strip()
+    if recorded:
+        return recorded
     per = state.get("per_schema") or {}
     failed = sorted(s for s, p in per.items() if p == ExplorationPhase.FAILED.value)
     if not failed:
