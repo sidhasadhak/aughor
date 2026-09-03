@@ -163,9 +163,28 @@ def drifted_registered_metric(finding_text: str, sql: str) -> str | None:
             n = _kbnorm(ident)
             if len(n) >= 6 and n not in formula and n in s:
                 lbl = getattr(m, "label", "") or getattr(m, "name", "")
-                return (f"metric formula drift: the finding asserts {lbl} but the query uses a "
-                        f"non-governed form (references '{ident}'; governed: {getattr(m, 'sql', '')}). "
-                        "Recompute with the governed formula or relabel to what the SQL computes.")
+                # The REMEDY goes to the log, never into the returned reason. This reason
+                # becomes a finding's `trust_caveat`, and a trust caveat is concatenated
+                # verbatim into `confidence_justification` — which renders in the customer
+                # PDF (`export/document.py`). So "Recompute with the governed formula or
+                # relabel to what the SQL computes." shipped to readers who cannot do
+                # either: measured on the live corpus 2026-09-02, three stored reports
+                # carried it, the most recent from the day before.
+                #
+                # The split is by AUDIENCE, which is the only split that holds: a reader
+                # needs to know the number is not the governed metric (so they distrust
+                # it); whoever writes the query needs the governed formula and what to do.
+                # The governed SQL goes with the remedy for the same reason — it is the
+                # fixer's material, and it reads as leaked implementation in a narrative.
+                logger.info(
+                    "formula drift on %s: query references %r; governed: %s — recompute with "
+                    "the governed formula, or relabel the finding to what the SQL computes.",
+                    lbl, ident, getattr(m, "sql", ""))
+                # "metric formula drift" is load-bearing text, not a label: the deep path's
+                # `_COMPUTATION_ERROR_CAVEAT_RE` matches on it to reframe the headline.
+                return (f"metric formula drift: the finding asserts {lbl} but the query "
+                        f"computes it a different way (it reads '{ident}'), so this number "
+                        f"is not {lbl} as your organisation defines it")
     return None
 
 

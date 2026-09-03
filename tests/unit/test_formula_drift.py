@@ -94,3 +94,58 @@ def test_gate_accepts_governed_revenue_real_registry():
         rows, finding_text="Total revenue reached $4.1M.",
         sql="SELECT SUM(o.total_amount) AS r FROM orders o", columns=["r"])
     assert ok is True
+
+
+# ── the advisory is split by AUDIENCE (report-quality catalogue ⑥) ─────────────────
+#
+# A guard's reason becomes a finding's `trust_caveat`, and `_evidence_confidence_ceiling`
+# concatenates a trust caveat verbatim into `confidence_justification` — which renders in
+# the customer PDF (`export/document.py`) while the web view hides it. So an imperative
+# aimed at whoever writes the query ("Recompute with the governed formula…") shipped to
+# readers who can do nothing with it. Measured on the live corpus 2026-09-02: three stored
+# reports carried that sentence, the most recent from the day before.
+#
+# These lock the split rather than the wording: a reason may DIAGNOSE, and must not
+# INSTRUCT, because only one of those two audiences reads a report.
+
+#: Second-person remedies. Not a general prose linter — the specific shape that leaked.
+_REMEDY_VERBS = ("recompute", "re-run", "rerun", "relabel", "fix the", "check the query",
+                 "use the governed", "adjust the")
+
+
+def _drift_reason() -> str:
+    reason = drifted_registered_metric(
+        "Revenue rose 12% last quarter.",
+        "SELECT SUM(order_items.line_total) AS revenue FROM order_items")
+    assert reason, "the guard must still FIRE — a vacuous pass would make the rest trivial"
+    return reason
+
+
+def test_the_reader_facing_reason_carries_no_repair_instruction():
+    lowered = _drift_reason().lower()
+    for verb in _REMEDY_VERBS:
+        assert verb not in lowered, (
+            f"the trust caveat instructs the reader to {verb!r}; it reaches "
+            f"confidence_justification and renders in the customer PDF")
+
+
+def test_the_reader_facing_reason_does_not_leak_the_governed_SQL():
+    """The formula is the fixer's material. In a narrative sentence it reads as leaked
+    implementation, and a reader cannot act on it either way."""
+    assert "SUM(total_amount)" not in _drift_reason()
+
+
+def test_it_still_SAYS_the_number_is_not_the_governed_metric():
+    """The half a reader genuinely needs: distrust this number. Dropping the remedy must
+    not drop the diagnosis — that would trade a useless sentence for a silent one."""
+    reason = _drift_reason()
+    assert "Revenue" in reason
+    assert "different way" in reason or "not Revenue" in reason
+
+
+def test_the_caveat_still_trips_the_headline_reframe():
+    """`_COMPUTATION_ERROR_CAVEAT_RE` matches on the literal words "formula drift" to
+    reframe the headline. The phrase is load-bearing text, not a label, so a reword that
+    dropped it would silently un-wire the reframe while every other test stayed green."""
+    from aughor.agent.investigate import _COMPUTATION_ERROR_CAVEAT_RE
+    assert _COMPUTATION_ERROR_CAVEAT_RE.search(_drift_reason())
