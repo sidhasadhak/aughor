@@ -48,14 +48,142 @@ FROM = "$from"
 FROM_ANY = "$from_any"
 
 
+#: §3.8a — the CAST a binding may declare. `{"$from": "rows.count", "$as": "text"}`.
+#:
+#: The gap this closes, measured 2026-09-03 against Langflow's `Type Convert` / `Parser`
+#: family: `resolve` returned `produced[key]` and nothing else, so a binding NAMED a key
+#: and could not cast, format or reduce it. A person who needed a number as text had to
+#: leave the canvas.
+#:
+#: **A closed set, not an expression.** DS-16 already refuses code nodes by law, and the
+#: same reasoning applies one plane down: an expression language here would be a second
+#: place values are computed, outside every guard that governs the first. Each name below
+#: is a total function with one honest failure mode, and an unknown name is refused at
+#: SAVE rather than at 07:00.
+#:
+#: **On the binding, not as a step.** A `transform` effect kind would be a node whose only
+#: job is plumbing, and a chain reads worse with one. The typed port (B1) already carries
+#: the type; this lets it carry the conversion.
+AS = "$as"
+
+#: The names `$as` accepts. Kept deliberately small: every entry has to earn its place by
+#: closing a case somebody actually hit, and a taxonomy nobody can check is how a roster
+#: starts describing a system that no longer exists.
+CASTS: tuple[str, ...] = (
+    # Anything → text. The commonest need by far: a count or an amount going into a
+    # message. Without it a dict reaches a text field and renders "[object Object]" — the
+    # exact defect the list summary shipped with.
+    "text",
+    # Text → JSON text. Distinct from `text` on purpose: `text` on a dict gives Python's
+    # repr (single quotes, `None`), which is not JSON and not what a webhook wants.
+    "json",
+    # Text → number. Refuses anything non-numeric rather than yielding 0 — a silently
+    # wrong number in a guard comparison is how a chain fires on the wrong day.
+    "number",
+    # Text/number → integer. Refuses a non-integral value rather than TRUNCATING, because
+    # a truncation is a wrong answer that looks like a right one.
+    "integer",
+    # Only real booleans and the four unambiguous spellings. Truthiness is NOT used: `""`
+    # and `"false"` are both falsey in Python and only one of them means false to a
+    # person, and guessing is how a guard silently inverts.
+    "boolean",
+    # A list → how many. The reduction people reach for first ("post only if > 0").
+    "count",
+    # A list → one element. Refuses an EMPTY list rather than substituting None, which is
+    # the same law `UnresolvedBinding` already states for a missing key.
+    "first",
+    "last",
+)
+
+
 class UnresolvedBinding(LookupError):
     """A reference names a step that produced nothing — because it failed, was skipped,
     or produced no such key. The dependent step is skipped rather than run with a hole
     in its params: sending a message with a missing channel is worse than not sending."""
 
 
+class UncastableBinding(UnresolvedBinding):
+    """The reference resolved and the declared `$as` could not be honoured.
+
+    A SUBCLASS rather than a sibling, so every caller that already skips a step on an
+    unresolved binding skips this one too without being taught a second failure. The
+    consequence is identical and it is the point: a step never runs with a value we had
+    to guess at. Only the sentence differs, because "step 'rows' has no 'count'" and
+    "'abc' is not a number" send a reader to different places.
+    """
+
+
+def _cast(value: Any, how: str, ref: str) -> Any:
+    """Apply one declared cast, or raise. Total on the closed set; never guesses.
+
+    Every branch that cannot produce an honest answer RAISES instead of substituting one.
+    That is `resolve`'s existing law ("a default would let a step run with a silently
+    wrong value, and these steps send messages and write to systems") applied to the
+    conversion rather than to the lookup.
+    """
+    import json as _json
+
+    if how == "text":
+        return value if isinstance(value, str) else (
+            _json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+            if isinstance(value, (dict, list)) else str(value))
+    if how == "json":
+        try:
+            return _json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+        except (TypeError, ValueError) as exc:
+            raise UncastableBinding(f"{ref} cannot be written as JSON: {exc}") from exc
+    if how in ("number", "integer"):
+        try:
+            n = float(str(value).strip())
+        except (TypeError, ValueError) as exc:
+            raise UncastableBinding(
+                f"{ref} is {value!r}, which is not a number") from exc
+        if how == "number":
+            return int(n) if n.is_integer() else n
+        if not n.is_integer():
+            raise UncastableBinding(
+                f"{ref} is {value!r}, which is not a whole number — refusing rather than "
+                f"truncating, because a truncated value looks like a correct one")
+        return int(n)
+    if how == "boolean":
+        if isinstance(value, bool):
+            return value
+        text = str(value).strip().lower()
+        if text in ("true", "1", "yes"):
+            return True
+        if text in ("false", "0", "no"):
+            return False
+        raise UncastableBinding(
+            f"{ref} is {value!r}, which is not plainly true or false. Truthiness is not "
+            f"used here: '' and 'false' are both falsey and only one of them means false.")
+    if how in ("count", "first", "last"):
+        if isinstance(value, (str, bytes)) or not isinstance(value, (list, tuple)):
+            raise UncastableBinding(f"{ref} is not a list, so '{how}' has nothing to read")
+        if how == "count":
+            return len(value)
+        if not value:
+            raise UncastableBinding(
+                f"{ref} is an empty list, so '{how}' has no element to take")
+        return value[0] if how == "first" else value[-1]
+    # Unreachable through a saved chain — `validate_chain` refuses an unknown cast — but
+    # a chain can also be POSTed, and an unknown name must not fall through as a no-op.
+    raise UncastableBinding(f"'{how}' is not a conversion this deployment knows")
+
+
+def _cast_if_declared(value: Any, binding: dict, ref: str) -> Any:
+    """Apply `binding`'s `$as` to `value`, or return it untouched. One place, so the two
+    binding shapes cannot disagree about what a cast means."""
+    how = binding.get(AS)
+    return value if how is None else _cast(value, str(how), f"'{ref}'")
+
+
 def is_binding(value: Any) -> bool:
-    return isinstance(value, dict) and set(value.keys()) == {FROM}
+    # `$as` is the ONE companion key a binding may carry. Still an exact match, not a
+    # subset test: `{"$from": …, "other": 1}` stays "not a lone marker" (a test pins it),
+    # because a dict wearing the key with arbitrary extras is neither a binding nor a
+    # payload anyone meant. An UNKNOWN cast name still makes this a binding — refused by
+    # name at save and at run, rather than silently demoted to a literal dict.
+    return isinstance(value, dict) and set(value.keys()) in ({FROM}, {FROM, AS})
 
 
 def is_any_binding(value: Any) -> bool:
@@ -63,7 +191,7 @@ def is_any_binding(value: Any) -> bool:
     non-empty strings. A dict wearing the key with a malformed value is neither a
     binding nor a payload anyone meant — `validate_chain` refuses it at save and
     :func:`resolve` refuses it at run, so it can never pass silently as a literal."""
-    if not (isinstance(value, dict) and set(value.keys()) == {FROM_ANY}):
+    if not _wears_any_key(value):
         return False
     refs = value[FROM_ANY]
     return (isinstance(refs, list) and len(refs) > 0
@@ -71,10 +199,10 @@ def is_any_binding(value: Any) -> bool:
 
 
 def _wears_any_key(value: Any) -> bool:
-    """Exactly the one key — well-formed or not. The malformed case must be REFUSED,
-    never recursed into as an ordinary payload (a join that quietly became a literal
-    dict would be this plane's worst failure: well-formed and wrong)."""
-    return isinstance(value, dict) and set(value.keys()) == {FROM_ANY}
+    """The join key, well-formed or not — optionally with `$as`. The malformed case must
+    be REFUSED, never recursed into as an ordinary payload (a join that quietly became a
+    literal dict would be this plane's worst failure: well-formed and wrong)."""
+    return isinstance(value, dict) and set(value.keys()) in ({FROM_ANY}, {FROM_ANY, AS})
 
 
 def parse_ref(ref: str) -> tuple[str, str]:
@@ -168,7 +296,9 @@ def resolve(params: Any, context: dict[str, dict]) -> Any:
         if key not in produced:
             raise UnresolvedBinding(f"step '{alias}' has no '{key}' (it produced: "
                                     f"{', '.join(sorted(produced)) or 'nothing'})")
-        return produced[key]
+        # The cast is applied AFTER the lookup and never instead of it: a missing key is
+        # still a missing key, and a cast must not be able to invent a value.
+        return _cast_if_declared(produced[key], params, params[FROM])
     if is_any_binding(params):
         # DS-6 — the first alternative that resolves wins, in AUTHORED order. Down a
         # route the arms are mutually exclusive so at most one can; outside one this is
@@ -180,7 +310,10 @@ def resolve(params: Any, context: dict[str, dict]) -> Any:
             alias, key = parse_ref(ref)
             produced = context.get(alias)
             if produced is not None and key in produced:
-                return produced[key]
+                # The cast applies to whichever arm actually ran — one declared
+                # conversion for the join, not one per alternative, because the arms are
+                # the same value arriving by different routes.
+                return _cast_if_declared(produced[key], params, ref)
         raise UnresolvedBinding(
             f"none of {', '.join(refs)} produced a value to read")
     if _wears_any_key(params):
@@ -688,6 +821,20 @@ def list_published_keys(effect: Any) -> tuple[str, ...]:
     return LIST_PUBLISHED.get(effect_kind(effect), ())
 
 
+def _bad_cast(binding: dict) -> Optional[str]:
+    """The binding's `$as`, if it names a conversion we do not have — as a sentence.
+
+    Names the whole closed set rather than only the offender: a person who typed
+    `"$as": "int"` is one word away from `integer`, and a refusal that does not say what
+    IS accepted sends them to the source.
+    """
+    how = binding.get(AS)
+    if how is None or str(how) in CASTS:
+        return None
+    return (f"'{how}' is not a conversion this deployment knows. "
+            f"Available: {', '.join(CASTS)}")
+
+
 def _malformed_any(value: Any) -> Optional[str]:
     """The first malformed join binding anywhere in `value`, as a sentence — or None.
 
@@ -700,7 +847,12 @@ def _malformed_any(value: Any) -> Optional[str]:
         if not is_any_binding(value):
             return (f"'{FROM_ANY}' needs a non-empty list of \"step.key\" references — "
                     f"got {type(value[FROM_ANY]).__name__}")
-        return None
+        return _bad_cast(value)
+    # §3.8a — an unknown `$as` is refused at SAVE, in the same pass and for the same
+    # reason a malformed join is: the alternative is a chain that looks schedulable and
+    # raises at 09:00, against a value somebody else's system produced.
+    if is_binding(value):
+        return _bad_cast(value)
     if isinstance(value, dict):
         for v in value.values():
             problem = _malformed_any(v)
@@ -733,7 +885,7 @@ def _mcp_problem(effect: Any, alias: str) -> Optional[str]:
         return None
     from aughor.mcpservers import store as mcp_store
     from aughor.mcpservers.discover import tool_named
-    from aughor.mcpservers.models import CALLABLE
+    from aughor.mcpservers.models import CALLABLE, GRANT_ACTIVE, GRANT_STALE, grant_verdict
 
     cfg = effect_config(effect)
     for field in ("server_id", "tool"):
@@ -755,9 +907,18 @@ def _mcp_problem(effect: Any, alias: str) -> Optional[str]:
                 f"which its discovered roster does not have — run Discover if the server "
                 f"has changed")
     if tool.disposition != CALLABLE:
-        # The roster's own sentence, at save. A chain that would always refuse at 07:00 is
-        # one that "looks schedulable", which is K1's expensive kind of broken.
-        return f"step '{alias}' calls '{tool_name}', which this deployment refuses: {tool.reason}"
+        # Not callable on the server's word — so the step is legal only if a person granted
+        # this tool. Checked at SAVE for the same reason as everything else here: a chain
+        # that would always refuse at 07:00 is one that "looks schedulable", which is K1's
+        # expensive kind of broken. The door checks again; this is the early sentence.
+        state, why = grant_verdict(tool, mcp_store.get_grant(server_id, tool_name))
+        if state == GRANT_STALE:
+            return (f"step '{alias}' calls '{tool_name}', and its grant no longer covers "
+                    f"what that tool declares: {why}")
+        if state != GRANT_ACTIVE:
+            # The roster's own sentence, at save.
+            return (f"step '{alias}' calls '{tool_name}', which this deployment refuses: "
+                    f"{tool.reason}")
     return None
 
 

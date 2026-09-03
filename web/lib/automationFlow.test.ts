@@ -923,3 +923,44 @@ describe("landPrebound — the palette choice lands wired to the dropped edge", 
     expect(r.error).toMatch(/has no 'no_such_key'/);
   });
 });
+
+/* ── §3.8a · a binding that declares a conversion is still wiring ──────────────
+ *
+ * The server gained `{"$from": "step.key", "$as": "text"}`. This client read bindings
+ * with `keys.length === 1`, so without the matching change a cast-carrying binding would
+ * not have been recognised as wiring AT ALL: its edge would vanish from the canvas and
+ * its field would render as a raw object, for a chain the server considers valid.
+ *
+ * The canvas must never teach a rule the engine does not have — this file's own opening
+ * claim — and that cuts both ways. These tests exist so the two spellings of one rule
+ * cannot drift apart silently.
+ */
+describe("bindingRefs — the $as companion key", () => {
+  it("still reads a plain binding", () => {
+    expect(bindingRefs({ $from: "ask.answer" })).toEqual(["ask.answer"]);
+  });
+
+  it("reads a binding that declares a conversion", () => {
+    expect(bindingRefs({ $from: "rows.count", $as: "text" })).toEqual(["rows.count"]);
+  });
+
+  it("reads a JOIN that declares a conversion", () => {
+    expect(bindingRefs({ $from_any: ["a.n", "b.n"], $as: "text" }))
+      .toEqual(["a.n", "b.n"]);
+  });
+
+  it("REFUSES an arbitrary extra key — $as is the only companion", () => {
+    // The exact-match rule is what stops a dict wearing `$from` plus a payload from
+    // being read as wiring. Relaxing it to "contains $from" would draw edges out of
+    // literal payloads that merely happen to carry the word.
+    expect(bindingRefs({ $from: "ask.answer", other: 1 })).toEqual([]);
+    expect(bindingRefs({ $from: "ask.answer", $as: "text", other: 1 })).toEqual([]);
+  });
+
+  it("treats an UNKNOWN conversion as wiring, so the server can refuse it by name", () => {
+    // Demoting it to a literal here would send a mistyped cast to a step as a dict —
+    // well-formed, wrong, and silent. The server refuses `$as: "int"` at save with the
+    // whole accepted set in the sentence.
+    expect(bindingRefs({ $from: "rows.n", $as: "nonsense" })).toEqual(["rows.n"]);
+  });
+});

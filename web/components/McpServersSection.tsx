@@ -22,14 +22,23 @@
  *
  * **The roster's age is always on screen when the roster is.** A cached remote list shown
  * as if it were live is the failure `discovered_at` exists to prevent.
+ *
+ * **The write slice adds one button, and changes none of the above.** A refused tool can be
+ * GRANTED here — §6.6's answer to "whose declaration of read-only is believed": nobody's but
+ * ours, so a mutating call runs on a person's ratification rather than on the server's word.
+ * The refusal sentences are still the server's and still verbatim; granting adds a state
+ * beside them, it does not soften them. Three states are drawn rather than two, because
+ * "nobody approved this" and "somebody approved it and the server has since changed what it
+ * says" want different next actions, and a granted row is marked as a WRITE rather than
+ * simply going green.
  */
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import {
-  createMcpServer, deleteMcpServer, discoverMcpServer, listMcpServers, mcpServerHealth,
-  updateMcpServer,
+  createMcpServer, deleteMcpServer, discoverMcpServer, grantMcpTool, listMcpServers,
+  mcpServerHealth, revokeMcpTool, updateMcpServer,
   type McpServerRow, type McpToolRow,
 } from "@/lib/api";
 
@@ -209,7 +218,8 @@ export function McpServersSection() {
             </div>
 
             {expanded === s.id && (
-              <ToolRoster tools={s.tools} discoveredAt={s.discovered_at} />
+              <ToolRoster tools={s.tools} discoveredAt={s.discovered_at} serverId={s.id}
+                onChanged={() => void load()} />
             )}
           </div>
         ))}
@@ -292,40 +302,99 @@ export function McpServersSection() {
   );
 }
 
-/** The roster, refused rows included. Hiding them would be the catalogue that lies. */
-function ToolRoster({ tools, discoveredAt }: {
-  tools: McpToolRow[]; discoveredAt: string;
+/** The roster, refused rows included. Hiding them would be the catalogue that lies.
+ *
+ * **The write slice's surface is here, and it is one button.** A refused tool can be
+ * GRANTED — the ratification §6.6 made the authority for a mutating call. Three states are
+ * drawn, never two, because "nobody has approved this" and "somebody approved it and the
+ * server has since changed what it says" are different situations with different next
+ * actions, and flattening them into one dimmed row is how a person re-approves a change
+ * they never saw.
+ *
+ * A granted row is marked as a WRITE rather than simply going green. A tool that mutates
+ * somebody else's system rendering identically to one that reads is the property a person
+ * most needs before putting it on a canvas that runs at 07:00 unattended.
+ */
+function ToolRoster({ tools, discoveredAt, serverId, onChanged }: {
+  tools: McpToolRow[]; discoveredAt: string; serverId: string; onChanged: () => void;
 }) {
+  const [busy, setBusy] = useState("");
+  const [failed, setFailed] = useState("");
+
+  const act = async (toolName: string, grant: boolean) => {
+    setBusy(toolName); setFailed("");
+    try {
+      if (grant) await grantMcpTool(serverId, toolName);
+      else await revokeMcpTool(serverId, toolName);
+      onChanged();
+    } catch (e) {
+      setFailed(e instanceof Error ? e.message : "that did not work");
+    } finally {
+      setBusy("");
+    }
+  };
+
   return (
     <div style={{ marginTop: 8, borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
       <div className="aug-fs-xs" style={{ color: "var(--t4)", marginBottom: 6 }}>
         {/* Never the list without its age. */}
         Read from the server at {discoveredAt || "an unknown time"}.
       </div>
+      {failed && (
+        <div className="aug-fs-xs" style={{ color: "var(--red4)", marginBottom: 6 }}>
+          {failed}
+        </div>
+      )}
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {tools.map(t => {
           const callable = t.disposition === "callable";
+          const granted = t.grant_state === "active";
+          const stale = t.grant_state === "stale";
           return (
             <div key={t.name} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <span className="aug-fs-xs" style={{ paddingTop: 1, flexShrink: 0,
-                color: callable ? "var(--grn4)" : "var(--t4)" }}>
-                {callable ? "●" : "○"}
+                color: callable ? "var(--grn4)" : granted ? "var(--amb4)"
+                  : stale ? "var(--red4)" : "var(--t4)" }}>
+                {callable || granted ? "●" : "○"}
               </span>
-              <div style={{ minWidth: 0 }}>
+              <div style={{ minWidth: 0, flex: 1 }}>
                 <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)",
-                  color: callable ? "var(--t2)" : "var(--t4)" }}>{t.name}</span>
+                  color: callable || granted ? "var(--t2)" : "var(--t4)" }}>{t.name}</span>
+                {granted && (
+                  // Named a write, not merely allowed. This is the one row on the panel
+                  // that changes somebody else's system.
+                  <span className="aug-fs-xs" style={{ color: "var(--amb4)", marginLeft: 6 }}>
+                    writes
+                  </span>
+                )}
                 {t.description && (
                   <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
                     {" "}— {t.description}
                   </span>
                 )}
-                {!callable && (
-                  // The server's sentence, verbatim. It is the whole posture.
-                  <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
-                    {t.reason}
+                {!callable && !granted && (
+                  // The server's sentence, verbatim. It is the whole posture. For a STALE
+                  // grant it is the drift sentence instead, which says what changed.
+                  <div className="aug-fs-xs" style={{ color: stale ? "var(--red4)" : "var(--t3)",
+                    marginTop: 2 }}>
+                    {stale ? t.grant_reason : t.reason}
+                  </div>
+                )}
+                {granted && (
+                  <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+                    Granted{t.granted_by ? ` by ${t.granted_by}` : ""}
+                    {t.granted_at ? ` on ${t.granted_at.slice(0, 10)}` : ""}. Covers the
+                    declaration this server makes today — if that changes, the grant lapses.
                   </div>
                 )}
               </div>
+              {!callable && (
+                <Button variant="ghost" size="xs" className="aug-fs-xs"
+                  disabled={busy === t.name}
+                  onClick={() => void act(t.name, !granted)}>
+                  {busy === t.name ? "…" : granted ? "Revoke" : stale ? "Grant again" : "Grant"}
+                </Button>
+              )}
             </div>
           );
         })}

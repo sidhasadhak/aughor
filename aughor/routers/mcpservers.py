@@ -12,18 +12,29 @@ arrives with an empty roster and someone presses Discover.
 **Nothing here calls a tool.** The one door is `mcpservers/call.py`, reached by a chain
 step; a `POST /mcp-servers/{id}/tools/{name}` here would be a second way through, and every
 gate that lives at the door would then be a gate one caller can skip. The routes read,
-write and discover — they do not invoke.
+write, discover and GRANT — they do not invoke.
+
+**Granting is the write slice's whole API surface, and it is deliberately small.** A grant
+is created for a tool that is already on a discovered roster, pins the declaration that
+roster carries, and can only be withdrawn — never edited. There is no route that grants a
+whole server, because ``*`` is not a thing this plane accepts (`grant_key` says why), and
+none that grants a tool by declaration ("everything non-destructive"), because a rule
+evaluated against future rosters would authorize tools nobody has read.
 """
 from __future__ import annotations
 
 import logging
 
+from typing import Optional
+
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field, ValidationError
 
 from aughor.mcpservers import store
-from aughor.mcpservers.discover import TooManyTools, discover, health
-from aughor.mcpservers.models import CALLABLE, McpServer
+from aughor.mcpservers.discover import TooManyTools, discover, health, tool_named
+from aughor.mcpservers.models import (
+    CALLABLE, GRANT_ACTIVE, McpServer, McpToolGrant, grant_verdict,
+)
 from aughor.mcpservers.session import McpUnreachable
 
 logger = logging.getLogger(__name__)
@@ -57,27 +68,57 @@ def _server_or_404(server_id: str) -> McpServer:
     return server
 
 
-def _view(server: McpServer) -> dict:
-    """A server plus its roster, as every surface reads it.
+def _view(server: McpServer, grants_by_key: Optional[dict] = None) -> dict:
+    """A server plus its roster and the grants over it, as every surface reads it.
 
     The roster's age rides along in the same object rather than being fetchable
     separately — a client that had to make a second call to learn how stale a list is, is a
     client that will render the list without it.
+
+    `grants_by_key` lets a LIST caller read every grant once instead of once per server —
+    the reason `store.all_rosters` exists, applied to the plane beside it. Optional rather
+    than required so a single-server caller stays a one-liner.
     """
     tools, discovered_at = store.get_roster(server.id)
+    if grants_by_key is None:
+        grants = {g.tool_name: g for g in store.grants_for_server(server.id)}
+    else:
+        grants = {k[1]: g for k, g in grants_by_key.items() if k[0] == server.id}
+    rows = []
+    for tool in tools:
+        state, why = grant_verdict(tool, grants.get(tool.name))
+        grant = grants.get(tool.name)
+        rows.append({
+            **tool.model_dump(),
+            # The grant rides WITH the tool rather than in a parallel list a client has to
+            # join. A surface that had to zip two arrays to learn whether it may call
+            # something is a surface that will render the roster without doing it.
+            "grant_state": state,
+            "grant_reason": why,
+            "granted_by": grant.granted_by if grant else "",
+            "granted_at": grant.granted_at if grant else "",
+            "grant_note": grant.note if grant else "",
+            # What the door would do, precomputed, so the palette and the engine cannot
+            # disagree about a tool's reachability.
+            "callable_now": tool.disposition == CALLABLE or state == GRANT_ACTIVE,
+        })
     return {
         **server.to_safe_dict(),
         "discovered_at": discovered_at,
         "tool_count": len(tools),
         "callable_count": sum(1 for t in tools if t.disposition == CALLABLE),
-        "tools": [t.model_dump() for t in tools],
+        #: Separate from `callable_count` on purpose: one is what the server said, the other
+        #: is what this deployment decided. Collapsing them would hide the grants.
+        "granted_count": sum(1 for r in rows if r["grant_state"] == GRANT_ACTIVE),
+        "tools": rows,
     }
 
 
 @router.get("/mcp-servers")
 def list_servers() -> dict:
     """Every server this deployment may reach. An EMPTY list is the normal fresh state."""
-    return {"servers": [_view(s) for s in store.list_servers()]}
+    grants = {(g.server_id, g.tool_name): g for g in store.list_grants()}
+    return {"servers": [_view(s, grants) for s in store.list_servers()]}
 
 
 @router.post("/mcp-servers")
@@ -150,6 +191,64 @@ def server_health(server_id: str) -> dict:
     different one. It refreshes the roster on the way through, so a green health check and
     a stale list cannot disagree."""
     return {"server_id": server_id, **health(_server_or_404(server_id))}
+
+
+class GrantRequest(BaseModel):
+    """The authored half of a grant. The declaration is NOT here — it is pinned from the
+    roster server-side, because a client that could state which declaration it was ratifying
+    could ratify one the server never made."""
+
+    granted_by: str = ""
+    note: str = ""
+
+
+@router.get("/mcp-servers/{server_id}/grants")
+def list_grants(server_id: str) -> dict:
+    """Every tool a person has ratified on this server. An EMPTY list is the normal state."""
+    _server_or_404(server_id)
+    return {"server_id": server_id,
+            "grants": [g.model_dump() for g in store.grants_for_server(server_id)]}
+
+
+@router.put("/mcp-servers/{server_id}/grants/{tool_name}")
+def grant_tool(server_id: str, tool_name: str, body: GrantRequest) -> dict:
+    """Ratify one mutating tool, for the declaration it makes RIGHT NOW.
+
+    The tool must be on a roster somebody discovered — a grant for a name we have never
+    seen would be a permission with no declaration behind it, which is precisely the thing
+    this plane exists to require. And a grant is refused for a tool that does not need one:
+    a `callable` tool already runs, so ratifying it would create a row that authorizes
+    nothing and would then go stale on a declaration change and read as a revocation.
+    """
+    _server_or_404(server_id)
+    tool = tool_named(server_id, tool_name)
+    if tool is None:
+        raise HTTPException(
+            status_code=404,
+            detail=(f"'{tool_name}' is not on this server's discovered roster. Discover the "
+                    f"server first — a grant pins what a tool declares, so there has to be "
+                    f"a declaration to pin."))
+    if tool.disposition == CALLABLE:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"'{tool_name}' is already callable: this server declares it read-only, "
+                    f"so it needs no grant. Granting it would record a permission that "
+                    f"authorizes nothing."))
+    grant = store.save_grant(McpToolGrant(
+        server_id=server_id, tool_name=tool_name,
+        # Pinned from the roster, never from the request — see `GrantRequest`.
+        read_only_hint=tool.read_only_hint, destructive_hint=tool.destructive_hint,
+        granted_by=body.granted_by, note=body.note))
+    return {"granted": grant.model_dump(), "server": _view(_server_or_404(server_id))}
+
+
+@router.delete("/mcp-servers/{server_id}/grants/{tool_name}")
+def revoke_tool(server_id: str, tool_name: str) -> dict:
+    """Withdraw a ratification. The tool goes back to being listed and refused."""
+    _server_or_404(server_id)
+    if not store.delete_grant(server_id, tool_name, reason="withdrawn by a person"):
+        raise HTTPException(status_code=404, detail=f"'{tool_name}' is not granted")
+    return {"revoked": tool_name, "server": _view(_server_or_404(server_id))}
 
 
 def _first_error(exc: ValidationError) -> str:

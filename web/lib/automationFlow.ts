@@ -34,10 +34,26 @@ export function aliasFor(e: AutoEffect, index: number): string {
   return e.alias || `step${index + 1}`;
 }
 
+/** §3.8a — the one companion key a binding may carry: `{"$from": "…", "$as": "text"}`.
+ *
+ * Mirrored from the server's rule in the SAME change, and that is why this constant
+ * exists here. The client had `keys.length === 1`, so a binding that declared a
+ * conversion would not have been recognised as wiring at all — its edge would vanish
+ * from the canvas and its field would render as a raw object, for a chain the server
+ * considers perfectly valid. A rule mirrored on one side only is a rule that disagrees
+ * with itself. */
+const AS = "$as";
+
+/** Exactly the marker, optionally with `$as` — never an arbitrary extra key, which is
+ *  what stops a dict wearing `$from` plus a payload from being read as wiring. */
+function wearsMarker(keys: string[], marker: string): boolean {
+  if (keys.length === 1) return keys[0] === marker;
+  return keys.length === 2 && keys.includes(marker) && keys.includes(AS);
+}
+
 function bindingRef(value: unknown): string | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    const keys = Object.keys(value as object);
-    if (keys.length === 1 && keys[0] === "$from") {
+    if (wearsMarker(Object.keys(value as object), "$from")) {
       return String((value as Record<string, unknown>)["$from"]);
     }
   }
@@ -54,8 +70,7 @@ const FROM_ANY = "$from_any";
  *  server, so the client treats only the well-formed shape as wiring. */
 function anyBindingRefs(value: unknown): string[] | null {
   if (value && typeof value === "object" && !Array.isArray(value)) {
-    const keys = Object.keys(value as object);
-    if (keys.length === 1 && keys[0] === FROM_ANY) {
+    if (wearsMarker(Object.keys(value as object), FROM_ANY)) {
       const refs = (value as Record<string, unknown>)[FROM_ANY];
       if (Array.isArray(refs) && refs.length > 0
           && refs.every(r => typeof r === "string" && r.trim())) {

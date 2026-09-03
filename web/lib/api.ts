@@ -3659,6 +3659,17 @@ export interface McpToolRow {
   read_only_hint: boolean | null;
   destructive_hint: boolean | null;
   discovered_at: string;
+  /** OUR ratification, orthogonal to `disposition`: that is what the SERVER said and is
+   *  recomputed on every discovery, this is what a PERSON said and survives one. */
+  grant_state: "none" | "active" | "stale";
+  /** Why a grant no longer applies. Empty unless `grant_state` is "stale". */
+  grant_reason: string;
+  granted_by: string;
+  granted_at: string;
+  grant_note: string;
+  /** What the door would actually do — precomputed server-side so this client and the
+   *  engine cannot disagree about a tool's reachability. */
+  callable_now: boolean;
 }
 
 /** One allowlisted server, plus the roster last discovered against it.
@@ -3684,7 +3695,11 @@ export interface McpServerRow {
   updated_at: string;
   discovered_at: string;
   tool_count: number;
+  /** What the server declared read-only. */
   callable_count: number;
+  /** What a person ratified. Separate from `callable_count` on purpose — collapsing them
+   *  would hide the grants, which are the only writes this deployment performs. */
+  granted_count: number;
   tools: McpToolRow[];
 }
 
@@ -3720,6 +3735,31 @@ export async function updateMcpServer(id: string, body: McpServerInput): Promise
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(await _mcpError(res, "save that server"));
+  return res.json();
+}
+
+/** Ratify one mutating tool. The declaration is pinned SERVER-side from the roster — this
+ *  client cannot state which declaration it is approving, because a client that could would
+ *  be able to approve one the server never made. */
+export async function grantMcpTool(
+  serverId: string, toolName: string, body: { granted_by?: string; note?: string } = {},
+): Promise<{ server: McpServerRow }> {
+  const res = await fetch(
+    `${getApiBase()}/mcp-servers/${serverId}/grants/${encodeURIComponent(toolName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body) });
+  if (!res.ok) throw new Error(await _mcpError(res, "grant that tool"));
+  return res.json();
+}
+
+/** Withdraw a ratification. The tool goes back to being listed and refused. */
+export async function revokeMcpTool(
+  serverId: string, toolName: string,
+): Promise<{ server: McpServerRow }> {
+  const res = await fetch(
+    `${getApiBase()}/mcp-servers/${serverId}/grants/${encodeURIComponent(toolName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await _mcpError(res, "revoke that grant"));
   return res.json();
 }
 

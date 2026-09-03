@@ -25,7 +25,7 @@
  * output rows, free drag — built on `@xyflow/react`, the library already driving four
  * canvases here. Design investment, not adoption.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import {
   Background,
   type Connection as RFConnection,
@@ -33,6 +33,7 @@ import {
   Handle,
   MarkerType,
   MiniMap,
+  type NodeChange,
   type OnConnectEnd,
   Panel,
   Position,
@@ -410,19 +411,67 @@ interface DesignNodeData {
   forEach: string;
   /** DS-6 — the step whose "Only if" this one runs OTHERWISE of. "" = unrouted. */
   elseOf: string;
-  onPatch: (field: string, value: unknown) => void;
-  onClear: (field: string) => void;
-  /** Remove this step — absent on the last one, the same law the rail enforces. */
-  onRemove?: () => void;
-  /** DS-4 — copy this step to the end of the chain, keeping the wiring that still
-   *  means what it meant. Always present: duplicating never breaks a rule. */
-  onDuplicate?: () => void;
-  /** DS-2 — walk the chain as far as THIS step and show what it would receive. */
-  onRunToHere?: () => void;
+  /* ── §3.8b · why there are no callbacks in here ──
+   *
+   * A node's `data` used to carry `onPatch`, `onClear`, `onRemove`, `onDuplicate` and
+   * `onRunToHere` as closures built inside the `design` memo. That made `data` a NEW
+   * object with NEW function identities on every memo run, so `React.memo` on the node
+   * could never hit — every node re-rendered whenever anything changed, including on
+   * every frame of a drag. The handlers now live in `NodeHandlersContext` as stable
+   * dispatchers that take the alias, and `data` is plain serialisable state that
+   * compares cheaply. Wiring the change channel without this would have fixed the
+   * position resets and left the re-render storm.
+   *
+   * Capability stays as BOOLEANS rather than optional callbacks: the node still has to
+   * know that the last step shows no remove control, and "is this allowed" is data —
+   * only "do it" was ever behaviour. */
+  canRemove: boolean;
+  canDuplicate: boolean;
+  canRunToHere: boolean;
   /** True while that walk is in flight, so the control cannot be pressed twice. */
   running?: boolean;
   [key: string]: unknown;
 }
+
+/** The step handlers, hoisted out of `data` so a node's props can be compared.
+ *
+ * Every one takes the alias it acts on, so ONE stable object serves N nodes — the
+ * property that makes memoisation possible at all. Null outside the canvas (the node
+ * components are exported for tests and for the run view, where nothing is editable). */
+interface NodeHandlers {
+  patch: (alias: string, field: string, value: unknown) => void;
+  clear: (alias: string, field: string) => void;
+  remove: (alias: string) => void;
+  duplicate: (alias: string) => void;
+  runToHere: (alias: string) => void;
+}
+
+const NodeHandlersContext = createContext<NodeHandlers | null>(null);
+
+/** §3.8b — the position changes in one ReactFlow batch, or null when there are none.
+ *
+ * Exported and pure because it is the whole of the new logic and the rest is a
+ * `setState` — this file's own harness note says to assert at the handoff, since jsdom
+ * reports every element as 0×0 and a rendered-drag assertion could not fail.
+ *
+ * **Positions only, deliberately.** ReactFlow also emits `add`, `remove`, `dimensions`,
+ * `select` and `replace` changes. Applying those here would make the library a second
+ * author of what the chain CONTAINS, and the draft is the first — two sources of truth
+ * for structure is how a canvas starts disagreeing with what it will save. Structure
+ * flows draft → canvas; only position flows back.
+ */
+export function positionChanges(
+  changes: NodeChange<RFNode>[],
+): Record<string, { x: number; y: number }> | null {
+  let moved: Record<string, { x: number; y: number }> | null = null;
+  for (const c of changes) {
+    // `position` is absent on the final `dragging: false` tick, and on a change that
+    // only reports selection. Writing `undefined` would blank a card's coordinates.
+    if (c.type === "position" && c.position) (moved ??= {})[c.id] = c.position;
+  }
+  return moved;
+}
+
 
 /** The primary editable fields per kind — the ones a person actually authors on the
  *  node. Everything else stays on the rail; a node holding every field is a form
@@ -466,7 +515,8 @@ const KIND_HUE: Record<string, string> = {
   integration_call: "var(--chart-7)",
 };
 
-function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
+function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selected?: boolean }) {
+  const handlers = useContext(NodeHandlersContext);
   // Operator WORDS come from the server's vocabulary (cached module-side, so N nodes
   // make one request) — a local map would be a second spelling of a closed set.
   const { guardOps } = useAutomationVocabulary();
@@ -513,27 +563,27 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
           padding: "1px 8px", background: "var(--bg-1)" }}>
           {data.alias}
         </span>
-        {data.onRunToHere && (
+        {data.canRunToHere && handlers && (
           <Button variant="ghost" size="icon-sm" aria-label={`run to ${data.alias}`}
             title="Run the chain to here — inert, nothing is sent"
             disabled={data.running}
             className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
-            onClick={data.onRunToHere}>
+            onClick={() => handlers.runToHere(data.alias)}>
             <Icon name={data.running ? "spinner" : "run"} size={11} />
           </Button>
         )}
-        {data.onDuplicate && (
+        {data.canDuplicate && handlers && (
           <Button variant="ghost" size="icon-sm" aria-label={`duplicate ${data.alias}`}
             title="Duplicate this step (⌘D)"
             className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
-            onClick={data.onDuplicate}>
+            onClick={() => handlers.duplicate(data.alias)}>
             <Icon name="copy" size={11} />
           </Button>
         )}
-        {data.onRemove && (
+        {data.canRemove && handlers && (
           <Button variant="ghost" size="icon-sm" aria-label={`remove ${data.alias}`}
             className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
-            onClick={data.onRemove}>
+            onClick={() => handlers.remove(data.alias)}>
             <Icon name="close" size={11} />
           </Button>
         )}
@@ -569,7 +619,7 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
                     whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>{bound}</span>
                   <Button variant="ghost" size="icon-sm" aria-label={`unbind ${field}`}
                     className="nodrag" style={{ marginLeft: "auto", width: 18, height: 18 }}
-                    onClick={() => data.onClear(field)}>
+                    onClick={() => handlers?.clear(data.alias, field)}>
                     <Icon name="close" size={10} />
                   </Button>
                 </div>
@@ -579,7 +629,7 @@ function DesignStepNode({ data, selected }: { data: DesignNodeData; selected?: b
                   style={inputStyle}
                   placeholder={placeholder}
                   value={String(data.config[field] ?? "")}
-                  onChange={e => data.onPatch(field, e.target.value)}
+                  onChange={e => handlers?.patch(data.alias, field, e.target.value)}
                 />
               )}
             </div>
@@ -747,9 +797,24 @@ function DesignTriggerNode({ data }: {
   );
 }
 
+/* ── §3.8b · memoised, and the order this had to be done in ──
+ *
+ * ReactFlow re-renders its node layer on every frame of a drag. Without `memo` here
+ * every card re-ran its whole body each frame — Langflow memoises six sub-components
+ * inside `GenericNode` alone, which is what the comparison actually showed.
+ *
+ * This is the LAST of the three changes, not the first: memo compares props, `data` is
+ * a node's props, and until the handler closures came out of `data` (see
+ * `NodeHandlersContext`) every comparison was guaranteed to differ. Adding `memo`
+ * first would have looked like a fix and changed nothing measurable. */
+const StepNodeMemo = memo(StepNode);
+const TriggerNodeMemo = memo(TriggerNode);
+const DesignStepNode = memo(DesignStepNodeInner);
+const DesignTriggerNodeMemo = memo(DesignTriggerNode);
+
 const NODE_TYPES = {
-  step: StepNode, trigger: TriggerNode,
-  designStep: DesignStepNode, designTrigger: DesignTriggerNode,
+  step: StepNodeMemo, trigger: TriggerNodeMemo,
+  designStep: DesignStepNode, designTrigger: DesignTriggerNodeMemo,
 };
 
 /* ═══════════════════ the component ═══════════════════ */
@@ -1318,6 +1383,41 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
     setDraft(d => clearBinding(d, alias, field));
   }, []);
 
+  /* ── §3.8b · the change channel, and why the overlay is separate from history ──
+   *
+   * ReactFlow was handed `nodes` and NO `onNodesChange`, which breaks controlled mode:
+   * the library moved the card in its own store, our array never heard, and the next
+   * parent render put the card back where `positions` still said it was. The DS-4 note
+   * above read the silence as a library quirk ("it does not fire here at all") — it did
+   * not fire because it was never passed.
+   *
+   * Positions during a drag land HERE and not in history. `positions` lives in the undo
+   * stack, and writing there per pointer-move would put a hundred steps between a person
+   * and the thing they wanted to undo. So the overlay holds the live position, the design
+   * memo prefers it, and `onNodeDragStop` commits ONE entry and drops the overlay — the
+   * same coalescing the stack already documents. */
+  const [livePos, setLivePos] = useState<Record<string, { x: number; y: number }>>({});
+
+  const onNodesChange = useCallback((changes: NodeChange<RFNode>[]) => {
+    const moved = positionChanges(changes);
+    if (moved) setLivePos(prev => ({ ...prev, ...moved }));
+  }, []);
+
+  /** §3.8b — one stable object for N nodes. Rebuilt only when a dispatcher itself
+   *  changes, which is what lets `memo(DesignStepNodeInner)` actually hit. */
+  const nodeHandlers = useMemo<NodeHandlers>(() => ({
+    patch: (alias, field, value) => patchField(alias, field, value),
+    clear: (alias, field) => clearField(alias, field),
+    duplicate: (alias) => duplicateStep(alias),
+    runToHere: (alias) => runToHere(alias),
+    // `aliasFor(e, j)`, not `e.alias`: a draft effect's alias is often EMPTY and the
+    // displayed name is positional (`step2`). Filtering on the raw field would match
+    // nothing and silently remove no step.
+    remove: (alias) => setDraft(d => ({
+      ...d, effects: d.effects.filter((e, j) => aliasFor(e, j) !== alias),
+    })),
+  }), [patchField, clearField, duplicateStep, runToHere, setDraft]);
+
   const design = useMemo(() => {
     if (!vocab) return { nodes: [] as RFNode[], edges: [] as RFEdge[] };
     const { steps, edges } = draftToFlow(draft, vocab);
@@ -1325,7 +1425,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
       id: "__trigger",
       type: "designTrigger",
       measured: sizes["__trigger"],
-      position: positions["__trigger"] ?? { x: 0, y: 60 },
+      position: livePos["__trigger"] ?? positions["__trigger"] ?? { x: 0, y: 60 },
       data: { conditions: draft.conditions,
               logic: automation?.condition_logic ?? "all",
               scheduling: automation?.scheduling ?? "ordered" },
@@ -1333,20 +1433,18 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
       id: s.alias,
       type: "designStep" as const,
       measured: sizes[s.alias],
-      position: positions[s.alias] ?? { x: 260 + i * (NODE_W + 90), y: 0 },
+      position: livePos[s.alias] ?? positions[s.alias] ?? { x: 260 + i * (NODE_W + 90), y: 0 },
       data: {
         ...s,
-        onPatch: (field: string, value: unknown) => patchField(s.alias, field, value),
-        onClear: (field: string) => clearField(s.alias, field),
+        // §3.8b — capabilities, not closures. The behaviour is one stable object in
+        // `NodeHandlersContext`; what stays here is what the node has to KNOW.
+        canDuplicate: true,
+        canRunToHere: Boolean(automation),
+        running: runningTo === s.alias,
         // The last step keeps no remove control at all — the model requires one effect,
         // and an affordance that fails at save teaches the wrong law. Same rule as the
         // rail, enforced by ABSENCE both places.
-        onDuplicate: () => duplicateStep(s.alias),
-        onRunToHere: automation ? () => runToHere(s.alias) : undefined,
-        running: runningTo === s.alias,
-        onRemove: draft.effects.length > 1
-          ? () => setDraft(d => ({ ...d, effects: d.effects.filter((_, j) => j !== i) }))
-          : undefined,
+        canRemove: draft.effects.length > 1,
       } as DesignNodeData,
     }))];
     const spineStyle = {
@@ -1406,8 +1504,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
       })),
     ];
     return { nodes, edges: rfEdges };
-  }, [draft, positions, vocab, patchField, clearField, automation, sizes,
-      duplicateStep, runToHere, runningTo]);
+  }, [draft, positions, livePos, vocab, automation, sizes, runningTo]);
 
   /** Edges are handed over ONE FRAME after the nodes that carry their handles.
    *  ReactFlow drops an edge whose named handle is not yet registered, and on the
@@ -1672,7 +1769,11 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
              }}
              style={{ flex: 1, minWidth: 0, minHeight: 220, position: "relative",
                       border: "1px solid var(--border)", borderRadius: 8, overflow: "hidden" }}>
+          {/* §3.8b — the handlers the nodes call, provided ONCE for the whole canvas.
+              In `data` they were N closures rebuilt on every memo run, so `memo` on the
+              node could never hit; here they are one stable object. */}
           {mode === "design" ? (
+            <NodeHandlersContext.Provider value={nodeHandlers}>
             <ReactFlow
               onInit={(instance) => { rf.current = instance; }}
               onSelectionChange={({ nodes }) => setSelectedAlias(nodes[0]?.id ?? null)}
@@ -1681,6 +1782,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
               nodeTypes={NODE_TYPES}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}
+              onNodesChange={onNodesChange}
               onNodeDragStop={(_e, n) => {
                 // A move is an edit: same stack, so one undo means "the last thing I
                 // did" whether that was typing or dragging. Coalesced per node, so
@@ -1691,6 +1793,13 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
                   persistLayout(nextPositions, new Set(design.nodes.map(node => node.id)));
                   return pushHistory(h, { ...h.present, positions: nextPositions },
                                      { key: `move:${n.id}`, at: now });
+                });
+                // The overlay has served its purpose for this node: history now holds the
+                // position, and leaving the entry behind would let a stale live value win
+                // over a later undo.
+                setLivePos(prev => {
+                  if (!(n.id in prev)) return prev;
+                  const next = { ...prev }; delete next[n.id]; return next;
                 });
               }}
               onEdgeDoubleClick={(_e, edge) => {
@@ -1779,6 +1888,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
                 </span>
               </Panel>
             </ReactFlow>
+            </NodeHandlersContext.Provider>
           // B2 — `shown`, not `graph`: a PREVIEW is a graph this canvas was handed rather
           // than one it fetched, and gating the body on the fetched one left a dry run
           // reading "Loading…" underneath its own "nothing was sent" banner. Found by

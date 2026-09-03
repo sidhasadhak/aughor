@@ -22,8 +22,8 @@ from __future__ import annotations
 
 import pytest
 
-from aughor.automations.dataflow import (UnresolvedBinding, alias_for, collect_refs,
-                                         is_binding, resolve)
+from aughor.automations.dataflow import (CASTS, UncastableBinding, UnresolvedBinding,
+                                         alias_for, collect_refs, is_binding, resolve)
 from aughor.automations.models import Automation, Condition, Effect, EffectOutcome
 
 
@@ -490,3 +490,117 @@ def test_investigate_summary_is_a_DECLARED_key():
     inv = Effect(kind="investigate", alias="numbers", config={"question": "sales?"})
     auto = _automation(inv, _effect(message={"$from": "numbers.summary"}))
     assert auto.effects[1].config["message"] == {"$from": "numbers.summary"}
+
+
+# ── §3.8a · `$as`, the declared conversion ───────────────────────────────────────
+#
+# The gap this closes was measured against Langflow's Type Convert / Parser family:
+# `resolve` returned `produced[key]` and nothing else, so a binding NAMED a key and could
+# not cast, format or reduce it.
+#
+# Every test below is really one claim: **a conversion that cannot be made honestly RAISES
+# rather than producing a plausible value.** That is `resolve`'s existing law — "a default
+# would let a step run with a silently wrong value, and these steps send messages and write
+# to systems" — applied to the conversion instead of the lookup.
+
+def _ctx(**produced):
+    return {"rows": produced}
+
+
+def test_a_cast_turns_a_number_into_the_text_a_message_needs():
+    assert resolve({"$from": "rows.n", "$as": "text"}, _ctx(n=3)) == "3"
+
+
+def test_text_on_a_STRUCTURE_gives_json_not_a_python_repr():
+    """The defect this closes by name: a dict reaching a text field rendered
+    "[object Object]" in the list summary. Python's `str({'a': 1})` would be just as
+    wrong — single quotes and `None` are not JSON and not what a webhook wants."""
+    out = resolve({"$from": "rows.item", "$as": "text"}, _ctx(item={"a": 1, "b": None}))
+    assert out == '{"a":1,"b":null}'
+
+
+def test_a_non_numeric_value_REFUSES_rather_than_becoming_zero():
+    """A silently wrong number in a guard comparison is how a chain fires on the wrong
+    day. The step is skipped instead."""
+    with pytest.raises(UncastableBinding, match="not a number"):
+        resolve({"$from": "rows.n", "$as": "number"}, _ctx(n="abc"))
+
+
+def test_integer_REFUSES_a_fraction_rather_than_truncating():
+    """A truncation is a wrong answer that looks like a right one — 2.9 items becoming
+    2 passes every downstream check."""
+    with pytest.raises(UncastableBinding, match="whole number"):
+        resolve({"$from": "rows.n", "$as": "integer"}, _ctx(n="2.9"))
+    assert resolve({"$from": "rows.n", "$as": "integer"}, _ctx(n="2.0")) == 2
+
+
+def test_boolean_does_NOT_use_truthiness():
+    """`""` and `"false"` are both falsey in Python and only one of them means false to a
+    person. Guessing is how a guard silently inverts."""
+    assert resolve({"$from": "rows.b", "$as": "boolean"}, _ctx(b="true")) is True
+    assert resolve({"$from": "rows.b", "$as": "boolean"}, _ctx(b="No")) is False
+    with pytest.raises(UncastableBinding, match="not plainly true or false"):
+        resolve({"$from": "rows.b", "$as": "boolean"}, _ctx(b="maybe"))
+
+
+def test_count_first_and_last_read_a_list_and_refuse_anything_else():
+    assert resolve({"$from": "rows.items", "$as": "count"}, _ctx(items=[1, 2, 3])) == 3
+    assert resolve({"$from": "rows.items", "$as": "first"}, _ctx(items=["a", "b"])) == "a"
+    assert resolve({"$from": "rows.items", "$as": "last"}, _ctx(items=["a", "b"])) == "b"
+    # A string is a sequence in Python and is NOT a list here: `count` on "abc" giving 3
+    # would be a plausible, wrong answer.
+    with pytest.raises(UncastableBinding, match="not a list"):
+        resolve({"$from": "rows.items", "$as": "count"}, _ctx(items="abc"))
+
+
+def test_first_on_an_EMPTY_list_refuses_rather_than_yielding_None():
+    """The same law the missing-key case already states: no value is better than a
+    guessed one, because the step would otherwise send a message with a hole in it."""
+    with pytest.raises(UncastableBinding, match="empty list"):
+        resolve({"$from": "rows.items", "$as": "first"}, _ctx(items=[]))
+
+
+def test_a_failed_cast_SKIPS_the_step_exactly_as_a_missing_key_does():
+    """`UncastableBinding` subclasses `UnresolvedBinding` on purpose: every caller that
+    already skips a step on an unresolved binding skips this one too, without being taught
+    a second failure mode. If this ever stops holding, a cast failure becomes an unhandled
+    exception in the engine — a chain crash where a skip was wanted."""
+    assert issubclass(UncastableBinding, UnresolvedBinding)
+
+
+def test_the_cast_runs_AFTER_the_lookup_and_cannot_invent_a_value():
+    """A missing key is still a missing key. A cast that ran first — or that ran on a
+    default — would let `$as: "text"` turn an absent value into the string "None"."""
+    with pytest.raises(UnresolvedBinding, match="has no 'missing'"):
+        resolve({"$from": "rows.missing", "$as": "text"}, _ctx(n=1))
+
+
+def test_a_binding_still_refuses_ARBITRARY_extra_keys():
+    """`$as` is the one companion key. The exact-match rule is what stops a dict wearing
+    `$from` plus a payload from being read as a binding — or worse, from being demoted to
+    a literal and sent."""
+    assert is_binding({"$from": "rows.n"})
+    assert is_binding({"$from": "rows.n", "$as": "text"})
+    assert not is_binding({"$from": "rows.n", "other": 1})
+    # An UNKNOWN cast is still a BINDING — so it is refused by name rather than silently
+    # becoming a literal dict in a message body.
+    assert is_binding({"$from": "rows.n", "$as": "nonsense"})
+
+
+def test_an_unknown_cast_is_refused_at_SAVE_and_the_message_names_the_whole_set():
+    """A chain that would raise at 09:00 against somebody else's data is one that "looks
+    schedulable" — K1's expensive kind of broken. And a refusal that does not say what IS
+    accepted sends the reader to the source: `"int"` is one word from `integer`."""
+    from aughor.automations.dataflow import validate_chain
+    problem = validate_chain([Effect(kind="slack_post", alias="post", config={
+        "bot_id": "sb_1", "channel": {"$from": "rows.c", "$as": "int"}})])
+    assert problem and "not a conversion" in problem
+    for name in CASTS:
+        assert name in problem, f"the refusal does not offer '{name}'"
+
+
+def test_a_JOIN_casts_whichever_arm_actually_ran():
+    """One declared conversion for the join, not one per alternative: the arms are the
+    same value arriving by different routes."""
+    binding = {"$from_any": ["a.n", "b.n"], "$as": "text"}
+    assert resolve(binding, {"b": {"n": 7}}) == "7"
