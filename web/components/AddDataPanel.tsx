@@ -60,6 +60,23 @@ const META: Record<string, { label: string; blurb: string; badge?: string }> = {
   notion:       { label: "Notion",       blurb: "Docs & databases" },
 };
 
+/** The categories this panel draws, in the order it draws them.
+ *
+ * ⚠️ **Every category the SERVER can emit must be handled somewhere on this panel.** A
+ * category missing from here is not a smaller list — it is a connector that exists, works,
+ * and is never offered, which is the catalogue-that-lies failure DS-10 exists to end.
+ * The two categories deliberately NOT here: `file` renders above as `FileTile`s, and
+ * `federation` is filtered out entirely (a federated connection is composed from existing
+ * ones, not added). `tests/unit/test_connector_categories.py` fails if the server starts
+ * emitting a category that is neither in this list nor one of those two — and equally if
+ * this list names one the server never emits, which would render a heading with nothing
+ * under it: "we support this and you have none" rather than "this does not exist".
+ *
+ * ⚠️ `knowledge` (Notion, Confluence) is NOT missing from here by accident. Those two are
+ * deliberately not registered as connector types at all — `_register_defaults` says so in
+ * its own comment: *"not DB connectors — open_connection() is not called on them"*. They
+ * feed the documents pipeline, not the data plane, and adding a row for them here would
+ * draw an empty heading. See the loose-end ledger for what they actually need. */
 const CATEGORY_ORDER: Array<{ id: string; label: string }> = [
   { id: "built-in",   label: "Databases" },
   { id: "warehouse",  label: "Data warehouses" },

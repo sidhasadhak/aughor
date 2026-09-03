@@ -1745,13 +1745,24 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   that has landed is the exact failure this entry is about.
 - **Explorer partial-day sibling** — canvas trend charts still end on today's false dip
   (the investigate-path guard landed 2026-09-02; chip filed).
-- **Connectors picker hides Notion + Confluence** — real, synced, never offered (DS-10 chip).
-  ✅ **ROOT-CAUSED 2026-09-02, and it is one line.** Not a backend gap: `list_connector_types`
-  (`routers/system.py:324`) returns them with `category: "knowledge"`, and no server-side filter
-  drops them. The frontend does: `CATEGORY_ORDER` (`web/components/AddDataPanel.tsx:63`) lists
-  only `built-in`, `warehouse`, `api`, and the render maps **only** those (`:621`) — so every
-  `knowledge` connector falls out. Their `META` labels already exist (`:59-60`), which is why a
-  grep finds them and the UI does not. **Fix: add a `knowledge` row to `CATEGORY_ORDER`.**
+- **Notion + Confluence are built and unreachable** — and the two diagnoses this line carried
+  before were both WRONG. 🔴 **Re-measured 2026-09-03 by driving the live API**, which is what
+  finally settled it: `GET /connectors/types` emits **no `knowledge` category at all**.
+  - The 2026-09-02 entry blamed the frontend's `CATEGORY_ORDER` and called it "one line". That
+    was read off the static `CATEGORIES` map. The route builds its list from
+    `["duckdb", "postgres"] + REGISTRY.supported_types()`, and **`_register_defaults` never
+    registers notion or confluence** — its own comment says why: *"not DB connectors —
+    `open_connection()` is not called on them"*. They feed the documents pipeline.
+  - So adding the `knowledge` row draws an **empty heading**, which reads as "we support this
+    and you have none". It was added, driven, and reverted the same hour.
+  🔑 **Twice now, a static lookup table was read as though it were the route's output.** The
+  live call took one command and overturned both answers. *A proxy is not the measure* — and a
+  registry map is a proxy for a registry.
+  **What it actually needs is a DECISION, not a line**: does a Notion source belong in "Add
+  data" (where a person expects tables) or on the documents surface? The connectors import
+  cleanly and have no route, no registration and no UI — the complete-and-inert shape §7 names.
+  ✅ A guard now exists either way: `tests/unit/test_connector_categories.py` fails if the
+  server emits a category nothing draws, AND if the panel draws one the server never emits.
 - ~~**Monitors' `notification_channel` unwired**~~ — **THIS LINE WAS FALSE. Re-measured
   2026-09-02:** the field was wired by **#349 (`f4c25426`, OA·N8-0)**, which is where
   `aughor/monitors/notify.py` came from. `dispatch_alert(alert)` is called on the alert-commit
@@ -1775,16 +1786,14 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   the `[export]` extra (`pyproject.toml:85-90`). So this is an INSTALL gap on this machine
   (the documented setup is `uv sync --all-extras`), not a code defect: the function already
   degrades to `None` and callers fall back to their table/prose, by design.
-- 🆕 **Canvas drag is not fluid** — ROOT-CAUSED 2026-09-03 (§3.8b): `AutomationGraph.tsx`
-  passes `nodes` with **no `onNodesChange`**, so positions never flow back and any mid-drag
-  re-render resets them; zero `memo(` on any of the five canvases; a dependency-less
-  `useEffect` forces layout every render. `AgentMap.tsx` has the same missing handler. Our own
-  DS-4 comment read the missing prop as a library quirk and worked around it.
-- 🆕 **The primitive gap** — §3.8a: **data shaping is the only first-order gap left.** The
-  conditional-router half of this line was FALSE and is struck in §3.8a — DS-6's `else_of` is
-  already the branch. `dataflow.resolve` returns `produced[key]` and nothing else, so a binding
-  names a key and cannot cast, format, split or reshape it. `Python Interpreter` is REFUSED
-  rather than missing.
+- ~~**Canvas drag is not fluid**~~ — **FIXED and MERGED 2026-09-03** (`e3a56b5c`, #428; §3.8b).
+  ⏳ Two things survive it: **`AgentMap.tsx` has the same missing handler** and was left for a
+  separate change, and the fix has **no empirical receipt** — the browser tool cannot drive
+  ReactFlow pointer interactions, so a React Profiler trace during a real drag is still owed.
+- ~~**The primitive gap**~~ — **CLOSED 2026-09-03** (`e3a56b5c`, #428). Data shaping shipped as
+  `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
+  was always the branch (§3.8a). ⏳ Survives it: **nothing in the canvas SETS `$as`** — API and
+  the DS-16 import funnel only, not the binding chip.
 - **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
