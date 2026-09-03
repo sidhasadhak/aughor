@@ -561,6 +561,55 @@ function AutomationCard({ a, onToggle, onPause, onRun, onEdit, onDelete, onRuns,
 
 // ── Runs view (the reason a tick did NOTHING) ─────────────────────────────────
 
+/** One row of the runs rail: a real run, or a run of consecutive quiet ticks. */
+export type RunRow =
+  | { kind: "run"; run: AutomationRun }
+  | { kind: "quiet"; count: number; newest: string; oldest: string; reason: string };
+
+/** Collapse ADJACENT scheduler ticks that did nothing, so the run that DID something is
+ *  visible without scrolling.
+ *
+ * Measured on this deployment 2026-09-03: **99 of the last 100 runs were `not_fired`** —
+ * pure scheduler ticks reading "schedule(0 9 * * *): next due …", carrying no effects and
+ * no error. One fired run was buried under ninety-nine identical cards.
+ *
+ * **Adjacent only, and the front row keeps the count** — the stacking rule this project
+ * already applies on every canvas, brought to a list.
+ *
+ * **This must not HIDE anything, or it becomes the catalogue that lies.** So a tick is only
+ * collapsible when it did nothing at all: `not_fired`, no effects, no error. A `not_fired`
+ * run that somehow carried an effect stays a full card, because "the schedule was not due"
+ * and "something happened and was not recorded as firing" are different sentences and only
+ * one of them is boring. The group states the exact count, the span it covers, and the
+ * shared reason when every tick in it gives the same one.
+ */
+export function collapseQuietTicks(runs: AutomationRun[]): RunRow[] {
+  const out: RunRow[] = [];
+  for (const run of runs) {
+    const quiet = run.outcome === "not_fired"
+      && (run.effects?.length ?? 0) === 0
+      && !run.error;
+    const last = out[out.length - 1];
+    if (!quiet) {
+      out.push({ kind: "run", run });
+      continue;
+    }
+    if (last && last.kind === "quiet") {
+      last.count += 1;
+      // `runs` arrives newest-first, so each further tick extends the OLDER end.
+      last.oldest = run.started_at;
+      // A shared reason is only shared while every tick agrees; the moment one differs the
+      // group stops claiming one rather than quietly showing the first.
+      if (last.reason && last.reason !== run.reason) last.reason = "";
+    } else {
+      out.push({ kind: "quiet", count: 1, newest: run.started_at,
+                 oldest: run.started_at, reason: run.reason ?? "" });
+    }
+  }
+  return out;
+}
+
+
 function RunsView({ automations, runsFor, runs, onPick }: {
   automations: Automation[]; runsFor: Automation | null; runs: AutomationRun[];
   onPick: (a: Automation) => void;
@@ -579,7 +628,26 @@ function RunsView({ automations, runsFor, runs, onPick }: {
       {!runsFor && <div style={{ color: "var(--t3)", fontSize: 13 }}>Pick an automation to see its tick history.</div>}
       {runsFor && runs.length === 0 && <div style={{ color: "var(--t3)", fontSize: 13 }}>No ticks yet — hit “Run now”.</div>}
       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        {runs.map(r => (
+        {collapseQuietTicks(runs).map(row => row.kind === "quiet" ? (
+          // A run of ticks that did nothing, as ONE row. The count and the span are exact:
+          // this collapses, it does not hide.
+          <div key={`quiet:${row.newest}`} style={{
+            display: "flex", alignItems: "center", gap: 8, padding: "6px 14px",
+            border: "1px dashed var(--b1)", borderRadius: 6, color: "var(--t3)",
+          }}>
+            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
+              textTransform: "uppercase", background: "var(--bg-2)", color: "var(--t3)" }}>
+              not fired ×{row.count}
+            </span>
+            <span style={{ fontSize: 12 }}>
+              {row.reason || "the schedule was not due"}
+            </span>
+            <div style={{ flex: 1 }} />
+            <span style={{ fontSize: 11 }}>
+              {row.count > 1 ? `${relTime(row.oldest)} → ${relTime(row.newest)}` : relTime(row.newest)}
+            </span>
+          </div>
+        ) : (() => { const r = row.run; return (
           <div key={r.id} style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: 6, padding: "10px 14px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{
@@ -603,7 +671,7 @@ function RunsView({ automations, runsFor, runs, onPick }: {
             )}
             {r.error && <div style={{ marginTop: 4, fontSize: 11, color: "var(--red3)" }}>{r.error}</div>}
           </div>
-        ))}
+        ); })())}
       </div>
     </div>
   );
