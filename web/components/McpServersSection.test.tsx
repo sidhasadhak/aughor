@@ -27,6 +27,8 @@ const api = vi.hoisted(() => ({
   deleteMcpServer: vi.fn(),
   discoverMcpServer: vi.fn(),
   mcpServerHealth: vi.fn(),
+  grantMcpTool: vi.fn(),
+  revokeMcpTool: vi.fn(),
 }));
 
 vi.mock("@/lib/api", async (importOriginal) => ({
@@ -41,16 +43,21 @@ const tool = (over: Partial<McpToolRow> = {}): McpToolRow => ({
   server_id: "s1", name: "read_the_weather", title: "", description: "Reads the weather",
   input_schema: {}, disposition: "callable", reason: "",
   read_only_hint: true, destructive_hint: null,
-  discovered_at: "2026-09-02T10:00:00Z", ...over,
+  discovered_at: "2026-09-02T10:00:00Z",
+  // The write slice's fields. Defaulted to the OFF state so every existing case here keeps
+  // asserting the read-only posture unchanged, and a grant has to be asked for explicitly.
+  grant_state: "none", grant_reason: "", granted_by: "", granted_at: "", grant_note: "",
+  callable_now: true, ...over,
 });
 
 const server = (over: Partial<McpServerRow> = {}): McpServerRow => ({
   id: "s1", name: "Fixture tools", transport: "stdio", command: "/usr/bin/python",
   args: ["server.py"], env: {}, url: "", has_auth: false, enabled: true,
   created_at: "", updated_at: "", discovered_at: "2026-09-02T10:00:00Z",
-  tool_count: 2, callable_count: 1,
+  tool_count: 2, callable_count: 1, granted_count: 0,
   tools: [tool(), tool({ name: "unannotated_thing", disposition: "refused_mutating",
-                         reason: REFUSAL, read_only_hint: null, description: "" })],
+                         reason: REFUSAL, read_only_hint: null, description: "",
+                         callable_now: false })],
   ...over,
 });
 
@@ -172,5 +179,93 @@ describe("a credential never reaches this component", () => {
     expect(await screen.findByText(/auth header stored/)).toBeInTheDocument();
     // `McpServerRow` carries no `auth_header` at all, so there is nothing to leak here.
     expect(screen.queryByText(/Bearer /)).toBeNull();
+  });
+});
+
+describe("the write slice — a grant is a person's ratification, drawn as one", () => {
+  const MUTATING = "delete_everything";
+  const refused = (over: Partial<McpToolRow> = {}) => tool({
+    name: MUTATING, disposition: "refused_mutating", description: "",
+    reason: "This server declares the tool as modifying.",
+    read_only_hint: false, destructive_hint: true, callable_now: false, ...over,
+  });
+
+  it("offers Grant on a refused tool and NOT on one the server already allows", async () => {
+    api.listMcpServers.mockResolvedValue({
+      servers: [server({ tools: [tool(), refused()] })],
+    });
+    render(<McpServersSection />);
+    // The roster lives behind the Tools toggle — the grant controls are ON it.
+    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // One Grant button, for the refused row. A read-only tool needs no ratification, and
+    // offering one would invite a permission that authorizes nothing.
+    expect(await screen.findAllByRole("button", { name: /^grant$/i })).toHaveLength(1);
+  });
+
+  it("marks a granted tool as a WRITE rather than merely allowing it", async () => {
+    api.listMcpServers.mockResolvedValue({
+      servers: [server({
+        granted_count: 1,
+        tools: [refused({ grant_state: "active", granted_by: "amit", callable_now: true,
+                          granted_at: "2026-09-02T10:00:00Z" })],
+      })],
+    });
+    render(<McpServersSection />);
+    // The roster lives behind the Tools toggle — the grant controls are ON it.
+    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // The property a reader most needs before putting this on a canvas that runs
+    // unattended. A granted row that looked like a read would hide it.
+    expect(await screen.findByText("writes")).toBeInTheDocument();
+    expect(screen.getByText(/Granted by amit/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /revoke/i })).toBeInTheDocument();
+  });
+
+  it("shows the DRIFT sentence — not the original refusal — when a grant went stale", async () => {
+    api.listMcpServers.mockResolvedValue({
+      servers: [server({
+        tools: [refused({
+          grant_state: "stale",
+          grant_reason: "'delete_everything' was granted when this server declared it "
+            + "modifying, and not destructive, and it now declares it modifying, and "
+            + "destructive. The grant covered the first declaration, not this one, so it "
+            + "no longer applies.",
+        })],
+      })],
+    });
+    render(<McpServersSection />);
+    // The roster lives behind the Tools toggle — the grant controls are ON it.
+    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    // "Somebody approved this and the server changed it" is a different situation from
+    // "nobody has approved this", with a different next action. Flattening them is how a
+    // person re-approves a change they never saw.
+    expect(await screen.findByText(/no longer applies/)).toBeInTheDocument();
+    expect(screen.queryByText(/declares the tool as modifying\.$/)).toBeNull();
+    expect(screen.getByRole("button", { name: /grant again/i })).toBeInTheDocument();
+  });
+
+  it("granting calls the API and re-reads the roster rather than guessing the new state",
+     async () => {
+    api.listMcpServers.mockResolvedValue({ servers: [server({ tools: [refused()] })] });
+    api.grantMcpTool.mockResolvedValue({ server: server() });
+    render(<McpServersSection />);
+    // The roster lives behind the Tools toggle — the grant controls are ON it.
+    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^grant$/i }));
+    await waitFor(() => expect(api.grantMcpTool).toHaveBeenCalledWith("s1", MUTATING));
+    // Re-read, never optimistic: the server pins the declaration and decides the state, so
+    // a client that painted "granted" itself could show a grant the API refused.
+    await waitFor(() => expect(api.listMcpServers).toHaveBeenCalledTimes(2));
+  });
+
+  it("shows the API's refusal sentence when a grant is rejected", async () => {
+    api.listMcpServers.mockResolvedValue({ servers: [server({ tools: [refused()] })] });
+    api.grantMcpTool.mockRejectedValue(
+      new Error("'delete_everything' is not on this server's discovered roster."));
+    render(<McpServersSection />);
+    // The roster lives behind the Tools toggle — the grant controls are ON it.
+    fireEvent.click(await screen.findByRole("button", { name: /^tools$/i }));
+    fireEvent.click(await screen.findByRole("button", { name: /^grant$/i }));
+    expect(await screen.findByText(/not on this server's discovered roster/))
+      .toBeInTheDocument();
   });
 });

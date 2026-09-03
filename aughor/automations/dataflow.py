@@ -733,7 +733,7 @@ def _mcp_problem(effect: Any, alias: str) -> Optional[str]:
         return None
     from aughor.mcpservers import store as mcp_store
     from aughor.mcpservers.discover import tool_named
-    from aughor.mcpservers.models import CALLABLE
+    from aughor.mcpservers.models import CALLABLE, GRANT_ACTIVE, GRANT_STALE, grant_verdict
 
     cfg = effect_config(effect)
     for field in ("server_id", "tool"):
@@ -755,9 +755,18 @@ def _mcp_problem(effect: Any, alias: str) -> Optional[str]:
                 f"which its discovered roster does not have — run Discover if the server "
                 f"has changed")
     if tool.disposition != CALLABLE:
-        # The roster's own sentence, at save. A chain that would always refuse at 07:00 is
-        # one that "looks schedulable", which is K1's expensive kind of broken.
-        return f"step '{alias}' calls '{tool_name}', which this deployment refuses: {tool.reason}"
+        # Not callable on the server's word — so the step is legal only if a person granted
+        # this tool. Checked at SAVE for the same reason as everything else here: a chain
+        # that would always refuse at 07:00 is one that "looks schedulable", which is K1's
+        # expensive kind of broken. The door checks again; this is the early sentence.
+        state, why = grant_verdict(tool, mcp_store.get_grant(server_id, tool_name))
+        if state == GRANT_STALE:
+            return (f"step '{alias}' calls '{tool_name}', and its grant no longer covers "
+                    f"what that tool declares: {why}")
+        if state != GRANT_ACTIVE:
+            # The roster's own sentence, at save.
+            return (f"step '{alias}' calls '{tool_name}', which this deployment refuses: "
+                    f"{tool.reason}")
     return None
 
 

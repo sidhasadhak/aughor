@@ -24,10 +24,20 @@ not a judgement call we are making, it is the specification's. An unannotated to
 LISTED and REFUSED exactly like one that declares itself mutating: listed, because a roster
 that hides what a server offers is the catalogue-that-lies failure DS-10 exists to end.
 
-**What this deliberately does not settle** (§3.1's own words, and the write slice's job):
-whose declaration of "read-only" is believed, and what a server that changes a tool's
-declaration after registration is allowed to do. We believe an allowlisted server's label
-for reads only, and we say so on the surface rather than hiding it.
+**The write slice settles what the read-only slice deferred** (decided 2026-09-02, §6.6).
+*Whose declaration of "read-only" is believed:* nobody's but ours. A server's hints are
+DISPLAYED and ADVISORY; what authorizes a mutating call is an explicit per-tool grant a
+human wrote down (`McpToolGrant`). Note what this does to `classify()` — it does not change
+it. Its restrictive defaults now decide what **needs a grant**, never what **may run**. The
+allowlist says WHERE we may reach; the grant says WHAT we may do there, and neither answer
+is borrowed from the counterparty.
+
+*What a server that CHANGES a declaration after registration may do:* a grant pins the
+declaration it was given for, and `grant_verdict` refuses when the roster no longer matches
+it. Scoped to the tool that moved — a server is not quarantined for re-versioning one label,
+because a control that fires on every legitimate change is one people learn to click
+through — and fail-closed, because a silently relabelled tool is exactly the attack the
+advisory reading exists to blunt.
 """
 from __future__ import annotations
 
@@ -128,14 +138,20 @@ REFUSED_MUTATING = "refused_mutating"
 #: The sentence a refused tool carries. One string, because the roster, the palette and the
 #: call door must all give the reader the same reason — three wordings of one refusal is
 #: how a reader learns the product has three opinions about it.
+#: Both sentences end the same way, and that ending is the write slice. They used to say
+#: writes "arrive in a later slice" — a promise that came true, and a sentence left
+#: un-updated after the thing it deferred has shipped is how a working feature stays
+#: invisible to the person the refusal is talking to.
+_GRANT_INVITATION = (
+    "Aughor calls it only if a person grants this tool by name, and a grant covers the "
+    "declaration it was given for."
+)
 REFUSAL_UNDECLARED = (
     "This server does not declare the tool as read-only, and the protocol reads a missing "
-    "declaration as 'may modify'. Aughor calls read-only tools first; writes through MCP "
-    "arrive in a later slice, behind the approval gate."
+    "declaration as 'may modify'. " + _GRANT_INVITATION
 )
 REFUSAL_MUTATING = (
-    "This server declares the tool as modifying. Aughor calls read-only tools first; "
-    "writes through MCP arrive in a later slice, behind the approval gate."
+    "This server declares the tool as modifying. " + _GRANT_INVITATION
 )
 
 
@@ -194,6 +210,112 @@ def classify(read_only: Optional[bool], destructive: Optional[bool]) -> tuple[st
     if read_only is False:
         return REFUSED_MUTATING, REFUSAL_MUTATING
     return REFUSED_MUTATING, REFUSAL_UNDECLARED
+
+
+# ── the human's ratification, and what makes it go stale ─────────────────────────
+
+#: No human has ratified this tool. The normal state, and the off state: a mutating tool
+#: with no grant is refused exactly as it was before the write slice existed.
+GRANT_NONE = "none"
+#: Ratified, and the declaration still matches the one that was ratified.
+GRANT_ACTIVE = "active"
+#: Ratified, but the server has since changed what the tool declares. Refused until a human
+#: looks again — the grant is not silently re-interpreted against a declaration nobody read.
+GRANT_STALE = "stale"
+
+
+class McpToolGrant(BaseModel):
+    """One human's ratification that one mutating tool on one server may be called.
+
+    **Why this is not `user_agents.tool_grants`.** That column is a different plane wearing
+    a similar word: its subject is an AGENT, its object is an ontology action id validated
+    against a connection's declared actions, and its verb is PROPOSE — it grants the right
+    to suggest, never to act. This grant's subject is the deployment, its object is a
+    ``(server, tool)`` pair on somebody else's machine, and its verb is CALL. Putting an MCP
+    tool name into that column would fail its own validator and conflate two planes that
+    happen to share a noun.
+
+    **The pinned declaration is the whole point.** A grant records what the server was
+    saying about the tool at the moment a human said yes. Without it "the declaration
+    changed" is not a question this code can ask, and the ratification would silently carry
+    over to a tool that now claims something else.
+    """
+
+    server_id: str = ""
+    tool_name: str = ""
+
+    #: The declaration AS RATIFIED — not the current one. Compared against the roster on
+    #: every call; a difference is `GRANT_STALE`.
+    read_only_hint: Optional[bool] = None
+    destructive_hint: Optional[bool] = None
+
+    #: Who said yes and when. A grant with no author is one nobody can be asked about.
+    granted_by: str = ""
+    granted_at: str = Field(default_factory=now_iso_z)
+    #: Optional: why this write is acceptable. Read back on the roster, so the next person
+    #: to look inherits the reasoning rather than only the permission.
+    note: str = ""
+
+    @property
+    def key(self) -> str:
+        return grant_key(self.server_id, self.tool_name)
+
+
+def grant_key(server_id: str, tool_name: str) -> str:
+    """The id a grant is stored under. One tool on one server, never a wildcard.
+
+    ``*`` is not accepted anywhere on this surface, for the reason `_validate_agent_grants`
+    already gives one plane over: a grant names a tool, never a roster, because a blanket
+    grant is what per-target ratification exists to avoid. A server's whole roster is
+    granted by granting each tool, which is meant to be tedious in proportion to its reach.
+    """
+    return f"{server_id}::{tool_name}"
+
+
+def grant_verdict(tool: McpTool, grant: Optional[McpToolGrant]) -> tuple[str, str]:
+    """Does this grant still authorize this tool? Returns ``(state, reason)``.
+
+    The single place staleness is decided, for `classify()`'s reason: the door, the roster
+    and the API must give one answer, and three readings of one grant is how a reader learns
+    the product has three opinions about their permissions.
+
+    **Only the ANNOTATIONS are compared.** A tool's title and description change for
+    cosmetic reasons and revoking on those would fire constantly — and a control that fires
+    on every legitimate change is one people learn to click through. The annotations are the
+    security claim: a human who ratified "mutating, but not destructive" has not ratified
+    the same tool once it declares itself destructive, and that is exactly the transition
+    this catches. An `input_schema` change is surfaced on the roster (`schema_changed`)
+    rather than revoking, because we supply a granted tool's arguments ourselves — a changed
+    schema breaks our call rather than widening theirs.
+    """
+    if grant is None:
+        return GRANT_NONE, ""
+    if (grant.read_only_hint == tool.read_only_hint
+            and grant.destructive_hint == tool.destructive_hint):
+        return GRANT_ACTIVE, ""
+    return GRANT_STALE, (
+        f"'{tool.name}' was granted when this server declared it "
+        f"{_declaration_phrase(grant.read_only_hint, grant.destructive_hint)}, and it now "
+        f"declares it {_declaration_phrase(tool.read_only_hint, tool.destructive_hint)}. "
+        f"The grant covered the first declaration, not this one, so it no longer applies. "
+        f"Review the tool and grant it again if the change is expected.")
+
+
+def _declaration_phrase(read_only: Optional[bool], destructive: Optional[bool]) -> str:
+    """A server's hints as a sentence fragment, for the staleness message.
+
+    Spelled out rather than printed as ``readOnlyHint=None``, because the person reading
+    this is being asked to re-ratify a permission and "nothing" is a claim with meaning
+    here — the protocol reads silence as "may modify, possibly destructively", and a reader
+    who does not know that cannot judge the change they are being shown.
+    """
+    if read_only is True:
+        return "read-only" + (", and destructive" if destructive is True else "")
+    if read_only is False:
+        return "modifying" + (", and destructive" if destructive is True
+                              else ", and not destructive" if destructive is False
+                              else "")
+    return "nothing (which the protocol reads as 'may modify, possibly destructively')"
 
 
 def service_name(server: McpServer) -> str:

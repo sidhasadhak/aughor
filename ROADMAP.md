@@ -196,9 +196,48 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > false}` → and both calls land in the live ledger as `EXTERNAL_CALL` beside Slack's:
 > `mcp:<id>.tools/list` and `mcp:<id>.tools/call:read_the_weather`.
 >
-> **Left open (the write slice, and §3.1's own deferred question):** whose declaration of
-> "read-only" is believed, and what a server that changes a tool's declaration after
-> registration may do. Also unbuilt here: a UI (`+ Custom MCP` in the connectors catalog and
+> ✅ **SHIPPED 2026-09-02 — the write slice, built to the decision below.** `McpToolGrant`
+> + `grant_verdict()` (models) · a `mcp_tool_grants.json` store beside the roster, so no new
+> env var and no migration · the door's fifth gate · `GET/PUT/DELETE /mcp-servers/{id}/
+> grants[/{tool}]` · grant controls on the catalog roster · the save-time check and the
+> palette both taught the same thing. 35 tests, the two load-bearing ones verified to FAIL
+> with the fix reverted.
+>
+> 🔴 **The premise in the decision's own wording was wrong, and measuring it first is what
+> caught it.** "Reusing `tool_grants`" is not possible: that column's subject is an AGENT,
+> its object is an ontology action id validated against a connection's declared actions, and its verb is
+> PROPOSE. This grant's subject is the deployment, its object is a `(server, tool)` pair on
+> somebody else's machine, and its verb is CALL — and it must carry a PINNED DECLARATION,
+> which that column has nowhere to put. The principle survived the premise intact; only the
+> storage moved. `McpToolGrant`'s docstring carries the distinction so the noun stops
+> inviting the confusion.
+>
+> 🔴 **A second gap the build found: `writes` reached the SPAN and not the LEDGER.**
+> `external_call` sends `attributes` to mlflow and emits `payload={"operation", **extra}` —
+> two destinations — and the operation string is `tools/call:<name>` for reads and writes
+> alike. So the audit trail this slice is accountable to could not tell a granted mutation
+> from a read. Same class as the read-only slice's missing trace: capped, spanned, and
+> unrecorded. Fixed on the `extra`, and the test asserts the ledger rather than the wrapper.
+>
+> ✅ **DECIDED 2026-09-02 (the user's call, §6.6) — the write slice's two questions.**
+> *Whose declaration of "read-only" is believed:* **nobody's but ours.** A server's
+> annotation is DISPLAYED and ADVISORY; what authorizes a mutating call is an explicit
+> **per-tool grant a human wrote down**, reusing `tool_grants` rather than standing up a
+> second grant plane beside it. This is the reading the SDK's own warning asks for —
+> *"clients should never make tool use decisions based on ToolAnnotations received from
+> untrusted servers"* — and note what it does to `classify()`: the restrictive defaults it
+> already applies (silence = "may modify, possibly destructively") now decide what **needs a
+> grant**, never what **may run**. The allowlist says where we may reach; the grant says what
+> we may do there. Two questions, two answers, neither borrowed from the counterparty.
+>
+> *What a server that CHANGES a declaration after registration may do:* discovery **pins a
+> snapshot**, and when a granted tool's annotations change that tool's grant is **REVOKED** —
+> the next call is refused until a human re-ratifies. Scoped to the tool that actually moved:
+> a server is not quarantined for re-versioning one label, because a control that fires on
+> every legitimate change is one people learn to click through. Fail-closed, because a
+> silently relabelled tool is precisely the attack the advisory reading exists to blunt.
+>
+> **Still unbuilt here:** a UI (`+ Custom MCP` in the connectors catalog and
 > the palette's per-server rail rows, §3.7 Phase 1's P2 note), OAuth-authenticated servers
 > (the `auth_header` is a single opaque forwarded value, not an auth implementation), and
 > non-text tool results — images and embedded resources are dropped rather than flattened,
@@ -272,17 +311,17 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 
 ### 3.3 · B1/B2 — borrowed from Langflow
 
-- **B1 · Typed bindings.** `validate_chain` catches an unknown *step* at save but **not an
-  unknown key** — that surfaces at 09:00 as a skipped step. VA-13 shipped the binding as free
-  text. A picker over "what each upstream step publishes" closes it. **Weakest seam in VA-12/13.**
-  *Design direction (user, 2026-08-30, from the Langflow canvas):* render bindings as **visible
-  inward/outward ports** on the nodes — coloured dots, output right, input left — with nodes
-  free to drag and fields editable on the node. That look is `@xyflow/react` (the library the
-  four existing canvases already use) with styled handles instead of our `opacity: 0` ones and
-  `nodesDraggable` on: design investment, not new technology. B1's picker and the visible port
-  are the same feature — the port IS the typed binding, drawn. Reference for the
-  redesign (user-supplied): https://docs.langflow.org/concepts-components — their component
-  anatomy (header/inputs/outputs, port types, tool-mode toggle) is the vocabulary to beat.
+- ~~**B1 · Typed bindings.**~~ — **SHIPPED `16019b5a`**: typed ports over a server-fetched
+  vocabulary, drag-to-bind, and unknown KEYS refused at save (`PUBLISHED_KEYS` /
+  `published_keys()` in `automations/dataflow.py`, covered by three test files). The Runs
+  layer retired into Activity → Phases.
+  ⚠️ **This entry read "the weakest seam in VA-12/13" for days after it shipped** — §5's band
+  had it right the whole time. Third instance this week of a resolved item reading as open
+  (VA-9d's posture, the report-quality count, this). Verified in code 2026-09-03 before the
+  strikethrough, not taken from the band.
+  *Kept because it was the design brief and the ports still answer to it:* render bindings as
+  visible inward/outward ports — coloured dots, output right, input left — nodes draggable,
+  fields editable on the node.
 - ~~**B2 · Dry-run.**~~ — **SHIPPED 2026-08-30.** `run_automation(dry_run=True)` returns an
   ordinary `AutomationRun`, so the existing run canvas draws a preview with no second way
   of showing a chain. ⚠️ **The plan's premise was half true**: `evals/equivalence.py`'s inert
@@ -426,7 +465,13 @@ URIs — the callback must live on the stable production origin, verified before
 Untouched. User analytics over `session_events`, per-user and per-org quotas, an admin view of
 every user's agents/runs/connections, RBAC on the agent plane, and audit of admin access to
 user traces. **Risk is policy, not code:** an admin reading a user's prompts is a real question.
-Default to visible-metadata, gated-payloads.
+✅ **DECIDED 2026-09-02 (§6.4): visible metadata, GATED payloads.** Counts, timings, costs,
+tool names, error rates and run outcomes are admin-visible without ceremony — that is the
+whole analytics case, and it needs no prompt text. Reading a prompt or a response body is a
+**break-glass**: an explicit act, with a reason recorded, written to the audit log, and
+**visible to the user whose data it is**. The asymmetry is the point — metadata answers
+"is this deployment healthy", payloads answer "what did this person ask", and only the
+second needs a name attached to it.
 
 ---
 
@@ -1460,9 +1505,16 @@ NEXT (order within a band is the user's knob)
                                    ⚠️ The posture was DECIDED 2026-09-01 (§3.1, §6.3) — this
                                    band said "agree it with the user first" for a further
                                    day, which is a resolved item reading as a blocked one.
-                                   NEXT for this arc: the write slice (whose declaration of
-                                   "read-only" do we believe?) and the UI (`+ Custom MCP` in
-                                   the connectors catalog, per-server palette rows).
+  ✅ VA-9d WRITE SLICE SHIPPED 2026-09-02 — the grant plane. Our per-tool ratification
+                                   authorizes a mutating call, their `readOnlyHint` is
+                                   advisory, and a changed declaration revokes the grant
+                                   (pinned at discovery, scoped to the tool that moved,
+                                   fail-closed). `uncertain` arrived with it, as the
+                                   read-only slice promised it would. 🔴 Two premises broke
+                                   under measurement: `tool_grants` was the wrong column,
+                                   and `writes` reached the span but not the ledger — §3.1
+                                   carries both. Still unbuilt: OAuth-authenticated servers,
+                                   non-text tool results.
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
@@ -1492,18 +1544,30 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
         with the repo's one publicly-reachable route) · Slack · MCP tool, each `open |
         closed | needs_setup | unavailable` with the alt-door sentence — §3.7 Phase 4;
         **§3.7 is now COMPLETE**)
-        VA-10 multi-user + admin  (hardening pass over everything above)
+        VA-10 multi-user + admin  (hardening pass over everything above) — ✅ UNBLOCKED
+                                   2026-09-02: §6.4 decided (visible metadata, gated payloads,
+                                   break-glass audited and visible to the user). §3.5 carries it.
 ```
 
 ### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
+
+> ⚠️ **Re-swept 2026-09-02 (later the same day), and the sweep itself was the finding.** Of the
+> items re-measured, **two were FALSE** (`notification_channel`, wired a fortnight earlier by
+> #349) **or wrong by six** (report-quality: 1 live, not 7), **one was stale** (DS-6/DS-7
+> receipts, cleaned that morning), **one was true for the wrong reason** (`svg_to_png` — an
+> uninstalled extra, not a missing backend), and **one was true and root-caused to a single
+> line** (the Notion/Confluence picker). Three of the week's failures were the same failure:
+> **a resolved item that keeps reading as open costs whatever work it deters.** Re-measure
+> before scheduling from this list; every line below carries the date it was last checked.
 
 **Keyed on the user** (a decision or credential only they hold):
 - ~~**VA-9d posture**~~ — **NOT a debt: decided 2026-09-01** (§3.1, §6.3), and the first
   slice shipped 2026-09-02. This line and §5's band both still read "needs sign-off" a
   day after the call was made — the ledger's own worst failure mode, because a resolved
   item that keeps reading as blocked stops work that could have started.
-- **VA-10's privacy default** — §6.4, the ONE open decision left in §6: may an admin read a
-  user's prompts, or only their metadata? VA-10 stalls on it, VA-9d does not.
+- ~~**VA-10's privacy default**~~ — **DECIDED 2026-09-02** (§6.4, §3.5): visible metadata,
+  gated payloads. **§6 now has NO open decisions**, and VA-10 no longer stalls. The MCP write
+  slice's two questions were decided the same day (§6.6, §3.1) — so is Arc VA's other blocker.
 - **VA-11's live Google receipt** — needs an OAuth client only the user can create.
 - **Slack reinstall** with `assistant:write` + `files:write` — three Slack surfaces dark until then.
 - **One manual drag** — P1's edge-drop gesture: no tooling here can drive a ReactFlow drag
@@ -1512,22 +1576,48 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
-- **Report-quality deep dive, 7 of 8 defects still live** (2026-08-19 catalogue; the partial-day
-  guard closed one). Worst first: repair-instruction text ships inside customer PDFs
-  (`confidence_justification`); `_orchestration_plan` dropped by LangGraph on 144/144 reports;
-  the dead confidence floor (zero-row run shipped HIGH); grounding check lacks derivation
-  credit; deep follow-up posts no session_id.
+- ~~**Report-quality deep dive, 7 of 8 defects still live**~~ — **THE COUNT WAS WRONG BY SIX.
+  Re-measured 2026-09-02** against the code and the live corpus (985 reports, 229 deep runs):
+  **exactly ONE was live.** **CA-0 (#359) merged 2026-08-19 at 23:55 — the same evening the
+  catalogue was written** — and closed the rest, each fix naming its specimen. The catalogue was
+  stale within hours and was then read as a backlog for two weeks.
+  The one real survivor, ⑥ *repair-instruction text ships inside customer PDFs*
+  (`confidence_justification`, 10/144 reports), is **fixed on `claude/report-quality-audience-split`
+  (`d1649452`) — pushed, NOT merged.**
+  🔑🔑 **A catalogue is a measurement with a TIMESTAMP, not a backlog. Re-measure before
+  scheduling from one.**
 - **Explorer partial-day sibling** — canvas trend charts still end on today's false dip
   (the investigate-path guard landed 2026-09-02; chip filed).
 - **Connectors picker hides Notion + Confluence** — real, synced, never offered (DS-10 chip).
-- **Monitors' `notification_channel` unwired** since the Arc OA retirement — monitors fire,
-  can't route.
+  ✅ **ROOT-CAUSED 2026-09-02, and it is one line.** Not a backend gap: `list_connector_types`
+  (`routers/system.py:324`) returns them with `category: "knowledge"`, and no server-side filter
+  drops them. The frontend does: `CATEGORY_ORDER` (`web/components/AddDataPanel.tsx:63`) lists
+  only `built-in`, `warehouse`, `api`, and the render maps **only** those (`:621`) — so every
+  `knowledge` connector falls out. Their `META` labels already exist (`:59-60`), which is why a
+  grep finds them and the UI does not. **Fix: add a `knowledge` row to `CATEGORY_ORDER`.**
+- ~~**Monitors' `notification_channel` unwired**~~ — **THIS LINE WAS FALSE. Re-measured
+  2026-09-02:** the field was wired by **#349 (`f4c25426`, OA·N8-0)**, which is where
+  `aughor/monitors/notify.py` came from. `dispatch_alert(alert)` is called on the alert-commit
+  path (`monitors/store.py:332`), the channel holds an **Action Hub trigger id** (a configured
+  destination, not a channel *kind*), delivery is `fire_action`, and a unit test covers it.
+  Monitors CAN route. Third instance of the week's lesson — this one deterred work that had
+  already shipped a fortnight earlier.
 - **The propose plane has an empty roster on this deployment** — theLook declares zero
   actions, so tool_grants/`propose_action` are live plumbing with nothing to bite; declaring
   one action is the ten-minute end-to-end receipt.
-- **DS-6/DS-7 receipt automations pollute Attention daily** — enabled fixtures with
-  deliberately-missing ids (`sb_missing`, trigger `744ec96b`) re-fail every 09:00.
-- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study).
+- ~~**DS-6/DS-7 receipt automations pollute Attention daily**~~ — **CLOSED 2026-09-02.** The
+  10 offending fixtures were deleted; `automation_runs` 26,298 → **3,010** and the heartbeat
+  write rate ~11/min → **1.0/min**. Deletion cascades runs, probe_state and layouts; real
+  automations untouched (`The Look - Daily Briefing` still live on 2 doors).
+  ⚠️ Two DISABLED fixtures remain by choice — `W1 guard check`, `W2 fan-out check` — same class,
+  zero cost because disabled. Ask before deleting. ⚠️ No `VACUUM` yet (needs an exclusive lock,
+  the API was running): the file is still 12.1 MB.
+- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study). **Re-measured
+  2026-09-02: true, and the reason is not the one recorded.** Not "a renderPM backend is
+  absent" — `reportlab` and `svglib` do not import here **at all**, because both live only in
+  the `[export]` extra (`pyproject.toml:85-90`). So this is an INSTALL gap on this machine
+  (the documented setup is `uv sync --all-extras`), not a code defect: the function already
+  degrades to `None` and callers fall back to their table/prose, by design.
 - **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
@@ -1545,6 +1635,13 @@ the browser** · **measure the premise before building.**
 ---
 
 ## 6 · Open decisions — the user's, not the builder's
+
+> **Status 2026-09-02: NONE open. All six are decided.** Kept as a register, not a queue —
+> each entry records the reasoning so a settled question is not re-litigated, and so no band
+> elsewhere in this document can go on reading as blocked once the call has been made. If you
+> arrived here looking for what the user still owes, the answer is *nothing*; what remains is
+> in the ledger's "keyed on the user" list, and those are credentials and one manual gesture,
+> not decisions.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -1564,7 +1661,11 @@ the browser** · **measure the premise before building.**
    question it defers on purpose — whose declaration of "read-only" is believed — is the
    write slice's to answer, and is the reason this cut is the narrow one. Full note: §3.1.
 
-4. **VA-10's privacy default** — may an admin read a user's prompts, or only their metadata?
+4. ✅ **DECIDED 2026-09-02 — visible metadata, gated payloads.** An admin reads a user's
+   metadata freely and their prompts only through an audited break-glass: a recorded reason,
+   an audit-log entry, and the access visible to the user it concerns. Metadata carries the
+   analytics case on its own; payload access is the exception that must justify itself.
+   Specced as §3.5 — VA-10 no longer stalls.
 5. ✅ **DECIDED 2026-08-31 — the visual-editor question: the grammar, not the codebase.**
    The user re-opened §4.2 with a mandate for total openness ("fork it… go all in… think
    years ahead"); the four-pass re-study confirmed the refusal (§4.2 addendum) and the
@@ -1573,6 +1674,12 @@ the browser** · **measure the premise before building.**
    proposal. Phase-1 default order DS-1 → DS-4 → DS-3 → DS-2 → DS-5, reorderable; the
    VA-11 consumer stays first among equals in §5 (repairing the built-and-inert vault is
    §7's own law).
+6. ✅ **DECIDED 2026-09-02 — the MCP write slice: our grant, not their label.** A server's
+   `readOnlyHint` is advisory and displayed; an explicit per-tool grant (reusing
+   `tool_grants`) is what authorizes a mutating call, which is what the SDK's own
+   untrusted-annotation warning asks for. A declaration that changes after registration
+   revokes that tool's grant and refuses the next call until a human re-ratifies — pinned at
+   discovery, scoped to the tool that moved, fail-closed. Full note: §3.1.
 
 ---
 

@@ -338,17 +338,33 @@ def _remote_tool_components() -> list[Component]:
     that did that would be paying a subprocess for a picture.
     """
     from aughor.mcpservers import store as mcp_store
-    from aughor.mcpservers.models import CALLABLE
+    from aughor.mcpservers.models import CALLABLE, GRANT_ACTIVE, GRANT_STALE, grant_verdict
 
     servers = {s.id: s for s in mcp_store.list_servers()}
+    grants = {(g.server_id, g.tool_name): g for g in mcp_store.list_grants()}
     out: list[Component] = []
     for server_id, tools in mcp_store.all_rosters().items():
         server = servers.get(server_id)
         if server is None:
             continue          # a roster whose server was deleted; the store purges these
         for n, tool in enumerate(tools):
+            grant_state, grant_why = grant_verdict(
+                tool, grants.get((server_id, tool.name)))
+            granted = grant_state == GRANT_ACTIVE
+            badges: list = []
             if server.enabled and tool.disposition == CALLABLE:
                 availability, reason = "ready", ""
+            elif server.enabled and granted:
+                # A tool this deployment may call because a PERSON said so, not because its
+                # server did. Ready, and badged — a write that renders identically to a read
+                # would hide the one property a reader most needs before dropping it on a
+                # canvas that runs at 07:00 unattended.
+                availability, reason = "ready", ""
+                badges = ["writes"]
+            elif server.enabled and grant_state == GRANT_STALE:
+                # Distinct from never-granted on purpose: somebody DID ratify this, and the
+                # actionable sentence is "look again", not "ask for permission".
+                availability, reason = "needs_setup", grant_why
             elif not server.enabled:
                 # The SERVER's state dims every one of its rows; a tool's own disposition
                 # dims one. Two levels, the shape `_integration_components` already draws
@@ -380,7 +396,7 @@ def _remote_tool_components() -> list[Component]:
                 # does not exist.
                 exposable_as_tool=False,
                 governed_by="aughor.mcpservers.call",
-                badges=[],
+                badges=badges,
             ))
     return out
 

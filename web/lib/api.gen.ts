@@ -5827,6 +5827,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/mcp-servers/{server_id}/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Grants
+         * @description Every tool a person has ratified on this server. An EMPTY list is the normal state.
+         */
+        get: operations["list_grants_mcp_servers__server_id__grants_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/mcp-servers/{server_id}/grants/{tool_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Grant Tool
+         * @description Ratify one mutating tool, for the declaration it makes RIGHT NOW.
+         *
+         *     The tool must be on a roster somebody discovered — a grant for a name we have never
+         *     seen would be a permission with no declaration behind it, which is precisely the thing
+         *     this plane exists to require. And a grant is refused for a tool that does not need one:
+         *     a `callable` tool already runs, so ratifying it would create a row that authorizes
+         *     nothing and would then go stale on a declaration change and read as a revocation.
+         */
+        put: operations["grant_tool_mcp_servers__server_id__grants__tool_name__put"];
+        post?: never;
+        /**
+         * Revoke Tool
+         * @description Withdraw a ratification. The tool goes back to being listed and refused.
+         */
+        delete: operations["revoke_tool_mcp_servers__server_id__grants__tool_name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/mcp-servers/{server_id}/health": {
         parameters: {
             query?: never;
@@ -10591,11 +10641,6 @@ export interface components {
             /** Suite Id */
             suite_id: string;
         };
-        /** GrantRequest */
-        GrantRequest: {
-            /** Catalog Id */
-            catalog_id: string;
-        };
         /**
          * GroundRequest
          * @description Resolve + re-run a cited finding's query to back a specific number ("show the
@@ -12621,6 +12666,29 @@ export interface components {
             actor: string;
             /** Context */
             context: string;
+        };
+        /**
+         * GrantRequest
+         * @description The authored half of a grant. The declaration is NOT here — it is pinned from the
+         *     roster server-side, because a client that could state which declaration it was ratifying
+         *     could ratify one the server never made.
+         */
+        aughor__routers__mcpservers__GrantRequest: {
+            /**
+             * Granted By
+             * @default
+             */
+            granted_by: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+        };
+        /** GrantRequest */
+        aughor__routers__metastore__GrantRequest: {
+            /** Catalog Id */
+            catalog_id: string;
         };
     };
     responses: never;
@@ -22621,6 +22689,111 @@ export interface operations {
             };
         };
     };
+    list_grants_mcp_servers__server_id__grants_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    grant_tool_mcp_servers__server_id__grants__tool_name__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+                tool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__mcpservers__GrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    revoke_tool_mcp_servers__server_id__grants__tool_name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                server_id: string;
+                tool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     server_health_mcp_servers__server_id__health_get: {
         parameters: {
             query?: never;
@@ -22904,7 +23077,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["GrantRequest"];
+                "application/json": components["schemas"]["aughor__routers__metastore__GrantRequest"];
             };
         };
         responses: {
