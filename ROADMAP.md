@@ -1571,8 +1571,17 @@ worked.
   INSERT drops the model's existing `agent_id` (the half-added-field class, again).
 - **Feedback is split and invisible:** `chat.feedback` keys on turn_id, `trace.feedback`
   on trace_id; neither is in `KIND_CATEGORY`, so neither reaches the governance feed.
-- **The strong verdict surfaces already exist:** `finding_verdicts` (accept · correct ·
-  reject, **with `corrected_sql`** — ready-made preference pairs) · `staged_proposals`
+- **The strong verdict surfaces already exist** — *as SCHEMA; re-measured 2026-09-03 and
+  the contents are the story.* `finding_verdicts` (accept · correct · reject, with a
+  `corrected_sql` column) held **5 rows on the live deployment: 2 accept, 1 correct, 2
+  reject — and ZERO carrying `sql_source` or `corrected_sql`.** "Ready-made preference
+  pairs" described a column, not its contents; the true count of usable DPO pairs was
+  **0**. A catalogue is a proxy for the thing (×7). The funnel, not the schema, is the
+  constraint: the fix-it chain is wired end to end from chat (`ChatMessage.tsx:1208` passes
+  both fields) but **`ExplorationReport.tsx:196` and `TraceExplorerPanel.tsx:192` call
+  `recordVerdict` without them**, so verdicts from the exploration report — plausibly the
+  highest-volume surface — can never become training pairs however diligently anyone
+  grades. **Two call sites, and worth more per line than the exporters.** OPEN · `staged_proposals`
   (accepted · rejected · executed · failed, resolver named) · `evidence_claims`
   (validated · disputed, downstream fate) · `guardrail` events (allow AND block) ·
   `automation_runs` (fired · not_fired · gated · error · paused, no-ops included) ·
@@ -1734,7 +1743,34 @@ survives the sweep and its ungraded neighbour does not, in ONE test, because sur
 proves nothing if nothing is being swept. Plus the restart case the counter could never
 cover, both directions of the durable clock, and the row-cap exemption.
 
-#### MI-3 · The dataset plane (Tangle's schema, our law — §4.5)
+#### MI-3 · The dataset plane (Tangle's schema, our law — §4.5) — ✅ SHIPPED 2026-09-03
+
+> **Built, and honest about what it currently exports: ~0 examples.** The plane is the
+> accrual substrate (MI-5: MI-1…3 are default-ON for every install, and a fresh install
+> starts accruing from its first query), so it is worth having before there is volume — but
+> the exporters run over 5 verdicts today, none carrying SQL. That is the arc's own
+> prediction (*capture is rich; grading is the gap*), and `gate_status()` publishes the
+> measured distance to MI-4's entry gates precisely so the falsifier stays checkable.
+>
+> **Store:** `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR`, both registered in all THREE
+> places in the same commit (code · `tests/conftest.py` · `scripts/dump_openapi.py`),
+> directory family included. Three tables as ported: content-addressed `dataset_data`
+> (bytes dedup by hash; `deleted_at` lets a purge remove payload while the node and its
+> lineage stand), `dataset_node` (per-org versioning, `parent_id` clone lineage; identical
+> content re-registers as the SAME version rather than minting one), `dataset_lineage`.
+>
+> **Exporters:** SFT from accepted findings, DPO from `correct` verdicts that carry an
+> actual correction (a `correct` with no `corrected_sql` is a judgement without a lesson —
+> including it would fabricate a preference nobody expressed), golden as a stable 1-in-10
+> hold-out. The split is a content hash, NOT a shuffle: a random split would move examples
+> between corpora on every export and break both determinism and the never-trained-on
+> promise. PII scrub rides the existing `security/pii` seam and **fails closed**.
+>
+> **Consumption, not just capability:** the endpoints landed in the EXISTING
+> `routers/learning.py` — the Wave 1 surface built to make the closed loop's accumulation
+> visible, which is one step short of this. Scheduling is deliberately absent: periodic
+> work joins the one loop that exists, and a nightly export over a two-example corpus is
+> motion without progress. `gate_status()` is what says when that changes.
 
 New store `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR` for snapshot files — the
 THREE-registration law applies, same commit. The ported ideas (§4.5): content-addressed
