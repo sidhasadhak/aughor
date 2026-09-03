@@ -1770,9 +1770,25 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   destination, not a channel *kind*), delivery is `fire_action`, and a unit test covers it.
   Monitors CAN route. Third instance of the week's lesson — this one deterred work that had
   already shipped a fortnight earlier.
-- **The propose plane has an empty roster on this deployment** — theLook declares zero
-  actions, so tool_grants/`propose_action` are live plumbing with nothing to bite; declaring
-  one action is the ten-minute end-to-end receipt.
+- ~~**The propose plane has an empty roster on this deployment**~~ — **the claim was false as
+  written, and the receipt is now taken. Measured live 2026-09-03, per connection:**
+  `workspace` **1** · `fixture` **2** (a DS-8 receipt from 2026-09-01) · theLook **0**. So the
+  plane already had something to bite on two connections; what was true is narrower — *theLook*
+  declared none. Fifth line this week whose wording outlived its measurement.
+  ✅ **Receipt taken on theLook**: one `annotate` action (`flag_order_for_review`) declared
+  through `PUT /ontology/kinetic-actions`. It reaches every consumer — the roster returns it,
+  and `GET /components?conn_id=8233e4fd` now carries `declared_action: 1`, `availability=ready`,
+  its `order_id` param drawn as a port, `exposable_as_tool=true`, `governed_by=
+  aughor.govern.actions`, and `risk=high` by the model's fail-safe default (an unclassified
+  declared action stops for a human rather than auto-firing).
+  🔴 **The chain was NOT driven to a staged proposal, deliberately.** `POST
+  /kinetic-actions/propose` runs a proposer **LLM call** on the `fast` binding, and spending the
+  user's tokens is not something a receipt gets to do unasked. What is proven is that a
+  declaration reaches the palette, the ports and the tool-exposure flag; what is unproven here
+  is the LLM proposal step, which has its own unit coverage (`test_kinetic_propose.py`).
+  ⚠️ The declaration is a reversible override file
+  (`data/ontology_overrides/8233e4fd/thelook/action/flag_order_for_review.yaml`), untracked like
+  its `fixture` sibling. Delete it to restore the previous state.
 - ~~**DS-6/DS-7 receipt automations pollute Attention daily**~~ — **CLOSED 2026-09-02.** The
   10 offending fixtures were deleted; `automation_runs` 26,298 → **3,010** and the heartbeat
   write rate ~11/min → **1.0/min**. Deletion cascades runs, probe_state and layouts; real
