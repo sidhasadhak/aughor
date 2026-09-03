@@ -63,6 +63,33 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         );
         CREATE INDEX IF NOT EXISTS idx_audit_conn ON audit_log (connection_id);
         CREATE INDEX IF NOT EXISTS idx_audit_ts   ON audit_log (ts);
+
+        -- MI-1: the guard verdict, kept. Guards were computed on every execution and
+        -- discarded at birth -- `run_trust_checks` returned E1 issues and the rewrite
+        -- receipts fanned out to an SSE sink, so the best free supervision signal on the
+        -- platform lived only as long as a browser tab. It rides THIS database because
+        -- `audit_log` is the one table that sees every execution (quick path included),
+        -- which makes "run -> executed SQL -> guard fire" a single-store join instead of
+        -- a cross-database reconstruction.
+        --
+        -- FIRES ONLY, deliberately: the denominator is `audit_log` itself. Every execution
+        -- writes an audit row, so "clean" is an audit row with no guard_verdicts sibling —
+        -- a rate whose denominator is already durable, without doubling the write volume
+        -- of the busiest table in the system.
+        CREATE TABLE IF NOT EXISTS guard_verdicts (
+            id         TEXT NOT NULL PRIMARY KEY,
+            ts         TEXT NOT NULL,
+            trace_id   TEXT NOT NULL,
+            org_id     TEXT NOT NULL DEFAULT 'default',
+            sql_digest TEXT NOT NULL DEFAULT '',
+            pattern    TEXT NOT NULL,
+            subject    TEXT NOT NULL DEFAULT '',
+            phase      TEXT NOT NULL DEFAULT '',
+            detail     TEXT NOT NULL DEFAULT ''
+        );
+        CREATE INDEX IF NOT EXISTS idx_guard_trace   ON guard_verdicts (trace_id);
+        CREATE INDEX IF NOT EXISTS idx_guard_ts      ON guard_verdicts (ts);
+        CREATE INDEX IF NOT EXISTS idx_guard_pattern ON guard_verdicts (pattern);
         PRAGMA journal_mode=WAL;
     """)
     run_migrations(c, _MIGRATIONS, store="audit")
@@ -199,5 +226,99 @@ class AuditLogger:
                 params,
             ).fetchone()
             return dict(row) if row else {}
+        finally:
+            c.close()
+
+
+class GuardVerdicts:
+    """MI-1 — the durable half of the guard plane. Append-only, one row per FIRE.
+
+    Two producers feed this sink, and they are deliberately separate because the guard
+    families have genuinely different shapes: `run_trust_checks` records its E1 semantic
+    caveats (pattern + the column they are about), and the kernel's `emit_guard_receipt`
+    seam records interventions that rewrote SQL (guard name + what changed). Both are
+    registration-free — neither depends on the agent plugin being wired, so a bare
+    platform, an automation tick and the quick path all record.
+    """
+
+    @classmethod
+    def record(
+        cls,
+        *,
+        pattern: str,
+        subject: str = "",
+        phase: str = "",
+        sql: str = "",
+        detail: str = "",
+        trace_id: str | None = None,
+        org_id: str | None = None,
+    ) -> None:
+        """Persist one guard fire. Best-effort and TRACE-GATED; never raises.
+
+        A verdict with no trace is dropped rather than written orphaned — the same law
+        the session log already applies, for the same reason: this row exists to be
+        JOINED (run -> executed SQL -> guard fire -> human verdict), and a row that can
+        reach none of those is noise that makes the table look healthier than it is.
+        That gating is also what keeps the check free for tests, scripts and the eval
+        plane's `guard.e1_semantics`, which call the same pure functions outside a run.
+
+        Guarding must never cost a query its answer: every failure here is tolerated,
+        exactly like the audit write it sits beside.
+        """
+        try:
+            if trace_id is None:
+                from aughor.telemetry import current_trace_id
+                trace_id = current_trace_id()
+            if not trace_id:
+                return
+            from aughor.org.context import current_org_id
+            c = _connect()
+            try:
+                ensure_once(c, _ensure_schema)
+                c.execute(
+                    """INSERT INTO guard_verdicts
+                       (id, ts, trace_id, org_id, sql_digest, pattern, subject, phase, detail)
+                       VALUES (?,?,?,?,?,?,?,?,?)""",
+                    (str(uuid.uuid4()),
+                     time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+                     trace_id,
+                     org_id or current_org_id(),
+                     (sql or "")[:120].replace("\n", " ").strip(),
+                     pattern, subject, phase, (detail or "")[:500]),
+                )
+                c.commit()
+            finally:
+                c.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "guard-verdict persistence is additive; the guard still fired",
+                     counter="guard.verdict_record")
+
+    @classmethod
+    def recent(cls, limit: int = 100, trace_id: str | None = None,
+               pattern: str | None = None,
+               org_id: str | None = None) -> list[dict[str, Any]]:
+        """Recent guard fires, newest first. ``org_id`` is the tenant filter (DATA-06),
+        with the same contract as :meth:`AuditLogger.recent`: ``None`` means no filter."""
+        c = _connect()
+        try:
+            ensure_once(c, _ensure_schema)
+            clauses: list[str] = []
+            params: list[Any] = []
+            if org_id is not None:
+                clauses.append("org_id = ?")
+                params.append(org_id)
+            if trace_id:
+                clauses.append("trace_id = ?")
+                params.append(trace_id)
+            if pattern:
+                clauses.append("pattern = ?")
+                params.append(pattern)
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            rows = c.execute(
+                f"SELECT * FROM guard_verdicts {where} ORDER BY ts DESC LIMIT ?",
+                [*params, limit],
+            ).fetchall()
+            return [dict(r) for r in rows]
         finally:
             c.close()

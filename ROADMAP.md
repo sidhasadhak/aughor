@@ -1558,8 +1558,15 @@ worked.
 - **`session_events` expires in 14 days** (`AUGHOR_SESSION_LOG_KEEP_DAYS=14`,
   `obs/session_log.py:698`) while `finding_verdicts`, `staged_proposals` and
   `evidence_claims` are unbounded — a late verdict's join target is already deleted.
-- **Attribution is dead on arrival:** `session_events.user_id` at 0 of 8,198 rows,
-  `agent_id` at 0 of 7,365.
+- ~~**Attribution is dead on arrival**~~ — **RE-MEASURED 2026-09-03, and it was wrong in
+  both halves.** `agent_id` is at **639 of 10,782** rows across seven kinds, flowing since
+  2026-08-30: VA-9b's plumbing works and the earlier count was taken before it landed.
+  `user_id` is genuinely 0 of 10,782 — but not for want of wiring. `session_log.emit`
+  already reads all three ids ambiently from contextvars (`telemetry.py:388`), so there is
+  nothing to thread; `user_id` is empty because `AUGHOR_REQUIRE_IDENTITY` is **off by
+  default** (localhost mode) and the identity middleware no-ops. Making it non-empty is
+  multi-user work — **§3.5 VA-10's band, not MI-1's**. `investigations.py:5528` had already
+  written the diagnosis down: *the machinery was reading a value nobody set.*
 - **`automation_runs` cannot reach the LLM calls it caused** — no `trace_id`; and its
   INSERT drops the model's existing `agent_id` (the half-added-field class, again).
 - **Feedback is split and invisible:** `chat.feedback` keys on turn_id, `trace.feedback`
@@ -1579,7 +1586,7 @@ worked.
   `trace.payload_access`). **One exception, found by reading:** `new_trace()` puts the
   user's *question* on the OTLP wire (`langfuse.trace.input`) regardless of the window.
 
-#### MI-0 · The custody law: the training annex — ✅ DECIDED 2026-09-03 (§6.7); the gate remains
+#### MI-0 · The custody law: the training annex — ✅ DECIDED 2026-09-03 (§6.7); ✅ GATE SHIPPED 2026-09-03
 
 The decision half landed with §6.7: **payloads are trainable only under an org-level
 opt-in carrying a retention class, a purpose tag, and PII scrub at export; work
@@ -1589,28 +1596,61 @@ annex governs machine consumption — deliberately separate acts.) What remains 
 is its one piece of code: `langfuse.trace.input`'s question attribute — an *export*,
 not a read, so no break-glass ever fires on it today — must obey the same custody
 classes, with a test.
-**Receipt:** §6.7's dated stamp (✅ landed); the trace-input gate test (open — rides
-MI-1's wave).
+**Receipt:** §6.7's dated stamp (✅ landed); the trace-input gate ✅ shipped with MI-1's
+wave — `telemetry._trace_input` keeps `connection_id` unconditionally (§6.4 makes metadata
+free) and attaches the question only inside an open capture window, failing safe to "no
+capture" when the window cannot be read. It deliberately does NOT `consume()` that budget:
+the budget is denominated in captured MODEL CALLS, and spending it per trace would make an
+operator's "20 calls" mean something different depending on how many runs happened to
+start.
 
-#### MI-1 · Grade what already runs (substrate-sized)
+#### MI-1 · Grade what already runs (substrate-sized) — ✅ SHIPPED 2026-09-03
 
-- **Persist guard verdicts at the execution chokepoint** — the one seam every connector
+> **Three of this band's four bullets survived their own pre-check; the fourth did not.**
+> The guard sink, the run attribution and the feedback categorization were all real and are
+> built. "Wire attribution" was struck — see the bullet below. The pre-check also turned up
+> a defect the band had predicted in the abstract and got exactly right in the concrete:
+> the `uncategorized_kinds` ratchet was blind *by construction*, not by omission.
+
+- ✅ **Persist guard verdicts at the execution chokepoint** — the one seam every connector
   and both the quick and deep paths already pass (the capability-misses-a-connector
   lesson, ×3, decides the placement). Rows `(ts, trace_id, sql_digest, pattern,
   subject, phase, org_id)` beside `audit_log` in `AUGHOR_AUDIT_DB` (an existing store:
   migration rules above apply).
-- **`automation_runs` gains `trace_id`**, and the INSERT carries the `agent_id` the
+- ✅ **`automation_runs` gains `trace_id`**, and the INSERT carries the `agent_id` the
   model already declares — a chain run can finally reach the `llm_call` rows it caused
   (`session_events` got `job_id`/`charter_id` in m10 precisely for this join; this is
   the reciprocal key).
-- **Both feedback kinds enter `KIND_CATEGORY`** — and find out why the
-  `uncategorized_kinds` ratchet wasn't already flagging them (a guard blind to its own
-  population is a standing failure class; treat the silence as its own defect).
-- **Wire attribution:** thread `user_id`/`agent_id` through the session-log emitters;
-  measure after — the receipt is nonzero on new rows, not the code existing.
+- ✅ **Both feedback kinds enter `KIND_CATEGORY`** under a new `human_verdict` category —
+  none of the existing four fits a thumbs, and a mapping alone renders nothing because
+  `feed()` walks `_SINKS`, so both halves landed together.
+  **Why the ratchet was silent, which was the more expensive half:** it hand-listed the
+  emitted kinds as a literal and asserted them against the hand-maintained `KIND_CATEGORY`.
+  Both sides were the same edit, so a kind nobody remembered was absent from *both* and the
+  assertion passed. It failed OPEN. It now DISCOVERS its population by parsing `aughor/`
+  (resolving module-level constants too — the guardrail sink emits `EVENT_KIND`, not a
+  literal), and every discovered kind must be categorized or explicitly declared
+  non-governance. It caught `budget.exceeded` on its first run.
+  **Found by the fix, and needing a product decision:** `govern.cap`, `guardrail`,
+  `metric.enforcement` and `budget.exceeded` are all governance-shaped and invisible to the
+  governance feed. They are held in `GOVERNANCE_SHAPED_UNCATEGORIZED` rather than buried in
+  the exclusion set, because writing "not governance" about them would record a judgment
+  known to be false. Admitting them changes what a user-facing surface returns, and
+  `guardrail` alone is 1,074 of the local ledger's rows — every one a PII *allow* — against
+  a 500-per-sink read. Whether a high-volume allow trail belongs in a reader-facing feed is
+  the user's call, not the builder's.
+- ~~**Wire attribution**~~ — **struck at the pre-check (2026-09-03).** The bullet named a
+  mechanism that does not exist: nothing is threaded through the emitters, because they
+  read identity ambiently. Half of it already works and the other half is VA-10's (see the
+  re-measured bullet above). Kept as a lesson rather than deleted: this line was written
+  the day before it was struck, from a count taken the day before that.
 
-**Receipt:** ONE live SQL query walks run → executed SQL → guard fires → human verdict.
-Today that query cannot be written. Before/after row counts published in the PR.
+**Receipt:** ONE live SQL query walks run → executed SQL → guard fire. Before this slice
+that query could not be written; it is now
+`tests/unit/test_mi1_graded_ledger.py::test_one_query_walks_run_to_executed_sql_to_guard_fire`,
+and both tables share `AUGHOR_AUDIT_DB` so it is a single-store join. The human-verdict hop
+is reachable but not yet joined in one statement — `finding_verdicts` lives in its own
+store, which is MI-3's dataset plane, not this slice's.
 
 #### MI-2 · A verdict pins its evidence (substrate-sized)
 

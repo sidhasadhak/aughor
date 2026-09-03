@@ -104,9 +104,18 @@ def _date_only_literal(node) -> Optional[str]:
 
 
 def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
-                     dialect: str = "duckdb") -> list[TrustIssue]:
+                     dialect: str = "duckdb",
+                     phase: str = "trust_check") -> list[TrustIssue]:
     """Return E1 function-semantics caveats for `sql`. Pure AST; never raises. `col_types` keys are
-    lowercased "table.col" and/or "col" → type string (optional)."""
+    lowercased "table.col" and/or "col" → type string (optional).
+
+    MI-1: a fire is also PERSISTED, from here rather than from the callers. Four sites run
+    these checks (the quick path, the deep path, the executor and the trust scope) and a
+    fifth is the eval plane; recording at each would be five chances to miss one — the same
+    shape as the capability that missed a connector three times. `phase` names which caller
+    ran it, so the durable row can tell an execution-time fire from a speculative one.
+    Persistence is trace-gated and best-effort, so the pure-AST contract above still holds:
+    no trace (tests, scripts, evals outside a run) writes nothing and costs one lookup."""
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
     except Exception:
@@ -207,6 +216,10 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
     if out:
         from aughor.stats import bump
         bump("guard.trust_e1.fired", len(out))
+        from aughor.security.audit import GuardVerdicts
+        for _issue in out:
+            GuardVerdicts.record(pattern=_issue.pattern, subject=_issue.subject,
+                                 phase=phase, sql=sql, detail=_issue.message)
     return out
 
 

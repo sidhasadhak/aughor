@@ -61,7 +61,8 @@ def get_cost_sql():
 def get_audit_feed(
     category: Optional[str] = Query(default=None,
                                     description="data_access | governance_change | "
-                                                "action_decision | model_call"),
+                                                "action_decision | model_call | "
+                                                "human_verdict"),
     limit: int = Query(default=100, ge=1, le=1000),
 ):
     """Governance events across every audit sink, newest first.

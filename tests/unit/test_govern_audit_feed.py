@@ -8,10 +8,15 @@ from __future__ import annotations
 
 import pytest
 
+import pathlib
+
+import aughor.govern.audit_categories
 from aughor.govern.audit_categories import (
     AUDIT_TABLE_CATEGORY,
     CATEGORIES,
+    GOVERNANCE_SHAPED_UNCATEGORIZED,
     KIND_CATEGORY,
+    NON_GOVERNANCE_KINDS,
     AuditEvent,
     _summarize,
     category_for,
@@ -28,21 +33,89 @@ def test_every_mapped_kind_lands_in_a_known_category():
     assert AUDIT_TABLE_CATEGORY in CATEGORIES
 
 
+def _emitted_kinds_in_tree() -> set[str]:
+    """Every event kind `aughor/` emits, discovered by parsing it.
+
+    Resolves module-level string constants as well as literals, because the guardrail
+    sink emits `EVENT_KIND` rather than `"guardrail"` — a scanner that saw only literals
+    would miss it and call the omission a clean bill of health.
+    """
+    import ast
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2] / "aughor"
+    kinds: set[str] = set()
+    for f in root.rglob("*.py"):
+        try:
+            tree = ast.parse(f.read_text(encoding="utf-8"))
+        except (SyntaxError, UnicodeDecodeError):
+            continue
+        consts = {
+            n.targets[0].id: n.value.value
+            for n in tree.body
+            if isinstance(n, ast.Assign) and len(n.targets) == 1
+            and isinstance(n.targets[0], ast.Name)
+            and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+        }
+        for n in ast.walk(tree):
+            if (isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
+                    and n.func.attr == "emit" and n.args):
+                a = n.args[0]
+                if isinstance(a, ast.Constant) and isinstance(a.value, str):
+                    kinds.add(a.value)
+                elif isinstance(a, ast.Name) and a.id in consts:
+                    kinds.add(consts[a.id])
+    return kinds
+
+
+def test_the_scanner_finds_the_kinds_it_exists_to_find():
+    """The ratchet's own premise, checked. A scanner that silently matched nothing would
+    make the assertion below vacuous — a passing test proving only that zero is a subset
+    of everything, which is the failure this file has already shipped once."""
+    found = _emitted_kinds_in_tree()
+    assert len(found) > 20, f"scanner found only {len(found)} kinds — it stopped matching"
+    # One literal and one resolved through a module-level constant.
+    assert "chat.feedback" in found
+    assert "guardrail" in found, "constant resolution regressed — EVENT_KIND went unseen"
+
+
 def test_every_governance_kind_is_categorized():
     """The ratchet. Five sinks record governance events and none knew about the others;
     a sixth arriving uncategorized is how that happens again.
 
-    The kinds are listed here rather than discovered, so ADDING a sink means editing this
-    list — which is the moment to also decide its category.
+    DISCOVERED, not listed. The previous version of this test hand-wrote the emitted set
+    and asserted it against the hand-written KIND_CATEGORY — two halves of one edit, so a
+    kind nobody remembered was missing from both and the assertion passed anyway. It stayed
+    green while `chat.feedback` and `trace.feedback` went uncategorized from the day they
+    shipped. A guard whose population is supplied by the same hand as its expectation is
+    not a guard, and this one now fails CLOSED: a new kind is unknown until someone
+    categorizes it or declares it non-governance.
     """
-    emitted = {"action.approval", "govern.tag", "metric.governance", "llm_call",
-               # VA-5: an admin reading a trace's payloads. Decision ③ makes the audit
-               # trail the control, so this kind being uncategorized would mean the
-               # control exists and nobody can see it.
-               "trace.payload_access"}
-    assert uncategorized_kinds(emitted) == [], (
-        "a governance-emitting kind has no category — add it to KIND_CATEGORY so the "
-        "audit feed can surface it, or the sink is invisible to every reader")
+    unknown = (_emitted_kinds_in_tree()
+               - set(KIND_CATEGORY)
+               - NON_GOVERNANCE_KINDS
+               - GOVERNANCE_SHAPED_UNCATEGORIZED)
+    assert unknown == set(), (
+        f"undeclared event kind(s): {sorted(unknown)} — add each to KIND_CATEGORY (with a "
+        "sink in _SINKS, or the feed still renders nothing), or to NON_GOVERNANCE_KINDS if "
+        "it is operational telemetry. Deciding is the point; defaulting is what broke this.")
+
+
+def test_every_categorized_kind_has_a_sink_that_reads_it():
+    """`feed` walks _SINKS, never KIND_CATEGORY, so a mapping entry on its own renders
+    nothing. Two parallel hand-maintained lists is exactly the shape that let the audit
+    feed's own timestamps be read from a column that did not exist — assert they agree
+    instead of trusting that whoever edited one edited the other."""
+    import re
+
+    src = (pathlib.Path(aughor.govern.audit_categories.__file__)).read_text()
+    sinks_block = src.split("_SINKS: list[")[1].split("]\n")[0]
+    read_by_sink = set(re.findall(r'_from_ledger\("([^"]+)"', sinks_block))
+    # `llm_call` and the audit table ride dedicated readers, not `_from_ledger`.
+    mapped = set(KIND_CATEGORY) - {"llm_call"}
+    assert mapped <= read_by_sink, (
+        f"categorized but unreadable: {sorted(mapped - read_by_sink)} — KIND_CATEGORY "
+        "claims the kind, no sink reads it, so the feed shows nothing")
 
 
 def test_an_unmapped_kind_reports_itself():

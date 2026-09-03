@@ -78,7 +78,13 @@ CREATE TABLE IF NOT EXISTS automation_runs (
     fallback_used    INTEGER NOT NULL DEFAULT 0,
     error            TEXT NOT NULL DEFAULT '',
     -- DS-8: the durable pause checkpoint (JSON). '{}' on every run that never parked.
-    checkpoint       TEXT NOT NULL DEFAULT '{}'
+    checkpoint       TEXT NOT NULL DEFAULT '{}',
+    -- MI-1: whose work the tick was, and which trace it ran under. `agent_id` is the
+    -- FOURTH instance in this file of a field that had a model attribute and no column
+    -- (see the three migration docstrings below) — `AutomationRun.agent_id` has been
+    -- declared since VA-9b and silently ignored by the named INSERT ever since.
+    agent_id         TEXT NOT NULL DEFAULT '',
+    trace_id         TEXT NOT NULL DEFAULT ''
 );
 
 -- A3: last-committed source-version fingerprints, keyed PER AUTOMATION so two automations
@@ -154,6 +160,24 @@ def _add_run_checkpoint(conn: sqlite3.Connection) -> None:
     add_column_if_missing(conn, "automation_runs", "checkpoint", "TEXT NOT NULL DEFAULT '{}'")
 
 
+def _add_run_attribution(conn: sqlite3.Connection) -> None:
+    """MI-1's ``AutomationRun.agent_id`` + ``trace_id`` — who ran the tick, and under
+    which trace.
+
+    `agent_id` is this file's FOURTH half-added field, and the first one found by asking
+    the database instead of the model: VA-9b declared `AutomationRun.agent_id`, the named
+    INSERT never listed it, and SQLite's named binding ignored the key — so every run row
+    written since VA-9b recorded `""` while the API echoed back an agent. The three
+    docstrings above describe this exact failure; the field they describe is the one on
+    the `automations` table, and nobody checked its sibling on `automation_runs`.
+
+    `trace_id` is the reciprocal of ledger migration 10's `job_id`/`charter_id`: a chain
+    run could be reached FROM the session log but could not reach the `llm_call` rows it
+    caused, so "what did this automation actually spend" was unanswerable in SQL."""
+    add_column_if_missing(conn, "automation_runs", "agent_id", "TEXT NOT NULL DEFAULT ''")
+    add_column_if_missing(conn, "automation_runs", "trace_id", "TEXT NOT NULL DEFAULT ''")
+
+
 #: Version 2 because the live store reads `PRAGMA user_version = 1` — checked against the
 #: deployed database, not assumed from this file, which is the only way to number one.
 #: Version 3 numbered off the same fact one release later: the deployed store runs this
@@ -192,6 +216,14 @@ _MIGRATIONS: list[Migration] = [
     #: and passes either way.
     Migration(version=5, name="tool exposure (DS-14: chains as MCP tools)",
               apply=_add_exposed_as_tool),
+    #: Version 6, read off the LIVE store exactly as its four predecessors were:
+    #: `PRAGMA user_version` on the deployed `data/automations.db` returns 5 (DS-14's
+    #: migration ran at its boot), so 6 is the next one that will actually execute. A
+    #: migration numbered at or below the deployed version is skipped forever and no
+    #: hermetic test can catch it — a fresh database takes both columns from the DDL
+    #: above and passes either way.
+    Migration(version=6, name="run attribution (MI-1: agent_id + trace_id on runs)",
+              apply=_add_run_attribution),
 ]
 
 
@@ -490,6 +522,15 @@ def append_run(run: AutomationRun) -> AutomationRun:
     p["effects"] = json.dumps([e.model_dump() for e in run.effects])
     p["fallback_used"] = int(run.fallback_used)
     p["checkpoint"] = json.dumps(run.checkpoint or {})
+    # MI-1 — default the trace from the ambient run rather than making every caller
+    # thread it, the same way `AuditLogger.log` defaults its own. An explicit value on
+    # the model always wins, so a replayed or reconstructed run keeps its original trace.
+    if not p.get("trace_id"):
+        try:
+            from aughor.telemetry import current_trace_id
+            p["trace_id"] = current_trace_id() or ""
+        except Exception:
+            p["trace_id"] = ""
 
     with _LOCK:
         conn = _connect()
@@ -498,11 +539,11 @@ def append_run(run: AutomationRun) -> AutomationRun:
                 INSERT OR IGNORE INTO automation_runs (
                     id, automation_id, automation_name, conn_id, started_at, finished_at,
                     duration_ms, outcome, reason, conditions_fired, effects, fallback_used,
-                    error, checkpoint
+                    error, checkpoint, agent_id, trace_id
                 ) VALUES (
                     :id, :automation_id, :automation_name, :conn_id, :started_at, :finished_at,
                     :duration_ms, :outcome, :reason, :conditions_fired, :effects,
-                    :fallback_used, :error, :checkpoint
+                    :fallback_used, :error, :checkpoint, :agent_id, :trace_id
                 )
             """, p)
             conn.execute(

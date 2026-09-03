@@ -14136,7 +14136,7 @@ export interface operations {
     get_audit_feed_audit_feed_get: {
         parameters: {
             query?: {
-                /** @description data_access | governance_change | action_decision | model_call */
+                /** @description data_access | governance_change | action_decision | model_call | human_verdict */
                 category?: string | null;
                 limit?: number;
             };

@@ -13,12 +13,33 @@ import pytest
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _reload_telemetry():
-    """Force a fresh import of aughor.telemetry (clears the lazy-init flags)."""
+    """Force a fresh import of aughor.telemetry (clears the lazy-init flags).
+
+    Rebinds the PACKAGE ATTRIBUTE as well as the `sys.modules` entry. Deleting only the
+    latter leaves `aughor.telemetry` (the attribute on the parent package) pointing at the
+    old module, so the two import spellings resolve to DIFFERENT module objects with
+    different ContextVars: `import aughor.telemetry as t` reads the stale attribute while
+    `from aughor.telemetry import f` reads the fresh entry. A trace bound through one is
+    then invisible through the other, silently — which is how MI-1's tests came to pass
+    alone and fail in the suite on 2026-09-03."""
+    import aughor
     for mod in list(sys.modules.keys()):
         if "aughor.telemetry" in mod or mod == "aughor.telemetry":
             del sys.modules[mod]
     import aughor.telemetry as tel
+    aughor.telemetry = tel
     return tel
+
+
+@pytest.fixture(autouse=True, scope="module")
+def _restore_telemetry_module():
+    """Put the original module object back — in BOTH places — when this file is done, so
+    the reload above cannot leak a divergent module into every file that runs after."""
+    import aughor
+    import aughor.telemetry as original
+    yield
+    sys.modules["aughor.telemetry"] = original
+    aughor.telemetry = original
 
 
 # ── new_trace ─────────────────────────────────────────────────────────────────
@@ -348,10 +369,17 @@ def test_two_invocations_produce_one_trace(spans):
         "a sliced run split across two Langfuse traces"
 
 
-def test_first_span_carries_the_trace_level_attributes(spans):
+def test_first_span_carries_the_trace_level_attributes(spans, monkeypatch):
     """OTel has no trace object, so new_trace's name/input/session ride the first
-    span. Without this the trace lands in Langfuse unnamed and inputless."""
+    span. Without this the trace lands in Langfuse unnamed and inputless.
+
+    MI-0: the question inside that input is now custody-gated, so this opens the capture
+    window to keep proving what the test is for — that the attributes ride the first span.
+    The gate itself is proven in `test_mi1_graded_ledger.py`."""
     import aughor.telemetry as tel
+    from aughor.obs import prompt_window
+    monkeypatch.setattr(prompt_window, "active", lambda: True)
+
     tel.new_trace("inv-attrs", "Why did sales drop?", "conn-1")
     with tel.span("inv-attrs", "decompose"):
         pass
@@ -360,6 +388,24 @@ def test_first_span_carries_the_trace_level_attributes(spans):
     assert "Why did sales drop?" in attrs[tel._LF_TRACE_INPUT]
     assert attrs[tel._LF_SESSION_ID] == "inv-attrs"
     assert attrs[tel._LF_AS_ROOT] is True
+
+
+def test_the_trace_attribute_withholds_the_question_with_the_window_shut(spans, monkeypatch):
+    """MI-0's gate, asserted where the export actually happens. The trace stays named,
+    sessioned and rooted — only the question is withheld, so nothing about finding or
+    correlating a trace depends on the custody window."""
+    import aughor.telemetry as tel
+    from aughor.obs import prompt_window
+    monkeypatch.setattr(prompt_window, "active", lambda: False)
+
+    tel.new_trace("inv-shut", "Why did sales drop?", "conn-1")
+    with tel.span("inv-shut", "decompose"):
+        pass
+    attrs = spans.get_finished_spans()[0].attributes
+    assert "Why did sales drop?" not in attrs[tel._LF_TRACE_INPUT]
+    assert "conn-1" in attrs[tel._LF_TRACE_INPUT]
+    assert attrs[tel._LF_TRACE_NAME] == "investigation"
+    assert attrs[tel._LF_SESSION_ID] == "inv-shut"
 
 
 def test_only_the_first_span_claims_the_root(spans):

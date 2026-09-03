@@ -38,6 +38,10 @@ CATEGORIES: tuple[str, ...] = (
     "governance_change",   # a governed definition or tag changed
     "action_decision",     # the approval gate allowed, auto-allowed or blocked an action
     "model_call",          # an LLM call (the cost/usage trail — G3a)
+    "human_verdict",       # a person graded an answer or a run (MI-1). Its own category
+                           # because none of the four above fits: a thumbs is not a call,
+                           # not a definition change, and not the approval gate. It is the
+                           # scarce signal the platform collects and could not surface.
 )
 
 #: Ledger event kind → category. The one place that mapping lives.
@@ -50,10 +54,53 @@ KIND_CATEGORY: dict[str, str] = {
     # auditable. Filed as data_access because that is what an auditor asking "who saw
     # what" filters on; the `kind` separates it from query execution within that view.
     "trace.payload_access": "data_access",
+    # MI-1 — the two feedback doors. Both have been writing to the ledger since they
+    # shipped, neither was categorized, so the governance feed could not show that a
+    # person had ever graded anything. They are split by design (`chat.feedback` keys on
+    # turn_id, `trace.feedback` on trace_id) and stay two kinds under one category.
+    "chat.feedback": "human_verdict",
+    "trace.feedback": "human_verdict",
 }
 
 #: The non-Ledger sink: the append-only `audit_log` table is entirely data access.
 AUDIT_TABLE_CATEGORY = "data_access"
+
+#: MI-1 — reviewed and judged NOT governance: operational telemetry, lifecycle and
+#: progress. Listed rather than inferred so the ratchet below can fail CLOSED. The old
+#: ratchet compared a hand-written list of emitted kinds against this module's hand-written
+#: map; both sides were the same edit, so a kind nobody remembered was absent from BOTH and
+#: the assertion passed. That is how `chat.feedback` and `trace.feedback` stayed invisible
+#: from the day they shipped. Now the emitted set is DISCOVERED from the tree, and every
+#: discovered kind must be claimed here or categorized above.
+NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
+    "agent.handoff", "api.started", "automation.run", "birth.done", "birth.step",
+    "brief.delivered", "error.tolerated", "exploration.skipped", "explorer.resumed",
+    "investigation.dispatched", "investigations.swept", "job.foreign", "job.orphaned",
+    "job.state", "monitor.alert", "node.span", "pack.status_changed", "phase_complete",
+    "playbook.use", "store.wal_drift", "eval.graduation", "ontology.build",
+})
+
+#: MI-1 — reviewed and judged governance-shaped, deliberately NOT yet in the feed.
+#:
+#: Found by making the ratchet discover its own population: these four are as
+#: governance-relevant as the kinds already mapped — `govern.cap` is named for it,
+#: `metric.enforcement` is the enforcement twin of the categorized `metric.governance`,
+#: and `guardrail` is the allow-AND-block trail `govern/guardrails.py` deliberately writes
+#: both halves of so a block RATE can be computed. They are held out of KIND_CATEGORY
+#: because admitting them changes what a user-facing surface RETURNS, and one of them
+#: would dominate it: `guardrail` is 1,074 of the local ledger's rows, every one a PII
+#: allow, against 500-per-sink. Which of them the feed should carry — and whether a
+#: high-volume allow trail belongs in a reader-facing feed at all — is a product decision,
+#: not a builder's. Recorded here rather than buried in the exclusion set above, because
+#: writing "not governance" about these would be recording a judgment known to be false.
+#:
+#: `budget.exceeded` was added by the new ratchet itself, on its first run: the kernel
+#: cancels a job for breaching a governed cap and says so on the ledger, and no reader of
+#: the governance feed could see it. It is here rather than in the list above for the same
+#: reason as the other three — it is enforcement, and calling it telemetry would be false.
+GOVERNANCE_SHAPED_UNCATEGORIZED: frozenset[str] = frozenset({
+    "govern.cap", "guardrail", "metric.enforcement", "budget.exceeded",
+})
 
 
 @dataclass
@@ -125,7 +172,7 @@ def _from_ledger(kind: str, limit: int) -> list[AuditEvent]:
             # claim about 505 identical empty strings.
             category=category, kind=kind, at=str(e.get("at") or e.get("created_at") or ""),
             actor=str(p.get("actor") or p.get("set_by") or p.get("cleared_by")
-                      or p.get("read_by") or ""),
+                      or p.get("read_by") or p.get("by") or ""),
             org_id=str(p.get("org_id") or e.get("org_id") or ""),
             conn_id=str(e.get("conn_id") or p.get("scope") or ""),
             summary=_summarize(kind, p), detail=p))
@@ -147,6 +194,11 @@ def _summarize(kind: str, p: dict) -> str:
                 f" ({p.get('from', '?')} → {p.get('to', '?')})")
     if kind == "llm_call":
         return f"{p.get('role') or 'model'} call"
+    if kind in ("chat.feedback", "trace.feedback"):
+        subject = p.get("turn_id") or p.get("trace_id") or "?"
+        note = str(p.get("note") or "").strip()
+        return (f"{p.get('verdict', '?')} on {str(subject)[:12]}"
+                + (f" — {note[:60]}" if note else ""))
     if kind == "trace.payload_access":
         who = p.get("read_by") or "unidentified"
         whose = p.get("subject_user_id") or "unattributed"
@@ -233,6 +285,11 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("governance_change", lambda n: _from_ledger("govern.tag", n)),
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),
     ("model_call", _from_session_log),
+    # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.
+    # The two lists are parallel and hand-maintained, which is why the ratchet now
+    # asserts they agree rather than trusting that whoever edited one edited the other.
+    ("human_verdict", lambda n: _from_ledger("chat.feedback", n)),
+    ("human_verdict", lambda n: _from_ledger("trace.feedback", n)),
 ]
 
 
