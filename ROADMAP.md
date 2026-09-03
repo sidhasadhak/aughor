@@ -1392,14 +1392,29 @@ is what this install has connected, not what the version ships. Counting those a
 components counts our architecture as a deficit.
 
 **The real gap is general dataflow primitives**, and it is worth having a position on each
-rather than a backlog:
+rather than a backlog. ⚠️ **One line of this list was already wrong within hours of being
+written** — see the struck control-flow entry. Re-measure before building from it, including
+when the author was me:
 
-- **Control flow** — `If-Else`, `Smart Router`. We have per-step `when` guards and W2 for-each,
-  but nothing that branches to a *different path*. The strongest candidate: a conditional
-  router is the one primitive whose absence forces a person to build two chains.
+- ~~**Control flow** — `If-Else`, `Smart Router`.~~ **THIS CLAIM WAS FALSE, and it was written
+  in this very section hours earlier. Re-measured 2026-09-03: we already have it.** DS-6's
+  `else_of` IS the branch — a step declares itself the *Otherwise* arm of a sibling's guard,
+  the target is validated at save (must exist, run earlier, carry a guard), it draws as one
+  labelled edge, and the two arms are **complementary by construction** because one guard is
+  read from both sides. An unevaluable guard takes NEITHER arm rather than guessing. Chaining
+  `else_of` gives the else-if ladder a Smart Router is. What we express as *guard + Otherwise*
+  Langflow expresses as a *router node*; that is a rendering difference, not a missing
+  primitive.
+  🔑 **Fourth instance this week of a resolved item reading as open — and the first one I
+  authored myself, the same day.** Writing a gap analysis is not exempt from "measure the
+  premise": I read the palette, saw no `if_else` row, and wrote the conclusion without
+  checking whether the capability lived on the step instead of in the roster.
 - **Data shaping** — `Type Convert`, `Parser`, `Split Text`, `Structured Output`,
-  `Smart Transform`, `Dynamic Create Data`. B1 gave us typed ports; nothing *transforms*
-  between steps. Second-strongest, and the one that decides whether ports stay expressive.
+  `Smart Transform`, `Dynamic Create Data`. **VERIFIED ABSENT 2026-09-03** (`dataflow.resolve`
+  returns `produced[key]` and nothing else — a binding NAMES a key, it cannot cast, format,
+  split or reshape it). With control flow struck above, this is **the only remaining
+  first-order gap**, and therefore the one to take: it is what decides whether B1's typed
+  ports stay expressive or become a reason to leave the canvas.
 - **File I/O** — `Read File`, `Write File`, `File System`.
 - **LLM as a component** — `Language Model`, `Embedding Model`, `Prompt Template`,
   `LLM Selector`. We have the whole plane; it is not droppable, it lives inside
@@ -1715,9 +1730,11 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   re-render resets them; zero `memo(` on any of the five canvases; a dependency-less
   `useEffect` forces layout every render. `AgentMap.tsx` has the same missing handler. Our own
   DS-4 comment read the missing prop as a library quirk and worked around it.
-- 🆕 **The primitive gap** — §3.8a: no conditional router and no data-shaping steps are the two
-  absences that make a person build two chains or leave the canvas. Measured, with a position
-  on each; `Python Interpreter` is REFUSED rather than missing.
+- 🆕 **The primitive gap** — §3.8a: **data shaping is the only first-order gap left.** The
+  conditional-router half of this line was FALSE and is struck in §3.8a — DS-6's `else_of` is
+  already the branch. `dataflow.resolve` returns `produced[key]` and nothing else, so a binding
+  names a key and cannot cast, format, split or reshape it. `Python Interpreter` is REFUSED
+  rather than missing.
 - **DS-5 Map grants spoke** — buildable since tool_grants stored (2026-09-02), undrawn.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
 - **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
