@@ -222,15 +222,31 @@ def render_exploration_annotations(connection_id: str) -> str:
     """
     Return a formatted intelligence block for injection into the schema context.
 
-    Only includes sections that have data.  Returns "" when exploration has not
-    yet produced any findings (pending / failed phase, or no data written yet).
+    Only includes sections that have data.  Returns "" when exploration has produced
+    nothing — which is a question about the FINDINGS, not about the phase.
+
+    **A FAILED run's verified facts still count** (decided by the user 2026-09-03). This
+    gated on `phase in ("pending", "failed")` and returned "" for the whole block, so a
+    connection that had verified 58 facts across null semantics, joins and lifecycles —
+    and was displaying every one of them in its briefing — contributed NOTHING to the
+    deep-analysis planner or the ontology overlay, because a later run had set the phase to `failed` on
+    top of an earlier successful one.
+
+    The facts are the same facts either way. Each was verified by a query that ran and
+    returned rows; a subsequent phase transition does not retract them, and withholding
+    them silently is the more dangerous failure: the planner cannot tell "this connection
+    has no verified intelligence" from "it has plenty and something upstream said failed".
+
+    `pending` still returns "" and that is not symmetry lost: a pending run has not
+    verified anything yet, so the sections below would be empty regardless — the guard
+    just says so cheaply.
     """
     # Aggregate across per-schema runs — reading only the bare state silently
     # returned "" for every multi-schema connection, starving the ADA planner
     # and the ontology overlay of the explorer's verified intelligence.
     state = load_aggregate(connection_id)
     phase = state.get("phase", "pending")
-    if phase in ("pending", "failed"):
+    if phase == "pending":
         return ""
 
     sections: list[str] = []

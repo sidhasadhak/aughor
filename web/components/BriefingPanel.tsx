@@ -2441,6 +2441,20 @@ export function BriefingPanel({
     confirmAction("Starting…", before);
   }, [connectionId, canvasId, schema, surfaceRefusal, explorerStatus?.phase, confirmAction]);
 
+  /** Does this connection already hold findings? — the discriminator the explorer control
+   *  bar keys on, replacing `phase === "complete"`.
+   *
+   *  A phase is the verdict of the LAST run; findings are the accumulated result of every
+   *  run. Those come apart exactly when it matters: a run that fails after (or on top of)
+   *  a successful one leaves a full briefing behind a phase that says failed, and keying
+   *  the controls on the phase then hides the only two actions that make sense.
+   *
+   *  `facts_discovered` rather than the findings count: it is the superset (findings plus
+   *  mapped lifecycles), so a run that verified structure without landing a finding still
+   *  has a body of work worth extending — and "is there anything here at all" is the
+   *  question these controls actually turn on. */
+  const hasFindings = (explorerStatus?.facts_discovered ?? 0) > 0;
+
   const runTriggerIntel = useCallback(async () => {
     if (!canvasId && !connectionId) { setExplorerError("No connection selected"); return; }
     const before = explorerStatus?.phase ?? null;
@@ -2729,19 +2743,33 @@ export function BriefingPanel({
                   This is the taxonomy `BriefingEmpty` already uses one level down —
                   "Start exploration" for never, "Restart exploration" for failed —
                   which the control bar was contradicting. */}
-              {explorerStatus?.phase !== "complete" && (
+              {/* 🔴 These keyed on `phase === "complete"`, which contradicted the very
+                  taxonomy described above. A run that FAILED after producing findings —
+                  or, as seen live, a later run that failed on top of an earlier
+                  successful one — kept 54 findings and a grounded briefing on screen
+                  while the control bar offered only "Start". Trigger Intel and Refresh,
+                  the two things the comment says you can actually do to a body of
+                  findings, were both hidden precisely when someone would reach for them.
+
+                  The honest discriminator is not the phase, it is whether there ARE
+                  findings: "offering to start one implies none exists" is exactly as
+                  true for a failed run with 54 of them. So `hasFindings` decides, and
+                  the phase decides only the VERB — Start when nothing has ever run,
+                  Restart when something ran and did not finish. */}
+              {!hasFindings && (
                 <Button
                   variant="secondary" size="xs"
                   disabled={controlsLocked} onClick={runExplorer}
-                >{explorerPending === "Starting…" ? "Starting…" : "Start"}</Button>
+                >{explorerPending === "Starting…" ? "Starting…"
+                  : explorerStatus?.phase === "failed" ? "Restart" : "Start"}</Button>
               )}
-              {explorerStatus?.phase === "complete" && (
+              {hasFindings && (
                 <Button
                   variant="secondary" size="xs"
                   disabled={controlsLocked} onClick={runTriggerIntel}
                 >{explorerPending === "Triggering…" ? "Triggering…" : "Trigger Intel"}</Button>
               )}
-              {explorerStatus?.phase === "complete" && (
+              {hasFindings && (
                 <Button
                   variant="secondary" size="xs"
                   disabled={controlsLocked} onClick={runRefresh}
