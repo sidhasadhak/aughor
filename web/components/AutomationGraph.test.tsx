@@ -13,7 +13,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { toFlow, type AutomationGraphData } from "@/components/AutomationGraph";
+import { positionChanges, toFlow, type AutomationGraphData } from "@/components/AutomationGraph";
 
 const graph = (over: Partial<AutomationGraphData> = {}): AutomationGraphData => ({
   mode: "structure",
@@ -188,5 +188,69 @@ describe("parallel scheduling on the execution graph", () => {
     });
     const pairs = seqEdges(g).map(e => `${e.source}->${e.target}`);
     expect(pairs).toEqual(["trigger->ask", "trigger->post"]);
+  });
+});
+
+/* ── §3.8b · the change channel ──────────────────────────────────────────────
+ *
+ * The canvas passed `nodes` to ReactFlow with NO `onNodesChange`, which breaks
+ * controlled mode: the library moved a card in its own store, our array never heard, and
+ * the next parent render put it back where stale state said it was. Our own DS-4 comment
+ * had recorded the symptom — "it does not fire here at all" — as a library quirk; it did
+ * not fire because it was never passed.
+ *
+ * Asserted on `positionChanges` for this file's stated reason: jsdom reports every
+ * element as 0×0, so a rendered-drag assertion could not fail.
+ */
+describe("positionChanges — what may flow back from the library", () => {
+  const move = (id: string, x: number, y: number) =>
+    ({ type: "position", id, position: { x, y }, dragging: true }) as never;
+
+  it("collects a position so a drag is not reset by the next render", () => {
+    expect(positionChanges([move("ask", 10, 20)])).toEqual({ ask: { x: 10, y: 20 } });
+  });
+
+  it("returns null when nothing moved, so no state write happens at all", () => {
+    // The common case on a selection or dimension tick. Returning `{}` would set state
+    // on every frame and re-run the design memo for nothing.
+    expect(positionChanges([{ type: "select", id: "ask", selected: true } as never])).toBeNull();
+  });
+
+  it("ignores the final tick that carries no position", () => {
+    // ReactFlow emits `dragging: false` with no `position`. Writing `undefined` through
+    // would blank the card's coordinates at the exact moment the drag ends.
+    expect(positionChanges([{ type: "position", id: "ask", dragging: false } as never]))
+      .toBeNull();
+  });
+
+  it("REFUSES a non-position change even when it CARRIES a position", () => {
+    // The type check is what this asserts, so the fixture has to make it load-bearing:
+    // an `add`/`replace` change carries its node under `item`, and a first version of
+    // this test used those — which have no `.position` at all, so deleting the type
+    // check left the test green. The same shape as the bug it was meant to catch.
+    // A change that is NOT a move but does carry coordinates is the honest fixture:
+    // structure flows draft → canvas, and only position flows back.
+    const carriesPosition = [
+      { type: "replace", id: "ask", position: { x: 99, y: 99 } },
+    ] as never[];
+    expect(positionChanges(carriesPosition)).toBeNull();
+  });
+
+  it("ignores the structural changes the library also emits", () => {
+    const structural = [
+      { type: "remove", id: "ask" },
+      { type: "dimensions", id: "post", dimensions: { width: 10, height: 10 } },
+    ] as never[];
+    expect(positionChanges(structural)).toBeNull();
+  });
+
+  it("keeps the last position when one node moves several times in a batch", () => {
+    expect(positionChanges([move("ask", 1, 1), move("ask", 9, 9)]))
+      .toEqual({ ask: { x: 9, y: 9 } });
+  });
+
+  it("carries every moved node — a multi-select drag moves more than one", () => {
+    expect(positionChanges([move("ask", 1, 2), move("post", 3, 4)]))
+      .toEqual({ ask: { x: 1, y: 2 }, post: { x: 3, y: 4 } });
   });
 });
