@@ -2711,6 +2711,20 @@ export function BriefingPanel({
               {explorerStatus.phase}
               {explorerStatus.paused && " (paused)"}
             </span>
+            {/* A terminal phase with work behind it must say BOTH. "failed" alone is what
+                sent a reader to "I may have to start afresh" while 54 findings and a
+                grounded briefing sat on the same screen — the phase is the verdict of the
+                LAST run, not of the body of work, and those come apart exactly when a run
+                fails on top of a successful one.
+
+                No count: the scope bar above already carries it, and the status's own
+                figure counts something slightly different, so a second number here would
+                invite the reader to reconcile two things that were never the same. */}
+            {explorerStatus.phase === "failed" && hasFindings && (
+              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                · earlier findings kept — Trigger Intel adds to them
+              </span>
+            )}
             {/* No run counters here: queries_executed is the CURRENT run's number while
                 insights_found is lifetime, so "1q · 22 findings" read as broken history —
                 and either way it is machinery, not business content. */}
