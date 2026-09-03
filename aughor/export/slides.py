@@ -95,6 +95,15 @@ class _Deck:
         self.prs.slide_width = _W
         self.prs.slide_height = _H
         self.section = None  # (slide, text_frame)
+        # The caption of a chart this deck could not draw. `document._chart_or_table`
+        # blanks the TABLE's caption whenever a chart block exists, on the reasonable
+        # assumption that the chart carries the title — and the PDF does draw it, from the
+        # SVG. PPTX needs a raster, and this repo has no rasterizer it can rely on
+        # (`export.echarts.svg_to_png` returns None without a reportlab renderPM backend,
+        # and `routers/charts.py` says outright that raster is the caller's edge to
+        # convert at). So the picture goes, and with it the only place the title lived:
+        # a customer received an UNTITLED table. Held here and spent on the next table.
+        self._orphaned_caption = ""
 
     def title_slide(self, doc: ExportDoc):
         s = _blank(self.prs)
@@ -205,8 +214,21 @@ class _Deck:
             _para(tf, "    ".join(parts), size=12.5, bold=True, color=_INK, space_before=4)
         elif b.kind == "chart" and b.png:
             self.image_slide(b.png, b.caption)
+            self._orphaned_caption = ""
+        elif b.kind == "chart":
+            # A chart with no raster. Keep its caption for the table that follows: the
+            # table is the same exhibit in numbers, and it was stripped of its title
+            # precisely because this slide was expected to carry one.
+            #
+            # Deliberately NOT a "chart unavailable" slide. The numbers arrive on the very
+            # next slide, so announcing the absence of a picture would add a line about
+            # our own plumbing to a customer's deck without telling them anything they
+            # cannot see. What was actually lost is the TITLE, so the title is what is
+            # restored.
+            self._orphaned_caption = b.caption or self._orphaned_caption
         elif b.kind == "table" and b.columns:
-            self.table_slide(b.columns, b.rows, b.caption)
+            self.table_slide(b.columns, b.rows, b.caption or self._orphaned_caption)
+            self._orphaned_caption = ""
         # code blocks are omitted from slides (they live in the PDF appendix)
 
     def render(self) -> bytes:

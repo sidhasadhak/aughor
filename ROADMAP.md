@@ -1813,12 +1813,30 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   ⚠️ Two DISABLED fixtures remain by choice — `W1 guard check`, `W2 fan-out check` — same class,
   zero cost because disabled. Ask before deleting. ⚠️ No `VACUUM` yet (needs an exclusive lock,
   the API was running): the file is still 12.1 MB.
-- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study). **Re-measured
-  2026-09-02: true, and the reason is not the one recorded.** Not "a renderPM backend is
-  absent" — `reportlab` and `svglib` do not import here **at all**, because both live only in
-  the `[export]` extra (`pyproject.toml:85-90`). So this is an INSTALL gap on this machine
-  (the documented setup is `uv sync --all-extras`), not a code defect: the function already
-  degrades to `None` and callers fall back to their table/prose, by design.
+- **`svg_to_png` dead** → PPTX chart export degrades (Chat SDK study). Re-measured twice, and
+  **the second correction is the one that mattered — my first was also incomplete.**
+  ✅ The install half stands (2026-09-02): `reportlab` and `svglib` live only in the `[export]`
+  extra (`pyproject.toml:85-90`) and do not import here; the documented setup is
+  `uv sync --all-extras`, and **CI installs them, which is why CI never saw what follows.**
+  🔴 **"Degrades by design" was WRONG (2026-09-03) — it was masking a defect that ships to
+  customers.** `document._chart_or_table` blanks the TABLE's caption whenever a chart block
+  exists, because the chart is meant to carry the title — and in the PDF it does, from the SVG,
+  needing no raster. `slides.py` renders a chart slide only `if b.png`. So on any install
+  without the backend the PPTX dropped the chart **and** the table arrived with an empty
+  caption: **an untitled table in a customer's deck.** Not a degraded picture — a missing
+  title, silently, on the format that goes out to people. **FIXED**: the renderer that drops
+  the chart hands the caption to the table that follows, spends it once, and never displaces a
+  table's own title.
+  🔑 **The repair belongs in the RENDERER, not in `document.py`** — the block layer is
+  format-agnostic and was right to blank the caption, because the PDF really does draw it.
+  Only the renderer knows it dropped the picture. Deliberately NOT a "chart unavailable"
+  slide: the numbers arrive on the next slide, so a line about our own plumbing tells a
+  customer nothing they cannot see. Six tests, two mutation-verified.
+  🔑 **The lesson: I read the FUNCTION and called it benign; the defect was in the PATH.**
+  `svg_to_png` really does degrade cleanly — and two layers up, something else had already
+  given away the title on the strength of a chart that would not arrive.
+  ⏳ Installing the `[export]` extra here would restore the PICTURES too; that is the user's
+  environment to change, and the deck is honest without it.
 - ~~**Canvas drag is not fluid**~~ — **FIXED and MERGED 2026-09-03** (`e3a56b5c`, #428; §3.8b).
   ⏳ Two things survive it: **`AgentMap.tsx` has the same missing handler** and was left for a
   separate change, and the fix has **no empirical receipt** — the browser tool cannot drive
