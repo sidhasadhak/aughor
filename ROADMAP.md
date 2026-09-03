@@ -1486,7 +1486,7 @@ interactions (measured 4×), so this is a code-level diagnosis. A React Profiler
 drag would show the re-render storm directly, and is the receipt to get before claiming the fix
 worked.
 
-### 3.9 · Arc MI — the Machine-Intelligence arc (drafted 2026-09-03 from the 2026-09-02 audit; adoption + training annex = §6.7, community flywheel = §6.8)
+### 3.9 · Arc MI — the Machine-Intelligence arc (adopted 2026-09-03; decisions §6.7 · §6.8)
 
 > **Origin.** The user's 2026-09-02 directive: *"a never-ending learning process through
 > which models can be made smarter as more and more users start using the platform…
@@ -1517,11 +1517,11 @@ worked.
 
 **Laws that bind every MI wave (standing, not per-slice):**
 
-- **The lawful lane first.** Nothing trains on payloads before §6.4's TRAINING ANNEX is
-  decided (MI-0 → §6.7). The reading half of §6.4 landed 2026-09-02 — visible metadata,
-  prompts only through an audited, user-visible break-glass — but a model consuming
-  payloads is a different act than an admin reading them, and gets its own explicit
-  yes. The NL2SQL loop needs neither: question, SQL, outcome and human verdicts are
+- **The lawful lane first.** Nothing trains on payloads outside §6.7's TRAINING ANNEX
+  (✅ decided 2026-09-03): an org-level opt-in carrying a retention class, a purpose
+  tag, and PII scrub at export. §6.4's reading half (2026-09-02) governs an admin's
+  eyes; the annex governs machine consumption — two different acts, each with its own
+  law. The NL2SQL loop needs neither: question, SQL, outcome and human verdicts are
   already durable work artifacts — which is why it goes first.
 - **A verdict pins its evidence.** Graded runs become permanent; ungraded exhaust keeps
   expiring on the 14-day sweep. Retention follows grading, not the other way round.
@@ -1579,19 +1579,18 @@ worked.
   `trace.payload_access`). **One exception, found by reading:** `new_trace()` puts the
   user's *question* on the OTLP wire (`langfuse.trace.input`) regardless of the window.
 
-#### MI-0 · The custody law: the training annex (a decision, then one small gate)
+#### MI-0 · The custody law: the training annex — ✅ DECIDED 2026-09-03 (§6.7); the gate remains
 
-§6.4's reading half was decided 2026-09-02 — an admin sees metadata freely and a user's
-prompts only through an audited break-glass the user can see. **Training is the
-unfinished half:** a model consuming payloads is not an admin reading them, and the
-decided text does not cover machine consumption, export, or retention-for-learning.
-MI-0 puts the annex on the table as §6.7's second clause: **payloads become trainable
-only under an org-level opt-in carrying a retention class, a purpose tag, and PII scrub
-at export; work artifacts (questions, SQL, result summaries, verdicts) are named lawful
-training inputs, org-scoped by default.** Code in this slice is one gate:
-`langfuse.trace.input`'s question attribute — an *export*, not a read, so no
-break-glass ever fires on it today — obeys the same custody classes, with a test.
-**Receipt:** a dated stamp on §6.7; the trace-input gate test.
+The decision half landed with §6.7: **payloads are trainable only under an org-level
+opt-in carrying a retention class, a purpose tag, and PII scrub at export; work
+artifacts (questions, SQL, result summaries, verdicts) are lawful training inputs,
+org-scoped by default.** (§6.4's 2026-09-02 reading half governs an admin's eyes; this
+annex governs machine consumption — deliberately separate acts.) What remains of MI-0
+is its one piece of code: `langfuse.trace.input`'s question attribute — an *export*,
+not a read, so no break-glass ever fires on it today — must obey the same custody
+classes, with a test.
+**Receipt:** §6.7's dated stamp (✅ landed); the trace-input gate test (open — rides
+MI-1's wave).
 
 #### MI-1 · Grade what already runs (substrate-sized)
 
@@ -1682,8 +1681,9 @@ a live Trust Receipt naming the cascade hop it rode.
   even a 0.6–1B base is 0.5–1.5 GB quantized, and an untuned base meets users at its
   worst; first impressions are a one-shot resource.
 - **Shared adapters ship as versioned release artifacts** (`aughor-sql-v1`, `-v2`, …)
-  trained on our own pilot data — and later on opted-in, scrubbed contributions under
-  §6.7's annex **only if §6.8 is decided YES** (default NO). An install pulls them the
+  trained on our own pilot data — and on opted-in, scrubbed contributions under §6.7's
+  annex (**§6.8: decided YES 2026-09-03**; contribution stays strictly per-deployment
+  opt-in — nothing leaves a deployment that didn't say so). An install pulls them the
   way it pulls packs; org-private adapters layer on top. This is the origin directive
   made mechanical: *"models made smarter as more and more users start using the
   platform"* — a fresh install starts with the distilled experience of every deployment
@@ -1732,10 +1732,11 @@ job (this section was renumbered from 3.8 to 3.9 in the reconciliation). As reco
 MI-0 is decision-sized on its own (§6.7's annex). MI-1 and MI-2 are substrate-sized —
 three migrations and a categorization — and may ride alongside any band. MI-3 follows
 both. MI-4 starts only at its measured gates. MI-5's door ships with MI-4's first
-serving; adapters-as-releases waits on §6.8. MI-6 waits on a measured plateau.
+serving; adapters-as-releases is cleared by §6.8 (YES, 2026-09-03). MI-6 waits on a
+measured plateau.
 **Non-goals for the whole arc:** a GPU fleet · weights in the repo/installer ·
 online/continual learning on live traffic · a second eval harness · a foreign pipeline
-runtime (§4.5) · any training on payloads ahead of §6.7's annex.
+runtime (§4.5) · any training on payloads outside §6.7's annex.
 
 **Falsifiers — this arc is droppable by measurement.** If after ~90 days of MI-1…3 on
 real usage the graded-pair rate cannot plausibly reach MI-4's gates, the distillation
@@ -1960,15 +1961,15 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
                                    2026-09-02: §6.4 decided (visible metadata, gated payloads,
                                    break-glass audited and visible to the user). §3.5 carries it.
 
-ARC MI  (§3.9, drafted 2026-09-03 from the 2026-09-02 audit — enters this queue on §6.7)
-        MI-0 the §6.4 TRAINING ANNEX (the reading half landed 2026-09-02; §6.7 carries
-             the training clause) + the langfuse.trace.input gate
+ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first target NL2SQL,
+        training rented, not owned
+        MI-0 annex ✅ DECIDED (§6.7b); remaining code: the langfuse.trace.input gate
         MI-1 grade what already runs · MI-2 verdict pins evidence — substrate-sized,
              may ride alongside any band above
         MI-3 dataset plane (learning store; Tangle's schema per §4.5)
         MI-4 NL2SQL adapter — starts ONLY at measured gates (≥1,000 SFT · ≥150 DPO ·
              golden ≥150 · verdicts flowing ≥30 days); rented training; ratchet-gated
-        MI-5 ledger-in-the-box · model-as-a-door · adapters-as-releases (§6.8)
+        MI-5 ledger-in-the-box · model-as-a-door · adapters-as-releases (§6.8 ✅)
         MI-6 RLVR rehearsal — only after a measured SFT+DPO plateau (×2 versions)
 ```
 
@@ -2144,24 +2145,22 @@ the browser** · **measure the premise before building.**
    untrusted-annotation warning asks for. A declaration that changes after registration
    revokes that tool's grant and refuses the next call until a human re-ratifies — pinned at
    discovery, scoped to the tool that moved, fail-closed. Full note: §3.1.
-7. **Does Arc MI enter the active queue — and §6.4's training annex.** §3.9 is drafted
-   in full (2026-09-03, from the 2026-09-02 audit) and waits on this stamp. Two clauses,
-   stampable together or apart: **(a) adoption** — builder's recommendation yes; first
+7. ✅ **DECIDED 2026-09-03 — Arc MI enters the queue, and the training annex is law.**
+   Both clauses stamped YES by the user. **(a) Adoption:** §3.9 is active; first
    distillation target NL2SQL (ground truth is free: execution outcomes + guard fires +
    human corrections with `corrected_sql`); training rented, not owned; MI-1/MI-2 are
-   substrate-sized and could ride the next wave even ahead of the full stamp. **(b) the
-   training annex** — the 2026-09-02 decision on §6.4 governs an admin's *reading*; this
-   clause governs *machine consumption*: payloads become trainable only under an
-   org-level opt-in carrying a retention class, a purpose tag, and PII scrub at export;
-   work artifacts (questions, SQL, result summaries, verdicts) are lawful training
-   inputs, org-scoped. Until stamped: no training on payloads, full stop — and the
-   NL2SQL loop needs nothing from this clause.
-8. **Shared adapters and contributed data (the community flywheel).** Two sub-questions,
-   separable: (a) may releases ship shared task adapters (`aughor-sql-vN`) trained on our
-   own pilot data? (b) may a deployment OPT IN to contribute scrubbed graded pairs (under
-   7b's annex) to those shared adapters? Default until decided: (a) undecided, (b) NO —
-   nothing leaves a deployment. This is the mechanical form of the origin directive
-   ("smarter as more users use the platform") and deserves its own deliberate yes.
+   substrate-sized and may ride the next wave. **(b) The training annex to §6.4:** the
+   2026-09-02 decision governs an admin's *reading*; this clause governs *machine
+   consumption* — payloads are trainable only under an org-level opt-in carrying a
+   retention class, a purpose tag, and PII scrub at export; work artifacts (questions,
+   SQL, result summaries, verdicts) are lawful training inputs, org-scoped. The NL2SQL
+   loop needs nothing from this clause.
+8. ✅ **DECIDED 2026-09-03 — the community flywheel: YES to both halves.** (a) Releases
+   may ship shared task adapters (`aughor-sql-vN`) trained on our own pilot data.
+   (b) A deployment may OPT IN to contribute scrubbed graded pairs under 7(b)'s annex.
+   The yes does not change the default posture: contribution is strictly opt-in —
+   nothing leaves a deployment that didn't say so. This is the mechanical form of the
+   origin directive ("smarter as more users use the platform"), now deliberate.
 
 ---
 
@@ -2186,7 +2185,9 @@ the browser** · **measure the premise before building.**
 A second application · a TS runtime · an n8n dependency · a low-code flow engine (adopting a
 foreign one, that is — Arc DS's visual authoring over our own engine is §3.7, not this) · a
 canvas for anything without a producer/consumer relation (an agent record still gets a form;
-its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/`.
+its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/` · a GPU fleet ·
+model weights in the repo or installer (Arc MI ships the ledger in the box and adapters as
+release artifacts, §3.9) · online/continual learning on live traffic.
 
 ---
 
