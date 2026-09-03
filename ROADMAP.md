@@ -1743,8 +1743,25 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   `claude/report-quality-audience-split` as *"pushed, NOT merged"*, and this branch IS that
   fix. The pointer was dropped rather than carried, because a ledger line naming a branch
   that has landed is the exact failure this entry is about.
-- **Explorer partial-day sibling** — canvas trend charts still end on today's false dip
-  (the investigate-path guard landed 2026-09-02; chip filed).
+- ~~**Explorer partial-day sibling**~~ — **FIXED 2026-09-03.** The baseline TREND axis
+  (`explorer/manifest_query.cell_to_sql`) had **no upper bound on its time axis at all**:
+  `WHERE ts IS NOT NULL GROUP BY 1 ORDER BY 1`, so the final point of every canvas trend was
+  today-so-far. It now drops the unfinished bucket, carrying the investigate guard's two
+  conditions rather than re-deriving them: **only when the data reaches today** (a closed
+  dataset's last bucket is final — trimming it would erase real data on every render, which is
+  what keeps every demo and fixture set whole) and **only when a complete bucket would remain**
+  (an empty chart reads as a fact about the business rather than about the calendar).
+  🔑 The cutoff is `date_trunc(<grain>, CURRENT_DATE)` **in SQL, not a Python literal** — the
+  warehouse's idea of now, in its own timezone. A literal would be this process's idea of
+  today, and the two disagree for several hours a day. Grain-aware, so a monthly trend drops
+  the whole current month rather than one day of it. `seasonality`, `yoy`, `headline` and
+  `dimension` are untouched and tested to stay so. Eleven tests, three conditions each
+  mutation-verified.
+  ✅ **And the ORIGINAL guard's live receipt, which was owed since 2026-09-02**: today's 09:00
+  briefing fired and reported *"1,769 orders on September 2nd, a 58.8% increase over the
+  previous day"* — a complete day against the preceding complete day. The defect it replaced
+  led with "orders fell 97.5%" from nine hours of today (43) against all of yesterday (1,733).
+  The window guard holds live.
 - **Notion + Confluence are built and unreachable** — and the two diagnoses this line carried
   before were both WRONG. 🔴 **Re-measured 2026-09-03 by driving the live API**, which is what
   finally settled it: `GET /connectors/types` emits **no `knowledge` category at all**.
