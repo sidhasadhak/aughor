@@ -1860,12 +1860,27 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
   renderer's half a compile error rather than a silent omission — the type system catching the
   partial add that this arc keeps paying for.
 - **Runs rail lists every per-minute `not_fired` tick** — the fired run drowns in scheduler noise.
-- **Stray `data/qdrant/` appeared 2026-09-02** despite the server pin — evidence of a
-  bare-import path escaping both the .env pin and test isolation (chip filed). ⚠️ The
-  suspect this line named — non-`*_DB` path envs missing from `dump_openapi`'s hermetic set
-  — was **TESTED AND CLEARED 2026-09-02 (DS-17)**: the gap was real and is now fixed, but
-  reproducing the old shape did NOT recreate the directory (these stores write when USED,
-  and a spec dump only imports and calls `app.openapi()`). The cause is still unfound.
+- ~~**Stray `data/qdrant/` appeared 2026-09-02** despite the server pin~~ — **CAUSE FOUND
+  2026-09-03: `aughor/cli.py` never read `.env`.**
+  The chain, proven statically: `.env` was read by `api.py` and `semantic/kb_retriever.py`
+  and **nothing on the general import path**, so a process starting at the CLI — the
+  installed console script — saw no `AUGHOR_QDRANT_URL`. Without that pin
+  `vector_store._client()` takes the embedded branch at `_embedded_path()` →
+  `state_dir()/qdrant` → **`data/qdrant`**. And `aughor investigate` reaches the store
+  through `agent.bootstrap` (`delete_by_filter` / `match_filter`) — real operations, and
+  these stores write when USED, which is exactly why the DS-17 suspect could be real and
+  still not reproduce it: a spec dump only imports.
+  🔑 **Fixed at the ENTRYPOINT, not in the library modules.** `kb_retriever` had already
+  patched itself the same way — and patching one call site is precisely why the gap
+  survived, because the next path in did not go through it.
+  🔑 **And the repo already had an opinion about WHERE**: `test_env_isolation` refuses a
+  module-level load outside its allowlist, so the load sits in the `click.group()` callback
+  every command passes through and no test that merely imports the module runs. The
+  existing ratchet caught the first attempt and was right.
+  ✅ `tests/unit/test_entrypoints_load_dotenv.py` guards the CLASS — every process
+  entrypoint reads `.env`, honours `AUGHOR_SKIP_DOTENV`, and the console-script target
+  stays covered — plus a canary on the premise (the set of `.env` readers) so the next
+  reader re-derives the reasoning instead of trusting it.
 
 **House rules that bind every PR:** one PR at a time, squash, never push without authorisation ·
 ratchet battery on your own diff in a clean worktree · seven frontend gates + `gen:api` on route

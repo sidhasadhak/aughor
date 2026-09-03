@@ -46,6 +46,38 @@ LLM_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anth
 @click.group()
 def cli():
     """Aughor — Autonomous Intelligence Platform"""
+    # 🔴 Load `.env` HERE, in the group callback every command passes through — not at
+    # module import, which would put a developer's environment into any test that merely
+    # imports this module (`test_env_isolation` guards exactly that, and said so).
+    #
+    # Why it matters, and the ledger item it closes: `.env` was read by `api.py` and
+    # `semantic/kb_retriever.py` and nothing else, so a process starting at the CLI saw
+    # none of it — including `AUGHOR_QDRANT_URL`, which pins the semantic index at a
+    # server. Without that pin `vector_store._client()` takes the embedded branch at
+    # `state_dir()/qdrant`, and `aughor investigate` reaches the store through
+    # `agent.bootstrap` (`delete_by_filter` / `match_filter`). That is the stray
+    # `data/qdrant/` that appeared in a tree whose `.env` pinned a server — the loose end
+    # nobody could account for.
+    #
+    # At the ENTRYPOINT rather than in each library module: `kb_retriever` had already
+    # patched itself, and patching one call site is exactly why the gap survived — the
+    # next path in did not go through it.
+    if not os.environ.get("AUGHOR_SKIP_DOTENV"):
+        try:
+            from dotenv import load_dotenv
+
+            load_dotenv(Path(__file__).parent.parent / ".env")
+        except ImportError as exc:
+            # Through `tolerate`, not a bare `pass`. The silent-swallow ratchet caught the
+            # first version and was right to: python-dotenv being absent is survivable, but
+            # it means every pin in `.env` silently does not apply — which is the exact
+            # class of failure this whole change exists to fix, so swallowing it without a
+            # word would reintroduce the defect one layer down. `kb_retriever` already
+            # handles it this way.
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "python-dotenv is optional; without it the CLI reads only the "
+                          "real environment, so anything pinned in .env does not apply",
+                     counter="cli.dotenv")
 
 
 # ── Seed ─────────────────────────────────────────────────────────────────────
