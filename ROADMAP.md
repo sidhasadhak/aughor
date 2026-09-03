@@ -1999,16 +1999,47 @@ ARC MI  (§3.9, drafted 2026-09-03 from the 2026-09-02 audit — enters this que
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
-- ~~**Report-quality deep dive, 7 of 8 defects still live**~~ — **THE COUNT WAS WRONG BY SIX.
-  Re-measured 2026-09-02** against the code and the live corpus (985 reports, 229 deep runs):
-  **exactly ONE was live.** **CA-0 (#359) merged 2026-08-19 at 23:55 — the same evening the
-  catalogue was written** — and closed the rest, each fix naming its specimen. The catalogue was
-  stale within hours and was then read as a backlog for two weeks.
-  The one real survivor, ⑥ *repair-instruction text ships inside customer PDFs*
-  (`confidence_justification`, 10/144 reports), is **fixed on `claude/report-quality-audience-split`
-  (`d1649452`) — pushed, NOT merged.**
-  🔑🔑 **A catalogue is a measurement with a TIMESTAMP, not a backlog. Re-measure before
-  scheduling from one.**
+- ~~**Report-quality deep dive, 7 of 8 defects still live**~~ — **RE-MEASURED 2026-09-02: the
+  true count was ONE, and it is now closed.** This line advertised seven live defects for two
+  weeks, and it is the ledger's own worst failure mode a second time (see VA-9d's posture): a
+  resolved item that keeps reading as open costs whatever work it deters. **CA-0 (#359) merged
+  at 23:55 on 2026-08-19 — the same evening the catalogue was written — and closed most of it**,
+  each fix naming the specimen it came from, so the catalogue was stale within hours of being
+  filed and nobody re-read it against the code.
+
+  Verified one by one, against the code AND the live corpus
+  (985 reports, 229 deep runs): ① the tautology's measure regex —
+  closed by CA-2, which added `abs_change`/`delta`/`pct_change`/`contribution` by name ·
+  ② `_orchestration_plan` — closed, and PROVEN on live data: today's run journals
+  `planned: [baseline, decomposition, dimensional, intake, synthesis]` · ③ the confidence floor —
+  closed, `_finding_has_rows` keys on `row_count` and excludes the synthetic intake-spec finding,
+  the exact two things named, with its own test file · ④ derivation credit in `check_grounding` —
+  closed, docstring names both halves as CA-0 fixes · ⑤ the `increase` verb regex — closed by
+  CA-0's transitive/intransitive split, whose comment cites the Direkteingabe #15 hits ·
+  ⑦ session_id — closed for every CHAT path (10/10 shaped runs in the last 7 days carry one; the
+  session-less remainder are AUTOMATION runs, which correctly have no session), and the
+  zero-row conjunction trap is handled in `analyst.py` naming the same specimen ·
+  ⑧ observation_label and the contradiction detector — closed; the detector reads `is_significant`
+  flags, not prose word-lists.
+
+  ⑥ **was** live and is now fixed (2026-09-02): `drifted_registered_metric` concatenated
+  *"Recompute with the governed formula or relabel to what the SQL computes."* — plus the raw
+  governed SQL — into a finding's `trust_caveat`, which `_evidence_confidence_ceiling` copies
+  verbatim into `confidence_justification`, which renders in the customer PDF while the web view
+  hides it. Measured on the live corpus: three stored reports carried it, the most recent from
+  2026-09-01. Split by AUDIENCE at the source — the reader gets the diagnosis ("this number is
+  not Revenue as your organisation defines it"), the log gets the remedy and the formula. The
+  phrase "metric formula drift" is kept because `_COMPUTATION_ERROR_CAVEAT_RE` matches on it to
+  reframe the headline, and a reword would have un-wired that silently.
+
+  **The standing lesson, not the defect:** a catalogue is a measurement with a timestamp, and
+  this one was re-read as a to-do list for two weeks. Re-measure before scheduling from one.
+
+  ⚠️ **Conflict resolved 2026-09-03 when this branch merged main.** Both sides had rewritten
+  this same line: main's (from #427) was a summary that ended by pointing at
+  `claude/report-quality-audience-split` as *"pushed, NOT merged"*, and this branch IS that
+  fix. The pointer was dropped rather than carried, because a ledger line naming a branch
+  that has landed is the exact failure this entry is about.
 - **Explorer partial-day sibling** — canvas trend charts still end on today's false dip
   (the investigate-path guard landed 2026-09-02; chip filed).
 - **Connectors picker hides Notion + Confluence** — real, synced, never offered (DS-10 chip).

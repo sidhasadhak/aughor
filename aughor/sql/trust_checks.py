@@ -79,6 +79,19 @@ def _is_text(col: exp.Column, a2t: dict, single: Optional[str], col_types: Optio
     return bool(t) and any(x in t.upper() for x in _TEXT_TYPE)
 
 
+def _names_a_column(word: str, all_tables: set, col_types: Optional[dict]) -> bool:
+    """True when `word` is a column on a table this query reads. Used only to SHARPEN the
+    quoted-identifier caveat's suggestion, never to decide whether to emit it — the module's
+    rule is that the text/numeric checks skip rather than guess, and this one has nothing to
+    guess about: two literals compared is a bug whatever the schema says."""
+    if not word or not col_types:
+        return False
+    w = word.lower()
+    if w in col_types:
+        return True
+    return any(f"{t}.{w}".lower() in col_types for t in (all_tables or ()))
+
+
 def _numericish_name(name: str) -> bool:
     n = name.lower()
     return any(tok in n for tok in _NUMERICISH)
@@ -153,6 +166,44 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
                           f"Text column '{col.name}' is compared to the numeric literal {lit.name}; "
                           f"this compares lexicographically / casts unexpectedly. "
                           f"CAST({col.name} AS <numeric>) for a numeric comparison.")
+    # E1-quoted-identifier: a STRING literal compared to a NUMERIC literal — `WHERE 'id' = 165428`.
+    #
+    # The sibling check above needs a Column on one side, so it is blind to the case where the
+    # column reference was never a column: quoting it turned `id` into the three-character string
+    # "id", and the predicate now compares two CONSTANTS. Found on a live BigQuery run
+    # (2026-09-02) where the editor reported "Guards clean" and the warehouse then refused the
+    # job outright — the badge was honest about what it checks and still read as a clean bill of
+    # health on a query that could not run.
+    #
+    # Two outcomes, and the second is why this is worth a caveat rather than just letting the
+    # engine complain. STRICT engines (BigQuery) reject it: "No matching signature for operator
+    # =" — noisy, but safe, and it costs a round trip. COERCING engines do not: the predicate is
+    # a constant that is always FALSE, so the query succeeds and returns ZERO ROWS, and an
+    # analyst reads "no data" as a fact about the world. That is the well-formed wrong answer
+    # this codebase ranks below an exception.
+    #
+    # Precision: mismatched literal TYPES only. `WHERE 1 = 1` is the idiomatic generated-SQL
+    # placeholder (numeric vs numeric — never flagged), and `WHERE 'a' = 'b'` is string vs string,
+    # which is ambiguous enough to leave alone. A quoted word against a number is neither.
+    for cmp_cls in (exp.GT, exp.LT, exp.GTE, exp.LTE, exp.EQ, exp.NEQ):
+        for node in tree.find_all(cmp_cls):
+            for s_lit, n_lit in ((node.left, node.right), (node.right, node.left)):
+                if not (isinstance(s_lit, exp.Literal) and s_lit.is_string
+                        and isinstance(n_lit, exp.Literal) and not n_lit.is_string):
+                    continue
+                word = str(s_lit.name)
+                # Name the intent when we can PROVE it: the quoted text is a real column on a
+                # table this query reads. `col_types` is optional everywhere in this module, so
+                # the caveat degrades to the general form rather than disappearing — the
+                # comparison is a bug either way, and only the suggestion needs the types.
+                looks_like_column = _names_a_column(word, all_tables, col_types)
+                fix = (f"Did you mean the column `{word}` (unquoted)?" if looks_like_column
+                       else f"If `{word}` is a column, remove the quotes.")
+                _emit("E1-quoted-identifier", word,
+                      f"'{word}' is quoted, so this compares the STRING \'{word}\' to the number "
+                      f"{n_lit.name} — not a column to a value. {fix} A strict engine refuses the "
+                      f"query; a coercing one returns zero rows from an always-false predicate.")
+
     if out:
         from aughor.stats import bump
         bump("guard.trust_e1.fired", len(out))
