@@ -1185,6 +1185,10 @@ def chat_feedback(body: _ChatFeedbackRequest, request: Request):
         )
     except Exception as exc:
         tolerate(exc, "chat feedback journal", counter="chat.feedback")
+    # MI-2 — a graded turn keeps its evidence. `turn_id` is an investigation id (the
+    # drill-recording below reads it with `get_investigation`), so it pins directly.
+    from aughor.obs.session_log import pin_run
+    pin_run(investigation_id=body.turn_id or "")
     if body.verdict == "helpful" and body.turn_id:
         try:
             from aughor.db.history import get_investigation

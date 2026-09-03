@@ -397,6 +397,11 @@ def post_trace_feedback(trace_id: str, body: _TraceFeedbackRequest):
         # shows up as a rising counter rather than as an unusually happy user base.
         tolerate(exc, "trace feedback journal", counter="trace.feedback")
         return {"ok": False, "recorded": False}
+    # MI-2 — a graded trace keeps its evidence past the 14-day sweep. Only on the path
+    # where the verdict actually landed: pinning evidence for a thumbs that was dropped
+    # would make the log claim a grading that never happened.
+    from aughor.obs.session_log import pin_run
+    pin_run(trace_id=trace_id or "")
     return {"ok": True, "recorded": True, "verdict": verdict}
 
 

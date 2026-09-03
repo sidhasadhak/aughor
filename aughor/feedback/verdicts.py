@@ -96,6 +96,10 @@ def record_verdict(
              sql_source or "", corrected_sql or "", now),
         )
         c.commit()
+        # MI-2 — the verdict just made this run's evidence permanent. Best-effort and
+        # AFTER the commit: the verdict is the durable thing, pinning is bookkeeping.
+        from aughor.obs.session_log import pin_run
+        pin_run(investigation_id=investigation_id or "")
         result = {
             "id": new_id, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,

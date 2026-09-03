@@ -1666,14 +1666,73 @@ and both tables share `AUGHOR_AUDIT_DB` so it is a single-store join. The human-
 is reachable but not yet joined in one statement — `finding_verdicts` lives in its own
 store, which is MI-3's dataset plane, not this slice's.
 
-#### MI-2 · A verdict pins its evidence (substrate-sized)
+#### MI-2 · A verdict pins its evidence (substrate-sized) — ✅ SHIPPED 2026-09-03
 
-`session_events.pinned_at` (ledger migration — numbered off the LIVE store). The
-verdict writers — `finding_verdicts`, `staged_proposals` resolution, both feedback
-doors — pin the run's rows by trace_id/investigation_id at verdict time. The amortized
-sweeper skips pinned rows; the 14-day default for ungraded exhaust stands.
-**Receipt:** a synthetic 15-day-old graded run survives the sweep; its ungraded
-neighbor doesn't. Sweeper timing measured before/after (it runs inline on write).
+> **The pre-check found that the sweep this band protects against was not running at all.**
+> `_session_events_maybe_prune` fired on an in-process counter (`_session_event_writes`,
+> initialised to 0 in `Ledger.__init__`, prune every 500). The counter resets on every
+> boot, so an install that restarts before accumulating 500 session-event writes in one
+> process lifetime **never pruned**. Measured live: **4,186 of 10,788 rows past a 14-day
+> retention — 39% of the table — the oldest 19 days**, with `session_events_prune` itself
+> working perfectly and called by nothing but an eval receipt and a test — the "tested, not
+> leveraged" shape, a fourth time.
+>
+> ⚠️ **That figure is a correction, and the first one was mine.** The probe originally said
+> 1,766 because it compared `at` against `datetime('now','-14 days')`, which renders a
+> SPACE separator (`2026-08-20 21:13:50`) while the stored values use `T`
+> (`2026-08-20T21:13:50+00:00`). These are string comparisons: `'T'` (0x54) sorts above
+> `' '` (0x20), so every row on the boundary day silently fell out of the count. The prune
+> builds its cutoff with `.isoformat()` and was comparing correctly all along — the code
+> was right and the measurement was wrong, which is the standing lesson, and it is the same
+> family as `E1-quoted-identifier`: a string comparison wearing the costume of a temporal
+> one. The live sweep deleted exactly 4,186 rows, which is what settled it.
+> Retention is a **stated privacy property** that §6.4's and §6.7's custody decisions lean
+> on, and it was not true. It also made this band's own receipt unprovable: "a graded run
+> survives the sweep, its ungraded neighbour does not" says nothing when neither is swept.
+>
+> Fixed WITHOUT a new loop (§VA-6's law: periodic work joins the one that exists). The
+> defect was never the missing loop — it was **volatile state driving a durable decision**.
+> The amortised counter stays on the write path unchanged; the restart case is insured
+> **at OPEN**, where `Ledger.__init__` consults a last-pruned stamp kept in `kv` and sweeps
+> if it is stale. One read per process, not per write, and an unreadable clock fails
+> *toward* pruning.
+>
+> **At open rather than on the first write, and the difference is not cosmetic.** The first
+> draft hung the check on the first write and two existing suites caught it within the
+> hour: `session_event_insert` prunes AFTER inserting, so a first write that is itself
+> backdated — a back-fill, an import, a test fixture — was deleted by the very sweep its
+> own arrival triggered. Opening is also simply the honest place for it: the thing being
+> insured against is a process starting, not a row arriving. Best-effort and last in
+> `__init__`, because a prune that raises must never be why the app cannot boot —
+> Migration 10's back-fill did exactly that on Postgres.
+
+`session_events.pinned_at` — **Migration 11**, numbered off the LIVE store's
+`PRAGMA user_version` of 10 and **rehearsed on a `.backup` first** (10 → 11, column
+present, 10,785 rows intact) before anything touched the real file. Portable SQL only:
+this store also runs on Postgres, where Migration 10's `json_extract` back-fill once
+raised inside `Ledger.__init__`. The column is projected in `_SESSION_EVENT_COLS`, not
+merely stored — a reader that cannot see a pin cannot tell a kept run from one the sweep
+has not reached yet.
+
+Pinned rows are skipped by the age sweep **and do not count toward the row cap**: a graded
+run is evidence, not budget, and letting pins consume the newest-N window would mean
+grading enough runs quietly starved the log of everything else.
+
+**Three of the four verdict doors pin; the fourth cannot, and saying so is the finding.**
+`finding_verdicts` (by investigation_id), `chat.feedback` (its `turn_id` IS an
+investigation id) and `trace.feedback` (by trace_id) all pin at verdict time.
+**`staged_proposals` resolution does not**: that table's `run_id` is a fresh `uuid4()`
+minted per tool call (`agent/action_tools.py`), not a `trace_id` or an `investigation_id`,
+so it does not join to `session_events` at all — and pinning on the RESOLVER's ambient
+trace would pin the wrong run (the human's request, not the agent's). This is the same
+missing-reciprocal-key shape MI-1 just fixed for `automation_runs`, and it wants the same
+fix — a real join key on the proposal — rather than a plausible-looking pin aimed at the
+wrong rows. **Open, and small.**
+
+**Receipt:** `tests/unit/test_mi2_retention_and_pinning.py` — a 15-day-old graded run
+survives the sweep and its ungraded neighbour does not, in ONE test, because survival
+proves nothing if nothing is being swept. Plus the restart case the counter could never
+cover, both directions of the durable clock, and the row-cap exemption.
 
 #### MI-3 · The dataset plane (Tangle's schema, our law — §4.5)
 

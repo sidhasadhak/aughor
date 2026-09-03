@@ -693,6 +693,39 @@ def prompt_weight(*, org_id: Optional[str] = None, scan: int = 5000) -> dict:
     }
 
 
+def pin_run(*, trace_id: str = "", investigation_id: str = "") -> int:
+    """MI-2 — make a graded run's events permanent. Best-effort; never raises.
+
+    Called from the verdict doors, because retention follows grading: `session_events`
+    expires on the 14-day sweep while `finding_verdicts`, `staged_proposals` and
+    `evidence_claims` are unbounded, so a verdict recorded late lands on evidence that has
+    already been deleted.
+
+    Pinning must never be able to cost someone their verdict — a thumbs that 500s because
+    a retention bookkeeping write failed is a worse outcome than an unpinned row — so every
+    failure is tolerated and counted, the same posture the feedback doors themselves take.
+
+    NOT wired to `staged_proposals` resolution, though MI-2 names it: that table's `run_id`
+    is a fresh uuid4 minted per tool call (`agent/action_tools.py`), not a `trace_id` or an
+    `investigation_id`, so it does not join to `session_events` at all. Pinning on the
+    RESOLVER's ambient trace would pin the wrong run — the human's request, not the agent's.
+    This is the same missing-reciprocal-key shape MI-1 fixed for `automation_runs`, and it
+    wants the same fix (a real join key on the proposal) rather than a plausible-looking
+    pin that points at the wrong rows.
+    """
+    if not trace_id and not investigation_id:
+        return 0
+    try:
+        from aughor.kernel.ledger import Ledger
+        return Ledger.default().pin_session_events(
+            trace_id=trace_id or "", investigation_id=investigation_id or "")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "pinning a graded run is bookkeeping; the verdict itself stands",
+                 counter="session_log.pin_run")
+        return 0
+
+
 def keep_days() -> int:
     """Retention window in days (0 = keep forever). Enforced on write."""
     return int(os.environ.get("AUGHOR_SESSION_LOG_KEEP_DAYS", "14") or 0)
