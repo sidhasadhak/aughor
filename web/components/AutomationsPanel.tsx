@@ -635,15 +635,16 @@ function RunsView({ automations, runsFor, runs, onPick }: {
             display: "flex", alignItems: "center", gap: 8, padding: "6px 14px",
             border: "1px dashed var(--b1)", borderRadius: 6, color: "var(--t3)",
           }}>
-            <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 7px", borderRadius: 4,
-              textTransform: "uppercase", background: "var(--bg-2)", color: "var(--t3)" }}>
+            <span className="aug-fs-xs" style={{ fontWeight: 700, padding: "2px 7px",
+              borderRadius: 4, textTransform: "uppercase", background: "var(--bg-2)",
+              color: "var(--t3)" }}>
               not fired ×{row.count}
             </span>
-            <span style={{ fontSize: 12 }}>
+            <span className="aug-fs-sm">
               {row.reason || "the schedule was not due"}
             </span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11 }}>
+            <span className="aug-fs-xs">
               {row.count > 1 ? `${relTime(row.oldest)} → ${relTime(row.newest)}` : relTime(row.newest)}
             </span>
           </div>
