@@ -311,17 +311,17 @@ Neither needs a new canvas: VA-12's authoring rail edits whatever the model can 
 
 ### 3.3 · B1/B2 — borrowed from Langflow
 
-- **B1 · Typed bindings.** `validate_chain` catches an unknown *step* at save but **not an
-  unknown key** — that surfaces at 09:00 as a skipped step. VA-13 shipped the binding as free
-  text. A picker over "what each upstream step publishes" closes it. **Weakest seam in VA-12/13.**
-  *Design direction (user, 2026-08-30, from the Langflow canvas):* render bindings as **visible
-  inward/outward ports** on the nodes — coloured dots, output right, input left — with nodes
-  free to drag and fields editable on the node. That look is `@xyflow/react` (the library the
-  four existing canvases already use) with styled handles instead of our `opacity: 0` ones and
-  `nodesDraggable` on: design investment, not new technology. B1's picker and the visible port
-  are the same feature — the port IS the typed binding, drawn. Reference for the
-  redesign (user-supplied): https://docs.langflow.org/concepts-components — their component
-  anatomy (header/inputs/outputs, port types, tool-mode toggle) is the vocabulary to beat.
+- ~~**B1 · Typed bindings.**~~ — **SHIPPED `16019b5a`**: typed ports over a server-fetched
+  vocabulary, drag-to-bind, and unknown KEYS refused at save (`PUBLISHED_KEYS` /
+  `published_keys()` in `automations/dataflow.py`, covered by three test files). The Runs
+  layer retired into Activity → Phases.
+  ⚠️ **This entry read "the weakest seam in VA-12/13" for days after it shipped** — §5's band
+  had it right the whole time. Third instance this week of a resolved item reading as open
+  (VA-9d's posture, the report-quality count, this). Verified in code 2026-09-03 before the
+  strikethrough, not taken from the band.
+  *Kept because it was the design brief and the ports still answer to it:* render bindings as
+  visible inward/outward ports — coloured dots, output right, input left — nodes draggable,
+  fields editable on the node.
 - ~~**B2 · Dry-run.**~~ — **SHIPPED 2026-08-30.** `run_automation(dry_run=True)` returns an
   ordinary `AutomationRun`, so the existing run canvas draws a preview with no second way
   of showing a chain. ⚠️ **The plan's premise was half true**: `evals/equivalence.py`'s inert
