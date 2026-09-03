@@ -1409,12 +1409,31 @@ when the author was me:
   authored myself, the same day.** Writing a gap analysis is not exempt from "measure the
   premise": I read the palette, saw no `if_else` row, and wrote the conclusion without
   checking whether the capability lived on the step instead of in the roster.
-- **Data shaping** — `Type Convert`, `Parser`, `Split Text`, `Structured Output`,
-  `Smart Transform`, `Dynamic Create Data`. **VERIFIED ABSENT 2026-09-03** (`dataflow.resolve`
-  returns `produced[key]` and nothing else — a binding NAMES a key, it cannot cast, format,
-  split or reshape it). With control flow struck above, this is **the only remaining
-  first-order gap**, and therefore the one to take: it is what decides whether B1's typed
-  ports stay expressive or become a reason to leave the canvas.
+- ✅ **Data shaping — SHIPPED 2026-09-03 as `$as` on the binding**, the user's call between a
+  transform STEP and a formatter on the wire. `{"$from": "rows.count", "$as": "text"}`.
+  Verified absent first (`dataflow.resolve` returned `produced[key]` and nothing else), so
+  this is the one half of §3.8a that survived re-measurement.
+  **A closed set, not an expression**: `text · json · number · integer · boolean · count ·
+  first · last`. DS-16 refuses code nodes by law and the same reasoning applies one plane
+  down — an expression language here would be a second place values are computed, outside
+  every guard that governs the first. An unknown name is refused at SAVE with the whole set
+  in the sentence.
+  🔑 **Every conversion that cannot be made honestly RAISES rather than producing a plausible
+  value** — `resolve`'s own law ("a default would let a step run with a silently wrong value,
+  and these steps send messages and write to systems") applied to the conversion instead of
+  the lookup. `integer` refuses `2.9` rather than truncating; `boolean` refuses `maybe` rather
+  than using truthiness (`""` and `"false"` are both falsey and only one means false);
+  `first` refuses an empty list rather than yielding None. `UncastableBinding` SUBCLASSES
+  `UnresolvedBinding`, so every caller that already skips a step skips this one unchanged.
+  🔴 **The client mirrored the same rule in the same commit.** `automationFlow.ts` read
+  bindings with `keys.length === 1`, so without it a cast-carrying binding would not have
+  been wiring at all — edge gone from the canvas, field rendered as a raw object, for a chain
+  the server considers valid. A rule mirrored on one side only is a rule that disagrees with
+  itself.
+  ⏳ **Still owed — the authoring UI.** Nothing in the canvas SETS `$as` yet: it is reachable
+  through the API and the DS-16 import funnel, not from the binding chip. Until that lands
+  this is the arc's own recurring failure (a complete and inert plane), and it is named here
+  rather than left to be discovered.
 - **File I/O** — `Read File`, `Write File`, `File System`.
 - **LLM as a component** — `Language Model`, `Embedding Model`, `Prompt Template`,
   `LLM Selector`. We have the whole plane; it is not droppable, it lives inside
