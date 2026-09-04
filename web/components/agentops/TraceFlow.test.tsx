@@ -31,6 +31,9 @@ import type { SessionEvent, TimelineNode, TraceFlowEdge } from "@/lib/api";
 const handoff: { nodes: RFLike[]; edges: RFLike[] }[] = [];
 /** Every viewport move the component asked for. */
 const fits: string[] = [];
+/** Every prop the canvas was handed, not just nodes/edges — the interaction flags live
+ *  here and are invisible to a nodes-and-edges assertion. */
+const canvasProps: Record<string, unknown>[] = [];
 const fakeRf = {
   fitView: () => { fits.push("fit"); },
   setCenter: () => { fits.push("center"); },
@@ -47,11 +50,13 @@ vi.mock("@xyflow/react", async importOriginal => {
   const Provider = actual.ReactFlowProvider as React.ComponentType<{
     children?: React.ReactNode;
   }>;
-  const Stub = ({ nodes, edges, nodeTypes, onInit }: {
+  const Stub = (props: {
     nodes: RFLike[]; edges: RFLike[]; nodeTypes: Record<string, React.ComponentType<RFLike>>;
     onInit?: (rf: unknown) => void;
   }) => {
+    const { nodes, edges, nodeTypes, onInit } = props;
     handoff.push({ nodes, edges });
+    canvasProps.push(props as unknown as Record<string, unknown>);
     // Hand the component an instance ONCE, so the re-fit it performs is observable.
     // Without this `rf` stays null, the effect returns early, and a test asserting the
     // viewport does not jump would pass with the jump fully intact.
@@ -125,6 +130,7 @@ beforeAll(() => {
 
 beforeEach(() => {
   handoff.length = 0;
+  canvasProps.length = 0;
   fits.length = 0;
 });
 
@@ -688,5 +694,31 @@ describe("guardrails that allowed", () => {
     for (const id of ["m1", "t1"]) {
       expect(drawn().edges.some(e => String(e.target) === id)).toBe(true);
     }
+  });
+});
+
+// ── §3.8 · the canvas does not offer a drag it cannot keep ──────────────────────────
+
+describe("interaction affordances", () => {
+  /** The last set of props the canvas was handed. */
+  const lastProps = () => canvasProps[canvasProps.length - 1] ?? {};
+
+  it("hands the canvas nodesDraggable={false}", () => {
+    render(<TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]} />);
+    // ReactFlow DEFAULTS this to true, so the assertion is on the explicit false — an
+    // `undefined` here means dragging is on, which is the bug this pins.
+    expect(lastProps().nodesDraggable).toBe(false);
+  });
+
+  it("does not offer connection handles either", () => {
+    render(<TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]} />);
+    expect(lastProps().nodesConnectable).toBe(false);
+  });
+
+  it("still hands nodes down, so this is not a blank canvas passing vacuously", () => {
+    // Guard against the assertions above being satisfied by a canvas that renders
+    // nothing: a stub handed no nodes would have `undefined` flags too.
+    render(<TraceFlow timeline={timeline([node("a", { span_id: "a" })])} edges={[]} />);
+    expect(drawn().nodes.length).toBeGreaterThan(0);
   });
 });

@@ -1268,6 +1268,28 @@ export function TraceFlow({
             // with fit-to-screen still one click away in the controls.
             fitViewOptions={{ minZoom: 0.55, maxZoom: 1, padding: 0.15 }}
             proOptions={{ hideAttribution: true }}
+            // §3.8 — the drag affordance is REMOVED rather than wired, and the direction
+            // is the whole decision.
+            //
+            // ReactFlow defaults `nodesDraggable` to true, and this canvas passes a
+            // CONTROLLED `nodes` array with no `onNodesChange`. So a card could be
+            // grabbed, the library moved it in its own store, `rfNodes` never heard, and
+            // the next parent render put it back — the same controlled-mode break #428
+            // fixed on the automation canvas.
+            //
+            // There the fix was to wire the channel, because that canvas has a layout
+            // people AUTHOR and a sidecar to persist it in. Here neither is true: these
+            // positions are computed by `layoutForest`/`layoutGrid` from the run's own
+            // shape, there is no trace-layout store to write to, and a moved card would
+            // be lost on the next re-select regardless. Wiring drag would promise a
+            // persistence that does not exist — and the tree layout is a READING of the
+            // run, so arbitrary positions destroy the thing the view is for.
+            //
+            // Clicking, selecting and panning are untouched: `elementsSelectable` stays
+            // default, and dragging on a card now pans the canvas instead of pretending
+            // to move it. `AgentMap` already made this call for the same reason.
+            nodesDraggable={false}
+            nodesConnectable={false}
             minZoom={0.2}
             maxZoom={1.6}
           >

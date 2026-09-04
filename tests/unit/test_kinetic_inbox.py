@@ -199,7 +199,12 @@ def test_a_row_written_before_ds11_still_reads_as_a_declared_action(tmp_path,
         row = mod.get_proposal("old-1")
         assert row is not None
         assert row.kind == "declared_action" and row.grant_id == ""
-        assert sqlite3.connect(db).execute("PRAGMA user_version").fetchone()[0] == 3
+        # Against the module's OWN highest migration, not a literal. This assertion was
+        # `== 3` and broke the moment a fourth migration landed — a test that fails on
+        # every future migration teaches people to edit the number rather than read it.
+        # What it exists to prove is that the chain RAN, not which version is newest.
+        expected = max(m.version for m in mod._MIGRATIONS)
+        assert sqlite3.connect(db).execute("PRAGMA user_version").fetchone()[0] == expected
     finally:
         monkeypatch.undo()
         importlib.reload(mod)

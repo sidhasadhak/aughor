@@ -79,6 +79,14 @@ _MIGRATIONS: list = [
               lambda c: add_column_if_missing(c, "staged_proposals", "expires_at", "TEXT")),
     # 3 — measured against the live store on 2026-09-01, which sat at 2.
     Migration(3, "proposal kind + integration grant", _add_proposal_kind),
+    #: Version 4, numbered off the LIVE store rather than off this file: `PRAGMA
+    #: user_version` on the deployed inbox store returns 3, so 4 is the next one
+    #: that will actually execute. A migration numbered at or below the deployed version is
+    #: skipped forever, and no hermetic test can catch it — a fresh database takes the
+    #: column from the DDL above and passes either way.
+    Migration(4, "proposal trace key (MI-2: a verdict can pin its evidence)",
+              lambda c: add_column_if_missing(c, "staged_proposals", "trace_id",
+                                              "TEXT NOT NULL DEFAULT ''")),
 ]
 
 #: Terminal statuses — a proposal in any of these is resolved and cannot be re-resolved.
@@ -162,6 +170,15 @@ class StagedProposal(BaseModel):
     # replayed run after a restart cannot duplicate a proposal.
     run_id: str = ""
     call_id: str = ""
+    #: MI-2 — the trace this proposal was raised under, so a verdict on it can PIN the run's
+    #: evidence before the 14-day sweep takes it. `run_id` cannot serve: it is a fresh
+    #: `uuid4()` minted per tool call (`agent/action_tools.py`) purely as an idempotency key,
+    #: and it joins to nothing in `session_events`. Pinning on the RESOLVER's ambient trace
+    #: instead would pin the human's request rather than the agent's run — the wrong rows,
+    #: recorded confidently. Defaulted from the ambient trace at stage time, the way MI-1
+    #: does it for `automation_runs` (measured live after that shipped: 2,142 of 2,142 runs
+    #: carry one).
+    trace_id: str = ""
     #: pending | accepted | rejected | executed | failed | approval_required | expired |
     #: uncertain. `uncertain` (DS-11's completion) is an accepted write whose transport
     #: broke: it MAY have arrived, and the resumed run carries the word rather than
@@ -225,6 +242,8 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             source         TEXT NOT NULL DEFAULT 'agent',
             run_id         TEXT NOT NULL DEFAULT '',
             call_id        TEXT NOT NULL DEFAULT '',
+            -- MI-2's reciprocal key. See the model field for why `run_id` cannot serve.
+            trace_id       TEXT NOT NULL DEFAULT '',
             status         TEXT NOT NULL DEFAULT 'pending',
             status_message TEXT NOT NULL DEFAULT '',
             outcome        TEXT NOT NULL DEFAULT '{}',
@@ -263,6 +282,16 @@ def stage_proposal(p: StagedProposal) -> StagedProposal:
         p.org_id = current_org_id()
     if not p.expires_at:
         p.expires_at = _deadline_from(p.created_at)
+    # MI-2 — default the trace from the ambient run, exactly as `automation_runs` does, so no
+    # caller threads it through. An explicit value always wins, so a replayed or
+    # reconstructed proposal keeps the trace it was originally raised under rather than
+    # acquiring the replay's.
+    if not p.trace_id:
+        try:
+            from aughor.telemetry import current_trace_id
+            p.trace_id = current_trace_id() or ""
+        except Exception:
+            p.trace_id = ""
     with _LOCK:
         c = _conn()
         try:
@@ -276,12 +305,12 @@ def stage_proposal(p: StagedProposal) -> StagedProposal:
                 INSERT INTO staged_proposals (
                     id, org_id, connection_id, schema_name, kind, grant_id, action_id,
                     params, reasoning, proposer, source, run_id, call_id, status,
-                    status_message, outcome, created_at, expires_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    status_message, outcome, created_at, expires_at, trace_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (p.id, p.org_id, p.connection_id, p.schema_name, p.kind, p.grant_id,
                   p.action_id, json.dumps(p.params), p.reasoning, p.proposer, p.source,
                   p.run_id, p.call_id, p.status, p.status_message, json.dumps(p.outcome),
-                  p.created_at, p.expires_at))
+                  p.created_at, p.expires_at, p.trace_id))
             c.commit()
             return p
         finally:
@@ -302,9 +331,26 @@ def _resolve_once(proposal_id: str, to_status: str, actor: str) -> bool:
                 "WHERE id=? AND status='pending'",
                 (to_status, actor, now_iso_z(), proposal_id))
             c.commit()
-            return cur.rowcount == 1
+            resolved = cur.rowcount == 1
+            trace_id = ""
+            if resolved:
+                row = c.execute("SELECT trace_id FROM staged_proposals WHERE id=?",
+                                (proposal_id,)).fetchone()
+                trace_id = (row["trace_id"] if row else "") or ""
         finally:
             c.close()
+    # MI-2 — a resolution IS a human verdict, so it pins the run's evidence past the 14-day
+    # sweep. Outside the lock and after the commit: the resolution is the durable thing, and
+    # pinning is bookkeeping that must never be able to cost someone their decision.
+    #
+    # Pinned on the PROPOSAL's trace, never the resolver's ambient one. They are different
+    # runs — the agent that proposed, and the human request that answered — and pinning the
+    # latter would confidently preserve the wrong rows while the evidence it was meant to
+    # keep expired on schedule.
+    if resolved and trace_id:
+        from aughor.obs.session_log import pin_run
+        pin_run(trace_id=trace_id)
+    return resolved
 
 
 def _record_outcome(proposal_id: str, status: str, message: str, outcome: dict) -> None:

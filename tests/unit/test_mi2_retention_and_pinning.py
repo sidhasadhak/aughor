@@ -170,3 +170,64 @@ def test_the_verdict_door_pins_its_run():
 
     pinned = [r["pinned_at"] for r in led.session_events(limit=10, trace_id="t-verdict")]
     assert pinned and all(p for p in pinned), "the verdict door did not pin its evidence"
+
+
+# ── the fourth verdict door: a proposal's resolution ─────────────────────────────────
+
+def test_a_proposal_records_the_trace_it_was_raised_under():
+    """`run_id` cannot serve as this key — it is a fresh uuid4 per tool call, minted for
+    idempotency, joining to nothing in `session_events`."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+
+    with _tel().bind_trace("t-prop-raise"):
+        p = stage_proposal(StagedProposal(connection_id="c1", action_id="a1"))
+    assert p.trace_id == "t-prop-raise"
+    assert p.run_id != p.trace_id, "the idempotency key is not a correlation key"
+
+
+def test_resolving_a_proposal_pins_the_run_that_raised_it():
+    from aughor.actions.inbox import StagedProposal, reject_proposal, stage_proposal
+
+    led = Ledger.default()
+    led.session_events_clear()
+    with _tel().bind_trace("t-prop-evidence"):
+        session_log.emit(session_log.TOOL_CALL, name="x")
+        p = stage_proposal(StagedProposal(connection_id="c1", action_id="a1"))
+
+    reject_proposal(p.id, actor="a-human")
+
+    pinned = [r["pinned_at"] for r in led.session_events(limit=10, trace_id="t-prop-evidence")]
+    assert pinned and all(pinned), "the proposal door did not pin its evidence"
+
+
+def test_it_pins_the_PROPOSAL_trace_not_the_resolver_trace():
+    """The property the whole change turns on. The agent that proposed and the human who
+    answered are DIFFERENT runs; pinning the resolver's would confidently preserve the
+    wrong rows while the evidence it was meant to keep expired on schedule."""
+    from aughor.actions.inbox import StagedProposal, reject_proposal, stage_proposal
+
+    led = Ledger.default()
+    led.session_events_clear()
+    with _tel().bind_trace("t-agent-run"):
+        session_log.emit(session_log.TOOL_CALL, name="agent-work")
+        p = stage_proposal(StagedProposal(connection_id="c1", action_id="a1"))
+    with _tel().bind_trace("t-human-request"):
+        session_log.emit(session_log.TOOL_CALL, name="human-request")
+        reject_proposal(p.id, actor="a-human")
+
+    agent_rows = led.session_events(limit=10, trace_id="t-agent-run")
+    human_rows = led.session_events(limit=10, trace_id="t-human-request")
+    assert all(r["pinned_at"] for r in agent_rows), "the agent's run was not preserved"
+    assert not any(r["pinned_at"] for r in human_rows), \
+        "the resolver's own request was pinned — the wrong run"
+
+
+def test_an_explicit_trace_survives_a_replay():
+    """A reconstructed proposal keeps the trace it was originally raised under rather than
+    acquiring the replay's."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+
+    with _tel().bind_trace("t-replay-now"):
+        p = stage_proposal(StagedProposal(connection_id="c1", action_id="a1",
+                                          trace_id="t-original"))
+    assert p.trace_id == "t-original"

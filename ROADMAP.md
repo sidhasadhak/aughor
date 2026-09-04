@@ -237,11 +237,32 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > every legitimate change is one people learn to click through. Fail-closed, because a
 > silently relabelled tool is precisely the attack the advisory reading exists to blunt.
 >
-> **Still unbuilt here:** a UI (`+ Custom MCP` in the connectors catalog and
-> the palette's per-server rail rows, §3.7 Phase 1's P2 note), OAuth-authenticated servers
-> (the `auth_header` is a single opaque forwarded value, not an auth implementation), and
-> non-text tool results — images and embedded resources are dropped rather than flattened,
-> deliberately, because a partial answer that looks whole is worse than a missing one.
+> **Still unbuilt here** — ~~a UI~~, OAuth-authenticated servers, non-text tool results.
+> **RE-MEASURED 2026-09-04, and two of the three were wrong:**
+>
+> - ~~**a UI**~~ — **BUILT.** `McpServersSection.tsx:298` renders `+ Custom MCP`, with tests
+>   covering it, against full CRUD + `/discover` + per-tool grant routes. It shipped with
+>   #426 and this line was never updated.
+> - **OAuth-authenticated servers** — still true as written (the `auth_header` is one opaque
+>   forwarded value), **but it is NOT what unlocks Arcade/Composio, and the sentence below
+>   that says it is was wrong.** This repo's own Langflow study records Composio as *keyed by
+>   `COMPOSIO_API_KEY`*, with *"service provider authentication managed through the Composio
+>   platform"* — the platform absorbs the per-service OAuth, and what it wants from us is an
+>   API key in a header. `session.py:74` already sends exactly that. **So the most-wanted
+>   feature is reachable TODAY** via a Custom MCP server with an API-key auth header; it wants
+>   an end-to-end receipt against a real key, not an OAuth implementation. OAuth remains a
+>   real capability for servers that demand a flow of their own — a narrower, separate case.
+> - **non-text tool results** — ✅ **the DECLARATION half shipped 2026-09-04.** Images and
+>   embedded resources are still not carried (a base64 image in a chain context is a
+>   megabyte no downstream step can read), but the omission is no longer silent — which it
+>   was, in flat contradiction of the very sentence this line used to justify it. A tool
+>   returning a chart plus one line of prose handed back the prose alone, and every reader
+>   downstream, the model included, saw a complete-looking answer. `_text_of` now counts the
+>   dropped blocks by kind onto `McpCallResult.omitted` AND states them in the text, because
+>   the text is what a step actually reads and a flag nobody consults would leave the model
+>   exactly where the objection says it must not be. The notice is appended AFTER the cap so
+>   a long result cannot truncate away the sentence saying something is missing.
+>   ⏳ Still owed: CARRYING them, typed, when a consumer exists.
 
 VA-9's own risk note calls this *"the largest new attack surface in the arc"*. ~~Agree the
 allowlist and the outbound-off-by-default posture with the user before starting.~~
@@ -263,6 +284,12 @@ allowlist and the outbound-off-by-default posture with the user before starting.
 platforms which solve the OAuth problem — Arcade, Composio — expose their tools **over MCP**.
 VA-9d is therefore no longer an abstract capability; it is the delivery mechanism for the
 most-wanted feature on this list.
+
+> ✅ **And that delivery mechanism is BUILT (re-measured 2026-09-04).** The chain — custom
+> server UI → registration → `/discover` → per-tool grants → `mcp_call` step — is complete,
+> and these platforms authenticate with an API key the existing `auth_header` already
+> forwards. What is owed is a **receipt**, not a feature: register one against a real key and
+> drive a tool end to end. That needs a credential, so it is the user's to run, not mine.
 
 ### 3.2 · W1/W2 — the two workflow primitives
 
@@ -462,9 +489,38 @@ URIs — the callback must live on the stable production origin, verified before
 
 ### 3.5 · VA-10 — multi-user & admin
 
-Untouched. User analytics over `session_events`, per-user and per-org quotas, an admin view of
-every user's agents/runs/connections, RBAC on the agent plane, and audit of admin access to
-user traces. **Risk is policy, not code:** an admin reading a user's prompts is a real question.
+~~Untouched.~~ **RE-MEASURED 2026-09-04: "Untouched" was wrong, and so was "risk is policy,
+not code" — it is the exact inverse.** Three of the five pieces are already built:
+
+| Piece | This line said | Measured 2026-09-04 |
+|---|---|---|
+| RBAC on the agent plane | untouched | **built** — `aughor/rbac/` store, `/rbac/roles` routes, `effective_capabilities`/`resolve_roles`, and **80 routes enforcing a capability gate** |
+| Per-user / per-org quotas | untouched | **built** — `govern/usage_caps.py`: `UsageCap`, `evaluate`, `check`, `observed_usage` |
+| Audit of admin trace access | untouched | **built** — VA-5's `trace.payload_access`, categorized into the governance feed |
+| Admin view across users | untouched | **genuinely missing** — no admin routes exist |
+| Per-user analytics | untouched | **impossible today** — `COUNT(DISTINCT user_id)` = **0** over 6,618 rows |
+
+**The blocker is code, and it is authentication.** `security/authz.resolve_principal` reads
+`X-Aughor-Org` and `X-Aughor-User` as **unverified headers**, marked in its own docstring
+*"SEAM: swap this for authenticated-token extraction in production"*. There is no JWT, no
+OIDC, no session anywhere in the tree.
+
+**Demonstrated on the live instance 2026-09-04**, not argued from a code comment: with
+`AUGHOR_REQUIRE_IDENTITY=1`, a request with no headers is **401**; `X-Aughor-User: mallory`
+is **200** with no credential; and the §6.4 break-glass audit then recorded
+**`read_by: mallory`** — a string typed into a curl. One thing came out BETTER than
+expected: a caller naming a different org got **403**, so tenant isolation (DATA-06) is real
+enforcement, not theatre. The gap is specifically the USER half, inside an org.
+
+That matters because every remaining piece keys on it: per-user analytics groups by it,
+per-user quotas meter by it, and §6.4 requires a payload read be *"visible to the user whose
+data it is"*. Built on a self-asserted header, that surface would be trivially
+misattributable — worse than absent, because people would trust it.
+
+⏳ **VA-10 is therefore not one band.** It is (a) an auth model — service tokens? OIDC
+against which IdP? — which is the user's decision, and (b) an admin view, which is small once
+(a) exists. **Risk is policy, not code** was written when the policy was undecided; §6.4
+decided it 2026-09-02, and what remains is the code this line assumed was already there.
 ✅ **DECIDED 2026-09-02 (§6.4): visible metadata, GATED payloads.** Counts, timings, costs,
 tool names, error rates and run outcomes are admin-visible without ceremony — that is the
 whole analytics case, and it needs no prompt text. Reading a prompt or a response body is a
@@ -1430,7 +1486,18 @@ when the author was me:
   been wiring at all — edge gone from the canvas, field rendered as a raw object, for a chain
   the server considers valid. A rule mirrored on one side only is a rule that disagrees with
   itself.
-  ⏳ **Still owed — the authoring UI.** Nothing in the canvas SETS `$as` yet: it is reachable
+  ✅ **DISCOVERABLE 2026-09-04.** `$as` shipped supported on both sides and **named on
+  neither surface** — the server honoured it, the client parsed it, and nothing told anyone
+  it existed or which words it takes. A capability reachable only by reading the source is
+  one nobody reaches. The cast vocabulary is now exported from `lib/automationFlow` and
+  stated on the bindable inputs, with a **cross-language test that reads BOTH the TS list
+  and `dataflow.py` and asserts they match** — the drift that file's own comment warns about
+  ("a rule mirrored on one side only is a rule that disagrees with itself") now fails a test
+  instead of surfacing as a cast the server refuses.
+  ⏳ Still owed — a dedicated PICKER. Bindings are edited as free-text JSON deliberately (a
+  plain input is the only editor that holds either a sentence or a binding), so a control
+  beside each of several bindable fields is a real design change, not a wiring one.
+  It is reachable
   through the API and the DS-16 import funnel, not from the binding chip. Until that lands
   this is the arc's own recurring failure (a complete and inert plane), and it is named here
   rather than left to be discovered.
@@ -1738,16 +1805,22 @@ Pinned rows are skipped by the age sweep **and do not count toward the row cap**
 run is evidence, not budget, and letting pins consume the newest-N window would mean
 grading enough runs quietly starved the log of everything else.
 
-**Three of the four verdict doors pin; the fourth cannot, and saying so is the finding.**
+**All four verdict doors pin — the fourth caught up 2026-09-04.**
 `finding_verdicts` (by investigation_id), `chat.feedback` (its `turn_id` IS an
 investigation id) and `trace.feedback` (by trace_id) all pin at verdict time.
-**`staged_proposals` resolution does not**: that table's `run_id` is a fresh `uuid4()`
-minted per tool call (`agent/action_tools.py`), not a `trace_id` or an `investigation_id`,
-so it does not join to `session_events` at all — and pinning on the RESOLVER's ambient
-trace would pin the wrong run (the human's request, not the agent's). This is the same
-missing-reciprocal-key shape MI-1 just fixed for `automation_runs`, and it wants the same
-fix — a real join key on the proposal — rather than a plausible-looking pin aimed at the
-wrong rows. **Open, and small.**
+✅ **`staged_proposals` now has the join key it was missing (Migration 4, numbered off the
+live store's `user_version` of 3 and rehearsed on a `.backup` first).** Its `run_id` is a
+fresh `uuid4()` minted per tool call for idempotency and joins to `session_events` not at
+all, so the proposal now carries `trace_id`, defaulted from the ambient run exactly as
+`automation_runs` does — a pattern since **measured in production: 2,142 of 2,142 automation
+runs written after MI-1 shipped carry a trace.** Resolution pins that trace, after the
+commit and outside the lock, because the decision is the durable thing and pinning is
+bookkeeping that must never cost someone their verdict.
+
+🔑 **It pins the PROPOSAL's trace, never the resolver's** — the agent that proposed and the
+human who answered are different runs, and pinning the latter would confidently preserve the
+wrong rows while the evidence it was meant to keep expired on schedule. That property has
+its own test.
 
 **Receipt:** `tests/unit/test_mi2_retention_and_pinning.py` — a 15-day-old graded run
 survives the sweep and its ungraded neighbour does not, in ONE test, because survival
@@ -2076,9 +2149,11 @@ NEXT (order within a band is the user's knob)
                                    last — that order is load-bearing) and data shaping shipped
                                    as `$as` on the binding. 🔴 The conditional-router half of
                                    the gap was my own FALSE claim: DS-6's `else_of` already was
-                                   the branch. ⏳ Survives it: `AgentMap.tsx` has the same
-                                   missing handler, the drag fix owes a Profiler receipt, and
-                                   nothing in the canvas SETS `$as` yet. Original note:
+                                   the branch. ✅ 2026-09-04: the "same missing
+                                   handler" claim was WRONG — `agentops/AgentMap.tsx` already
+                                   sets `nodesDraggable={false}`, so it never wanted drag.
+                                   `agentops/TraceFlow.tsx` was the real one and is FIXED.
+                                   ⏳ Still owed: the Profiler receipt. `$as` is now NAMED at the point of authoring (2026-09-04). Original note:
                                    the PRIMITIVE gap (measured: their 34 core components vs our
                                    15 palette entries; their other 76 pages are vendor bundles,
                                    which is our connector/integration family and NOT a deficit)
@@ -2093,7 +2168,9 @@ NEXT (order within a band is the user's knob)
                                    read-only slice promised it would. 🔴 Two premises broke
                                    under measurement: `tool_grants` was the wrong column,
                                    and `writes` reached the span but not the ledger — §3.1
-                                   carries both. Still unbuilt: OAuth-authenticated servers,
+                                   carries both. Still unbuilt (2026-09-04: the UI half of
+                                   this line was WRONG — `+ Custom MCP` ships): non-text tool
+                                   results, and OAuth-authenticated servers,
                                    non-text tool results.
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
@@ -2140,7 +2217,26 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
         MI-6 RLVR rehearsal — only after a measured SFT+DPO plateau (×2 versions)
 ```
 
-### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
+### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
+
+> ⚠️⚠️ **The 2026-09-04 sweep, and where the rot actually is.** The five OPEN bullets below
+> were all re-measured and all hold — three of them (`VA-11`'s Google client, the Slack
+> reinstall, the manual drag) are **keyed on the user and no sweep can move them**, and the
+> other two (Notion/Confluence, `svg_to_png`) were re-verified by driving the endpoint and
+> importing the module. **This list was not the problem.**
+>
+> The stale claims were **inline in §3**, where nobody re-reads them: §3.5 said VA-10 was
+> "Untouched" when three of its five pieces ship; §3.1 said the MCP UI was unbuilt when
+> `+ Custom MCP` ships and said OAuth was the Arcade/Composio unlock when this repo's own
+> study records an API key; §3.8's leftover named a file (`AgentMap.tsx`) that already opted
+> out of the behaviour, while the file that actually had the defect went unnamed. **Three of
+> five items offered as "next" on 2026-09-04 were misdescribed.**
+>
+> 🔑 **The lesson, third instance in a week:** a struck-through debt list stays honest because
+> striking it is a deliberate act. A prose claim inside a section rots silently, because
+> nothing forces anyone to look at it again. **Measure the inline claims, not just the
+> ledger** — and prefer a dated table to a sentence, because a table with a date on it
+> invites re-measurement and a sentence does not.
 
 > ⚠️ **Re-swept 2026-09-02 (later the same day), and the sweep itself was the finding.** Of the
 > items re-measured, **two were FALSE** (`notification_channel`, wired a fortnight earlier by
@@ -2303,12 +2399,24 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   ⏳ Installing the `[export]` extra here would restore the PICTURES too; that is the user's
   environment to change, and the deck is honest without it.
 - ~~**Canvas drag is not fluid**~~ — **FIXED and MERGED 2026-09-03** (`e3a56b5c`, #428; §3.8b).
-  ⏳ Two things survive it: **`AgentMap.tsx` has the same missing handler** and was left for a
-  separate change, and the fix has **no empirical receipt** — the browser tool cannot drive
-  ReactFlow pointer interactions, so a React Profiler trace during a real drag is still owed.
+  ✅ **The follow-up is done, and it was not what this line said (2026-09-04).**
+  `AgentMap.tsx` does not have the same missing handler — it is `agentops/AgentMap.tsx` (the
+  bare path here is why it read as absent) and it already sets `nodesDraggable={false}`, so
+  it never offered a drag. Grepping every ReactFlow canvas for the actual defect shape found
+  the real one: **`agentops/TraceFlow.tsx`** passed controlled `nodes` with no
+  `onNodesChange` and no `nodesDraggable={false}`, and ReactFlow defaults dragging ON.
+  **Fixed by REMOVING the affordance, not wiring the channel** — #428 wired it because that
+  canvas has an authored layout and a sidecar to persist it; a trace's positions are computed
+  by `layoutForest`/`layoutGrid`, there is no trace-layout store, and a moved card would be
+  lost on the next re-select. Wiring drag would promise a persistence that does not exist,
+  and the tree layout is a READING of the run that arbitrary positions destroy.
+  ⏳ Still owed: the **empirical receipt** — the browser tool cannot drive ReactFlow pointer
+  interactions, so a React Profiler trace during a real drag remains outstanding. The new
+  tests assert the render HANDOFF (the flags the canvas is given), which is the honest limit
+  of what jsdom can prove; they were verified to FAIL without the fix.
 - ~~**The primitive gap**~~ — **CLOSED 2026-09-03** (`e3a56b5c`, #428). Data shaping shipped as
   `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
-  was always the branch (§3.8a). ⏳ Survives it: **nothing in the canvas SETS `$as`** — API and
+  was always the branch (§3.8a). ✅ 2026-09-04: `$as` is now TAUGHT where bindings are typed. ⏳ A dedicated picker survives it — API and
   the DS-16 import funnel only, not the binding chip.
 - ~~**DS-5 Map grants spoke**~~ — **DRAWN 2026-09-03**, closing the last undrawn spoke of the
   DS-5 spec ("its doors; its automations; its tool grants and connections"). One node per
