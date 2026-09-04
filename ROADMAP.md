@@ -1558,14 +1558,41 @@ worked.
 - **`session_events` expires in 14 days** (`AUGHOR_SESSION_LOG_KEEP_DAYS=14`,
   `obs/session_log.py:698`) while `finding_verdicts`, `staged_proposals` and
   `evidence_claims` are unbounded — a late verdict's join target is already deleted.
-- **Attribution is dead on arrival:** `session_events.user_id` at 0 of 8,198 rows,
-  `agent_id` at 0 of 7,365.
+- ~~**Attribution is dead on arrival**~~ — **RE-MEASURED 2026-09-03, and it was wrong in
+  both halves.** `agent_id` is at **639 of 10,782** rows across seven kinds, flowing since
+  2026-08-30: VA-9b's plumbing works and the earlier count was taken before it landed.
+  `user_id` is genuinely 0 of 10,782 — but not for want of wiring. `session_log.emit`
+  already reads all three ids ambiently from contextvars (`telemetry.py:388`), so there is
+  nothing to thread; `user_id` is empty because `AUGHOR_REQUIRE_IDENTITY` is **off by
+  default** (localhost mode) and the identity middleware no-ops. Making it non-empty is
+  multi-user work — **§3.5 VA-10's band, not MI-1's**. `investigations.py:5528` had already
+  written the diagnosis down: *the machinery was reading a value nobody set.*
 - **`automation_runs` cannot reach the LLM calls it caused** — no `trace_id`; and its
   INSERT drops the model's existing `agent_id` (the half-added-field class, again).
 - **Feedback is split and invisible:** `chat.feedback` keys on turn_id, `trace.feedback`
   on trace_id; neither is in `KIND_CATEGORY`, so neither reaches the governance feed.
-- **The strong verdict surfaces already exist:** `finding_verdicts` (accept · correct ·
-  reject, **with `corrected_sql`** — ready-made preference pairs) · `staged_proposals`
+- **The strong verdict surfaces already exist** — *as SCHEMA; re-measured 2026-09-03 and
+  the contents are the story.* `finding_verdicts` (accept · correct · reject, with a
+  `corrected_sql` column) held **5 rows on the live deployment: 2 accept, 1 correct, 2
+  reject — and ZERO carrying `sql_source` or `corrected_sql`.** "Ready-made preference
+  pairs" described a column, not its contents; the true count of usable DPO pairs was
+  **0**. A catalogue is a proxy for the thing (×7). The funnel, not the schema, is the
+  constraint: the fix-it chain is wired end to end from chat (`ChatMessage.tsx:1208` passes
+  both fields) but **`ExplorationReport.tsx:196` and `TraceExplorerPanel.tsx:192` call
+  `recordVerdict` without them**, so verdicts from the exploration report — plausibly the
+  highest-volume surface — can never become training pairs however diligently anyone
+  grades. **Two call sites, and worth more per line than the exporters.**
+  ✅ **FIXED 2026-09-04.** Both surfaces now send the structural payload, and the trace
+  explorer gained the corrected-SQL field it needed to produce a preference pair at all
+  (without it, that surface could only ever yield accepts). The selection rule lives in
+  `web/lib/verdictSql.ts` because it must be IDENTICAL wherever a verdict is recorded, and
+  it is deliberately conservative: **attribute only when exactly one statement could be
+  meant.** A chain whose headline synthesises several queries has no single statement its
+  finding rests on, and naming the last would be a fabricated attribution — a wrong
+  training pair teaches a falsehood with full confidence, which is worse than a missing
+  one. §3.9's reward-integrity law is about the corpus, not only the grader. Distinct
+  statements are counted rather than events, so a retried identical query stays
+  attributable. 8 unit tests on the rule itself. · `staged_proposals`
   (accepted · rejected · executed · failed, resolver named) · `evidence_claims`
   (validated · disputed, downstream fate) · `guardrail` events (allow AND block) ·
   `automation_runs` (fired · not_fired · gated · error · paused, no-ops included) ·
@@ -1579,7 +1606,7 @@ worked.
   `trace.payload_access`). **One exception, found by reading:** `new_trace()` puts the
   user's *question* on the OTLP wire (`langfuse.trace.input`) regardless of the window.
 
-#### MI-0 · The custody law: the training annex — ✅ DECIDED 2026-09-03 (§6.7); the gate remains
+#### MI-0 · The custody law: the training annex — ✅ DECIDED 2026-09-03 (§6.7); ✅ GATE SHIPPED 2026-09-03
 
 The decision half landed with §6.7: **payloads are trainable only under an org-level
 opt-in carrying a retention class, a purpose tag, and PII scrub at export; work
@@ -1589,39 +1616,172 @@ annex governs machine consumption — deliberately separate acts.) What remains 
 is its one piece of code: `langfuse.trace.input`'s question attribute — an *export*,
 not a read, so no break-glass ever fires on it today — must obey the same custody
 classes, with a test.
-**Receipt:** §6.7's dated stamp (✅ landed); the trace-input gate test (open — rides
-MI-1's wave).
+**Receipt:** §6.7's dated stamp (✅ landed); the trace-input gate ✅ shipped with MI-1's
+wave — `telemetry._trace_input` keeps `connection_id` unconditionally (§6.4 makes metadata
+free) and attaches the question only inside an open capture window, failing safe to "no
+capture" when the window cannot be read. It deliberately does NOT `consume()` that budget:
+the budget is denominated in captured MODEL CALLS, and spending it per trace would make an
+operator's "20 calls" mean something different depending on how many runs happened to
+start.
 
-#### MI-1 · Grade what already runs (substrate-sized)
+#### MI-1 · Grade what already runs (substrate-sized) — ✅ SHIPPED 2026-09-03
 
-- **Persist guard verdicts at the execution chokepoint** — the one seam every connector
+> **Three of this band's four bullets survived their own pre-check; the fourth did not.**
+> The guard sink, the run attribution and the feedback categorization were all real and are
+> built. "Wire attribution" was struck — see the bullet below. The pre-check also turned up
+> a defect the band had predicted in the abstract and got exactly right in the concrete:
+> the `uncategorized_kinds` ratchet was blind *by construction*, not by omission.
+
+> **Corrected the same day, by driving it instead of testing it.** The first cut gated the
+> write on an ambient trace, reasoning by analogy with the session log's drop-trace-less-
+> events law. Wrong analogy: that law is about session EVENTS, meaningless outside the run
+> they describe, whereas a guard verdict is a standalone labeled example — exactly what
+> MI-3 consumes. Running the live `/query/validate` proved it: the guard fired
+> (`E1-quoted-identifier` on `row_id`) and persisted **nothing**. Measured on the live
+> deployment: **189 audit rows that day, 28 with a trace — `bind_trace` is bound only at
+> the ask door**, so the workbench and the validate endpoint carry none. The gate would
+> have discarded ~85% of the signal in the slice whose whole purpose is to stop discarding
+> it. Every fire is now kept, `trace_id` empty when absent, and `phase` (`execute` ·
+> `validate` · `deep` · `trust_scope` · `eval`) carries the weight of separating production
+> supervision from the eval plane's own cases — a dataset built from an unlabelled
+> population would train on its own benchmark.
+
+- ✅ **Persist guard verdicts at the execution chokepoint** — the one seam every connector
   and both the quick and deep paths already pass (the capability-misses-a-connector
   lesson, ×3, decides the placement). Rows `(ts, trace_id, sql_digest, pattern,
   subject, phase, org_id)` beside `audit_log` in `AUGHOR_AUDIT_DB` (an existing store:
   migration rules above apply).
-- **`automation_runs` gains `trace_id`**, and the INSERT carries the `agent_id` the
+- ✅ **`automation_runs` gains `trace_id`**, and the INSERT carries the `agent_id` the
   model already declares — a chain run can finally reach the `llm_call` rows it caused
   (`session_events` got `job_id`/`charter_id` in m10 precisely for this join; this is
   the reciprocal key).
-- **Both feedback kinds enter `KIND_CATEGORY`** — and find out why the
-  `uncategorized_kinds` ratchet wasn't already flagging them (a guard blind to its own
-  population is a standing failure class; treat the silence as its own defect).
-- **Wire attribution:** thread `user_id`/`agent_id` through the session-log emitters;
-  measure after — the receipt is nonzero on new rows, not the code existing.
+- ✅ **Both feedback kinds enter `KIND_CATEGORY`** under a new `human_verdict` category —
+  none of the existing four fits a thumbs, and a mapping alone renders nothing because
+  `feed()` walks `_SINKS`, so both halves landed together.
+  **Why the ratchet was silent, which was the more expensive half:** it hand-listed the
+  emitted kinds as a literal and asserted them against the hand-maintained `KIND_CATEGORY`.
+  Both sides were the same edit, so a kind nobody remembered was absent from *both* and the
+  assertion passed. It failed OPEN. It now DISCOVERS its population by parsing `aughor/`
+  (resolving module-level constants too — the guardrail sink emits `EVENT_KIND`, not a
+  literal), and every discovered kind must be categorized or explicitly declared
+  non-governance. It caught `budget.exceeded` on its first run.
+  **Found by the fix, and needing a product decision:** `govern.cap`, `guardrail`,
+  `metric.enforcement` and `budget.exceeded` are all governance-shaped and invisible to the
+  governance feed. They are held in `GOVERNANCE_SHAPED_UNCATEGORIZED` rather than buried in
+  the exclusion set, because writing "not governance" about them would record a judgment
+  known to be false. Admitting them changes what a user-facing surface returns, and
+  `guardrail` alone is 1,074 of the local ledger's rows — every one a PII *allow* — against
+  a 500-per-sink read. Whether a high-volume allow trail belongs in a reader-facing feed is
+  the user's call, not the builder's.
+- ~~**Wire attribution**~~ — **struck at the pre-check (2026-09-03).** The bullet named a
+  mechanism that does not exist: nothing is threaded through the emitters, because they
+  read identity ambiently. Half of it already works and the other half is VA-10's (see the
+  re-measured bullet above). Kept as a lesson rather than deleted: this line was written
+  the day before it was struck, from a count taken the day before that.
 
-**Receipt:** ONE live SQL query walks run → executed SQL → guard fires → human verdict.
-Today that query cannot be written. Before/after row counts published in the PR.
+**Receipt:** ONE live SQL query walks run → executed SQL → guard fire. Before this slice
+that query could not be written; it is now
+`tests/unit/test_mi1_graded_ledger.py::test_one_query_walks_run_to_executed_sql_to_guard_fire`,
+and both tables share `AUGHOR_AUDIT_DB` so it is a single-store join. The human-verdict hop
+is reachable but not yet joined in one statement — `finding_verdicts` lives in its own
+store, which is MI-3's dataset plane, not this slice's.
 
-#### MI-2 · A verdict pins its evidence (substrate-sized)
+#### MI-2 · A verdict pins its evidence (substrate-sized) — ✅ SHIPPED 2026-09-03
 
-`session_events.pinned_at` (ledger migration — numbered off the LIVE store). The
-verdict writers — `finding_verdicts`, `staged_proposals` resolution, both feedback
-doors — pin the run's rows by trace_id/investigation_id at verdict time. The amortized
-sweeper skips pinned rows; the 14-day default for ungraded exhaust stands.
-**Receipt:** a synthetic 15-day-old graded run survives the sweep; its ungraded
-neighbor doesn't. Sweeper timing measured before/after (it runs inline on write).
+> **The pre-check found that the sweep this band protects against was not running at all.**
+> `_session_events_maybe_prune` fired on an in-process counter (`_session_event_writes`,
+> initialised to 0 in `Ledger.__init__`, prune every 500). The counter resets on every
+> boot, so an install that restarts before accumulating 500 session-event writes in one
+> process lifetime **never pruned**. Measured live: **4,186 of 10,788 rows past a 14-day
+> retention — 39% of the table — the oldest 19 days**, with `session_events_prune` itself
+> working perfectly and called by nothing but an eval receipt and a test — the "tested, not
+> leveraged" shape, a fourth time.
+>
+> ⚠️ **That figure is a correction, and the first one was mine.** The probe originally said
+> 1,766 because it compared `at` against `datetime('now','-14 days')`, which renders a
+> SPACE separator (`2026-08-20 21:13:50`) while the stored values use `T`
+> (`2026-08-20T21:13:50+00:00`). These are string comparisons: `'T'` (0x54) sorts above
+> `' '` (0x20), so every row on the boundary day silently fell out of the count. The prune
+> builds its cutoff with `.isoformat()` and was comparing correctly all along — the code
+> was right and the measurement was wrong, which is the standing lesson, and it is the same
+> family as `E1-quoted-identifier`: a string comparison wearing the costume of a temporal
+> one. The live sweep deleted exactly 4,186 rows, which is what settled it.
+> Retention is a **stated privacy property** that §6.4's and §6.7's custody decisions lean
+> on, and it was not true. It also made this band's own receipt unprovable: "a graded run
+> survives the sweep, its ungraded neighbour does not" says nothing when neither is swept.
+>
+> Fixed WITHOUT a new loop (§VA-6's law: periodic work joins the one that exists). The
+> defect was never the missing loop — it was **volatile state driving a durable decision**.
+> The amortised counter stays on the write path unchanged; the restart case is insured
+> **at OPEN**, where `Ledger.__init__` consults a last-pruned stamp kept in `kv` and sweeps
+> if it is stale. One read per process, not per write, and an unreadable clock fails
+> *toward* pruning.
+>
+> **At open rather than on the first write, and the difference is not cosmetic.** The first
+> draft hung the check on the first write and two existing suites caught it within the
+> hour: `session_event_insert` prunes AFTER inserting, so a first write that is itself
+> backdated — a back-fill, an import, a test fixture — was deleted by the very sweep its
+> own arrival triggered. Opening is also simply the honest place for it: the thing being
+> insured against is a process starting, not a row arriving. Best-effort and last in
+> `__init__`, because a prune that raises must never be why the app cannot boot —
+> Migration 10's back-fill did exactly that on Postgres.
 
-#### MI-3 · The dataset plane (Tangle's schema, our law — §4.5)
+`session_events.pinned_at` — **Migration 11**, numbered off the LIVE store's
+`PRAGMA user_version` of 10 and **rehearsed on a `.backup` first** (10 → 11, column
+present, 10,785 rows intact) before anything touched the real file. Portable SQL only:
+this store also runs on Postgres, where Migration 10's `json_extract` back-fill once
+raised inside `Ledger.__init__`. The column is projected in `_SESSION_EVENT_COLS`, not
+merely stored — a reader that cannot see a pin cannot tell a kept run from one the sweep
+has not reached yet.
+
+Pinned rows are skipped by the age sweep **and do not count toward the row cap**: a graded
+run is evidence, not budget, and letting pins consume the newest-N window would mean
+grading enough runs quietly starved the log of everything else.
+
+**Three of the four verdict doors pin; the fourth cannot, and saying so is the finding.**
+`finding_verdicts` (by investigation_id), `chat.feedback` (its `turn_id` IS an
+investigation id) and `trace.feedback` (by trace_id) all pin at verdict time.
+**`staged_proposals` resolution does not**: that table's `run_id` is a fresh `uuid4()`
+minted per tool call (`agent/action_tools.py`), not a `trace_id` or an `investigation_id`,
+so it does not join to `session_events` at all — and pinning on the RESOLVER's ambient
+trace would pin the wrong run (the human's request, not the agent's). This is the same
+missing-reciprocal-key shape MI-1 just fixed for `automation_runs`, and it wants the same
+fix — a real join key on the proposal — rather than a plausible-looking pin aimed at the
+wrong rows. **Open, and small.**
+
+**Receipt:** `tests/unit/test_mi2_retention_and_pinning.py` — a 15-day-old graded run
+survives the sweep and its ungraded neighbour does not, in ONE test, because survival
+proves nothing if nothing is being swept. Plus the restart case the counter could never
+cover, both directions of the durable clock, and the row-cap exemption.
+
+#### MI-3 · The dataset plane (Tangle's schema, our law — §4.5) — ✅ SHIPPED 2026-09-03
+
+> **Built, and honest about what it currently exports: ~0 examples.** The plane is the
+> accrual substrate (MI-5: MI-1…3 are default-ON for every install, and a fresh install
+> starts accruing from its first query), so it is worth having before there is volume — but
+> the exporters run over 5 verdicts today, none carrying SQL. That is the arc's own
+> prediction (*capture is rich; grading is the gap*), and `gate_status()` publishes the
+> measured distance to MI-4's entry gates precisely so the falsifier stays checkable.
+>
+> **Store:** `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR`, both registered in all THREE
+> places in the same commit (code · `tests/conftest.py` · `scripts/dump_openapi.py`),
+> directory family included. Three tables as ported: content-addressed `dataset_data`
+> (bytes dedup by hash; `deleted_at` lets a purge remove payload while the node and its
+> lineage stand), `dataset_node` (per-org versioning, `parent_id` clone lineage; identical
+> content re-registers as the SAME version rather than minting one), `dataset_lineage`.
+>
+> **Exporters:** SFT from accepted findings, DPO from `correct` verdicts that carry an
+> actual correction (a `correct` with no `corrected_sql` is a judgement without a lesson —
+> including it would fabricate a preference nobody expressed), golden as a stable 1-in-10
+> hold-out. The split is a content hash, NOT a shuffle: a random split would move examples
+> between corpora on every export and break both determinism and the never-trained-on
+> promise. PII scrub rides the existing `security/pii` seam and **fails closed**.
+>
+> **Consumption, not just capability:** the endpoints landed in the EXISTING
+> `routers/learning.py` — the Wave 1 surface built to make the closed loop's accumulation
+> visible, which is one step short of this. Scheduling is deliberately absent: periodic
+> work joins the one loop that exists, and a nightly export over a two-example corpus is
+> motion without progress. `gate_status()` is what says when that changes.
 
 New store `AUGHOR_LEARNING_DB` + `AUGHOR_DATASETS_DIR` for snapshot files — the
 THREE-registration law applies, same commit. The ported ideas (§4.5): content-addressed

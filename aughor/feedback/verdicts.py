@@ -96,6 +96,10 @@ def record_verdict(
              sql_source or "", corrected_sql or "", now),
         )
         c.commit()
+        # MI-2 — the verdict just made this run's evidence permanent. Best-effort and
+        # AFTER the commit: the verdict is the durable thing, pinning is bookkeeping.
+        from aughor.obs.session_log import pin_run
+        pin_run(investigation_id=investigation_id or "")
         result = {
             "id": new_id, "org_id": org, "connection_id": connection_id or "",
             "investigation_id": investigation_id or "", "verdict": v,
@@ -209,6 +213,33 @@ def list_verdicts(connection_id: Optional[str] = None, limit: int = 50) -> list[
     finally:
         c.close()
     return [dict(r) for r in rows]
+
+
+def list_for_export(kinds: tuple[str, ...] = ("accept",), *, require_sql: bool = True,
+                    limit: int = 100000) -> list[dict]:
+    """Verdicts as TRAINING material, oldest first — MI-3's read path.
+
+    Oldest-first, unlike every other reader here, and the direction is load-bearing: a
+    corpus must be stable as it grows, so a new verdict APPENDS rather than shifting every
+    example's position. A newest-first export would produce a different content hash on
+    every run and make the determinism receipt meaningless.
+
+    ``require_sql`` keeps rows that carry the structural payload. Measured on the live
+    store 2026-09-03: of 5 verdicts, 0 carried `sql_source` and 0 carried `corrected_sql`,
+    so this filter is currently the difference between an empty corpus and a corpus of
+    prose with nothing to learn from. That is a grading-funnel fact, not a schema one.
+    """
+    org = current_org_id()
+    placeholders = ",".join("?" for _ in kinds)
+    q = (f"SELECT * FROM finding_verdicts WHERE org_id=? AND verdict IN ({placeholders})")
+    if require_sql:
+        q += " AND sql_source != ''"
+    q += " ORDER BY id ASC LIMIT ?"
+    c = _conn()
+    try:
+        return [dict(r) for r in c.execute(q, (org, *kinds, max(1, int(limit)))).fetchall()]
+    finally:
+        c.close()
 
 
 def list_corrections(connection_id: Optional[str] = None, limit: int = 20) -> list[dict]:

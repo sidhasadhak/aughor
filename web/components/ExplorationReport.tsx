@@ -6,6 +6,7 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { BriefDetails, BriefDetailBlock, renderEmphasis } from "@/components/brief/Brief";
 import { stripPlannerNotes } from "@/lib/format";
 import { recordVerdict } from "@/lib/api";
+import { soleSqlOfSteps } from "@/lib/verdictSql";
 import { FixItForm } from "@/components/FixItForm";
 
 interface Props {
@@ -181,19 +182,29 @@ function VerificationPanel({ v }: { v: NonNullable<ExplorationReportType["verifi
   );
 }
 
-function FindingVerdict({ headline, connectionId, investigationId }: {
+function FindingVerdict({ headline, connectionId, investigationId, sqlSource }: {
   headline: string; connectionId?: string; investigationId?: string;
+  /** The statement that produced the judged answer, when ONE unambiguously did.
+   *  Empty for a multi-step chain — see the call site for why that is deliberate. */
+  sqlSource?: string;
 }) {
   const [done, setDone] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // S3 fix-it: a negative verdict asks WHAT was wrong — an accept stays one
   // click, but "Partly"/"Wrong" without the reason teaches the loop nothing.
   const [fixIt, setFixIt] = useState<"correct" | "reject" | null>(null);
-  const send = async (verdict: "accept" | "correct" | "reject", note = "") => {
+  const send = async (verdict: "accept" | "correct" | "reject", note = "",
+                      correctedSql = "") => {
     if (busy) return;
     setBusy(true);
     try {
-      await recordVerdict({ verdict, connectionId, investigationId, headline, note });
+      // MI-3: carry the STRUCTURAL payload, not just the label. Without these two fields
+      // a verdict recorded here could never become a training pair — measured 2026-09-03,
+      // every one of the store's `correct` rows had an empty `corrected_sql` because the
+      // only surface that sent one was chat. A verdict without its SQL teaches the loop
+      // that something was wrong but not what right would have looked like.
+      await recordVerdict({ verdict, connectionId, investigationId, headline, note,
+                            sqlSource, correctedSql });
       setDone(verdict);
       setFixIt(null);
     } catch {
@@ -222,7 +233,8 @@ function FindingVerdict({ headline, connectionId, investigationId }: {
       {fixIt && (
         <div className="w-full">
           <FixItForm busy={busy}
-                     onSubmit={(note) => send(fixIt, note)}
+                     withSql={!!sqlSource}
+                     onSubmit={(note, correctedSql) => send(fixIt, note, correctedSql)}
                      onCancel={() => setFixIt(null)} />
         </div>
       )}
@@ -232,6 +244,9 @@ function FindingVerdict({ headline, connectionId, investigationId }: {
 
 export function ExplorationReportView({ report, subqAnswers, queryCount, connectionId, investigationId }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
+  // The SQL a verdict is ABOUT, and only when that is unambiguous — the rule lives in
+  // `lib/verdictSql` because it must be identical on every surface that records a verdict.
+  const soleSql = soleSqlOfSteps(subqAnswers);
   const showNarrative = report.narrative && report.narrative.trim() !== (report.conclusion ?? "").trim();
 
   return (
@@ -322,7 +337,8 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
 
       {/* Human ground-truth capture (Bet 0, 0-V) — the non-circular calibration anchor */}
       {investigationId && (
-        <FindingVerdict headline={report.headline} connectionId={connectionId} investigationId={investigationId} />
+        <FindingVerdict headline={report.headline} connectionId={connectionId}
+                        investigationId={investigationId} sqlSource={soleSql} />
       )}
 
       <p className="aug-fs-xs text-zinc-500 pt-1">

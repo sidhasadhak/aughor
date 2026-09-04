@@ -89,14 +89,40 @@ def collect_guard_receipts():
         _COLLECTOR.reset(token)
 
 
+def _record_guard_verdict(guard: str, action: str, detail: str, before) -> None:
+    """MI-1 — durable half of a guard receipt. Best-effort and trace-gated; never raises.
+
+    A rewrite guard names no single column, so `subject` stays empty and the guard's own
+    name carries the meaning: `pattern` is the guard (``fanout_defan``), `phase` is what
+    it did (``rewrote_sql``). The E1 semantic checks fill `subject` because they ARE
+    about one column — the two families share a table, not a shape.
+    """
+    try:
+        from aughor.security.audit import GuardVerdicts
+        GuardVerdicts.record(pattern=guard, phase=action, detail=detail,
+                             sql=str(before) if before is not None else "")
+    except Exception as e:
+        tolerate(e, "guard-verdict persistence is additive; the receipt still fanned out",
+                 counter="exec.guard.persist")
+
+
 def emit_guard_receipt(guard: str, action: str, detail: str = "",
                        before=None, after=None) -> None:
-    """Report a guard intervention (A4). No hook registered = free no-op, which is
+    """Report a guard intervention (A4). No hook registered = no fan-out, which is
     what a bare platform (tests, scripts) gets.
 
     Also lands in the innermost open collector, if any — see
     :func:`collect_guard_receipts`.
+
+    MI-1: an intervention is now also PERSISTED here rather than in a registered hook,
+    because the only hook that exists is the agent's SSE forwarder — riding it would
+    mean a bare platform, an automation tick and the quick path silently recorded
+    nothing. This seam is the one every producer already calls, so recording here needs
+    no registration and no producer can miss it. The no-op contract above is narrowed
+    honestly: a guard that FIRES now costs a row, in or out of a run. Only fires pay it —
+    a platform whose guards stay quiet still writes nothing.
     """
+    _record_guard_verdict(guard, action, detail, before)
     sink = _COLLECTOR.get()
     if sink is not None:
         try:

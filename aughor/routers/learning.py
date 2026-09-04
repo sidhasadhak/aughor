@@ -71,3 +71,53 @@ def delete_resolution(res_id: str):
     from aughor.semantic.ambiguity_ledger import revoke_resolution
     if not revoke_resolution(res_id):
         raise HTTPException(status_code=404, detail="No such resolution")
+
+
+# ── MI-3: the dataset plane ──────────────────────────────────────────────────────────
+#
+# These sit in THIS router rather than a new one because they answer the same question it
+# was built for — "is the closed loop actually accumulating?" — one step further along.
+# Wave 1's endpoints made verdicts and trusted assets visible; these make the corpus those
+# verdicts become visible, and publish the measured distance to MI-4's entry gates.
+#
+# Scheduling is deliberately absent. Periodic work joins the one loop that exists rather
+# than growing a timer, and a nightly export over a two-example corpus is motion without
+# progress. The gate report is what says when that changes.
+
+
+@router.get("/learning/datasets")
+def get_datasets():
+    """Corpus size per kind, and the measured distance to MI-4's entry gates.
+
+    Published rather than kept in a document because §3.9 made the arc falsifiable by
+    measurement: if the graded-pair rate cannot plausibly reach these gates, the
+    distillation premise is unproven here and the arc stops at the ledger. Someone has to
+    be able to SEE the inputs to that decision."""
+    from aughor.learning import exporters, store
+    return {"stats": store.stats(), "gates": exporters.gate_status()}
+
+
+@router.get("/learning/datasets/{name}")
+def get_dataset(name: str, version: Optional[int] = None):
+    """One dataset node plus its provenance — which verdicts fed it. The question MI-4
+    owes about any adapter it promotes."""
+    from aughor.learning import store
+    node = store.get(name, version=version)
+    if node is None:
+        return {"found": False, "name": name, "version": version}
+    return {"found": True, "dataset": node, "lineage": store.lineage_of(node["id"])}
+
+
+@router.post("/learning/export")
+def post_export(task: str = "nl2sql", publish_golden: bool = True):
+    """Run every exporter once. Idempotent — an unchanged corpus registers no new version,
+    so this is safe to call repeatedly and safe to put on a schedule later.
+
+    `publish_golden` also registers the held-out set as an eval suite: a golden set that
+    never reaches the plane enforcing promotion gates is a measuring stick nobody measures
+    with, which is this codebase's most-repeated failure shape."""
+    from aughor.learning import exporters
+    nodes = exporters.export_all(task=task)
+    suite_id = exporters.publish_golden_to_evals(nodes["golden"]) if publish_golden else None
+    return {"datasets": nodes, "golden_suite_id": suite_id,
+            "gates": exporters.gate_status()}

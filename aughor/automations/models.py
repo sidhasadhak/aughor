@@ -532,6 +532,13 @@ class AutomationRun(BaseModel):
     #: VA-9b — the agent this run operated as, so a run can say WHOSE work it was.
     agent_id: str = ""
 
+    #: MI-1 — the trace this tick ran under, so a run can reach the `llm_call` rows it
+    #: caused. `session_events` gained `job_id`/`charter_id` in ledger migration 10 to
+    #: join the other way; this is the reciprocal key, and without it the chain
+    #: run -> model calls -> guard fires cannot be walked in SQL at all. Defaulted from
+    #: the ambient trace at write time, so no caller threads it through.
+    trace_id: str = ""
+
     started_at: str = Field(default_factory=now_iso_z)
     finished_at: Optional[str] = None
     duration_ms: int = 0

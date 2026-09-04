@@ -104,9 +104,23 @@ def _date_only_literal(node) -> Optional[str]:
 
 
 def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
-                     dialect: str = "duckdb") -> list[TrustIssue]:
+                     dialect: str = "duckdb",
+                     phase: str = "trust_check") -> list[TrustIssue]:
     """Return E1 function-semantics caveats for `sql`. Pure AST; never raises. `col_types` keys are
-    lowercased "table.col" and/or "col" → type string (optional)."""
+    lowercased "table.col" and/or "col" → type string (optional).
+
+    MI-1: a fire is also PERSISTED, from here rather than from the callers. Four sites run
+    these checks (the quick path, the deep path, the executor and the trust scope) and a
+    fifth is the eval plane; recording at each would be five chances to miss one — the same
+    shape as the capability that missed a connector three times. `phase` names which caller
+    ran it, and carries the weight now that every fire is kept: it is what separates
+    production supervision from `eval` and from a speculative `validate`. A site that
+    forgets it degrades to the default label, never to silence.
+
+    The write is best-effort and never raises, so the "never raises" half of the contract
+    above holds exactly. It is no longer free, though — a FIRE costs a row wherever it
+    happens (~1% of statements, measured). That is deliberate: gating on an ambient trace
+    discarded ~85% of fires, because only the ask door binds one."""
     try:
         tree = sqlglot.parse_one(sql, read=dialect)
     except Exception:
@@ -207,6 +221,10 @@ def run_trust_checks(sql: str, *, col_types: Optional[dict] = None,
     if out:
         from aughor.stats import bump
         bump("guard.trust_e1.fired", len(out))
+        from aughor.security.audit import GuardVerdicts
+        for _issue in out:
+            GuardVerdicts.record(pattern=_issue.pattern, subject=_issue.subject,
+                                 phase=phase, sql=sql, detail=_issue.message)
     return out
 
 

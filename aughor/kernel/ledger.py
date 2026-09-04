@@ -43,6 +43,15 @@ _DEFAULT_DB = Path(__file__).parent.parent.parent / "data" / "system.db"
 
 # Amortise session-log retention over inserts (see Ledger._session_events_maybe_prune).
 _SESSION_EVENT_PRUNE_EVERY = 500
+#: Also prune when the LAST prune was longer ago than this, regardless of the counter.
+#: The counter alone is per-process and starts at zero on every boot, so a deployment that
+#: restarts before accumulating 500 session-event writes in one process lifetime never
+#: prunes at all — measured on the live install 2026-09-03: 4,186 of 10,788 rows past a
+#: 14-day retention (39% of the table), the oldest 19 days. The clock is read from the `kv`
+#: table, so it survives the restart that resets the counter.
+_SESSION_EVENT_PRUNE_MAX_AGE_S = 6 * 3600
+_PRUNE_KV_STORE = "session_log"
+_PRUNE_KV_KEY = "last_pruned_at"
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS kv (
@@ -362,6 +371,19 @@ def _backfill_payload_facts(c: sqlite3.Connection) -> None:
                 flags)
 
 
+def _older_than(iso_ts: str, seconds: float) -> bool:
+    """Is ``iso_ts`` further in the past than ``seconds``? Unparseable/absent reads as
+    YES — an unreadable clock must not be the reason retention stops happening, which is
+    the failure mode this whole seam exists to end."""
+    try:
+        ts = datetime.fromisoformat(str(iso_ts))
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return True
+    return (datetime.now(timezone.utc) - ts).total_seconds() > seconds
+
+
 def _add_session_event_attribution(c: sqlite3.Connection) -> None:
     """Which RUN produced this call, and which agent charter owned that run.
 
@@ -401,6 +423,33 @@ def _add_session_event_attribution(c: sqlite3.Connection) -> None:
     # "role coverage collapsed today". A migration that only helps FUTURE rows leaves the
     # operator with an empty view on the day it ships.
     _backfill_payload_facts(c)
+
+
+def _add_session_event_pin(c: sqlite3.Connection) -> None:
+    """MI-2 — ``pinned_at``: retention follows GRADING, not the other way round.
+
+    `session_events` expires on a 14-day sweep while `finding_verdicts`,
+    `staged_proposals` and `evidence_claims` are unbounded, so a verdict recorded late
+    joins to rows that are already gone — the run it grades has been swept out from under
+    it. The strongest supervision signal the platform has is the one whose evidence
+    expires fastest.
+
+    A pin is a timestamp rather than a flag so the row records WHEN it became permanent,
+    which is the only way to tell a deliberate pin from a default that drifted. Empty
+    string, not NULL, to match every other text column here and keep the sweep's predicate
+    index-friendly on both backends.
+
+    Portable SQL only: this store also runs on Postgres, where Migration 10's original
+    `json_extract` back-fill raised inside `Ledger.__init__` and left those stores at 8.
+    An additive ALTER with a literal default is safe on both. `c.execute` per statement,
+    never `executescript` — the implicit COMMIT tears the migration out of
+    `run_migrations`' transaction and it re-runs forever (it corrupted this store once).
+    """
+    add_column_if_missing(c, "session_events", "pinned_at", "TEXT NOT NULL DEFAULT ''")
+    # The sweep filters on it on every pass, and a pinned row is the rare case — an index
+    # keeps the common "nothing is pinned" delete from degrading into a full scan.
+    c.execute("CREATE INDEX IF NOT EXISTS session_events_pinned "
+              "ON session_events(pinned_at)")
 
 
 # Schema evolution (DATA-05). The kernel tables in _SCHEMA are v1; changes are Migration(v>=2).
@@ -453,6 +502,13 @@ _MIGRATIONS = [
     # redo work already done, and still leave Postgres stuck at 8 behind the failing v10.
     Migration(10, "session_events: run attribution (job/charter), role, fallback, at index",
               _add_session_event_attribution),
+    #: Version 11, numbered off the LIVE store rather than off this file: `PRAGMA
+    #: user_version` on the deployed `data/system.db` returns 10, so 11 is the next one
+    #: that will actually execute. The note above explains why the PREVIOUS change chose
+    #: to edit Migration 10 in place instead of adding an 11 — that reasoning was about a
+    #: back-fill nobody should re-run, and does not apply to an additive column.
+    Migration(11, "session_events: pinned_at (MI-2 — a verdict pins its evidence)",
+              _add_session_event_pin),
 ]
 
 
@@ -502,6 +558,46 @@ class Ledger:
             # Schema evolution through the versioned framework (DATA-05). Idempotent +
             # forward-only; back-fills existing rows to the bootstrap org.
             run_migrations(self._conn, _MIGRATIONS, store="ledger")
+        self._prune_if_overdue_at_open()
+
+    def _prune_if_overdue_at_open(self) -> None:
+        """Retention's restart insurance: prune once at OPEN when the durable clock says
+        nobody has in a while.
+
+        The amortised counter is per-process and starts at zero on every boot, so an
+        install that restarts before 500 session-event writes in one process lifetime
+        never pruned at all — the stated 14-day policy silently did not hold. Measured on
+        the live install 2026-09-03: 4,186 of 10,788 rows past the cutoff, the oldest 19
+        days, with `session_events_prune` working perfectly and called by nothing but an
+        eval receipt and a test.
+
+        AT OPEN rather than on the first write, and the difference is not cosmetic:
+        `session_event_insert` prunes AFTER inserting, so a first write that is itself
+        backdated — a back-fill, an import, a test fixture — would be deleted by the very
+        sweep its own arrival triggered. Opening is also the honest place for it: the
+        thing being insured against is a process starting, not a row arriving.
+
+        Best-effort and last in ``__init__`` by design. A prune that raises must never be
+        the reason the app cannot boot — Migration 10's back-fill did exactly that on
+        Postgres, and the store sat at user_version=8 until it was repaired."""
+        try:
+            last = self.kv_get(_PRUNE_KV_STORE, _PRUNE_KV_KEY)
+            if last and not _older_than(last, _SESSION_EVENT_PRUNE_MAX_AGE_S):
+                return
+            self._prune_and_stamp()
+        except Exception as exc:
+            logger.debug("open-time session_events prune skipped: %s", exc)
+
+    def _prune_and_stamp(self) -> None:
+        """Prune, then record WHEN — the stamp is what survives the restart that resets
+        the counter. Best-effort on both halves; a failed stamp only means the next open
+        checks again, which is the safe direction."""
+        try:
+            self.session_events_prune()
+            self.kv_put(_PRUNE_KV_STORE, _PRUNE_KV_KEY,
+                        datetime.now(timezone.utc).isoformat())
+        except Exception as exc:
+            logger.debug("session_events prune failed: %s", exc)
 
     @classmethod
     def default(cls) -> "Ledger":
@@ -1104,6 +1200,10 @@ class Ledger:
         "row_count", "retries",
         # Migration 10 — which run, which charter, which prompt role, did it fail over.
         "job_id", "charter_id", "role", "fallback",
+        # Migration 11 (MI-2) — when a verdict made this row permanent. Projected, not
+        # just stored: a reader that cannot see the pin cannot tell a kept run from one
+        # the sweep simply has not reached yet.
+        "pinned_at",
         "payload",
     )
 
@@ -1269,18 +1369,31 @@ class Ledger:
             return max(self._conn.execute(q, args).rowcount, 0)
 
     def _session_events_maybe_prune(self) -> None:
-        """Prune every ``_SESSION_EVENT_PRUNE_EVERY`` inserts (amortised, so the
-        common insert stays one statement). Best-effort: a prune failure must
-        never surface to the answer path that produced the event."""
+        """Prune every ``_SESSION_EVENT_PRUNE_EVERY`` inserts (amortised, so the common
+        insert stays one statement). The restart case is covered at OPEN instead — see
+        :meth:`_prune_if_overdue_at_open`.
+
+        The counter alone was not retention, it was retention *on a long-lived process*.
+        ``_session_event_writes`` starts at 0 in ``__init__``, so an install that restarts
+        before reaching 500 session-event writes in one process lifetime never pruned —
+        and the stated 14-day policy silently did not hold. Measured on the live install
+        2026-09-03, before this: 4,186 of 10,788 rows past the cutoff, the oldest 19 days
+        old, with `session_events_prune` itself working perfectly and called by nothing but
+        an eval receipt and a test.
+
+        The fix keeps the amortised shape (no new loop — periodic work joins the one that
+        exists, it does not grow a timer) and gives it a DURABLE memory: the last prune
+        time lives in `kv`, so exactly the event the counter cannot survive — a restart —
+        is the one that now forces a check. One extra read per process, not per write.
+
+        Best-effort: a prune failure must never surface to the answer path that produced
+        the event."""
         with self._lock:
             self._session_event_writes += 1
             due = self._session_event_writes % _SESSION_EVENT_PRUNE_EVERY == 0
         if not due:
             return
-        try:
-            self.session_events_prune()
-        except Exception as exc:
-            logger.debug("session_events prune failed: %s", exc)
+        self._prune_and_stamp()
 
     def session_events_prune(self, *, keep_days: Optional[int] = None,
                              max_rows: Optional[int] = None) -> int:
@@ -1297,11 +1410,47 @@ class Ledger:
             if keep_days > 0:
                 cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
                 deleted += self._conn.execute(
-                    "DELETE FROM session_events WHERE at < ?", (cutoff,)).rowcount
+                    "DELETE FROM session_events WHERE at < ? AND pinned_at = ''",
+                    (cutoff,)).rowcount
             if max_rows > 0:
+                # MI-2: the row cap spares pinned rows too, and — importantly — does not
+                # COUNT them toward the cap. A graded run is evidence, not budget: letting
+                # pins consume the newest-N window would mean grading enough runs quietly
+                # starved the log of everything else.
                 deleted += self._conn.execute(
-                    "DELETE FROM session_events WHERE seq NOT IN ("
-                    "  SELECT seq FROM session_events ORDER BY seq DESC LIMIT ?)",
+                    "DELETE FROM session_events WHERE pinned_at = '' AND seq NOT IN ("
+                    "  SELECT seq FROM session_events WHERE pinned_at = '' "
+                    "  ORDER BY seq DESC LIMIT ?)",
                     (max_rows,),
                 ).rowcount
         return max(deleted, 0)
+
+    def pin_session_events(self, *, trace_id: str = "",
+                           investigation_id: str = "") -> int:
+        """MI-2 — mark a run's session events permanent. Returns rows pinned.
+
+        Called at VERDICT time, by whoever records the human judgement: retention follows
+        grading. Idempotent — a row already pinned keeps its original timestamp, so
+        re-grading does not rewrite when the evidence became permanent.
+
+        At least one selector is required. A pin with neither would match the whole table,
+        which is the kind of mistake that turns a retention policy into a no-op — the
+        exact failure this wave exists to fix, arriving from the other direction.
+        """
+        if not trace_id and not investigation_id:
+            raise ValueError(
+                "pin_session_events needs a trace_id or an investigation_id — "
+                "an unfiltered pin would make every row permanent")
+        clauses, args = [], []
+        if trace_id:
+            clauses.append("trace_id = ?")
+            args.append(trace_id)
+        if investigation_id:
+            clauses.append("investigation_id = ?")
+            args.append(investigation_id)
+        where = " OR ".join(clauses)
+        now = datetime.now(timezone.utc).isoformat()
+        with self._lock, self._conn:
+            return max(self._conn.execute(
+                f"UPDATE session_events SET pinned_at = ? "
+                f"WHERE pinned_at = '' AND ({where})", (now, *args)).rowcount, 0)

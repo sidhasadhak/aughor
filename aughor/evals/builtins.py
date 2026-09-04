@@ -29,8 +29,12 @@ from aughor.trust import BLOCK, WARN
 # ── argument builders needing more than the shared ones ───────────────────────
 
 def _trust_checks_args(case: EvalCase, obs: EvalObservation):
+    # MI-1: `phase="eval"` marks these fires as the eval plane's own, not production
+    # supervision. The guard persists every fire now, and a graded dataset built from a
+    # population containing its own benchmark cases would be training on the test.
     return (sql_of(case, obs),), {"col_types": case.scope.col_types,
-                                  "dialect": case.scope.dialect}
+                                  "dialect": case.scope.dialect,
+                                  "phase": "eval"}
 
 
 def _composite_key_args(case: EvalCase, obs: EvalObservation):

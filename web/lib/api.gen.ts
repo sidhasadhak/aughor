@@ -5405,6 +5405,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/datasets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Datasets
+         * @description Corpus size per kind, and the measured distance to MI-4's entry gates.
+         *
+         *     Published rather than kept in a document because §3.9 made the arc falsifiable by
+         *     measurement: if the graded-pair rate cannot plausibly reach these gates, the
+         *     distillation premise is unproven here and the arc stops at the ledger. Someone has to
+         *     be able to SEE the inputs to that decision.
+         */
+        get: operations["get_datasets_learning_datasets_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/datasets/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Dataset
+         * @description One dataset node plus its provenance — which verdicts fed it. The question MI-4
+         *     owes about any adapter it promotes.
+         */
+        get: operations["get_dataset_learning_datasets__name__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Export
+         * @description Run every exporter once. Idempotent — an unchanged corpus registers no new version,
+         *     so this is safe to call repeatedly and safe to put on a schedule later.
+         *
+         *     `publish_golden` also registers the held-out set as an eval suite: a golden set that
+         *     never reaches the plane enforcing promotion gates is a measuring stick nobody measures
+         *     with, which is this codebase's most-repeated failure shape.
+         */
+        post: operations["post_export_learning_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/resolutions": {
         parameters: {
             query?: never;
@@ -14136,7 +14207,7 @@ export interface operations {
     get_audit_feed_audit_feed_get: {
         parameters: {
             query?: {
-                /** @description data_access | governance_change | action_decision | model_call */
+                /** @description data_access | governance_change | action_decision | model_call | human_verdict */
                 category?: string | null;
                 limit?: number;
             };
@@ -21909,6 +21980,91 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_datasets_learning_datasets_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    get_dataset_learning_datasets__name__get: {
+        parameters: {
+            query?: {
+                version?: number | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_export_learning_export_post: {
+        parameters: {
+            query?: {
+                task?: string;
+                publish_golden?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

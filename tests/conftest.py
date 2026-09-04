@@ -67,6 +67,9 @@ for _env, _file in (
     ("AUGHOR_EVIDENCE_DB", "evidence_ledger.db"),
     ("AUGHOR_MONITORS_DB", "monitors.db"),
     ("AUGHOR_AGENT_ALERTS_DB", "agent_alerts.db"),
+    # MI-3 — the dataset plane. Registered in the SAME commit as the store, with its
+    # directory sibling below: a store is not hermetic until its env name is here.
+    ("AUGHOR_LEARNING_DB", "learning.db"),
     # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it
     # writes (ontology/vocabulary.py:151). Unisolated it created data/vocabulary/ in
     # the repo on any suite run that saved a synonym.
@@ -147,6 +150,9 @@ for _env, _file in (
 # it was unrecoverable). One env for the whole family → a new store in it is isolated by
 # construction. Authored files (glossary/kb/rules) keep their own vars and stay repo-readable.
 for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
+                 # MI-3 — snapshot bytes. The DB name above is not enough on its own: a
+                 # dir-keyed store needs the directory family too, a lesson paid twice.
+                 "AUGHOR_DATASETS_DIR",
                  "AUGHOR_SLACKBOTS_DIR", "AUGHOR_STATE_DIR",
                  # VA-11 — integration apps/grants/pending live under this dir; added in
                  # the SAME COMMIT as aughor/integrations/store.py (the rule a live-data

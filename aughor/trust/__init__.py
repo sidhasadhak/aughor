@@ -77,7 +77,8 @@ def _verify_sql(sql: str, scope: Scope) -> Verdict:
     # 2 — CIDR-E1 function-semantics footguns: advisory WARN. Pure AST + optional col_types.
     try:
         from aughor.sql.trust_checks import run_trust_checks
-        for f in run_trust_checks(sql, col_types=scope.col_types, dialect=dialect):
+        for f in run_trust_checks(sql, col_types=scope.col_types, dialect=dialect,
+                                  phase="trust_scope"):
             d = f.to_dict()
             checks.append(Check("trust_checks", ok=False, severity=WARN,
                                 reason=d.get("message", ""), detail=d))

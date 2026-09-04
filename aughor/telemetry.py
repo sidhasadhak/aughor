@@ -800,12 +800,49 @@ def new_trace(investigation_id: str, question: str, connection_id: str) -> str:
     in a later invocation still lands on the same trace.
     """
     if _otel() is not None:
-        _traces[investigation_id] = {
+        attrs = {
             _LF_TRACE_NAME: "investigation",
-            _LF_TRACE_INPUT: _json_attr({"question": question, "connection_id": connection_id}),
+            _LF_TRACE_INPUT: _json_attr(_trace_input(question, connection_id)),
             _LF_SESSION_ID: investigation_id,
         }
+        _traces[investigation_id] = attrs
     return investigation_id
+
+
+def _trace_input(question: str, connection_id: str) -> dict:
+    """MI-0 — the trace-level input attribute, under the same custody law as every other
+    payload.
+
+    This attribute put the user's raw question on the OTLP wire on every single run,
+    regardless of the prompt-capture window, and it went unnoticed because it is an
+    EXPORT rather than a read: no break-glass fires on it, nothing audits it, and the
+    content leaves the box for whatever collector is configured. `prompt_window` calls
+    the question the most sensitive thing this product can write down and gates storing
+    it; sending it was ungated.
+
+    The connection id stays unconditionally — §6.4 makes metadata free, and a trace with
+    no identifying attribute is not a trace anyone can find. Only the question is gated.
+
+    It does NOT `consume()` the window's budget: that budget is denominated in captured
+    MODEL CALLS on purpose (a run makes an unpredictable number of them), and spending it
+    per trace would make an operator's "20 calls" mean something different depending on
+    how many investigations happened to start. Gating on `active()` without consuming
+    keeps the budget's stated meaning while closing the export.
+    """
+    payload: dict = {"connection_id": connection_id}
+    try:
+        from aughor.obs import prompt_window
+        if prompt_window.active():
+            payload["question"] = question
+    except Exception as exc:
+        # Fail-safe, like every read in prompt_window: no window, no capture. Routed
+        # through `tolerate` rather than a bare pass so a custody gate that has started
+        # erroring is COUNTED — a privacy control failing quietly toward "no capture" is
+        # still a control nobody can tell is broken.
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "capture-window read failed; the question is withheld",
+                 counter="telemetry.trace_input_gate")
+    return payload
 
 
 def _json_attr(value: Any) -> str:
