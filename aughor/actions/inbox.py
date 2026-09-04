@@ -80,7 +80,7 @@ _MIGRATIONS: list = [
     # 3 — measured against the live store on 2026-09-01, which sat at 2.
     Migration(3, "proposal kind + integration grant", _add_proposal_kind),
     #: Version 4, numbered off the LIVE store rather than off this file: `PRAGMA
-    #: user_version` on the deployed `data/kinetic_inbox.db` returns 3, so 4 is the next one
+    #: user_version` on the deployed inbox store returns 3, so 4 is the next one
     #: that will actually execute. A migration numbered at or below the deployed version is
     #: skipped forever, and no hermetic test can catch it — a fresh database takes the
     #: column from the DDL above and passes either way.
