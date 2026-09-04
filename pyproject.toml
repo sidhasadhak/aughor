@@ -43,7 +43,7 @@ dependencies = [
     "apscheduler>=3.10.0",
     "pytz>=2024.1",
     "mcp>=1.28.0",
-    "ag-ui-protocol==0.1.19",
+    "ag-ui-protocol==0.1.22",
 ]
 
 [project.optional-dependencies]
