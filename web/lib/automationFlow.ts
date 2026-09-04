@@ -44,6 +44,19 @@ export function aliasFor(e: AutoEffect, index: number): string {
  * with itself. */
 const AS = "$as";
 
+/** §3.8a — the conversions `$as` accepts, mirrored from `automations/dataflow.py:CASTS`.
+ *
+ * Exported so the authoring surfaces can TEACH them. The vocabulary existed on both sides
+ * and was named on neither: a person editing a binding had no way to learn that a cast was
+ * available, let alone which words it takes, so `$as` shipped reachable and undiscovered.
+ *
+ * A mirrored list is a rule that can disagree with itself — the failure this file's own
+ * comment above describes. `automationFlow.casts.test.ts` reads BOTH files and asserts they
+ * match, so drift fails a test instead of surfacing as a cast the server rejects. */
+export const CASTS = [
+  "text", "json", "number", "integer", "boolean", "count", "first", "last",
+] as const;
+
 /** Exactly the marker, optionally with `$as` — never an arbitrary extra key, which is
  *  what stops a dict wearing `$from` plus a payload from being read as wiring. */
 function wearsMarker(keys: string[], marker: string): boolean {

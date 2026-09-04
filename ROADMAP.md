@@ -1486,7 +1486,18 @@ when the author was me:
   been wiring at all — edge gone from the canvas, field rendered as a raw object, for a chain
   the server considers valid. A rule mirrored on one side only is a rule that disagrees with
   itself.
-  ⏳ **Still owed — the authoring UI.** Nothing in the canvas SETS `$as` yet: it is reachable
+  ✅ **DISCOVERABLE 2026-09-04.** `$as` shipped supported on both sides and **named on
+  neither surface** — the server honoured it, the client parsed it, and nothing told anyone
+  it existed or which words it takes. A capability reachable only by reading the source is
+  one nobody reaches. The cast vocabulary is now exported from `lib/automationFlow` and
+  stated on the bindable inputs, with a **cross-language test that reads BOTH the TS list
+  and `dataflow.py` and asserts they match** — the drift that file's own comment warns about
+  ("a rule mirrored on one side only is a rule that disagrees with itself") now fails a test
+  instead of surfacing as a cast the server refuses.
+  ⏳ Still owed — a dedicated PICKER. Bindings are edited as free-text JSON deliberately (a
+  plain input is the only editor that holds either a sentence or a binding), so a control
+  beside each of several bindable fields is a real design change, not a wiring one.
+  It is reachable
   through the API and the DS-16 import funnel, not from the binding chip. Until that lands
   this is the arc's own recurring failure (a complete and inert plane), and it is named here
   rather than left to be discovered.
@@ -2142,7 +2153,7 @@ NEXT (order within a band is the user's knob)
                                    handler" claim was WRONG — `agentops/AgentMap.tsx` already
                                    sets `nodesDraggable={false}`, so it never wanted drag.
                                    `agentops/TraceFlow.tsx` was the real one and is FIXED.
-                                   ⏳ Still owed: the Profiler receipt, and nothing SETS `$as`. Original note:
+                                   ⏳ Still owed: the Profiler receipt. `$as` is now NAMED at the point of authoring (2026-09-04). Original note:
                                    the PRIMITIVE gap (measured: their 34 core components vs our
                                    15 palette entries; their other 76 pages are vendor bundles,
                                    which is our connector/integration family and NOT a deficit)
@@ -2405,7 +2416,7 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   of what jsdom can prove; they were verified to FAIL without the fix.
 - ~~**The primitive gap**~~ — **CLOSED 2026-09-03** (`e3a56b5c`, #428). Data shaping shipped as
   `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
-  was always the branch (§3.8a). ⏳ Survives it: **nothing in the canvas SETS `$as`** — API and
+  was always the branch (§3.8a). ✅ 2026-09-04: `$as` is now TAUGHT where bindings are typed. ⏳ A dedicated picker survives it — API and
   the DS-16 import funnel only, not the binding chip.
 - ~~**DS-5 Map grants spoke**~~ — **DRAWN 2026-09-03**, closing the last undrawn spoke of the
   DS-5 spec ("its doors; its automations; its tool grants and connections"). One node per

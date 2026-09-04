@@ -26,7 +26,7 @@ import {
   type AutomationVocabulary, type GuardClause, type IntegrationConnection,
   type IntegrationOperation, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
-import { seedConfig, upstreamKeys } from "@/lib/automationFlow";
+import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
@@ -123,6 +123,20 @@ function fieldText(value: unknown): string {
   if (value == null) return "";
   return typeof value === "string" ? value : JSON.stringify(value);
 }
+
+/** §3.8a — what a person needs to know at the moment they are typing a binding.
+ *
+ * `$as` shipped supported on both sides and NAMED on neither surface: the server honoured
+ * it, the client parsed it, and nothing anywhere told anyone it existed or which words it
+ * takes. A capability reachable only by reading the source is one nobody reaches. Carried
+ * as a `title` rather than stuffed into the placeholder because a placeholder is truncated
+ * by the input's width, and a hint that is cut in half is worse than none.
+ *
+ * The list comes from `CASTS` in `lib/automationFlow`, which a test holds equal to the
+ * server's — so this hint cannot drift into offering a conversion the server refuses. */
+const BINDING_HINT =
+  `Bind an earlier step with {"$from": "step1.answer"}. `
+  + `Add {"$as": "…"} to convert it — one of: ${CASTS.join(", ")}.`;
 
 function messageText(e: AutoEffect): string {
   return fieldText(e.config.message);
@@ -662,13 +676,15 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
                 work. Found by driving a step whose channel reads `item.room`. */}
             <input style={inputStyle} value={fieldText(e.config.channel)}
               onChange={ev => set({ channel: parseMessage(ev.target.value) })}
+              title={BINDING_HINT}
               placeholder="channel — e.g. #aughor-canvas or C0…" />
             {/* Left as free text on purpose: a step whose message is
                 `{"$from": "step1.answer"}` is the whole reason the chain exists, and a
                 plain input is the only editor that can hold either that or a sentence. */}
             <input style={inputStyle} value={messageText(e)}
               onChange={ev => set({ message: parseMessage(ev.target.value) })}
-              placeholder={'message, or {"$from": "step1.answer"} to post an earlier step'} />
+              title={BINDING_HINT}
+              placeholder={'message, or {"$from": "step1.answer", "$as": "text"}'} />
           </div>
         )}
         {e.kind === "integration_call" && <IntegrationRows e={e} onChange={onChange} />}
