@@ -138,6 +138,49 @@ const BINDING_HINT =
   `Bind an earlier step with {"$from": "step1.answer"}. `
   + `Add {"$as": "…"} to convert it — one of: ${CASTS.join(", ")}.`;
 
+/** §3.8a — the cast picker, shown only when the field actually holds a binding.
+ *
+ * Renders NOTHING for a plain value, and that is the whole reason it can exist here.
+ * Bindings are edited as free text on purpose — a step whose message is
+ * `{"$from": "step1.answer"}` is the point of the chain, and a plain input is the only
+ * editor that holds either that or a sentence. A control that appeared beside every field
+ * would be clutter on the majority that will never carry a binding; one that appears when
+ * a binding does is an affordance arriving exactly when it means something.
+ *
+ * Clearing the cast DELETES `$as` rather than setting it to "". The server's `CASTS` has no
+ * empty member, and `wearsMarker` accepts `$from` plus at most `$as` — so an empty string
+ * would be a third state: recognised as wiring by the client and refused as a conversion by
+ * the server. Deleting returns the binding to exactly the shape it had before.
+ */
+export function BindingCast({ value, onChange }: {
+  value: unknown;
+  onChange: (next: unknown) => void;
+}) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const binding = value as Record<string, unknown>;
+  if (!("$from" in binding) && !("$from_any" in binding)) return null;
+
+  const current = typeof binding.$as === "string" ? binding.$as : "";
+  return (
+    <select
+      aria-label="convert the bound value"
+      title={BINDING_HINT}
+      className="aug-fs-xs"
+      style={{ background: "var(--bg-1)", color: "var(--t2)",
+               border: "1px solid var(--b1)", borderRadius: 4, padding: "2px 4px" }}
+      value={current}
+      onChange={ev => {
+        const next: Record<string, unknown> = { ...binding };
+        if (ev.target.value) next.$as = ev.target.value;
+        else delete next.$as;
+        onChange(next);
+      }}>
+      <option value="">as-is</option>
+      {CASTS.map(c => <option key={c} value={c}>{`as ${c}`}</option>)}
+    </select>
+  );
+}
+
 function messageText(e: AutoEffect): string {
   return fieldText(e.config.message);
 }
@@ -595,18 +638,27 @@ export function IntegrationRows({ e, onChange }: {
         </div>
       )}
       {op?.params.map(prm => (
-        <input key={prm.name} style={inputStyle}
-          aria-label={prm.label || prm.name}
-          value={fieldText(params[prm.name])}
-          onChange={ev => setParam(prm.name,
-            // Bindable fields accept a binding object; the rest are plain values. Same
-            // reason `slack_post`'s message is free text: a field whose value is
-            // `{"$from": "step1.answer"}` is the whole point of the chain, and
-            // `String(obj)` renders "[object Object]" — an editor inviting someone to
-            // overwrite the wiring that makes it work.
-            prm.bindable ? parseMessage(ev.target.value) : ev.target.value)}
-          placeholder={`${prm.label || prm.name}${prm.required ? "" : " (optional)"}`
-            + (prm.placeholder ? ` — e.g. ${prm.placeholder}` : "")} />
+        <div key={prm.name} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <input style={{ ...inputStyle, flex: 1 }}
+            aria-label={prm.label || prm.name}
+            value={fieldText(params[prm.name])}
+            onChange={ev => setParam(prm.name,
+              // Bindable fields accept a binding object; the rest are plain values. Same
+              // reason `slack_post`'s message is free text: a field whose value is
+              // `{"$from": "step1.answer"}` is the whole point of the chain, and
+              // `String(obj)` renders "[object Object]" — an editor inviting someone to
+              // overwrite the wiring that makes it work.
+              prm.bindable ? parseMessage(ev.target.value) : ev.target.value)}
+            title={prm.bindable ? BINDING_HINT : undefined}
+            placeholder={`${prm.label || prm.name}${prm.required ? "" : " (optional)"}`
+              + (prm.placeholder ? ` — e.g. ${prm.placeholder}` : "")} />
+          {/* Only for a field the operation DECLARES bindable. Offering a conversion on a
+              param that cannot hold a binding would advertise wiring the server refuses. */}
+          {prm.bindable && (
+            <BindingCast value={params[prm.name]}
+              onChange={next => setParam(prm.name, next)} />
+          )}
+        </div>
       ))}
     </div>
   );
@@ -674,17 +726,25 @@ export function EffectRow({ e, agents, bots = [], siblings, index = 0, onChange,
                 `channel` bindable, and `String({$from: …})` renders "[object Object]" —
                 an editor inviting someone to overwrite the binding that makes the chain
                 work. Found by driving a step whose channel reads `item.room`. */}
-            <input style={inputStyle} value={fieldText(e.config.channel)}
-              onChange={ev => set({ channel: parseMessage(ev.target.value) })}
-              title={BINDING_HINT}
-              placeholder="channel — e.g. #aughor-canvas or C0…" />
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input style={{ ...inputStyle, flex: 1 }} value={fieldText(e.config.channel)}
+                onChange={ev => set({ channel: parseMessage(ev.target.value) })}
+                title={BINDING_HINT}
+                placeholder="channel — e.g. #aughor-canvas or C0…" />
+              <BindingCast value={e.config.channel}
+                onChange={next => set({ channel: next })} />
+            </div>
             {/* Left as free text on purpose: a step whose message is
                 `{"$from": "step1.answer"}` is the whole reason the chain exists, and a
                 plain input is the only editor that can hold either that or a sentence. */}
-            <input style={inputStyle} value={messageText(e)}
-              onChange={ev => set({ message: parseMessage(ev.target.value) })}
-              title={BINDING_HINT}
-              placeholder={'message, or {"$from": "step1.answer", "$as": "text"}'} />
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input style={{ ...inputStyle, flex: 1 }} value={messageText(e)}
+                onChange={ev => set({ message: parseMessage(ev.target.value) })}
+                title={BINDING_HINT}
+                placeholder={'message, or {"$from": "step1.answer", "$as": "text"}'} />
+              <BindingCast value={e.config.message}
+                onChange={next => set({ message: next })} />
+            </div>
           </div>
         )}
         {e.kind === "integration_call" && <IntegrationRows e={e} onChange={onChange} />}
