@@ -481,9 +481,38 @@ URIs — the callback must live on the stable production origin, verified before
 
 ### 3.5 · VA-10 — multi-user & admin
 
-Untouched. User analytics over `session_events`, per-user and per-org quotas, an admin view of
-every user's agents/runs/connections, RBAC on the agent plane, and audit of admin access to
-user traces. **Risk is policy, not code:** an admin reading a user's prompts is a real question.
+~~Untouched.~~ **RE-MEASURED 2026-09-04: "Untouched" was wrong, and so was "risk is policy,
+not code" — it is the exact inverse.** Three of the five pieces are already built:
+
+| Piece | This line said | Measured 2026-09-04 |
+|---|---|---|
+| RBAC on the agent plane | untouched | **built** — `aughor/rbac/` store, `/rbac/roles` routes, `effective_capabilities`/`resolve_roles`, and **80 routes enforcing a capability gate** |
+| Per-user / per-org quotas | untouched | **built** — `govern/usage_caps.py`: `UsageCap`, `evaluate`, `check`, `observed_usage` |
+| Audit of admin trace access | untouched | **built** — VA-5's `trace.payload_access`, categorized into the governance feed |
+| Admin view across users | untouched | **genuinely missing** — no admin routes exist |
+| Per-user analytics | untouched | **impossible today** — `COUNT(DISTINCT user_id)` = **0** over 6,618 rows |
+
+**The blocker is code, and it is authentication.** `security/authz.resolve_principal` reads
+`X-Aughor-Org` and `X-Aughor-User` as **unverified headers**, marked in its own docstring
+*"SEAM: swap this for authenticated-token extraction in production"*. There is no JWT, no
+OIDC, no session anywhere in the tree.
+
+**Demonstrated on the live instance 2026-09-04**, not argued from a code comment: with
+`AUGHOR_REQUIRE_IDENTITY=1`, a request with no headers is **401**; `X-Aughor-User: mallory`
+is **200** with no credential; and the §6.4 break-glass audit then recorded
+**`read_by: mallory`** — a string typed into a curl. One thing came out BETTER than
+expected: a caller naming a different org got **403**, so tenant isolation (DATA-06) is real
+enforcement, not theatre. The gap is specifically the USER half, inside an org.
+
+That matters because every remaining piece keys on it: per-user analytics groups by it,
+per-user quotas meter by it, and §6.4 requires a payload read be *"visible to the user whose
+data it is"*. Built on a self-asserted header, that surface would be trivially
+misattributable — worse than absent, because people would trust it.
+
+⏳ **VA-10 is therefore not one band.** It is (a) an auth model — service tokens? OIDC
+against which IdP? — which is the user's decision, and (b) an admin view, which is small once
+(a) exists. **Risk is policy, not code** was written when the policy was undecided; §6.4
+decided it 2026-09-02, and what remains is the code this line assumed was already there.
 ✅ **DECIDED 2026-09-02 (§6.4): visible metadata, GATED payloads.** Counts, timings, costs,
 tool names, error rates and run outcomes are admin-visible without ceremony — that is the
 whole analytics case, and it needs no prompt text. Reading a prompt or a response body is a
@@ -2163,7 +2192,26 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
         MI-6 RLVR rehearsal — only after a measured SFT+DPO plateau (×2 versions)
 ```
 
-### Loose-end ledger (swept 2026-09-02, verified live — not a band, a debt list)
+### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
+
+> ⚠️⚠️ **The 2026-09-04 sweep, and where the rot actually is.** The five OPEN bullets below
+> were all re-measured and all hold — three of them (`VA-11`'s Google client, the Slack
+> reinstall, the manual drag) are **keyed on the user and no sweep can move them**, and the
+> other two (Notion/Confluence, `svg_to_png`) were re-verified by driving the endpoint and
+> importing the module. **This list was not the problem.**
+>
+> The stale claims were **inline in §3**, where nobody re-reads them: §3.5 said VA-10 was
+> "Untouched" when three of its five pieces ship; §3.1 said the MCP UI was unbuilt when
+> `+ Custom MCP` ships and said OAuth was the Arcade/Composio unlock when this repo's own
+> study records an API key; §3.8's leftover named a file (`AgentMap.tsx`) that already opted
+> out of the behaviour, while the file that actually had the defect went unnamed. **Three of
+> five items offered as "next" on 2026-09-04 were misdescribed.**
+>
+> 🔑 **The lesson, third instance in a week:** a struck-through debt list stays honest because
+> striking it is a deliberate act. A prose claim inside a section rots silently, because
+> nothing forces anyone to look at it again. **Measure the inline claims, not just the
+> ledger** — and prefer a dated table to a sentence, because a table with a date on it
+> invites re-measurement and a sentence does not.
 
 > ⚠️ **Re-swept 2026-09-02 (later the same day), and the sweep itself was the finding.** Of the
 > items re-measured, **two were FALSE** (`notification_channel`, wired a fortnight earlier by
