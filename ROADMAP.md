@@ -237,11 +237,24 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 > every legitimate change is one people learn to click through. Fail-closed, because a
 > silently relabelled tool is precisely the attack the advisory reading exists to blunt.
 >
-> **Still unbuilt here:** a UI (`+ Custom MCP` in the connectors catalog and
-> the palette's per-server rail rows, §3.7 Phase 1's P2 note), OAuth-authenticated servers
-> (the `auth_header` is a single opaque forwarded value, not an auth implementation), and
-> non-text tool results — images and embedded resources are dropped rather than flattened,
-> deliberately, because a partial answer that looks whole is worse than a missing one.
+> **Still unbuilt here** — ~~a UI~~, OAuth-authenticated servers, non-text tool results.
+> **RE-MEASURED 2026-09-04, and two of the three were wrong:**
+>
+> - ~~**a UI**~~ — **BUILT.** `McpServersSection.tsx:298` renders `+ Custom MCP`, with tests
+>   covering it, against full CRUD + `/discover` + per-tool grant routes. It shipped with
+>   #426 and this line was never updated.
+> - **OAuth-authenticated servers** — still true as written (the `auth_header` is one opaque
+>   forwarded value), **but it is NOT what unlocks Arcade/Composio, and the sentence below
+>   that says it is was wrong.** This repo's own Langflow study records Composio as *keyed by
+>   `COMPOSIO_API_KEY`*, with *"service provider authentication managed through the Composio
+>   platform"* — the platform absorbs the per-service OAuth, and what it wants from us is an
+>   API key in a header. `session.py:74` already sends exactly that. **So the most-wanted
+>   feature is reachable TODAY** via a Custom MCP server with an API-key auth header; it wants
+>   an end-to-end receipt against a real key, not an OAuth implementation. OAuth remains a
+>   real capability for servers that demand a flow of their own — a narrower, separate case.
+> - **non-text tool results** — still true. Images and embedded resources are dropped rather
+>   than flattened, deliberately, because a partial answer that looks whole is worse than a
+>   missing one. **This is the genuine remaining VA-9d gap.**
 
 VA-9's own risk note calls this *"the largest new attack surface in the arc"*. ~~Agree the
 allowlist and the outbound-off-by-default posture with the user before starting.~~
@@ -263,6 +276,12 @@ allowlist and the outbound-off-by-default posture with the user before starting.
 platforms which solve the OAuth problem — Arcade, Composio — expose their tools **over MCP**.
 VA-9d is therefore no longer an abstract capability; it is the delivery mechanism for the
 most-wanted feature on this list.
+
+> ✅ **And that delivery mechanism is BUILT (re-measured 2026-09-04).** The chain — custom
+> server UI → registration → `/discover` → per-tool grants → `mcp_call` step — is complete,
+> and these platforms authenticate with an API key the existing `auth_header` already
+> forwards. What is owed is a **receipt**, not a feature: register one against a real key and
+> drive a tool end to end. That needs a credential, so it is the user's to run, not mine.
 
 ### 3.2 · W1/W2 — the two workflow primitives
 
@@ -2095,7 +2114,9 @@ NEXT (order within a band is the user's knob)
                                    read-only slice promised it would. 🔴 Two premises broke
                                    under measurement: `tool_grants` was the wrong column,
                                    and `writes` reached the span but not the ledger — §3.1
-                                   carries both. Still unbuilt: OAuth-authenticated servers,
+                                   carries both. Still unbuilt (2026-09-04: the UI half of
+                                   this line was WRONG — `+ Custom MCP` ships): non-text tool
+                                   results, and OAuth-authenticated servers,
                                    non-text tool results.
   ✅ S1 Qdrant embedded SHIPPED 2026-09-02  (third backend: in-process local mode at
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
