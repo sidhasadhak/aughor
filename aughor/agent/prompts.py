@@ -390,7 +390,7 @@ STEP 1 — DECLARE TABLES (mandatory):
 List every table you plan to touch in the `tables` field.
 - Every table must appear verbatim in the SCHEMA above — do NOT invent table names.
 - IMPORTANT: use the exact table names as shown in the SCHEMA. When a table name includes a schema prefix (e.g. ecommerce.orders), use the full qualified name. When no schema prefix is shown, use the bare name.
-- If you need to join two tables, verify a join path exists in DETECTED JOIN PATHS.
+- If you need to join two tables, verify a join path exists in DETECTED JOIN PATHS (or ENTITY RELATIONSHIPS, which is verified against the data and wins when the two disagree).
 - If no direct join path exists between two tables, find an intermediate table or revise the approach.
 
 STEP 2 — WRITE PREDICTIONS (mandatory before designing queries):

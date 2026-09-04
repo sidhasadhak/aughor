@@ -32,7 +32,8 @@ _TABLE_PREFIX = re.compile(r"^[a-z]{1,3}_")
 
 # Section headers that terminate a TABLE: block when parsing a schema string.
 _SECTION_STOP = re.compile(
-    r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS|RELEVANT|--)"
+    r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS"
+    r"|RELEVANT|ENTITY RELATIONSHIPS|--)"
 )
 
 

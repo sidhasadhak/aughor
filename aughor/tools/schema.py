@@ -667,6 +667,27 @@ def apply_schema_enrichment(
         join_hints = infer_joins(enriched)
     if join_hints:
         enriched += "\n\n" + join_hints
+    # The verified entity graph's join edges (cardinality + confidence + probed
+    # overlap). The JOIN HINTS above are name-heuristic guesses; where the cached
+    # ontology has a verified/exact edge, the model should prefer it — and the
+    # cardinality lets it avoid a fan-out join UPSTREAM instead of relying on the
+    # post-generation guard family. Cache-read only (no LLM, no probing — the
+    # display path stays inference-free); best-effort like every other block.
+    if connection_id:
+        rel_block = ""
+        try:
+            from aughor.ontology.semantic_block import render_relationship_block
+            from aughor.ontology.store import load_latest_ontology
+            with _stage("enrich.ontology_relationships"):
+                rel_block = render_relationship_block(
+                    load_latest_ontology(connection_id, schema_name or None),
+                    parse_schema_tables(enriched))
+        except Exception as _rel_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_rel_exc, "ontology relationship block is best-effort schema enrichment",
+                     counter="ontology.relationship_block", conn_id=connection_id)
+        if rel_block:
+            enriched += "\n\n" + rel_block
     # Filter metrics against THIS schema so a globally-stored metric that
     # references columns absent here (another connection's metric) doesn't leak
     # a wrong formula into the prompt.

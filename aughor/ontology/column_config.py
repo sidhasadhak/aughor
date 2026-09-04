@@ -348,7 +348,8 @@ _COL_LINE = re.compile(r"^\s{2}(.+?)\s{2,}\S")
 _VALUES_LINE = re.compile(r"^\s{2}--\s+(\S+)\s+\[")
 _TABLE_LINE = re.compile(r"^TABLE:\s+([\w.]+)")
 _STOP_LINE = re.compile(
-    r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS|RELEVANT)"
+    r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS"
+    r"|RELEVANT|ENTITY RELATIONSHIPS)"
 )
 
 
