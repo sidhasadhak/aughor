@@ -1794,16 +1794,22 @@ Pinned rows are skipped by the age sweep **and do not count toward the row cap**
 run is evidence, not budget, and letting pins consume the newest-N window would mean
 grading enough runs quietly starved the log of everything else.
 
-**Three of the four verdict doors pin; the fourth cannot, and saying so is the finding.**
+**All four verdict doors pin — the fourth caught up 2026-09-04.**
 `finding_verdicts` (by investigation_id), `chat.feedback` (its `turn_id` IS an
 investigation id) and `trace.feedback` (by trace_id) all pin at verdict time.
-**`staged_proposals` resolution does not**: that table's `run_id` is a fresh `uuid4()`
-minted per tool call (`agent/action_tools.py`), not a `trace_id` or an `investigation_id`,
-so it does not join to `session_events` at all — and pinning on the RESOLVER's ambient
-trace would pin the wrong run (the human's request, not the agent's). This is the same
-missing-reciprocal-key shape MI-1 just fixed for `automation_runs`, and it wants the same
-fix — a real join key on the proposal — rather than a plausible-looking pin aimed at the
-wrong rows. **Open, and small.**
+✅ **`staged_proposals` now has the join key it was missing (Migration 4, numbered off the
+live store's `user_version` of 3 and rehearsed on a `.backup` first).** Its `run_id` is a
+fresh `uuid4()` minted per tool call for idempotency and joins to `session_events` not at
+all, so the proposal now carries `trace_id`, defaulted from the ambient run exactly as
+`automation_runs` does — a pattern since **measured in production: 2,142 of 2,142 automation
+runs written after MI-1 shipped carry a trace.** Resolution pins that trace, after the
+commit and outside the lock, because the decision is the durable thing and pinning is
+bookkeeping that must never cost someone their verdict.
+
+🔑 **It pins the PROPOSAL's trace, never the resolver's** — the agent that proposed and the
+human who answered are different runs, and pinning the latter would confidently preserve the
+wrong rows while the evidence it was meant to keep expired on schedule. That property has
+its own test.
 
 **Receipt:** `tests/unit/test_mi2_retention_and_pinning.py` — a 15-day-old graded run
 survives the sweep and its ungraded neighbour does not, in ONE test, because survival
