@@ -80,6 +80,11 @@ class McpCallResult:
     #: Whether `text` was cut. Carried rather than implied, so a reader is never shown a
     #: half answer that looks whole.
     truncated: bool = False
+    #: Non-text blocks this platform does not carry, as ``{kind: count}`` — images and
+    #: embedded resources. Carried for exactly the reason `truncated` is: the omission is
+    #: DECLARED rather than left for a reader to notice. Empty when the tool returned text
+    #: only, which is the common case.
+    omitted: dict = field(default_factory=dict)
     data: dict = field(default_factory=dict)
 
     @property
@@ -187,31 +192,62 @@ def _through_the_seam(server, tool_name: str, arguments: dict,
         # A read that did not arrive is simply a failed read.
         return McpCallResult("failed", f"{server.name or server.id} was unreachable: {exc}")
 
-    text, truncated = _text_of(result)
+    text, truncated, omitted = _text_of(result)
     if getattr(result, "isError", False):
         # The protocol's own in-band failure: a 200-shaped response carrying an error. Read
         # as success it would be `slackbots/post.py`'s bug — a message reported as sent that
         # never was — one plane over.
         return McpCallResult("failed", text or "the tool reported an error", writes=writes)
-    return McpCallResult("executed", "", text=text, truncated=truncated, writes=writes,
+    return McpCallResult("executed", "", text=text, truncated=truncated, omitted=omitted,
+                         writes=writes,
                          data={"tool": tool_name, "server_id": server.id})
 
 
-def _text_of(result: Any) -> tuple[str, bool]:
-    """A tool result as text, capped. Returns ``(text, truncated)``.
+def _text_of(result: Any) -> tuple[str, bool, dict]:
+    """A tool result as text, capped. Returns ``(text, truncated, omitted)``.
 
-    Only the text blocks, joined. A tool may also return images and embedded resources, and
-    this slice does not carry them rather than pretending: a base64 image flattened into a
-    chain context is a megabyte of noise no downstream step can read, and quietly dropping
-    it while returning the surrounding text would make a partial answer look complete. When
-    a consumer for those exists, they arrive typed.
+    Only the text blocks are carried. A tool may also return images and embedded resources,
+    and this slice still does not carry them: a base64 image flattened into a chain context
+    is a megabyte of noise no downstream step can read. When a consumer for those exists,
+    they arrive typed.
+
+    **What changed: the omission is now DECLARED.** The rule this function was written
+    against is that "quietly dropping it while returning the surrounding text would make a
+    partial answer look complete" — and dropping silently is what the code did. A tool
+    returning a chart plus one line of prose handed back the prose alone, and every reader
+    downstream, the model included, saw a complete-looking answer. That is the same standard
+    `truncated` exists to keep, so the omission is carried the same way: counted on the
+    result AND stated in the text.
+
+    Stated in the text and not only on the field because the text is what a downstream step
+    actually reads. A flag no consumer looks at would leave the model in exactly the
+    position this docstring says is unacceptable.
+
+    The notice is appended AFTER the cap, deliberately. Written before it, a long result
+    would truncate away the very sentence that says something is missing — the failure
+    reporting the failure. That costs a few characters over `MAX_RESULT_CHARS`, which is the
+    right trade: the cap exists to bound noise, and this is the opposite of noise.
     """
     parts: list[str] = []
+    omitted: dict[str, int] = {}
     for block in (getattr(result, "content", None) or []):
         text = getattr(block, "text", None)
         if text:
             parts.append(str(text))
+            continue
+        # Anything that is not a text block. `type` is the MCP discriminator; a block
+        # without one is counted as "unknown" rather than ignored, because an unrecognised
+        # block is exactly the case where silence is most misleading.
+        kind = str(getattr(block, "type", "") or "unknown")
+        omitted[kind] = omitted.get(kind, 0) + 1
+
     joined = "\n".join(parts)
-    if len(joined) > MAX_RESULT_CHARS:
-        return joined[:MAX_RESULT_CHARS], True
-    return joined, False
+    truncated = len(joined) > MAX_RESULT_CHARS
+    if truncated:
+        joined = joined[:MAX_RESULT_CHARS]
+    if omitted:
+        summary = ", ".join(f"{n} {kind}" for kind, n in sorted(omitted.items()))
+        joined = (joined + "\n" if joined else "") + (
+            f"[{summary} block(s) returned by this tool were not carried — this platform "
+            f"does not pass non-text tool output to a chain step.]")
+    return joined, truncated, omitted

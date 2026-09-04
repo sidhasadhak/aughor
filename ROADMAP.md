@@ -252,9 +252,17 @@ API. A generic consumer — stdio + SSE, registry, discovery, health — does no
 >   feature is reachable TODAY** via a Custom MCP server with an API-key auth header; it wants
 >   an end-to-end receipt against a real key, not an OAuth implementation. OAuth remains a
 >   real capability for servers that demand a flow of their own — a narrower, separate case.
-> - **non-text tool results** — still true. Images and embedded resources are dropped rather
->   than flattened, deliberately, because a partial answer that looks whole is worse than a
->   missing one. **This is the genuine remaining VA-9d gap.**
+> - **non-text tool results** — ✅ **the DECLARATION half shipped 2026-09-04.** Images and
+>   embedded resources are still not carried (a base64 image in a chain context is a
+>   megabyte no downstream step can read), but the omission is no longer silent — which it
+>   was, in flat contradiction of the very sentence this line used to justify it. A tool
+>   returning a chart plus one line of prose handed back the prose alone, and every reader
+>   downstream, the model included, saw a complete-looking answer. `_text_of` now counts the
+>   dropped blocks by kind onto `McpCallResult.omitted` AND states them in the text, because
+>   the text is what a step actually reads and a flag nobody consults would leave the model
+>   exactly where the objection says it must not be. The notice is appended AFTER the cap so
+>   a long result cannot truncate away the sentence saying something is missing.
+>   ⏳ Still owed: CARRYING them, typed, when a consumer exists.
 
 VA-9's own risk note calls this *"the largest new attack surface in the arc"*. ~~Agree the
 allowlist and the outbound-off-by-default posture with the user before starting.~~

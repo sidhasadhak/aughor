@@ -21,6 +21,8 @@ mock of that protocol would be a mock of our own misunderstanding.
 """
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import sys
 from pathlib import Path
 
@@ -334,3 +336,62 @@ def test_the_auth_header_is_encrypted_at_rest():
     assert "not-a-real-credential" not in raw
     # …and comes back intact for the one caller that must send it.
     assert store.get_server(s.id).auth_header == "Bearer not-a-real-credential"
+
+
+# ── non-text tool output is DECLARED, not dropped in silence ────────────────────────
+
+def _blocks(*bs):
+    """A tool result shaped like the SDK's: an object with `.content`."""
+    return SimpleNamespace(content=list(bs))
+
+
+def _text_block(t):
+    return SimpleNamespace(type="text", text=t)
+
+
+def _blob(kind):
+    """A non-text block. `.text` is absent, which is what makes it non-text to the reader."""
+    return SimpleNamespace(type=kind)
+
+
+def test_text_only_output_declares_no_omission():
+    """The common case must stay clean — a notice on every result would be noise, and
+    noise is how a real notice stops being read."""
+    text, truncated, omitted = door._text_of(_blocks(_text_block("all fine")))
+    assert text == "all fine"
+    assert truncated is False
+    assert omitted == {}
+
+
+def test_a_dropped_image_is_counted_AND_stated_in_the_text():
+    """The field alone is not enough. The TEXT is what a downstream step reads, so an
+    omission recorded only on a flag leaves the model looking at a partial answer that
+    reads as whole — the exact thing this function's contract forbids."""
+    text, _, omitted = door._text_of(_blocks(_text_block("here is the chart"), _blob("image")))
+    assert omitted == {"image": 1}
+    assert "here is the chart" in text
+    assert "not carried" in text and "1 image" in text
+
+
+def test_several_kinds_are_counted_separately():
+    _, _, omitted = door._text_of(
+        _blocks(_blob("image"), _blob("image"), _blob("resource")))
+    assert omitted == {"image": 2, "resource": 1}
+
+
+def test_a_block_with_no_type_is_counted_not_ignored():
+    """An unrecognised block is the case where silence misleads most: we cannot even say
+    what was lost, so saying nothing is the worst available answer."""
+    _, _, omitted = door._text_of(_blocks(SimpleNamespace()))
+    assert omitted == {"unknown": 1}
+
+
+def test_the_notice_survives_truncation():
+    """The design decision, pinned. Appended BEFORE the cap, a long result would truncate
+    away the very sentence saying something is missing — a failure notice eaten by the
+    failure it reports."""
+    long_text = "x" * (door.MAX_RESULT_CHARS + 5000)
+    text, truncated, omitted = door._text_of(_blocks(_text_block(long_text), _blob("image")))
+    assert truncated is True
+    assert omitted == {"image": 1}
+    assert "not carried" in text, "the omission notice was truncated away"
