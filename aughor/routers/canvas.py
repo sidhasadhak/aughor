@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import json
-from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
@@ -21,21 +19,6 @@ def _canvas_owner_guard(request: Request) -> None:
 
 
 router = APIRouter(tags=["canvas"], dependencies=[Depends(_canvas_owner_guard)])
-
-# Per-Canvas instruction store (keyed by canvas_id). Kept separate from the
-# connection-level instructions file so Canvases scoped to the same connection
-# can carry distinct business rules.
-_CANVAS_INSTRUCTIONS_FILE = Path(__file__).parent.parent.parent / "data" / "canvas_instructions.json"
-
-
-def _load_canvas_instructions() -> dict:
-    if _CANVAS_INSTRUCTIONS_FILE.exists():
-        try:
-            return json.loads(_CANVAS_INSTRUCTIONS_FILE.read_text())
-        except Exception:
-            return {}
-    return {}
-
 
 class CreateCanvasRequest(BaseModel):
     # R10 — name is now optional: an empty name is derived
@@ -248,16 +231,14 @@ def get_canvas_recents(canvas_id: str, limit: int = 10):
 
 @router.get("/canvases/{canvas_id}/instructions")
 def get_canvas_instructions(canvas_id: str):
-    data = _load_canvas_instructions()
-    return {"text": data.get(canvas_id, {}).get("text", "")}
+    from aughor.semantic.instructions import canvas_instructions
+    return {"text": canvas_instructions(canvas_id)}
 
 
 @router.put("/canvases/{canvas_id}/instructions")
 def put_canvas_instructions(canvas_id: str, req: CanvasInstructionsRequest):
-    data = _load_canvas_instructions()
-    data.setdefault(canvas_id, {})["text"] = req.text
-    _CANVAS_INSTRUCTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
-    _CANVAS_INSTRUCTIONS_FILE.write_text(json.dumps(data, indent=2))
+    from aughor.semantic.instructions import set_canvas_instructions
+    set_canvas_instructions(canvas_id, req.text)
     return {"ok": True}
 
 

@@ -16,7 +16,7 @@ def test_all_blocks_present_in_order():
     ctx = G.build_grounding_context("why is revenue down", "samples")
     keys = [b.key for b in ctx.blocks]
     # prepends first, then schema-dependent, then the enrichment body
-    assert keys[:5] == ["dialect_rules", "agent_brief", "pack",
+    assert keys[:6] == ["dialect_rules", "agent_brief", "pack", "instructions",
                         "trusted", "corrections"]
     assert "governed_metrics" in keys and "schema_slice" in keys and "glossary" in keys
 
