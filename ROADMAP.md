@@ -2076,9 +2076,11 @@ NEXT (order within a band is the user's knob)
                                    last — that order is load-bearing) and data shaping shipped
                                    as `$as` on the binding. 🔴 The conditional-router half of
                                    the gap was my own FALSE claim: DS-6's `else_of` already was
-                                   the branch. ⏳ Survives it: `AgentMap.tsx` has the same
-                                   missing handler, the drag fix owes a Profiler receipt, and
-                                   nothing in the canvas SETS `$as` yet. Original note:
+                                   the branch. ✅ 2026-09-04: the "same missing
+                                   handler" claim was WRONG — `agentops/AgentMap.tsx` already
+                                   sets `nodesDraggable={false}`, so it never wanted drag.
+                                   `agentops/TraceFlow.tsx` was the real one and is FIXED.
+                                   ⏳ Still owed: the Profiler receipt, and nothing SETS `$as`. Original note:
                                    the PRIMITIVE gap (measured: their 34 core components vs our
                                    15 palette entries; their other 76 pages are vendor bundles,
                                    which is our connector/integration family and NOT a deficit)
@@ -2303,9 +2305,21 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
   ⏳ Installing the `[export]` extra here would restore the PICTURES too; that is the user's
   environment to change, and the deck is honest without it.
 - ~~**Canvas drag is not fluid**~~ — **FIXED and MERGED 2026-09-03** (`e3a56b5c`, #428; §3.8b).
-  ⏳ Two things survive it: **`AgentMap.tsx` has the same missing handler** and was left for a
-  separate change, and the fix has **no empirical receipt** — the browser tool cannot drive
-  ReactFlow pointer interactions, so a React Profiler trace during a real drag is still owed.
+  ✅ **The follow-up is done, and it was not what this line said (2026-09-04).**
+  `AgentMap.tsx` does not have the same missing handler — it is `agentops/AgentMap.tsx` (the
+  bare path here is why it read as absent) and it already sets `nodesDraggable={false}`, so
+  it never offered a drag. Grepping every ReactFlow canvas for the actual defect shape found
+  the real one: **`agentops/TraceFlow.tsx`** passed controlled `nodes` with no
+  `onNodesChange` and no `nodesDraggable={false}`, and ReactFlow defaults dragging ON.
+  **Fixed by REMOVING the affordance, not wiring the channel** — #428 wired it because that
+  canvas has an authored layout and a sidecar to persist it; a trace's positions are computed
+  by `layoutForest`/`layoutGrid`, there is no trace-layout store, and a moved card would be
+  lost on the next re-select. Wiring drag would promise a persistence that does not exist,
+  and the tree layout is a READING of the run that arbitrary positions destroy.
+  ⏳ Still owed: the **empirical receipt** — the browser tool cannot drive ReactFlow pointer
+  interactions, so a React Profiler trace during a real drag remains outstanding. The new
+  tests assert the render HANDOFF (the flags the canvas is given), which is the honest limit
+  of what jsdom can prove; they were verified to FAIL without the fix.
 - ~~**The primitive gap**~~ — **CLOSED 2026-09-03** (`e3a56b5c`, #428). Data shaping shipped as
   `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
   was always the branch (§3.8a). ⏳ Survives it: **nothing in the canvas SETS `$as`** — API and
