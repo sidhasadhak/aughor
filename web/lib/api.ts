@@ -2764,6 +2764,24 @@ export async function putCanvasInstructions(canvasId: string, text: string): Pro
   if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
 }
 
+/** Connection-level instructions — apply to every Canvas on the connection; a Canvas's
+ *  own instructions take precedence on conflict (mirrors the grounding block's render). */
+export async function getConnectionInstructions(connId: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/instructions`);
+  if (!res.ok) return "";
+  const d = await res.json().catch(() => ({ text: "" }));
+  return d.text ?? "";
+}
+
+export async function putConnectionInstructions(connId: string, text: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/instructions`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ text }),
+  });
+  if (!res.ok) throw new Error(fastApiError(await res.json().catch(() => ({})), "Failed to save instructions"));
+}
+
 export async function deleteCanvas(id: string): Promise<void> {
   await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
