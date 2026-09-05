@@ -32,7 +32,7 @@ def _db_path() -> Path:
 #: existing store its accepted form lands in (`definition` = a prose metric
 #: definition, landing as a connection-KB `metric` entry).
 KINDS = ("metric", "synonym", "glossary", "rule", "join", "definition",
-         "trusted_query")
+         "trusted_query", "pack")
 
 #: A candidate's verdict from the plan, and its resolution status.
 VERDICTS = ("new", "changed", "identical", "conflict")

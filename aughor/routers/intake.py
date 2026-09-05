@@ -135,6 +135,26 @@ async def upload_file(request: Request,
     src = (source or "").strip() or name
     ignored: list[str] = []
     mapper_refused: list[str] = []
+    if name.lower().endswith((".md", ".markdown")):
+        # A markdown file with SKILL.md frontmatter is a skill import (KI's last
+        # deferral, landed): it stages a `pack` candidate whose accept writes a
+        # DRAFT pack — promotion stays the pack plane's own second act. Markdown
+        # WITHOUT frontmatter is prose, and prose is the LLM mapper's explicit
+        # opt-in door — this endpoint never spends a model call by surprise.
+        from aughor.skills.ingest import SkillIngestError, parse_skill
+        text = data.decode("utf-8-sig", errors="replace")
+        try:
+            parse_skill(text)
+        except SkillIngestError as exc:
+            raise HTTPException(status_code=422, detail=(
+                f"not a SKILL.md ({exc}) — for plain prose use POST /intake/prose, "
+                "the LLM mapper's explicit door"))
+        sections: dict = {"skills": [{"skill_md": text, "source": src}]}
+        bundle = {"version": 1, "connection_id": connection_id,
+                  "source_file": name, "sections": sections}
+        out = _stage(bundle, connection_id, source=src, actor=actor)
+        out["mapped"] = {"file": name, "ignored_headers": []}
+        return out
     if name.lower().endswith(".json"):
         import json as _json
         try:

@@ -27,7 +27,7 @@ from aughor.ontology.interchange import BUNDLE_VERSION
 #: real metric dictionaries take — landing as connection-KB `metric` entries, the
 #: store that already exists for exactly that.
 SECTIONS: tuple[str, ...] = ("metrics", "synonyms", "glossary", "rules", "joins",
-                             "definitions", "trusted_queries")
+                             "definitions", "trusted_queries", "skills")
 
 #: candidate kind → the connection-KB kind it lands as.
 _KB_KIND = {"rule": "rule", "join": "join", "definition": "metric"}
@@ -73,6 +73,7 @@ def plan(connection_id: str, bundle: dict) -> tuple[list[dict], list[str]]:
     out += _plan_kb(connection_id, "definition", sections.get("definitions") or [],
                     refused)
     out += _plan_trusted(connection_id, sections.get("trusted_queries") or [], refused)
+    out += _plan_skills(sections.get("skills") or [], refused)
     return out, refused
 
 
@@ -218,6 +219,70 @@ def _plan_trusted(connection_id: str, rows: list[dict],
     return out
 
 
+def _plan_skills(rows: list[dict], refused: list[str]) -> list[dict]:
+    """SKILL.md documents → `pack` candidates, through the skills-ingest planner that
+    already owns the format (`plan_pack`: lint FIRST, no disk). A skill the linter
+    BLOCKS (model ids, credential shapes, injection, exfiltration) is REFUSED at the
+    door with the rules named — it must never sit in the lane looking acceptable.
+    Warnings ride the candidate: the lane IS the review screen the ingest module's
+    docstring asked for. `conflict` means the existing pack is ACTIVE — a human
+    promoted it, and overwriting promoted curation is a human's decision."""
+    import yaml as _yaml
+
+    from aughor.packs.roots import pack_dir
+    from aughor.skills.ingest import SkillIngestError, plan_pack
+
+    out = []
+    for raw in rows:
+        text = str(raw.get("skill_md") or "")
+        if not text.strip():
+            refused.append("skill: skill_md is required")
+            continue
+        try:
+            plan = plan_pack(text,
+                             source=str(raw.get("source") or "intake"),
+                             source_url=str(raw.get("source_url") or ""),
+                             licence=str(raw.get("licence") or ""),
+                             pack_id=str(raw.get("pack_id") or ""),
+                             namespace=str(raw.get("namespace") or ""))
+        except SkillIngestError as exc:
+            refused.append(f"skill: {exc}")
+            continue
+        if plan.blocked:
+            from aughor.skills.lint import blocks
+            refused.append(f"skill '{plan.name}': blocked by the import gate — "
+                           + "; ".join(f"{f.rule} (line {f.line})"
+                                       for f in blocks(plan.findings)))
+            continue
+        payload = {k: v for k, v in raw.items() if k in
+                   ("skill_md", "source", "source_url", "licence", "pack_id",
+                    "namespace")}
+        payload["pack_id"] = plan.pack_id
+        warnings = [f"{f.rule} (line {f.line}): {f.why}"
+                    for f in plan.warnings]
+        detail = f"{len(warnings)} lint warning(s)" if warnings else ""
+        existing = pack_dir(plan.pack_id)
+        if existing is None:
+            out.append(_cand("pack", "new", payload, detail))
+            continue
+        try:
+            manifest = _yaml.safe_load((existing / "pack.yaml").read_text()) or {}
+        except Exception:
+            manifest = {}
+        if str(manifest.get("status") or "") == "active":
+            out.append(_cand("pack", "conflict", payload,
+                             f"pack '{plan.pack_id}' is ACTIVE (a human promoted it)"
+                             + (f" · {detail}" if detail else "")))
+            continue
+        same = all((existing / rel).exists()
+                   and (existing / rel).read_text() == content
+                   for rel, content in plan.files.items())
+        out.append(_cand("pack", "identical" if same else "changed", payload,
+                         detail if same else
+                         ("content differs" + (f" · {detail}" if detail else ""))))
+    return out
+
+
 # ── apply ────────────────────────────────────────────────────────────────────────────
 
 
@@ -240,6 +305,8 @@ def apply_candidate(connection_id: str, kind: str, payload: dict, *,
         return _apply_kb(connection_id, _KB_KIND[kind], payload)
     if kind == "trusted_query":
         return _apply_trusted(connection_id, payload, actor, source)
+    if kind == "pack":
+        return _apply_pack(payload)
     raise ValueError(f"unknown candidate kind {kind!r}")
 
 
@@ -309,6 +376,34 @@ def _apply_kb(connection_id: str, kind: str, payload: dict) -> dict:
         tags=[str(t) for t in (payload.get("tags") or [])],
         connection_id=connection_id))
     return {"target_ref": f"kb:{connection_id}:{entry_id}", "landed_as": kind}
+
+
+def _apply_pack(payload: dict) -> dict:
+    """An accepted skill becomes a DRAFT, PARTIAL pack in the imported root — the
+    ingest engine's own honest posture, unchanged: `active_packs()` filters on
+    status, so nothing here reaches a prompt until the pack plane's own promotion.
+    The lint re-runs at accept time (the payload may have been edited); a plan that
+    is blocked NOW raises, and the candidate stays pending with the reason."""
+    from aughor.packs.roots import imported_root
+    from aughor.skills.ingest import SkillIngestError, plan_pack, write_pack
+
+    try:
+        plan = plan_pack(str(payload.get("skill_md") or ""),
+                         source=str(payload.get("source") or "intake"),
+                         source_url=str(payload.get("source_url") or ""),
+                         licence=str(payload.get("licence") or ""),
+                         pack_id=str(payload.get("pack_id") or ""),
+                         namespace=str(payload.get("namespace") or ""))
+        if plan.blocked:
+            from aughor.skills.lint import blocks
+            raise ValueError("blocked by the import gate: " + "; ".join(
+                f.rule for f in blocks(plan.findings)))
+        path = write_pack(plan, imported_root(), overwrite=True)
+    except SkillIngestError as exc:
+        raise ValueError(str(exc)) from exc
+    return {"target_ref": f"pack:{plan.pack_id}", "landed_as": "draft",
+            "partial": True, "path": str(path),
+            "warnings": [f"{f.rule} (line {f.line})" for f in plan.warnings]}
 
 
 def _apply_trusted(connection_id: str, payload: dict, actor: str, source: str) -> dict:
