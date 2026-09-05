@@ -217,6 +217,40 @@ def resolve_candidate(cand_id: str, *, status: str, actor: str,
         c.commit()
 
 
+def llm_mapper_stats(*, org_id: str = "default",
+                     bundle_id: str = "") -> dict:
+    """The arc's falsifier input, measured from the lane's own rows: the human
+    edit-rate on LLM-extracted candidates (bundles whose source is `llm:*`). An
+    accept WITH an edit is the signal — the human had to fix what the model wrote.
+    Dismissals are counted separately: a wrong candidate a human threw away cost a
+    click, not a correction. `edit_rate` is None until something is resolved."""
+    with _connect() as c:
+        ensure_once(c, _ensure_schema)
+        q = ("SELECT ic.status, ic.edited_payload FROM intake_candidate ic "
+             "JOIN intake_bundle ib ON ic.bundle_id = ib.id "
+             "WHERE ib.org_id=? AND ib.source LIKE 'llm:%'")
+        args: list = [org_id]
+        if bundle_id:
+            q += " AND ib.id=?"
+            args.append(bundle_id)
+        rows = c.execute(q, args).fetchall()
+    counts = {"candidates": len(rows), "pending": 0, "dismissed": 0,
+              "accepted_clean": 0, "accepted_edited": 0, "noop": 0}
+    for r in rows:
+        if r["status"] == "pending":
+            counts["pending"] += 1
+        elif r["status"] == "dismissed":
+            counts["dismissed"] += 1
+        elif r["status"] == "noop":
+            counts["noop"] += 1
+        elif r["status"] == "accepted":
+            counts["accepted_edited" if r["edited_payload"] else "accepted_clean"] += 1
+    accepted = counts["accepted_clean"] + counts["accepted_edited"]
+    return {**counts,
+            "edit_rate": (round(counts["accepted_edited"] / accepted, 3)
+                          if accepted else None)}
+
+
 def provenance(target_ref: str, *, org_id: str = "default") -> list[dict]:
     """Walk an accepted object back to its bundle: candidate rows + the bundle's
     hash, source and uploader — §3.10's stated receipt."""

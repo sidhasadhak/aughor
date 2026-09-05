@@ -286,6 +286,71 @@ def mine_knowledge(body: MineIn, request: Request):
             "pages": results, **({"error": error} if error else {})}
 
 
+class ProseIn(BaseModel):
+    connection_id: str
+    actor: str
+    text: str                # markdown or plain prose; one model call per import
+    source: str = ""         # a label for where the text came from
+
+
+@router.post("/intake/prose", status_code=201,
+             dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def upload_prose(body: ProseIn, request: Request):
+    """KI-2's deferred half — the LLM prose mapper: pasted text or a markdown page
+    becomes typed candidates through ONE model call on the provider chain, validated
+    deterministically (synonyms land `llm_candidate` and stay prompt-invisible until
+    promoted; everything carries `mined:llm`), staged in the SAME lane. The response
+    publishes the running edit-rate — the arc's falsifier input: above ~50%, the
+    mapper parks and the deterministic doors remain."""
+    from aughor.intake import prose, store
+
+    if not (body.actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+    text = (body.text or "").strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="text is required")
+    if len(text) > prose.MAX_TEXT_CHARS:
+        raise HTTPException(status_code=413, detail=(
+            f"text is {len(text)} chars; the cap is {prose.MAX_TEXT_CHARS} — "
+            "split the document, one import per section"))
+    _check_conn_org(request, body.connection_id)
+
+    try:
+        extraction = prose.extract(text)
+    except Exception as exc:
+        # NoModelConfigured and every other chain failure land here: the LLM door
+        # needs a configured model; the deterministic doors keep working without one.
+        raise HTTPException(status_code=503, detail=(
+            "the prose mapper needs a working model binding and the call failed: "
+            f"{exc}"))
+    sections = prose.to_sections(extraction)
+    stats = store.llm_mapper_stats(org_id=_org())
+    if not sections:
+        return {"staged": False, "mined_at": _now(),
+                "note": "the model extracted nothing it could state as a fact",
+                "mapper_stats": {**stats,
+                                 "threshold": prose.EDIT_RATE_THRESHOLD}}
+    bundle = {"version": 1, "connection_id": body.connection_id,
+              "mapped_by": "llm", "sections": sections}
+    out = _stage(bundle, body.connection_id,
+                 source=f"llm:{(body.source or '').strip() or 'prose'}",
+                 actor=body.actor)
+    return {**out, "mined_at": _now(),
+            "mapper_stats": {**store.llm_mapper_stats(org_id=_org()),
+                             "threshold": prose.EDIT_RATE_THRESHOLD}}
+
+
+@router.get("/intake/mapper-stats")
+def mapper_stats(bundle_id: str = ""):
+    """The LLM mapper's falsifier, live: the human edit-rate on its candidates,
+    per bundle or in aggregate. §3.10's law — above the threshold after prompt
+    iteration, the mapper parks; publishing the number is what makes that a
+    measurement instead of a vibe."""
+    from aughor.intake import prose, store
+    return {**store.llm_mapper_stats(org_id=_org(), bundle_id=bundle_id),
+            "threshold": prose.EDIT_RATE_THRESHOLD}
+
+
 class SuggestIn(BaseModel):
     connection_id: str
     actor: str

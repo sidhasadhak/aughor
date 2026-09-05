@@ -2129,7 +2129,7 @@ content hash; provenance walks accepted object → bundle hash → source → up
 the accepted metric is `proposed` (never approved by an import) and the accepted
 trusted query is NOT in the prompt until KI-0's own approve.
 
-#### KI-2 · File mappers — DETERMINISTIC HALF ✅ BUILT 2026-09-05; LLM mapper deferred
+#### KI-2 · File mappers — ✅ COMPLETE 2026-09-05 (deterministic half + LLM prose mapper)
 
 `POST /intake/files` (multipart, SEMANTIC_EDIT-gated) maps a file into a bundle and
 feeds the SAME lane (`aughor/intake/mappers.py`; the router's `_stage` is shared, so a
@@ -2144,9 +2144,22 @@ as a `definitions` candidate (a new lane kind, landing as the connection-KB `met
 entry that already exists for exactly that); an Aliases cell fans into synonym
 candidates; a nameless row is refused with its row number. The mapper judges
 nothing — every object still waits in the lane.
-**Deliberately deferred, per this slice's own law:** the LLM prose mapper (needs the
-edit-rate falsifier instrumented first) and the SKILL.md lane (imports packs, a
-different root — revisit when a pack candidate kind earns its place).
+✅ **The LLM prose mapper landed 2026-09-05, falsifier first** (`POST /intake/prose`,
+`aughor/intake/prose.py`): pasted text or a markdown page → ONE structured model call
+on the provider chain (`get_provider("coder")`, role from config, no model id, metered
+like every call) → deterministic validation stands between the model and the lane
+(nameless drops; a formula-less metric DEMOTES to a definition, the CSV mapper's own
+rule; synonyms are FORCED to `llm_candidate`, so the synonyms prompt block ignores
+them until a human promotes; everything tagged `mined:llm`). **The edit-rate
+falsifier is instrumented, not aspirational:** the lane's own resolutions are the
+measurement (accept-with-edit vs accept-clean vs dismissed), published per import in
+the door's response and in aggregate at `GET /intake/mapper-stats` with the ~50%
+threshold beside it — above it after prompt iteration, the mapper parks and the
+deterministic doors remain. Receipt: `tests/unit/test_ki2_prose_mapper.py` — no test
+spends a token; the cross-slice law is pinned (an accepted LLM synonym widens
+retrieval and stays OUT of the prompt until promoted to human).
+**Still deferred:** the SKILL.md lane (imports packs, a different root — revisit when
+a pack candidate kind earns its place).
 **Receipt:** `tests/unit/test_ki2_file_mappers.py` — the same CSV maps to the same
 candidate set twice; the mapped file lands: metric `proposed`, definitions in the KB,
 synonyms in the vocabulary; the same file re-uploaded dedupes to the same bundle; a
@@ -2487,8 +2500,9 @@ ARC KI  ✅ ADOPTED 2026-09-05 (§6 item 9, both clauses YES) — org-owned defi
         KI-1 ✅ canonical bundle + review lane BUILT 2026-09-05 — upload → plan →
              accept/edit/dismiss → fan-out through each store's own governance;
              interchange.py consumed (plan_import has its first caller)
-        KI-2 ✅ deterministic half BUILT 2026-09-05 — CSV/TSV/XLSX dictionary + dbt
-             manifest upload feed the same lane · LLM prose mapper + SKILL.md deferred
+        KI-2 ✅ COMPLETE 2026-09-05 — CSV/TSV/XLSX dictionary + dbt manifest upload
+             + LLM prose mapper (edit-rate falsifier instrumented, published at
+             /intake/mapper-stats) · SKILL.md lane deferred
         KI-3 ✅ COMPLETE 2026-09-05 — Sheets definitions mode + Confluence/Notion
              table mining (one bundle per page, page URL as provenance; re-mine
              of an unchanged page proposes nothing)

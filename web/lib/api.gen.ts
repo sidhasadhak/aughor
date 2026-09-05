@@ -4771,6 +4771,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/mapper-stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Mapper Stats
+         * @description The LLM mapper's falsifier, live: the human edit-rate on its candidates,
+         *     per bundle or in aggregate. §3.10's law — above the threshold after prompt
+         *     iteration, the mapper parks; publishing the number is what makes that a
+         *     measurement instead of a vibe.
+         */
+        get: operations["mapper_stats_intake_mapper_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/intake/mine": {
         parameters: {
             query?: never;
@@ -4791,6 +4814,31 @@ export interface paths {
          *     invisible to every prompt, which is the built-and-inert trap by construction.
          */
         post: operations["mine_knowledge_intake_mine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/prose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Prose
+         * @description KI-2's deferred half — the LLM prose mapper: pasted text or a markdown page
+         *     becomes typed candidates through ONE model call on the provider chain, validated
+         *     deterministically (synonyms land `llm_candidate` and stay prompt-invisible until
+         *     promoted; everything carries `mined:llm`), staged in the SAME lane. The response
+         *     publishes the running edit-rate — the arc's falsifier input: above ~50%, the
+         *     mapper parks and the deterministic doors remain.
+         */
+        post: operations["upload_prose_intake_prose_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11580,6 +11628,20 @@ export interface components {
             table_cols?: {
                 [key: string]: string[];
             } | null;
+        };
+        /** ProseIn */
+        ProseIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Text */
+            text: string;
         };
         /**
          * QueryTemplate
@@ -21420,6 +21482,37 @@ export interface operations {
             };
         };
     };
+    mapper_stats_intake_mapper_stats_get: {
+        parameters: {
+            query?: {
+                bundle_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     mine_knowledge_intake_mine_post: {
         parameters: {
             query?: {
@@ -21437,6 +21530,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_prose_intake_prose_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProseIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
