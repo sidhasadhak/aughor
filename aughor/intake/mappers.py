@@ -12,7 +12,11 @@ from __future__ import annotations
 
 import csv
 import io
+import re
 from typing import Any
+
+#: What a spreadsheet id looks like once extracted from an id or URL.
+_SHEET_ID_RE = re.compile(r"[a-zA-Z0-9-_]{10,}")
 
 #: Header spellings a metric dictionary is seen in the wild with, mapped to the
 #: canonical field. Matching is case-insensitive on the stripped header.
@@ -67,8 +71,12 @@ def read_tabular(filename: str, data: bytes) -> tuple[list[str], list[dict]]:
             try:
                 try:
                     con.execute("INSTALL excel")
-                except Exception:
-                    pass  # cached installs still LOAD; a truly offline box errors below
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "excel extension install skipped — a cached "
+                                  "install still LOADs; a truly offline box errors "
+                                  "on the LOAD below with DuckDB's own message",
+                             counter="intake.excel_install")
                 con.execute("LOAD excel")
                 rel = con.execute(
                     f"SELECT * FROM read_xlsx('{f.name}', all_varchar = true)")
@@ -152,6 +160,37 @@ def map_dictionary_rows(headers: list[str],
     if synonyms:
         sections["synonyms"] = synonyms
     return sections, ignored, refused
+
+
+def fetch_gsheet_csv(spreadsheet: str, sheet: str = "") -> bytes:
+    """One worksheet of a link-shared Google Sheet, as CSV bytes — the same public
+    gviz export the Sheets DATA connector reads (`connectors/api/gsheets.py`), so
+    the definitions mode makes exactly the claims that connector makes: public
+    link-sharing only, no OAuth, no credentials.
+
+    The host is fixed (docs.google.com); only the extracted spreadsheet id and the
+    sheet name ride the URL. Raises ``ValueError`` with a human-readable reason —
+    including the private-sheet case, which Google answers with an HTML login page
+    rather than an error code."""
+    import urllib.parse
+    import urllib.request
+
+    from aughor.connectors.api.gsheets import _extract_id
+
+    sid = _extract_id(spreadsheet)
+    if not _SHEET_ID_RE.fullmatch(sid or ""):
+        raise ValueError("not a spreadsheet id or /spreadsheets/d/... URL")
+    url = (f"https://docs.google.com/spreadsheets/d/{sid}/gviz/tq?tqx=out:csv"
+           + (f"&sheet={urllib.parse.quote(sheet)}" if sheet else ""))
+    try:
+        with urllib.request.urlopen(url, timeout=30) as resp:
+            data = resp.read()
+    except Exception as exc:
+        raise ValueError(f"could not fetch the sheet: {exc}") from exc
+    if data.lstrip()[:1] in (b"<",):
+        raise ValueError("the sheet is not link-shared — Google answered with a "
+                         "login page. Share it as 'Anyone with the link can view'.")
+    return data
 
 
 def looks_like_dbt_manifest(doc: dict) -> bool:

@@ -4793,6 +4793,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Sheet
+         * @description KI-3 — the Sheets definitions mode: a link-shared Google Sheet holding a
+         *     metric dictionary is fetched through the SAME public gviz export the Sheets
+         *     data connector reads, mapped by the SAME deterministic dictionary mapper, and
+         *     staged in the SAME lane. Public link-sharing only — no OAuth, no credentials,
+         *     exactly the claims the data connector makes.
+         */
+        post: operations["upload_sheet_intake_sheets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/catalog": {
         parameters: {
             query?: never;
@@ -11794,6 +11818,25 @@ export interface components {
              * @default
              */
             url: string;
+        };
+        /** SheetIn */
+        SheetIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Sheet
+             * @default
+             */
+            sheet: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Spreadsheet */
+            spreadsheet: string;
         };
         /** SlackBotBody */
         SlackBotBody: {
@@ -21307,6 +21350,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_sheet_intake_sheets_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

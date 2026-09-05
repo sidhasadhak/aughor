@@ -167,6 +167,47 @@ async def upload_file(request: Request,
     return out
 
 
+class SheetIn(BaseModel):
+    spreadsheet: str          # a spreadsheet id, or the full /spreadsheets/d/... URL
+    sheet: str = ""           # worksheet name; empty = the first tab
+    connection_id: str
+    actor: str
+    source: str = ""
+
+
+@router.post("/intake/sheets", status_code=201,
+             dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def upload_sheet(body: SheetIn, request: Request):
+    """KI-3 — the Sheets definitions mode: a link-shared Google Sheet holding a
+    metric dictionary is fetched through the SAME public gviz export the Sheets
+    data connector reads, mapped by the SAME deterministic dictionary mapper, and
+    staged in the SAME lane. Public link-sharing only — no OAuth, no credentials,
+    exactly the claims the data connector makes."""
+    from aughor.intake import mappers
+
+    if not (body.actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+    _check_conn_org(request, body.connection_id)
+    try:
+        data = mappers.fetch_gsheet_csv(body.spreadsheet, body.sheet)
+        headers, rows = mappers.read_tabular("sheet.csv", data)
+        sections, ignored, mapper_refused = mappers.map_dictionary_rows(headers, rows)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    if not sections:
+        raise HTTPException(status_code=422, detail="no usable rows — "
+                            + "; ".join(mapper_refused[:5]))
+    src = (body.source or "").strip() or f"gsheet:{body.spreadsheet.strip()[:60]}"
+    bundle = {"version": 1, "connection_id": body.connection_id,
+              "source_sheet": {"spreadsheet": body.spreadsheet, "sheet": body.sheet},
+              "sections": sections}
+    out = _stage(bundle, body.connection_id, source=src, actor=body.actor,
+                 mapper_refused=mapper_refused)
+    out["mapped"] = {"sheet": body.sheet or "(first tab)",
+                     "ignored_headers": ignored}
+    return out
+
+
 @router.get("/intake/bundles")
 def bundles(connection_id: str = ""):
     from aughor.intake import store

@@ -2146,17 +2146,25 @@ candidate set twice; the mapped file lands: metric `proposed`, definitions in th
 synonyms in the vocabulary; the same file re-uploaded dedupes to the same bundle; a
 non-manifest JSON and a nameless CSV are refused with reasons.
 
-#### KI-3 · Source fetchers — the connectors point at the lane
+#### KI-3 · Source fetchers — SHEETS MODE ✅ BUILT 2026-09-05; Confluence/Notion mining open
 
-Confluence and Notion already sync into the document KB; this slice additionally mines
-SYNCED pages for definition candidates — the fetchers exist, only the mining is new,
-and it is built ONCE against the ingestion-registry seam, not per connector (the
-capability-misses-a-connector lesson, ×3). Google Sheets: the public-link fetch
-exists; a definitions mode maps a chosen worksheet through KI-2's deterministic
-mapper. Private-OAuth Sheets/Drive stays parked until a real deployment asks — no
-speculative OAuth surface.
-**Receipt:** a Confluence metric page becomes staged candidates with the page URL as
-provenance; a re-sync of an unchanged page proposes nothing.
+✅ **Sheets definitions mode** (`POST /intake/sheets`): a link-shared Google Sheet
+holding a metric dictionary is fetched through the SAME public gviz export the Sheets
+DATA connector reads (id extraction reused; fixed host, no OAuth, no credentials —
+exactly the claims that connector makes), mapped by KI-2's deterministic dictionary
+mapper, staged in the SAME lane. A private sheet is reported plainly ("Google
+answered with a login page — share as Anyone-with-the-link") rather than as a parse
+error. Receipt in `test_ki2_file_mappers.py` (fetch patched; everything after it is
+the shared path).
+⏳ **Still open:** mining SYNCED Confluence/Notion pages for definition candidates —
+the fetchers exist, only the mining is new, and it is built ONCE against the
+ingestion-registry seam, not per connector (the capability-misses-a-connector lesson,
+×3). The deterministic first cut is TABLES inside synced pages through the dictionary
+mapper; prose mining waits on the LLM mapper (KI-2's deferred half). Private-OAuth
+Sheets/Drive stays parked until a real deployment asks — no speculative OAuth
+surface.
+**Receipt (for the open half):** a Confluence metric page becomes staged candidates
+with the page URL as provenance; a re-sync of an unchanged page proposes nothing.
 
 #### KI-4 · The suggestions loop — the same lane, fed from inside
 
@@ -2449,8 +2457,8 @@ ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned def
              interchange.py consumed (plan_import has its first caller)
         KI-2 ✅ deterministic half BUILT 2026-09-05 — CSV/TSV/XLSX dictionary + dbt
              manifest upload feed the same lane · LLM prose mapper + SKILL.md deferred
-        KI-3 source fetchers — Confluence/Notion mining on the existing sync ·
-             Sheets definitions mode
+        KI-3 ◐ Sheets definitions mode BUILT 2026-09-05 (link-shared Sheet → the
+             same mapper and lane) · Confluence/Notion mining still open
         KI-4 usage-mined suggestions — the same lane Arc MI grades through; accepts
              feed MI-3's gates
 ```

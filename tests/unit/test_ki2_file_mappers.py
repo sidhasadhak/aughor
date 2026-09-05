@@ -193,6 +193,49 @@ def test_dbt_manifest_file_door(stores):
             == "One row per customer.")
 
 
+def test_sheets_definitions_mode_feeds_the_same_lane(stores, monkeypatch):
+    """KI-3's Sheets mode: the fetch is patched (unit tests stay off the network);
+    everything after the fetch is the SAME mapper and the SAME lane."""
+    from aughor.intake import mappers
+
+    fetched: dict = {}
+
+    def _fake_fetch(spreadsheet, sheet=""):
+        fetched["args"] = (spreadsheet, sheet)
+        return CSV.encode()
+
+    monkeypatch.setattr(mappers, "fetch_gsheet_csv", _fake_fetch)
+    r = client.post("/intake/sheets", json={
+        "spreadsheet": "https://docs.google.com/spreadsheets/d/1AbCdEfGhIjK/edit",
+        "sheet": "KPIs", "connection_id": CONN, "actor": "ana@example.com"})
+    assert r.status_code == 201, r.text
+    assert fetched["args"][1] == "KPIs"
+    kinds = sorted(c["kind"] for c in r.json()["candidates"])
+    assert kinds == ["definition", "definition", "metric",
+                     "synonym", "synonym", "synonym"]
+    assert r.json()["bundle"]["source"].startswith("gsheet:")
+
+
+def test_sheets_mode_reports_a_private_sheet_plainly(stores, monkeypatch):
+    from aughor.intake import mappers
+
+    def _login_page(spreadsheet, sheet=""):
+        raise ValueError("the sheet is not link-shared — Google answered with a "
+                         "login page. Share it as 'Anyone with the link can view'.")
+
+    monkeypatch.setattr(mappers, "fetch_gsheet_csv", _login_page)
+    r = client.post("/intake/sheets", json={
+        "spreadsheet": "1AbCdEfGhIjK", "connection_id": CONN,
+        "actor": "ana@example.com"})
+    assert r.status_code == 422 and "link-shared" in r.json()["detail"]
+
+
+def test_sheet_id_validation_refuses_junk():
+    from aughor.intake.mappers import fetch_gsheet_csv
+    with pytest.raises(ValueError, match="spreadsheet id"):
+        fetch_gsheet_csv("not a sheet!!")
+
+
 def test_file_door_refuses_what_it_cannot_map(stores):
     r = client.post("/intake/files",
                     files={"file": ("notes.json", b"{\"hello\": 1}", "application/json")},
