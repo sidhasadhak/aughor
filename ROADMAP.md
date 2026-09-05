@@ -2108,7 +2108,13 @@ object differs — overwriting a human's approved curation is a human's decision
 accept/edit/dismiss → accepted objects fan out through each store's own governance:
 a metric lands PROPOSED in the metrics workflow, a trusted query goes through KI-0's
 `seed_trusted` (extracted so the HTTP door and the lane are ONE flow), a synonym
-lands via the vocabulary writer that finally has a caller. Malformed rows are
+lands via the vocabulary writer that finally has a caller — **and, since the
+2026-09-05 follow-up, a prompt that finally renders it**: human-tier synonyms now
+emit a BUSINESS SYNONYMS grounding block (the Snowflake study's last un-landed PORT
+lever; mined and model-proposed tiers keep widening schema-linker retrieval and stay
+out of the prompt until a person promotes them — their own caveat, kept). Before
+that, the lane accepted synonyms into a prompt-invisible store, which is the
+built-and-inert shape by construction. Malformed rows are
 REFUSED at the door, never staged; identical objects stage as `noop` (nothing to
 decide); a failed apply keeps the candidate PENDING with the error attached, so an
 edit can fix what a dismissal would lose. Staging store `AUGHOR_INTAKE_DB` — all

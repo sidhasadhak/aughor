@@ -29,9 +29,8 @@ from aughor.ontology.vocabulary import (
 @pytest.fixture(autouse=True)
 def vocab_root(tmp_path, monkeypatch):
     """Point the store at a tmp dir — never the tracked data/ tree."""
-    import aughor.ontology.vocabulary as V
 
-    monkeypatch.setattr(V, "_ROOT", tmp_path / "vocabulary")
+    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
     return tmp_path
 
 

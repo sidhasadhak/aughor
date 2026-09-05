@@ -33,9 +33,8 @@ from aughor.ontology.interchange import (
 
 @pytest.fixture(autouse=True)
 def vocab_root(tmp_path, monkeypatch):
-    import aughor.ontology.vocabulary as V
 
-    monkeypatch.setattr(V, "_ROOT", tmp_path / "vocabulary")
+    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocabulary"))
 
 
 def _c(**kw) -> Candidate:

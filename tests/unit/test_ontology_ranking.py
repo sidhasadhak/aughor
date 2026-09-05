@@ -145,7 +145,7 @@ def test_signals_come_from_the_declared_synonym_store(tmp_path, monkeypatch):
     import aughor.ontology.vocabulary as V
     from aughor.ontology.ranking import signals_from_stores
 
-    monkeypatch.setattr(V, "_ROOT", tmp_path / "vocab")
+    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
     V.add_synonym("c1", "metric", "gmv_eur", "revenue", source="human")
     sig = signals_from_stores("c1")
     assert sig["gmv_eur"].source == "human"
@@ -155,7 +155,7 @@ def test_the_strongest_source_wins_per_subject(tmp_path, monkeypatch):
     import aughor.ontology.vocabulary as V
     from aughor.ontology.ranking import signals_from_stores
 
-    monkeypatch.setattr(V, "_ROOT", tmp_path / "vocab")
+    monkeypatch.setenv("AUGHOR_VOCABULARY_ROOT", str(tmp_path / "vocab"))
     V.add_synonym("c1", "metric", "m", "a", source="llm_candidate")
     V.add_synonym("c1", "metric", "m", "b", source="human")
     assert signals_from_stores("c1")["m"].source == "human"
