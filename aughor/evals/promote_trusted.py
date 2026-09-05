@@ -82,7 +82,10 @@ def promote(suite_id: str, connection_id: str, *, min_runs: int = 2,
     from aughor.semantic.trusted_queries import TrustedQuery, list_trusted, save_trusted
 
     candidates = promotable(suite_id, min_runs=min_runs)
-    existing = {(tq.question or "").strip().lower() for tq in list_trusted(connection_id)}
+    # Dedupe against the WHOLE store, drafts included — re-minting over a draft a human
+    # is still deciding about would silently overwrite their pending judgement.
+    existing = {(tq.question or "").strip().lower()
+                for tq in list_trusted(connection_id, include_unapproved=True)}
 
     promoted = skipped = 0
     for item in candidates:
@@ -109,6 +112,8 @@ def promote(suite_id: str, connection_id: str, *, min_runs: int = 2,
                               "query is still minted, without its table list",
                          counter="evals.promote_trusted.expected_parse")
                 expected = {}
+        from datetime import datetime, timezone
+        now = datetime.now(timezone.utc).isoformat()
         save_trusted(TrustedQuery(
             id=trusted_id(connection_id, question),
             connection_id=connection_id,
@@ -119,6 +124,11 @@ def promote(suite_id: str, connection_id: str, *, min_runs: int = 2,
                   f"Consistency-verified (reproduces this connection's prior answer), "
                   f"NOT independently checked for correctness."),
             tags=[SOURCE_TAG, f"suite:{suite_id}"],
+            # KI-0: minted entries were injected before statuses existed and their
+            # warrant (unanimous passes, ≥min_runs) is the promotion bar itself —
+            # they land approved, with the suite as the verifier of record.
+            status="approved", version=1, source="eval_promotion",
+            verified_by=f"eval-suite:{suite_id}", verified_at=now,
         ))
         existing.add(question.lower())
         promoted += 1

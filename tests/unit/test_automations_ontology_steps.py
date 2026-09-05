@@ -120,8 +120,9 @@ def _metric(name="ds12_revenue", connection="*", **kw) -> MetricDefinition:
 
 def _query(qid="tq_accounts", sql="SELECT id, name FROM accounts ORDER BY id",
            question="which accounts are at risk?") -> tq.TrustedQuery:
+    # KI-0: the component reads the store fail-closed — only `approved` is trusted.
     q = tq.TrustedQuery(id=qid, connection_id=CONN, question=question, sql=sql,
-                        tables=["accounts"])
+                        tables=["accounts"], status="approved")
     tq.save_trusted(q)
     return q
 
@@ -204,7 +205,8 @@ def test_a_query_on_another_connection_is_not_found(warehouse):
     """A trusted query is verified against the schema it was written for. Running one
     against a different connection is how a vetted query stops being vetted."""
     tq.save_trusted(tq.TrustedQuery(id="tq_elsewhere", connection_id="other",
-                                    question="q", sql="SELECT 1", tables=[]))
+                                    question="q", sql="SELECT 1", tables=[],
+                                    status="approved"))
     out = _dispatch_trusted_query(
         Effect(kind="trusted_query", config={"query_id": "tq_elsewhere"}), AUTO)
     assert out.status == "dispatch_error" and "tq_elsewhere" in out.message

@@ -242,7 +242,7 @@ def test_a_list_publishing_key_is_marked_as_one():
 
     tq.save_trusted(tq.TrustedQuery(id="tq_ds15", connection_id=CONN,
                                     question="which accounts churned?",
-                                    sql="SELECT 1", tables=[]))
+                                    sql="SELECT 1", tables=[], status="approved"))
     try:
         p = _Provider(_chain())
         propose_chain("x", conn_id=CONN, provider=p)

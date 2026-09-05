@@ -2071,17 +2071,28 @@ then own training volume, §4.5's factory question reopens.
   propose→validate→seed grammar, and the eval-promotion path that already turns green
   cases into trusted queries.
 
-#### KI-0 · The trusted-SQL door (substrate-sized — may ride alongside any band)
+#### KI-0 · The trusted-SQL door (substrate-sized) — ✅ BUILT 2026-09-05 (at the user's direction, ahead of item 9's stamp)
 
-CRUD API over the existing store, capability-gated, the model gaining `verified_at ·
-verified_by · source · last_executed_at`. A seeded query is EXECUTED against its
-connection and walked through the guard battery before it becomes authoritative; one
-that fails lands as a draft with the error attached, never in the prompt. Recommended
-(user-stampable, §6 item 9b): acceptance into the authoritative tier is a metrics-style
-transition — propose → approve — so uploading and trusting are two recorded acts.
-**Receipt:** an org seeds golden SQL over HTTP; the next ask's prompt carries it in the
-trusted block; a syntactically-valid-but-failing seed is demonstrably NOT in that
-block; `GET /learning/trusted` shows provenance.
+CRUD API over the existing store, capability-gated (`SEMANTIC_EDIT`), the model gaining
+`status · version · source · proposed_by/at · verified_by · verified_at ·
+last_executed_at · verification`. A seeded query is EXECUTED (bounded, mutations
+AST-blocked before any engine sees them) against its connection and walked through the
+SAME guard battery `/query/validate` runs — extracted into `aughor/sql/validation.py`
+precisely so there is one battery, not a drifting copy. A failing seed lands as a
+draft with the report attached, never in the prompt. Acceptance is a metrics-style
+transition on the shared governance machine — propose (re-verifies) → approve — so
+uploading and trusting are two recorded acts; every step journals
+`trusted_query.governance` (categorized AND sunk in the governance feed — a mapping
+alone renders nothing). `list_trusted` now fails CLOSED: only `approved` reaches
+`retrieve_trusted`, the MCP listing and the automations component; a pre-KI-0 record
+with no status is grandfathered approved (it was being injected before statuses
+existed). The two internal writers stamp their provenance (`eval_promotion`,
+`divergence_review`), so `source` is no longer inferable-only.
+**Receipt:** `tests/unit/test_ki0_trusted_door.py` — a seed reaches the trusted block
+only AFTER the approve act; a mutating seed is blocked before execution and its
+propose returns 409; an edit resets approval; identical re-seed of an approved row is
+a no-op (the door is safe to point a sync at); the delete is audited (the metrics
+catalog already paid for an unaudited one).
 
 #### KI-1 · The canonical bundle and the review lane (the spine — before any mapper)
 
@@ -2412,7 +2423,8 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
 ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned definitions in
         through ONE funnel: any source → typed candidates → accept/edit/dismiss →
         the stores that exist. Nothing auto-applies.
-        KI-0 trusted-SQL door — substrate-sized, may ride alongside any band
+        KI-0 ✅ trusted-SQL door BUILT 2026-09-05 — seed → verify (real execution +
+             the shared battery) → propose → approve; only approved reaches a prompt
         KI-1 canonical bundle + review lane (interchange.py finally gets a consumer)
         KI-2 file mappers — CSV/XLSX dictionary · dbt manifest upload · SKILL.md ·
              LLM prose mapper (deterministic paths first)

@@ -371,9 +371,12 @@ def pin(connection_id: str, question: str, sql: str, *, tables: Optional[list[st
     answers — a store that can hold both variants of "does cancelled count as revenue" would
     reintroduce the exact divergence it exists to end.
     """
+    from datetime import datetime, timezone
+
     from aughor.evals.promote_trusted import trusted_id
     from aughor.semantic.trusted_queries import TrustedQuery, save_trusted
 
+    now = datetime.now(timezone.utc).isoformat()
     tq = TrustedQuery(
         id=trusted_id(connection_id, question),
         connection_id=connection_id,
@@ -382,6 +385,10 @@ def pin(connection_id: str, question: str, sql: str, *, tables: Optional[list[st
         tables=[str(t) for t in (tables or [])],
         note=note.strip() or "chosen by a reviewer from divergent past answers",
         tags=[HUMAN_TAG],
+        # KI-0: a pin IS a human approval — the reviewer chose this variant over the
+        # alternatives, which is a stronger warrant than any seed-and-approve flow.
+        status="approved", version=1, source="divergence_review",
+        verified_by="reviewer", verified_at=now,
     )
     save_trusted(tq)
     return tq

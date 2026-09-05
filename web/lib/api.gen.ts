@@ -5553,10 +5553,79 @@ export interface paths {
          * Learning Trusted
          * @description The trusted assets themselves — curated queries injected authoritatively into prompts,
          *     now inspectable. Scoped to the current org, optionally to one connection.
+         *
+         *     KI-0: this is the INSPECTION surface, so it lists every status — drafts and
+         *     proposals included, each row carrying its status and provenance. The prompt path
+         *     (`retrieve_trusted`) sees only ``approved``.
          */
         get: operations["learning_trusted_learning_trusted_get"];
         put?: never;
+        /**
+         * Create Trusted
+         * @description Seed one golden query. Content-addressed on (connection, question) — re-seeding
+         *     the same question REPLACES the entry rather than accumulating two contradictory
+         *     trusted answers, and re-seeding IDENTICAL content that is already approved is a
+         *     no-op (idempotence is what makes this door safe to point a sync at).
+         *
+         *     The seed is verified NOW: executed (bounded) against its connection and walked
+         *     through the same guard battery `/query/validate` runs. Passing lands it in
+         *     `proposed` — approval is a separate recorded act. Failing lands it in `draft`
+         *     with the report attached; a draft never reaches a prompt.
+         */
+        post: operations["create_trusted_learning_trusted_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/trusted/{tq_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit Trusted
+         * @description Edit a seeded query. An edit changes the content, so it RESETS the lifecycle:
+         *     the row is re-verified and lands back in `proposed` (or `draft` on failure), and
+         *     any prior approval stamp is cleared — an approval covers the content it approved,
+         *     nothing later.
+         */
+        put: operations["edit_trusted_learning_trusted__tq_id__put"];
         post?: never;
+        /**
+         * Remove Trusted
+         * @description Remove a trusted query — audited, because the metrics catalog already paid for
+         *     an unaudited delete: two calls emptied it on a live install and nothing anywhere
+         *     recorded that it happened.
+         */
+        delete: operations["remove_trusted_learning_trusted__tq_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/trusted/{tq_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Trusted
+         * @description Drive a trusted query through its lifecycle (propose → approve → deprecate …),
+         *     on the metric governance state machine. `propose` RE-verifies first — the data may
+         *     have moved since the seed — and refuses (409, report attached) when verification
+         *     fails. `approve` is the human act that makes the entry prompt-authoritative: it
+         *     stamps `verified_by`/`verified_at` and bumps the version.
+         */
+        post: operations["transition_trusted_learning_trusted__tq_id__transition_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8299,6 +8368,9 @@ export interface paths {
          *     filter value-domain (live probes) — and return a structured verdict. Each guard is
          *     fail-open: one that can't run is simply omitted, never an error. This is the explicit,
          *     user-triggered version of the guards that run inline during answer generation.
+         *
+         *     The battery itself lives in ``aughor.sql.validation`` (KI-0 extracted it so
+         *     trusted-query verification runs the SAME sequence rather than a drifting copy).
          */
         post: operations["query_validate_query_validate_post"];
         delete?: never;
@@ -11731,6 +11803,53 @@ export interface components {
         };
         /** TransitionRequest */
         TransitionRequest: {
+            /** Action */
+            action: string;
+            /** Actor */
+            actor: string;
+        };
+        /** TrustedQueryEdit */
+        TrustedQueryEdit: {
+            /** Actor */
+            actor: string;
+            /** Note */
+            note?: string | null;
+            /** Question */
+            question?: string | null;
+            /** Sql */
+            sql?: string | null;
+            /** Tables */
+            tables?: string[] | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** TrustedQueryIn */
+        TrustedQueryIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Question */
+            question: string;
+            /**
+             * Source
+             * @default api
+             */
+            source: string;
+            /** Sql */
+            sql: string;
+            /** Tables */
+            tables?: string[];
+            /** Tags */
+            tags?: string[];
+        };
+        /** TrustedTransitionIn */
+        TrustedTransitionIn: {
             /** Action */
             action: string;
             /** Actor */
@@ -22172,6 +22291,149 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_trusted_learning_trusted_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedQueryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_trusted_learning_trusted__tq_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedQueryEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_trusted_learning_trusted__tq_id__delete: {
+        parameters: {
+            query?: {
+                actor?: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_trusted_learning_trusted__tq_id__transition_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedTransitionIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

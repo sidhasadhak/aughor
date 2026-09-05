@@ -77,7 +77,8 @@ def test_the_minted_note_refuses_to_claim_correctness(monkeypatch):
           runs=[{"id": "r1", "status": "succeeded"}, {"id": "r2", "status": "succeeded"}],
           results={"r1": [{"case_id": "c1", "passed": True}],
                    "r2": [{"case_id": "c1", "passed": True}]})
-    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted", lambda c: [])
+    monkeypatch.setattr("aughor.semantic.trusted_queries.list_trusted",
+                        lambda c, include_unapproved=False: [])
     monkeypatch.setattr("aughor.semantic.trusted_queries.save_trusted", saved.append)
 
     out = PT.promote("s1", "conn")
