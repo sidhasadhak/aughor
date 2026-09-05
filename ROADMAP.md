@@ -1980,7 +1980,7 @@ movements make the cascade's savings < 2× at MI-4's pre-check, MI-4 re-scopes t
 latency/custody play or parks. If a foreign runtime ships releases + auth AND we by
 then own training volume, §4.5's factory question reopens.
 
-### 3.10 · Arc KI — the Knowledge-Intake arc (drafted 2026-09-05; adoption = §6 item 9)
+### 3.10 · Arc KI — the Knowledge-Intake arc (adopted 2026-09-05; decision §6 item 9)
 
 > **Origin.** The user's 2026-09-05 directive, raised while walking the production story:
 > *"how we enable organisations to bring their own metric definitions. It can be in a
@@ -2458,7 +2458,7 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
         MI-5 ledger-in-the-box · model-as-a-door · adapters-as-releases (§6.8 ✅)
         MI-6 RLVR rehearsal — only after a measured SFT+DPO plateau (×2 versions)
 
-ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned definitions in
+ARC KI  ✅ ADOPTED 2026-09-05 (§6 item 9, both clauses YES) — org-owned definitions in
         through ONE funnel: any source → typed candidates → accept/edit/dismiss →
         the stores that exist. Nothing auto-applies.
         KI-0 ✅ trusted-SQL door BUILT 2026-09-05 — seed → verify (real execution +
@@ -2727,13 +2727,13 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-05: ONE open — item 9 (Arc KI adoption, drafted this date).** The eight
-> before it are decided (§6.7 and §6.8 stamped with Arc MI on 2026-09-03). Kept as a
-> register, not a queue — each entry records the reasoning so a settled question is not
-> re-litigated, and so no band elsewhere in this document can go on reading as blocked once
-> the call has been made. If you arrived here looking for what the user still owes, the
-> answer is item 9's stamp; beyond that, what remains is in the ledger's "keyed on the
-> user" list — credentials and one manual gesture, not decisions.
+> **Status 2026-09-05: NONE open. All NINE are decided** (item 9 stamped YES, both
+> clauses, the same day it was drafted — with KI-0…KI-3 already built at the user's
+> direction). Kept as a register, not a queue — each entry records the reasoning so a
+> settled question is not re-litigated, and so no band elsewhere in this document can go
+> on reading as blocked once the call has been made. If you arrived here looking for what
+> the user still owes, the answer is *nothing*; what remains is in the ledger's "keyed on
+> the user" list — credentials and one manual gesture, not decisions.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -2788,15 +2788,17 @@ the browser** · **measure the premise before building.**
    The yes does not change the default posture: contribution is strictly opt-in —
    nothing leaves a deployment that didn't say so. This is the mechanical form of the
    origin directive ("smarter as more users use the platform"), now deliberate.
-9. ⏳ **OPEN (drafted 2026-09-05) — Arc KI enters the queue, and who approves an
-   authoritative import.** **(a) Adoption:** §3.10 goes active; order within §5 stays
-   the user's knob; KI-0 is substrate-sized and free to ride alongside any band.
-   **(b) The authority model for prompt-authoritative imports:** recommended that
-   trusted-SQL acceptance be a metrics-style transition (propose → approve,
-   capability-gated), so uploading and trusting are two recorded acts — on a
-   single-analyst deployment the same person performs both, but the ledger records them
-   separately. Neither clause opens custody ground: §6.7 already covers imported work
-   artifacts as org-scoped inputs, and §6.8's outbound posture is untouched.
+9. ✅ **DECIDED 2026-09-05 — Arc KI is adopted, and the two-act authority model is
+   law.** Both clauses stamped YES by the user, the same day the section was drafted
+   (the build ran ahead at their direction: KI-0…KI-3 landed before the stamp).
+   **(a) Adoption:** §3.10 is active; order within §5 stays the user's knob.
+   **(b) The authority model for prompt-authoritative imports:** trusted-SQL
+   acceptance is a metrics-style transition (propose → approve, capability-gated) —
+   uploading and trusting are two recorded acts. On a single-analyst deployment the
+   same person performs both, but the ledger records them separately; the shipped
+   KI-0/KI-1 code implements exactly this. Neither clause opened custody ground:
+   §6.7 already covers imported work artifacts as org-scoped inputs, and §6.8's
+   outbound posture is untouched.
 
 ---
 
