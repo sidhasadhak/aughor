@@ -4661,6 +4661,115 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundles */
+        get: operations["bundles_intake_bundles_get"];
+        put?: never;
+        /**
+         * Upload Bundle
+         * @description Stage one bundle: parse, refuse what cannot be taken (forward versions,
+         *     unknown sections, malformed rows), diff the rest against the live stores, and
+         *     persist the plan as candidates awaiting a human. Re-uploading identical content
+         *     returns the existing bundle and stages nothing new.
+         */
+        post: operations["upload_bundle_intake_bundles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundle Plan */
+        get: operations["bundle_plan_intake_bundles__bundle_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/bundles/{bundle_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Bundle
+         * @description The human verdicts. Accepted candidates apply IMMEDIATELY, each through its
+         *     target store's own governance (a metric lands proposed in the metrics workflow, a
+         *     trusted query goes through KI-0's verified seed — approval stays that store's
+         *     second act). A candidate whose apply fails STAYS PENDING with the error attached,
+         *     so the human can edit rather than lose it. Dismissed candidates write nothing.
+         */
+        post: operations["resolve_bundle_intake_bundles__bundle_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/export/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Bundle
+         * @description The round-trip's other half: this deployment's declared knowledge as a bundle
+         *     — importable elsewhere, and an identical re-import there plans zero changes.
+         *     Trusted queries export APPROVED entries only; drafts are nobody's statement.
+         */
+        get: operations["export_bundle_intake_export__connection_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Intake Provenance
+         * @description Walk an accepted object back to its import: candidate → bundle hash → source
+         *     → who uploaded and who accepted. `ref` is a target_ref, e.g.
+         *     `trusted_query:tq_ab12…` or `metric:*:revenue`.
+         */
+        get: operations["intake_provenance_intake_provenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/catalog": {
         parameters: {
             query?: never;
@@ -5571,6 +5680,9 @@ export interface paths {
          *     through the same guard battery `/query/validate` runs. Passing lands it in
          *     `proposed` — approval is a separate recorded act. Failing lands it in `draft`
          *     with the report attached; a draft never reaches a prompt.
+         *
+         *     The flow itself lives in `semantic/trusted_verify.seed_trusted` — KI-1's intake
+         *     lane seeds through the SAME function, so there is one door, not two.
          */
         post: operations["create_trusted_learning_trusted_post"];
         delete?: never;
@@ -9933,6 +10045,30 @@ export interface components {
             /** Table Name */
             table_name?: string | null;
         };
+        /** BundleUpload */
+        BundleUpload: {
+            /** Actor */
+            actor: string;
+            /** Bundle */
+            bundle?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Yaml Text
+             * @default
+             */
+            yaml_text: string;
+        };
         /** CanvasInstructionsRequest */
         CanvasInstructionsRequest: {
             /**
@@ -11435,6 +11571,21 @@ export interface components {
             keep?: string[];
             /** Schema Name */
             schema_name?: string | null;
+        };
+        /** ResolveIn */
+        ResolveIn: {
+            /** Accept */
+            accept?: string[];
+            /** Actor */
+            actor: string;
+            /** Dismiss */
+            dismiss?: string[];
+            /** Edits */
+            edits?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
         };
         /**
          * RestoreDoctreesIn
@@ -20893,6 +21044,202 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bundles_intake_bundles_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_bundle_intake_bundles_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bundle_plan_intake_bundles__bundle_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_bundle_intake_bundles__bundle_id__resolve_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_bundle_intake_export__connection_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    intake_provenance_intake_provenance_get: {
+        parameters: {
+            query: {
+                ref: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

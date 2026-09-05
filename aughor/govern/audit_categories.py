@@ -53,6 +53,10 @@ KIND_CATEGORY: dict[str, str] = {
     # approve / reject / deprecate / delete). Same shape as metric.governance: an
     # approved trusted query is a governed definition every later answer leans on.
     "trusted_query.governance": "governance_change",
+    # KI-1 (§3.10) — the intake lane: a bundle upload and its human resolutions.
+    # Governance because every accept changes a governed definition somewhere; the
+    # per-store trails (metric.governance, trusted_query.governance) carry the detail.
+    "intake.governance": "governance_change",
     "llm_call": "model_call",
     # Arc VA decision ③ — admins may read any trace's payloads, and every such read is
     # auditable. Filed as data_access because that is what an auditor asking "who saw
@@ -200,6 +204,13 @@ def _summarize(kind: str, p: dict) -> str:
         return (f"{p.get('action', '?')} trusted query "
                 f"{str(p.get('trusted_query') or '?')[:16]}"
                 f" ({p.get('from') or '—'} → {p.get('to') or '—'})")
+    if kind == "intake.governance":
+        act = p.get("action", "?")
+        if act == "resolve":
+            return (f"resolved intake {str(p.get('bundle') or '?')[:16]}: "
+                    f"{p.get('accepted', 0)} accepted, {p.get('dismissed', 0)} dismissed")
+        return (f"{act} intake bundle {str(p.get('bundle') or '?')[:16]}"
+                f" ({p.get('staged', 0)} staged, {p.get('refused', 0)} refused)")
     if kind == "llm_call":
         return f"{p.get('role') or 'model'} call"
     if kind in ("chat.feedback", "trace.feedback"):
@@ -293,6 +304,7 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("governance_change", lambda n: _from_ledger("govern.tag", n)),
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),
     ("governance_change", lambda n: _from_ledger("trusted_query.governance", n)),
+    ("governance_change", lambda n: _from_ledger("intake.governance", n)),
     ("model_call", _from_session_log),
     # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.
     # The two lists are parallel and hand-maintained, which is why the ratchet now

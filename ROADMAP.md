@@ -2094,23 +2094,34 @@ propose returns 409; an edit resets approval; identical re-seed of an approved r
 a no-op (the door is safe to point a sync at); the delete is audited (the metrics
 catalog already paid for an unaudited one).
 
-#### KI-1 · The canonical bundle and the review lane (the spine — before any mapper)
+#### KI-1 · The canonical bundle and the review lane (the spine) — ✅ BUILT 2026-09-05
 
-The candidate object model: `metric · synonym · join · rule · glossary_entry ·
-trusted_query`, each carrying provenance, a confidence tier and the target store it
-would land in. `ontology/interchange.py` graduates from demo code to the wire format —
-its plan/apply split is exactly the dry-run-then-commit grammar the rest of the
-platform speaks (B2's dry run, DS-15's propose-validate-seed, DS-16's
-report-before-canvas). Endpoints: upload a bundle → a PLAN (per-object diff against
-the live stores: new / changed / identical / conflict) → accept/edit/dismiss per
-object or in bulk → apply fans accepted objects out to their existing stores, each
-write passing through that store's own governance (a metric proposal enters the
-metrics workflow, not around it). Staging rows live in the lane's own small table —
-three-registration law, same commit.
-**Receipt:** a YAML bundle round-trips — exported from one deployment, planned on
-another, N accepted / M dismissed — and a provenance query walks accepted object →
-bundle hash → source. An identical re-import plans ZERO changes; idempotence is what
-makes this door safe to point a sync at.
+The candidate object model landed as `metric · synonym · glossary · rule · join ·
+trusted_query` (`aughor/intake/engine.py SECTIONS`; join and rule are connection-KB
+entries, glossary carries table+column semantics). `ontology/interchange.py` is
+CONSUMED, not rebuilt: its `bundle_from_yaml` parses the wire format, its
+forward-version refusal law is shared, and `_plan_synonyms` delegates to its
+`plan_import` — the planner that had zero callers has its consumer. Endpoints
+(`/intake/*`, SEMANTIC_EDIT-gated): upload → PLAN (per-object verdict against the
+LIVE stores: new / changed / identical / conflict, where conflict means an APPROVED
+object differs — overwriting a human's approved curation is a human's decision) →
+accept/edit/dismiss → accepted objects fan out through each store's own governance:
+a metric lands PROPOSED in the metrics workflow, a trusted query goes through KI-0's
+`seed_trusted` (extracted so the HTTP door and the lane are ONE flow), a synonym
+lands via the vocabulary writer that finally has a caller. Malformed rows are
+REFUSED at the door, never staged; identical objects stage as `noop` (nothing to
+decide); a failed apply keeps the candidate PENDING with the error attached, so an
+edit can fix what a dismissal would lose. Staging store `AUGHOR_INTAKE_DB` — all
+three registrations same commit, path resolved PER CALL (the DS-12 lesson; the
+module-level resolution failed its own isolation test within the hour).
+`intake.governance` categorized AND sunk. `/intake/export/{conn}` emits the extended
+bundle (approved trusted queries only — an export states what this deployment
+TRUSTS).
+**Receipt:** `tests/unit/test_ki1_intake_lane.py` — export → re-import plans ALL
+IDENTICAL and zero pending; a byte-identical re-upload dedupes to the SAME bundle by
+content hash; provenance walks accepted object → bundle hash → source → uploader;
+the accepted metric is `proposed` (never approved by an import) and the accepted
+trusted query is NOT in the prompt until KI-0's own approve.
 
 #### KI-2 · File mappers — where formats multiply cheaply
 
@@ -2425,7 +2436,9 @@ ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned def
         the stores that exist. Nothing auto-applies.
         KI-0 ✅ trusted-SQL door BUILT 2026-09-05 — seed → verify (real execution +
              the shared battery) → propose → approve; only approved reaches a prompt
-        KI-1 canonical bundle + review lane (interchange.py finally gets a consumer)
+        KI-1 ✅ canonical bundle + review lane BUILT 2026-09-05 — upload → plan →
+             accept/edit/dismiss → fan-out through each store's own governance;
+             interchange.py consumed (plan_import has its first caller)
         KI-2 file mappers — CSV/XLSX dictionary · dbt manifest upload · SKILL.md ·
              LLM prose mapper (deterministic paths first)
         KI-3 source fetchers — Confluence/Notion mining on the existing sync ·

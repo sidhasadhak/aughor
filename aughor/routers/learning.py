@@ -195,52 +195,23 @@ def create_trusted(body: TrustedQueryIn, request: Request):
     The seed is verified NOW: executed (bounded) against its connection and walked
     through the same guard battery `/query/validate` runs. Passing lands it in
     `proposed` — approval is a separate recorded act. Failing lands it in `draft`
-    with the report attached; a draft never reaches a prompt."""
-    from aughor.evals.promote_trusted import trusted_id
-    from aughor.semantic import trusted_verify
-    from aughor.semantic.trusted_queries import TrustedQuery, get_trusted, save_trusted
+    with the report attached; a draft never reaches a prompt.
+
+    The flow itself lives in `semantic/trusted_verify.seed_trusted` — KI-1's intake
+    lane seeds through the SAME function, so there is one door, not two."""
+    from aughor.semantic.trusted_verify import seed_trusted
 
     _check_trusted_conn_org(request, body.connection_id)
     if not (body.sql or "").strip() or not (body.question or "").strip():
         raise HTTPException(status_code=400, detail="question and sql are required")
     if not (body.actor or "").strip():
         raise HTTPException(status_code=400, detail="actor is required")
-
-    tq_id = trusted_id(body.connection_id, body.question)
-    existing = get_trusted(tq_id)
-    if (existing is not None and existing.status == "approved"
-            and existing.sql.strip() == body.sql.strip()
-            and existing.tables == body.tables and existing.note == body.note
-            and existing.tags == body.tags):
-        return {"trusted_query": existing.model_dump(),
-                "verification": existing.verification, "unchanged": True}
-
     try:
-        report = trusted_verify.verify(body.connection_id, body.sql)
+        return seed_trusted(body.connection_id, body.question, body.sql,
+                            tables=body.tables, note=body.note, tags=body.tags,
+                            actor=body.actor, source=body.source)
     except KeyError:
         raise HTTPException(status_code=404, detail="Connection not found")
-    now = _now()
-    passed = bool(report.get("passed"))
-    tq = TrustedQuery(
-        id=tq_id, connection_id=body.connection_id,
-        question=body.question.strip(), sql=body.sql.strip(),
-        tables=body.tables, note=body.note, tags=body.tags,
-        status="proposed" if passed else "draft",
-        source=(body.source or "api").strip() or "api",
-        proposed_by=body.actor if passed else "",
-        proposed_at=now if passed else "",
-        last_executed_at=now if report.get("battery") is not None else "",
-        verification=report,
-    )
-    save_trusted(tq)
-    _emit_trusted_governance({
-        "trusted_query": tq_id, "connection_id": body.connection_id,
-        "action": "create", "actor": body.actor,
-        "from": existing.status if existing else "",
-        "to": tq.status, "version": tq.version, "at": now,
-    })
-    return {"trusted_query": tq.model_dump(), "verification": report,
-            "unchanged": False}
 
 
 @router.put("/learning/trusted/{tq_id}",

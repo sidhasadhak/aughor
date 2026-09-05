@@ -70,6 +70,8 @@ for _env, _file in (
     # MI-3 — the dataset plane. Registered in the SAME commit as the store, with its
     # directory sibling below: a store is not hermetic until its env name is here.
     ("AUGHOR_LEARNING_DB", "learning.db"),
+    # KI-1 — the intake lane's staging store, registered in the SAME commit.
+    ("AUGHOR_INTAKE_DB", "intake.db"),
     # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it
     # writes (ontology/vocabulary.py:151). Unisolated it created data/vocabulary/ in
     # the repo on any suite run that saved a synonym.

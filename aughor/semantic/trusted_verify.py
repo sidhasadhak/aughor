@@ -79,3 +79,56 @@ def verify(connection_id: str, sql: str) -> dict:
         and not battery.get("mutation_blockers")
     return {"passed": bool(passed), "checked_at": checked_at, "blockers": blockers,
             "execution": execution, "battery": battery}
+
+
+def seed_trusted(connection_id: str, question: str, sql: str, *,
+                 tables: list[str] | None = None, note: str = "", tags: list[str] | None = None,
+                 actor: str, source: str = "api") -> dict:
+    """The one seeding flow, shared by the HTTP door and the intake lane (KI-1).
+
+    Content-addressed on (connection, question): re-seeding the same question REPLACES
+    the entry, and re-seeding IDENTICAL content that is already approved is a no-op.
+    The seed is verified NOW; passing lands `proposed` (approval stays a separate act),
+    failing lands `draft` with the report attached. Emits the governance event.
+
+    Returns ``{"trusted_query": <row dict>, "verification": <report>, "unchanged": bool}``.
+    Raises ``KeyError`` when the connection does not exist.
+    """
+    from aughor.evals.promote_trusted import trusted_id
+    from aughor.kernel.ledger import Ledger
+    from aughor.semantic.trusted_queries import TrustedQuery, get_trusted, save_trusted
+
+    tables = tables or []
+    tags = tags or []
+    tq_id = trusted_id(connection_id, question)
+    existing = get_trusted(tq_id)
+    if (existing is not None and existing.status == "approved"
+            and existing.sql.strip() == sql.strip()
+            and existing.tables == tables and existing.note == note
+            and existing.tags == tags):
+        return {"trusted_query": existing.model_dump(),
+                "verification": existing.verification, "unchanged": True}
+
+    report = verify(connection_id, sql)
+    now = datetime.now(timezone.utc).isoformat()
+    passed = bool(report.get("passed"))
+    tq = TrustedQuery(
+        id=tq_id, connection_id=connection_id,
+        question=question.strip(), sql=sql.strip(),
+        tables=tables, note=note, tags=tags,
+        status="proposed" if passed else "draft",
+        source=(source or "api").strip() or "api",
+        proposed_by=actor if passed else "",
+        proposed_at=now if passed else "",
+        last_executed_at=now if report.get("battery") is not None else "",
+        verification=report,
+    )
+    save_trusted(tq)
+    Ledger.default().emit("trusted_query.governance", {
+        "trusted_query": tq_id, "connection_id": connection_id,
+        "action": "create", "actor": actor,
+        "from": existing.status if existing else "",
+        "to": tq.status, "version": tq.version, "at": now,
+    })
+    return {"trusted_query": tq.model_dump(), "verification": report,
+            "unchanged": False}
