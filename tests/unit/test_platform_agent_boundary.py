@@ -39,10 +39,12 @@ PLATFORM_DIRS = {
     "export", "savedquery", "notifications",
 }
 PLATFORM_TOP_MODULES = {"secretvault.py", "stats.py", "telemetry.py"}
-# sql/ is split: the safety inspectors are platform; the LLM SQL generator (`writer.py`)
-# and the query-log miner (`query_log_miner.py` — mines real query history into NL2SQL
-# grounding: learned joins / value domains / formulas) are agent intelligence.
-SQL_AGENT_FILES = {"writer.py", "query_log_miner.py"}
+# sql/ is split: the safety inspectors are platform; the LLM SQL generator (`writer.py`),
+# the query-log miner (`query_log_miner.py` — mines real query history into NL2SQL
+# grounding: learned joins / value domains / formulas), and the on-demand guard battery
+# (`validation.py` — KI-0 extracted it from the validate route; it composes the agent's
+# Verifier and schema tools with the platform inspectors) are agent intelligence.
+SQL_AGENT_FILES = {"writer.py", "query_log_miner.py", "validation.py"}
 
 # ── Agent packages — forbidden import targets for platform code ───────────────
 AGENT_PKGS = {

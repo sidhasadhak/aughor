@@ -11,8 +11,10 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException, Request
+from pydantic import BaseModel, Field
 
+from aughor.licensing import Capability, gate
 from aughor.org.context import current_org_id
 
 router = APIRouter(tags=["learning"])
@@ -43,12 +45,16 @@ def learning_summary(connection_id: Optional[str] = None):
 @router.get("/learning/trusted")
 def learning_trusted(connection_id: Optional[str] = None):
     """The trusted assets themselves — curated queries injected authoritatively into prompts,
-    now inspectable. Scoped to the current org, optionally to one connection."""
+    now inspectable. Scoped to the current org, optionally to one connection.
+
+    KI-0: this is the INSPECTION surface, so it lists every status — drafts and
+    proposals included, each row carrying its status and provenance. The prompt path
+    (`retrieve_trusted`) sees only ``approved``."""
     from aughor.semantic.trusted_queries import list_trusted
 
     cid = connection_id or ""
     return {
-        "queries": [q.model_dump() for q in list_trusted(cid)],
+        "queries": [q.model_dump() for q in list_trusted(cid, include_unapproved=True)],
     }
 
 
@@ -121,3 +127,217 @@ def post_export(task: str = "nl2sql", publish_golden: bool = True):
     suite_id = exporters.publish_golden_to_evals(nodes["golden"]) if publish_golden else None
     return {"datasets": nodes, "golden_suite_id": suite_id,
             "gates": exporters.gate_status()}
+
+
+# ── KI-0 (§3.10): the trusted-SQL door ───────────────────────────────────────────────
+#
+# The single most prompt-authoritative store on the platform, writable until now only by
+# two internal jobs or by editing data/trusted_queries.json on the host's disk. These
+# endpoints are the HTTP door: seed → verify (real execution + the shared guard battery)
+# → propose → a SECOND recorded act approves. Only `approved` reaches a prompt; a seed
+# that fails verification lands as a draft with the error attached, never in the block.
+# Lifecycle rides the metric governance machine; every step is journaled to the ledger
+# under `trusted_query.governance` (categorized in govern/audit_categories.py — a kind
+# alone renders nothing, the sink entry is the other mandatory half).
+
+
+class TrustedQueryIn(BaseModel):
+    connection_id: str
+    question: str
+    sql: str
+    tables: list[str] = Field(default_factory=list)
+    note: str = ""
+    tags: list[str] = Field(default_factory=list)
+    actor: str            # who is seeding — provenance is not optional (§3.10)
+    source: str = "api"   # api | <importer name>; internal writers stamp their own
+
+
+class TrustedQueryEdit(BaseModel):
+    question: Optional[str] = None
+    sql: Optional[str] = None
+    tables: Optional[list[str]] = None
+    note: Optional[str] = None
+    tags: Optional[list[str]] = None
+    actor: str
+
+
+class TrustedTransitionIn(BaseModel):
+    action: str   # propose | approve | reject | deprecate
+    actor: str
+
+
+def _check_trusted_conn_org(request: Request, conn_id: str) -> None:
+    """DATA-06 for body-carried connection ids (the query router's pattern): 403 when
+    the connection belongs to another org; no-op in localhost mode."""
+    from aughor.security.authz import check_owner, get_principal
+    if conn_id:
+        check_owner("connection", conn_id, get_principal(request))
+
+
+def _emit_trusted_governance(payload: dict) -> None:
+    from aughor.kernel.ledger import Ledger
+    Ledger.default().emit("trusted_query.governance", payload)
+
+
+def _now() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).isoformat()
+
+
+@router.post("/learning/trusted", status_code=201,
+             dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def create_trusted(body: TrustedQueryIn, request: Request):
+    """Seed one golden query. Content-addressed on (connection, question) — re-seeding
+    the same question REPLACES the entry rather than accumulating two contradictory
+    trusted answers, and re-seeding IDENTICAL content that is already approved is a
+    no-op (idempotence is what makes this door safe to point a sync at).
+
+    The seed is verified NOW: executed (bounded) against its connection and walked
+    through the same guard battery `/query/validate` runs. Passing lands it in
+    `proposed` — approval is a separate recorded act. Failing lands it in `draft`
+    with the report attached; a draft never reaches a prompt.
+
+    The flow itself lives in `semantic/trusted_verify.seed_trusted` — KI-1's intake
+    lane seeds through the SAME function, so there is one door, not two."""
+    from aughor.semantic.trusted_verify import seed_trusted
+
+    _check_trusted_conn_org(request, body.connection_id)
+    if not (body.sql or "").strip() or not (body.question or "").strip():
+        raise HTTPException(status_code=400, detail="question and sql are required")
+    if not (body.actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+    try:
+        return seed_trusted(body.connection_id, body.question, body.sql,
+                            tables=body.tables, note=body.note, tags=body.tags,
+                            actor=body.actor, source=body.source)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+
+
+@router.put("/learning/trusted/{tq_id}",
+            dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def edit_trusted(tq_id: str, body: TrustedQueryEdit, request: Request):
+    """Edit a seeded query. An edit changes the content, so it RESETS the lifecycle:
+    the row is re-verified and lands back in `proposed` (or `draft` on failure), and
+    any prior approval stamp is cleared — an approval covers the content it approved,
+    nothing later."""
+    from aughor.semantic import trusted_verify
+    from aughor.semantic.trusted_queries import get_trusted, save_trusted
+
+    tq = get_trusted(tq_id)
+    if tq is None:
+        raise HTTPException(status_code=404, detail="No such trusted query")
+    _check_trusted_conn_org(request, tq.connection_id)
+    if not (body.actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+
+    was = tq.status
+    if body.question is not None:
+        tq.question = body.question.strip()
+    if body.sql is not None:
+        tq.sql = body.sql.strip()
+    if body.tables is not None:
+        tq.tables = body.tables
+    if body.note is not None:
+        tq.note = body.note
+    if body.tags is not None:
+        tq.tags = body.tags
+    if not tq.question or not tq.sql:
+        raise HTTPException(status_code=400, detail="question and sql are required")
+
+    try:
+        report = trusted_verify.verify(tq.connection_id, tq.sql)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    now = _now()
+    passed = bool(report.get("passed"))
+    tq.status = "proposed" if passed else "draft"
+    tq.proposed_by, tq.proposed_at = (body.actor, now) if passed else ("", "")
+    tq.verified_by = tq.verified_at = ""
+    if report.get("battery") is not None:
+        tq.last_executed_at = now
+    tq.verification = report
+    save_trusted(tq)
+    _emit_trusted_governance({
+        "trusted_query": tq_id, "connection_id": tq.connection_id,
+        "action": "edit", "actor": body.actor,
+        "from": was, "to": tq.status, "version": tq.version, "at": now,
+    })
+    return {"trusted_query": tq.model_dump(), "verification": report}
+
+
+@router.post("/learning/trusted/{tq_id}/transition",
+             dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def transition_trusted(tq_id: str, body: TrustedTransitionIn, request: Request):
+    """Drive a trusted query through its lifecycle (propose → approve → deprecate …),
+    on the metric governance state machine. `propose` RE-verifies first — the data may
+    have moved since the seed — and refuses (409, report attached) when verification
+    fails. `approve` is the human act that makes the entry prompt-authoritative: it
+    stamps `verified_by`/`verified_at` and bumps the version."""
+    from aughor.semantic import trusted_verify
+    from aughor.semantic.governance import apply_transition
+    from aughor.semantic.trusted_queries import TrustedQuery, get_trusted, save_trusted
+
+    tq = get_trusted(tq_id)
+    if tq is None:
+        raise HTTPException(status_code=404, detail="No such trusted query")
+    _check_trusted_conn_org(request, tq.connection_id)
+
+    now = _now()
+    action = str(body.action or "").strip().lower()
+    if action == "propose":
+        try:
+            report = trusted_verify.verify(tq.connection_id, tq.sql)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Connection not found")
+        tq.verification = report
+        if report.get("battery") is not None:
+            tq.last_executed_at = now
+        if not report.get("passed"):
+            save_trusted(tq)  # the failed report is worth keeping either way
+            raise HTTPException(status_code=409, detail={
+                "message": "verification failed — the query stays out of the prompt",
+                "verification": report})
+
+    try:
+        updated, audit = apply_transition(
+            {**tq.model_dump(), "name": tq.id}, action, body.actor, now)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    updated.pop("name", None)
+    if action == "approve":
+        # The governance machine stamps metrics vocabulary; this store's fields are
+        # the VERIFIED_AT/VERIFIED_BY the roadmap named. One mapping site, tested.
+        updated["verified_by"] = updated.pop("approved_by", body.actor)
+        updated["verified_at"] = updated.pop("approved_at", now)
+    row = TrustedQuery(**updated)
+    save_trusted(row)
+    _emit_trusted_governance({
+        "trusted_query": tq_id, "connection_id": row.connection_id,
+        "action": action, "actor": body.actor,
+        "from": audit["from"], "to": audit["to"],
+        "version": row.version, "at": now,
+    })
+    return {"trusted_query": row.model_dump(), "audit": audit}
+
+
+@router.delete("/learning/trusted/{tq_id}",
+               dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def remove_trusted(tq_id: str, request: Request, actor: str = ""):
+    """Remove a trusted query — audited, because the metrics catalog already paid for
+    an unaudited delete: two calls emptied it on a live install and nothing anywhere
+    recorded that it happened."""
+    from aughor.semantic.trusted_queries import delete_trusted, get_trusted
+
+    tq = get_trusted(tq_id)
+    if tq is None:
+        raise HTTPException(status_code=404, detail="No such trusted query")
+    _check_trusted_conn_org(request, tq.connection_id)
+    delete_trusted(tq_id)
+    _emit_trusted_governance({
+        "trusted_query": tq_id, "connection_id": tq.connection_id,
+        "action": "delete", "actor": actor,
+        "from": tq.status, "to": "", "version": tq.version, "at": _now(),
+        "question": (tq.question or "")[:120],
+    })
+    return {"deleted": tq_id}

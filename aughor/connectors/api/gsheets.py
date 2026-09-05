@@ -63,11 +63,18 @@ def invalidate_sheet_cache(spreadsheet_id: str | None = None) -> None:
 _ID_RE = re.compile(r"/spreadsheets/d/([a-zA-Z0-9-_]+)")
 
 
-def _extract_id(raw: str) -> str:
+def extract_spreadsheet_id(raw: str) -> str:
+    """The spreadsheet id out of an id-or-URL. Public: the intake lane's Sheets
+    definitions mode (KI-3) extracts ids through the same reading this connector
+    uses, so the two doors can never disagree about what counts as a sheet."""
     m = _ID_RE.search(raw)
     if m:
         return m.group(1)
     return raw.strip()
+
+
+#: Internal alias, kept so the connector's own call sites read as before.
+_extract_id = extract_spreadsheet_id
 
 
 def _safe_table_name(sheet: str) -> str:

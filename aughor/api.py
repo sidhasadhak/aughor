@@ -774,6 +774,7 @@ from aughor.routers import (
     verify,
     approvals,
     learning,
+    intake as intake_router,
     roles as roles_router,
     packs as packs_router,
     receipt as receipt_router,
@@ -829,6 +830,7 @@ app.include_router(profile.router)
 app.include_router(orgsettings.router)
 app.include_router(verify.router)
 app.include_router(learning.router)
+app.include_router(intake_router.router)
 app.include_router(packs_router.router)
 app.include_router(roles_router.router)
 app.include_router(receipt_router.router)

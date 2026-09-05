@@ -51,6 +51,23 @@ class TrustedQuery(BaseModel):
     tables: list[str] = Field(default_factory=list)
     note: str = ""                      # what pattern/pitfall it demonstrates
     tags: list[str] = Field(default_factory=list)
+    # ── KI-0 (§3.10) — governance + provenance ──────────────────────────────────
+    # Lifecycle rides the metric state machine (semantic/governance.py):
+    # draft → proposed → approved (→ deprecated). ONLY `approved` reaches a prompt —
+    # `list_trusted` filters by default, so every authoritative consumer fails closed.
+    # A record with NO status key predates KI-0 and loads as approved (it was being
+    # injected before statuses existed; grandfathering preserves that behaviour).
+    status: str = "draft"
+    version: int = 0                    # bumped by each approve
+    source: str = ""                    # api | eval_promotion | divergence_review | legacy
+    proposed_by: str = ""
+    proposed_at: str = ""
+    # The human (or eval suite) whose approval made this authoritative, and when —
+    # the VERIFIED_AT/VERIFIED_BY the Snowflake study flagged this store as missing.
+    verified_by: str = ""
+    verified_at: str = ""
+    last_executed_at: str = ""          # when verification last ran the SQL for real
+    verification: dict = Field(default_factory=dict)  # last verification report
 
 
 def _tokens(text: str) -> set[str]:
@@ -67,18 +84,41 @@ def _load_raw() -> list[dict]:
         return []
 
 
-def list_trusted(connection_id: str = "") -> list[TrustedQuery]:
+def list_trusted(connection_id: str = "", *,
+                 include_unapproved: bool = False) -> list[TrustedQuery]:
+    """Trusted queries for a connection — APPROVED ONLY by default.
+
+    KI-0: the default is the authoritative view, because every consumer that treats an
+    entry as trusted (prompt injection, the MCP listing, the automations component)
+    calls this and must fail closed against drafts. The two callers that genuinely
+    need the whole store — the inspection endpoint and the eval-promotion dedupe —
+    pass ``include_unapproved=True`` explicitly.
+    """
     out = []
     for d in _load_raw():
+        if "status" not in d:
+            # Pre-KI-0 record: it was injected before statuses existed, so it loads
+            # as approved rather than silently vanishing from every prompt.
+            d = {**d, "status": "approved", "source": d.get("source") or "legacy"}
         try:
             tq = TrustedQuery(**d)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "skip a malformed trusted-query record; the rest still load", counter="trusted_queries.parse")
             continue
+        if not include_unapproved and tq.status != "approved":
+            continue
         if not connection_id or tq.connection_id == connection_id:
             out.append(tq)
     return out
+
+
+def get_trusted(tq_id: str) -> TrustedQuery | None:
+    """One record by id, whatever its status — the write endpoints' lookup."""
+    for tq in list_trusted(include_unapproved=True):
+        if tq.id == tq_id:
+            return tq
+    return None
 
 
 def save_trusted(tq: TrustedQuery) -> None:

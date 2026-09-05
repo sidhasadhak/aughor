@@ -4661,6 +4661,188 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/bundles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundles */
+        get: operations["bundles_intake_bundles_get"];
+        put?: never;
+        /**
+         * Upload Bundle
+         * @description Stage one bundle: parse, refuse what cannot be taken (forward versions,
+         *     unknown sections, malformed rows), diff the rest against the live stores, and
+         *     persist the plan as candidates awaiting a human. Re-uploading identical content
+         *     returns the existing bundle and stages nothing new.
+         */
+        post: operations["upload_bundle_intake_bundles_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/bundles/{bundle_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Bundle Plan */
+        get: operations["bundle_plan_intake_bundles__bundle_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/bundles/{bundle_id}/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resolve Bundle
+         * @description The human verdicts. Accepted candidates apply IMMEDIATELY, each through its
+         *     target store's own governance (a metric lands proposed in the metrics workflow, a
+         *     trusted query goes through KI-0's verified seed — approval stays that store's
+         *     second act). A candidate whose apply fails STAYS PENDING with the error attached,
+         *     so the human can edit rather than lose it. Dismissed candidates write nothing.
+         */
+        post: operations["resolve_bundle_intake_bundles__bundle_id__resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/export/{connection_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export Bundle
+         * @description The round-trip's other half: this deployment's declared knowledge as a bundle
+         *     — importable elsewhere, and an identical re-import there plans zero changes.
+         *     Trusted queries export APPROVED entries only; drafts are nobody's statement.
+         */
+        get: operations["export_bundle_intake_export__connection_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload File
+         * @description KI-2 — the file door: a metric dictionary (CSV / TSV / XLSX with name,
+         *     definition, formula, unit, owner, aliases columns) or a dbt `manifest.json`
+         *     becomes a bundle through a DETERMINISTIC mapper and enters the SAME lane.
+         *     The mapper judges nothing: every object still waits for a human verdict.
+         */
+        post: operations["upload_file_intake_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mine Knowledge
+         * @description KI-3 — mine a Confluence or Notion connection's pages for definition tables,
+         *     through the SAME dictionary mapper and into the SAME lane, one bundle per page
+         *     with the page URL as provenance. Deterministic: tables only; a page with no
+         *     dictionary-shaped table stages nothing, and a re-mine of an unchanged page
+         *     proposes nothing (content-hash dedupe). The target DATA connection is named
+         *     explicitly — mined definitions attached to the wiki connection itself would be
+         *     invisible to every prompt, which is the built-and-inert trap by construction.
+         */
+        post: operations["mine_knowledge_intake_mine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Intake Provenance
+         * @description Walk an accepted object back to its import: candidate → bundle hash → source
+         *     → who uploaded and who accepted. `ref` is a target_ref, e.g.
+         *     `trusted_query:tq_ab12…` or `metric:*:revenue`.
+         */
+        get: operations["intake_provenance_intake_provenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/intake/sheets": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Sheet
+         * @description KI-3 — the Sheets definitions mode: a link-shared Google Sheet holding a
+         *     metric dictionary is fetched through the SAME public gviz export the Sheets
+         *     data connector reads, mapped by the SAME deterministic dictionary mapper, and
+         *     staged in the SAME lane. Public link-sharing only — no OAuth, no credentials,
+         *     exactly the claims the data connector makes.
+         */
+        post: operations["upload_sheet_intake_sheets_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/catalog": {
         parameters: {
             query?: never;
@@ -5553,10 +5735,82 @@ export interface paths {
          * Learning Trusted
          * @description The trusted assets themselves — curated queries injected authoritatively into prompts,
          *     now inspectable. Scoped to the current org, optionally to one connection.
+         *
+         *     KI-0: this is the INSPECTION surface, so it lists every status — drafts and
+         *     proposals included, each row carrying its status and provenance. The prompt path
+         *     (`retrieve_trusted`) sees only ``approved``.
          */
         get: operations["learning_trusted_learning_trusted_get"];
         put?: never;
+        /**
+         * Create Trusted
+         * @description Seed one golden query. Content-addressed on (connection, question) — re-seeding
+         *     the same question REPLACES the entry rather than accumulating two contradictory
+         *     trusted answers, and re-seeding IDENTICAL content that is already approved is a
+         *     no-op (idempotence is what makes this door safe to point a sync at).
+         *
+         *     The seed is verified NOW: executed (bounded) against its connection and walked
+         *     through the same guard battery `/query/validate` runs. Passing lands it in
+         *     `proposed` — approval is a separate recorded act. Failing lands it in `draft`
+         *     with the report attached; a draft never reaches a prompt.
+         *
+         *     The flow itself lives in `semantic/trusted_verify.seed_trusted` — KI-1's intake
+         *     lane seeds through the SAME function, so there is one door, not two.
+         */
+        post: operations["create_trusted_learning_trusted_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/trusted/{tq_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Edit Trusted
+         * @description Edit a seeded query. An edit changes the content, so it RESETS the lifecycle:
+         *     the row is re-verified and lands back in `proposed` (or `draft` on failure), and
+         *     any prior approval stamp is cleared — an approval covers the content it approved,
+         *     nothing later.
+         */
+        put: operations["edit_trusted_learning_trusted__tq_id__put"];
         post?: never;
+        /**
+         * Remove Trusted
+         * @description Remove a trusted query — audited, because the metrics catalog already paid for
+         *     an unaudited delete: two calls emptied it on a live install and nothing anywhere
+         *     recorded that it happened.
+         */
+        delete: operations["remove_trusted_learning_trusted__tq_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/trusted/{tq_id}/transition": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transition Trusted
+         * @description Drive a trusted query through its lifecycle (propose → approve → deprecate …),
+         *     on the metric governance state machine. `propose` RE-verifies first — the data may
+         *     have moved since the seed — and refuses (409, report attached) when verification
+         *     fails. `approve` is the human act that makes the entry prompt-authoritative: it
+         *     stamps `verified_by`/`verified_at` and bumps the version.
+         */
+        post: operations["transition_trusted_learning_trusted__tq_id__transition_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -8299,6 +8553,9 @@ export interface paths {
          *     filter value-domain (live probes) — and return a structured verdict. Each guard is
          *     fail-open: one that can't run is simply omitted, never an error. This is the explicit,
          *     user-triggered version of the guards that run inline during answer generation.
+         *
+         *     The battery itself lives in ``aughor.sql.validation`` (KI-0 extracted it so
+         *     trusted-query verification runs the SAME sequence rather than a drifting copy).
          */
         post: operations["query_validate_query_validate_post"];
         delete?: never;
@@ -9850,6 +10107,20 @@ export interface components {
             /** File */
             file: string;
         };
+        /** Body_upload_file_intake_files_post */
+        Body_upload_file_intake_files_post: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /** File */
+            file: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+        };
         /** Body_upload_file_to_connection_connections__conn_id__files_post */
         Body_upload_file_to_connection_connections__conn_id__files_post: {
             /** Column Types */
@@ -9860,6 +10131,30 @@ export interface components {
             schema?: string | null;
             /** Table Name */
             table_name?: string | null;
+        };
+        /** BundleUpload */
+        BundleUpload: {
+            /** Actor */
+            actor: string;
+            /** Bundle */
+            bundle?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Yaml Text
+             * @default
+             */
+            yaml_text: string;
         };
         /** CanvasInstructionsRequest */
         CanvasInstructionsRequest: {
@@ -10988,6 +11283,20 @@ export interface components {
              */
             wrong_usage_examples: string[];
         };
+        /** MineIn */
+        MineIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /** Knowledge Connection Id */
+            knowledge_connection_id: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+        };
         /**
          * OrgSettings
          * @description App-wide organization settings (the singleton) and the shape of a
@@ -11364,6 +11673,21 @@ export interface components {
             /** Schema Name */
             schema_name?: string | null;
         };
+        /** ResolveIn */
+        ResolveIn: {
+            /** Accept */
+            accept?: string[];
+            /** Actor */
+            actor: string;
+            /** Dismiss */
+            dismiss?: string[];
+            /** Edits */
+            edits?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            };
+        };
         /**
          * RestoreDoctreesIn
          * @description `dry_run` defaults TRUE, like its sibling. `connection_id` limits it to one.
@@ -11534,6 +11858,25 @@ export interface components {
              * @default
              */
             url: string;
+        };
+        /** SheetIn */
+        SheetIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Sheet
+             * @default
+             */
+            sheet: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /** Spreadsheet */
+            spreadsheet: string;
         };
         /** SlackBotBody */
         SlackBotBody: {
@@ -11731,6 +12074,53 @@ export interface components {
         };
         /** TransitionRequest */
         TransitionRequest: {
+            /** Action */
+            action: string;
+            /** Actor */
+            actor: string;
+        };
+        /** TrustedQueryEdit */
+        TrustedQueryEdit: {
+            /** Actor */
+            actor: string;
+            /** Note */
+            note?: string | null;
+            /** Question */
+            question?: string | null;
+            /** Sql */
+            sql?: string | null;
+            /** Tables */
+            tables?: string[] | null;
+            /** Tags */
+            tags?: string[] | null;
+        };
+        /** TrustedQueryIn */
+        TrustedQueryIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Question */
+            question: string;
+            /**
+             * Source
+             * @default api
+             */
+            source: string;
+            /** Sql */
+            sql: string;
+            /** Tables */
+            tables?: string[];
+            /** Tags */
+            tags?: string[];
+        };
+        /** TrustedTransitionIn */
+        TrustedTransitionIn: {
             /** Action */
             action: string;
             /** Actor */
@@ -20787,6 +21177,307 @@ export interface operations {
             };
         };
     };
+    bundles_intake_bundles_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_bundle_intake_bundles_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BundleUpload"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bundle_plan_intake_bundles__bundle_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    resolve_bundle_intake_bundles__bundle_id__resolve_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                bundle_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    export_bundle_intake_export__connection_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                connection_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_file_intake_files_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_file_intake_files_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mine_knowledge_intake_mine_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MineIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    intake_provenance_intake_provenance_get: {
+        parameters: {
+            query: {
+                ref: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_sheet_intake_sheets_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SheetIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     catalog_integrations_catalog_get: {
         parameters: {
             query?: never;
@@ -22172,6 +22863,149 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_trusted_learning_trusted_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedQueryIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edit_trusted_learning_trusted__tq_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedQueryEdit"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_trusted_learning_trusted__tq_id__delete: {
+        parameters: {
+            query?: {
+                actor?: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    transition_trusted_learning_trusted__tq_id__transition_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                tq_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TrustedTransitionIn"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
