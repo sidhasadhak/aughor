@@ -2265,6 +2265,250 @@ without a measured customer pull · OAuth Drive/SharePoint/OneDrive before a dep
 asks · MCP `resources/*` as a content channel (revisit only with a concrete server in
 hand) · any change to §6.8's outbound posture.
 
+### 3.11 · Arc SP — Spotlight, the platform operator (drafted 2026-09-05; adoption = decision §6 item 10, the user's)
+
+> **Origin.** The user's 2026-09-05 framing, verbatim in the parts that bind: *"an agent
+> that understands knows and can modify each and every part of the whole platform (without
+> impacting the core functions of course) — the one who can switch between Dark Mode and
+> light mode, who can create an agent via Text input from the user, who can schedule
+> automations, who can deliver meta data about the activities that were recorded on the
+> platform, the one who can query the logs, the one who can count the number of
+> connections the tables the schemas… It should be able to guide the user… I think it can
+> be a game changer."* The user named it **Spotlight**. Lineage: the 2026-09-01
+> meta-agent vision (drafted as an Arc EX section, never inserted, recovered 2026-09-05 —
+> the recovery is itself a §7 lesson: a proposal living only in a transcript is invisible
+> to every later session) is the **Shape** limb of this arc, one of four.
+>
+> **The thesis.** This platform's most-repeated failure shape, in its own §7 words, is
+> *features stall at TESTED, not LEVERAGED* — the action plane, the vault, interchange,
+> the instruction endpoints each shipped complete and sat unreachable. Spotlight ends the
+> class structurally: it is the **universal surface**. A governed door, on the day it
+> merges, becomes operable ("do it"), introspectable ("what's its state"), and explainable
+> ("how does it work") by sentence — before any bespoke UI exists. It is also the stated
+> product principle ("chat must feel like a frontier-LLM conversation", user ×3) promoted
+> from the data plane to the platform plane. Four limbs: **Know** (counts, activity,
+> audit, logs, config) · **Act** (create/schedule/pause/grant — by proposal) · **Guide**
+> (teach the product from inside it, ending in an offered act) · **Shape** (the EX
+> experience plane, absorbed).
+
+**Laws that bind every SP wave (standing, not per-wave):**
+
+- **One brain, many summons.** Palette, chat rail, Slack (RC-5), and the MCP server are
+  transports over ONE declared roster with one custody. No transport sees a wider roster
+  than another.
+- **The roster is declared, never discovered.** Typed, capability-gated, risk-tiered
+  declarations organized into topics — never scraped from OpenAPI at runtime, never
+  live-discovered from outside. The house verdict stands: the description IS the routing
+  policy, so nothing untrusted may author it.
+- **Reads are free within scope; claims are bound to tool results.** Org-scoped, RBAC ∩
+  tier via `effective_capabilities` (shipped), §6.4's line intact: metadata freely,
+  payloads only through the audited break-glass. Spotlight never answers a state
+  question from priors — CI-3's latitude law, unchanged.
+- **Cosmetic applies; structural proposes.** Self-scoped preference edits land
+  instantly; anything that changes what runs, what others see, or what exists is a
+  drafted diff into the EXISTING inbox. The model drafts, the human certifies; a grant
+  is permission to PROPOSE.
+- **One inbox, one loop, one chat stack.** No second approval plane; periodic work joins
+  by adoption, never its own timer; Spotlight extends `converse`, it does not fork it.
+- **The invariant plane, non-overridable at every scope.** Spotlight cannot widen its
+  own roster, mint capabilities or grants, alter auth/audit configuration, or restyle
+  away approvals · failures · provenance · reset. Invariants are always evaluated; only
+  an operator decision widens anything.
+- **Everything it reads is data, never instructions.** Log lines, activity strings,
+  agent names, document text are attacker-influenceable; every tool result is fenced; no
+  URL in retrieved content is fetched; no retrieved text can trigger an act (the
+  EchoLeak class — CVE-2025-32711 — is the industry's paid receipt). The red-team corpus
+  becomes a permanent test file.
+
+**What is true today (measured 2026-09-05; file:line receipts in the session census):**
+
+- **The summon exists.** `web/components/CommandPalette.tsx` (⌘K, Fuse index, 16 nav
+  targets, live data) + `web/lib/commandRegistry.ts` (views contribute scoped commands
+  while mounted). Gap: `Command.run` is sync-void — free text that matches no command
+  dead-ends; no async/streamed shape.
+- **The outside door exists.** `aughor/mcp/server.py`: 18 governed tools (incl.
+  `list_connections`, runs, jobs, briefing — deliberately no raw query) plus every
+  exposed automation as a dynamic tool, stdio/HTTP :8765. The irony that sells the arc:
+  an external MCP client can ask this platform how many connections it has; the
+  product's own chat cannot.
+- **The brain is data-facing.** The conversational roster is 18 tools
+  (`converse_tools.py:378–475`) with the platform-wide identity — including
+  `platform_help` (8 curated topics; a proto-Guide) and `propose_action`
+  (grants-gated, inbox-staged; the Act custody already live in conversation). It is
+  connection-bound: no platform-ops tools.
+- **Know's substrate is complete and scattered.** ~528 routes; `GET /activity` (+SSE,
+  filters, kinds histogram) over `session_events` — whose rows carry
+  `prompt/completion/total_tokens`; `GET /usage` rolls cost by six axes with
+  `cost_is_complete` honesty; six audit readers across six routers; traces with
+  per-trace logs; `GET /capabilities` resolves tier ∩ role. Table/column popularity is
+  ALREADY MINED (`aughor/sql/popularity.py`, R14) but consumption sits behind
+  `obs.popularity`, default-off — the built-and-inert shape, in miniature, waiting.
+- **The user's acceptance suite is green on substrate (2026-09-05, four questions —
+  a fifth, nav-tab telemetry, was struck by the user same day):** agent runs 7d + token
+  spend ✅ (usage rollup; one `since/until` seam on `usage_report`) · investigation
+  accuracy ✅ with the honesty clause (`/learning/summary` verdict acceptance over N
+  graded; MI-4's coverage is the limiter) · most-queried table ✅ (popularity store;
+  must answer "not mined yet", never a confident 0) · investigations/month ✅
+  (`started_at NOT NULL`).
+- **The real gaps are three seams and one store:** no per-user settings store anywhere
+  (theme = one browser's localStorage) · docs corpus not served (though KI-2's SKILL.md
+  lane, landed 2026-09-05, is now the Guide corpus's intake) · `POST /agents/custom`
+  goes instantly live, no draft state — so text-to-agent MUST stage, never post · the
+  async palette seam above.
+
+**The ten conversations (the market case), graded for buildability.** NL2SQL chat is
+table stakes (Genie, Cortex Analyst, Sage, Power BI Copilot). None of them hold this
+platform's substrate — receipts, verdict economics, guard batteries, definitional audit,
+one inbox, per-sentence cost — so each use case below is a conversation a competitor
+cannot have without first building the governance plane. Grades: **near** = wiring over
+merged substrate; **medium** = one new seam or falsifier-gated quality; none require new
+ML or a new plane.
+
+1. *The disagreement autopsy* ("why do these two numbers differ?") — **medium**: the
+   deterministic diff (definition version · snapshot age · warrant tier · guard fires)
+   covers most real cases; free-form divergence narration rides the deep path.
+2. *Blast radius before any change* — **medium**: needs a `consumers()` reverse index
+   per store over edges that exist (ontology · trusted · monitors · briefs · automations).
+3. *Deployment by interview* (empty org → staged KI bundle) — **medium**: prompting over
+   the SHIPPED plan→accept/edit/dismiss lane; quality falsifier-gated exactly like
+   KI-2's mapper (edit-rate at `/intake/mapper-stats` is the precedent).
+4. *"Someone already answered this"* — **near**: investigations + SQL-examples vector
+   store + `finding_dedup` + freshness; falsifier = dedupe precision.
+5. *The pre-mortem sweep* (silent-failure audit: zero-doc agents · failing automations ·
+   unpriced models · guards gone quiet · default-off flags) — **near**: every check is a
+   deterministic read; this is §7's lesson catalog productized.
+6. *Spend attributed to the sentence* — **near**: the G3 rollup + the windowing seam.
+7. *The ambiguity broker* (unanswered questions → staged fixes) — **near**:
+   `/intake/suggest` already mines exactly this exhaust.
+8. *Approvals that learn* (repetition → offered target-bound standing grant) — **near**:
+   counting over the inbox + grant machinery that exists.
+9. *Cross-tool missions under one custody* — **medium**: automations already call
+   granted MCP tools (`automations/engine.py:980`); composition = `draft_automation`
+   over granted effects, staged.
+10. *Replay any answer as a lesson* — **medium**: narration over traces/spans/logs that
+    exist; the stepping UX comes later.
+
+The "time machine" ("what did we believe on Aug 15") stays OUTSIDE the ten: append-only
+stores make it reconstructable for governed objects, but it graduates to a wave only if
+versioned reads become a platform discipline — wild, kept honest.
+
+#### SP-0 · The census — ✅ substantially done 2026-09-05
+
+This section's "what is true today" table IS the census, taken with file:line receipts.
+At build time each wave re-verifies its own rows (the catalogue-timestamp law) — three
+inline claims here will rot before any code does.
+
+#### SP-1 · The Know roster (first shippable slice; read-only)
+
+Platform-ops read tools join conversation: connections/catalog counts, activity
+queries, run histories, trace lookups, a unified audit read, popularity ("not mined
+yet" honest), capability introspection. Bodies shared with the MCP server — the
+`knowledge_tools.py` pattern already proven. Injection fencing on every result.
+**Receipt:** the user's four acceptance questions answered live in the product's own
+chat, every number traceable to a tool call in the receipt.
+
+#### SP-2 · The summon
+
+`commandRegistry` gains an async, streamable command shape; free text that matches no
+command falls through to Spotlight inside the overlay; the current surface travels as
+context (the `canvas` param generalized), so "schedule this" knows what *this* is.
+Commands stay first — deterministic and instant; the model is the fallthrough, never
+the fast path.
+
+**Where a person finds it (the discovery map, ranked by how people actually discover):**
+⌘K for hands already on keyboards · a **visible Spotlight affordance in the top chrome
+of every screen** — the same overlay, for everyone who will never learn a shortcut ·
+**the chat surface itself** — the same brain, so a platform question mid-data-
+conversation just works, no mode switch, the router routes · **in-context handles where
+questions actually arise** — an empty Agents screen offers "ask Spotlight to draft
+one", a failed run row offers "ask why" (the commandRegistry's scoped contribution,
+aimed; DS-17's doors law: offer only what THIS deployment can open) · and on an EMPTY
+deployment, the first thing a brand-new user meets IS Spotlight offering the interview
+(use case 3) — onboarding is the summon. Outside the product, SP-5's doors: Slack and
+MCP. **The anti-pattern, named: Spotlight is NOT a navigation tab.** An operator is
+ambient — summonable everywhere, resident nowhere; a fifteenth tab would demote it to
+a destination you remember to visit, which is the built-and-inert shape with a door.
+
+**Receipt:** ⌘K → a question no command matches → a grounded answer with an offered
+action, without leaving the overlay; the same overlay opens from the chrome affordance
+with a mouse alone; palette latency for plain commands unchanged, measured.
+
+#### SP-3 · The Act limb, and the arc's one new store
+
+`draft_agent` — the "describe it" NL bootstrap the 2026-08-18 research already
+recommended: an accept/reject DIFF over the five governing fields, the empty-`doc_ids`
+trap disclosed in the draft itself; `draft_automation` — trigger + effects + attached
+dry-run, joining the ONE loop by adoption; grant/pause/resume proposals. All staged
+through the existing inbox; nothing posts live. Plus the per-user settings store
+(theme · density · defaults) — hermetic from day one: env name in `tests/conftest.py`
+AND `scripts/dump_openapi.py` the same commit, one writer per `data/`.
+**Receipt:** the origin sentence, real — "create an agent that watches refund rate in
+DE and briefs me every Monday" → two staged records → approve → live agent + scheduled
+brief; decline → the platform byte-identical.
+
+#### SP-4 · The Guide limb
+
+The curated corpus becomes real and served: KI's SKILL.md lane feeds it; answers ground
+in the registry (what THIS deployment offers — a door the deployment cannot open is
+never offered, DS-17's law) and in live state (what YOU have built, what failed
+lately); every guidance answer ends in an offered, staged act. **Receipt:** "how should
+I create an agent?" yields the real four steps, cites the asker's own agents and their
+eval results, and offers the draft.
+
+#### SP-5 · One roster, every door
+
+The converse and MCP rosters unify into one declared registry with two transports;
+Slack summon rides RC-5. **Receipt:** the same staged-proposal flow driven from Slack
+and from an external MCP client; a diff of the two rosters returns empty and is
+ratcheted so it stays empty.
+
+#### SP-6 · Red team, then proact
+
+An adversarial pass seeds hostile content into logs, agent names, document text —
+every hole becomes a refusal test in the permanent corpus (EX-9's pattern, arc-wide).
+Only after it holds: evidence-backed proposals ("this automation failed four Mondays
+running — fix its schedule?") that cite their evidence rows and never auto-apply.
+**Receipt:** the attack corpus IS the test file; one proactive proposal accepted by a
+real user with its evidence chain in the record.
+
+**Traps this arc must not re-pay:** the built-and-inert plane (the popularity flag is
+sitting in it right now) · the god-roster (500 tools, no topics — routing collapses and
+the blast radius is maximal) · approval fatigue (bulk-approve turns the inbox into a
+rubber stamp; diffs, batching, and standing grants are the counter-design) · a confident
+0 where an unmeasured 0 belongs (the observability docstring's own law) · unfenced
+content blending (EchoLeak) · a new store without its three registrations.
+
+**Sequencing.** SP-1 is independent, read-only, and first — it pays for itself the day
+it answers the acceptance suite. SP-2 can ride in parallel (it is mostly `web/`). SP-3
+follows SP-1 (the Act tools want the Know tools' grounding). SP-4 any time after KI's
+lane (already landed). SP-5 after SP-1+SP-3 stabilize the roster. SP-6's red-team half
+gates the proactive half, not the other way around. **Cross-user Know answers ("who did
+what") wait on VA-10's auth-model decision, full stop** — resolve_principal trusts
+unverified headers today, and an operator agent must not stand on that.
+
+**Falsifiers — this arc re-scopes by measurement.** Tool-routing accuracy degrading
+past ~25 tools ⇒ topics become load-time-scoped before the roster widens further ·
+drafted agents mostly edited-to-death before approval ⇒ SP-3 re-scopes to "open the
+real form, pre-filled" · palette fallthrough latency people abandon ⇒ the summon stays
+navigational and Spotlight lives in the chat rail · if 30 days after SP-1 nobody asks
+Spotlight platform questions, stop and re-measure demand before building a single Act
+tool — a universal surface nobody summons is the built-and-inert shape wearing a cape.
+
+**Non-goals for the whole arc:** an OpenAPI-scraped roster · auto-execution of anything
+structural · a second inbox, loop, or chat stack · raw SQL over system stores · live MCP
+tool discovery into the brain · client-side navigation telemetry (proposed as an
+acceptance question, struck by the user 2026-09-05 — do not re-propose without new
+facts) · a browser-local theme hack in place of the settings store · any capability
+widening by Spotlight itself, ever.
+
+**Relationship to the other arcs.** Arc EX folds in as the Shape wave-family (item 10
+recommends this rather than a sibling arc; the EX draft and its two session artifacts —
+the founding note and the interactive console demo — are the wave-family's design
+record). Arc KI feeds Guide's corpus and the interview use case; every graded Spotlight
+exchange feeds Arc MI's funnel; VA-10 gates cross-user Know. CI-2/CI-3 (the platform
+identity and first roster) are, in hindsight, SP's Phase 0 — this arc aims what they
+began.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -2518,6 +2762,22 @@ ARC KI  ✅ ADOPTED 2026-09-05 (§6 item 9, both clauses YES) — org-owned defi
         KI-4 ✅ BUILT 2026-09-05 — /intake/suggest mines validated runs + guard
              clusters into the lane; human-approved trusted queries now export
              to SFT/golden, so every approval moves gate_status()
+
+ARC SP  ☐ DRAFTED 2026-09-05 (§3.11; adoption = §6 item 10, PENDING) — Spotlight,
+        the platform operator: one declared roster behind palette/chat/Slack/MCP;
+        know · act · guide · shape. Census done in-draft; the user's 4-question
+        acceptance suite is green on substrate.
+        SP-0 ✅ census (in §3.11 itself; re-verify per wave)
+        SP-1 Know roster — read-only, independent, FIRST slice; receipt = the
+             acceptance suite answered live in the product's own chat
+        SP-2 the summon (async palette fallthrough + surface context)
+        SP-3 Act tools (draft_agent/draft_automation as staged DIFFs) + the
+             per-user settings store (the arc's ONE new store)
+        SP-4 Guide (serve the corpus KI's SKILL.md lane now feeds; answers end
+             in an offered act)
+        SP-5 one roster, every door (converse ∪ MCP unified; Slack via RC-5)
+        SP-6 red-team corpus, THEN evidence-backed proactive proposals
+        ⚠ cross-user Know waits on VA-10's auth decision
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -2772,13 +3032,13 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-05: NONE open. All NINE are decided** (item 9 stamped YES, both
-> clauses, the same day it was drafted — with KI-0…KI-3 already built at the user's
-> direction). Kept as a register, not a queue — each entry records the reasoning so a
-> settled question is not re-litigated, and so no band elsewhere in this document can go
-> on reading as blocked once the call has been made. If you arrived here looking for what
-> the user still owes, the answer is *nothing*; what remains is in the ledger's "keyed on
-> the user" list — credentials and one manual gesture, not decisions.
+> **Status 2026-09-05 (evening): ONE open — item 10 (Arc SP adoption), drafted the same
+> day.** Items 1–9 are all decided (item 9 stamped YES, both clauses, the same day it was
+> drafted — with KI-0…KI-3 already built at the user's direction). Kept as a register,
+> not a queue — each entry records the reasoning so a settled question is not
+> re-litigated, and so no band elsewhere in this document can go on reading as blocked
+> once the call has been made. Beyond item 10, what remains keyed on the user is in the
+> ledger's list — credentials and one manual gesture, not decisions.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -2844,6 +3104,18 @@ the browser** · **measure the premise before building.**
    KI-0/KI-1 code implements exactly this. Neither clause opened custody ground:
    §6.7 already covers imported work artifacts as org-scoped inputs, and §6.8's
    outbound posture is untouched.
+10. ⏳ **PENDING — Arc SP adoption (drafted 2026-09-05).** The user's Spotlight vision
+    as §3.11: one platform operator (know · act · guide · shape) behind one declared
+    roster, every write a staged proposal into the existing inbox. The census in the
+    section shows the substrate largely merged; the user's own four acceptance
+    questions are green on it, and the ten market use cases grade near/medium with
+    none requiring new ML. **(a) Adoption:** activate §3.11; order within §5 stays the
+    user's knob — SP-1 (read-only Know roster) is the cheap, independently shippable
+    first slice. **(b) The EX fold:** the 2026-09-01 meta-agent/experience vision
+    becomes the Shape wave-family INSIDE this arc (recommended), rather than a sibling
+    arc with its own laws — one custody story, one roster, one decision. Neither
+    clause opens custody ground: §6.4 governs what Spotlight may read, §6.7/§6.8 are
+    untouched, and cross-user Know waits on VA-10 regardless of this item's outcome.
 
 ---
 
