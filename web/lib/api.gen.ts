@@ -14146,6 +14146,8 @@ export interface operations {
                 connection: string;
                 /** @description the question to ground */
                 question: string;
+                /** @description canvas id — scopes the custom-instructions block */
+                canvas?: string;
             };
             header?: never;
             path?: never;
