@@ -1980,6 +1980,199 @@ movements make the cascade's savings < 2× at MI-4's pre-check, MI-4 re-scopes t
 latency/custody play or parks. If a foreign runtime ships releases + auth AND we by
 then own training volume, §4.5's factory question reopens.
 
+### 3.10 · Arc KI — the Knowledge-Intake arc (drafted 2026-09-05; adoption = §6 item 9)
+
+> **Origin.** The user's 2026-09-05 directive, raised while walking the production story:
+> *"how we enable organisations to bring their own metric definitions. It can be in a
+> Google sheet, confluence page, md format, yaml, notion or ready sqls… do we have an
+> inlet for all such (and many more) formats?"* The same-day sweep (every ingestion
+> surface in `aughor/` and `web/` inventoried with file:line receipts) answered: **prose
+> has inlets; structure mostly does not — and the structured stores are exactly the ones
+> that carry metric definitions.** Everything load-bearing is restated below so this
+> section stands alone.
+>
+> **The thesis.** §0's ontology is *derived* knowledge (explored from the schema); Arc
+> MI's ledger is *earned* knowledge (graded from usage). This arc is the third inlet:
+> **declared** knowledge — the metric dictionary the org already owns before it installs
+> anything. The wrong build is N format parsers each targeting one of the eight
+> definition stores that exist; the right build is ONE funnel: **any source → typed
+> candidate objects → a staged review lane → human accept / edit / dismiss → the
+> existing stores.** A new format is a new fetcher, never a new pipeline. And the review
+> lane is deliberately the SAME surface Arc MI grades through, because an accepted
+> import IS a graded artifact: an org's existing dictionary is the fastest lawful volume
+> toward MI-4's gates — hundreds of pre-vetted definitions on day one, versus months of
+> organic grading.
+
+**Laws that bind every KI wave (standing, not per-slice):**
+
+- **Nothing auto-applies.** Every imported definition passes human accept/edit/dismiss
+  before any store the prompt reads is touched. Snowflake's own docs list "patching a
+  weak model with verified queries" as an anti-pattern and warn that bad VQs actively
+  hurt; §3.9's reward-integrity law extends to imported corpora unchanged. An import is
+  a PROPOSAL, in exactly the sense the action plane already means the word.
+- **Import into the stores that exist.** Eight definition stores already reach the
+  prompt (metrics · glossary · connection KB · trusted queries · vocabulary · packs ·
+  instructions · playbook). This arc adds DOORS and a lane, never a ninth store of
+  record (the lane's own staging table is bookkeeping, not a destination).
+- **Every door is HTTP.** The four structured doors that exist today all require
+  filesystem or env access to the host — dead on a serverless deployment. A KI door
+  must work on every deployment shape: §3.9's ledger-in-the-box discipline, applied to
+  intake.
+- **Provenance on every accepted object:** source (file hash / page URL / connector id),
+  `imported_at`, `accepted_by` — and on trusted SQL, `verified_at`/`verified_by`, the
+  timestamp the Snowflake study flagged our VQ store as missing. A catalogue is a
+  measurement with a timestamp; so is a verified query.
+- **Imported SQL is fuel, never ground truth.** It becomes prompt-authoritative only
+  after real execution plus the real guard battery, and it enters MI-3's dataset plane
+  only through the same graders as everything else — §3.9's synthetic-bootstrap law,
+  verbatim.
+- **Custody is already decided.** Questions, SQL, definitions and verdicts are work
+  artifacts — lawful, org-scoped inputs under §6.7; intake changes nothing outbound
+  (§6.8's strictly-opt-in posture untouched). No new custody ground is opened.
+- **Extraction rides the provider chain** — model ids from config, metered under the
+  existing kernel-jobs budget (two caps for one population is a paid trap), no
+  import-time `_ENABLED` reads.
+- **Store hygiene as ever:** a new table's env name lands in `tests/conftest.py` AND
+  `scripts/dump_openapi.py` in the same commit, directory family included; one writer
+  per `data/`; migrations numbered off the LIVE `PRAGMA user_version`.
+
+**What is true today (measured 2026-09-05; file:line receipts in the session sweep):**
+
+- **Prose has inlets.** `POST /documents/upload` accepts `.pdf .docx .md .markdown .txt`
+  (hard allowlist, `aughor/routers/knowledge.py:20`) into the Qdrant KB → the EXTERNAL
+  CONTEXT block on every ask. Confluence and Notion knowledge-sync connectors exist and
+  land in the same KB (`aughor/connectors/knowledge/confluence.py:52`, `notion.py:64`;
+  trigger `aughor/routers/actions.py:203`).
+- **Structure mostly does not.** `POST /metrics` takes one JSON metric per call — no
+  bulk, no file. Glossary PUTs are per-entity. The four doors that DO take structured
+  files — `data/glossary.yaml`, `/ontology/import`'s export tree, pack folders, the dbt
+  manifest (`AUGHOR_DBT_MANIFEST`, env-only) — all assume host filesystem access.
+- **The most prompt-authoritative store has NO write door.** Trusted queries are
+  injected at the top of the prompt (`aughor/routers/investigations.py:2027`), and the
+  only writers are internal (`aughor/evals/promote_trusted.py:112`,
+  `aughor/semantic/answer_divergence.py:386`). An org seeds golden SQL by editing
+  `data/trusted_queries.json` on disk, or not at all. The model has no
+  `verified_at`/`verified_by`, and stores physical SQL that schema drift silently rots.
+- **A complete bundle format exists, exposed nowhere.** `aughor/ontology/interchange.py`
+  carries a versioned bundle (synonyms · formats · value_dictionaries · exclusions),
+  `plan_import`, `apply_import`, `bundle_from_yaml` — and its only caller is
+  `aughor/demo/pack.py`. Likewise the vocabulary store's writers (`add_synonym`,
+  `set_format`, `set_value_dictionary`, `aughor/ontology/vocabulary.py:155,243,272`)
+  have zero HTTP/CLI callers. Built-and-inert — §7's recurring shape, twice over.
+- **Google Sheets exists as DATA only** (public gviz CSV → DuckDB tables,
+  `aughor/connectors/api/gsheets.py:78`); a Sheet-shaped metric dictionary can become a
+  table and nothing else. CSV/XLSX likewise (`local_upload.py:81`) — there is no "this
+  file IS a glossary" path anywhere on the platform.
+- **MCP cannot supply content** — the consumer implements `tools/list` + `tools/call`
+  only (`aughor/mcpservers/session.py:122,136`); `resources/*` is unimplemented, and
+  nothing routes an MCP result into any knowledge store.
+- **The review plumbing already exists in spirit:** `staged_proposals` (accept/reject,
+  resolver named, trace-pinned since MI-2), the packs propose-bindings pattern, DS-15's
+  propose→validate→seed grammar, and the eval-promotion path that already turns green
+  cases into trusted queries.
+
+#### KI-0 · The trusted-SQL door (substrate-sized — may ride alongside any band)
+
+CRUD API over the existing store, capability-gated, the model gaining `verified_at ·
+verified_by · source · last_executed_at`. A seeded query is EXECUTED against its
+connection and walked through the guard battery before it becomes authoritative; one
+that fails lands as a draft with the error attached, never in the prompt. Recommended
+(user-stampable, §6 item 9b): acceptance into the authoritative tier is a metrics-style
+transition — propose → approve — so uploading and trusting are two recorded acts.
+**Receipt:** an org seeds golden SQL over HTTP; the next ask's prompt carries it in the
+trusted block; a syntactically-valid-but-failing seed is demonstrably NOT in that
+block; `GET /learning/trusted` shows provenance.
+
+#### KI-1 · The canonical bundle and the review lane (the spine — before any mapper)
+
+The candidate object model: `metric · synonym · join · rule · glossary_entry ·
+trusted_query`, each carrying provenance, a confidence tier and the target store it
+would land in. `ontology/interchange.py` graduates from demo code to the wire format —
+its plan/apply split is exactly the dry-run-then-commit grammar the rest of the
+platform speaks (B2's dry run, DS-15's propose-validate-seed, DS-16's
+report-before-canvas). Endpoints: upload a bundle → a PLAN (per-object diff against
+the live stores: new / changed / identical / conflict) → accept/edit/dismiss per
+object or in bulk → apply fans accepted objects out to their existing stores, each
+write passing through that store's own governance (a metric proposal enters the
+metrics workflow, not around it). Staging rows live in the lane's own small table —
+three-registration law, same commit.
+**Receipt:** a YAML bundle round-trips — exported from one deployment, planned on
+another, N accepted / M dismissed — and a provenance query walks accepted object →
+bundle hash → source. An identical re-import plans ZERO changes; idempotence is what
+makes this door safe to point a sync at.
+
+#### KI-2 · File mappers — where formats multiply cheaply
+
+Deterministic first: a column-mapped CSV/XLSX dictionary (name · definition · formula ·
+owner · caveats — the shape metric dictionaries actually take in the wild), a dbt
+`manifest.json` UPLOAD (the env door stays for CI; the HTTP door serves everyone else),
+and SKILL.md (the CLI-only import gains the same lane). Then the LLM-assisted mapper
+for prose: a markdown page or pasted text → typed candidates, budget-metered, its
+output confidence-tiered `llm_candidate` so the lane ranks human > mined >
+llm_candidate (the vocabulary store already speaks this ranking). The mapper emits
+candidates ONLY — the lane is what stands between a hallucinated formula and the
+prompt.
+**Receipt:** the same Sheet-shaped CSV yields the same candidate set twice
+(deterministic path is deterministic); the human edit-rate on LLM-extracted candidates
+is measured and published per import — it is this arc's falsifier input.
+
+#### KI-3 · Source fetchers — the connectors point at the lane
+
+Confluence and Notion already sync into the document KB; this slice additionally mines
+SYNCED pages for definition candidates — the fetchers exist, only the mining is new,
+and it is built ONCE against the ingestion-registry seam, not per connector (the
+capability-misses-a-connector lesson, ×3). Google Sheets: the public-link fetch
+exists; a definitions mode maps a chosen worksheet through KI-2's deterministic
+mapper. Private-OAuth Sheets/Drive stays parked until a real deployment asks — no
+speculative OAuth surface.
+**Receipt:** a Confluence metric page becomes staged candidates with the page URL as
+provenance; a re-sync of an unchanged page proposes nothing.
+
+#### KI-4 · The suggestions loop — the same lane, fed from inside
+
+The Snowflake study's biggest PORT item, landed where it belongs: mine what the
+platform already witnesses — validated `sql_examples` runs, session questions that
+never resolved, guard-fire clusters — into the SAME accept/edit/dismiss lane, as
+proposals for trusted queries, synonyms and descriptions. Nothing auto-applies here
+either. This is deliberately shared substrate with Arc MI: every accept, edit and
+dismiss in the lane is a human verdict, pinned and exportable — the lane converts both
+an org's imported past (KI-1…3) and its passive present (this slice) into MI-3's
+graded rows. Gate at pre-check: measure the minable population first — a miner over a
+dozen examples is motion without progress, MI-3's own lesson.
+**Receipt:** a week of real usage yields proposals whose acceptance visibly moves
+`gate_status()`'s SFT/DPO counts, and a mined trusted query's provenance names the run
+it came from.
+
+**Traps this arc must not re-pay:** the built-and-inert plane (interchange and
+vocabulary are ALREADY that — this arc's first job is consuming them, §7's law) · a
+capability added to one store misses the seven others (the lane fans out through ONE
+dispatcher, not eight hand-copies) · a guard population hand-listed beside its
+expectation (the plan's new/changed/identical/conflict verdicts get tests whose
+fixtures the planner discovers) · two caps for one population (mapper LLM calls ride
+the kernel-jobs budget) · non-hermetic `data/` (the staging table is a new env name —
+all three registrations, same commit).
+
+**Sequencing.** KI-0 is substrate-sized and independent — it may ride alongside any
+band and pays for itself the day one pilot org has golden SQL to seed. KI-1 precedes
+KI-2/3/4: nothing-auto-applies requires somewhere to review. KI-2's deterministic
+mappers precede its LLM mapper. KI-4 shares Arc MI's funnel and should land while
+MI-4's gates are still filling — that is the point of it.
+
+**Falsifiers — this arc is droppable by measurement.** If after ~90 days no pilot org
+brings a dictionary through the doors, stop at KI-0/KI-1 (independently worth having:
+they are also the export/migration surface between deployments) and re-measure demand
+before building a single mapper. If the LLM mapper's human edit-rate stays above ~50%
+after prompt iteration, park it and keep the deterministic paths — a lane full of junk
+candidates teaches reviewers to rubber-stamp, and that poisons the SAME verdict stream
+Arc MI trains on. The coupling cuts both ways, and it is the strongest reason this arc
+must not ship half-attended.
+
+**Non-goals for the whole arc:** a ninth definition store · auto-apply in any form ·
+LookML / Cube / MetricFlow / catalog-tool (DataHub · Atlan · Collibra) importers
+without a measured customer pull · OAuth Drive/SharePoint/OneDrive before a deployment
+asks · MCP `resources/*` as a content channel (revisit only with a concrete server in
+hand) · any change to §6.8's outbound posture.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -2215,6 +2408,18 @@ ARC MI  ✅ ADOPTED 2026-09-03 (§6.7 both clauses YES · §6.8 YES) — first t
              golden ≥150 · verdicts flowing ≥30 days); rented training; ratchet-gated
         MI-5 ledger-in-the-box · model-as-a-door · adapters-as-releases (§6.8 ✅)
         MI-6 RLVR rehearsal — only after a measured SFT+DPO plateau (×2 versions)
+
+ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned definitions in
+        through ONE funnel: any source → typed candidates → accept/edit/dismiss →
+        the stores that exist. Nothing auto-applies.
+        KI-0 trusted-SQL door — substrate-sized, may ride alongside any band
+        KI-1 canonical bundle + review lane (interchange.py finally gets a consumer)
+        KI-2 file mappers — CSV/XLSX dictionary · dbt manifest upload · SKILL.md ·
+             LLM prose mapper (deterministic paths first)
+        KI-3 source fetchers — Confluence/Notion mining on the existing sync ·
+             Sheets definitions mode
+        KI-4 usage-mined suggestions — the same lane Arc MI grades through; accepts
+             feed MI-3's gates
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -2469,13 +2674,13 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-03: NONE open. All EIGHT are decided** (§6.7 and §6.8 stamped with Arc MI
-> on 2026-09-03). Kept as a register, not a queue —
-> each entry records the reasoning so a settled question is not re-litigated, and so no band
-> elsewhere in this document can go on reading as blocked once the call has been made. If you
-> arrived here looking for what the user still owes, the answer is *nothing*; what remains is
-> in the ledger's "keyed on the user" list, and those are credentials and one manual gesture,
-> not decisions.
+> **Status 2026-09-05: ONE open — item 9 (Arc KI adoption, drafted this date).** The eight
+> before it are decided (§6.7 and §6.8 stamped with Arc MI on 2026-09-03). Kept as a
+> register, not a queue — each entry records the reasoning so a settled question is not
+> re-litigated, and so no band elsewhere in this document can go on reading as blocked once
+> the call has been made. If you arrived here looking for what the user still owes, the
+> answer is item 9's stamp; beyond that, what remains is in the ledger's "keyed on the
+> user" list — credentials and one manual gesture, not decisions.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -2530,6 +2735,15 @@ the browser** · **measure the premise before building.**
    The yes does not change the default posture: contribution is strictly opt-in —
    nothing leaves a deployment that didn't say so. This is the mechanical form of the
    origin directive ("smarter as more users use the platform"), now deliberate.
+9. ⏳ **OPEN (drafted 2026-09-05) — Arc KI enters the queue, and who approves an
+   authoritative import.** **(a) Adoption:** §3.10 goes active; order within §5 stays
+   the user's knob; KI-0 is substrate-sized and free to ride alongside any band.
+   **(b) The authority model for prompt-authoritative imports:** recommended that
+   trusted-SQL acceptance be a metrics-style transition (propose → approve,
+   capability-gated), so uploading and trusting are two recorded acts — on a
+   single-analyst deployment the same person performs both, but the ledger records them
+   separately. Neither clause opens custody ground: §6.7 already covers imported work
+   artifacts as org-scoped inputs, and §6.8's outbound posture is untouched.
 
 ---
 
@@ -2556,7 +2770,9 @@ foreign one, that is — Arc DS's visual authoring over our own engine is §3.7,
 canvas for anything without a producer/consumer relation (an agent record still gets a form;
 its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/` · a GPU fleet ·
 model weights in the repo or installer (Arc MI ships the ledger in the box and adapters as
-release artifacts, §3.9) · online/continual learning on live traffic.
+release artifacts, §3.9) · online/continual learning on live traffic · a ninth definition
+store or auto-applied imports (Arc KI reviews everything into the eight stores that exist,
+§3.10).
 
 ---
 
