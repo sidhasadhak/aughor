@@ -1985,6 +1985,17 @@ def _answer_core(
         _instr_sec = _grounding_instructions(connection_id, canvas_id or "")
         if _instr_sec:
             prompt = _instr_sec + prompt
+        # Business synonyms — human-curated aliases, rendered verbatim like the
+        # instructions above (an alias matters for reading the question AND for
+        # labelling the answer). The vocabulary store fed the schema linker from
+        # day one but never the model — a person could record "'sales value' means
+        # orders.amount" and the SQL writer never learned it; the KI lane now
+        # imports synonyms, so a prompt-invisible destination would be the
+        # built-and-inert shape. Empty when none: byte-identical prompt.
+        from aughor.agent.grounding import vocabulary_synonyms as _grounding_synonyms
+        _syn_sec = _grounding_synonyms(connection_id)
+        if _syn_sec:
+            prompt = _syn_sec + "\n" + prompt
         # "Ask this briefing" — ground the answer in the brief the user is LOOKING AT, read
         # server-side from the same `conn:schema` cache entry the Briefing rendered (never
         # posted up by the client, so it can't drift from what's on screen or be spoofed).

@@ -48,9 +48,14 @@ SUBJECT_KINDS: tuple[str, ...] = ("table", "column", "metric", "term")
 #: format that silently does nothing, and S2 has to implement each one.
 FORMATS: tuple[str, ...] = ("number", "currency", "percent", "compact", "date", "text")
 
-_ROOT = resolve_db_path(
-    "AUGHOR_VOCABULARY_ROOT",
-    Path(__file__).parent.parent.parent / "data" / "vocabulary")
+def _root() -> Path:
+    """Resolved PER CALL, not at import — the trusted-queries store's DS-12 lesson,
+    paid a third time (2026-09-05, by this store's own new prompt-block tests): a
+    module-level resolution freezes whatever env the first import saw, which makes
+    per-test isolation impossible and once let a suite write into live data/."""
+    return resolve_db_path(
+        "AUGHOR_VOCABULARY_ROOT",
+        Path(__file__).parent.parent.parent / "data" / "vocabulary")
 
 
 def _rank_index(source: str) -> int:
@@ -115,7 +120,7 @@ class ValueDictionary:
 
 def _path(connection_id: str) -> Path:
     safe = "".join(c if c.isalnum() or c in "-_" else "_" for c in (connection_id or "_"))
-    return _ROOT / f"{safe}.yaml"
+    return _root() / f"{safe}.yaml"
 
 
 def read_vocabulary(connection_id: str) -> dict:
@@ -199,6 +204,33 @@ def synonyms_for(connection_id: str, *, subject_kind: Optional[str] = None) -> l
     if subject_kind:
         out = [s for s in out if s.subject_kind == subject_kind]
     return sorted(out, key=lambda s: (s.rank, s.subject_id, s.synonym))
+
+
+#: Prompt-block cap. Human curation is small by nature; the cap only guards a
+#: degenerate store from flooding the prompt.
+_SYNONYM_BLOCK_CAP = 24
+
+
+def build_synonyms_block(connection_id: str, *, cap: int = _SYNONYM_BLOCK_CAP) -> str:
+    """HUMAN-tier synonyms as a prompt section — the Snowflake-study lever this
+    store was missing: synonyms widened schema-linker retrieval but never reached
+    the model, so a person could record "'sales value' means orders.amount" and the
+    SQL writer never learned it. Snowflake renders synonyms to the model; their own
+    caveat (auto-generated synonyms reduce accuracy) is why ONLY the human tier
+    renders here — `mined` and `llm_candidate` entries keep widening retrieval and
+    stay out of the prompt until a human promotes them. '' when there are none, so
+    a connection without curation keeps a byte-identical prompt."""
+    humans = [s for s in synonyms_for(connection_id) if s.source == "human"][:max(1, cap)]
+    if not humans:
+        return ""
+    lines = ["BUSINESS SYNONYMS (human-curated; treat each as an exact alias when "
+             "reading the question and when labelling results):"]
+    for s in humans:
+        subject = f"{s.subject_kind} {s.subject_id}".strip()
+        lines.append(f'- "{s.synonym}" means {subject}'
+                     + (f" — {s.note}" if s.note else ""))
+    lines.append("")
+    return "\n".join(lines)
 
 
 def synonym_expansion(connection_id: str) -> dict[str, set[str]]:

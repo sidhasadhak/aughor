@@ -114,6 +114,17 @@ def custom_instructions(connection_id: str, canvas_id: str = "") -> str:
                  "grounding: custom instructions")
 
 
+def vocabulary_synonyms(connection_id: str) -> str:
+    """Human-curated business synonyms, rendered verbatim (not question-matched —
+    an alias matters both for reading the question and for labelling the answer).
+    Only the human tier renders; mined and model-proposed entries keep widening
+    schema-linker retrieval and stay out of the prompt until a person promotes
+    them. '' when the connection has none."""
+    from aughor.ontology.vocabulary import build_synonyms_block
+    return _safe(lambda: build_synonyms_block(connection_id),
+                 "grounding: vocabulary synonyms")
+
+
 def trusted_templates(question: str, connection_id: str) -> str:
     from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
     return _safe(lambda: build_trusted_block(retrieve_trusted(question, connection_id)),
@@ -218,6 +229,8 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
     ("schema_slice", "Schema slice (linked)",
      lambda q, c, **k: schema_slice(q, c, schema=k.get("schema", "")), True),
     ("glossary", "Connection glossary / business definitions", lambda q, c, **k: connection_glossary(q, c), False),
+    ("synonyms", "Business synonyms (human-curated)",
+     lambda q, c, **k: vocabulary_synonyms(c), False),
     ("kb_patterns", "Knowledge-base planning patterns", lambda q, c, **k: kb_patterns(q, c), False),
     ("sql_examples", "Prior-analysis SQL examples", lambda q, c, **k: sql_examples(q, c), False),
     ("exploration", "Exploration annotations", lambda q, c, **k: exploration_annotations(q, c), False),
