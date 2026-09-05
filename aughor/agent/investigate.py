@@ -1279,13 +1279,20 @@ def _filter_schema(schema: str, table_names: list[str]) -> str:
     return filtered if filtered.strip() else schema
 
 
-def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date_column: str, question: str) -> str:
+def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date_column: str, question: str,
+                           connection_id: str = "") -> str:
     """A JOIN-COMPLETE filtered schema for the deep-analysis coder. Keeping only the metric +
     dimension tables drops the table that holds the date/join columns (revenue on
     `invoices`, the timestamp on `orders`), so the coder hallucinates a date column on
     the metric table. This keeps the metric + dimension tables, the date column's host
     table, FK-joinable neighbours, and temporal dimension tables, then appends the
-    DETECTED JOIN PATHS hints (which _filter_schema strips) — what the /chat path does."""
+    DETECTED JOIN PATHS hints (which _filter_schema strips) — what the /chat path does.
+
+    With a connection_id, the cached ontology's ENTITY RELATIONSHIPS block is appended
+    too, existence-bound to the FILTERED slice: apply_schema_enrichment's schema-wide
+    copy is a non-table block, so _filter_schema drops it, and re-attaching only
+    infer_joins left the deep coder with name guesses while the /ask paths saw the
+    verified edges (cardinality/confidence/probed overlap)."""
     try:
         from aughor.tools.schema import parse_schema_tables
         # If the schema isn't TABLE:-format (e.g. an already-scoped Data Catalog from the
@@ -1309,9 +1316,25 @@ def _build_grounded_schema(full_schema: str, metric_table: str, dimensions, date
         relevant = fk_neighbor_expand(full_schema, relevant, cap=10)
         sch = _filter_schema(full_schema, relevant)
         hints = infer_joins(sch)
-        return sch + "\n\n" + hints if hints else sch
+        grounded = sch + "\n\n" + hints if hints else sch
     except Exception:
+        # tools.schema machinery failed — the relationship block below depends on the
+        # same module, so return the bare filtered slice rather than attempt it.
         return _filter_schema(full_schema, relevant)
+    if connection_id:
+        try:
+            from aughor.tools.schema import parse_schema_tables as _pst
+            from aughor.ontology.semantic_block import render_relationship_block
+            from aughor.ontology.store import load_latest_ontology
+            rel_block = render_relationship_block(
+                load_latest_ontology(connection_id), _pst(sch))
+            if rel_block:
+                grounded += "\n\n" + rel_block
+        except Exception as _rel_exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(_rel_exc, "ontology relationship block is best-effort schema grounding",
+                     counter="deep_analysis.relationship_block", conn_id=connection_id)
+    return grounded
 
 
 _DATE_TYPE_RE = re.compile(r"\b(date|timestamp|datetime|time)\b", re.I)
@@ -5812,6 +5835,7 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     filtered_schema = _build_grounded_schema(
         state["schema_context"], intake.metric_table, intake.dimensions,
         intake.date_column, question,
+        connection_id=state.get("connection_id", "") or "",
     )
 
     intake_dict = intake.model_dump()

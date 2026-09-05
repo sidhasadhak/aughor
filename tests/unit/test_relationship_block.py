@@ -168,3 +168,68 @@ def test_apply_schema_enrichment_without_a_graph_is_unchanged(monkeypatch):
     assert "ENTITY RELATIONSHIPS" not in apply_schema_enrichment(raw, connection_id="connR")
     # no connection at all (fixture rendering) → the block never loads either
     assert "ENTITY RELATIONSHIPS" not in apply_schema_enrichment(raw)
+
+
+# ── Wiring: the deep-analysis grounded schema carries the block ───────────────
+# _build_grounded_schema filters with _filter_schema (TABLE-block-only — it drops
+# the schema-wide ENTITY RELATIONSHIPS block enrichment appended) and re-attaches
+# only the name-heuristic infer_joins hints, so the deep coder never saw the
+# verified edges. The block is re-appended AFTER the filter, existence-bound to
+# the KEPT tables so a dropped table's edge stays out of the prompt.
+
+_DEEP_SCHEMA = (
+    "TABLE: orders (100 rows)\n  order_id  INTEGER\n  customer_id  INTEGER\n"
+    "  amount  DOUBLE\n  created_at  DATE\n\n"
+    "TABLE: customers (10 rows)\n  customer_id  INTEGER\n  name  VARCHAR\n\n"
+    "TABLE: vendors (5 rows)\n  vendor_key  INTEGER\n  vendor_label  VARCHAR\n\n"
+    "TABLE: payments (50 rows)\n  payment_key  INTEGER\n  vendor_key  INTEGER\n"
+)
+
+
+def test_grounded_schema_appends_verified_edges_for_kept_tables_only(monkeypatch):
+    from aughor.agent.investigate import _build_grounded_schema
+    from aughor.ontology import store as onto_store
+    g = _graph(
+        _rel("R1", "orders", "customer_id", "customers", "customer_id", overlap=0.97),
+        _rel("R2", "payments", "vendor_key", "vendors", "vendor_key"),
+    )
+    monkeypatch.setattr(onto_store, "load_latest_ontology", lambda cid, sn=None: g)
+    out = _build_grounded_schema(
+        _DEEP_SCHEMA, "orders", ["customers.name"], "orders.created_at",
+        "total order amount by customer", connection_id="connD")
+    assert "ENTITY RELATIONSHIPS" in out
+    assert "- orders.customer_id → customers.customer_id [N:1, verified, 97% key overlap]" in out
+    # premise: the filter really dropped the payments/vendors tables …
+    assert "TABLE: payments" not in out and "TABLE: vendors" not in out
+    # … so their edge — verified, and both tables live in the FULL schema — must
+    # not render: existence binds to the filtered slice, not the full schema.
+    assert "- payments.vendor_key" not in out
+
+
+def test_grounded_schema_without_connection_or_graph_is_unchanged(monkeypatch):
+    from aughor.agent.investigate import _build_grounded_schema
+    from aughor.ontology import store as onto_store
+    calls: list = []
+    monkeypatch.setattr(onto_store, "load_latest_ontology",
+                        lambda cid, sn=None: calls.append(cid))
+    base = _build_grounded_schema(_DEEP_SCHEMA, "orders", ["customers.name"],
+                                  "orders.created_at", "q")
+    assert "TABLE: orders" in base and "ENTITY RELATIONSHIPS" not in base
+    assert calls == []            # no connection_id ⇒ the cache is never touched
+    out = _build_grounded_schema(_DEEP_SCHEMA, "orders", ["customers.name"],
+                                 "orders.created_at", "q", connection_id="connD")
+    assert out == base            # a connection with no cached graph changes nothing
+    assert calls == ["connD"]
+
+
+def test_grounded_schema_tolerates_a_failing_ontology_load(monkeypatch):
+    from aughor.agent.investigate import _build_grounded_schema
+    from aughor.ontology import store as onto_store
+
+    def _boom(cid, sn=None):
+        raise RuntimeError("ontology cache unavailable")
+
+    monkeypatch.setattr(onto_store, "load_latest_ontology", _boom)
+    out = _build_grounded_schema(_DEEP_SCHEMA, "orders", ["customers.name"],
+                                 "orders.created_at", "q", connection_id="connD")
+    assert "TABLE: orders" in out and "ENTITY RELATIONSHIPS" not in out
