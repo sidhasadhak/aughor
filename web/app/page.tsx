@@ -259,7 +259,7 @@ function Topbar({
         onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.color = "var(--t3)"; }}
       >
         <NavIcon name="search" size={13} />
-        <span style={{ flex: 1, textAlign: "left" }}>Search tables, analyses, metrics…</span>
+        <span style={{ flex: 1, textAlign: "left" }}>Search — or ask Spotlight anything…</span>
         <span style={{ display: "flex", gap: 2, alignItems: "center" }}>
           <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>⌘</kbd>
           <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>K</kbd>
@@ -2369,6 +2369,7 @@ export default function Home() {
         selectedConn={selectedConn}
         onNavigate={t => { handleNavigate(t as NavTab); setShowSearch(false); }}
         onGoToChat={q => { goToChat(q); setShowSearch(false); }}
+        surface={tab}
       />
 
       {/* ── Upgrade / upsell modal — fired by any HTTP-402 capability_locked response ── */}

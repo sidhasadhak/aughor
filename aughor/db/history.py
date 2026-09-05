@@ -889,6 +889,72 @@ def find_prior_answers(question: str, connection_id: str, *,
         return []
 
 
+def investigation_counts_since(days: int = 7) -> dict:
+    """Org-scoped started/completed counts over a trailing day window (SP-1 read).
+
+    Comparisons run on the DAY substring of ``started_at`` rather than the full
+    timestamp: this store has carried both ISO-``T`` and space-separated forms, and a
+    lexical compare across the two silently drops boundary-day rows. Day granularity
+    is the question's own granularity ("runs in the last seven days"), so nothing is
+    lost by refusing the finer, format-fragile compare.
+    """
+    from datetime import datetime, timedelta, timezone
+    days = max(1, min(int(days or 7), 366))
+    floor_day = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
+    org = current_org_id()
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    try:
+        row = c.execute(
+            "SELECT COUNT(*) AS started, "
+            "       SUM(CASE WHEN status NOT IN ('running','paused') THEN 1 ELSE 0 END) AS finished, "
+            "       SUM(CASE WHEN status IN ('failed','timed_out','error') THEN 1 ELSE 0 END) AS failed "
+            "FROM investigations WHERE substr(started_at,1,10) >= ? AND (org_id = ? OR ? = '')",
+            (floor_day, org, org),
+        ).fetchone()
+        return {"window_days": days, "since_day": floor_day,
+                "started": int(row["started"] or 0),
+                "finished": int(row["finished"] or 0),
+                "failed": int(row["failed"] or 0)}
+    finally:
+        c.close()
+
+
+def investigations_by_month(months: int = 6) -> dict:
+    """Per-month started counts for the trailing ``months`` calendar months, plus the
+    mean — the cadence read (SP-1). Month key is ``substr(started_at, 1, 7)``, which is
+    format-proof across the ISO-``T`` and space forms for the same reason as above.
+    Months with zero runs are present in the result: an absent month reads as "no
+    data", and only an explicit zero is the true claim.
+    """
+    from datetime import datetime, timezone
+    months = max(1, min(int(months or 6), 36))
+    now = datetime.now(timezone.utc)
+    keys = []
+    y, m = now.year, now.month
+    for _ in range(months):
+        keys.append(f"{y:04d}-{m:02d}")
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    keys.reverse()
+    org = current_org_id()
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    try:
+        rows = c.execute(
+            "SELECT substr(started_at,1,7) AS month, COUNT(*) AS n FROM investigations "
+            "WHERE substr(started_at,1,7) >= ? AND (org_id = ? OR ? = '') GROUP BY month",
+            (keys[0], org, org),
+        ).fetchall()
+        by = {r["month"]: int(r["n"]) for r in rows}
+        series = [{"month": k, "started": by.get(k, 0)} for k in keys]
+        avg = round(sum(p["started"] for p in series) / len(series), 1) if series else 0.0
+        return {"months": months, "series": series, "monthly_average": avg}
+    finally:
+        c.close()
+
+
 def delete_investigation(inv_id: str) -> bool:
     """Delete a history line item. Matches either a single investigation row by
     its ``id`` OR a whole chat session by ``session_id`` (history collapses chat

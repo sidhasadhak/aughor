@@ -19,10 +19,13 @@ import { getApiBase } from "@/lib/config";
 import { useRichSchema } from "@/lib/schema-context";
 import { useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { newSessionId, projectThread } from "@/lib/chatTurn";
+import { useAughorChat } from "@/lib/useAughorChat";
+import { PartsMessage } from "@/components/chat/PartsMessage";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
-type ItemType = "command" | "action" | "investigation" | "table" | "canvas";
+type ItemType = "command" | "action" | "investigation" | "table" | "canvas" | "spotlight";
 
 interface PaletteItem {
   id: string;
@@ -33,17 +36,21 @@ interface PaletteItem {
   icon: string;         // from ICONS map below
   accent?: string;      // CSS color for the icon dot
   meta?: string;        // e.g. connection name, time ago
+  /** SP-2 — the Spotlight row switches the overlay into its answer pane; the
+   *  palette must NOT close on select the way every navigation row does. */
+  keepOpen?: boolean;
   onSelect: () => void;
 }
 
 // Section header order and display names
-const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table", "canvas"];
+const SECTION_ORDER: ItemType[] = ["command", "action", "investigation", "table", "canvas", "spotlight"];
 const SECTION_LABELS: Record<ItemType, string> = {
   command:       "Commands",
   action:        "Navigation",
   investigation: "Recent Agent runs",
   table:         "Tables",
   canvas:        "Canvases",
+  spotlight:     "Spotlight",
 };
 
 // ── Icon primitives ───────────────────────────────────────────────────────────
@@ -119,6 +126,9 @@ interface CommandPaletteProps {
   selectedConn: string;
   onNavigate: (tab: string) => void;
   onGoToChat: (q?: string) => void;
+  /** SP-2 — the tab the palette was summoned over; rides every Spotlight ask as
+   *  one line of prompt orientation ("schedule this" knows what *this* is). */
+  surface?: string;
 }
 
 /**
@@ -145,9 +155,36 @@ export function GlobalCommands({ onNavigate, onGoToChat }: { onNavigate: (t: str
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
-export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat }: CommandPaletteProps) {
+export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoToChat, surface = "" }: CommandPaletteProps) {
   const [query, setQuery] = useState("");
   const [cursor, setCursor] = useState(0);
+  // ── SP-2: the Spotlight answer pane ──────────────────────────────────────
+  // One conversation per palette lifetime (follow-ups compose); "search" is the
+  // deterministic fast path and stays the default on every open.
+  const [mode, setMode] = useState<"search" | "spotlight">("search");
+  const [spotQ, setSpotQ] = useState("");
+  const [followUp, setFollowUp] = useState("");
+  const [spotlightSession] = useState(() => newSessionId());
+  const spotScrollRef = useRef<HTMLDivElement>(null);
+  const { messages, sendMessage, status, error } = useAughorChat({
+    connectionId: selectedConn,
+    sessionId: spotlightSession,
+    // depth:"quick" keeps the overlay snappy (the router honours it with no model
+    // call); `surface` is the summoned-from tab, sanitized server-side.
+    body: { depth: "quick", surface },
+  });
+  const streaming = status === "submitted" || status === "streaming";
+  const spotTurns = useMemo(() => projectThread(messages, {
+    streaming,
+    transportError: status === "error" ? (error?.message ?? "The turn failed.") : null,
+  }), [messages, streaming, status, error]);
+  const ask = useCallback((q: string) => {
+    const question = q.trim();
+    if (!question || streaming) return;
+    setMode("spotlight");
+    setSpotQ(question);
+    void sendMessage({ text: question, metadata: { mode: "ask" } });
+  }, [streaming, sendMessage]);
   const [investigations, setInvestigations] = useState<Array<{ id: string; question: string; started_at: string; status: string }>>([]);
   const [tables, setTables] = useState<Array<{ name: string; row_count: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -159,6 +196,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     if (!open) return;
     setQuery("");
     setCursor(0);
+    setMode("search");
     setTimeout(() => inputRef.current?.focus(), 30);
 
     // Fetch recent investigations
@@ -180,13 +218,17 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     setTables((paletteSchema?.tables ?? []).map(t => ({ ...t, row_count: t.row_count ?? "" })));
   }, [paletteSchema]);
 
-  // Escape handler
+  // Escape backs out one level: spotlight → search → closed.
   useEffect(() => {
     if (!open) return;
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    const fn = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      if (mode === "spotlight") { setMode("search"); setTimeout(() => inputRef.current?.focus(), 30); }
+      else onClose();
+    };
     window.addEventListener("keydown", fn);
     return () => window.removeEventListener("keydown", fn);
-  }, [open, onClose]);
+  }, [open, onClose, mode]);
 
   // ── Static nav action items ───────────────────────────────────────────────
 
@@ -303,19 +345,35 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     return fuse.search(query).slice(0, 20);
   }, [query, fuse, allItems]);
 
+  const shownResults: FuseResult<PaletteItem>[] = useMemo(() => {
+    const q = query.trim();
+    if (!q) return results;
+    const row: PaletteItem = {
+      id: "spotlight-ask",
+      label: "Ask Spotlight",
+      sublabel: q,
+      type: "spotlight",
+      icon: "spark",
+      accent: "var(--vio3)",
+      keepOpen: true,
+      onSelect: () => ask(q),
+    };
+    return [...results, { item: row, refIndex: 0, matches: [] }];
+  }, [results, query, ask]);
+
   // Group results by type preserving section order
   const grouped = useMemo(() => {
     const map = new Map<ItemType, FuseResult<PaletteItem>[]>();
-    for (const r of results) {
+    for (const r of shownResults) {
       const t = r.item.type;
       if (!map.has(t)) map.set(t, []);
       map.get(t)!.push(r);
     }
     return SECTION_ORDER.filter(t => map.has(t)).map(t => ({ type: t, items: map.get(t)! }));
-  }, [results]);
+  }, [shownResults]);
 
   // Flat list of all rendered items (for keyboard nav)
-  const flatResults = useMemo(() => results.map(r => r.item), [results]);
+  const flatResults = useMemo(() => shownResults.map(r => r.item), [shownResults]);
 
   // ── Keyboard navigation ───────────────────────────────────────────────────
 
@@ -329,7 +387,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = flatResults[cursor];
-      if (item) { item.onSelect(); onClose(); }
+      if (item) { item.onSelect(); if (!item.keepOpen) onClose(); }
     }
   }, [flatResults, cursor, onClose]);
 
@@ -341,6 +399,14 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     const el = listRef.current?.querySelector(`[data-idx="${cursor}"]`);
     el?.scrollIntoView({ block: "nearest" });
   }, [cursor]);
+
+  // Follow the Spotlight stream unless the reader scrolled up to re-read.
+  const spotTurnCount = spotTurns.length;
+  useEffect(() => {
+    const el = spotScrollRef.current;
+    if (!el) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 240) el.scrollTop = el.scrollHeight;
+  }, [spotTurnCount, streaming]);
 
   if (!open) return null;
 
@@ -363,7 +429,28 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
         borderRadius: "var(--r3)", overflow: "hidden",
         boxShadow: "var(--shadow-xl)",
       }}>
-        {/* Input row */}
+        {/* Input row (search) / identity row (spotlight) */}
+        {mode === "spotlight" ? (
+          <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>
+            <button
+              onClick={() => setMode("search")}
+              aria-label="Back to search"
+              className="aug-fs-sm"
+              style={{ display: "flex", alignItems: "center", gap: 6, background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0 }}
+            >
+              ← <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)" }}>Back</span>
+            </button>
+            <span className="aug-fs-xs" style={{ fontWeight: 600, letterSpacing: ".08em", textTransform: "uppercase", color: "var(--vio3)" }}>Spotlight</span>
+            <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t2)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{spotQ}</span>
+            <kbd
+              onClick={() => setMode("search")}
+              className="aug-fs-xs"
+              style={{ padding: "2px 6px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
+            >
+              ESC
+            </kbd>
+          </div>
+        ) : (
         <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "11px 14px", borderBottom: "1px solid var(--b1)" }}>
           <PIcon name="spark" size={13} color="var(--t3)" />
           <input
@@ -371,7 +458,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
             value={query}
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Search tables, analyses, metrics…"
+            placeholder="Search — or ask Spotlight anything…"
             style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)" }}
           />
           <kbd
@@ -381,10 +468,56 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
             ESC
           </kbd>
         </div>
+        )}
+
+        {/* Spotlight answer pane */}
+        {mode === "spotlight" && (
+          <>
+            <div ref={spotScrollRef} style={{ maxHeight: 400, minHeight: 140, overflowY: "auto", padding: "12px 14px" }}>
+              {spotTurns.length === 0 ? (
+                <div className="aug-fs-sm" style={{ color: "var(--t4)", lineHeight: 1.6 }}>
+                  Asking Spotlight…
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                  {spotTurns.map(({ turn, assistantMsg }) => (
+                    <PartsMessage
+                      key={turn.id}
+                      turn={turn}
+                      message={assistantMsg}
+                      connectionId={selectedConn}
+                      onFollowUp={(q: string) => { if (!streaming) void sendMessage({ text: q, metadata: { mode: "ask" } }); }}
+                      onDeeper={(q: string) => { onGoToChat(q); onClose(); }}
+                    />
+                  ))}
+                </div>
+              )}
+            </div>
+            <div style={{ padding: "10px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 8 }}>
+              <input
+                value={followUp}
+                onChange={e => setFollowUp(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === "Enter" && !e.shiftKey && followUp.trim() && !streaming) {
+                    e.preventDefault();
+                    setSpotQ(followUp.trim());
+                    void sendMessage({ text: followUp.trim(), metadata: { mode: "ask" } });
+                    setFollowUp("");
+                  }
+                }}
+                placeholder={streaming ? "Answering…" : "Ask a follow-up — answers stay in this overlay"}
+                disabled={streaming}
+                className="aug-fs-sm"
+                style={{ flex: 1, background: "var(--bg-3)", border: "1px solid var(--b1)", borderRadius: "var(--r1)", outline: "none", color: "var(--t1)", fontFamily: "var(--font-ui)", padding: "7px 10px" }}
+              />
+            </div>
+          </>
+        )}
 
         {/* Results */}
+        {mode === "search" && (
         <div ref={listRef} style={{ maxHeight: 380, overflowY: "auto" }}>
-          {results.length === 0 ? (
+          {shownResults.length === 0 ? (
             <div style={{ padding: "28px 0", textAlign: "center", fontSize: 12, color: "var(--t3)" }}>
               No results for &ldquo;{query}&rdquo;
             </div>
@@ -405,7 +538,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
                     <button
                       key={item.id}
                       data-idx={idx}
-                      onClick={() => { item.onSelect(); onClose(); }}
+                      onClick={() => { item.onSelect(); if (!item.keepOpen) onClose(); }}
                       onMouseEnter={() => setCursor(idx)}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 10,
@@ -449,17 +582,23 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
             ))
           )}
         </div>
+        )}
 
         {/* Footer hints */}
         <div style={{ padding: "6px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 14, alignItems: "center" }}>
-          {[["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]].map(([k, l]) => (
+          {(mode === "spotlight"
+            ? [["ESC", "Back to search"], ["↵", "Ask follow-up"]]
+            : [["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]]
+          ).map(([k, l]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
               <span style={{ fontSize: 11, color: "var(--t4)" }}>{l}</span>
             </span>
           ))}
           <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>
-            {results.length} result{results.length !== 1 ? "s" : ""}
+            {mode === "spotlight"
+              ? (streaming ? "answering…" : "grounded by tool calls")
+              : `${shownResults.length} result${shownResults.length !== 1 ? "s" : ""}`}
           </span>
         </div>
       </div>
