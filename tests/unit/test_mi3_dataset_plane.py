@@ -53,7 +53,11 @@ def test_provenance_walks_a_dataset_back_to_the_verdicts_that_fed_it():
     lineage = store.lineage_of(node["id"])
 
     assert lineage, "a dataset with no recorded lineage is unauditable"
-    assert {row["source_kind"] for row in lineage} == {"finding_verdict"}
+    # KI-4 widened the corpus: human-approved trusted queries export too, under their
+    # own lineage kind. The seeded verdicts must all be present; a trusted_query row
+    # appearing beside them is the new contract, not contamination.
+    kinds = {row["source_kind"] for row in lineage}
+    assert "finding_verdict" in kinds and kinds <= {"finding_verdict", "trusted_query"}
     assert len(lineage) >= node["row_count"]
 
 

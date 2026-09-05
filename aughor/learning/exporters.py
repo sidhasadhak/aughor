@@ -74,22 +74,44 @@ def _dedupe(examples: list[dict]) -> list[dict]:
     return out
 
 
+def _trusted_export_rows() -> list:
+    """Approved trusted queries whose approval was a HUMAN act — KI-4's addition to
+    the corpus. A human-approved (question, SQL) pair is the purest SFT example the
+    platform produces: the two-act door (§6 item 9b) means someone verified it ran
+    clean AND someone chose to trust it. Excluded deliberately: eval-promoted entries
+    (their warrant is consistency — "reproduces a prior answer", not "is true" — and
+    §3.9's reward-integrity law keeps the corpus human-graded) and grandfathered
+    legacy rows with no verifier of record."""
+    from aughor.semantic.trusted_queries import list_trusted
+
+    return [t for t in list_trusted()          # approved-only by default (fail closed)
+            if (t.verified_by or "").strip()
+            and t.source != "eval_promotion"
+            and (t.question or "").strip() and (t.sql or "").strip()]
+
+
 def export_sft(name: str = "nl2sql-sft", *, task: str = "nl2sql",
                limit: int = 100000) -> dict:
-    """Accepted findings → question/context → SQL pairs. Golden candidates are excluded."""
+    """Accepted findings + human-approved trusted queries → question → SQL pairs.
+    Golden candidates are excluded (same stable-hash predicate for both sources)."""
     from aughor.feedback.verdicts import list_for_export
 
     rows = list_for_export(("accept",), require_sql=True, limit=limit)
     kept = [r for r in rows if not _is_golden(r)]
+    trusted = [t for t in _trusted_export_rows() if not _is_golden({"id": t.id})]
     examples = _dedupe([
         {"prompt": _scrub(r.get("headline") or ""),
          "completion": _scrub(r.get("sql_source") or ""),
          "task": task}
         for r in kept if (r.get("sql_source") or "")
+    ] + [
+        {"prompt": _scrub(t.question), "completion": _scrub(t.sql), "task": task}
+        for t in trusted
     ])
     return store.register(
         name, "sft", examples, task=task,
-        lineage=[("finding_verdict", r["id"]) for r in kept])
+        lineage=([("finding_verdict", r["id"]) for r in kept]
+                 + [("trusted_query", t.id) for t in trusted]))
 
 
 def export_dpo(name: str = "nl2sql-dpo", *, task: str = "nl2sql",
@@ -127,15 +149,20 @@ def export_golden(name: str = "nl2sql-golden", *, task: str = "nl2sql",
 
     rows = list_for_export(("accept",), require_sql=True, limit=limit)
     held = [r for r in rows if _is_golden(r)]
+    trusted = [t for t in _trusted_export_rows() if _is_golden({"id": t.id})]
     examples = _dedupe([
         {"prompt": _scrub(r.get("headline") or ""),
          "completion": _scrub(r.get("sql_source") or ""),
          "task": task}
         for r in held if (r.get("sql_source") or "")
+    ] + [
+        {"prompt": _scrub(t.question), "completion": _scrub(t.sql), "task": task}
+        for t in trusted
     ])
     return store.register(
         name, "golden", examples, task=task,
-        lineage=[("finding_verdict", r["id"]) for r in held])
+        lineage=([("finding_verdict", r["id"]) for r in held]
+                 + [("trusted_query", t.id) for t in trusted]))
 
 
 def publish_golden_to_evals(node: dict, *, suite_name: Optional[str] = None) -> Optional[str]:

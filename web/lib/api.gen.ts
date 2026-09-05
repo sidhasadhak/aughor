@@ -4843,6 +4843,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/suggest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Suggest From Usage
+         * @description KI-4 — the suggestions loop: mine what the platform already witnessed on this
+         *     connection (validated runs → trusted-query proposals; recurring guard fires →
+         *     rule proposals) into the SAME lane, and report the measured populations either
+         *     way. Questions the platform could not answer come back as a report, not
+         *     candidates — writing their SQL is the human act the lane exists to receive.
+         *     Deterministic, no model call; an unchanged corpus re-mines to the same bundle
+         *     and proposes nothing.
+         */
+        post: operations["suggest_from_usage_intake_suggest_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/integrations/catalog": {
         parameters: {
             query?: never;
@@ -11940,6 +11966,23 @@ export interface components {
              * @description draft | active | deprecated
              */
             status: string;
+        };
+        /** SuggestIn */
+        SuggestIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /**
+             * Limit
+             * @default 200
+             */
+            limit: number;
+            /**
+             * Min Fires
+             * @default 3
+             */
+            min_fires: number;
         };
         /** SuggestNameRequest */
         SuggestNameRequest: {
@@ -21460,6 +21503,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    suggest_from_usage_intake_suggest_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SuggestIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
