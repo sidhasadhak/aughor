@@ -2398,14 +2398,32 @@ This section's "what is true today" table IS the census, taken with file:line re
 At build time each wave re-verifies its own rows (the catalogue-timestamp law) — three
 inline claims here will rot before any code does.
 
-#### SP-1 · The Know roster (first shippable slice; read-only)
+#### SP-1 · The Know roster (first shippable slice; read-only) — ✅ FIRST CUT BUILT 2026-09-05 (same evening as the stamp)
 
 Platform-ops read tools join conversation: connections/catalog counts, activity
 queries, run histories, trace lookups, a unified audit read, popularity ("not mined
 yet" honest), capability introspection. Bodies shared with the MCP server — the
 `knowledge_tools.py` pattern already proven. Injection fencing on every result.
-**Receipt:** the user's four acceptance questions answered live in the product's own
-chat, every number traceable to a tool call in the receipt.
+
+**Built (first cut, acceptance-suite-shaped):** `aughor/agent/spotlight_tools.py` —
+six org-level reads in the converse roster (`list_platform_connections` ·
+`platform_usage` · `platform_runs` · `investigation_cadence` · `answer_accuracy` ·
+`table_popularity`), same read-only contract as `platform_tools`, stated in the same
+absolute terms. The usage tool windows at the LEDGER (`session_events(since=…)` — the
+"one seam" turned out to already exist) and totals through the pure `rollup`, so it
+cannot disagree with `/usage`; every honesty field travels (`cost_is_complete`,
+`calls_without_usage`, unpriced counts). Two new public reads in `db/history.py`
+(`investigation_counts_since`, `investigations_by_month`) compare on DAY/MONTH
+substrings — the ISO-`T`-vs-space lexical-compare trap, refused by construction.
+`answer_accuracy` quotes the rate WITH `graded_total` and grows a caveat under 30
+gradings; `table_popularity` reports an empty store as `mined=false` ("not mined
+yet"), never as an unqueried warehouse — the confident-0/unmeasured-0 law, per tool.
+**Receipt:** `tests/unit/test_spotlight_tools.py` (11 tests: windowing hits the
+ledger not client-side; unpriced ⇒ `cost_is_complete=false`; unknown axis refused
+before any read; zero-months listed not omitted; thin-sample caveats; not-mined
+honesty; the roster reaches `converse_tools`). Remaining for the wave: trace/audit
+lookup tools · the unified audit read · the LIVE chat receipt (the four questions
+asked in the product's own chat) once this merges and the API restarts.
 
 #### SP-2 · The summon
 
@@ -2769,8 +2787,9 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         Census done in-draft; the user's 4-question acceptance suite is green
         on substrate. SP-1 taken first at the user's direction.
         SP-0 ✅ census (in §3.11 itself; re-verify per wave)
-        SP-1 Know roster — read-only, independent, FIRST slice; receipt = the
-             acceptance suite answered live in the product's own chat
+        SP-1 ✅ FIRST CUT BUILT 2026-09-05 — six org-level reads in the converse
+             roster (spotlight_tools.py); acceptance-suite honesty pinned by 11
+             tests. Open: trace/audit tools + the live chat receipt post-merge
         SP-2 the summon (async palette fallthrough + surface context)
         SP-3 Act tools (draft_agent/draft_automation as staged DIFFs) + the
              per-user settings store (the arc's ONE new store)
