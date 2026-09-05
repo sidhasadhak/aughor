@@ -606,15 +606,29 @@ def link_schema(
         spent += block_chars
         included += 1
 
-    # Append non-table trailing content (join hints, metrics, etc.) verbatim.
+    # Append the trailing enrichment sections (join hints, metrics catalog, data
+    # profiles, …) VERBATIM. The region starts at the first section header — an
+    # unindented, non-blank line after the tables that is neither a TABLE: header
+    # nor a `--` note (compress_schema's shard notes are top-level `--` lines
+    # between blocks). Structural, not a header name list: a new section kind
+    # must not reintroduce this bug by being absent from an enumeration.
+    #
+    # Selecting section CONTENT by line shape is what this pass must never do
+    # again: a join-hint detail or metric formula line is indistinguishable from
+    # a column line (`  orders.customer_id → …`), so shape-matching kept bare
+    # headers over stripped bodies — a header asserting content that wasn't
+    # there — while value enumerations from DROPPED tables leaked in after them.
+    lines = schema_str.splitlines()
     past_tables = False
-    for line in schema_str.splitlines():
+    for i, line in enumerate(lines):
         if line.startswith("TABLE:"):
             past_tables = True
-        if not past_tables:
             continue
-        if not line.startswith("TABLE:") and not re.match(r"^\s{2}\w+", line):
-            out_lines.append(line)
+        if not past_tables or not line.strip():
+            continue
+        if not line.startswith((" ", "\t", "--")):
+            out_lines.extend(lines[i:])
+            break
 
     filtered = "\n".join(out_lines)
     # Final guard: never emit a schema with zero tables.
