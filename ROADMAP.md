@@ -2158,8 +2158,17 @@ threshold beside it — above it after prompt iteration, the mapper parks and th
 deterministic doors remain. Receipt: `tests/unit/test_ki2_prose_mapper.py` — no test
 spends a token; the cross-slice law is pinned (an accepted LLM synonym widens
 retrieval and stays OUT of the prompt until promoted to human).
-**Still deferred:** the SKILL.md lane (imports packs, a different root — revisit when
-a pack candidate kind earns its place).
+✅ **The SKILL.md lane landed 2026-09-05 — the arc's last deferral, and the pack
+candidate kind earned its place:** a `skills` section on the bundle door (and `.md`
+with frontmatter on the file door; markdown WITHOUT frontmatter is pointed at
+`/intake/prose` rather than guessed at) stages `pack` candidates through the
+skills-ingest engine that already owned the format — `plan_pack`'s lint-first plan
+was the lane's grammar all along. A BLOCKED skill (model ids, credential shapes,
+injection, exfiltration) is REFUSED at the door with the rules named; lint warnings
+ride the candidate (the lane IS the review screen the ingest module asked for); an
+ACTIVE pack conflicts rather than being overwritten. An accept writes the DRAFT,
+PARTIAL pack into the imported root — inert until the pack plane's own promotion,
+the two-act law unchanged. Receipt: `tests/unit/test_ki_skill_lane.py`.
 **Receipt:** `tests/unit/test_ki2_file_mappers.py` — the same CSV maps to the same
 candidate set twice; the mapped file lands: metric `proposed`, definitions in the KB,
 synonyms in the vocabulary; the same file re-uploaded dedupes to the same bundle; a
@@ -2501,8 +2510,8 @@ ARC KI  ✅ ADOPTED 2026-09-05 (§6 item 9, both clauses YES) — org-owned defi
              accept/edit/dismiss → fan-out through each store's own governance;
              interchange.py consumed (plan_import has its first caller)
         KI-2 ✅ COMPLETE 2026-09-05 — CSV/TSV/XLSX dictionary + dbt manifest upload
-             + LLM prose mapper (edit-rate falsifier instrumented, published at
-             /intake/mapper-stats) · SKILL.md lane deferred
+             + LLM prose mapper (edit-rate falsifier at /intake/mapper-stats)
+             + SKILL.md lane (pack candidates, draft-until-promoted). ARC COMPLETE
         KI-3 ✅ COMPLETE 2026-09-05 — Sheets definitions mode + Confluence/Notion
              table mining (one bundle per page, page URL as provenance; re-mine
              of an unchanged page proposes nothing)

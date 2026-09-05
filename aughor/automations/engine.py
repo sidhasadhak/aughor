@@ -757,6 +757,16 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     swallow them.
     """
     question = str(effect.config.get("question", ""))
+    # Scheduled-run grounding (the theLook-incident model correction): a schedule-
+    # fired investigation gets a code-written note naming the COMPLETE period to
+    # observe (never the in-progress one; `observation_lag_days` moves the anchor
+    # for sources whose recent days restate) plus its own previous report, so a
+    # source rewriting history is named instead of narrated as change. Empty for
+    # any automation without a schedule condition — those prompts stay
+    # byte-identical. The run history's `target` keeps the RAW question.
+    from aughor.automations.temporal import scheduled_grounding
+    _grounding = scheduled_grounding(automation, effect.config)
+    grounded_question = f"{_grounding}\n\n{question}" if _grounding else question
     # VA-13 — wait only when a later step binds to this one's answer (set by the chain
     # loop from `effect_refs`). An unconsumed investigate keeps submitting and returning,
     # which is what "run this nightly" wants and what every automation written before this
@@ -775,7 +785,7 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
     if agent_id:
         idem = f"{idem}:{agent_id}"
     run = run_investigation(
-        InvestigationRequest(question=question, connection_id=automation.conn_id,
+        InvestigationRequest(question=grounded_question, connection_id=automation.conn_id,
                              schema_name=effect.config.get("schema_name"),
                              agent_id=agent_id or None, wait=await_result),
         idempotency_key=idem, caller=f"automation:{automation.id}",
