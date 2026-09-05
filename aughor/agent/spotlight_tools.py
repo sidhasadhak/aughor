@@ -75,7 +75,11 @@ def platform_usage(args: dict) -> dict:
     from aughor.obs.usage import AXES, rollup
 
     days = max(1, min(int(args.get("days") or 7), 90))
-    by = str(args.get("by") or "model").strip()
+    by = str(args.get("by") or "model").strip().lower()
+    # The parameter prose offers plain words (agent, connection, user, org) so the
+    # tool-prose ratchet holds; map them onto the rollup's real axis names.
+    by = {"agent": "agent_id", "connection": "conn_id", "user": "user_id",
+          "org": "org_id"}.get(by, by)
     if by not in AXES:
         return {"error": f"unknown axis {by!r}", "known_axes": sorted(AXES)}
     since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -152,11 +156,15 @@ def investigation_cadence(args: dict) -> dict:
 
 def answer_accuracy(connection_id: str, args: dict) -> dict:
     """The graded quality of answers — verdict counts, acceptance rate, and the size of
-    the graded sample, which is the number that decides how much the rate means."""
+    the graded sample, which is the number that decides how much the rate means.
+
+    Bound to the conversation's connection by closure, like every other tool: the
+    binding law ("a tool that cannot express the wrong connection cannot be talked
+    into it") applies to reads too. An org-wide variant is a later, deliberate tool."""
     from aughor.feedback.verdicts import verdict_stats
     from aughor.semantic.trusted_queries import list_trusted
 
-    cid = str(args.get("connection_id") or "").strip() or connection_id
+    cid = connection_id
     stats = verdict_stats(cid or None)
     trend = (stats.get("trend") or [])[-_MAX_TREND_WEEKS:]
     total = int(stats.get("total") or 0)
@@ -181,7 +189,6 @@ def table_popularity(connection_id: str, args: dict) -> dict:
     """Which tables (and columns) real queries touch most, from the mined popularity
     store. An empty store is reported as NOT MINED — an unmined store and an unqueried
     warehouse look identical in the counts, and only one of those is a finding."""
-    from aughor.kernel.flags import flag_enabled
     from aughor.sql.popularity import load_popularity
 
     top = max(1, min(int(args.get("top") or 10), _MAX_POPULAR))
@@ -191,14 +198,12 @@ def table_popularity(connection_id: str, args: dict) -> dict:
     if not tables and not columns:
         return {
             "connection_id": connection_id, "mined": False,
-            "flag_obs_popularity": flag_enabled("obs.popularity"),
             "answer": ("the popularity store holds nothing for this connection — say "
                        "'not mined yet', never 'nothing is queried'; mining runs with "
                        "the schema birth job"),
         }
     return {
         "connection_id": connection_id, "mined": True,
-        "flag_obs_popularity": flag_enabled("obs.popularity"),
         "queries_mined": int(sum(n for _, n in tables)),
         "top_tables": [{"table": t, "queries": n} for t, n in tables[:top]],
         "top_columns": [{"column": c, "queries": n} for c, n in columns[:top]],
@@ -218,8 +223,8 @@ _USAGE_PARAMS = {
         "days": {"type": "integer",
                  "description": "Trailing window in days (default 7, max 90)."},
         "by": {"type": "string",
-               "description": "Grouping axis: model, provider, feature, agent_id, "
-                              "conn_id, user_id or org_id (default model)."},
+               "description": "Grouping axis: model, provider, feature, agent, "
+                              "connection, user or org (default model)."},
     },
 }
 _MONTHS_PARAMS = {
@@ -227,13 +232,7 @@ _MONTHS_PARAMS = {
     "properties": {"months": {"type": "integer",
                               "description": "Trailing calendar months (default 6)."}},
 }
-_ACCURACY_PARAMS = {
-    "type": "object",
-    "properties": {"connection_id": {
-        "type": "string",
-        "description": "Optional other connection id; omit for this conversation's "
-                       "connection. Pass an empty string for the whole org."}},
-}
+_ACCURACY_PARAMS: dict = {"type": "object", "properties": {}}
 _TOP_PARAMS = {
     "type": "object",
     "properties": {"top": {"type": "integer",
@@ -261,7 +260,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             name="platform_usage",
             description=(
                 "Model usage and cost for a trailing window — calls, tokens, USD — "
-                "grouped by model, provider, feature, agent_id, conn_id or user_id. "
+                "grouped by model, provider, feature, agent, connection or user. "
                 "Use this for 'what did we spend / which agent burns the most tokens' "
                 "questions. Read the honesty fields before quoting: unpriced or "
                 "usage-less calls make the totals a floor, not the whole truth, and "
@@ -275,7 +274,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             description=(
                 "How much ran on the platform in a trailing window: deep-analysis "
                 "runs started/finished/failed, and automation ticks by outcome "
-                "(fired / not_fired / gated / paused / error). Use this for 'how many "
+                "(fired, not fired, gated, paused, error). Use this for 'how many "
                 "runs happened' and 'is anything failing' questions."
             ),
             parameters=_DAYS_PARAMS,
@@ -297,7 +296,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "The graded quality of this platform's answers: human verdict counts, "
                 "the acceptance rate, the recent weekly trend, and how many verified "
                 "query patterns exist. ALWAYS quote the rate together with "
-                "graded_total — a rate over a thin sample is a different claim than "
+                "the graded total — a rate over a thin sample is a different claim than "
                 "one over a thick sample, and the caveat field says which you have."
             ),
             parameters=_ACCURACY_PARAMS,

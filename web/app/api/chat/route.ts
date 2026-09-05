@@ -87,6 +87,10 @@ interface ChatBody {
   };
   /** Direct callers may still send the compact history; the SDK client never does. */
   history?: unknown[];
+  /** SP-2 — the product screen the question was summoned from (the ⌘K overlay's
+   *  host tab; absent from every other caller). Forwarded verbatim; the backend
+   *  caps and sanitizes it. */
+  surface?: string;
 }
 
 /**
@@ -227,6 +231,7 @@ function upstreamRequest(body: ChatBody): { url: string; payload: Record<string,
         canvas_id: body.canvas_id ?? null,
         history,
         session_id: body.session_id ?? "",
+        surface: body.surface ?? "",
       },
     };
   }
@@ -251,6 +256,7 @@ function upstreamRequest(body: ChatBody): { url: string; payload: Record<string,
       deep: body.deep ?? false,
       mode: body.request_mode ?? null,
       purpose: body.purpose ?? "",
+      surface: body.surface ?? "",
     },
   };
 }

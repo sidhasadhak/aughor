@@ -812,6 +812,11 @@ class ChatRequest(BaseModel):
     canvas_id: Optional[str] = None
     history: list[ChatHistoryTurn] = []
     session_id: str = ""
+    # SP-2 (§3.11) — the product screen the question was summoned from (the ⌘K
+    # overlay sends its host tab; '' from every other caller keeps prompts
+    # byte-identical). One line of orientation in the prompt, never an
+    # instruction channel and never an authorization input.
+    surface: str = ""
 
 
 class AskRequest(BaseModel):
@@ -864,6 +869,9 @@ class AskRequest(BaseModel):
     # R13/R10 seam — the starter's purpose tag; pure provenance (carried on the
     # route receipt so a starter run is legible as one).
     purpose: str = ""
+    # SP-2 (§3.11) — the product screen the question was summoned from (see
+    # ChatRequest.surface; same contract, same non-authority).
+    surface: str = ""
     # Pass-throughs preserved from the investigate path. `escalate` accepts the old wire
     # name `deep`; it is the dossier-escalation flag, not the `depth` knob above.
     escalate: bool = Field(default=False, alias="deep")
@@ -1483,6 +1491,7 @@ def _answer_core(
     schema_scope: Optional[str] = None,
     assumed_default: bool = False,
     persist_question: str = "",
+    surface: str = "",
 ) -> "_AnswerCoreResult":
     """Answer one question, synchronously, reporting progress through ``emit``.
 
@@ -1985,6 +1994,16 @@ def _answer_core(
         _instr_sec = _grounding_instructions(connection_id, canvas_id or "")
         if _instr_sec:
             prompt = _instr_sec + prompt
+        # Summon surface (SP-2, §3.11) — which product screen the question was asked
+        # from; the ⌘K overlay sends its host tab and every other door sends ''
+        # (byte-identical prompts). Whitespace-collapsed and hard-capped because it
+        # is client-supplied text: one line of orientation, structurally unable to
+        # carry a smuggled paragraph, and never an instruction channel.
+        if surface:
+            _surf = " ".join(str(surface).split())[:48]
+            if _surf:
+                prompt = (f"ASKED FROM — the user summoned this question from the "
+                          f"'{_surf}' screen of the product.\n\n") + prompt
         # Business synonyms — human-curated aliases, rendered verbatim like the
         # instructions above (an alias matters for reading the question AND for
         # labelling the answer). The vocabulary store fed the schema linker from
@@ -3158,6 +3177,7 @@ async def _stream_chat(
     purpose: str = "",
     schema_scope: Optional[str] = None,
     assumed_default: bool = False,
+    surface: str = "",
 ) -> AsyncGenerator[str, None]:
     """The streaming half: run ``_answer_core`` on a worker thread and yield what it says.
 
@@ -3177,7 +3197,7 @@ async def _stream_chat(
             question, connection_id, history, emit=emit, cancelled=cancelled,
             session_id=session_id, canvas_id=canvas_id, skip_clarify=skip_clarify,
             purpose=purpose, schema_scope=schema_scope,
-            assumed_default=assumed_default,
+            assumed_default=assumed_default, surface=surface,
         )
 
     _bridge = _core_frames(_run)
@@ -3219,6 +3239,7 @@ async def _stream_converse(
     canvas_id: Optional[str] = None,
     origin_prose: str = "",
     agent_id: str = "",
+    surface: str = "",
 ) -> AsyncGenerator[str, None]:
     """Serve one `/ask` turn as a CONVERSATION (`ask.converse`, EXPERIMENT, default off).
 
@@ -3304,6 +3325,14 @@ async def _stream_converse(
                        resolve_prior_answers(question, connection_id, session_id)))
         if origin_prose:
             _memory = origin_prose + "\n\n" + _memory if _memory else origin_prose
+        # Summon surface (SP-2, §3.11) — same one-line orientation the quick path
+        # prepends, same sanitation, '' from every door but the ⌘K overlay.
+        if surface:
+            _surf = " ".join(str(surface).split())[:48]
+            if _surf:
+                _line = (f"ASKED FROM — the user summoned this question from the "
+                         f"'{_surf}' screen of the product.")
+                _memory = _line + "\n\n" + _memory if _memory else _line
         # VA-9c — the agent record, so its GRANTS decide whether a write tool exists at
         # all on this turn. Resolved here rather than passed as an id: the tool roster is
         # bound by closure precisely so the model cannot name an agent it was not given.
@@ -4531,7 +4560,8 @@ async def chat_endpoint(req: ChatRequest, request: Request):
     # rather than going through build_ask_stream, so without this it stays dark.
     stream = stream_with_session_log(
         _stream_chat(req.question, conn_id, req.history,
-                     session_id=req.session_id, canvas_id=req.canvas_id),
+                     session_id=req.session_id, canvas_id=req.canvas_id,
+                     surface=req.surface),
         question=req.question, conn_id=conn_id, door="chat",
         canvas_id=req.canvas_id or "")
     return StreamingResponse(
@@ -5219,6 +5249,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
         _body = (
             _stream_converse(req.question, conn_id, req.history, agent_id=req.agent_id or "",
                              session_id=req.session_id, canvas_id=req.canvas_id,
+                             surface=req.surface,
                              # CI-4 — a seeded/dossier turn hands its finding to the
                              # conversation instead of bypassing it.
                              origin_prose=await _origin_prose_for(req, conn_id))
@@ -5226,7 +5257,7 @@ async def _stream_ask(req: "AskRequest", request: Request, conn_id: str) -> Asyn
             _stream_chat(req.question, conn_id, req.history,
                          session_id=req.session_id, canvas_id=req.canvas_id,
                          skip_clarify=req.skip_clarify, purpose=req.purpose,
-                         schema_scope=req.schema_name,
+                         schema_scope=req.schema_name, surface=req.surface,
                          # "Answer anyway" = skipped WITHOUT supplying a reading. When a
                          # reading did come back the choice is recorded and crystallized,
                          # so there is nothing to disclose.

@@ -2425,13 +2425,32 @@ honesty; the roster reaches `converse_tools`). Remaining for the wave: trace/aud
 lookup tools · the unified audit read · the LIVE chat receipt (the four questions
 asked in the product's own chat) once this merges and the API restarts.
 
-#### SP-2 · The summon
+#### SP-2 · The summon — ✅ FIRST CUT BUILT 2026-09-06
 
-`commandRegistry` gains an async, streamable command shape; free text that matches no
-command falls through to Spotlight inside the overlay; the current surface travels as
-context (the `canvas` param generalized), so "schedule this" knows what *this* is.
-Commands stay first — deterministic and instant; the model is the fallthrough, never
-the fast path.
+Free text falls through to Spotlight inside the ⌘K overlay; the current surface
+travels as context; commands stay first — deterministic and instant; the model is the
+fallthrough, never the fast path.
+
+**Built (first cut):** the palette grows a second mode, not a second stack — the
+Spotlight row is appended AFTER Fuse's results (never through the index: zero
+keystroke cost, always last), and selecting it flips the overlay into an answer pane
+driving `useAughorChat` → the same `/api/chat` transport → the same `/ask` door as
+every chat surface, `depth:"quick"` pinned, rendered through `projectTurn` →
+`PartsMessage` (receipts and all, no bespoke renderer). Follow-ups compose in one
+overlay session; ESC backs out one level (spotlight → search → closed); the topbar
+search bar — already mouse-clickable on every screen — now reads "Search — or ask
+Spotlight anything…", which is the visible affordance. `surface` rides
+`ChatRequest`/`AskRequest` end to end (route → both quick bodies → one prompt line),
+whitespace-collapsed and capped at 48 chars because it is client-supplied text —
+structurally unable to smuggle a paragraph.
+**Receipts:** `tests/unit/test_sp2_surface_context.py` (6) — both request models
+accept the field; BOTH quick bodies render the line (the guard found the fork
+function and counted both threads — the two-site instructions defect, refused);
+the sanitizer collapses and caps. Seven web gates + `gen:api` + 670 web tests
+green; the raw-font-size ratchet came out one UNDER baseline and was lowered.
+**Open in the wave:** an async command shape in `commandRegistry` itself (the
+palette owns the fallthrough today) · in-context handles (empty states, failed-run
+rows) · the live latency measurement and the in-browser receipt post-merge.
 
 **Where a person finds it (the discovery map, ranked by how people actually discover):**
 ⌘K for hands already on keyboards · a **visible Spotlight affordance in the top chrome
@@ -2790,7 +2809,10 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         SP-1 ✅ FIRST CUT BUILT 2026-09-05 — six org-level reads in the converse
              roster (spotlight_tools.py); acceptance-suite honesty pinned by 11
              tests. Open: trace/audit tools + the live chat receipt post-merge
-        SP-2 the summon (async palette fallthrough + surface context)
+        SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
+             in the overlay (same /ask door, quick-pinned); surface context
+             threaded end-to-end, sanitized. Open: registry async shape,
+             in-context handles, live receipt
         SP-3 Act tools (draft_agent/draft_automation as staged DIFFs) + the
              per-user settings store (the arc's ONE new store)
         SP-4 Guide (serve the corpus KI's SKILL.md lane now feeds; answers end

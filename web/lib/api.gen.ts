@@ -10027,6 +10027,11 @@ export interface components {
              * @default false
              */
             skip_clarify: boolean;
+            /**
+             * Surface
+             * @default
+             */
+            surface: string;
         };
         /** AssignRoleRequest */
         AssignRoleRequest: {
@@ -10417,6 +10422,11 @@ export interface components {
              * @default
              */
             session_id: string;
+            /**
+             * Surface
+             * @default
+             */
+            surface: string;
         };
         /** ColumnAnnotationIn */
         ColumnAnnotationIn: {
