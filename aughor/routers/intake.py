@@ -286,6 +286,41 @@ def mine_knowledge(body: MineIn, request: Request):
             "pages": results, **({"error": error} if error else {})}
 
 
+class SuggestIn(BaseModel):
+    connection_id: str
+    actor: str
+    min_fires: int = 3     # guard-cluster threshold; the populations report what it cut
+    limit: int = 200       # cap on trusted-query proposals per pass
+
+
+@router.post("/intake/suggest", dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def suggest_from_usage(body: SuggestIn, request: Request):
+    """KI-4 — the suggestions loop: mine what the platform already witnessed on this
+    connection (validated runs → trusted-query proposals; recurring guard fires →
+    rule proposals) into the SAME lane, and report the measured populations either
+    way. Questions the platform could not answer come back as a report, not
+    candidates — writing their SQL is the human act the lane exists to receive.
+    Deterministic, no model call; an unchanged corpus re-mines to the same bundle
+    and proposes nothing."""
+    from aughor.intake import suggestions
+
+    if not (body.actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+    _check_conn_org(request, body.connection_id)
+
+    bundle, populations, unresolved = suggestions.build_bundle(
+        body.connection_id, min_fires=max(1, int(body.min_fires)),
+        limit=max(1, int(body.limit)))
+    if bundle is None:
+        return {"staged": False, "mined_at": _now(), "populations": populations,
+                "unresolved": unresolved,
+                "note": "nothing minable yet — the populations above say why"}
+    out = _stage(bundle, body.connection_id, source="usage-mining",
+                 actor=body.actor)
+    return {"staged": not out["duplicate"], **out, "mined_at": _now(),
+            "populations": populations, "unresolved": unresolved}
+
+
 @router.get("/intake/bundles")
 def bundles(connection_id: str = ""):
     from aughor.intake import store

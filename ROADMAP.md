@@ -2177,20 +2177,35 @@ unchanged page stages nothing (content-hash dedupe); mined candidates land throu
 the same lane (metric arrives `proposed`); Notion table-blocks and databases both
 mine; a lunch-spots page stages nothing.
 
-#### KI-4 · The suggestions loop — the same lane, fed from inside
+#### KI-4 · The suggestions loop — ✅ BUILT 2026-09-05
 
-The Snowflake study's biggest PORT item, landed where it belongs: mine what the
-platform already witnesses — validated `sql_examples` runs, session questions that
-never resolved, guard-fire clusters — into the SAME accept/edit/dismiss lane, as
-proposals for trusted queries, synonyms and descriptions. Nothing auto-applies here
-either. This is deliberately shared substrate with Arc MI: every accept, edit and
-dismiss in the lane is a human verdict, pinned and exportable — the lane converts both
-an org's imported past (KI-1…3) and its passive present (this slice) into MI-3's
-graded rows. Gate at pre-check: measure the minable population first — a miner over a
-dozen examples is motion without progress, MI-3's own lesson.
-**Receipt:** a week of real usage yields proposals whose acceptance visibly moves
-`gate_status()`'s SFT/DPO counts, and a mined trusted query's provenance names the run
-it came from.
+The Snowflake study's biggest PORT item, landed where it belongs. `POST
+/intake/suggest` (`aughor/intake/suggestions.py`) mines what the platform already
+witnessed on a connection into the SAME lane: validated `sql_examples` runs →
+trusted-query proposals (one per question, ONLY when its history holds exactly one
+distinct SQL — two variants is divergence, and proposing either would fabricate an
+attribution; divergent questions are counted and named for the consistency surface
+instead) · recurring guard fires → factual rule proposals (subject required,
+threshold applied, eval-phase fires excluded — a corpus must not mine its own
+benchmark) · questions the platform could not answer → a REPORT, not candidates
+(an unanswered question has no SQL to stage; writing it is the human act KI-0's
+door exists to receive). Deterministic, no model call; the bundle carries no
+timestamp so an unchanged corpus re-mines to the same hash and proposes nothing.
+**The pre-check measured first (2026-09-05, live):** guard_verdicts held 26 non-eval
+rows and the only cluster ≥3 was 24 SUBJECT-LESS `preflight_repair` fires — the
+subject requirement and threshold exist because of that measurement; 31 unresolved
+investigations; the Qdrant example population is exclusively locked by the live API,
+so the endpoint publishes its own populations with every run — the measurement is
+part of the product, not a document.
+**The MI tie is now mechanical:** `export_sft`/`export_golden` include APPROVED
+trusted queries whose approval was a human act (`verified_by` set; eval-promoted
+excluded — consistency is not a human warrant; legacy no-verifier rows excluded),
+under `trusted_query` lineage, same stable-hash golden split. Every approval through
+the two-act door — seeded, imported, or mined — now moves `gate_status()`.
+**Receipt:** `tests/unit/test_ki4_suggestions.py` — a mined proposal names its runs
+in note, payload and, after approval, dataset lineage; the approved query lands in
+exactly one of SFT/golden; a re-mine of the unchanged corpus stages nothing; an
+empty deployment gets its populations and stages nothing.
 
 **Traps this arc must not re-pay:** the built-and-inert plane (interchange and
 vocabulary are ALREADY that — this arc's first job is consuming them, §7's law) · a
@@ -2471,8 +2486,9 @@ ARC KI  ✅ ADOPTED 2026-09-05 (§6 item 9, both clauses YES) — org-owned defi
         KI-3 ✅ COMPLETE 2026-09-05 — Sheets definitions mode + Confluence/Notion
              table mining (one bundle per page, page URL as provenance; re-mine
              of an unchanged page proposes nothing)
-        KI-4 usage-mined suggestions — the same lane Arc MI grades through; accepts
-             feed MI-3's gates
+        KI-4 ✅ BUILT 2026-09-05 — /intake/suggest mines validated runs + guard
+             clusters into the lane; human-approved trusted queries now export
+             to SFT/golden, so every approval moves gate_status()
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
