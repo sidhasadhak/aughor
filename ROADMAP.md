@@ -1494,9 +1494,16 @@ when the author was me:
   and `dataflow.py` and asserts they match** — the drift that file's own comment warns about
   ("a rule mirrored on one side only is a rule that disagrees with itself") now fails a test
   instead of surfacing as a cast the server refuses.
-  ⏳ Still owed — a dedicated PICKER. Bindings are edited as free-text JSON deliberately (a
-  plain input is the only editor that holds either a sentence or a binding), so a control
-  beside each of several bindable fields is a real design change, not a wiring one.
+  ✅ **PICKER SHIPPED 2026-09-04.** `BindingCast` renders a cast selector beside a bindable
+  field — and **nothing at all** when the field holds a plain value, which is what lets it
+  sit next to a free-text input without cluttering the majority of fields that will never
+  carry a binding. Wired to `slack_post`'s message and channel and to every param an
+  operation DECLARES bindable (offering a conversion on a param that cannot hold a binding
+  would advertise wiring the server refuses). Clearing it **deletes** `$as` rather than
+  setting `""`: `CASTS` has no empty member and `wearsMarker` accepts `$from` plus at most
+  `$as`, so an empty string would be a third state — read as wiring by the client and
+  refused as a conversion by the server. That property has its own test, verified to fail
+  against the naive implementation.
   It is reachable
   through the API and the DS-16 import funnel, not from the binding chip. Until that lands
   this is the arc's own recurring failure (a complete and inert plane), and it is named here
