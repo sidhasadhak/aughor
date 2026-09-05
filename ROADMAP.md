@@ -2265,7 +2265,7 @@ without a measured customer pull · OAuth Drive/SharePoint/OneDrive before a dep
 asks · MCP `resources/*` as a content channel (revisit only with a concrete server in
 hand) · any change to §6.8's outbound posture.
 
-### 3.11 · Arc SP — Spotlight, the platform operator (drafted 2026-09-05; adoption = decision §6 item 10, the user's)
+### 3.11 · Arc SP — Spotlight, the platform operator (adopted 2026-09-05; decision §6 item 10, both clauses YES)
 
 > **Origin.** The user's 2026-09-05 framing, verbatim in the parts that bind: *"an agent
 > that understands knows and can modify each and every part of the whole platform (without
@@ -2763,10 +2763,11 @@ ARC KI  ✅ ADOPTED 2026-09-05 (§6 item 9, both clauses YES) — org-owned defi
              clusters into the lane; human-approved trusted queries now export
              to SFT/golden, so every approval moves gate_status()
 
-ARC SP  ☐ DRAFTED 2026-09-05 (§3.11; adoption = §6 item 10, PENDING) — Spotlight,
-        the platform operator: one declared roster behind palette/chat/Slack/MCP;
-        know · act · guide · shape. Census done in-draft; the user's 4-question
-        acceptance suite is green on substrate.
+ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, the
+        platform operator: one declared roster behind palette/chat/Slack/MCP;
+        know · act · guide · shape; EX folded in as the Shape wave-family.
+        Census done in-draft; the user's 4-question acceptance suite is green
+        on substrate. SP-1 taken first at the user's direction.
         SP-0 ✅ census (in §3.11 itself; re-verify per wave)
         SP-1 Know roster — read-only, independent, FIRST slice; receipt = the
              acceptance suite answered live in the product's own chat
@@ -3032,13 +3033,14 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-05 (evening): ONE open — item 10 (Arc SP adoption), drafted the same
-> day.** Items 1–9 are all decided (item 9 stamped YES, both clauses, the same day it was
-> drafted — with KI-0…KI-3 already built at the user's direction). Kept as a register,
-> not a queue — each entry records the reasoning so a settled question is not
-> re-litigated, and so no band elsewhere in this document can go on reading as blocked
-> once the call has been made. Beyond item 10, what remains keyed on the user is in the
-> ledger's list — credentials and one manual gesture, not decisions.
+> **Status 2026-09-05 (late evening): NONE open. All TEN are decided** (items 9 and 10
+> each stamped YES, both clauses, the same day they were drafted — the KI build ran
+> ahead of its stamp at the user's direction, and SP-1 began the moment item 10 landed).
+> Kept as a register, not a queue — each entry records the reasoning so a settled
+> question is not re-litigated, and so no band elsewhere in this document can go on
+> reading as blocked once the call has been made. If you arrived here looking for what
+> the user still owes, the answer is *nothing*; what remains is in the ledger's "keyed
+> on the user" list — credentials and one manual gesture, not decisions.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -3104,18 +3106,20 @@ the browser** · **measure the premise before building.**
    KI-0/KI-1 code implements exactly this. Neither clause opened custody ground:
    §6.7 already covers imported work artifacts as org-scoped inputs, and §6.8's
    outbound posture is untouched.
-10. ⏳ **PENDING — Arc SP adoption (drafted 2026-09-05).** The user's Spotlight vision
-    as §3.11: one platform operator (know · act · guide · shape) behind one declared
-    roster, every write a staged proposal into the existing inbox. The census in the
-    section shows the substrate largely merged; the user's own four acceptance
-    questions are green on it, and the ten market use cases grade near/medium with
-    none requiring new ML. **(a) Adoption:** activate §3.11; order within §5 stays the
-    user's knob — SP-1 (read-only Know roster) is the cheap, independently shippable
-    first slice. **(b) The EX fold:** the 2026-09-01 meta-agent/experience vision
-    becomes the Shape wave-family INSIDE this arc (recommended), rather than a sibling
-    arc with its own laws — one custody story, one roster, one decision. Neither
-    clause opens custody ground: §6.4 governs what Spotlight may read, §6.7/§6.8 are
-    untouched, and cross-user Know waits on VA-10 regardless of this item's outcome.
+10. ✅ **DECIDED 2026-09-05 — Arc SP is adopted, and EX folds in as its Shape limb.**
+    Both clauses stamped YES by the user, the same day the section was drafted ("Lets
+    add to the roadmap… and then quickly take the first one in line"). The user's
+    Spotlight vision as §3.11: one platform operator (know · act · guide · shape)
+    behind one declared roster, every write a staged proposal into the existing inbox.
+    The census in the section shows the substrate largely merged; the user's own four
+    acceptance questions are green on it, and the ten market use cases grade
+    near/medium with none requiring new ML. **(a) Adoption:** §3.11 is active; order
+    within §5 stays the user's knob — SP-1 (read-only Know roster) is first, at the
+    user's direction. **(b) The EX fold:** the 2026-09-01 meta-agent/experience
+    vision is the Shape wave-family INSIDE this arc, not a sibling arc — one custody
+    story, one roster, one decision. Neither clause opened custody ground: §6.4
+    governs what Spotlight may read, §6.7/§6.8 are untouched, and cross-user Know
+    waits on VA-10 regardless.
 
 ---
 
