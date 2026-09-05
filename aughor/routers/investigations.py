@@ -1819,11 +1819,13 @@ def _answer_core(
                 linked_tables = fk_neighbor_expand(_full_schema, linked_tables, cap=10)
                 # M24c: verified semantic layer (segments + computed properties)
                 # for the linked entities — only items validated against the live DB.
+                _onto_graph = None
                 try:
                     from aughor.ontology.store import load_latest_ontology
                     from aughor.ontology.semantic_block import render_semantic_layer
+                    _onto_graph = load_latest_ontology(connection_id)
                     semantic_layer_section = render_semantic_layer(
-                        load_latest_ontology(connection_id), linked_tables
+                        _onto_graph, linked_tables
                     )
                 except Exception:
                     semantic_layer_section = ""
@@ -1831,6 +1833,27 @@ def _answer_core(
                                                   schema=canvas_scope_eff_schema or None)
                 if data_catalog:
                     schema = data_catalog
+                    # The catalog REPLACES the enriched schema string, dropping the
+                    # ENTITY RELATIONSHIPS block apply_schema_enrichment appended —
+                    # so re-inject it here, scoped to the linked tables (the same
+                    # question-scoping the semantic layer above uses). It rides
+                    # semantic_layer_section because that is prepended AFTER the
+                    # table cap: enforce_context_cap cuts trailing blocks. On the
+                    # no-catalog fallback the slice still carries the enrichment-time
+                    # block, so injecting only here never duplicates it.
+                    try:
+                        from aughor.ontology.semantic_block import render_relationship_block
+                        _linked_lower = {t.lower() for t in linked_tables}
+                        _rel_block = render_relationship_block(
+                            _onto_graph,
+                            {t: cols for t, cols in parse_schema_tables(_full_schema).items()
+                             if t.lower() in _linked_lower})
+                        if _rel_block:
+                            semantic_layer_section = (
+                                semantic_layer_section + "\n\n" + _rel_block
+                                if semantic_layer_section else _rel_block)
+                    except Exception:
+                        logger.debug("relationship block injection skipped", exc_info=True)
         except Exception:
             logger.warning("Data Catalog build failed; using linked schema text", exc_info=True)
 
