@@ -2123,20 +2123,28 @@ content hash; provenance walks accepted object → bundle hash → source → up
 the accepted metric is `proposed` (never approved by an import) and the accepted
 trusted query is NOT in the prompt until KI-0's own approve.
 
-#### KI-2 · File mappers — where formats multiply cheaply
+#### KI-2 · File mappers — DETERMINISTIC HALF ✅ BUILT 2026-09-05; LLM mapper deferred
 
-Deterministic first: a column-mapped CSV/XLSX dictionary (name · definition · formula ·
-owner · caveats — the shape metric dictionaries actually take in the wild), a dbt
-`manifest.json` UPLOAD (the env door stays for CI; the HTTP door serves everyone else),
-and SKILL.md (the CLI-only import gains the same lane). Then the LLM-assisted mapper
-for prose: a markdown page or pasted text → typed candidates, budget-metered, its
-output confidence-tiered `llm_candidate` so the lane ranks human > mined >
-llm_candidate (the vocabulary store already speaks this ranking). The mapper emits
-candidates ONLY — the lane is what stands between a hallucinated formula and the
-prompt.
-**Receipt:** the same Sheet-shaped CSV yields the same candidate set twice
-(deterministic path is deterministic); the human edit-rate on LLM-extracted candidates
-is measured and published per import — it is this arc's falsifier input.
+`POST /intake/files` (multipart, SEMANTIC_EDIT-gated) maps a file into a bundle and
+feeds the SAME lane (`aughor/intake/mappers.py`; the router's `_stage` is shared, so a
+mapped file is just a bundle). Built: the column-mapped **CSV/TSV/XLSX dictionary**
+(header vocabulary: Metric/Definition/Formula/Unit/Owner/Aliases/Notes and their
+spellings; XLSX via DuckDB's `excel` extension, the same reader the data-upload path
+uses) and the **dbt `manifest.json` upload** — mapped through
+`semantic/dbt.glossary_from_manifest`, a seam extracted from the env-configured layer
+so there is ONE reading of dbt's shape (the env door stays for CI). A row with a
+formula becomes a governed-metric candidate; a row with only prose keeps its meaning
+as a `definitions` candidate (a new lane kind, landing as the connection-KB `metric`
+entry that already exists for exactly that); an Aliases cell fans into synonym
+candidates; a nameless row is refused with its row number. The mapper judges
+nothing — every object still waits in the lane.
+**Deliberately deferred, per this slice's own law:** the LLM prose mapper (needs the
+edit-rate falsifier instrumented first) and the SKILL.md lane (imports packs, a
+different root — revisit when a pack candidate kind earns its place).
+**Receipt:** `tests/unit/test_ki2_file_mappers.py` — the same CSV maps to the same
+candidate set twice; the mapped file lands: metric `proposed`, definitions in the KB,
+synonyms in the vocabulary; the same file re-uploaded dedupes to the same bundle; a
+non-manifest JSON and a nameless CSV are refused with reasons.
 
 #### KI-3 · Source fetchers — the connectors point at the lane
 
@@ -2439,8 +2447,8 @@ ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned def
         KI-1 ✅ canonical bundle + review lane BUILT 2026-09-05 — upload → plan →
              accept/edit/dismiss → fan-out through each store's own governance;
              interchange.py consumed (plan_import has its first caller)
-        KI-2 file mappers — CSV/XLSX dictionary · dbt manifest upload · SKILL.md ·
-             LLM prose mapper (deterministic paths first)
+        KI-2 ✅ deterministic half BUILT 2026-09-05 — CSV/TSV/XLSX dictionary + dbt
+             manifest upload feed the same lane · LLM prose mapper + SKILL.md deferred
         KI-3 source fetchers — Confluence/Notion mining on the existing sync ·
              Sheets definitions mode
         KI-4 usage-mined suggestions — the same lane Arc MI grades through; accepts

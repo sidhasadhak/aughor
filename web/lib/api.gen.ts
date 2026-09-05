@@ -4748,6 +4748,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload File
+         * @description KI-2 — the file door: a metric dictionary (CSV / TSV / XLSX with name,
+         *     definition, formula, unit, owner, aliases columns) or a dbt `manifest.json`
+         *     becomes a bundle through a DETERMINISTIC mapper and enters the SAME lane.
+         *     The mapper judges nothing: every object still waits for a human verdict.
+         */
+        post: operations["upload_file_intake_files_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/intake/provenance": {
         parameters: {
             query?: never;
@@ -10033,6 +10056,20 @@ export interface components {
             chunk_settings?: string | null;
             /** File */
             file: string;
+        };
+        /** Body_upload_file_intake_files_post */
+        Body_upload_file_intake_files_post: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /** File */
+            file: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
         };
         /** Body_upload_file_to_connection_connections__conn_id__files_post */
         Body_upload_file_to_connection_connections__conn_id__files_post: {
@@ -21204,6 +21241,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    upload_file_intake_files_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_upload_file_intake_files_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

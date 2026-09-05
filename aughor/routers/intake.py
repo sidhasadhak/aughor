@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from aughor.licensing import Capability, gate
@@ -61,7 +61,6 @@ def upload_bundle(body: BundleUpload, request: Request):
     unknown sections, malformed rows), diff the rest against the live stores, and
     persist the plan as candidates awaiting a human. Re-uploading identical content
     returns the existing bundle and stages nothing new."""
-    from aughor.intake import engine, store
     from aughor.ontology.interchange import bundle_from_yaml
 
     if not (body.actor or "").strip():
@@ -79,27 +78,93 @@ def upload_bundle(body: BundleUpload, request: Request):
         raise HTTPException(status_code=400, detail="connection_id is required "
                             "(on the request or inside the bundle)")
     _check_conn_org(request, conn_id)
+    return _stage(bundle, conn_id, source=body.source, actor=body.actor)
+
+
+def _stage(bundle: dict, conn_id: str, *, source: str, actor: str,
+           mapper_refused: list[str] | None = None) -> dict:
+    """Refuse-or-stage one bundle — shared by the bundle door and the file door
+    (KI-2's mappers feed the SAME lane; a mapped file is just a bundle)."""
+    from aughor.intake import engine, store
+
     refusal = engine.refusal(bundle)
     if refusal:
         raise HTTPException(status_code=400, detail=refusal)
 
     org = _org()
-    rec, created = store.save_bundle(bundle, source=body.source,
-                                     actor=body.actor, org_id=org)
+    rec, created = store.save_bundle(bundle, source=source, actor=actor, org_id=org)
     if not created:
         cands = store.list_candidates(rec["id"], org_id=org)
-        return {"bundle": rec, "duplicate": True, "refused": [],
+        return {"bundle": rec, "duplicate": True,
+                "refused": list(mapper_refused or []),
                 "summary": _summary(cands), "candidates": cands}
 
     cands, refused = engine.plan(conn_id, bundle)
+    refused = list(mapper_refused or []) + refused
     staged = store.add_candidates(rec["id"], cands, org_id=org)
     _emit({"action": "upload", "bundle": rec["id"], "content_hash": rec["content_hash"],
-           "connection_id": conn_id, "actor": body.actor, "source": body.source,
+           "connection_id": conn_id, "actor": actor, "source": source,
            "staged": len(staged), "refused": len(refused), "at": _now(),
            **_summary(cands)})
     return {"bundle": rec, "duplicate": False, "refused": refused,
             "summary": _summary(cands),
             "candidates": store.list_candidates(rec["id"], org_id=org)}
+
+
+@router.post("/intake/files", status_code=201,
+             dependencies=[gate(Capability.SEMANTIC_EDIT)])
+async def upload_file(request: Request,
+                      file: UploadFile = File(...),
+                      connection_id: str = Form(...),
+                      actor: str = Form(...),
+                      source: str = Form("")):
+    """KI-2 — the file door: a metric dictionary (CSV / TSV / XLSX with name,
+    definition, formula, unit, owner, aliases columns) or a dbt `manifest.json`
+    becomes a bundle through a DETERMINISTIC mapper and enters the SAME lane.
+    The mapper judges nothing: every object still waits for a human verdict."""
+    from aughor.intake import mappers
+
+    if not (actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+    if not (connection_id or "").strip():
+        raise HTTPException(status_code=400, detail="connection_id is required")
+    _check_conn_org(request, connection_id)
+
+    name = file.filename or "upload"
+    data = await file.read()
+    src = (source or "").strip() or name
+    ignored: list[str] = []
+    mapper_refused: list[str] = []
+    if name.lower().endswith(".json"):
+        import json as _json
+        try:
+            doc = _json.loads(data.decode("utf-8-sig"))
+        except Exception:
+            raise HTTPException(status_code=422, detail="not parseable JSON")
+        if not mappers.looks_like_dbt_manifest(doc):
+            raise HTTPException(status_code=422, detail="the JSON is not a dbt "
+                                "manifest (no nodes/sources + metadata)")
+        sections = mappers.map_dbt_manifest(doc)
+        if not sections:
+            raise HTTPException(status_code=422, detail="the manifest carries no "
+                                "described models or sources")
+    else:
+        try:
+            headers, rows = mappers.read_tabular(name, data)
+            sections, ignored, mapper_refused = mappers.map_dictionary_rows(
+                headers, rows)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+        if not sections:
+            raise HTTPException(status_code=422, detail="no usable rows — "
+                                + "; ".join(mapper_refused[:5]))
+
+    bundle = {"version": 1, "connection_id": connection_id,
+              "source_file": name, "sections": sections}
+    out = _stage(bundle, connection_id, source=src, actor=actor,
+                 mapper_refused=mapper_refused)
+    out["mapped"] = {"file": name, "ignored_headers": ignored}
+    return out
 
 
 @router.get("/intake/bundles")

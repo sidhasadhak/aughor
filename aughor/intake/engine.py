@@ -22,9 +22,15 @@ from typing import Any
 from aughor.ontology.interchange import BUNDLE_VERSION
 
 #: The KI sections and the store each maps to. `synonyms` uses interchange's shape
-#: verbatim; the rest are this arc's additions to the wire format.
+#: verbatim; the rest are this arc's additions to the wire format. `definitions` are
+#: PROSE metric definitions (a name and what it means, no formula) — the shape most
+#: real metric dictionaries take — landing as connection-KB `metric` entries, the
+#: store that already exists for exactly that.
 SECTIONS: tuple[str, ...] = ("metrics", "synonyms", "glossary", "rules", "joins",
-                             "trusted_queries")
+                             "definitions", "trusted_queries")
+
+#: candidate kind → the connection-KB kind it lands as.
+_KB_KIND = {"rule": "rule", "join": "join", "definition": "metric"}
 
 #: Fields a metric candidate may carry (subset of MetricDefinition, governance
 #: lifecycle excluded — lifecycle is the workflow's to assign, never the file's).
@@ -64,6 +70,8 @@ def plan(connection_id: str, bundle: dict) -> tuple[list[dict], list[str]]:
     out += _plan_glossary(connection_id, sections.get("glossary") or [], refused)
     out += _plan_kb(connection_id, "rule", sections.get("rules") or [], refused)
     out += _plan_kb(connection_id, "join", sections.get("joins") or [], refused)
+    out += _plan_kb(connection_id, "definition", sections.get("definitions") or [],
+                    refused)
     out += _plan_trusted(connection_id, sections.get("trusted_queries") or [], refused)
     return out, refused
 
@@ -160,26 +168,27 @@ def _kb_id(kind: str, title: str) -> str:
     return hashlib.sha1(f"{kind}|{title.strip().lower()}".encode()).hexdigest()[:8]
 
 
-def _plan_kb(connection_id: str, kind: str, rows: list[dict],
+def _plan_kb(connection_id: str, cand_kind: str, rows: list[dict],
              refused: list[str]) -> list[dict]:
     from aughor.semantic.connection_kb import load_entries
 
+    kb_kind = _KB_KIND[cand_kind]
     live = {e.title.strip().lower(): e for e in load_entries(connection_id)
-            if e.kind == kind}
+            if e.kind == kb_kind}
     out = []
     for raw in rows:
         title = str(raw.get("title") or "").strip()
         body = str(raw.get("body") or "").strip()
         if not title or not body:
-            refused.append(f"{kind}: title and body are required: {raw!r}")
+            refused.append(f"{cand_kind}: title and body are required: {raw!r}")
             continue
         cur = live.get(title.lower())
         if cur is None:
-            out.append(_cand(kind, "new", raw))
+            out.append(_cand(cand_kind, "new", raw))
         elif cur.body.strip() == body:
-            out.append(_cand(kind, "identical", raw))
+            out.append(_cand(cand_kind, "identical", raw))
         else:
-            out.append(_cand(kind, "changed", raw, "body differs"))
+            out.append(_cand(cand_kind, "changed", raw, "body differs"))
     return out
 
 
@@ -227,8 +236,8 @@ def apply_candidate(connection_id: str, kind: str, payload: dict, *,
         return _apply_synonym(connection_id, payload, source)
     if kind == "glossary":
         return _apply_glossary(payload)
-    if kind in ("rule", "join"):
-        return _apply_kb(connection_id, kind, payload)
+    if kind in ("rule", "join", "definition"):
+        return _apply_kb(connection_id, _KB_KIND[kind], payload)
     if kind == "trusted_query":
         return _apply_trusted(connection_id, payload, actor, source)
     raise ValueError(f"unknown candidate kind {kind!r}")
@@ -346,6 +355,8 @@ def export(connection_id: str) -> dict:
                   for e in kb if e.kind == "rule"],
         "joins": [{"title": e.title, "body": e.body, "tags": e.tags}
                   for e in kb if e.kind == "join"],
+        "definitions": [{"title": e.title, "body": e.body, "tags": e.tags}
+                        for e in kb if e.kind == "metric"],
         "trusted_queries": [{"question": t.question, "sql": t.sql, "tables": t.tables,
                              "note": t.note, "tags": t.tags}
                             for t in list_trusted(connection_id)],

@@ -29,8 +29,10 @@ def _db_path() -> Path:
     return resolve_db_path("AUGHOR_INTAKE_DB", Path("data/intake.db"))
 
 #: The candidate kinds the lane stages — §3.10's object model. Each maps to the
-#: existing store its accepted form lands in.
-KINDS = ("metric", "synonym", "glossary", "rule", "join", "trusted_query")
+#: existing store its accepted form lands in (`definition` = a prose metric
+#: definition, landing as a connection-KB `metric` entry).
+KINDS = ("metric", "synonym", "glossary", "rule", "join", "definition",
+         "trusted_query")
 
 #: A candidate's verdict from the plan, and its resolution status.
 VERDICTS = ("new", "changed", "identical", "conflict")

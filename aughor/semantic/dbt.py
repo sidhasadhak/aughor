@@ -112,6 +112,20 @@ def load_dbt_glossary() -> dict:
     except Exception:
         return {}
 
+    catalog = None
+    cp = _catalog_path()
+    if cp:
+        try:
+            catalog = json.loads(cp.read_text())
+        except Exception:
+            catalog = None
+    return glossary_from_manifest(manifest, catalog)
+
+
+def glossary_from_manifest(manifest: dict, catalog: dict | None = None) -> dict:
+    """The parse itself, over already-loaded dicts — KI-2's seam: the intake
+    mapper feeds an UPLOADED manifest through the same parser the env-configured
+    layer uses, so there is one reading of dbt's shape, not two."""
     tables: dict[str, Any] = {}
 
     # ── Models ────────────────────────────────────────────────────────────────
@@ -141,10 +155,9 @@ def load_dbt_glossary() -> dict:
         return {}
 
     # ── Catalog enrichment (optional) ─────────────────────────────────────────
-    cp = _catalog_path()
-    if cp:
+    if catalog:
         try:
-            _enrich_from_catalog(tables, json.loads(cp.read_text()))
+            _enrich_from_catalog(tables, catalog)
         except Exception:
             pass
 
