@@ -590,6 +590,28 @@ def get_runs(automation_id: Optional[str] = None, conn_id: Optional[str] = None,
             conn.close()
 
 
+def count_runs_since(day_floor: str) -> dict[str, int]:
+    """Ticks since ``day_floor`` (``YYYY-MM-DD``, inclusive) counted BY OUTCOME — at the
+    store, as COUNTs, never by scanning a capped row window. SP-1's live drive is why
+    this exists: a busy deployment ticks >10k times a week, so "newest 500 rows, then
+    filter by date" reported 5 fired where the truth was 83. A windowed question gets a
+    windowed query. Day-substring compare on purpose: this table has carried both the
+    ISO-``T`` and the space-separated timestamp forms, and a full lexical compare across
+    the two silently drops boundary-day rows.
+    """
+    with _LOCK:
+        conn = _connect()
+        try:
+            rows = conn.execute(
+                "SELECT outcome, COUNT(*) AS n FROM automation_runs "
+                "WHERE substr(started_at, 1, 10) >= ? GROUP BY outcome",
+                (day_floor,),
+            ).fetchall()
+            return {str(r["outcome"] or "unknown"): int(r["n"]) for r in rows}
+        finally:
+            conn.close()
+
+
 def last_run(automation_id: str) -> Optional[AutomationRun]:
     """The most recent tick, or None. Used by ``schedule`` conditions to know what
     'since last time' means and by the UI to explain the current state."""

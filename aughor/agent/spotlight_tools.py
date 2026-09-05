@@ -32,6 +32,11 @@ from aughor.agent.tool_loop import ToolSpec
 
 logger = logging.getLogger(__name__)
 
+#: Quotable in an answer verbatim — the narrator's disclosure for windowed questions.
+_POPULARITY_SCOPE = ("cumulative mined history since this connection was first profiled "
+                     "— these counts cannot be filtered to a date window; report them as "
+                     "all-time and say so when the question asked for a window")
+
 _MAX_GROUPS = 8
 _MAX_CONNECTIONS = 50
 _MAX_POPULAR = 15
@@ -114,36 +119,26 @@ def platform_usage(args: dict) -> dict:
 
 def platform_runs(args: dict) -> dict:
     """Runs across the platform in a trailing window — deep-analysis runs from the
-    history store, automation ticks by outcome from the automations store."""
-    from aughor.automations.store import get_runs
+    history store, automation ticks counted BY OUTCOME at the automations store.
+
+    The automation half is a store-level COUNT over the window, never a scan of the
+    newest N rows: the live drive on 2026-09-06 caught the scan variant reporting
+    5 fired where the windowed truth was 83 (a busy deployment ticks >10k times a
+    week). A soft caveat under a 16× wrong number is not honesty — the right query is.
+    """
+    from aughor.automations.store import count_runs_since
     from aughor.db.history import investigation_counts_since
 
     days = max(1, min(int(args.get("days") or 7), 90))
     floor_day = (datetime.now(timezone.utc) - timedelta(days=days)).strftime("%Y-%m-%d")
 
     inv = investigation_counts_since(days)
-
-    outcomes: dict[str, int] = {}
-    runs = get_runs(limit=500)
-    seen = 0
-    for r in runs:
-        d = r.model_dump()
-        # Day-substring compare on purpose: the stores have carried both the ISO-T and
-        # the space-separated timestamp forms, and a lexical compare across the two
-        # drops boundary-day rows. Day granularity IS the question's granularity.
-        if str(d.get("started_at") or "")[:10] >= floor_day:
-            seen += 1
-            oc = str(d.get("outcome") or "unknown")
-            outcomes[oc] = outcomes.get(oc, 0) + 1
-    res = {
+    outcomes = count_runs_since(floor_day)
+    return {
         "window_days": days, "since_day": floor_day,
         "deep_runs": inv,
-        "automation_runs": {"total": seen, "by_outcome": outcomes},
+        "automation_runs": {"total": sum(outcomes.values()), "by_outcome": outcomes},
     }
-    if len(runs) >= 500:
-        res["note"] = ("automation-run scan capped at the newest 500 ticks — a busy "
-                       "deployment's window may extend past the cap")
-    return res
 
 
 def investigation_cadence(args: dict) -> dict:
@@ -187,8 +182,15 @@ def answer_accuracy(connection_id: str, args: dict) -> dict:
 
 def table_popularity(connection_id: str, args: dict) -> dict:
     """Which tables (and columns) real queries touch most, from the mined popularity
-    store. An empty store is reported as NOT MINED — an unmined store and an unqueried
-    warehouse look identical in the counts, and only one of those is a finding."""
+    store — THE source for that question; never answered with warehouse SQL.
+
+    Counts are CUMULATIVE since mining began and cannot be filtered to a date window;
+    the `scope` field says so in words the narrator can quote, because the live drive
+    on 2026-09-06 showed what happens otherwise: asked "in the last 7 days", the model
+    distrusted the un-windowed counts it was holding, wrote a warehouse query for an
+    answer the warehouse cannot give, got 0, and reported 0 over real data. An empty
+    store is reported as NOT MINED — an unmined store and an unqueried warehouse look
+    identical in the counts, and only one of those is a finding."""
     from aughor.sql.popularity import load_popularity
 
     top = max(1, min(int(args.get("top") or 10), _MAX_POPULAR))
@@ -198,13 +200,17 @@ def table_popularity(connection_id: str, args: dict) -> dict:
     if not tables and not columns:
         return {
             "connection_id": connection_id, "mined": False,
+            "scope": _POPULARITY_SCOPE,
             "answer": ("the popularity store holds nothing for this connection — say "
                        "'not mined yet', never 'nothing is queried'; mining runs with "
                        "the schema birth job"),
         }
     return {
         "connection_id": connection_id, "mined": True,
+        "scope": _POPULARITY_SCOPE,
         "queries_mined": int(sum(n for _, n in tables)),
+        "distinct_tables": len(tables),
+        "distinct_columns": len(columns),
         "top_tables": [{"table": t, "queries": n} for t, n in tables[:top]],
         "top_columns": [{"column": c, "queries": n} for c, n in columns[:top]],
     }
@@ -273,9 +279,11 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             name="platform_runs",
             description=(
                 "How much ran on the platform in a trailing window: deep-analysis "
-                "runs started/finished/failed, and automation ticks by outcome "
-                "(fired, not fired, gated, paused, error). Use this for 'how many "
-                "runs happened' and 'is anything failing' questions."
+                "runs started / succeeded / failed (failed runs are part of started, "
+                "never a separate pile), and automation ticks counted by outcome "
+                "(fired, not fired, gated, paused, error) with a real windowed count "
+                "— no scan cap. Use this for 'how many runs happened' and 'is "
+                "anything failing' questions."
             ),
             parameters=_DAYS_PARAMS,
             run=lambda a: platform_runs(a),
@@ -305,10 +313,16 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
         ToolSpec(
             name="table_popularity",
             description=(
-                "Which tables and columns real queries touch most on this connection, "
-                "from mined query history. If the result says mined=false, answer "
-                "'not mined yet' — never report an empty store as 'nothing gets "
-                "queried'."
+                "THE authoritative source for which tables and columns real queries "
+                "touch most on this connection, and how many distinct tables have "
+                "been queried — mined from actual query history. Never answer that "
+                "question by writing SQL against the warehouse: the warehouse holds "
+                "the business data, not the platform's query log, and such a query "
+                "returns a confident wrong 0. Counts are all-time since mining began "
+                "and cannot be windowed to N days — when the user asks for a window, "
+                "report the all-time counts and say they are all-time (quote the "
+                "scope field). If the result says mined=false, answer 'not mined "
+                "yet' — never report an empty store as 'nothing gets queried'."
             ),
             parameters=_TOP_PARAMS,
             run=lambda a: table_popularity(connection_id, a),

@@ -15,6 +15,7 @@ from pydantic import ValidationError
 from aughor.automations.models import Automation, AutomationRun, Condition, Effect, EffectOutcome
 from aughor.automations.store import (
     append_run,
+    count_runs_since,
     delete_automation,
     get_automation,
     get_runs,
@@ -223,3 +224,24 @@ def test_the_automation_level_agent_survives_a_round_trip():
 
     upsert_automation(a.model_copy(update={"agent_id": "ua_5678"}))
     assert get_automation(a.id).agent_id == "ua_5678"
+
+
+def test_count_runs_since_windows_at_the_store():
+    """SP-1 follow-up (live drive 2026-09-06): the windowed automation count is a
+    store-level COUNT by outcome, so a deployment with more ticks than any row cap
+    still gets the true window. The old row is excluded by its day substring even
+    though it uses the space-separated timestamp form."""
+    a = upsert_automation(_automation(conn_id="conn-window"))
+    append_run(AutomationRun(automation_id=a.id, automation_name=a.name, conn_id=a.conn_id,
+                             outcome="fired", reason="recent",
+                             started_at="2099-01-02T08:00:00Z"))
+    append_run(AutomationRun(automation_id=a.id, automation_name=a.name, conn_id=a.conn_id,
+                             outcome="not_fired", reason="recent",
+                             started_at="2099-01-03 09:00:00"))
+    append_run(AutomationRun(automation_id=a.id, automation_name=a.name, conn_id=a.conn_id,
+                             outcome="error", reason="ancient",
+                             started_at="1999-01-01T00:00:00Z"))
+    counts = count_runs_since("2099-01-01")
+    assert counts.get("fired", 0) >= 1
+    assert counts.get("not_fired", 0) >= 1
+    assert "error" not in counts or counts["error"] == 0

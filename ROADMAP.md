@@ -2418,12 +2418,33 @@ substrings — the ISO-`T`-vs-space lexical-compare trap, refused by constructio
 `answer_accuracy` quotes the rate WITH `graded_total` and grows a caveat under 30
 gradings; `table_popularity` reports an empty store as `mined=false` ("not mined
 yet"), never as an unqueried warehouse — the confident-0/unmeasured-0 law, per tool.
-**Receipt:** `tests/unit/test_spotlight_tools.py` (11 tests: windowing hits the
-ledger not client-side; unpriced ⇒ `cost_is_complete=false`; unknown axis refused
-before any read; zero-months listed not omitted; thin-sample caveats; not-mined
-honesty; the roster reaches `converse_tools`). Remaining for the wave: trace/audit
-lookup tools · the unified audit read · the LIVE chat receipt (the four questions
-asked in the product's own chat) once this merges and the API restarts.
+**Receipt:** `tests/unit/test_spotlight_tools.py` (windowing hits the ledger not
+client-side; unpriced ⇒ `cost_is_complete=false`; unknown axis refused before any
+read; zero-months listed not omitted; thin-sample caveats; not-mined honesty; the
+roster reaches `converse_tools`).
+
+**✅ LIVE RECEIPT 2026-09-06 — and the live drive earned its keep by finding two real
+defects, fixed the same day.** The user asked the acceptance questions through the
+product's own chat. What held: tokens (1.53M / 565 calls — the org-scoped subset of
+1,156 platform-wide, BY DESIGN) with the unpriced-cost honesty clause spoken in the
+model's own words; deep-run counts (34, org-scoped of 37). What broke, verified
+read-only against the live stores:
+- 🔴 **The automation count was a ~16× undercount** — "500 ticks, 5 fired" against a
+  windowed truth of 10,646 ticks / 83 fired. Cause: the tool scanned the newest 500
+  rows then filtered by date; a soft caveat under a 16× wrong number is not honesty.
+  **Fixed:** `automations/store.count_runs_since(day_floor)` counts BY OUTCOME at the
+  store; the tool no longer sees rows at all.
+- 🔴 **The tables answer reported 0 over correct data** — `table_popularity` returned
+  the real top-5 with real counts (4,210 mined; the model even listed the right
+  names), but "in the last 7 days" pushed the model to ALSO write warehouse SQL
+  (`Count(Distinct Table Name)` → 0, the warehouse has no query log) and let 0
+  override the tool. **Fixed** at the description (the description IS the routing
+  policy): the tool now declares itself THE source for that question, forbids the
+  warehouse-SQL route, discloses that counts are all-time and not windowable (a
+  quotable `scope` field), and returns a direct distinct-table count.
+- ⚠️ **"34 finished and 5 failed" read as disjoint** — `finished` includes failures.
+  **Fixed:** an explicit `succeeded` field; the narrator never infers it again.
+Remaining for the wave: trace/audit lookup tools · the unified audit read.
 
 #### SP-2 · The summon — ✅ FIRST CUT BUILT 2026-09-06
 
@@ -2448,9 +2469,12 @@ accept the field; BOTH quick bodies render the line (the guard found the fork
 function and counted both threads — the two-site instructions defect, refused);
 the sanitizer collapses and caps. Seven web gates + `gen:api` + 670 web tests
 green; the raw-font-size ratchet came out one UNDER baseline and was lowered.
+**✅ In-browser receipt 2026-09-06:** the user drove ⌘K live — free text produced
+the Spotlight row and grounded answers in the overlay (the same session that found
+SP-1's two live defects; the summon did its job by carrying real questions).
 **Open in the wave:** an async command shape in `commandRegistry` itself (the
 palette owns the fallthrough today) · in-context handles (empty states, failed-run
-rows) · the live latency measurement and the in-browser receipt post-merge.
+rows) · the live latency measurement.
 
 **Where a person finds it (the discovery map, ranked by how people actually discover):**
 ⌘K for hands already on keyboards · a **visible Spotlight affordance in the top chrome
@@ -2806,9 +2830,11 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         Census done in-draft; the user's 4-question acceptance suite is green
         on substrate. SP-1 taken first at the user's direction.
         SP-0 ✅ census (in §3.11 itself; re-verify per wave)
-        SP-1 ✅ FIRST CUT BUILT 2026-09-05 — six org-level reads in the converse
-             roster (spotlight_tools.py); acceptance-suite honesty pinned by 11
-             tests. Open: trace/audit tools + the live chat receipt post-merge
+        SP-1 ✅ BUILT 2026-09-05 · LIVE 2026-09-06 — six org-level reads in the
+             converse roster; live drive found 2 real defects (automation count
+             ~16× under via row-scan cap; tables misroute to warehouse SQL over
+             correct tool data), BOTH FIXED same day at the store / the routing
+             policy. Open: trace/audit tools
         SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
              in the overlay (same /ask door, quick-pinned); surface context
              threaded end-to-end, sanitized. Open: registry async shape,

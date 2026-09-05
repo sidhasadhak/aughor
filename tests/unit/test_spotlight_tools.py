@@ -9,8 +9,6 @@ worse than the dead-end it replaces.
 """
 from __future__ import annotations
 
-from types import SimpleNamespace
-
 import aughor.agent.spotlight_tools as spot
 from aughor.sql.popularity import PopularitySignal, save_popularity
 
@@ -71,22 +69,27 @@ def test_platform_usage_refuses_an_unknown_axis(monkeypatch):
 # ── platform_runs + cadence — Q1's runs half and Q5 ────────────────────────────────
 
 def test_platform_runs_counts_both_planes(monkeypatch):
+    """The automation half is a store-level windowed COUNT, never a row scan — the
+    live drive caught the scan variant reporting 5 fired where the truth was 83."""
     from aughor.db.history import create_investigation, fail_investigation
     inv = create_investigation("q1", "conn-spot")
     create_investigation("q2", "conn-spot")
     fail_investigation(inv)
 
-    runs = [SimpleNamespace(model_dump=lambda d=d: d) for d in (
-        {"started_at": "2099-01-01T00:00:00", "outcome": "fired"},       # future: inside
-        {"started_at": "1999-01-01 00:00:00", "outcome": "error"},       # far past: outside
-    )]
-    monkeypatch.setattr("aughor.automations.store.get_runs", lambda limit=500: runs)
+    asked: dict = {}
+    def _count(day_floor):
+        asked["floor"] = day_floor
+        return {"fired": 83, "not_fired": 10_562, "gated": 1}
+    monkeypatch.setattr("aughor.automations.store.count_runs_since", _count)
 
     out = spot.platform_runs({"days": 7})
     assert out["deep_runs"]["started"] >= 2
     assert out["deep_runs"]["failed"] >= 1
-    # Day-substring windowing: the ISO-T future row is in, the space-form 1999 row out.
-    assert out["automation_runs"]["by_outcome"] == {"fired": 1}
+    # succeeded is an explicit field, never left for the narrator to infer.
+    assert out["deep_runs"]["succeeded"] == out["deep_runs"]["finished"] - out["deep_runs"]["failed"]
+    assert out["automation_runs"]["total"] == 10_646
+    assert out["automation_runs"]["by_outcome"]["fired"] == 83
+    assert len(asked["floor"]) == 10  # a YYYY-MM-DD day floor reached the store
 
 
 def test_cadence_lists_zero_months_and_averages_over_all_of_them():
@@ -134,6 +137,7 @@ def test_popularity_empty_store_reports_not_mined_not_unpopular(tmp_path, monkey
     out = spot.table_popularity("conn-x", {})
     assert out["mined"] is False
     assert "not mined yet" in out["answer"]
+    assert "cannot be filtered to a date window" in out["scope"]
 
 
 def test_popularity_mined_counts_rank_and_cap(tmp_path, monkeypatch):
@@ -147,6 +151,10 @@ def test_popularity_mined_counts_rank_and_cap(tmp_path, monkeypatch):
     assert out["mined"] is True
     assert [t["table"] for t in out["top_tables"]] == ["refunds", "orders"]
     assert out["top_columns"][0]["column"] == "orders.total"
+    # "How many tables did we query" has a direct number, and the all-time scope is
+    # quotable — the two halves of the live-drive misroute, closed.
+    assert out["distinct_tables"] == 3
+    assert "cannot be filtered to a date window" in out["scope"]
 
 
 # ── the roster itself ──────────────────────────────────────────────────────────────

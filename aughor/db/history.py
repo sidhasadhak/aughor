@@ -912,10 +912,18 @@ def investigation_counts_since(days: int = 7) -> dict:
             "FROM investigations WHERE substr(started_at,1,10) >= ? AND (org_id = ? OR ? = '')",
             (floor_day, org, org),
         ).fetchone()
+        started = int(row["started"] or 0)
+        finished = int(row["finished"] or 0)
+        failed = int(row["failed"] or 0)
+        # `finished` means "no longer running" and INCLUDES the failures — the live
+        # drive proved a reader (human or model) hears "34 finished and 5 failed" as
+        # disjoint buckets. `succeeded` is the word people actually mean, so it is a
+        # field, not an inference left to the narrator.
         return {"window_days": days, "since_day": floor_day,
-                "started": int(row["started"] or 0),
-                "finished": int(row["finished"] or 0),
-                "failed": int(row["failed"] or 0)}
+                "started": started,
+                "finished": finished,
+                "succeeded": max(finished - failed, 0),
+                "failed": failed}
     finally:
         c.close()
 
