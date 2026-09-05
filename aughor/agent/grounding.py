@@ -103,6 +103,17 @@ def pack_brief(question: str, connection_id: str = "", schema_name: str = "") ->
     return pack_steering(question, connection_id, schema_name)[0]
 
 
+def custom_instructions(connection_id: str, canvas_id: str = "") -> str:
+    """User-authored custom instructions — connection-level, plus the Canvas's own
+    when the ask is canvas-scoped. The Sprint 53 surfaces (``PUT /connections/{id}/
+    instructions``, the Canvas Configure panel's Instructions tab) stored this text
+    from day one; this producer is what finally injects it. '' when nothing is
+    stored, so a scope with no instructions keeps a byte-identical prompt."""
+    from aughor.semantic.instructions import build_instructions_block
+    return _safe(lambda: build_instructions_block(connection_id, canvas_id),
+                 "grounding: custom instructions")
+
+
 def trusted_templates(question: str, connection_id: str) -> str:
     from aughor.semantic.trusted_queries import retrieve_trusted, build_trusted_block
     return _safe(lambda: build_trusted_block(retrieve_trusted(question, connection_id)),
@@ -197,6 +208,8 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
     # eff_schema (the schema NAME), never k["schema"] (rendered DDL) — see pack_brief.
     ("pack", "Pack steering",
      lambda q, c, **k: pack_brief(q, c, k.get("eff_schema") or ""), False),
+    ("instructions", "Custom instructions",
+     lambda q, c, **k: custom_instructions(c, k.get("canvas_id") or ""), False),
     ("trusted", "Trusted query templates", lambda q, c, **k: trusted_templates(q, c), False),
     ("corrections", "Ambiguity-ledger priors (corrections)", lambda q, c, **k: correction_priors(q, c), False),
     ("governed_metrics", "Governed-metric bindings",
@@ -275,16 +288,19 @@ def build_grounding_context(
     db: Optional[object] = None,
     schema: str = "",
     eff_schema: Optional[str] = None,
+    canvas_id: str = "",
 ) -> GroundingContext:
     """Assemble the grounding blocks for a (question, connection).
 
     ``schema`` (a rendered schema string) enables the schema-dependent blocks
     (governed metrics, schema slice); a live ``db`` additionally fills the grain +
-    feasibility parts of the metrics block. Every block is best-effort — a failing
+    feasibility parts of the metrics block; ``canvas_id`` scopes the
+    custom-instructions block to a Canvas. Every block is best-effort — a failing
     producer degrades to an empty block, never an error.
     """
     blocks: list[GroundingBlock] = []
     for key, title, producer, _needs in _BLOCKS:
-        content = producer(question, connection_id, db=db, schema=schema, eff_schema=eff_schema)
+        content = producer(question, connection_id, db=db, schema=schema, eff_schema=eff_schema,
+                           canvas_id=canvas_id)
         blocks.append(GroundingBlock(key=key, title=title, content=content))
     return GroundingContext(question=question, connection_id=connection_id, blocks=blocks)

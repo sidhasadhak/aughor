@@ -79,6 +79,12 @@ for _env, _file in (
     # as a temp COPY, because tests READ the sample pack that ships in it.)
     ("AUGHOR_IMPORTED_PACKS_DIR", "packs-imported"),
     ("AUGHOR_BRIEFS_FILE", "brief_subscriptions.json"),
+    # Custom-instructions stores (connection- and Canvas-level, JSON like BRIEFS).
+    # Hardcoded to data/ from Sprint 53 until the wiring commit made them consumed
+    # (grounding block `instructions`) — and a consumed store the suite writes is
+    # exactly the OPS-02 class, so they turn env-resolved in the SAME commit.
+    ("AUGHOR_INSTRUCTIONS_FILE", "instructions.json"),
+    ("AUGHOR_CANVAS_INSTRUCTIONS_FILE", "canvas_instructions.json"),
     ("AUGHOR_ORGS_DB", "orgs.db"),
     ("AUGHOR_ORG_LLM_DB", "org_llm.db"),
     ("AUGHOR_SAVEDQUERY_DB", "saved_queries.db"),

@@ -42,6 +42,9 @@ def _isolate_stores() -> None:
     ):
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))
+    os.environ.setdefault("AUGHOR_INSTRUCTIONS_FILE", os.path.join(tmp, "instructions.json"))
+    os.environ.setdefault("AUGHOR_CANVAS_INSTRUCTIONS_FILE",
+                          os.path.join(tmp, "canvas_instructions.json"))
 
     # The DIRECTORY stores, which this dump never isolated: the docstring above said
     # "every store honours its AUGHOR_*_DB override", and that sentence was the gap — a

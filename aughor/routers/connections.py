@@ -45,15 +45,6 @@ def _connection_owner_guard(request: Request) -> None:
 
 router = APIRouter(tags=["connections"], dependencies=[Depends(_connection_owner_guard)])
 
-_INSTRUCTIONS_FILE = Path(__file__).parent.parent.parent / "data" / "instructions.json"
-
-
-def _load_instructions() -> dict:
-    if _INSTRUCTIONS_FILE.exists():
-        return json.loads(_INSTRUCTIONS_FILE.read_text())
-    return {}
-
-
 class AddConnectionRequest(BaseModel):
     name: str
     conn_type: str
@@ -774,15 +765,14 @@ async def alter_table_column(conn_id: str, table: str, body: _AlterColumnRequest
 
 @router.get("/connections/{conn_id}/instructions")
 def get_instructions(conn_id: str):
-    data = _load_instructions()
-    return {"text": data.get(conn_id, {}).get("text", "")}
+    from aughor.semantic.instructions import connection_instructions
+    return {"text": connection_instructions(conn_id)}
 
 
 @router.put("/connections/{conn_id}/instructions")
 def put_instructions(conn_id: str, req: InstructionsRequest):
-    data = _load_instructions()
-    data.setdefault(conn_id, {})["text"] = req.text
-    _INSTRUCTIONS_FILE.write_text(json.dumps(data, indent=2))
+    from aughor.semantic.instructions import set_connection_instructions
+    set_connection_instructions(conn_id, req.text)
     return {"ok": True}
 
 

@@ -1974,6 +1974,17 @@ def _answer_core(
         _pack_sec = _grounding_pack(question, connection_id, canvas_scope_eff_schema or "")
         if _pack_sec:
             prompt = _pack_sec + prompt
+        # Custom instructions — the user-authored steering text stored by
+        # PUT /connections/{id}/instructions and the Canvas Configure panel's
+        # Instructions tab (PUT /canvases/{id}/instructions). Both surfaces stored
+        # this text since Sprint 53 and NOTHING consumed it — a user could type
+        # "fiscal year starts in February" into a live editor and every answer
+        # ignored it. Injected verbatim (not question-matched, unlike the conn KB):
+        # empty when none is stored, so those prompts are byte-identical.
+        from aughor.agent.grounding import custom_instructions as _grounding_instructions
+        _instr_sec = _grounding_instructions(connection_id, canvas_id or "")
+        if _instr_sec:
+            prompt = _instr_sec + prompt
         # "Ask this briefing" — ground the answer in the brief the user is LOOKING AT, read
         # server-side from the same `conn:schema` cache entry the Briefing rendered (never
         # posted up by the client, so it can't drift from what's on screen or be spoofed).
@@ -5325,6 +5336,7 @@ async def ask_resume_stream(session_id: str):
 def ask_context_endpoint(
     connection: str = Query(..., description="connection id"),
     question: str = Query(..., description="the question to ground"),
+    canvas: str = Query("", description="canvas id — scopes the custom-instructions block"),
     principal=Depends(get_principal),
 ):
     """The grounding-context receipt (flag ``ask.context_receipt``) — the exact
@@ -5349,7 +5361,8 @@ def ask_context_endpoint(
                  counter="ask.context_receipt.schema")
         schema = ""
     ctx = build_grounding_context(question, connection, db=db, schema=schema,
-                                  eff_schema=getattr(db, "_schema_name", None))
+                                  eff_schema=getattr(db, "_schema_name", None),
+                                  canvas_id=canvas)
     return {"receipt": ctx.to_dict(), "markdown": ctx.to_markdown()}
 
 
