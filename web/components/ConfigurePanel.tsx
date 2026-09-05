@@ -10,6 +10,8 @@ import {
   updateCanvas,
   getCanvasInstructions,
   putCanvasInstructions,
+  getConnectionInstructions,
+  putConnectionInstructions,
   type Connection,
   type Canvas,
 } from "@/lib/api";
@@ -433,8 +435,19 @@ function DataTab({
 
 // ── Instructions tab (Canvas-level) ─────────────────────────────────────────
 
-function InstructionsTab({ canvasId }: { canvasId: string }) {
-  const [subtab, setSubtab] = useState<"text" | "metrics">("text");
+function InstructionsEditor({
+  label,
+  hint,
+  placeholder,
+  load,
+  save,
+}: {
+  label: string;
+  hint: string;
+  placeholder: string;
+  load: () => Promise<string>;
+  save: (text: string) => Promise<void>;
+}) {
   const [text, setText] = useState("");
   const [saved, setSaved] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -442,21 +455,61 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
 
   useEffect(() => {
     setLoaded(false);
-    getCanvasInstructions(canvasId)
+    load()
       .then((t) => { setText(t); setLoaded(true); })
       .catch(() => setLoaded(true));
-  }, [canvasId]);
+  }, [load]);
 
   async function handleSave() {
     setSaving(true);
     try {
-      await putCanvasInstructions(canvasId, text);
+      await save(text);
       setSaved(true);
       setTimeout(() => setSaved(false), 2000);
     } finally {
       setSaving(false);
     }
   }
+
+  return (
+    <section className="flex-1 flex flex-col gap-1.5 min-h-0">
+      <div className="shrink-0">
+        <span className="aug-fs-sm font-semibold text-[var(--t1)]">{label}</span>
+        <p className="aug-fs-xs text-[var(--t3)] leading-relaxed">{hint}</p>
+      </div>
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        disabled={!loaded}
+        aria-label={label}
+        placeholder={loaded ? placeholder : "Loading…"}
+        className="flex-1 resize-none border border-[var(--b2)] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[var(--t1)] placeholder:text-[var(--t4)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
+        style={{ background: "var(--bg-0)" }}
+      />
+      <div className="flex justify-end shrink-0">
+        <Button
+          onClick={handleSave}
+          disabled={saving || !loaded}
+          variant="default"
+          size="xs"
+          className="disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+export function InstructionsTab({ canvasId, connectionId }: { canvasId: string; connectionId: string }) {
+  const [subtab, setSubtab] = useState<"text" | "metrics">("text");
+
+  // Stable per id — an inline arrow would retrigger the editor's load effect (and wipe
+  // unsaved text) on every parent render.
+  const loadCanvas = useMemo(() => () => getCanvasInstructions(canvasId), [canvasId]);
+  const saveCanvas = useMemo(() => (t: string) => putCanvasInstructions(canvasId, t), [canvasId]);
+  const loadConnection = useMemo(() => () => getConnectionInstructions(connectionId), [connectionId]);
+  const saveConnection = useMemo(() => (t: string) => putConnectionInstructions(connectionId, t), [connectionId]);
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden">
@@ -467,29 +520,23 @@ function InstructionsTab({ canvasId }: { canvasId: string }) {
       />
 
       {subtab === "text" && (
-        <div className="flex-1 flex flex-col overflow-hidden p-3 gap-2">
-          <p className="aug-fs-sm text-[var(--t2)] leading-relaxed">
-            Plain-English instructions the AI follows for every query on this canvas. Describe business rules, metric definitions, fiscal calendar, naming conventions, etc.
-          </p>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            disabled={!loaded}
-            placeholder={loaded ? "* Revenue uses the net_revenue column, not gross_revenue\n* Fiscal year starts in February\n* Always include region when comparing performance" : "Loading…"}
-            className="flex-1 resize-none border border-[var(--b2)] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[var(--t1)] placeholder:text-[var(--t4)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
-            style={{ background: "var(--bg-0)" }}
+        <div className="flex-1 flex flex-col overflow-hidden p-3 gap-3">
+          <InstructionsEditor
+            label="This Canvas"
+            hint="Plain-English rules the AI follows for every query on this canvas — business rules, metric definitions, fiscal calendar, naming conventions. Takes precedence over connection-level rules on conflict."
+            placeholder={"* Revenue uses the net_revenue column, not gross_revenue\n* Fiscal year starts in February\n* Always include region when comparing performance"}
+            load={loadCanvas}
+            save={saveCanvas}
           />
-          <div className="flex justify-end shrink-0">
-            <Button
-              onClick={handleSave}
-              disabled={saving || !loaded}
-              variant="default"
-              size="xs"
-              className="disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {saving ? "Saving…" : saved ? "Saved ✓" : "Save"}
-            </Button>
-          </div>
+          {connectionId && (
+            <InstructionsEditor
+              label="Whole connection"
+              hint="Rules that apply to every Canvas on this connection."
+              placeholder={"* Exclude test accounts (is_test = true) from all analyses\n* Amounts are in EUR unless a column says otherwise"}
+              load={loadConnection}
+              save={saveConnection}
+            />
+          )}
         </div>
       )}
 
@@ -565,7 +612,7 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, o
             <DataTab canvas={canvas} connId={connectionId} onCanvasUpdate={onCanvasUpdate} />
           )}
           {tab === "instructions" && (
-            <InstructionsTab canvasId={canvas.id} />
+            <InstructionsTab canvasId={canvas.id} connectionId={connectionId} />
           )}
           {tab === "docs" && (
             <div className="flex-1 overflow-auto p-4">
