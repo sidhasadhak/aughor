@@ -175,9 +175,9 @@ def fetch_gsheet_csv(spreadsheet: str, sheet: str = "") -> bytes:
     import urllib.parse
     import urllib.request
 
-    from aughor.connectors.api.gsheets import _extract_id
+    from aughor.connectors.api.gsheets import extract_spreadsheet_id
 
-    sid = _extract_id(spreadsheet)
+    sid = extract_spreadsheet_id(spreadsheet)
     if not _SHEET_ID_RE.fullmatch(sid or ""):
         raise ValueError("not a spreadsheet id or /spreadsheets/d/... URL")
     url = (f"https://docs.google.com/spreadsheets/d/{sid}/gviz/tq?tqx=out:csv"

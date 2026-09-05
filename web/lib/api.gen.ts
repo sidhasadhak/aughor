@@ -4771,6 +4771,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/intake/mine": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mine Knowledge
+         * @description KI-3 — mine a Confluence or Notion connection's pages for definition tables,
+         *     through the SAME dictionary mapper and into the SAME lane, one bundle per page
+         *     with the page URL as provenance. Deterministic: tables only; a page with no
+         *     dictionary-shaped table stages nothing, and a re-mine of an unchanged page
+         *     proposes nothing (content-hash dedupe). The target DATA connection is named
+         *     explicitly — mined definitions attached to the wiki connection itself would be
+         *     invisible to every prompt, which is the built-and-inert trap by construction.
+         */
+        post: operations["mine_knowledge_intake_mine_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/intake/provenance": {
         parameters: {
             query?: never;
@@ -11256,6 +11282,20 @@ export interface components {
              * @default []
              */
             wrong_usage_examples: string[];
+        };
+        /** MineIn */
+        MineIn: {
+            /** Actor */
+            actor: string;
+            /** Connection Id */
+            connection_id: string;
+            /** Knowledge Connection Id */
+            knowledge_connection_id: string;
+            /**
+             * Source
+             * @default
+             */
+            source: string;
         };
         /**
          * OrgSettings
@@ -21319,6 +21359,41 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mine_knowledge_intake_mine_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MineIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };

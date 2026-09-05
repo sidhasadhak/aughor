@@ -208,6 +208,84 @@ def upload_sheet(body: SheetIn, request: Request):
     return out
 
 
+class MineIn(BaseModel):
+    knowledge_connection_id: str   # the Confluence/Notion connection to walk
+    connection_id: str             # the DATA connection the definitions belong to
+    actor: str
+    source: str = ""               # optional label; defaults to each page's URL
+
+
+@router.post("/intake/mine", dependencies=[gate(Capability.SEMANTIC_EDIT)])
+def mine_knowledge(body: MineIn, request: Request):
+    """KI-3 — mine a Confluence or Notion connection's pages for definition tables,
+    through the SAME dictionary mapper and into the SAME lane, one bundle per page
+    with the page URL as provenance. Deterministic: tables only; a page with no
+    dictionary-shaped table stages nothing, and a re-mine of an unchanged page
+    proposes nothing (content-hash dedupe). The target DATA connection is named
+    explicitly — mined definitions attached to the wiki connection itself would be
+    invisible to every prompt, which is the built-and-inert trap by construction."""
+    from aughor.db.registry import get_dsn, get_meta
+    from aughor.intake import mining
+
+    if not (body.actor or "").strip():
+        raise HTTPException(status_code=400, detail="actor is required")
+    _check_conn_org(request, body.connection_id)
+    _check_conn_org(request, body.knowledge_connection_id)
+    try:
+        conn_type, _ = get_dsn(body.knowledge_connection_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Knowledge connection not found")
+    meta = get_meta(body.knowledge_connection_id)
+    try:
+        if conn_type == "confluence":
+            from aughor.connectors.knowledge.confluence import ConfluenceSync
+            pages = mining.mine_confluence(
+                ConfluenceSync(body.knowledge_connection_id, meta))
+        elif conn_type == "notion":
+            from aughor.connectors.knowledge.notion import NotionSync
+            pages = mining.mine_notion(
+                NotionSync(body.knowledge_connection_id, meta))
+        else:
+            raise HTTPException(status_code=400, detail=f"{conn_type!r} is not a "
+                                "knowledge connector (confluence or notion)")
+    except ValueError as e:      # a mis-configured connector names its gap plainly
+        raise HTTPException(status_code=400, detail=str(e))
+
+    results: list[dict] = []
+    staged = duplicates = skipped = 0
+    error = ""
+    try:
+        for page in pages:
+            if not page.sections:
+                skipped += 1
+                results.append({"url": page.url, "title": page.title,
+                                "outcome": "no_dictionary",
+                                "tables_seen": page.tables_seen})
+                continue
+            bundle = {"version": 1, "connection_id": body.connection_id,
+                      "source_page": {"url": page.url, "title": page.title},
+                      "sections": page.sections}
+            out = _stage(bundle, body.connection_id,
+                         source=(body.source or "").strip() or page.url,
+                         actor=body.actor, mapper_refused=page.refused)
+            if out["duplicate"]:
+                duplicates += 1
+            else:
+                staged += 1
+            results.append({"url": page.url, "title": page.title,
+                            "outcome": "duplicate" if out["duplicate"] else "staged",
+                            "bundle_id": out["bundle"]["id"],
+                            "summary": out["summary"], "refused": out["refused"],
+                            "tables_seen": page.tables_seen,
+                            "tables_mapped": page.tables_mapped})
+    except Exception as exc:     # a wiki that dies mid-walk keeps what it yielded
+        error = str(exc)
+    return {"knowledge_connection_id": body.knowledge_connection_id,
+            "connection_id": body.connection_id,
+            "staged": staged, "duplicates": duplicates, "skipped": skipped,
+            "pages": results, **({"error": error} if error else {})}
+
+
 @router.get("/intake/bundles")
 def bundles(connection_id: str = ""):
     from aughor.intake import store

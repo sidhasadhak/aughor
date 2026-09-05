@@ -2146,25 +2146,36 @@ candidate set twice; the mapped file lands: metric `proposed`, definitions in th
 synonyms in the vocabulary; the same file re-uploaded dedupes to the same bundle; a
 non-manifest JSON and a nameless CSV are refused with reasons.
 
-#### KI-3 · Source fetchers — SHEETS MODE ✅ BUILT 2026-09-05; Confluence/Notion mining open
+#### KI-3 · Source fetchers — ✅ COMPLETE 2026-09-05 (Sheets mode + Confluence/Notion mining)
 
 ✅ **Sheets definitions mode** (`POST /intake/sheets`): a link-shared Google Sheet
 holding a metric dictionary is fetched through the SAME public gviz export the Sheets
-DATA connector reads (id extraction reused; fixed host, no OAuth, no credentials —
-exactly the claims that connector makes), mapped by KI-2's deterministic dictionary
-mapper, staged in the SAME lane. A private sheet is reported plainly ("Google
-answered with a login page — share as Anyone-with-the-link") rather than as a parse
-error. Receipt in `test_ki2_file_mappers.py` (fetch patched; everything after it is
-the shared path).
-⏳ **Still open:** mining SYNCED Confluence/Notion pages for definition candidates —
-the fetchers exist, only the mining is new, and it is built ONCE against the
-ingestion-registry seam, not per connector (the capability-misses-a-connector lesson,
-×3). The deterministic first cut is TABLES inside synced pages through the dictionary
-mapper; prose mining waits on the LLM mapper (KI-2's deferred half). Private-OAuth
-Sheets/Drive stays parked until a real deployment asks — no speculative OAuth
-surface.
-**Receipt (for the open half):** a Confluence metric page becomes staged candidates
-with the page URL as provenance; a re-sync of an unchanged page proposes nothing.
+DATA connector reads (id extraction made a public seam, `extract_spreadsheet_id` —
+the private-import ratchet refused the `_underscore` import, correctly), mapped by
+KI-2's deterministic dictionary mapper, staged in the SAME lane. A private sheet is
+reported plainly ("Google answered with a login page — share as
+Anyone-with-the-link") rather than as a parse error.
+✅ **Confluence/Notion mining** (`POST /intake/mine`, `aughor/intake/mining.py`):
+walks a knowledge connection's pages through the connectors' OWN iterators and mines
+TABLES — the deterministic first cut, exactly as scoped. One pipeline; only the
+extraction is per-format, because the wire formats genuinely differ: Confluence
+storage-XHTML `<table>` markup (read from the RAW body — the sync's text-stripper
+flattens tables to word soup), Notion `table` blocks whose rows are CHILD blocks the
+text path never fetches (tables are entirely invisible to the document KB today),
+and a Notion DATABASE as one table — its page properties ARE the columns, the most
+dictionary-shaped thing in the product. One bundle per page, the page URL as source;
+the target DATA connection is named explicitly in the request — mined definitions
+attached to the wiki connection itself would be invisible to every prompt, the
+built-and-inert trap by construction. A header-less grid is skipped at extraction; a
+header-ed table with no metric-name column is "not a dictionary" — checked
+explicitly, not caught (the silent-swallow ratchet refused the `except: continue`
+version, correctly). Prose mining still waits on the LLM mapper (KI-2's deferred
+half). Private-OAuth Sheets/Drive stays parked until a real deployment asks.
+**Receipt:** `tests/unit/test_ki3_knowledge_mining.py` — a Confluence metric page
+becomes staged candidates whose bundle source IS the page URL; a re-mine of an
+unchanged page stages nothing (content-hash dedupe); mined candidates land through
+the same lane (metric arrives `proposed`); Notion table-blocks and databases both
+mine; a lunch-spots page stages nothing.
 
 #### KI-4 · The suggestions loop — the same lane, fed from inside
 
@@ -2457,8 +2468,9 @@ ARC KI  ⏳ DRAFTED 2026-09-05 (§3.10; adoption = §6 item 9) — org-owned def
              interchange.py consumed (plan_import has its first caller)
         KI-2 ✅ deterministic half BUILT 2026-09-05 — CSV/TSV/XLSX dictionary + dbt
              manifest upload feed the same lane · LLM prose mapper + SKILL.md deferred
-        KI-3 ◐ Sheets definitions mode BUILT 2026-09-05 (link-shared Sheet → the
-             same mapper and lane) · Confluence/Notion mining still open
+        KI-3 ✅ COMPLETE 2026-09-05 — Sheets definitions mode + Confluence/Notion
+             table mining (one bundle per page, page URL as provenance; re-mine
+             of an unchanged page proposes nothing)
         KI-4 usage-mined suggestions — the same lane Arc MI grades through; accepts
              feed MI-3's gates
 ```
