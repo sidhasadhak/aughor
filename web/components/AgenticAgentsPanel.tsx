@@ -24,6 +24,7 @@ import { AgentMap } from "@/components/agentops/AgentMap";
 import { RunTimeline, type TimelineRun } from "@/components/agentops/RunTimeline";
 import { rangeParams, type TimeRange } from "@/components/agentops/useTimeRange";
 import { Button } from "@/components/ui/button";
+import { askSpotlight } from "@/lib/commandRegistry";
 import { StatusChip } from "@/components/brief/StatusChip";
 import {
   createAgentGolden, createUserAgent,
@@ -120,8 +121,16 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
               No custom agents yet. An agent is a scope and a stance — where it may look,
               and how it should think.
             </p>
-            <Button variant="secondary" size="xs"
-              onClick={() => setSelected({ kind: "hire" })}>Create your first agent</Button>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              <Button variant="secondary" size="xs"
+                onClick={() => setSelected({ kind: "hire" })}>Create your first agent</Button>
+              {/* SP-2 — the in-context summon: the question is met where it arises.
+                  The draft stages in the inbox; nothing is created until accepted. */}
+              <Button variant="ghost" size="xs"
+                onClick={() => askSpotlight(
+                  "Help me create my first agent: walk me through it, then draft it "
+                  + "and stage it for my approval.")}>Ask Spotlight to draft one</Button>
+            </div>
           </div>
         )}
         {personas.map(p => (

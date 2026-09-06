@@ -14,10 +14,11 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { formatCount } from "@/lib/format";
-import Fuse, { type FuseResult, type FuseResultMatch } from "fuse.js";
+import { type FuseResult, type FuseResultMatch } from "fuse.js";
+import { buildPaletteIndex } from "@/lib/paletteSearch";
 import { getApiBase } from "@/lib/config";
 import { useRichSchema } from "@/lib/schema-context";
-import { useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
+import { consumePendingAsk, useCommands, useRegisterCommands, type Command } from "@/lib/commandRegistry";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { newSessionId, projectThread } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
@@ -39,7 +40,9 @@ interface PaletteItem {
   /** SP-2 — the Spotlight row switches the overlay into its answer pane; the
    *  palette must NOT close on select the way every navigation row does. */
   keepOpen?: boolean;
-  onSelect: () => void;
+  /** SP-2 — async commands keep the overlay open with the row busy until the
+   *  promise settles; a rejection surfaces as a visible error line. */
+  onSelect: () => void | Promise<void>;
 }
 
 // Section header order and display names
@@ -185,6 +188,35 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     setSpotQ(question);
     void sendMessage({ text: question, metadata: { mode: "ask" } });
   }, [streaming, sendMessage]);
+  // A ref so the open-effect can consume a parked in-context question without
+  // re-firing on every identity change of `ask`.
+  const askRef = useRef(ask);
+  useEffect(() => { askRef.current = ask; });
+  // SP-2 — async command state: the row that is running, and a run's surfaced error.
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [runError, setRunError] = useState("");
+  const activate = useCallback((item: PaletteItem) => {
+    if (busyId) return;                       // one async command at a time
+    setRunError("");
+    let out: void | Promise<void>;
+    try {
+      out = item.onSelect();
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : "The command failed.");
+      return;
+    }
+    if (out && typeof (out as Promise<void>).then === "function") {
+      setBusyId(item.id);
+      (out as Promise<void>).then(
+        () => { setBusyId(null); if (!item.keepOpen) onClose(); },
+        (e) => {
+          setBusyId(null);
+          setRunError(e instanceof Error ? e.message : "The command failed.");
+        });
+    } else if (!item.keepOpen) {
+      onClose();
+    }
+  }, [busyId, onClose]);
   const [investigations, setInvestigations] = useState<Array<{ id: string; question: string; started_at: string; status: string }>>([]);
   const [tables, setTables] = useState<Array<{ name: string; row_count: string }>>([]);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -197,7 +229,14 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     setQuery("");
     setCursor(0);
     setMode("search");
+    setRunError("");
     setTimeout(() => inputRef.current?.focus(), 30);
+
+    // SP-2 — an in-context handle parked a question (askSpotlight): consume it
+    // and go straight to the answer pane; the deterministic search stays the
+    // default on every plain open.
+    const seeded = consumePendingAsk();
+    if (seeded) setTimeout(() => askRef.current(seeded), 0);
 
     // Fetch recent investigations
     fetch(`${getApiBase()}/investigations`)
@@ -289,6 +328,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       type: "command" as ItemType,
       icon: c.icon ?? "spark",
       accent: c.accent ?? "var(--vio3)",
+      keepOpen: c.keepOpen,
       onSelect: c.run,
     }));
 
@@ -320,16 +360,9 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
 
   // ── Fuse fuzzy search ─────────────────────────────────────────────────────
 
-  const fuse = useMemo(() => new Fuse(allItems, {
-    keys: [
-      { name: "label",    weight: 2 },
-      { name: "sublabel", weight: 1 },
-      { name: "keywords", weight: 1 },
-    ],
-    threshold: 0.35,
-    includeMatches: true,
-    minMatchCharLength: 1,
-  }), [allItems]);
+  // The options live in lib/paletteSearch so the latency receipt measures the
+  // exact pipeline this overlay runs (SP-2).
+  const fuse = useMemo(() => buildPaletteIndex(allItems), [allItems]);
 
   const results: FuseResult<PaletteItem>[] = useMemo(() => {
     if (!query.trim()) {
@@ -387,9 +420,9 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     } else if (e.key === "Enter") {
       e.preventDefault();
       const item = flatResults[cursor];
-      if (item) { item.onSelect(); if (!item.keepOpen) onClose(); }
+      if (item) activate(item);
     }
-  }, [flatResults, cursor, onClose]);
+  }, [flatResults, cursor, activate]);
 
   // Reset cursor on query change
   useEffect(() => setCursor(0), [query]);
@@ -517,6 +550,12 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
         {/* Results */}
         {mode === "search" && (
         <div ref={listRef} style={{ maxHeight: 380, overflowY: "auto" }}>
+          {runError && (
+            <div className="aug-fs-xs" role="alert"
+              style={{ padding: "6px 14px", color: "var(--red4)", borderTop: "1px solid var(--b0)" }}>
+              {runError}
+            </div>
+          )}
           {shownResults.length === 0 ? (
             <div style={{ padding: "28px 0", textAlign: "center", fontSize: 12, color: "var(--t3)" }}>
               No results for &ldquo;{query}&rdquo;
@@ -538,7 +577,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
                     <button
                       key={item.id}
                       data-idx={idx}
-                      onClick={() => { item.onSelect(); if (!item.keepOpen) onClose(); }}
+                      onClick={() => activate(item)}
                       onMouseEnter={() => setCursor(idx)}
                       style={{
                         width: "100%", display: "flex", alignItems: "center", gap: 10,
@@ -561,6 +600,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                           <Highlighted text={item.label} matches={result.matches?.filter(m => m.key === "label")} />
+                          {busyId === item.id && <span style={{ color: "var(--t3)" }}> · running…</span>}
                         </div>
                         {item.sublabel && (
                           <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>

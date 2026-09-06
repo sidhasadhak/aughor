@@ -1627,6 +1627,15 @@ export default function Home() {
     return () => window.removeEventListener("aughor:turn-complete", syncStoredTheme);
   }, []);
 
+  // SP-2 — in-context handles (an empty Agents screen, a failed run row) summon
+  // Spotlight with a seeded question via commandRegistry.askSpotlight. The shell
+  // only opens the overlay; the palette consumes the parked question on open.
+  useEffect(() => {
+    const summon = () => setShowSearch(true);
+    window.addEventListener("aughor:ask-spotlight", summon);
+    return () => window.removeEventListener("aughor:ask-spotlight", summon);
+  }, []);
+
   const setTheme = (t: Theme) => {
     setThemeState(t);
     document.documentElement.setAttribute("data-theme", t);

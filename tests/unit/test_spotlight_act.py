@@ -198,6 +198,20 @@ def test_pause_stages_then_accept_applies_and_resume_clears():
     assert not get_automation(a.id).paused_until               # cleared
 
 
+def test_pause_evidence_chain_reaches_the_approvers_reasoning():
+    """SP-6 — a proactive proposal cites its evidence rows: the premortem offer's
+    evidence string lands VERBATIM (clipped) on the staged record."""
+    from aughor.actions.inbox import get_proposal
+    a = _seed_automation("evidence-carrier")
+    out = act.pause_or_resume_automation("conn-x", {
+        "automation": a.id, "action": "pause", "until": "2027-01-01T00:00:00Z",
+        "reasoning": "errors every Monday",
+        "evidence": "errored 3 runs in a row: run r-1 at 2026-09-01 (boom)"})
+    assert out["staged"] is True
+    p = get_proposal(out["proposal_id"])
+    assert "EVIDENCE: errored 3 runs in a row: run r-1" in p.reasoning
+
+
 def test_pause_reject_is_byte_identical_and_stale_accept_refused():
     from aughor.automations.store import delete_automation, get_automation
     a = _seed_automation("reject-me")

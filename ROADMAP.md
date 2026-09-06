@@ -2495,9 +2495,21 @@ green; the raw-font-size ratchet came out one UNDER baseline and was lowered.
 **✅ In-browser receipt 2026-09-06:** the user drove ⌘K live — free text produced
 the Spotlight row and grounded answers in the overlay (the same session that found
 SP-1's two live defects; the summon did its job by carrying real questions).
-**Open in the wave:** an async command shape in `commandRegistry` itself (the
-palette owns the fallthrough today) · in-context handles (empty states, failed-run
-rows) · the live latency measurement.
+**✅ WAVE CLOSED 2026-09-06 — the three leftovers built.** The registry's command
+shape is async (`run: () => void | Promise<void>` + `keepOpen`; the overlay keeps
+the row visibly running until the promise settles and surfaces a rejection as an
+error line, never a vanished overlay — one `activate` body serves keyboard and
+click, the two-site class refused). The in-context handles exist through one tiny
+seam (`commandRegistry.askSpotlight` parks the question, one event opens the
+overlay, the palette consumes it straight into the answer pane): the empty Agents
+screen offers "Ask Spotlight to draft one" and a failed run row offers "ask why" —
+the question is met where it arises, exactly the discovery map's sentence. And the
+latency is MEASURED over the real pipeline: the Fuse configuration moved to
+`lib/paletteSearch.ts` so the receipt benchmarks the module the overlay runs —
+**1.99 ms per keystroke over 800 items** (tripwire bound at 50 ms), with the
+structural pin that the Spotlight fallthrough row is appended after the search,
+never indexed, so its existence costs zero per keystroke.
+**Open in the wave:** nothing.
 
 **Where a person finds it (the discovery map, ranked by how people actually discover):**
 ⌘K for hands already on keyboards · a **visible Spotlight affordance in the top chrome
@@ -2632,8 +2644,16 @@ the asker's agents cited with pass counts, never-evaluated and stale states word
 distinctly; a failed grounding read is "could not be read", not "0 agents"; the
 stopped clock disclosed; stored preferences quoted; the stepper stations present;
 staging taught before scheduling; roster wiring). Prose/vocabulary ratchets green.
-**Open in the wave:** deeper corpus service (searching SKILL.md-fed pack prose from
-inside the guide, beyond naming the door) · the live chat receipt post-merge.
+**✅ LIVE RECEIPT 2026-09-06 — the wave's sentence, verbatim.** "How should I
+create an agent?" through the product's own chat: two steps, exactly ONE tool
+fired (`platform_guide` — routing healthy at ~36 tools), and the answer walked
+the real five stations, taught the empty-documents trap in the flow's own words,
+cited the asker's own agent WITH its eval result ("The Look Analyst — 5/5 golden
+questions passing, measured on the configuration running now"), and ended by
+offering the staged draft. The same grounded body also served through the MCP
+door the same day (SP-5's receipt) — one declaration, two transports, one answer.
+**Open in the wave:** deeper corpus service (searching SKILL.md-fed pack prose
+from inside the guide, beyond naming the door).
 
 #### SP-5 · One roster, every door — ✅ FIRST CUT BUILT 2026-09-06
 
@@ -2666,9 +2686,19 @@ real registration function driven over the real listing payload registers exactl
 it (declared descriptions led with verbatim; a name collision skipped, never
 shadowed); the dispatch door runs the same bodies, refuses an unknown tool naming
 the roster, and relays a raising tool as a refusal.
+**✅ LIVE DRIVES DONE 2026-09-06 — the staged-proposal flow proven on ALL THREE
+transports.** MCP: a real external client (stdio, its own process, no stores)
+listed 33 tools with 15/15 Spotlight present, read the same grounded guide body,
+and STAGED an agent draft into the real inbox — rejected, agents byte-identical.
+Slack: the user sent one message to the running bot (Socket Mode, supervisor up
+since Aug 29) → the same `agent_draft` kind staged pending → rejected,
+byte-identical. The Slack drive also handed the custody line a live win: the
+bot's turn ran on a different connection than the user meant, the model drafted
+against the wrong tables — and the questionable draft SAT WAITING for a human
+instead of going live. The model drafts; the human certifies; the mistake died
+in review.
 **Open in the wave:** native per-parameter schemas on the MCP side (arguments
-travel as one `args` object today, schema rendered into the description) · the
-live drives (a staged proposal from Slack and from an external MCP client).
+travel as one `args` object today, schema rendered into the description).
 
 #### SP-6 · Red team, then proact — ✅ FIRST CUT BUILT 2026-09-06 (red team held first, in-branch)
 
@@ -2706,9 +2736,22 @@ stages zero proposals, and an unreadable store reports itself, never a clean bil
 `test_spotlight_tools.py` (streak flagged with run-row evidence and the pause
 offer; zero-doc agent flagged with the honest no-tool offer; a broken store is
 "not a clean bill of health", never silence).
+**Hardened 2026-09-06:** the evidence chain is now STRUCTURAL, not narrated — a
+premortem streak finding's offer carries its own arguments (`automation`,
+`action`, and the pre-worded `evidence` chain of run ids), and
+`pause_or_resume_automation` records a passed evidence string verbatim (clipped)
+onto the staged reasoning, so the approver always sees the rows whether or not
+the narrator re-types them faithfully. And the permanent corpus followed the
+arc's newest seam, as the wave orders: hostile arguments through the
+`/spotlight/tools` HTTP door come back as bounded refusals (a guessed
+walkthrough never appears, a 10 KB agent name dies at the cap, nothing is
+created, nothing staged by reads), an unknown tool is a bounded 404, and a
+non-object `args` is a validation refusal, never a dispatch.
 **Open in the wave:** the LIVE half of the receipt — one proactive proposal
-accepted by a real user with its evidence chain in the record — and periodic live
-red-team drives feeding new corpus entries.
+accepted by a real user with its evidence chain in the record (no honest
+candidate existed on the live deployment when checked: the only finding's offer
+is deliberately a page, not a staged act — the receipt waits for a natural
+occasion) — and periodic live red-team drives feeding new corpus entries.
 
 **Traps this arc must not re-pay:** the built-and-inert plane (the popularity flag is
 sitting in it right now) · the god-roster (500 tools, no topics — routing collapses and
@@ -3018,8 +3061,10 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
              in the overlay (same /ask door, quick-pinned); surface context
              threaded end-to-end, sanitized. In-browser receipt done (the user
-             drove ⌘K live). Open: registry async shape, in-context handles,
-             latency measurement
+             drove ⌘K live). CLOSED 2026-09-06: async command shape +
+             keepOpen; askSpotlight in-context handles (empty Agents screen,
+             failed-run rows); latency measured 1.99 ms/keystroke over 800
+             items on the real pipeline. Nothing open.
         SP-3 ✅ COMPLETE 2026-09-06 · LIVE RECEIPT DONE (the origin sentence
              driven; the model measured the premise and declined a
              false-premise draft; agent draft staged pending in the real inbox)
@@ -3030,24 +3075,27 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              shell reads the settings store AND re-reads it when a chat turn
              ends, so a theme switched in conversation is visible without a
              reload. Nothing open in the wave.
-        SP-4 ✅ FIRST CUT BUILT 2026-09-06 — platform_guide: four grounded
-             walkthroughs (agent · automation · connect · appearance), steps
-             quoted from the product's own flows, live grounding honest about
-             failure, every answer ending in an offered staged act. Open:
-             corpus search over pack prose, live receipt
-        SP-5 ✅ FIRST CUT BUILT 2026-09-06 — the roster declared ONCE
-             (spotlight_roster: Know 9 · Act 5 · Guide 1); Slack + palette +
-             chat already rode /ask; MCP now registers the same declaration at
-             startup through the new /spotlight transport routes (stores stay
-             behind their one writer); parity ratchet holds the diff at empty.
-             Open: native MCP parameter schemas, live Slack/MCP drives
-        SP-6 ✅ FIRST CUT BUILT 2026-09-06 — the red-team corpus is a permanent
-             test file (hostile content through real writers; data-not-
-             instructions pinned; clips forced into every interpolation site;
-             reads stage nothing), and it held BEFORE the proact half landed:
-             platform_premortem, deterministic evidence-backed findings with
-             roster offers, never self-applying. Open: the live accepted-
-             proposal receipt, periodic live red-team drives
+        SP-4 ✅ BUILT + LIVE RECEIPT 2026-09-06 — platform_guide: four grounded
+             walkthroughs, steps quoted from the product's own flows, honest
+             failure grounding, every answer ending in an offered staged act;
+             the live ask hit the wave's receipt sentence verbatim (five
+             stations, the asker's 5/5 agent cited, draft offered). Open:
+             corpus search over pack prose
+        SP-5 ✅ BUILT + ALL THREE TRANSPORTS DRIVEN 2026-09-06 — the roster
+             declared ONCE; MCP registers the declaration at startup through
+             the /spotlight routes; parity ratchet holds the diff empty. Live:
+             an external MCP client and a real Slack message each STAGED the
+             same agent-draft kind into the one inbox (both rejected,
+             byte-identical) — and Slack's wrong-connection draft died in
+             review, the custody line working unprompted. Open: native MCP
+             parameter schemas
+        SP-6 ✅ BUILT + HARDENED 2026-09-06 — permanent red-team corpus (now
+             covering the /spotlight HTTP door), clips at every interpolation
+             site, reads stage nothing; platform_premortem's offers carry
+             their own arguments WITH the evidence chain, and the pause tool
+             records evidence verbatim for the approver. Open: the live
+             accepted-proposal receipt (waits for a natural evidence-backed
+             occasion), periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
 ```
 

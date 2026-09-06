@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { askSpotlight } from "@/lib/commandRegistry";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
 import { Icon } from "@/components/ui/icon";
@@ -194,6 +195,18 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                     <>
                       <span>·</span>
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded border border-red-500/20 bg-red-500/10 text-red-400 aug-fs-xs font-medium">✕ failed</span>
+                      {/* SP-2 — the in-context summon: the question is asked where
+                          it arises. Spotlight's trace tools hold the anatomy. */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          askSpotlight(`Why did the run "${inv.question}" (id ${inv.id}) fail?`);
+                        }}
+                        className="aug-fs-xs text-zinc-400 hover:text-zinc-200 underline decoration-dotted underline-offset-2"
+                        title="Ask Spotlight why this run failed"
+                      >
+                        ask why
+                      </button>
                     </>
                   )}
                   {inv.status === "running" && (
