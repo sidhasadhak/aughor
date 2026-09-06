@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import logging
 
+from aughor.agent.spotlight_text import NAME_CLIP, clip
 from aughor.agent.tool_loop import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -90,7 +91,7 @@ def draft_agent(connection_id: str, args: dict) -> dict:
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "documents_attached": len(doc_ids),
-        "summary": (f"Agent draft '{name}' staged for approval (proposal {p.id}) — "
+        "summary": (f"Agent draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) — "
                     f"nothing exists yet; a human accepts it in the inbox and only "
                     f"then is the agent created.{disclosure}"),
     }
@@ -126,7 +127,7 @@ def draft_automation(connection_id: str, args: dict) -> dict:
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "draft": proposal.draft, "dry_run": proposal.dry_run, "notes": proposal.notes,
-        "summary": (f"Automation draft '{name}' staged for approval (proposal {p.id}) "
+        "summary": (f"Automation draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) "
                     f"with its dry-run attached — it joins the one scheduler only "
                     f"after a human accepts it in the inbox."),
     }
@@ -144,7 +145,7 @@ def _resolve_automation(connection_id: str, ref: str):
     a = get_automation(ref)
     if a is not None:
         if (a.conn_id or "") not in ("", connection_id):
-            return None, (f"automation '{a.name}' belongs to connection "
+            return None, (f"automation '{clip(a.name, NAME_CLIP)}' belongs to connection "
                           f"{a.conn_id!r}, not this conversation's — switch there to act on it")
         return a, ""
     matches = [x for x in list_automations(conn_id=connection_id) if x.name == ref]
@@ -152,8 +153,8 @@ def _resolve_automation(connection_id: str, ref: str):
         return matches[0], ""
     if len(matches) > 1:
         ids = ", ".join(x.id for x in matches)
-        return None, f"{len(matches)} automations are named {ref!r} — use an id: {ids}"
-    return None, f"no automation named {ref!r} on this connection"
+        return None, f"{len(matches)} automations are named {clip(ref, NAME_CLIP)!r} — use an id: {ids}"
+    return None, f"no automation named {clip(ref, NAME_CLIP)!r} on this connection"
 
 
 def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
@@ -177,7 +178,7 @@ def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
 
     p = stage_proposal(StagedProposal(
         kind="automation_state", org_id=current_org_id() or "",
-        connection_id=connection_id, action_id=f"automation-{action}:{a.name}",
+        connection_id=connection_id, action_id=f"automation-{action}:{clip(a.name, NAME_CLIP)}",
         params={"automation_id": a.id, "action": action,
                 **({"until": until} if action == "pause" else {})},
         reasoning=(str(args.get("reasoning") or f"{action} requested in conversation")
@@ -187,7 +188,7 @@ def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "automation_id": a.id,
-        "summary": (f"Proposed: {action} automation '{a.name}'{tail} (proposal "
+        "summary": (f"Proposed: {action} automation '{clip(a.name, NAME_CLIP)}'{tail} (proposal "
                     f"{p.id}). Nothing changed yet — a human accepts it in the "
                     f"inbox and only then does it apply."),
     }
@@ -212,23 +213,23 @@ def propose_agent_grant(connection_id: str, args: dict) -> dict:
             ids = ", ".join(a.id for a in matches)
             return {"staged": False,
                     "summary": f"Nothing staged: {len(matches)} agents are named "
-                               f"{ref!r} — use an id: {ids}"}
+                               f"{clip(ref, NAME_CLIP)!r} — use an id: {ids}"}
         agent = matches[0] if matches else None
     if agent is None:
         return {"staged": False,
-                "summary": f"Nothing staged: no agent {ref!r} exists."}
+                "summary": f"Nothing staged: no agent {clip(ref, NAME_CLIP)!r} exists."}
     problems = validate_agent_grants([action_id], connection_id, agent.schema_scope)
     if problems:
         return {"staged": False, "problems": problems,
                 "summary": "Nothing staged: " + "; ".join(problems)}
     if action_id in agent.tool_grants:
         return {"staged": False,
-                "summary": f"Nothing staged: agent '{agent.name}' already holds the "
-                           f"{action_id} grant."}
+                "summary": f"Nothing staged: agent '{clip(agent.name, NAME_CLIP)}' already holds the "
+                           f"{clip(action_id, NAME_CLIP)} grant."}
 
     p = stage_proposal(StagedProposal(
         kind="agent_grant", org_id=current_org_id() or "",
-        connection_id=connection_id, action_id=f"agent-grant:{agent.name}:{action_id}",
+        connection_id=connection_id, action_id=f"agent-grant:{clip(agent.name, NAME_CLIP)}:{clip(action_id, NAME_CLIP)}",
         params={"agent_id": agent.id, "action_id": action_id},
         reasoning=(str(args.get("reasoning") or "granted from conversation")[:_MAX_REASON]
                    + " NOTE: a grant is permission to PROPOSE this action — every "
@@ -237,7 +238,7 @@ def propose_agent_grant(connection_id: str, args: dict) -> dict:
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "agent_id": agent.id,
-        "summary": (f"Proposed: let agent '{agent.name}' PROPOSE {action_id} "
+        "summary": (f"Proposed: let agent '{clip(agent.name, NAME_CLIP)}' PROPOSE {clip(action_id, NAME_CLIP)} "
                     f"(proposal {p.id}). A grant is never permission to execute — "
                     f"its proposals still wait for a human; nothing changes until "
                     f"this is accepted in the inbox."),

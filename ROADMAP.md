@@ -2635,14 +2635,42 @@ staging taught before scheduling; roster wiring). Prose/vocabulary ratchets gree
 **Open in the wave:** deeper corpus service (searching SKILL.md-fed pack prose from
 inside the guide, beyond naming the door) · the live chat receipt post-merge.
 
-#### SP-5 · One roster, every door
+#### SP-5 · One roster, every door — ✅ FIRST CUT BUILT 2026-09-06
 
 The converse and MCP rosters unify into one declared registry with two transports;
 Slack summon rides RC-5. **Receipt:** the same staged-proposal flow driven from Slack
 and from an external MCP client; a diff of the two rosters returns empty and is
 ratcheted so it stays empty.
 
-#### SP-6 · Red team, then proact
+**Built (first cut):** the census settled half the wave before any code — **Slack
+already summons the one brain** (the bot service drives the same `POST /ask` every
+chat surface drives, so the whole Spotlight roster, staged proposals included, is
+reachable from Slack by construction), and MCP's `ask` tool likewise. What was
+genuinely missing was DIRECT tool parity, and one-writer-per-`data/` is what shaped
+it: the MCP server is a separate process, so its Spotlight tools must not open the
+stores. The declaration is now ONE function (`agent/spotlight_roster.py` — Know 9 ·
+Act 5 · Guide 1), and every consumer derives from it: converse concatenates it (as
+before, connection bound by closure); two new routes serve it as the out-of-process
+transport seam (`GET /spotlight/tools` lists the declaration — names, descriptions,
+parameter schemas; `POST /spotlight/tools/{tool}` dispatches one call into the same
+bodies conversation runs, auth'd by the API's normal front door, deliberately NOT an
+exempt prefix); and the MCP server registers one tool per declared entry at startup
+(`register_spotlight_tools`, mirroring the automations pattern — never fatal,
+collision-skipped, `--no-spotlight` to opt out), each call riding the route back
+into the one process that owns the stores. Custody rides the roster, not the
+transport: an MCP client's Act call can only stage into the same inbox.
+**Receipts:** `tests/unit/test_spotlight_roster_parity.py` (7) — the parity ratchet
+the wave named: conversation carries exactly the declaration (names AND
+descriptions — the routing policy); the HTTP listing diffs empty against it; the
+real registration function driven over the real listing payload registers exactly
+it (declared descriptions led with verbatim; a name collision skipped, never
+shadowed); the dispatch door runs the same bodies, refuses an unknown tool naming
+the roster, and relays a raising tool as a refusal.
+**Open in the wave:** native per-parameter schemas on the MCP side (arguments
+travel as one `args` object today, schema rendered into the description) · the
+live drives (a staged proposal from Slack and from an external MCP client).
+
+#### SP-6 · Red team, then proact — ✅ FIRST CUT BUILT 2026-09-06 (red team held first, in-branch)
 
 An adversarial pass seeds hostile content into logs, agent names, document text —
 every hole becomes a refusal test in the permanent corpus (EX-9's pattern, arc-wide).
@@ -2650,6 +2678,37 @@ Only after it holds: evidence-backed proposals ("this automation failed four Mon
 running — fix its schedule?") that cite their evidence rows and never auto-apply.
 **Receipt:** the attack corpus IS the test file; one proactive proposal accepted by a
 real user with its evidence chain in the record.
+
+**Built (first cut, red team first as the wave orders):**
+`tests/unit/test_spotlight_redteam.py` is the PERMANENT corpus — instruction
+overrides, fake system/tool framing, exfiltration nudges, SQL-shaped names, and
+10 KB bulk, seeded through the REAL writers (ledger emits under a bound trace, real
+automation and agent records) and driven through the roster. What it pins is what a
+unit test can enforce: hostile content comes back as DATA, clipped
+(`agent/spotlight_text.py` — every name Spotlight interpolates and every free-text
+field it relays now rides one clip; the corpus forced that helper into existence
+across the Know, Act and Guide modules); no attack string changes custody (hostile
+automation references are clean clipped refusals, hostile preference keys/values
+die at the closed registry, hostile reasoning is truncated before an approver reads
+it); every result is size-bounded; and the whole Know roster leaves the inbox
+untouched over hostile data — a read that staged would be the EchoLeak shape. What
+a unit test cannot enforce — whether a model OBEYS relayed text — stays on the
+transport's structure (tool results ride the provider's tool-role channel) and the
+live drives this corpus seeds. THEN the proact half, held to its law:
+`platform_premortem`, a Know read whose findings are deterministic and
+evidence-backed — automations erroring N runs in a row (evidence: the run rows,
+with reasons), agents with zero documents (the sees-less trap), unpriced spend
+(the cost-floor clause) — each finding carrying the roster offer that addresses it
+(`pause_or_resume_automation` for a streak; an honest page pointer where no chat
+door exists), and the tool NEVER applies anything: the receipt pins that a sweep
+stages zero proposals, and an unreadable store reports itself, never a clean bill.
+**Receipts:** the corpus file (9) + two premortem receipts in
+`test_spotlight_tools.py` (streak flagged with run-row evidence and the pause
+offer; zero-doc agent flagged with the honest no-tool offer; a broken store is
+"not a clean bill of health", never silence).
+**Open in the wave:** the LIVE half of the receipt — one proactive proposal
+accepted by a real user with its evidence chain in the record — and periodic live
+red-team drives feeding new corpus entries.
 
 **Traps this arc must not re-pay:** the built-and-inert plane (the popularity flag is
 sitting in it right now) · the god-roster (500 tools, no topics — routing collapses and
@@ -2955,7 +3014,7 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              day); trace/audit leftovers closed 09-06: platform_traces (runs +
              one run's anatomy, metadata only — span payloads stay behind the
              audited read) and platform_audit (the unified recency feed over
-             every governance sink). Roster is eight reads.
+             every governance sink). Nine reads with SP-6's premortem.
         SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
              in the overlay (same /ask door, quick-pinned); surface context
              threaded end-to-end, sanitized. In-browser receipt done (the user
@@ -2976,8 +3035,19 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              quoted from the product's own flows, live grounding honest about
              failure, every answer ending in an offered staged act. Open:
              corpus search over pack prose, live receipt
-        SP-5 one roster, every door (converse ∪ MCP unified; Slack via RC-5)
-        SP-6 red-team corpus, THEN evidence-backed proactive proposals
+        SP-5 ✅ FIRST CUT BUILT 2026-09-06 — the roster declared ONCE
+             (spotlight_roster: Know 9 · Act 5 · Guide 1); Slack + palette +
+             chat already rode /ask; MCP now registers the same declaration at
+             startup through the new /spotlight transport routes (stores stay
+             behind their one writer); parity ratchet holds the diff at empty.
+             Open: native MCP parameter schemas, live Slack/MCP drives
+        SP-6 ✅ FIRST CUT BUILT 2026-09-06 — the red-team corpus is a permanent
+             test file (hostile content through real writers; data-not-
+             instructions pinned; clips forced into every interpolation site;
+             reads stage nothing), and it held BEFORE the proact half landed:
+             platform_premortem, deterministic evidence-backed findings with
+             roster offers, never self-applying. Open: the live accepted-
+             proposal receipt, periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
 ```
 

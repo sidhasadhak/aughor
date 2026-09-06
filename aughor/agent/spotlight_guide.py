@@ -71,7 +71,9 @@ def _agents_grounding() -> dict | None:
             else:
                 line = (f"{passed}/{total} golden questions passing, measured before "
                         f"revision tracking — it cannot be tied to today's configuration")
-        rows.append({"name": a.name, "enabled": a.enabled, "evaluation": line})
+        from aughor.agent.spotlight_text import NAME_CLIP, clip
+        rows.append({"name": clip(a.name, NAME_CLIP), "enabled": a.enabled,
+                     "evaluation": line})
     out = {"total": len(agents), "evaluated_shown": evaluated, "agents": rows}
     if len(agents) > _MAX_ROWS:
         out["note"] = f"listing capped at {_MAX_ROWS} of {len(agents)}"

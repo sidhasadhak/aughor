@@ -254,6 +254,73 @@ def test_audit_feed_rows_are_compact_and_the_scope_is_disclosed(monkeypatch):
     assert "recency feed" in out["summary"]                  # never a total
 
 
+# ── platform_premortem — SP-6's proact half: evidence rows, offers, never applies ──
+
+def test_premortem_finds_an_error_streak_with_its_evidence_rows(monkeypatch):
+    # The shared hermetic stores hold whatever earlier tests seeded; lift the scan
+    # and display caps so THIS receipt asserts detection, not cap arithmetic (the
+    # caps' own honesty — "scanned N of M" — has its own receipt below).
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 100_000)
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_FINDINGS", 100_000)
+    from aughor.actions.inbox import list_proposals
+    from aughor.automations.models import Automation, AutomationRun, Condition, Effect
+    from aughor.automations.store import append_run, upsert_automation
+
+    a = upsert_automation(Automation(
+        conn_id="pm-conn", name="always-breaking",
+        conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
+        effects=[Effect(kind="notify", config={"trigger_id": "t1"})]))
+    for i in range(3):
+        append_run(AutomationRun(automation_id=a.id, automation_name=a.name,
+                                 conn_id="pm-conn", outcome="error",
+                                 reason=f"boom {i}"))
+
+    before = len(list_proposals(status="pending"))
+    out = spot.platform_premortem({})
+    streaks = [f for f in out["findings"] if f["kind"] == "automation_error_streak"
+               and f["subject"] == "always-breaking"]
+    assert streaks, "the 3-error streak was not flagged"
+    ev = streaks[0]["evidence"]
+    assert len(ev) >= 3 and all(e["run_id"] for e in ev)     # rows, not vibes
+    assert streaks[0]["offer"]["tool"] == "pause_or_resume_automation"
+    assert "nothing here applies anything" in out["summary"]
+    assert len(list_proposals(status="pending")) == before   # the sweep staged NOTHING
+
+
+def test_premortem_flags_zero_document_agents_and_a_broken_store_is_not_clean(monkeypatch):
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 100_000)
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_FINDINGS", 100_000)
+    from aughor.custom_agents.store import create_agent
+    ag = create_agent("premortem-bare", instructions="A scope and a stance.")
+
+    out = spot.platform_premortem({})
+    bare = [f for f in out["findings"] if f["kind"] == "agent_without_documents"
+            and f["evidence"][0]["agent_id"] == ag.id]
+    assert bare and bare[0]["offer"]["tool"] == ""           # honest page offer
+
+    def boom():
+        raise RuntimeError("agents store gone")
+    monkeypatch.setattr("aughor.custom_agents.store.list_agents", boom)
+    out2 = spot.platform_premortem({})
+    assert "agents" in out2["stores_unavailable"]
+    assert "not a clean bill of health" in out2["summary"]
+
+
+def test_premortem_discloses_a_partial_scan_instead_of_a_clean_bill(monkeypatch):
+    """A capped sweep must say what it did NOT check — the confident-clean-report
+    class, refused. Force the cap below the store's population and read the words."""
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 1)
+    from aughor.automations.models import Automation, Condition, Effect
+    from aughor.automations.store import upsert_automation
+    for n in ("scan-cap-a", "scan-cap-b"):
+        upsert_automation(Automation(
+            conn_id="pm-conn", name=n,
+            conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
+            effects=[Effect(kind="notify", config={"trigger_id": "t1"})]))
+    out = spot.platform_premortem({})
+    assert "were NOT checked" in out["summary"]
+
+
 # ── the roster ──────────────────────────────────────────────────────────────────────
 
 def test_spotlight_roster_names_and_read_contract():
@@ -261,7 +328,7 @@ def test_spotlight_roster_names_and_read_contract():
     names = [t.name for t in tools]
     assert names == ["list_platform_connections", "platform_usage", "platform_runs",
                      "investigation_cadence", "answer_accuracy", "table_popularity",
-                     "platform_traces", "platform_audit"]
+                     "platform_traces", "platform_premortem", "platform_audit"]
 
 
 def test_conversation_gets_the_spotlight_roster():

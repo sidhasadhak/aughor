@@ -10,7 +10,7 @@ import argparse
 import asyncio
 import sys
 
-from aughor.mcp.server import mcp, register_automation_tools
+from aughor.mcp.server import mcp, register_automation_tools, register_spotlight_tools
 
 
 def main() -> None:
@@ -26,6 +26,10 @@ def main() -> None:
     ap.add_argument(
         "--no-automations", action="store_true",
         help="Skip registering this deployment's exposed automations as tools (DS-14).",
+    )
+    ap.add_argument(
+        "--no-spotlight", action="store_true",
+        help="Skip registering the Spotlight platform roster as tools (SP-5).",
     )
     args = ap.parse_args()
 
@@ -45,6 +49,15 @@ def main() -> None:
         if added:
             print(f"[aughor.mcp] exposed {len(added)} automation(s) as tools: "
                   f"{', '.join(added)}", file=sys.stderr)
+
+    # SP-5 — the Spotlight roster is the arc's ONE declaration, served to every
+    # transport; this transport registers from the API's listing under the same
+    # never-fatal posture as the automations above.
+    if not args.no_spotlight:
+        added_sp = asyncio.run(register_spotlight_tools())
+        if added_sp:
+            print(f"[aughor.mcp] exposed the Spotlight roster ({len(added_sp)} tools)",
+                  file=sys.stderr)
 
     if args.http:
         mcp.settings.host = args.host

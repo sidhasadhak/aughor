@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
+from aughor.agent.spotlight_text import NAME_CLIP, TEXT_CLIP, clip
 from aughor.agent.tool_loop import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -65,8 +66,8 @@ def list_platform_connections(args: dict) -> dict:
     conns = list_connections(org_id=_org() or None)
     out = [{
         "id": c.get("id", ""),
-        "name": c.get("name") or c.get("id", ""),
-        "type": c.get("conn_type") or c.get("type") or "",
+        "name": clip(c.get("name") or c.get("id", ""), NAME_CLIP),
+        "type": clip(c.get("conn_type") or c.get("type") or "", NAME_CLIP),
     } for c in conns[:_MAX_CONNECTIONS]]
     shown = ", ".join(f"{c['name']} ({c['type']})" if c['type'] else c['name']
                       for c in out[:6])
@@ -301,9 +302,12 @@ def platform_traces(args: dict) -> dict:
         rows = recent_sessions(org_id=_org() or None, limit=limit, since=since,
                                scan=_TRACE_SCAN)
         failed = sum(1 for r in rows if not r.get("ok"))
-        out = [{k: r.get(k) for k in (
-            "trace_id", "started", "question", "ok", "errors", "tool_calls",
-            "llm_calls", "duration_ms", "total_tokens", "agent_id", "conn_id")}
+        out = [{**{k: r.get(k) for k in (
+            "trace_id", "started", "ok", "errors", "tool_calls",
+            "llm_calls", "duration_ms", "total_tokens", "agent_id", "conn_id")},
+            # The question is someone's free text riding a log — quoted as DATA,
+            # clipped so a hostile or enormous one cannot host a paragraph (SP-6).
+            "question": clip(r.get("question"), TEXT_CLIP)}
             for r in rows]
         return {
             "window_days": days, "since": since,
@@ -324,9 +328,11 @@ def platform_traces(args: dict) -> dict:
                             f"identical from this side.")}
     from aughor.obs.trace_summary import build_summary
     s = build_summary(trace_id, events)
-    slowest = [{k: sp.get(k) for k in ("name", "kind", "duration_ms", "pct_of_run")}
+    slowest = [{**{k: sp.get(k) for k in ("kind", "duration_ms", "pct_of_run")},
+                "name": clip(sp.get("name"), NAME_CLIP)}
                for sp in (s.get("slowest_spans") or [])[:5]]
-    errors = [{k: e.get(k) for k in ("name", "kind", "error_class")}
+    errors = [{**{k: e.get(k) for k in ("kind", "error_class")},
+               "name": clip(e.get("name"), NAME_CLIP)}
               for e in (s.get("errors") or [])[:5]]
     counts, time = s.get("counts") or {}, s.get("time") or {}
     ok = bool(s.get("ok"))
@@ -345,7 +351,8 @@ def platform_traces(args: dict) -> dict:
                     f"{err_line}{slow_line} "
                     f"Metadata only — step inputs and outputs are the audited "
                     f"read on the Traces page."),
-        "question": s.get("question"), "started_at": s.get("started_at"),
+        "question": clip(s.get("question"), TEXT_CLIP),
+        "started_at": s.get("started_at"),
         "counts": counts, "time": time, "models": s.get("models"),
         "slowest_steps": slowest, "errors": errors,
     }
@@ -370,7 +377,8 @@ def platform_audit(args: dict) -> dict:
                 "summary": (f"No audit category named {category!r} — the "
                             f"categories are: {', '.join(sorted(CATEGORIES))}.")}
     rows = [{"category": e.category, "kind": e.kind, "at": e.at,
-             "actor": e.actor, "summary": e.summary} for e in events]
+             "actor": clip(e.actor, NAME_CLIP),
+             "summary": clip(e.summary, TEXT_CLIP)} for e in events]
     cats = sorted({r["category"] for r in rows})
     scope_line = (f"the {category} category" if category
                   else f"all categories ({', '.join(cats) or 'none present'})")
@@ -382,6 +390,128 @@ def platform_audit(args: dict) -> dict:
                     f"count."),
         "events": rows,
         "known_categories": sorted(CATEGORIES),
+    }
+
+
+_PREMORTEM_STREAK = 3
+_PREMORTEM_MAX_AUTOMATIONS = 100
+_PREMORTEM_MAX_FINDINGS = 10
+
+
+def platform_premortem(args: dict) -> dict:
+    """SP-6's proactive half, held to its law: EVIDENCE-BACKED findings, offers that
+    cite their evidence rows, and nothing applied — ever — by this tool.
+
+    Every check is a deterministic read (§3.11 use case 5, productized small): an
+    automation whose newest runs are an unbroken error streak; an agent with zero
+    documents (the sees-LESS-than-plain-chat trap); a spend window whose cost is a
+    floor because calls are unpriced. Each finding carries the rows that make it
+    true, and the offer names the staged act (or the page) that addresses it — a
+    human accepts in the inbox, or nothing happens. A check that cannot READ says
+    so; an unreadable store is not a clean bill of health."""
+    findings: list[dict] = []
+    unavailable: list[str] = []
+    scan_notes: list[str] = []
+
+    try:
+        from aughor.automations.store import get_runs, list_automations
+        enabled = [a for a in list_automations() if a.enabled]
+        autos = enabled[:_PREMORTEM_MAX_AUTOMATIONS]
+        if len(enabled) > len(autos):
+            # A partial scan reported as a full one would be a confident clean bill
+            # over unswept ground — say the window out loud instead.
+            scan_notes.append(f"scanned {len(autos)} of {len(enabled)} enabled "
+                              f"automations — the rest were NOT checked")
+        for a in autos:
+            runs = get_runs(automation_id=a.id, limit=_PREMORTEM_STREAK + 2)
+            streak = []
+            for r in runs:                       # newest first; stop at the first non-error
+                if r.outcome != "error":
+                    break
+                streak.append(r)
+            if len(streak) >= _PREMORTEM_STREAK:
+                findings.append({
+                    "kind": "automation_error_streak",
+                    "subject": clip(a.name, NAME_CLIP),
+                    "sentence": (f"automation '{clip(a.name, NAME_CLIP)}' has errored on "
+                                 f"its last {len(streak)} runs in a row"),
+                    "evidence": [{"run_id": r.id, "started_at": r.started_at,
+                                  "reason": clip(r.reason, TEXT_CLIP)} for r in streak],
+                    "offer": {"tool": "pause_or_resume_automation",
+                              "sentence": "I can propose pausing it (with an end date) "
+                                          "for your approval in the inbox."},
+                })
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "premortem: could not read the automations store",
+                 counter="spotlight_premortem.automations")
+        unavailable.append("automations")
+
+    try:
+        from aughor.custom_agents.store import list_agents
+        for a in list_agents():
+            if not a.doc_ids:
+                findings.append({
+                    "kind": "agent_without_documents",
+                    "subject": clip(a.name, NAME_CLIP),
+                    "sentence": (f"agent '{clip(a.name, NAME_CLIP)}' has no documents "
+                                 f"attached — it sees LESS context than plain chat"),
+                    "evidence": [{"agent_id": a.id, "documents_attached": 0}],
+                    "offer": {"tool": "",
+                              "sentence": "Attach documents on the Agents page — there "
+                                          "is no chat door for another agent's scope."},
+                })
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "premortem: could not read the agents store",
+                 counter="spotlight_premortem.agents")
+        unavailable.append("agents")
+
+    try:
+        usage = platform_usage({"days": 7, "by": "model"})
+        unpriced = int(usage.get("unpriced_calls") or 0)
+        if unpriced:
+            models = [g["model"] for g in usage.get("groups") or []][:5]
+            findings.append({
+                "kind": "unpriced_spend",
+                "subject": "model pricing",
+                "sentence": (f"{unpriced} model calls in the last 7 days have no "
+                             f"declared price — every cost figure is a floor until "
+                             f"prices are declared"),
+                "evidence": [{"unpriced_calls": unpriced,
+                              "models_in_window": models}],
+                "offer": {"tool": "",
+                          "sentence": "Declare model prices in Settings; no staged "
+                                      "act exists for pricing, deliberately."},
+            })
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "premortem: could not read the usage window",
+                 counter="spotlight_premortem.usage")
+        unavailable.append("usage")
+
+    findings_total = len(findings)
+    findings = findings[:_PREMORTEM_MAX_FINDINGS]
+    if findings_total > len(findings):
+        scan_notes.append(f"showing {len(findings)} of {findings_total} findings")
+    checked = "automation error streaks, zero-document agents, unpriced spend"
+    if unavailable:
+        health = (f"{findings_total} findings; could NOT read: "
+                  f"{', '.join(unavailable)} — an unreadable store is not a clean "
+                  f"bill of health")
+    elif findings_total:
+        health = f"{findings_total} findings, each with its evidence rows"
+    else:
+        health = "nothing flagged"
+    notes = (" " + "; ".join(scan_notes) + "." if scan_notes else "")
+    return {
+        "summary": (f"Pre-mortem sweep ({checked}): {health}.{notes} Offers are "
+                    f"proposals — nothing here applies anything; a human accepts "
+                    f"in the inbox or nothing happens."),
+        "checks": checked.split(", "),
+        "findings": findings,
+        "findings_total": findings_total,
+        "stores_unavailable": unavailable,
     }
 
 
@@ -533,6 +663,22 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             ),
             parameters=_TRACES_PARAMS,
             run=lambda a: platform_traces(a),
+        ),
+        ToolSpec(
+            name="platform_premortem",
+            description=(
+                "A deterministic pre-mortem sweep of this deployment: automations "
+                "erroring run after run, agents with no documents attached, spend "
+                "whose cost is only a floor. Every finding carries its evidence "
+                "rows — cite them when you relay it, and when a finding names an "
+                "offer, make that offer; never act on one without the user's word, "
+                "and nothing here ever applies itself. Use for 'is anything "
+                "silently broken / what should I look at' questions. Quote the "
+                "summary field verbatim for the numbers — never re-derive them "
+                "from the other fields."
+            ),
+            parameters=_EMPTY_PARAMS,
+            run=lambda a: platform_premortem(a),
         ),
         ToolSpec(
             name="platform_audit",

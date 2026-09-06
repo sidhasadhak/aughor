@@ -9315,6 +9315,46 @@ export interface paths {
         patch: operations["update_slack_bot_slack_bots__bot_id__patch"];
         trace?: never;
     };
+    "/spotlight/tools": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Spotlight Tools
+         * @description The declared roster, as a transport would register it.
+         *
+         *     Descriptions and schemas are static declarations — the same for every
+         *     connection — so the binding argument only shapes closures, never the listing.
+         */
+        get: operations["list_spotlight_tools_spotlight_tools_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/spotlight/tools/{tool_name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Call Spotlight Tool */
+        post: operations["call_spotlight_tool_spotlight_tools__tool_name__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/suggestions": {
         parameters: {
             query?: never;
@@ -12057,6 +12097,24 @@ export interface components {
              * @default
              */
             signing_secret: string;
+        };
+        /**
+         * SpotlightCall
+         * @description One tool invocation. `connection_id` is the binding conversation supplies by
+         *     closure; an outside transport must say it out loud.
+         */
+        SpotlightCall: {
+            /** Args */
+            args?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /** Session Id */
+            session_id?: string | null;
         };
         /** StatusIn */
         StatusIn: {
@@ -29708,6 +29766,72 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SlackBotBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_spotlight_tools_spotlight_tools_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    call_spotlight_tool_spotlight_tools__tool_name__post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                tool_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpotlightCall"];
             };
         };
         responses: {
