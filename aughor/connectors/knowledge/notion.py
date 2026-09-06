@@ -19,14 +19,12 @@ from __future__ import annotations
 
 import json
 import logging
-from pathlib import Path
 from typing import Iterator
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-_STATE_DIR  = Path("data")
 _PAGE_SIZE  = 100
 _NOTION_VER = "2022-06-28"
 
@@ -69,7 +67,11 @@ class NotionSync:
         self._token     = meta.get("integration_token", "")
         self._db_ids    = [d.strip() for d in meta.get("database_ids", "").split(",") if d.strip()]
         self._page_limit = int(meta.get("page_limit", 200))
-        self._state_path = _STATE_DIR / f"knowledge_sync_{connection_id}.json"
+        # Resolved on CALL, never at import (the vocabulary._ROOT freeze, 3×): a bare
+        # Path("data") was also CWD-relative, so any process not started at the repo
+        # root read an empty sync state and re-synced from scratch.
+        from aughor.db.paths import state_dir
+        self._state_path = state_dir() / f"knowledge_sync_{connection_id}.json"
 
         if not self._token:
             raise ValueError("Notion connector requires integration_token")
@@ -92,7 +94,7 @@ class NotionSync:
         return {}
 
     def _save_state(self, state: dict) -> None:
-        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(state, indent=2))
 
     # ── Notion API ─────────────────────────────────────────────────────────────

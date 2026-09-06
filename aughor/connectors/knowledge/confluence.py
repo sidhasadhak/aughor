@@ -23,14 +23,12 @@ from __future__ import annotations
 import json
 import logging
 import re
-from pathlib import Path
 from typing import Iterator
 
 import requests
 
 logger = logging.getLogger(__name__)
 
-_STATE_DIR = Path("data")
 _PAGE_SIZE  = 50       # Confluence max per request is 100; 50 is safe
 
 
@@ -59,7 +57,11 @@ class ConfluenceSync:
         self._api_token = meta.get("api_token", "")
         self._space_keys = [s.strip() for s in meta.get("space_keys", "").split(",") if s.strip()]
         self._page_limit = int(meta.get("page_limit", 500))
-        self._state_path = _STATE_DIR / f"knowledge_sync_{connection_id}.json"
+        # Resolved on CALL, never at import (the vocabulary._ROOT freeze, 3×): a bare
+        # Path("data") was also CWD-relative, so any process not started at the repo
+        # root read an empty sync state and re-synced from scratch.
+        from aughor.db.paths import state_dir
+        self._state_path = state_dir() / f"knowledge_sync_{connection_id}.json"
 
         if not (self._base_url and self._username and self._api_token):
             raise ValueError("Confluence connector requires base_url, username, and api_token")
@@ -79,7 +81,7 @@ class ConfluenceSync:
         return {}
 
     def _save_state(self, state: dict) -> None:
-        _STATE_DIR.mkdir(parents=True, exist_ok=True)
+        self._state_path.parent.mkdir(parents=True, exist_ok=True)
         self._state_path.write_text(json.dumps(state, indent=2))
 
     # ── Confluence REST API ────────────────────────────────────────────────────

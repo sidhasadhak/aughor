@@ -3312,6 +3312,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/evals/experiments": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Experiments
+         * @description A/B pairs derived from the run history — never stored, so never stale.
+         *
+         *     Two runs whose recorded requests (``config.cell_requested``) differ on exactly one
+         *     axis — one flag, or one model pin — are an experiment. The runs come from
+         *     ``run_experiment`` (today driven by ``scripts/flag_ab_grid.py``; a job-kernel door
+         *     is the named follow-on once model-backed targets are runnable from the API).
+         */
+        get: operations["list_experiments_evals_experiments_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/evals/experiments/compare": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Compare Experiment Runs
+         * @description The per-case diff of one pair: verdicts, flips, paired-subset accuracy, SQL.
+         *
+         *     ``a`` is read as the baseline cell and ``b`` as the variant. Accuracy over the
+         *     paired subset is the honest number — a cell that never reached a case contributes
+         *     ``unrun``, not a flip.
+         */
+        get: operations["compare_experiment_runs_evals_experiments_compare_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/evals/flags/{flag}/graduate": {
         parameters: {
             query?: never;
@@ -4405,6 +4454,39 @@ export interface paths {
         put: operations["put_column_glossary_glossary__table___column__put"];
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/governance/caps": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Usage Caps
+         * @description Every declared cap, with the vocabulary the form needs and — because a cap
+         *     without its measurement is just a wish — the observed value of each cap's metric
+         *     over its own window, read through the same rollup the usage page shows.
+         */
+        get: operations["list_usage_caps_governance_caps_get"];
+        /**
+         * Put Usage Cap
+         * @description Declare (or replace) one cap. The author is the identified caller — a limit
+         *     nobody set is not a policy, so an unidentified localhost operator is recorded as
+         *     ``operator`` rather than blank.
+         */
+        put: operations["put_usage_cap_governance_caps_put"];
+        post?: never;
+        /**
+         * Delete Usage Cap
+         * @description Remove one cap — a real delete, per the store's own law (a retired cap that
+         *     still reads as present would keep refusing work after the operator lifted it).
+         */
+        delete: operations["delete_usage_cap_governance_caps_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -5631,6 +5713,37 @@ export interface paths {
          *     success returns 200 with the dispatch outcome.
          */
         post: operations["execute_action_kinetic_actions__action_id__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/knowledge/sources": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Knowledge Sources
+         * @description The Documents surface's source catalog: what can be connected (form fields
+         *     SERVED from the connector registry, never mirrored into the client) and what is
+         *     connected, each with its sync state. Secret values never leave the server —
+         *     only the field descriptors do.
+         */
+        get: operations["list_knowledge_sources_knowledge_sources_get"];
+        put?: never;
+        /**
+         * Create Knowledge Source
+         * @description Connect a knowledge source. The credentials are tested against the live
+         *     counterparty BEFORE the record exists (mirroring `POST /connections`) — a saved
+         *     source that was never reachable would sit in the list as a sync that quietly
+         *     indexes nothing. Secret config fields are Fernet-encrypted by the connection
+         *     registry on write.
+         */
+        post: operations["create_knowledge_source_knowledge_sources_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10317,6 +10430,30 @@ export interface components {
              */
             text: string;
         };
+        /** CapIn */
+        CapIn: {
+            /**
+             * Action
+             * @default alert
+             */
+            action: string;
+            /** Limit */
+            limit: number;
+            /** Metric */
+            metric: string;
+            /** Scope */
+            scope: string;
+            /**
+             * Subject
+             * @default *
+             */
+            subject: string;
+            /**
+             * Window Hours
+             * @default 24
+             */
+            window_hours: number;
+        };
         /**
          * CardProvenance
          * @description Where the card came from — so every measured card links back to its evidence.
@@ -11377,6 +11514,20 @@ export interface components {
             tags: string[];
             /** Title */
             title: string;
+        };
+        /** KnowledgeSourceIn */
+        KnowledgeSourceIn: {
+            /**
+             * Config
+             * @default {}
+             */
+            config: {
+                [key: string]: string;
+            };
+            /** Conn Type */
+            conn_type: string;
+            /** Name */
+            name: string;
         };
         /** MetricRequest */
         MetricRequest: {
@@ -19175,6 +19326,72 @@ export interface operations {
             };
         };
     };
+    list_experiments_evals_experiments_get: {
+        parameters: {
+            query?: {
+                suite_id?: string | null;
+                limit?: number;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    compare_experiment_runs_evals_experiments_compare_get: {
+        parameters: {
+            query: {
+                a: string;
+                b: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     graduate_flag_evals_flags__flag__graduate_post: {
         parameters: {
             query?: {
@@ -21075,6 +21292,104 @@ export interface operations {
             };
         };
     };
+    list_usage_caps_governance_caps_get: {
+        parameters: {
+            query?: {
+                observe?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    put_usage_cap_governance_caps_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CapIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_usage_cap_governance_caps_delete: {
+        parameters: {
+            query: {
+                scope: string;
+                metric: string;
+                subject?: string;
+                window_hours?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_governed_tags_governance_tags_get: {
         parameters: {
             query?: {
@@ -22952,6 +23267,59 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_knowledge_sources_knowledge_sources_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_knowledge_source_knowledge_sources_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["KnowledgeSourceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

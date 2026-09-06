@@ -8,8 +8,9 @@
 import { useEffect, useState } from "react";
 import { compactNumber } from "@/lib/format";
 import {
-  getLearningSummary, getTrustedAssets, listRememberedReadings, revokeRememberedReading,
-  type LearningSummary, type TrustedAssets, type RememberedReading,
+  getLearningDatasets, getLearningSummary, getTrustedAssets, listRememberedReadings,
+  revokeRememberedReading, runLearningExport,
+  type LearningDatasets, type LearningSummary, type TrustedAssets, type RememberedReading,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -56,13 +57,27 @@ export function MemoryPanel() {
   // S5 cited memory — the readings themselves: remembered, cited, revocable.
   const [readings, setReadings] = useState<RememberedReading[]>([]);
   const [revoking, setRevoking] = useState<string | null>(null);
+  // MI-3: the corpus those verdicts become, and the measured distance to MI-4's gates.
+  const [datasets, setDatasets] = useState<LearningDatasets | null>(null);
+  const [exporting, setExporting] = useState(false);
 
   useEffect(() => {
     Promise.all([getLearningSummary(), getTrustedAssets()])
       .then(([s, t]) => { setSummary(s); setTrusted(t); })
       .finally(() => setLoading(false));
     listRememberedReadings().then(setReadings).catch(() => setReadings([]));
+    getLearningDatasets().then(setDatasets).catch(() => setDatasets(null));
   }, []);
+
+  const exportNow = async () => {
+    setExporting(true);
+    try {
+      const out = await runLearningExport();
+      if (out) setDatasets({ stats: datasets?.stats ?? {}, gates: out.gates });
+      const fresh = await getLearningDatasets();
+      if (fresh) setDatasets(fresh);
+    } finally { setExporting(false); }
+  };
 
   const revoke = async (id: string) => {
     setRevoking(id);
@@ -162,6 +177,31 @@ export function MemoryPanel() {
                 </div>
               ))}
             </div>
+          )}
+
+          {datasets && (
+            <>
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 18, marginBottom: 4 }}>
+                <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t2)" }}>Training corpus</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>graded work, exportable — and the measured distance to the MI-4 gates</span>
+                <span style={{ flex: 1 }} />
+                <Button variant="ghost" size="xs" disabled={exporting} onClick={exportNow}
+                        className="h-auto px-1.5 py-0.5 aug-fs-xs font-normal">
+                  {exporting ? "Exporting…" : "Export now"}
+                </Button>
+              </div>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 8, maxWidth: 640 }}>
+                Distillation (MI-4) does not start until every gate passes; an unchanged corpus
+                exports nothing new, so the button is safe to press.
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                {Object.entries(datasets.gates).map(([kind, g]) => (
+                  <Tile key={kind} label={kind.toUpperCase()}
+                        value={`${compactNumber(g.have)} / ${compactNumber(g.need)}`}
+                        sub={g.passes ? "gate passes" : "below the gate"} />
+                ))}
+              </div>
+            </>
           )}
         </>
       )}

@@ -296,3 +296,98 @@ def put_column_glossary(table: str, column: str, req: UpdateColumnRequest,
     update_column(table, column, description=req.description, values=req.values,
                   caveats=req.caveats, schema=schema)
     return {"ok": True, "table": table, "column": column, "schema": schema}
+
+
+# ── Knowledge sources (2026-09-06) — Confluence / Notion, on the documents surface ──
+#
+# Both connectors were built, reachable per-connection (`/connections/{id}/knowledge-sync`),
+# and impossible to CREATE: they are deliberately not in `REGISTRY.supported_types()`
+# ("not DB connectors — open_connection() is not called on them"), so `POST /connections`
+# would fail them at its connect test and no catalog row ever offered them. The decision
+# (2026-09-06, the user's): they surface HERE, with documents — they feed the doc KB, not
+# tables — and the data catalog's category ratchet (`test_connector_categories`) stays
+# exactly as pinned.
+
+_KNOWLEDGE_SOURCE_TYPES = ("confluence", "notion")
+
+_KNOWLEDGE_SOURCE_LABELS = {"confluence": "Confluence", "notion": "Notion"}
+
+
+def _knowledge_syncer(conn_type: str, conn_id: str, meta: dict):
+    if conn_type == "confluence":
+        from aughor.connectors.knowledge.confluence import ConfluenceSync
+        return ConfluenceSync(conn_id, meta)
+    from aughor.connectors.knowledge.notion import NotionSync
+    return NotionSync(conn_id, meta)
+
+
+class KnowledgeSourceIn(BaseModel):
+    conn_type: str
+    name: str
+    config: dict[str, str] = {}
+
+
+@router.get("/knowledge/sources")
+def list_knowledge_sources():
+    """The Documents surface's source catalog: what can be connected (form fields
+    SERVED from the connector registry, never mirrored into the client) and what is
+    connected, each with its sync state. Secret values never leave the server —
+    only the field descriptors do."""
+    from aughor.connectors.registry import FORM_FIELDS
+    from aughor.db.registry import get_meta, list_connections
+
+    types = [{"conn_type": t,
+              "label": _KNOWLEDGE_SOURCE_LABELS[t],
+              "fields": FORM_FIELDS.get(t, [])}
+             for t in _KNOWLEDGE_SOURCE_TYPES]
+
+    sources = []
+    for conn in list_connections():
+        if conn.get("conn_type") not in _KNOWLEDGE_SOURCE_TYPES:
+            continue
+        entry = {"id": conn.get("id"), "name": conn.get("name"),
+                 "conn_type": conn.get("conn_type"), "status": None}
+        try:
+            syncer = _knowledge_syncer(conn["conn_type"], conn["id"], get_meta(conn["id"]))
+            entry["status"] = syncer.status()
+        except Exception as exc:
+            entry["error"] = str(exc)
+        sources.append(entry)
+    return {"types": types, "sources": sources}
+
+
+@router.post("/knowledge/sources", status_code=201)
+async def create_knowledge_source(body: KnowledgeSourceIn):
+    """Connect a knowledge source. The credentials are tested against the live
+    counterparty BEFORE the record exists (mirroring `POST /connections`) — a saved
+    source that was never reachable would sit in the list as a sync that quietly
+    indexes nothing. Secret config fields are Fernet-encrypted by the connection
+    registry on write."""
+    import asyncio
+
+    from aughor.db.registry import add_connection
+
+    if body.conn_type not in _KNOWLEDGE_SOURCE_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"unknown knowledge source {body.conn_type!r} — "
+                   f"known: {list(_KNOWLEDGE_SOURCE_TYPES)}")
+    if not (body.name or "").strip():
+        raise HTTPException(status_code=400, detail="name is required")
+
+    config = {k: v for k, v in (body.config or {}).items() if str(v or "").strip()}
+    try:
+        syncer = _knowledge_syncer(body.conn_type, "pending", config)
+    except ValueError as exc:  # the connector names its own required fields
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    loop = asyncio.get_running_loop()
+    ok, msg = await loop.run_in_executor(None, syncer.test)
+    if not ok:
+        raise HTTPException(status_code=400, detail=f"Source test failed: {msg}")
+
+    dsn = config.get("base_url", "") if body.conn_type == "confluence" else "notion://"
+    conn_id = add_connection(name=body.name.strip(), conn_type=body.conn_type,
+                             dsn=dsn, meta=config)
+    return {"id": conn_id, "message": f"{_KNOWLEDGE_SOURCE_LABELS[body.conn_type]} "
+                                      f"source connected", "test_result": msg}

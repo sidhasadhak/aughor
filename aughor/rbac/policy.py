@@ -47,6 +47,12 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
+    # Usage caps are governance POLICY: setting one changes what the org may spend, so the
+    # writes sit with org administration — and the read sits beside them because a cap
+    # list names subjects (user ids), which is more than the open-read floor should carry.
+    ("GET", "/governance/caps"): P.ADMIN_MANAGE_ORG,
+    ("PUT", "/governance/caps"): P.ADMIN_MANAGE_ORG,
+    ("DELETE", "/governance/caps"): P.ADMIN_MANAGE_ORG,
     # Wave CR1/CR2 — raw session events carry SQL text and, when the capture flag is
     # on, prompt content; they sit with the audit feed, not under the open-read floor.
     # The control-room AGGREGATES (/control-room/*) stay at the floor like /jobs.

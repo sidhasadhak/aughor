@@ -14,8 +14,9 @@ const loading = () => (
   </div>
 );
 
-const EvalSuitesPanel = dynamic(() => import("@/components/EvalSuitesPanel").then(m => ({ default: m.EvalSuitesPanel })), { ssr: false, loading });
-const EvalRunPanel    = dynamic(() => import("@/components/EvalRunPanel").then(m => ({ default: m.EvalRunPanel })),       { ssr: false, loading });
+const EvalSuitesPanel      = dynamic(() => import("@/components/EvalSuitesPanel").then(m => ({ default: m.EvalSuitesPanel })),           { ssr: false, loading });
+const EvalRunPanel         = dynamic(() => import("@/components/EvalRunPanel").then(m => ({ default: m.EvalRunPanel })),                 { ssr: false, loading });
+const EvalExperimentsPanel = dynamic(() => import("@/components/EvalExperimentsPanel").then(m => ({ default: m.EvalExperimentsPanel })), { ssr: false, loading });
 
 // Icon paths mirror the sidebar's NavIcon set (check / activity).
 /**
@@ -26,6 +27,7 @@ const EvalRunPanel    = dynamic(() => import("@/components/EvalRunPanel").then(m
 const ROLE: Record<string, IconName> = {
   check: "check",
   activity: "activity",
+  compare: "flask",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -36,11 +38,12 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
   );
 }
 
-export type EvalsLayer = "suites" | "runs";
+export type EvalsLayer = "suites" | "runs" | "experiments";
 
 const LAYERS: WorkspaceLayer<EvalsLayer>[] = [
-  { id: "suites", icon: "check",    label: "Suites", blurb: "Cases, targets & evaluators" },
-  { id: "runs",   icon: "activity", label: "Runs",   blurb: "Results, replication & the noise floor" },
+  { id: "suites",      icon: "check",    label: "Suites",      blurb: "Cases, targets & evaluators" },
+  { id: "runs",        icon: "activity", label: "Runs",        blurb: "Results, replication & the noise floor" },
+  { id: "experiments", icon: "compare",  label: "Experiments", blurb: "A/B pairs & the per-case diff" },
 ];
 
 type Props = {
@@ -68,6 +71,7 @@ export function EvalsWorkspace({ connId, workspaceId, layer, onLayerChange }: Pr
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       renderLayer={id => {
         if (id === "runs") return <EvalRunPanel connId={connId} workspaceId={workspaceId} />;
+        if (id === "experiments") return <EvalExperimentsPanel connId={connId} workspaceId={workspaceId} />;
         return <EvalSuitesPanel connId={connId} workspaceId={workspaceId} onLayerChange={onLayerChange} />; // "suites"
       }}
     />

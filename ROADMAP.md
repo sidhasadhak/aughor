@@ -56,7 +56,7 @@ plane — see §7.
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
 | Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped and **consumed 2026-09-01** (DS-11's first half: an `integration_call` step spends a grant through govern.outbound); **VA-9d first slice shipped 2026-09-02** — an allowlisted MCP server's read-only tools, discovered, classified and callable as an `mcp_call` step (§3.1); its write slice and UI, and VA-10, remain open |
-| Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
+| Governance | `govern/` — actions · caps · guardrails · lineage · outbound · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428). (`disclosure` DELETED 2026-09-06 — see the ledger.) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
 | Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), parallel steps (`scheduling`, DS-7), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
@@ -3145,6 +3145,12 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
+- ✅ **`govern/disclosure.py` DELETED 2026-09-06 (the user's call, asked first).** Fully built
+  and tested since Wave G6, zero production callers ever — §7's complete-and-inert shape held
+  for months. The deciding argument was not the inertness but VA-10: its run-as identity half
+  would today surface the unverified `X-Aughor-User` header on answers — misattributable
+  identity people would trust, §3.5's own warning. Recoverable via git; rebuild ON REAL
+  IDENTITY when VA-10's auth model lands, with the receipt/answer as its consumer from day one.
 - ~~**Report-quality deep dive, 7 of 8 defects still live**~~ — **RE-MEASURED 2026-09-02: the
   true count was ONE, and it is now closed.** This line advertised seven live defects for two
   weeks, and it is the ledger's own worst failure mode a second time (see VA-9d's posture): a
@@ -3205,7 +3211,17 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
   previous day"* — a complete day against the preceding complete day. The defect it replaced
   led with "orders fell 97.5%" from nine hours of today (43) against all of yesterday (1,733).
   The window guard holds live.
-- **Notion + Confluence are built and unreachable** — and the two diagnoses this line carried
+- ~~**Notion + Confluence are built and unreachable**~~ — **DECIDED AND CLOSED 2026-09-06
+  (the user's call: the DOCUMENTS surface, not "Add data").** They feed the doc KB, not
+  tables — the registry's own comment was the argument. Shipped: `GET/POST
+  /knowledge/sources` (form fields SERVED from the connector registry; credentials tested
+  live before the record exists, Fernet-encrypted at rest) + a Connected-sources section
+  on the Documents tab riding the existing per-connection sync routes. The data catalog's
+  category ratchet (`test_connector_categories`) is untouched — deliberately. Also fixed
+  while joining: both connectors' sync state was a CWD-relative `Path("data")`, so any
+  process not started at the repo root re-synced from scratch; now `state_dir()`,
+  resolved per call. The history below is kept because its lesson (a static lookup table
+  read as the route's output, twice) outlives the item:
   before were both WRONG. 🔴 **Re-measured 2026-09-03 by driving the live API**, which is what
   finally settled it: `GET /connectors/types` emits **no `knowledge` category at all**.
   - The 2026-09-02 entry blamed the frontend's `CATEGORY_ORDER` and called it "one line". That

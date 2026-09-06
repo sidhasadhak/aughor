@@ -1,7 +1,9 @@
-"""Governance surface (Wave G3) — usage attribution and the unified audit feed.
+"""Governance surface (Wave G3) — usage attribution, the unified audit feed, usage caps.
 
-Read-only. Both endpoints report over stores that already exist; nothing here writes, and
-neither costs a warehouse query or a model call.
+Reporting routes report over stores that already exist and cost neither a warehouse query
+nor a model call. The one write surface is the usage-cap pair (2026-09-06): the G4 cap
+store shipped with ``set_cap``/``clear_cap`` and no route, so caps could be read by the
+enforcement path and set by nobody — the complete-and-inert shape §7 of the roadmap names.
 
 Authorization rides the existing declarative table in ``aughor/rbac/policy.py`` rather
 than a decorator here — that table is the auditable map of the whole surface, and a route
@@ -12,6 +14,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel, Field
 
 router = APIRouter(tags=["governance"])
 
@@ -79,6 +82,82 @@ def get_audit_feed(
         raise HTTPException(status_code=400, detail=str(exc))
     return {"categories": list(CATEGORIES), "category": category,
             "count": len(events), "events": [e.to_dict() for e in events]}
+
+
+# ── usage caps (G4's missing door, 2026-09-06) ────────────────────────────────
+
+
+class CapIn(BaseModel):
+    scope: str
+    subject: str = "*"
+    metric: str
+    limit: float = Field(ge=0)
+    window_hours: int = Field(default=24, ge=1)
+    action: str = "alert"
+
+
+@router.get("/governance/caps")
+def list_usage_caps(observe: bool = True):
+    """Every declared cap, with the vocabulary the form needs and — because a cap
+    without its measurement is just a wish — the observed value of each cap's metric
+    over its own window, read through the same rollup the usage page shows."""
+    from aughor.govern.cap_store import list_caps
+    from aughor.govern.usage_caps import ACTIONS, METRICS, SCOPES, observed_usage
+    from aughor.org.context import current_org_id
+
+    caps = [c.to_dict() for c in list_caps()]
+    if observe and caps:
+        org = current_org_id()
+        seen: dict[tuple, dict] = {}
+        for cap in caps:
+            key = (cap["scope"], cap["subject"], cap["window_hours"])
+            if key not in seen:
+                try:
+                    seen[key] = observed_usage(
+                        org_id=org,
+                        user_id=cap["subject"] if cap["scope"] == "user" else "",
+                        window_hours=cap["window_hours"])
+                except Exception as exc:
+                    from aughor.kernel.errors import tolerate
+                    tolerate(exc, "cap list: observed usage unreadable; caps still served",
+                             counter="govern.caps.observe")
+                    seen[key] = {}
+            cap["observed"] = seen[key].get(cap["metric"])
+    return {"caps": caps, "scopes": list(SCOPES), "metrics": list(METRICS),
+            "actions": list(ACTIONS)}
+
+
+@router.put("/governance/caps")
+def put_usage_cap(body: CapIn):
+    """Declare (or replace) one cap. The author is the identified caller — a limit
+    nobody set is not a policy, so an unidentified localhost operator is recorded as
+    ``operator`` rather than blank."""
+    from aughor.govern.cap_store import set_cap
+    from aughor.org.context import current_user_id
+
+    try:
+        cap = set_cap(body.scope, body.subject, body.metric, body.limit,
+                      window_hours=body.window_hours, action=body.action,
+                      set_by=current_user_id() or "operator")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return cap.to_dict()
+
+
+@router.delete("/governance/caps")
+def delete_usage_cap(scope: str, metric: str, subject: str = "*",
+                     window_hours: int = Query(default=24, ge=1)):
+    """Remove one cap — a real delete, per the store's own law (a retired cap that
+    still reads as present would keep refusing work after the operator lifted it)."""
+    from aughor.govern.cap_store import clear_cap
+    from aughor.org.context import current_user_id
+
+    removed = clear_cap(scope, subject, metric, window_hours=window_hours,
+                        cleared_by=current_user_id() or "operator")
+    if not removed:
+        raise HTTPException(status_code=404, detail="no cap matches those dimensions")
+    return {"removed": True, "scope": scope, "subject": subject, "metric": metric,
+            "window_hours": window_hours}
 
 
 @router.get("/governance/tags")
