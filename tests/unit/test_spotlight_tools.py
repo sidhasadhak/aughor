@@ -172,16 +172,102 @@ def test_popularity_mined_counts_rank_and_cap(tmp_path, monkeypatch):
 
 # ── the roster itself ──────────────────────────────────────────────────────────────
 
+# ── platform_traces — the wave's trace leftover, metadata only ──────────────────────
+
+def test_traces_listing_is_windowed_and_says_metadata_only(monkeypatch):
+    rows = [
+        {"trace_id": "t1", "started": "2026-09-06T01:00:00Z", "question": "q1",
+         "ok": True, "errors": 0, "tool_calls": 3, "llm_calls": 2,
+         "duration_ms": 900, "total_tokens": 500, "agent_id": "", "conn_id": "c1",
+         "answer": "SECRET PAYLOAD"},
+        {"trace_id": "t2", "started": "2026-09-06T00:00:00Z", "question": "q2",
+         "ok": False, "errors": 1, "tool_calls": 1, "llm_calls": 1,
+         "duration_ms": 100, "total_tokens": 50, "agent_id": "", "conn_id": "c1"},
+    ]
+    seen = {}
+    def fake_recent(**kw):
+        seen.update(kw)
+        return rows
+    monkeypatch.setattr("aughor.obs.session_log.recent_sessions", fake_recent)
+    out = spot.platform_traces({"days": 7})
+    assert seen["since"] and seen["limit"] == 10          # windowed at the reader
+    assert "2 runs" in out["summary"] and "1 of them not ok" in out["summary"]
+    assert "Metadata only" in out["summary"]
+    assert all("answer" not in r for r in out["runs"])    # payload-ish fields dropped
+    assert "note" in out                                  # the scan window, disclosed
+
+
+def test_trace_lookup_absent_is_honest_about_the_two_causes(monkeypatch):
+    monkeypatch.setattr("aughor.obs.session_log.recover_session",
+                        lambda tid, org_id=None: [])
+    out = spot.platform_traces({"trace_id": "nope"})
+    assert out["found"] is False
+    assert "does not exist, or it belongs to another org" in out["summary"]
+
+
+def test_trace_anatomy_quotes_timing_and_errors_without_payloads(monkeypatch):
+    monkeypatch.setattr("aughor.obs.session_log.recover_session",
+                        lambda tid, org_id=None: [{"kind": "user_request"}])
+    monkeypatch.setattr("aughor.obs.trace_summary.build_summary",
+                        lambda tid, events: {
+                            "trace_id": tid, "question": "why slow", "ok": False,
+                            "started_at": "2026-09-06T00:00:00Z",
+                            "counts": {"events": 9, "spans": 4, "model_calls": 2,
+                                       "errors": 1},
+                            "time": {"wall_ms": 1234, "busy_ms": 1000},
+                            "models": ["m:free"],
+                            "slowest_spans": [{"name": "answer", "kind": "tool_call",
+                                               "duration_ms": 800, "pct_of_run": 65,
+                                               "span_id": "s1", "model": "m:free",
+                                               "depth": 1}],
+                            "errors": [{"name": "run_sql", "kind": "tool_call",
+                                        "error_class": "GuardRefusal",
+                                        "at": "x", "span_id": "s2"}],
+                        })
+    out = spot.platform_traces({"trace_id": "t9"})
+    assert out["found"] is True and out["ok"] is False
+    assert "1234 ms wall" in out["summary"] and "GuardRefusal" in out["summary"]
+    assert set(out["slowest_steps"][0]) == {"name", "kind", "duration_ms",
+                                            "pct_of_run"}   # span ids/payload refs cut
+    assert set(out["errors"][0]) == {"name", "kind", "error_class"}
+
+
+# ── platform_audit — the unified feed, relayed not re-derived ───────────────────────
+
+def test_audit_unknown_category_names_the_known_ones():
+    out = spot.platform_audit({"category": "vibes"})
+    assert "unknown category" in out["error"]
+    assert "action_decision" in out["known_categories"]
+
+
+def test_audit_feed_rows_are_compact_and_the_scope_is_disclosed(monkeypatch):
+    from types import SimpleNamespace
+    events = [SimpleNamespace(category="model_call", kind="llm_call",
+                              at="2026-09-06T01:00:00Z", actor="local",
+                              summary="a call", detail={"huge": "blob"})]
+    monkeypatch.setattr("aughor.govern.audit_categories.feed",
+                        lambda category=None, limit=100: events)
+    out = spot.platform_audit({"limit": 5})
+    assert out["events"] == [{"category": "model_call", "kind": "llm_call",
+                              "at": "2026-09-06T01:00:00Z", "actor": "local",
+                              "summary": "a call"}]          # detail stays home
+    assert "recency feed" in out["summary"]                  # never a total
+
+
+# ── the roster ──────────────────────────────────────────────────────────────────────
+
 def test_spotlight_roster_names_and_read_contract():
     tools = spot.spotlight_tools("c1")
     names = [t.name for t in tools]
     assert names == ["list_platform_connections", "platform_usage", "platform_runs",
-                     "investigation_cadence", "answer_accuracy", "table_popularity"]
+                     "investigation_cadence", "answer_accuracy", "table_popularity",
+                     "platform_traces", "platform_audit"]
 
 
 def test_conversation_gets_the_spotlight_roster():
     from aughor.agent.converse_tools import converse_tools
     names = {t.name for t in converse_tools("c1")}
     for expected in ("platform_usage", "list_platform_connections", "table_popularity",
-                     "answer_accuracy", "platform_runs", "investigation_cadence"):
+                     "answer_accuracy", "platform_runs", "investigation_cadence",
+                     "platform_traces", "platform_audit"):
         assert expected in names

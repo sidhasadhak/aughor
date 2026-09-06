@@ -48,6 +48,9 @@ _MAX_CONNECTIONS = 50
 _MAX_POPULAR = 15
 _MAX_TREND_WEEKS = 4
 _USAGE_SCAN = 20_000
+_MAX_TRACES = 20
+_TRACE_SCAN = 4_000
+_MAX_AUDIT = 50
 
 
 def _org() -> str:
@@ -280,6 +283,108 @@ def table_popularity(connection_id: str, args: dict) -> dict:
     }
 
 
+def platform_traces(args: dict) -> dict:
+    """Recent runs from the session ledger — or one run's anatomy, by trace id.
+
+    METADATA ONLY, deliberately: names, timings, counts, error classes. Span
+    payloads (the actual inputs and outputs) are §6.4's gated class — reading one
+    is an audited act on the Traces page, and a conversational read that skipped
+    that audit would be the break-glass without the glass. This tool cannot
+    express the request, which is the binding law applied to depth."""
+    from aughor.obs.session_log import recent_sessions, recover_session
+
+    trace_id = str(args.get("trace_id") or "").strip()
+    if not trace_id:
+        days = max(1, min(int(args.get("days") or 7), 90))
+        limit = max(1, min(int(args.get("limit") or 10), _MAX_TRACES))
+        since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+        rows = recent_sessions(org_id=_org() or None, limit=limit, since=since,
+                               scan=_TRACE_SCAN)
+        failed = sum(1 for r in rows if not r.get("ok"))
+        out = [{k: r.get(k) for k in (
+            "trace_id", "started", "question", "ok", "errors", "tool_calls",
+            "llm_calls", "duration_ms", "total_tokens", "agent_id", "conn_id")}
+            for r in rows]
+        return {
+            "window_days": days, "since": since,
+            "summary": (f"Newest {len(rows)} runs of the last {days} days"
+                        + (f" — {failed} of them not ok" if failed else ", all ok")
+                        + ". Metadata only; span-level inputs and outputs live on "
+                          "the Traces page behind the audited read."),
+            "runs": out,
+            "note": (f"folded from the newest {_TRACE_SCAN} ledger events — a "
+                     f"busier window may hold older runs this scan did not reach"),
+        }
+
+    events = recover_session(trace_id, org_id=_org() or None)
+    if not events:
+        return {"trace_id": trace_id, "found": False,
+                "summary": (f"No trace {trace_id!r} is visible here — it does not "
+                            f"exist, or it belongs to another org; the two look "
+                            f"identical from this side.")}
+    from aughor.obs.trace_summary import build_summary
+    s = build_summary(trace_id, events)
+    slowest = [{k: sp.get(k) for k in ("name", "kind", "duration_ms", "pct_of_run")}
+               for sp in (s.get("slowest_spans") or [])[:5]]
+    errors = [{k: e.get(k) for k in ("name", "kind", "error_class")}
+              for e in (s.get("errors") or [])[:5]]
+    counts, time = s.get("counts") or {}, s.get("time") or {}
+    ok = bool(s.get("ok"))
+    n_err = int(counts.get("errors") or 0)
+    err_line = (f" {n_err} error{'s' if n_err != 1 else ''} — first: "
+                f"{errors[0]['name']} ({errors[0]['error_class']})."
+                if errors else "")
+    slow_line = (f" Slowest step: {slowest[0]['name']} "
+                 f"({slowest[0]['duration_ms']} ms)." if slowest else "")
+    return {
+        "trace_id": trace_id, "found": True, "ok": ok,
+        "summary": (f"Run {trace_id[:8]}…: {'ok' if ok else 'NOT ok'}, "
+                    f"{counts.get('spans', 0)} steps, "
+                    f"{counts.get('model_calls', 0)} model calls, "
+                    f"{int(round(float(time.get('wall_ms') or 0)))} ms wall."
+                    f"{err_line}{slow_line} "
+                    f"Metadata only — step inputs and outputs are the audited "
+                    f"read on the Traces page."),
+        "question": s.get("question"), "started_at": s.get("started_at"),
+        "counts": counts, "time": time, "models": s.get("models"),
+        "slowest_steps": slowest, "errors": errors,
+    }
+
+
+def platform_audit(args: dict) -> dict:
+    """The unified governance feed — every audited act, one merged stream.
+
+    The body is `govern.audit_categories.feed`, THE aggregator the /audit surface
+    reads: per-sink newest windows merged and sorted, tenant scoping inside each
+    sink. This tool adds nothing but the conversation-shaped cap and the honesty
+    line about what a per-sink window means."""
+    from aughor.govern.audit_categories import CATEGORIES, feed
+
+    category = str(args.get("category") or "").strip().lower() or None
+    limit = max(1, min(int(args.get("limit") or 20), _MAX_AUDIT))
+    try:
+        events = feed(category=category, limit=limit)
+    except ValueError:
+        return {"error": f"unknown category {category!r}",
+                "known_categories": sorted(CATEGORIES),
+                "summary": (f"No audit category named {category!r} — the "
+                            f"categories are: {', '.join(sorted(CATEGORIES))}.")}
+    rows = [{"category": e.category, "kind": e.kind, "at": e.at,
+             "actor": e.actor, "summary": e.summary} for e in events]
+    cats = sorted({r["category"] for r in rows})
+    scope_line = (f"the {category} category" if category
+                  else f"all categories ({', '.join(cats) or 'none present'})")
+    return {
+        "category": category or "(all)",
+        "summary": (f"Newest {len(rows)} audit events across {scope_line}, "
+                    f"newest first. This merges each audit sink's most recent "
+                    f"window — it is a recency feed, not a complete history "
+                    f"count."),
+        "events": rows,
+        "known_categories": sorted(CATEGORIES),
+    }
+
+
 # ── the roster ───────────────────────────────────────────────────────────────────────
 
 _DAYS_PARAMS = {
@@ -309,6 +414,29 @@ _TOP_PARAMS = {
                            "description": "How many tables/columns to list (default 10)."}},
 }
 _EMPTY_PARAMS: dict = {"type": "object", "properties": {}}
+_TRACES_PARAMS = {
+    "type": "object",
+    "properties": {
+        "trace_id": {"type": "string",
+                     "description": "Inspect ONE run by its trace id (from a "
+                                    "listing); omit to list recent runs."},
+        "days": {"type": "integer",
+                 "description": "Listing window in days (default 7, max 90)."},
+        "limit": {"type": "integer",
+                  "description": "How many runs to list (default 10, max 20)."},
+    },
+}
+_AUDIT_PARAMS = {
+    "type": "object",
+    "properties": {
+        "category": {"type": "string",
+                     "description": "Optional filter: data_access, "
+                                    "governance_change, action_decision, "
+                                    "model_call or human_verdict. Omit for all."},
+        "limit": {"type": "integer",
+                  "description": "How many events (default 20, max 50)."},
+    },
+}
 
 
 def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
@@ -390,5 +518,35 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             ),
             parameters=_TOP_PARAMS,
             run=lambda a: table_popularity(connection_id, a),
+        ),
+        ToolSpec(
+            name="platform_traces",
+            description=(
+                "Recent runs across the platform (what ran, when, how long, what "
+                "failed) — or, given a trace id, ONE run's anatomy: step counts, "
+                "timing, models, slowest steps, error classes. Use this for 'what "
+                "just ran', 'why was that slow', 'show me that failure' questions. "
+                "Metadata only: it never returns a step's inputs or outputs — those "
+                "are an audited read on the Traces page, and you must say so if "
+                "asked for them. Quote the summary field verbatim for the numbers "
+                "— never re-derive them from the other fields."
+            ),
+            parameters=_TRACES_PARAMS,
+            run=lambda a: platform_traces(a),
+        ),
+        ToolSpec(
+            name="platform_audit",
+            description=(
+                "The unified audit feed — who did what, newest first, across every "
+                "governance sink: data access, governance changes, action "
+                "decisions, model calls, human verdicts. Use this for 'who "
+                "changed / approved / accessed what' questions about the PLATFORM. "
+                "It is a recency feed of each sink's newest window, not a complete "
+                "history count — never present its length as a total. Quote the "
+                "summary field verbatim for the numbers — never re-derive them "
+                "from the other fields."
+            ),
+            parameters=_AUDIT_PARAMS,
+            run=lambda a: platform_audit(a),
         ),
     ]

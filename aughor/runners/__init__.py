@@ -13,6 +13,7 @@ inverting the wave dependency, since A already routes its ``kinetic_action`` eff
 through K's executor. A module that imports neither makes both callers peers.
 """
 from aughor.runners.automation_save import save_automation_payload
+from aughor.runners.automation_state import set_automation_state_payload
 from aughor.runners.investigation import (
     InvestigationRequest,
     InvestigationRun,
@@ -26,4 +27,5 @@ __all__ = [
     "refusal_for",
     "run_investigation",
     "save_automation_payload",
+    "set_automation_state_payload",
 ]

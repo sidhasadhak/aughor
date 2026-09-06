@@ -169,6 +169,43 @@ def validate_agent_draft(*, name=None, instructions=None, connection_id=None,
     return problems
 
 
+def validate_agent_grants(tool_grants, connection_id: str,
+                          schema_scope: str = "") -> list[str]:
+    """The grant checks as PROBLEM SENTENCES — one body for the agents routes (422)
+    and SP-3's grant proposals (refuse at stage, re-check at accept, same words).
+    The rules are the route's originals: a grant NAMES a declared action, a wildcard
+    is refused with the standing-grant sentence, and existence is checked only when
+    the agent is BOUND to a connection (an unbound agent resolves its roster on the
+    ask's connection). The roster read failing open is deliberate — a broken ontology
+    load must not block an agent save; the runtime's own refusal still holds."""
+    if not tool_grants:
+        return []
+    problems: list[str] = []
+    bad = [g for g in tool_grants if not isinstance(g, str) or not g.strip()]
+    if bad:
+        problems.append("a grant must be an action id")
+    if any(isinstance(g, str) and g.strip() == "*" for g in tool_grants):
+        problems.append("a grant names an action, never a roster — '*' would "
+                        "re-create the blanket grant that target-bound standing "
+                        "grants exist to avoid")
+    if problems or not connection_id:
+        return problems
+    try:
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_scope or None)
+        declared = set((getattr(graph, "kinetic_actions", None) or {}).keys()) if graph else set()
+    except Exception:
+        return problems
+    if not declared:
+        return problems
+    missing = [g for g in tool_grants if g not in declared]
+    if missing:
+        problems.append(
+            f"unknown action id(s) for this connection: {', '.join(sorted(missing))}. "
+            f"Declared: {', '.join(sorted(declared)) or 'none'}")
+    return problems
+
+
 def create_agent(name: str, *, instructions: str = "", purpose: str = "",
                  connection_id: str = "",
                  schema_scope: str = "", doc_ids: Optional[list[str]] = None,

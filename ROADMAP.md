@@ -2452,7 +2452,22 @@ sentence — numbers, units and honesty clauses already worded, built from the S
 locals as the fields so the two cannot disagree — and every description instructs:
 quote it verbatim, never re-derive. Also closed in passing: `cost_is_complete` now
 requires zero unpriced AND zero usage-less calls (it keyed on unpriced alone).
-Remaining for the wave: trace/audit lookup tools · the unified audit read.
+**✅ WAVE CLOSED 2026-09-06 — the trace/audit leftovers built.** Two more reads:
+`platform_traces` (recent runs from the session ledger via `recent_sessions`, or one
+run's anatomy via `recover_session` + the trace summary — step counts, timing,
+models, slowest steps, error classes) and `platform_audit` (the unified feed —
+`govern.audit_categories.feed` IS the aggregator the census asked for, already
+merging every sink with tenant scoping inside; the tool adds only the
+conversation-shaped cap and the honesty line that it is a recency feed, never a
+total). Custody line drawn where §6.4 draws it: the trace tool is METADATA ONLY —
+span inputs/outputs are the audited read on the Traces page, and the tool cannot
+express the request (the binding law applied to depth; it also keeps the
+conversational read from silently skipping the `trace.payload_access` audit the
+route performs). An absent trace is reported as "does not exist or belongs to
+another org — the two look identical from this side." Receipt drive on throwaway
+stores, real writers only (`session_log.emit` under `bind_trace`): listing counted
+2 runs / 1 not ok, the anatomy quoted the guard-refusal error class, the ghost
+lookup refused honestly, the audit feed carried the seeded model call.
 
 #### SP-2 · The summon — ✅ FIRST CUT BUILT 2026-09-06
 
@@ -2560,8 +2575,28 @@ connection — pass `?connection_id=…` when checking for staged rows.
 and the Settings toggle writes through `PUT /me/preferences/theme` — a theme set from
 chat, another browser, or Spotlight follows the user here on next load. Theme is no
 longer client-local.
-**Open in the wave:** grant/pause/resume proposals · a live in-session flip (the
-shell re-reading preferences after a chat turn changes them, without a reload).
+**✅ WAVE CLOSED 2026-09-06 — grant/pause/resume + the live flip built.** Two Act
+tools: `pause_or_resume_automation` (a pause always carries its end — an endless
+mute is disabling, a different act; resume clears it) and `propose_agent_grant`
+(ONE declared action onto an agent's grant list — a grant is permission to
+PROPOSE, never to execute, and the reasoning the approver reads says so). Both
+stage as two more kinds on the ONE inbox (`automation_state`, `agent_grant`);
+accepts apply through the second registered runners door
+(`runners/automation_state.py` — the layering guards' shape, reused) and the ONE
+grant-validation body (`custom_agents/store.validate_agent_grants`, extracted from
+the agents routes so stage, accept and the 422 path speak identical sentences —
+the two-site drift class, closed the way SP-3 closed it for drafts). The write's
+TARGET is bound too: an automation on another connection is refused with its home
+named. The vocabulary ratchet came out one UNDER baseline (347): the inbox's four
+accept bodies now share one lazy import of the executor's result type, so two new
+kinds arrived while the count fell. And the live flip: `useAughorChat` announces a
+finished turn (one hook, every chat surface — panel, /chat, the ⌘K overlay), the
+shell re-reads stored preferences and applies a changed theme without a reload;
+proven in-browser against the live store read-only (DOM drifted, event fired,
+stored value won and re-cached). Receipt drive on throwaway stores: pause staged →
+byte-identical until accept → applied with its end; resume cleared it; the grant
+appended exactly at accept; a deleted automation refused at accept with its
+sentence. **Open in the wave:** nothing.
 
 #### SP-4 · The Guide limb — ✅ FIRST CUT BUILT 2026-09-06
 
@@ -2914,25 +2949,28 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         Census done in-draft; the user's 4-question acceptance suite is green
         on substrate. SP-1 taken first at the user's direction.
         SP-0 ✅ census (in §3.11 itself; re-verify per wave)
-        SP-1 ✅ BUILT 2026-09-05 · LIVE 2026-09-06 — six org-level reads in the
-             converse roster; live drive found 2 real defects (automation count
-             ~16× under via row-scan cap; tables misroute to warehouse SQL over
-             correct tool data), BOTH FIXED same day at the store / the routing
-             policy. Open: trace/audit tools
+        SP-1 ✅ COMPLETE 2026-09-06 — six org-level reads BUILT 09-05, LIVE 09-06
+             (live drive found 2 real defects — automation count ~16× under via
+             row-scan cap; tables misroute to warehouse SQL — both fixed same
+             day); trace/audit leftovers closed 09-06: platform_traces (runs +
+             one run's anatomy, metadata only — span payloads stay behind the
+             audited read) and platform_audit (the unified recency feed over
+             every governance sink). Roster is eight reads.
         SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
              in the overlay (same /ask door, quick-pinned); surface context
              threaded end-to-end, sanitized. In-browser receipt done (the user
              drove ⌘K live). Open: registry async shape, in-context handles,
              latency measurement
-        SP-3 ✅ FIRST CUT BUILT 2026-09-06 · LIVE RECEIPT DONE (the origin
-             sentence driven; the model measured the premise and declined a
+        SP-3 ✅ COMPLETE 2026-09-06 · LIVE RECEIPT DONE (the origin sentence
+             driven; the model measured the premise and declined a
              false-premise draft; agent draft staged pending in the real inbox)
              — set_preference applies instantly (user_prefs store, closed
-             registry); draft_agent/draft_automation stage as two new kinds on
-             the ONE inbox; accept re-validates then creates, reject
-             byte-identical; web now reads the settings store (theme follows
-             the user, not the browser). Open: grant/pause/resume proposals,
-             live in-session theme flip
+             registry); draft_agent/draft_automation/pause-resume/agent-grant
+             stage as four kinds on the ONE inbox; accept re-validates then
+             applies through registered doors, reject byte-identical; the web
+             shell reads the settings store AND re-reads it when a chat turn
+             ends, so a theme switched in conversation is visible without a
+             reload. Nothing open in the wave.
         SP-4 ✅ FIRST CUT BUILT 2026-09-06 — platform_guide: four grounded
              walkthroughs (agent · automation · connect · appearance), steps
              quoted from the product's own flows, live grounding honest about

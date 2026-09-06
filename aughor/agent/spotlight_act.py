@@ -2,7 +2,7 @@
 
 `spotlight_tools` (the Know roster) promised this module by name: its contract is
 "every tool is a read", stated absolutely, so the writes live next door — the same
-split `action_tools` already models. Three tools, two custody classes:
+split `action_tools` already models. Five tools, two custody classes:
 
 * **Cosmetic, self-scoped → applies instantly.** `set_preference` changes how the
   platform looks to the CALLER (theme, density, default connection) and nothing about
@@ -14,6 +14,10 @@ split `action_tools` already models. Three tools, two custody classes:
   (`actions/inbox.py`), where accept is the arming and reject leaves the platform
   byte-identical. The model drafts; the human certifies. A second approval surface
   was the refused alternative, three times over, in the inbox's own words.
+  `pause_or_resume_automation` and `propose_agent_grant` (the wave's leftovers)
+  ride the same custody: changing what runs, or what an agent may propose, is
+  structural however small the diff looks — and a grant is permission to PROPOSE,
+  never to execute (VA-9c's line, restated where the tool offers it).
 
 `draft_automation` deliberately owns none of the drafting: DS-15's `propose_chain`
 already turns an outcome sentence into a validated, dry-run-attached chain and refuses
@@ -128,6 +132,118 @@ def draft_automation(connection_id: str, args: dict) -> dict:
     }
 
 
+def _resolve_automation(connection_id: str, ref: str):
+    """An automation on THIS connection, by id or exact name — ``(automation, "")``
+    or ``(None, refusal)``. The binding law applied to a write's TARGET: a chain on
+    another connection is refused with its home named, never silently acted on."""
+    from aughor.automations.store import get_automation, list_automations
+
+    ref = str(ref or "").strip()
+    if not ref:
+        return None, "name the automation to act on — its id or its exact name"
+    a = get_automation(ref)
+    if a is not None:
+        if (a.conn_id or "") not in ("", connection_id):
+            return None, (f"automation '{a.name}' belongs to connection "
+                          f"{a.conn_id!r}, not this conversation's — switch there to act on it")
+        return a, ""
+    matches = [x for x in list_automations(conn_id=connection_id) if x.name == ref]
+    if len(matches) == 1:
+        return matches[0], ""
+    if len(matches) > 1:
+        ids = ", ".join(x.id for x in matches)
+        return None, f"{len(matches)} automations are named {ref!r} — use an id: {ids}"
+    return None, f"no automation named {ref!r} on this connection"
+
+
+def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
+    """Stage a pause (with its end) or a resume on the one inbox — never applied here."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.org.context import current_org_id
+
+    action = str(args.get("action") or "").strip().lower()
+    if action not in ("pause", "resume"):
+        return {"staged": False,
+                "summary": f"unknown action {action!r} — this tool stages a pause or a resume"}
+    a, refusal = _resolve_automation(connection_id, str(args.get("automation") or ""))
+    if a is None:
+        return {"staged": False, "summary": f"Nothing staged: {refusal}"}
+    until = str(args.get("until") or "").strip()
+    if action == "pause" and not until:
+        return {"staged": False,
+                "summary": ("Nothing staged: a pause has an end — say until when "
+                            "(an ISO timestamp); to stop it for good, that is "
+                            "disabling, a different act.")}
+
+    p = stage_proposal(StagedProposal(
+        kind="automation_state", org_id=current_org_id() or "",
+        connection_id=connection_id, action_id=f"automation-{action}:{a.name}",
+        params={"automation_id": a.id, "action": action,
+                **({"until": until} if action == "pause" else {})},
+        reasoning=(str(args.get("reasoning") or f"{action} requested in conversation")
+                   [:_MAX_REASON]),
+        proposer="spotlight", source="agent"))
+    tail = f" until {until}" if action == "pause" else ""
+    return {
+        "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+        "automation_id": a.id,
+        "summary": (f"Proposed: {action} automation '{a.name}'{tail} (proposal "
+                    f"{p.id}). Nothing changed yet — a human accepts it in the "
+                    f"inbox and only then does it apply."),
+    }
+
+
+def propose_agent_grant(connection_id: str, args: dict) -> dict:
+    """Stage ONE declared action onto an agent's grant list — permission to PROPOSE."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.custom_agents.store import get_agent, list_agents, validate_agent_grants
+    from aughor.org.context import current_org_id
+
+    ref = str(args.get("agent") or "").strip()
+    action_id = str(args.get("action_id") or "").strip()
+    if not ref or not action_id:
+        return {"staged": False,
+                "summary": "Nothing staged: name the agent (id or exact name) and "
+                           "the declared action to grant."}
+    agent = get_agent(ref)
+    if agent is None:
+        matches = [a for a in list_agents() if a.name == ref]
+        if len(matches) > 1:
+            ids = ", ".join(a.id for a in matches)
+            return {"staged": False,
+                    "summary": f"Nothing staged: {len(matches)} agents are named "
+                               f"{ref!r} — use an id: {ids}"}
+        agent = matches[0] if matches else None
+    if agent is None:
+        return {"staged": False,
+                "summary": f"Nothing staged: no agent {ref!r} exists."}
+    problems = validate_agent_grants([action_id], connection_id, agent.schema_scope)
+    if problems:
+        return {"staged": False, "problems": problems,
+                "summary": "Nothing staged: " + "; ".join(problems)}
+    if action_id in agent.tool_grants:
+        return {"staged": False,
+                "summary": f"Nothing staged: agent '{agent.name}' already holds the "
+                           f"{action_id} grant."}
+
+    p = stage_proposal(StagedProposal(
+        kind="agent_grant", org_id=current_org_id() or "",
+        connection_id=connection_id, action_id=f"agent-grant:{agent.name}:{action_id}",
+        params={"agent_id": agent.id, "action_id": action_id},
+        reasoning=(str(args.get("reasoning") or "granted from conversation")[:_MAX_REASON]
+                   + " NOTE: a grant is permission to PROPOSE this action — every "
+                     "proposal still lands in this inbox for a human."),
+        proposer="spotlight", source="agent"))
+    return {
+        "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+        "agent_id": agent.id,
+        "summary": (f"Proposed: let agent '{agent.name}' PROPOSE {action_id} "
+                    f"(proposal {p.id}). A grant is never permission to execute — "
+                    f"its proposals still wait for a human; nothing changes until "
+                    f"this is accepted in the inbox."),
+    }
+
+
 # ── the roster ───────────────────────────────────────────────────────────────────────
 
 _PREF_PARAMS = {
@@ -171,6 +287,35 @@ _AUTOMATION_PARAMS = {
     },
     "required": ["outcome"],
 }
+_STATE_PARAMS = {
+    "type": "object",
+    "properties": {
+        "automation": {"type": "string",
+                       "description": "The automation's id or its exact name."},
+        "action": {"type": "string", "enum": ["pause", "resume"],
+                   "description": "pause mutes it until a time; resume clears a pause."},
+        "until": {"type": "string",
+                  "description": "REQUIRED for pause: when it ends, as an ISO "
+                                 "timestamp (e.g. 2026-09-13T00:00:00Z). A pause "
+                                 "always has an end."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": ["automation", "action"],
+}
+_GRANT_PARAMS = {
+    "type": "object",
+    "properties": {
+        "agent": {"type": "string",
+                  "description": "The agent's id or its exact name."},
+        "action_id": {"type": "string",
+                      "description": "ONE declared action id on this connection — "
+                                     "never a wildcard."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": ["agent", "action_id"],
+}
 
 
 def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
@@ -212,5 +357,32 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[Too
             ),
             parameters=_AUTOMATION_PARAMS,
             run=lambda a: draft_automation(connection_id, a),
+        ),
+        ToolSpec(
+            name="pause_or_resume_automation",
+            description=(
+                "STAGE a pause (until a stated time) or a resume of one automation "
+                "for human approval in the inbox — nothing applies until a person "
+                "accepts. Use for 'pause the Monday brief', 'silence that alert "
+                "until next week', 'turn it back on' asks. A pause always has an "
+                "end; permanently stopping a chain is disabling, which lives on the "
+                "Automations page. Quote the summary field verbatim."
+            ),
+            parameters=_STATE_PARAMS,
+            run=lambda a: pause_or_resume_automation(connection_id, a),
+        ),
+        ToolSpec(
+            name="propose_agent_grant",
+            description=(
+                "STAGE adding ONE declared action to a custom agent's grant list, "
+                "for human approval in the inbox. A grant is permission to PROPOSE "
+                "that action — the agent's proposals still wait for a human; "
+                "nothing ever auto-executes. Use when the user wants an agent to be "
+                "able to suggest a specific action. Unknown agents or undeclared "
+                "actions are refused with the known ones named. Quote the summary "
+                "field verbatim."
+            ),
+            parameters=_GRANT_PARAMS,
+            run=lambda a: propose_agent_grant(connection_id, a),
         ),
     ]

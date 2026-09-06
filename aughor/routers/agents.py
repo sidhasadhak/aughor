@@ -164,40 +164,14 @@ def _validate_agent_grants(tool_grants: Optional[list], connection_id: str,
     """Refuse a grant that could never propose anything — at WRITE time, in the words
     the runtime would use, instead of at ask time inside a background turn.
 
-    A grant NAMES a declared action (`propose_one` refuses ids outside the connection's
-    ontology roster); a wildcard would re-create the blanket grant target-bound standing
-    grants were built to avoid, so it is refused with that sentence. Existence is checked
-    only when the agent is BOUND to a connection — an unbound agent resolves its roster
-    on the ask's connection, and there is nothing to check against yet. The roster read
-    failing open mirrors `_validate_agent_packs`: a broken ontology load must not block
-    an agent save; the runtime's own `no_actions` refusal still holds.
+    The rules live in `custom_agents.store.validate_agent_grants` (one body — SP-3's
+    grant proposals re-check the same sentences at stage and at accept); this wrapper
+    only turns the first problem into the 422 this route has always raised.
     """
-    if not tool_grants:
-        return
-    bad = [g for g in tool_grants if not isinstance(g, str) or not g.strip()]
-    if bad:
-        raise HTTPException(status_code=422, detail="a grant must be an action id")
-    if any(g.strip() == "*" for g in tool_grants):
-        raise HTTPException(
-            status_code=422,
-            detail="a grant names an action, never a roster — '*' would re-create the "
-                   "blanket grant that target-bound standing grants exist to avoid")
-    if not connection_id:
-        return
-    try:
-        from aughor.ontology.store import load_latest_ontology
-        graph = load_latest_ontology(connection_id, schema_scope or None)
-        declared = set((getattr(graph, "kinetic_actions", None) or {}).keys()) if graph else set()
-    except Exception:
-        return
-    if not declared:
-        return
-    missing = [g for g in tool_grants if g not in declared]
-    if missing:
-        raise HTTPException(
-            status_code=422,
-            detail=(f"unknown action id(s) for this connection: {', '.join(sorted(missing))}. "
-                    f"Declared: {', '.join(sorted(declared)) or 'none'}"))
+    from aughor.custom_agents.store import validate_agent_grants
+    problems = validate_agent_grants(tool_grants, connection_id, schema_scope)
+    if problems:
+        raise HTTPException(status_code=422, detail=problems[0])
 
 
 class UserAgentCreate(BaseModel):

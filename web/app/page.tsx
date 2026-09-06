@@ -1600,23 +1600,31 @@ export default function Home() {
   // Theme effect — apply data-theme to <html>. localStorage paints first (no flash of
   // the wrong theme while a request is in flight); then the per-user settings store is
   // the truth (SP-3/SP-4): a preference set anywhere — this Settings screen, another
-  // browser, or Spotlight's set_preference in chat — wins here on load.
+  // browser, or Spotlight's set_preference in chat — wins here on load, and again at
+  // the end of any chat turn (the "aughor:turn-complete" event from useAughorChat),
+  // so a theme switched in conversation is visible without a reload.
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) as Theme | null : null;
     const initial: Theme = saved || "dark";
     setThemeState(initial);
     document.documentElement.setAttribute("data-theme", initial);
-    getMyPreferences()
-      .then(({ preferences }) => {
-        const stored = preferences.theme;
-        if ((stored === "dark" || stored === "light") && stored !== initial) {
-          setThemeState(stored);
-          document.documentElement.setAttribute("data-theme", stored);
-          if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
-        }
-      })
-      // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
-      .catch(() => {});
+    const syncStoredTheme = () => {
+      getMyPreferences()
+        .then(({ preferences }) => {
+          const stored = preferences.theme;
+          if ((stored === "dark" || stored === "light")
+              && stored !== document.documentElement.getAttribute("data-theme")) {
+            setThemeState(stored);
+            document.documentElement.setAttribute("data-theme", stored);
+            if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
+          }
+        })
+        // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
+        .catch(() => {});
+    };
+    syncStoredTheme();
+    window.addEventListener("aughor:turn-complete", syncStoredTheme);
+    return () => window.removeEventListener("aughor:turn-complete", syncStoredTheme);
   }, []);
 
   const setTheme = (t: Theme) => {
