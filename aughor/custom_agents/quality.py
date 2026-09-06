@@ -243,6 +243,20 @@ def evaluate_agent(agent: UserAgent, db=None,
         from aughor.kernel.errors import tolerate
         tolerate(exc, "schema introspection for agent eval is best-effort",
                  counter="agents.eval_schema")
+    # The engine's dialect rules ride the schema block — parity with the live
+    # quick path, which now carries the same `writer_rules` text. Without them
+    # the suite measured a path no user drives: both live failure classes on
+    # BigQuery (DATE_TRUNC argument order, DATE-typed literals) were rules the
+    # dialect block already teaches, unseen by this generator.
+    try:
+        from aughor.db.dialects import writer_rules
+        rules = writer_rules(db)
+        if rules:
+            schema = f"{schema}\n\n{rules}" if schema else rules
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "dialect rules for agent eval are best-effort",
+                 counter="agents.eval_dialect_rules")
 
     token = activate_agent(agent)
     try:
