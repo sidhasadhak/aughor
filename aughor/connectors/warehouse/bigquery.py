@@ -45,10 +45,13 @@ def _retype_date_literals(sql: str) -> str:
     itself reported the TIMESTAMP/DATE clash, so a date literal legitimately
     compared against a DATE column is never rewritten pre-emptively — and if a
     mixed query is rewritten too broadly, the retry simply fails the way the
-    original did, which is the state we were already in. Only bare string
-    literals shaped YYYY-MM-DD that sit DIRECTLY inside a comparison or BETWEEN
-    are touched; typed literals (DATE '…'), datetime strings, and literals inside
-    function calls stay exactly as written.
+    original did, which is the state we were already in. Two literal forms are
+    touched, both only when they sit DIRECTLY inside a comparison or BETWEEN:
+    bare 'YYYY-MM-DD' strings, and DATE-typed date literals (DATE '…') — the
+    live re-drive showed the model writes BOTH habits, and once the engine has
+    named the clash a DATE-typed literal is exactly as much the culprit as a
+    bare one. Datetime strings, casts of COLUMNS (DATE(ts_col) is a legitimate
+    fix direction), and literals inside function calls stay exactly as written.
     """
     try:
         import sqlglot
@@ -60,16 +63,28 @@ def _retype_date_literals(sql: str) -> str:
     except Exception:
         return ""
 
+    def _date_literal(node) -> "exp.Literal | None":
+        """The date-shaped string literal this node IS — bare, or DATE-typed."""
+        if (isinstance(node, exp.Literal) and node.is_string
+                and _BARE_DATE.fullmatch(node.this or "")):
+            return node
+        if (isinstance(node, exp.Cast)
+                and node.to is not None and node.to.this == exp.DataType.Type.DATE
+                and isinstance(node.this, exp.Literal) and node.this.is_string
+                and _BARE_DATE.fullmatch(node.this.this or "")):
+            return node.this
+        return None
+
     comparisons = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between)
     changed = False
     for node in tree.find_all(*comparisons):
         for child in list(node.args.values()):
-            if (isinstance(child, exp.Literal) and child.is_string
-                    and _BARE_DATE.fullmatch(child.this or "")):
+            lit = _date_literal(child)
+            if lit is not None:
                 # Built in the BigQuery dialect deliberately: the GENERIC sqlglot
                 # TIMESTAMP renders as BigQuery DATETIME (timezone-naive), which
                 # would reproduce the very clash being repaired.
-                child.replace(exp.Cast(this=child.copy(),
+                child.replace(exp.Cast(this=lit.copy(),
                                        to=exp.DataType.build("TIMESTAMP",
                                                              dialect="bigquery")))
                 changed = True
