@@ -7,6 +7,8 @@ import dynamic from "next/dynamic";
 import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
+import { AuthControl } from "@/components/AuthControl";
+import { installAuthFetch } from "@/lib/auth";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
@@ -66,6 +68,11 @@ const MetricsPanel      = dynamic(() => import("@/components/MetricsPanel").then
 const SemanticLayerPanel= dynamic(() => import("@/components/SemanticLayerPanel").then(m => ({ default: m.SemanticLayerPanel })), { ssr: false, loading });
 const AgenticOpsWorkspace = dynamic(() => import("@/components/AgenticOpsWorkspace").then(m => ({ default: m.AgenticOpsWorkspace })), { ssr: false, loading });
 import { getApiBase, DEMO_PACK } from "@/lib/config";
+
+// VA-10: the ID-token fetch wrapper must exist before ANY component's first
+// fetch, so it installs at module load — an effect would run after children
+// already raced their initial reads out unauthenticated.
+if (typeof window !== "undefined") installAuthFetch(getApiBase());
 import {
   getConnections,
   seedDemoConnection,
@@ -279,14 +286,7 @@ function Topbar({
           onUpdateWorkspace={onUpdateWorkspace}
           onDeleteWorkspace={onDeleteWorkspace}
         />
-        <div style={{
-          width: 28, height: 28, borderRadius: "var(--r2)",
-          background: "var(--bg-3)", border: "1px solid var(--b2)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--t2)", fontSize: 11, fontWeight: 600,
-        }}>
-          AU
-        </div>
+        <AuthControl />
       </div>
     </div>
   );
