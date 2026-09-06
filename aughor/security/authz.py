@@ -15,12 +15,13 @@ byte-identical). It is deliberately NOT full RBAC — just:
   3. ``authorize_resource`` / ``check_owner`` ownership checks, resolved through
      resource → connection → ``connections.org_id``.
 
-SEAM NOTE — where a real deployment plugs in identity: ``resolve_principal``
-takes the org from the ``X-Aughor-Org`` request header. That is the transitional
-self-host form; a production deployment MUST derive the org from an
-*authenticated* identity (JWT / OIDC / mTLS) so the caller cannot simply claim an
-org. Replace ``resolve_principal`` — every other piece (contextvar binding,
-owner-checks) stays unchanged.
+SEAM NOTE — filled 2026-09-06 (VA-10, decision §6 item 11): ``resolve_principal``
+now verifies an OIDC bearer first (``security/oidc.py`` — issuer + audience from
+config, keys from the issuer's discovery document, fail-closed). The
+``X-Aughor-Org`` header remains ONLY as the transitional self-host form, and it
+stops resolving identity the moment an issuer is configured and identity is
+required — the spoofable path and the verified path must not coexist. Every
+other piece (contextvar binding, owner-checks) is unchanged, as promised.
 """
 from __future__ import annotations
 
@@ -52,8 +53,34 @@ def require_identity_enabled() -> bool:
 
 def resolve_principal(request: Request) -> Optional[Principal]:
     """Resolve the calling principal from the request, or None if no identity is
-    presented. SEAM: org comes from the ``X-Aughor-Org`` header today — swap this
-    for authenticated-token extraction in production (see module docstring)."""
+    presented. Never raises — the org middleware calls this outside FastAPI's
+    exception handling, so an invalid credential resolves to None and the 401
+    (with its reason) is ``_require_auth``'s to give.
+
+    Order matters and is load-bearing:
+
+    1. A JWT-shaped OIDC bearer, when an issuer is configured — VERIFIED identity.
+       An invalid one resolves to nothing rather than falling through: a caller
+       who presented a bad token must not be quietly downgraded to the header seam.
+    2. While OIDC is configured AND identity is required, the header seam is DEAD —
+       otherwise `X-Aughor-User: mallory` would still work beside real tokens,
+       which is the exact hole VA-10 exists to close.
+    3. The transitional ``X-Aughor-*`` headers (self-host / dev, unchanged).
+    """
+    from aughor.security import oidc
+
+    if oidc.configured():
+        try:
+            verified = oidc.resolve_verified(request.headers.get("Authorization"))
+        except oidc.OidcError as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "OIDC bearer refused; resolving no identity (fail closed)",
+                     counter="authz.oidc.rejected")
+            return None
+        if verified is not None:
+            return verified
+        if require_identity_enabled():
+            return None
     org = (request.headers.get(IDENTITY_ORG_HEADER) or "").strip()
     if not org:
         return None

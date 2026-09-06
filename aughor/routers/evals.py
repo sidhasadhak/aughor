@@ -226,6 +226,38 @@ def get_run(run_id: str):
     return {**run, "results": store.run_results(run_id)}
 
 
+# ── experiments (derived A/B pairs — the reading the grid scripts owed a surface) ──
+
+@router.get("/evals/experiments", dependencies=[gate(Capability.EVAL_SUITE)])
+def list_experiments(suite_id: Optional[str] = None, limit: int = 50):
+    """A/B pairs derived from the run history — never stored, so never stale.
+
+    Two runs whose recorded requests (``config.cell_requested``) differ on exactly one
+    axis — one flag, or one model pin — are an experiment. The runs come from
+    ``run_experiment`` (today driven by ``scripts/flag_ab_grid.py``; a job-kernel door
+    is the named follow-on once model-backed targets are runnable from the API).
+    """
+    from aughor.evals.compare import find_experiments
+    return {"experiments": find_experiments(suite_id, limit=limit)}
+
+
+@router.get("/evals/experiments/compare", dependencies=[gate(Capability.EVAL_SUITE)])
+def compare_experiment_runs(a: str, b: str):
+    """The per-case diff of one pair: verdicts, flips, paired-subset accuracy, SQL.
+
+    ``a`` is read as the baseline cell and ``b`` as the variant. Accuracy over the
+    paired subset is the honest number — a cell that never reached a case contributes
+    ``unrun``, not a flip.
+    """
+    from aughor.evals.compare import compare_runs
+    try:
+        return compare_runs(a, b)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Run not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 # ── graduations (Wave E6 — the promotion gate) ──────────────────────────────────
 
 @router.post("/evals/flags/{flag}/graduate", dependencies=[gate(Capability.EVAL_SUITE)])

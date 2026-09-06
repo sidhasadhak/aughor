@@ -56,7 +56,7 @@ plane — see §7.
 | Conversational intelligence (Arc CI) | complete — `#335` roster, chat SDK data model, chat-first home |
 | Answer path | one door (`/ask`), converse ON, grounded-answer guard, Trust Receipt |
 | Agent plane (Arc VA) | VA-0…VA-9b, VA-4a…4e shipped; VA-9c **partial** — the propose-only action tool is live but no grant can be stored (limits below); the agent Map (DS-5); VA-11 vault+broker+catalog shipped and **consumed 2026-09-01** (DS-11's first half: an `integration_call` step spends a grant through govern.outbound); **VA-9d first slice shipped 2026-09-02** — an allowlisted MCP server's read-only tools, discovered, classified and callable as an `mcp_call` step (§3.1); its write slice and UI, and VA-10, remain open |
-| Governance | `govern/` — actions · caps · guardrails · lineage · outbound · disclosure · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428) |
+| Governance | `govern/` — actions · caps · guardrails · lineage · outbound · tags; `security/` — audit · authz · credentials · pii; graduated approval gate → `approval_required` (428). (`disclosure` DELETED 2026-09-06 — see the ledger.) |
 | Reach (Arc RC) | Slack door live: @mention → answer, streamed, threaded, filed as a conversation |
 | Automations | trigger → effects with `{"$from": …}` dataflow, `when` guards, `for_each` fan-out, branch+join (`else_of` / `$from_any`, DS-6), parallel steps (`scheduling`, DS-7), dry run + run-to-here, typed-port Design canvas with a truth-telling palette, live runs streaming onto nodes, undo/redo · copy/paste · minimap · layout sidecar; runs visible in Activity as traces |
 | Observability | OTLP spans, waterfall + flow canvas, per-node usage, cost with explicit `unpriced` |
@@ -500,10 +500,27 @@ not code" — it is the exact inverse.** Three of the five pieces are already bu
 | Admin view across users | untouched | **genuinely missing** — no admin routes exist |
 | Per-user analytics | untouched | **impossible today** — `COUNT(DISTINCT user_id)` = **0** over 6,618 rows |
 
-**The blocker is code, and it is authentication.** `security/authz.resolve_principal` reads
-`X-Aughor-Org` and `X-Aughor-User` as **unverified headers**, marked in its own docstring
-*"SEAM: swap this for authenticated-token extraction in production"*. There is no JWT, no
-OIDC, no session anywhere in the tree.
+~~**The blocker is code, and it is authentication.**~~ **CLOSED 2026-09-06 (decision §6
+item 11 — OIDC, the user's call).** `security/oidc.py` verifies a JWT-shaped bearer at
+the `resolve_principal` seam: issuer + audience from config, keys via the issuer's own
+discovery document — **no IdP hardcoded** (the model-id law applied to identity), so
+Google Workspace / Azure AD / Okta / Keycloak are the same deployment with different env
+values. Fail-closed throughout: half-configuration (issuer without audience) refuses;
+an invalid token resolves to NOTHING rather than downgrading to the header seam; and
+while an issuer is configured under `AUGHOR_REQUIRE_IDENTITY`, the `X-Aughor-*` headers
+are **DEAD** — the mallory demonstration below is now a 401, pinned by a test that was
+verified to FAIL with the wiring reverted. The header seam survives only for identity-off
+localhost and for OIDC-less deployments, exactly as before, byte-identically. The admin
+view shipped with it: `GET /admin/users` (metadata only per §6.4 — usage ∪ role
+assignments, coverage stated so an unattributed ledger never reads as one busy blank
+user) + the Users·measured section on the access panel. ⏳ Owed and user-keyed: the live
+receipt against a real IdP tenant (issuer + client id only they can create) — same class
+as VA-11's Google receipt.
+
+The paragraph this replaces, kept for the record: `resolve_principal` read
+`X-Aughor-Org`/`X-Aughor-User` as unverified headers, marked *"SEAM: swap this for
+authenticated-token extraction in production"* — and there was no JWT, no OIDC, no
+session anywhere in the tree.
 
 **Demonstrated on the live instance 2026-09-04**, not argued from a code comment: with
 `AUGHOR_REQUIRE_IDENTITY=1`, a request with no headers is **401**; `X-Aughor-User: mallory`
@@ -3145,6 +3162,12 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
   stale tags (`pre-rebase-va11`, `pre/post-rebase-backup`) · ~40 squash-merged local branches.
 
 **Buildable** (flagged, unscheduled — pull forward at will):
+- ✅ **`govern/disclosure.py` DELETED 2026-09-06 (the user's call, asked first).** Fully built
+  and tested since Wave G6, zero production callers ever — §7's complete-and-inert shape held
+  for months. The deciding argument was not the inertness but VA-10: its run-as identity half
+  would today surface the unverified `X-Aughor-User` header on answers — misattributable
+  identity people would trust, §3.5's own warning. Recoverable via git; rebuild ON REAL
+  IDENTITY when VA-10's auth model lands, with the receipt/answer as its consumer from day one.
 - ~~**Report-quality deep dive, 7 of 8 defects still live**~~ — **RE-MEASURED 2026-09-02: the
   true count was ONE, and it is now closed.** This line advertised seven live defects for two
   weeks, and it is the ledger's own worst failure mode a second time (see VA-9d's posture): a
@@ -3205,7 +3228,17 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
   previous day"* — a complete day against the preceding complete day. The defect it replaced
   led with "orders fell 97.5%" from nine hours of today (43) against all of yesterday (1,733).
   The window guard holds live.
-- **Notion + Confluence are built and unreachable** — and the two diagnoses this line carried
+- ~~**Notion + Confluence are built and unreachable**~~ — **DECIDED AND CLOSED 2026-09-06
+  (the user's call: the DOCUMENTS surface, not "Add data").** They feed the doc KB, not
+  tables — the registry's own comment was the argument. Shipped: `GET/POST
+  /knowledge/sources` (form fields SERVED from the connector registry; credentials tested
+  live before the record exists, Fernet-encrypted at rest) + a Connected-sources section
+  on the Documents tab riding the existing per-connection sync routes. The data catalog's
+  category ratchet (`test_connector_categories`) is untouched — deliberately. Also fixed
+  while joining: both connectors' sync state was a CWD-relative `Path("data")`, so any
+  process not started at the repo root re-synced from scratch; now `state_dir()`,
+  resolved per call. The history below is kept because its lesson (a static lookup table
+  read as the route's output, twice) outlives the item:
   before were both WRONG. 🔴 **Re-measured 2026-09-03 by driving the live API**, which is what
   finally settled it: `GET /connectors/types` emits **no `knowledge` category at all**.
   - The 2026-09-02 entry blamed the frontend's `CATEGORY_ORDER` and called it "one line". That
@@ -3351,7 +3384,7 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-05 (late evening): NONE open. All TEN are decided** (items 9 and 10
+> **Status 2026-09-06: NONE open. All ELEVEN are decided** (items 9 and 10
 > each stamped YES, both clauses, the same day they were drafted — the KI build ran
 > ahead of its stamp at the user's direction, and SP-1 began the moment item 10 landed).
 > Kept as a register, not a queue — each entry records the reasoning so a settled
@@ -3438,6 +3471,14 @@ the browser** · **measure the premise before building.**
     story, one roster, one decision. Neither clause opened custody ground: §6.4
     governs what Spotlight may read, §6.7/§6.8 are untouched, and cross-user Know
     waits on VA-10 regardless.
+11. ✅ **DECIDED 2026-09-06 — VA-10's auth model: OIDC.** The user's call, made when the
+    gap-map round asked it directly (platform-minted tokens were the recommended
+    alternative; OIDC won). Built generic the same day: no IdP is hardcoded — issuer +
+    audience are configuration, provider specifics come from the issuer's discovery
+    document, and the org claim is opt-in (`AUGHOR_OIDC_ORG_CLAIM`, strict when set)
+    with a single-org default. The spoofable header seam dies whenever an issuer is
+    configured under required identity. What only the user can supply: a real tenant's
+    issuer/client id for the live receipt. Full note: §3.5.
 
 ---
 

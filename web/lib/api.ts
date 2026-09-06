@@ -2453,6 +2453,48 @@ export async function deleteDocument(docId: string): Promise<void> {
   if (!res.ok) throw new Error("Delete failed");
 }
 
+// ── Knowledge sources (Confluence / Notion on the documents surface) ──────────
+// The form fields are SERVED by the connector registry — the client never mirrors
+// them, so a new field appears here without a frontend change.
+
+export interface KnowledgeSourceField {
+  key: string; label: string; placeholder?: string; secret?: boolean;
+}
+export interface KnowledgeSourceType {
+  conn_type: string; label: string; fields: KnowledgeSourceField[];
+}
+export interface KnowledgeSource {
+  id: string; name: string; conn_type: string;
+  status: { last_sync?: string | null; pages_indexed?: Record<string, number> | number | null } | null;
+  error?: string;
+}
+
+export async function getKnowledgeSources(): Promise<{ types: KnowledgeSourceType[]; sources: KnowledgeSource[] } | null> {
+  const res = await fetch(`${getApiBase()}/knowledge/sources`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function createKnowledgeSource(
+  connType: string, name: string, config: Record<string, string>,
+): Promise<{ id: string; message: string; test_result: string }> {
+  const res = await fetch(`${getApiBase()}/knowledge/sources`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ conn_type: connType, name, config }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(typeof err.detail === "string" ? err.detail : "Connect failed");
+  }
+  return res.json();
+}
+
+export async function triggerKnowledgeSync(connId: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/knowledge-sync`, { method: "POST" });
+  if (!res.ok) throw new Error("Sync trigger failed");
+}
+
 // ── Process Map ───────────────────────────────────────────────────────────────
 
 export interface ProcessNode {
@@ -6136,6 +6178,60 @@ export async function getTrustedAssets(connectionId?: string): Promise<TrustedAs
   return res.json();
 }
 
+// ── VA-10: the admin view across users (metadata only, §6.4) ─────────────────
+
+export interface AdminUser {
+  user_id: string; roles: string[];
+  calls: number; failures: number; total_tokens: number;
+  cost_usd: number; cost_is_complete: boolean;
+  mean_ms: number; failure_rate: number;
+}
+export interface AdminUsers {
+  org_id: string;
+  users: AdminUser[];
+  total_calls: number;
+  unattributed_calls: number;
+  /** Fraction of calls that carry a user id — 0 means identity is not flowing. */
+  coverage: number;
+  identity_required: boolean;
+  oidc_configured: boolean;
+}
+
+/** Null on failure or when the caller lacks org administration — the section hides. */
+export async function getAdminUsers(): Promise<AdminUsers | null> {
+  const res = await fetch(`${getApiBase()}/admin/users`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+// ── MI-3: the dataset plane ──────────────────────────────────────────────────
+// Corpus size per kind and the measured distance to MI-4's entry gates. The gate
+// report is served, never computed client-side — §3.9 made the arc falsifiable by
+// measurement, and one reader of one number is what keeps that honest.
+
+export interface DatasetGate {
+  have: number; need: number; passes: boolean;
+}
+export interface LearningDatasets {
+  /** Per kind (sft / dpo / golden): dataset and example counts. */
+  stats: Record<string, { datasets: number; examples: number }>;
+  /** Per kind: measured distance to MI-4's entry gate. */
+  gates: Record<string, DatasetGate>;
+}
+
+export async function getLearningDatasets(): Promise<LearningDatasets | null> {
+  const res = await fetch(`${getApiBase()}/learning/datasets`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+/** Run every exporter once (idempotent — an unchanged corpus registers nothing new). */
+export async function runLearningExport(): Promise<{ datasets: Record<string, unknown>; golden_suite_id: string | null; gates: LearningDatasets["gates"] } | null> {
+  const res = await fetch(`${getApiBase()}/learning/export`, { method: "POST" });
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // ── Grounding-context receipt (Rec 5) ───────────────────────────────────────
 // The input-side twin of the Trust Receipt: the exact grounding blocks the SQL
 // writer was given for a question. See routers/investigations.py GET /ask/context.
@@ -6337,6 +6433,64 @@ export async function getEvalRun(runId: string): Promise<EvalRun & { results: Ev
 export async function getEvaluators(): Promise<{ evaluators: EvalEvaluator[]; deterministic_count: number }> {
   const res = await fetch(`${getApiBase()}/evals/evaluators`);
   if (!res.ok) throw new Error("Failed to fetch evaluators");
+  return res.json();
+}
+
+// ── Experiments — A/B pairs DERIVED from the run history, never stored ────────
+// Two runs whose recorded requests (`config.cell_requested`) differ on exactly one
+// axis are an experiment; `a` is the baseline cell (flag OFF, or the older model).
+
+export interface ExperimentAxis {
+  kind: "flag" | "model" | string;
+  name: string | null;
+  a_model?: string | null;
+  b_model?: string | null;
+}
+export interface ExperimentRunBrief {
+  run_id: string; status: string; started_at: string; cell: string;
+  pass_rate: number | null; correct: number | null;
+  correctness_known: number | null; total: number | null;
+}
+export interface EvalExperiment {
+  suite_id: string; axis: ExperimentAxis;
+  a: ExperimentRunBrief; b: ExperimentRunBrief;
+}
+export interface ExperimentCompareRow {
+  case_id: string; question: string;
+  a: string; b: string; kind: "gained" | "lost" | "other" | string;
+  a_sql: string; b_sql: string; a_error: string; b_error: string;
+}
+export interface ExperimentCompare {
+  suite_id: string;
+  axis: ExperimentAxis | null;
+  a: ExperimentRunBrief; b: ExperimentRunBrief;
+  accuracy: {
+    a: { correct: number; known: number };
+    b: { correct: number; known: number };
+    paired: { cases: number; a_correct: number; b_correct: number };
+  };
+  flips: { same: number; gained: number; lost: number; other: number; unrun: number };
+  rows: ExperimentCompareRow[];
+  sql_available: boolean;
+}
+
+export async function getEvalExperiments(suiteId?: string, limit = 50): Promise<EvalExperiment[]> {
+  const qs = new URLSearchParams();
+  if (suiteId) qs.set("suite_id", suiteId);
+  qs.set("limit", String(limit));
+  const res = await fetch(`${getApiBase()}/evals/experiments?${qs.toString()}`);
+  if (!res.ok) throw new Error("Failed to fetch experiments");
+  return (await res.json()).experiments;
+}
+
+export async function compareEvalExperiment(a: string, b: string): Promise<ExperimentCompare> {
+  const qs = new URLSearchParams({ a, b });
+  const res = await fetch(`${getApiBase()}/evals/experiments/compare?${qs.toString()}`);
+  if (!res.ok) {
+    let detail = "Failed to compare runs";
+    try { detail = (await res.json()).detail || detail; } catch { /* keep default */ }
+    throw new Error(detail);
+  }
   return res.json();
 }
 

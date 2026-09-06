@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { formatCount } from "@/lib/format";
+import { KnowledgeSourcesSection } from "@/components/KnowledgeSourcesSection";
 import {
   listDocuments,
   uploadDocument,
@@ -421,6 +422,9 @@ export function DocumentUploader() {
           )}
         </div>
       </div>
+
+      {/* Connected sources — the other way content reaches this same corpus. */}
+      <KnowledgeSourcesSection />
 
       {/* Error */}
       {uploadError && (
