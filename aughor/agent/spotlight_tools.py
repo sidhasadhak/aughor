@@ -22,6 +22,12 @@ Rules, inherited rather than invented:
   /learning surfaces do; connection-flavoured reads bind the conversation's connection
   by closure, so the model cannot name a connection it was not given.
 * **The context window is the budget.** Grouped results are capped and say when cut.
+* **Every result carries a pre-composed `summary` sentence** (added 2026-09-06 after a
+  live re-drive on a different chat model): the numbers, honesty clauses and units,
+  already worded — because a model re-deriving prose from fields garbled a
+  deterministic count (reported 32/27/5 where the tool said 22/18/4) and turned USD
+  into €. The summary is built from the SAME locals as the fields, so the two cannot
+  disagree; the descriptions tell the model to quote it verbatim.
 """
 from __future__ import annotations
 
@@ -59,7 +65,14 @@ def list_platform_connections(args: dict) -> dict:
         "name": c.get("name") or c.get("id", ""),
         "type": c.get("conn_type") or c.get("type") or "",
     } for c in conns[:_MAX_CONNECTIONS]]
-    res = {"count": len(conns), "connections": out}
+    shown = ", ".join(f"{c['name']} ({c['type']})" if c['type'] else c['name']
+                      for c in out[:6])
+    extra = f", +{len(conns) - 6} more" if len(conns) > 6 else ""
+    res = {
+        "count": len(conns),
+        "summary": f"This deployment has {len(conns)} data connections: {shown}{extra}.",
+        "connections": out,
+    }
     if len(conns) > _MAX_CONNECTIONS:
         res["note"] = f"listing capped at {_MAX_CONNECTIONS} of {len(conns)}"
     return res
@@ -102,10 +115,20 @@ def platform_usage(args: dict) -> dict:
         "cost_usd": round(r.cost_usd, 4),
     } for r in report.rows[:_MAX_GROUPS]]
 
+    plain = {"agent_id": "agent", "conn_id": "connection", "user_id": "user",
+             "org_id": "org"}.get(by, by)
+    top = f" Most-used {plain}: {groups[0][by]} ({groups[0]['calls']} calls, "           f"{groups[0]['total_tokens']:,} tokens)." if groups else ""
+    complete = unpriced == 0 and no_usage == 0
+    cost_line = (f"Cost ${cost_usd:.2f} USD (complete — every call priced)." if complete
+                 else f"Cost ${cost_usd:.2f} USD is a FLOOR, not the full spend — "
+                      f"{unpriced} calls have no declared price and {no_usage} "
+                      f"reported no token usage.")
     res = {
         "window_days": days, "since": since, "grouped_by": by,
+        "summary": (f"Last {days} days: {report.total_calls} model calls, "
+                    f"{total_tokens:,} tokens.{top} {cost_line}"),
         "total_calls": report.total_calls, "total_tokens": total_tokens,
-        "cost_usd": cost_usd, "cost_is_complete": unpriced == 0,
+        "cost_usd": cost_usd, "cost_is_complete": complete,
         "unpriced_calls": unpriced, "calls_without_usage": no_usage,
         "groups": groups,
     }
@@ -134,10 +157,20 @@ def platform_runs(args: dict) -> dict:
 
     inv = investigation_counts_since(days)
     outcomes = count_runs_since(floor_day)
+    total_ticks = sum(outcomes.values())
+    still = max(inv["started"] - inv["finished"], 0)
+    ticks = ", ".join(f"{k.replace('_', ' ')} {v:,}"
+                      for k, v in sorted(outcomes.items(), key=lambda kv: -kv[1]))
     return {
         "window_days": days, "since_day": floor_day,
+        "summary": (f"Last {days} days (since {floor_day}): {inv['started']} "
+                    f"deep-analysis runs started — {inv['succeeded']} succeeded, "
+                    f"{inv['failed']} failed"
+                    + (f", {still} still running" if still else "")
+                    + f". Automation ticks: {total_ticks:,} total"
+                    + (f" — {ticks}." if ticks else ".")),
         "deep_runs": inv,
-        "automation_runs": {"total": sum(outcomes.values()), "by_outcome": outcomes},
+        "automation_runs": {"total": total_ticks, "by_outcome": outcomes},
     }
 
 
@@ -146,7 +179,13 @@ def investigation_cadence(args: dict) -> dict:
     from aughor.db.history import investigations_by_month
 
     months = max(1, min(int(args.get("months") or 6), 36))
-    return investigations_by_month(months)
+    out = investigations_by_month(months)
+    counts = [p["started"] for p in out["series"]] or [0]
+    out["summary"] = (f"Last {out['months']} calendar months: "
+                      f"{out['monthly_average']} deep-analysis runs per month on "
+                      f"average (range {min(counts)}–{max(counts)}; months with "
+                      f"zero runs are counted, not skipped).")
+    return out
 
 
 def answer_accuracy(connection_id: str, args: dict) -> dict:
@@ -163,20 +202,36 @@ def answer_accuracy(connection_id: str, args: dict) -> dict:
     stats = verdict_stats(cid or None)
     trend = (stats.get("trend") or [])[-_MAX_TREND_WEEKS:]
     total = int(stats.get("total") or 0)
+    rate = stats.get("acceptance_rate")
+    tq = len(list_trusted(cid)) if cid else None
     res = {
         "connection_id": cid or "(all)",
         "graded_total": total,
         "verdict_counts": stats.get("counts") or {},
-        "acceptance_rate": stats.get("acceptance_rate"),
+        "acceptance_rate": rate,
         "recent_weeks": trend,
-        "trusted_queries": len(list_trusted(cid)) if cid else None,
+        "trusted_queries": tq,
     }
     if total == 0:
         res["caveat"] = ("no graded verdicts yet — there is no accuracy number to "
                          "report, which is different from accuracy being low")
-    elif total < 30:
-        res["caveat"] = (f"only {total} graded verdicts — quote the rate WITH the "
-                         "sample size; grading volume is what firms this number up")
+        res["summary"] = ("No graded verdicts yet on this connection — no accuracy "
+                          "number exists to report; that is an absence of grading, "
+                          "not low accuracy."
+                          + (f" {tq} verified query patterns exist." if tq else ""))
+    else:
+        rate_pct = f"{round(rate * 100, 1)}%" if rate is not None else "n/a"
+        if total < 30:
+            res["caveat"] = (f"only {total} graded verdicts — quote the rate WITH the "
+                             "sample size; grading volume is what firms this number up")
+            res["summary"] = (f"Acceptance rate {rate_pct} over only {total} graded "
+                              f"verdicts on this connection — a thin sample; the rate "
+                              f"means little until grading volume grows."
+                              + (f" {tq} verified query patterns exist." if tq else ""))
+        else:
+            res["summary"] = (f"Acceptance rate {rate_pct} over {total} graded "
+                              f"verdicts on this connection."
+                              + (f" {tq} verified query patterns exist." if tq else ""))
     return res
 
 
@@ -201,14 +256,23 @@ def table_popularity(connection_id: str, args: dict) -> dict:
         return {
             "connection_id": connection_id, "mined": False,
             "scope": _POPULARITY_SCOPE,
+            "summary": ("The popularity store holds nothing for this connection — "
+                        "not mined yet (mining runs with the schema birth job); an "
+                        "unmined store is not an unqueried warehouse."),
             "answer": ("the popularity store holds nothing for this connection — say "
                        "'not mined yet', never 'nothing is queried'; mining runs with "
                        "the schema birth job"),
         }
+    q_total = int(sum(n for _, n in tables))
+    top3 = ", ".join(f"{t} ({n:,})" for t, n in tables[:3])
     return {
         "connection_id": connection_id, "mined": True,
         "scope": _POPULARITY_SCOPE,
-        "queries_mined": int(sum(n for _, n in tables)),
+        "summary": (f"All-time since mining began — this cannot be filtered to a "
+                    f"date window: {q_total:,} queries touching {len(tables):,} "
+                    f"distinct tables and {len(columns):,} distinct columns on this "
+                    f"connection. Top tables: {top3}."),
+        "queries_mined": q_total,
         "distinct_tables": len(tables),
         "distinct_columns": len(columns),
         "top_tables": [{"table": t, "queries": n} for t, n in tables[:top]],
@@ -257,7 +321,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "List every data connection this deployment has — count, names, engine "
                 "types. Use this for 'how many connections / what are we connected to' "
                 "questions about the PLATFORM; for the tables inside the current "
-                "connection use list_tables."
+                "connection use list_tables. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
             ),
             parameters=_EMPTY_PARAMS,
             run=lambda a: list_platform_connections(a),
@@ -270,7 +334,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "Use this for 'what did we spend / which agent burns the most tokens' "
                 "questions. Read the honesty fields before quoting: unpriced or "
                 "usage-less calls make the totals a floor, not the whole truth, and "
-                "you must say so."
+                "you must say so. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
             ),
             parameters=_USAGE_PARAMS,
             run=lambda a: platform_usage(a),
@@ -283,7 +347,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "never a separate pile), and automation ticks counted by outcome "
                 "(fired, not fired, gated, paused, error) with a real windowed count "
                 "— no scan cap. Use this for 'how many runs happened' and 'is "
-                "anything failing' questions."
+                "anything failing' questions. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
             ),
             parameters=_DAYS_PARAMS,
             run=lambda a: platform_runs(a),
@@ -293,7 +357,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
             description=(
                 "Deep-analysis runs per calendar month with the monthly average. Use "
                 "this for 'how many analyses do we run in a month on average' "
-                "questions; months with zero runs are listed as zero, not omitted."
+                "questions; months with zero runs are listed as zero, not omitted. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
             ),
             parameters=_MONTHS_PARAMS,
             run=lambda a: investigation_cadence(a),
@@ -305,7 +369,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "the acceptance rate, the recent weekly trend, and how many verified "
                 "query patterns exist. ALWAYS quote the rate together with "
                 "the graded total — a rate over a thin sample is a different claim than "
-                "one over a thick sample, and the caveat field says which you have."
+                "one over a thick sample, and the caveat field says which you have. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
             ),
             parameters=_ACCURACY_PARAMS,
             run=lambda a: answer_accuracy(connection_id, a),
@@ -322,7 +386,7 @@ def spotlight_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpe
                 "and cannot be windowed to N days — when the user asks for a window, "
                 "report the all-time counts and say they are all-time (quote the "
                 "scope field). If the result says mined=false, answer 'not mined "
-                "yet' — never report an empty store as 'nothing gets queried'."
+                "yet' — never report an empty store as 'nothing gets queried'. Quote the summary field verbatim for the numbers — never re-derive them from the other fields."
             ),
             parameters=_TOP_PARAMS,
             run=lambda a: table_popularity(connection_id, a),

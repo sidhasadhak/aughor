@@ -2444,6 +2444,14 @@ read-only against the live stores:
   quotable `scope` field), and returns a direct distinct-table count.
 - ⚠️ **"34 finished and 5 failed" read as disjoint** — `finished` includes failures.
   **Fixed:** an explicit `succeeded` field; the narrator never infers it again.
+**Hardening 2026-09-06 (after a second live drive on a different chat model):** the
+model got both QUALITATIVE fixes right (refused the window, quoted the scope, subset
+phrasing) but garbled a deterministic count (32/27/5 narrated where the tool said
+22/18/4) and turned USD into €. Every tool now returns a pre-composed `summary`
+sentence — numbers, units and honesty clauses already worded, built from the SAME
+locals as the fields so the two cannot disagree — and every description instructs:
+quote it verbatim, never re-derive. Also closed in passing: `cost_is_complete` now
+requires zero unpriced AND zero usage-less calls (it keyed on unpriced alone).
 Remaining for the wave: trace/audit lookup tools · the unified audit read.
 
 #### SP-2 · The summon — ✅ FIRST CUT BUILT 2026-09-06
