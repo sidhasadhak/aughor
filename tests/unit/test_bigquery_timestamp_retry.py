@@ -63,9 +63,22 @@ def test_non_date_strings_and_datetime_strings_stay_untouched():
         "SELECT 1 FROM t WHERE ts >= '2026-08-01 00:00:00'") == ""
 
 
-def test_typed_literals_and_function_args_stay_untouched():
+def test_date_typed_literals_are_rewritten_too():
+    """The live re-drive (2026-09-06, second eval run) showed the model's OTHER
+    habit: `created_at >= DATE '2026-08-01'` — typed, and still the clash. Once
+    the engine names the error, the typed form is rewritten like the bare one."""
+    out = _retype_date_literals(
+        "SELECT COUNT(*) FROM orders WHERE created_at >= DATE '2026-08-01' "
+        "AND created_at < DATE '2026-09-01'")
+    assert out.count("AS TIMESTAMP") == 2 and "AS DATE" not in out
+
+
+def test_timestamp_literals_column_casts_and_function_args_stay_untouched():
     assert _retype_date_literals(
         "SELECT 1 FROM t WHERE ts >= TIMESTAMP '2026-08-01'") == ""
+    # A cast of a COLUMN is a legitimate fix direction, never rewritten.
+    assert _retype_date_literals(
+        "SELECT 1 FROM t WHERE CAST(ts AS DATE) >= CURRENT_DATE()") == ""
     # The literal sits inside a function call, not directly in the comparison.
     assert _retype_date_literals(
         "SELECT 1 FROM t WHERE ts >= TIMESTAMP('2026-08-01')") == ""
