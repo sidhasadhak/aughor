@@ -12,12 +12,73 @@ Optional dep:
 """
 from __future__ import annotations
 
+import re
 from contextlib import contextmanager
 
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
 
 MAX_ROWS = 2000
+
+#: The exact class of error the date-literal retry may answer. BigQuery does not
+#: coerce between TIMESTAMP and DATE in comparisons (DuckDB and Postgres do), and a
+#: bare '2026-08-01' literal types as DATE — so generated SQL comparing a TIMESTAMP
+#: column against it fails with this signature error. Measured live 2026-09-06: an
+#: agent golden suite lost 4 of 5 questions to exactly this, across every generation
+#: path, because the clash is a property of the ENGINE, not of one prompt.
+_TS_DATE_CLASH = re.compile(
+    r"No matching signature for operator .*TIMESTAMP, DATE", re.DOTALL)
+
+_BARE_DATE = re.compile(r"\d{4}-\d{2}-\d{2}")
+
+
+def _is_timestamp_date_clash(error: str) -> bool:
+    return bool(_TS_DATE_CLASH.search(error or ""))
+
+
+def _retype_date_literals(sql: str) -> str:
+    """The failed SQL with bare date literals in comparisons cast to TIMESTAMP —
+    or "" when there is nothing to rewrite (parse failure included: a query we
+    cannot parse is a query we must not touch).
+
+    Deliberately ERROR-DRIVEN, never speculative: this runs only after BigQuery
+    itself reported the TIMESTAMP/DATE clash, so a date literal legitimately
+    compared against a DATE column is never rewritten pre-emptively — and if a
+    mixed query is rewritten too broadly, the retry simply fails the way the
+    original did, which is the state we were already in. Only bare string
+    literals shaped YYYY-MM-DD that sit DIRECTLY inside a comparison or BETWEEN
+    are touched; typed literals (DATE '…'), datetime strings, and literals inside
+    function calls stay exactly as written.
+    """
+    try:
+        import sqlglot
+        from sqlglot import exp
+    except Exception:
+        return ""
+    try:
+        tree = sqlglot.parse_one(sql, read="bigquery")
+    except Exception:
+        return ""
+
+    comparisons = (exp.EQ, exp.NEQ, exp.GT, exp.GTE, exp.LT, exp.LTE, exp.Between)
+    changed = False
+    for node in tree.find_all(*comparisons):
+        for child in list(node.args.values()):
+            if (isinstance(child, exp.Literal) and child.is_string
+                    and _BARE_DATE.fullmatch(child.this or "")):
+                # Built in the BigQuery dialect deliberately: the GENERIC sqlglot
+                # TIMESTAMP renders as BigQuery DATETIME (timezone-naive), which
+                # would reproduce the very clash being repaired.
+                child.replace(exp.Cast(this=child.copy(),
+                                       to=exp.DataType.build("TIMESTAMP",
+                                                             dialect="bigquery")))
+                changed = True
+    if not changed:
+        return ""
+    try:
+        return tree.sql(dialect="bigquery")
+    except Exception:
+        return ""
 
 
 class BigQueryConnection(Connector):
@@ -149,6 +210,25 @@ class BigQueryConnection(Connector):
             return _rp
 
         _t0 = _time.monotonic()
+        result = self._run_job(hypothesis_id, sql)
+        if result.error and _is_timestamp_date_clash(result.error):
+            # The engine named the exact clash; the deterministic rewrite answers it
+            # (cast the bare date literals, retry ONCE). Fixing here rather than in
+            # any one prompt covers every path that reaches this connector — chat,
+            # deep analysis, run_sql, agent evaluation. A retry that fails leaves
+            # the original honest error standing; the result's `sql` always carries
+            # what actually ran, so receipts stay truthful.
+            rewritten = _retype_date_literals(sql)
+            if rewritten and rewritten != sql:
+                retried = self._run_job(hypothesis_id, rewritten)
+                if not retried.error:
+                    result = retried
+
+        elapsed_ms = (_time.monotonic() - _t0) * 1000
+        return security_post(self._connection_id, hypothesis_id, result.sql, result, elapsed_ms)
+
+    def _run_job(self, hypothesis_id: str, sql: str) -> QueryResult:
+        """One BigQuery job → a QueryResult; an error is a value, never a raise."""
         try:
             from google.cloud import bigquery
             job_config = bigquery.QueryJobConfig(
@@ -161,7 +241,7 @@ class BigQueryConnection(Connector):
                     [str(v) if v is not None else "NULL" for v in row.values()]
                     for row in rows_it
                 ]
-            result = QueryResult(
+            return QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,
                 columns=columns,
@@ -169,13 +249,10 @@ class BigQueryConnection(Connector):
                 row_count=len(rows),
             )
         except Exception as e:
-            result = QueryResult(
+            return QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
                 columns=[], rows=[], row_count=0, error=str(e),
             )
-
-        elapsed_ms = (_time.monotonic() - _t0) * 1000
-        return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Use BigQuery's native dry-run — validates SQL + estimates bytes, zero cost."""
