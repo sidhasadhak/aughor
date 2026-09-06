@@ -198,7 +198,11 @@ _api_key_header = APIKeyHeader(name="X-Api-Key", auto_error=False)
 # order to call one chain) is the less safe one. The prefix is its own for this reason:
 # this list matches by `startswith`, and hanging the public door under `/automations/`
 # would have exempted every read, write and delete on that surface with it.
-_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/")
+#: VA-10: `/auth/config` is the how-to-authenticate payload — public by construction
+#: (a client with no token yet must be able to learn how to get one). Exact literal,
+#: not a bare `/auth/` prefix: this list matches by `startswith`, and a prefix would
+#: silently exempt anything that later mounts under it.
+_AUTH_EXEMPT = ("/health", "/docs", "/redoc", "/openapi.json", "/hooks/", "/auth/config")
 
 
 def api_key_configured() -> bool:
@@ -750,6 +754,7 @@ async def _start_automation_heartbeat() -> None:
 
 from aughor.routers import (
     admin,
+    authcfg,
     components,
     cron,
     preferences,
@@ -822,6 +827,7 @@ app.include_router(actions.router)
 app.include_router(security.router)
 app.include_router(governance.router)
 app.include_router(admin.router)  # VA-10 — the cross-user view (metadata only, §6.4)
+app.include_router(authcfg.router)  # VA-10 — how to authenticate (public; see _AUTH_EXEMPT)
 app.include_router(query.router)
 app.include_router(monitors.router)
 app.include_router(semantic.router)
