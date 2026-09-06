@@ -817,3 +817,34 @@ def _save_payload_for_inbox(params: dict):
 from aughor.runners.automation_save import register_automation_save  # noqa: E402
 
 register_automation_save(_save_payload_for_inbox)
+
+
+# The state door (pause/resume), introducing itself the same way. Pause keeps its end
+# ("a pause has an end" — the store's own docstring on pause_automation), so a pause
+# with no `until` is refused in the store's words rather than becoming a silent
+# forever-mute that only `enabled=false` should be.
+
+def _state_payload_for_inbox(params: dict):
+    automation_id = str(params.get("automation_id") or "")
+    action = str(params.get("action") or "")
+    until = str(params.get("until") or "")
+    a = get_automation(automation_id)
+    if a is None:
+        return False, f"automation {automation_id!r} no longer exists"
+    if action == "pause":
+        if not until:
+            return False, ("a pause has an end — 'until' (an ISO timestamp) is "
+                           "required; to stop a chain indefinitely, disable it instead")
+        saved = pause_automation(automation_id, until)
+        return True, {"automation_id": saved.id, "name": saved.name,
+                      "paused_until": until}
+    if action == "resume":
+        saved = pause_automation(automation_id, None)
+        return True, {"automation_id": saved.id, "name": saved.name,
+                      "paused_until": ""}
+    return False, f"unknown state action {action!r} — pause or resume"
+
+
+from aughor.runners.automation_state import register_automation_state  # noqa: E402
+
+register_automation_state(_state_payload_for_inbox)

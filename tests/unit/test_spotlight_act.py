@@ -159,11 +159,116 @@ def test_automation_draft_accept_refuses_a_draft_that_no_longer_validates():
     assert "draft no longer valid" in result.message
 
 
+# ── pause/resume — structural, staged, applied only on accept ──────────────────────
+
+def _seed_automation(name="pausable", conn_id="conn-x"):
+    from aughor.automations.models import Automation, Condition, Effect
+    from aughor.automations.store import upsert_automation
+    return upsert_automation(Automation(
+        conn_id=conn_id, name=name,
+        conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
+        effects=[Effect(kind="notify", config={"trigger_id": "trig-1"})],
+    ))
+
+
+def test_pause_without_an_end_is_refused_before_staging():
+    a = _seed_automation("no-end")
+    out = act.pause_or_resume_automation("conn-x", {"automation": a.id, "action": "pause"})
+    assert out["staged"] is False and "a pause has an end" in out["summary"]
+
+
+def test_pause_stages_then_accept_applies_and_resume_clears():
+    from aughor.automations.store import get_automation
+    a = _seed_automation("weekly-brief")
+
+    staged = act.pause_or_resume_automation("conn-x", {
+        "automation": "weekly-brief", "action": "pause",
+        "until": "2027-01-01T00:00:00Z"})
+    assert staged["staged"] is True
+    assert get_automation(a.id).paused_until in (None, "")   # staging changed nothing
+
+    result, _ = accept_proposal(staged["proposal_id"], actor="tester")
+    assert result.ok and result.status == "executed"
+    assert get_automation(a.id).paused_until == "2027-01-01T00:00:00Z"
+
+    resume = act.pause_or_resume_automation("conn-x", {"automation": a.id,
+                                                       "action": "resume"})
+    result2, _ = accept_proposal(resume["proposal_id"], actor="tester")
+    assert result2.ok
+    assert not get_automation(a.id).paused_until               # cleared
+
+
+def test_pause_reject_is_byte_identical_and_stale_accept_refused():
+    from aughor.automations.store import delete_automation, get_automation
+    a = _seed_automation("reject-me")
+
+    rejected = act.pause_or_resume_automation("conn-x", {
+        "automation": a.id, "action": "pause", "until": "2027-01-01T00:00:00Z"})
+    assert reject_proposal(rejected["proposal_id"], actor="tester") is True
+    assert get_automation(a.id).paused_until in (None, "")
+
+    stale = act.pause_or_resume_automation("conn-x", {
+        "automation": a.id, "action": "pause", "until": "2027-01-01T00:00:00Z"})
+    delete_automation(a.id)                                    # gone between the two acts
+    result, _ = accept_proposal(stale["proposal_id"], actor="tester")
+    assert not result.ok and result.status == "dispatch_error"
+    assert "no longer exists" in result.message
+
+
+def test_pause_refuses_a_chain_on_another_connection():
+    a = _seed_automation("elsewhere", conn_id="conn-other")
+    out = act.pause_or_resume_automation("conn-x", {"automation": a.id,
+                                                    "action": "pause",
+                                                    "until": "2027-01-01T00:00:00Z"})
+    assert out["staged"] is False and "conn-other" in out["summary"]
+
+
+# ── agent grants — permission to PROPOSE, staged like everything structural ────────
+
+def test_grant_stages_then_accept_appends_and_wildcard_refused(monkeypatch):
+    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft",
+                        lambda **kw: [])
+    from aughor.custom_agents.store import create_agent, get_agent
+    agent = create_agent("grantee", instructions="A scope and a stance.")
+
+    wild = act.propose_agent_grant("conn-x", {"agent": agent.id, "action_id": "*"})
+    assert wild["staged"] is False and "blanket grant" in wild["summary"]
+
+    out = act.propose_agent_grant("conn-x", {"agent": "grantee",
+                                             "action_id": "send_refund"})
+    assert out["staged"] is True
+    assert get_agent(agent.id).tool_grants == []               # staging changed nothing
+    p = get_proposal(out["proposal_id"])
+    assert p.kind == "agent_grant" and "PROPOSE" in p.reasoning
+
+    result, _ = accept_proposal(out["proposal_id"], actor="tester")
+    assert result.ok and result.status == "executed"
+    assert get_agent(agent.id).tool_grants == ["send_refund"]
+
+    again = act.propose_agent_grant("conn-x", {"agent": agent.id,
+                                               "action_id": "send_refund"})
+    assert again["staged"] is False and "already holds" in again["summary"]
+
+
+def test_grant_accept_revalidates_a_moved_world(monkeypatch):
+    from aughor.custom_agents.store import create_agent
+    agent = create_agent("moved-world", instructions="A scope and a stance.")
+    staged = act.propose_agent_grant("conn-x", {"agent": agent.id,
+                                                "action_id": "send_refund"})
+    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_grants",
+                        lambda *a, **k: ["unknown action id(s) for this connection: send_refund. Declared: none"])
+    result, _ = accept_proposal(staged["proposal_id"], actor="tester")
+    assert not result.ok and result.status == "dispatch_error"
+    assert "unknown action id" in result.message
+
+
 # ── the roster ─────────────────────────────────────────────────────────────────────
 
 def test_act_roster_names_and_conversation_wiring():
     names = [t.name for t in act.spotlight_act_tools("c1")]
-    assert names == ["set_preference", "draft_agent", "draft_automation"]
+    assert names == ["set_preference", "draft_agent", "draft_automation",
+                     "pause_or_resume_automation", "propose_agent_grant"]
     from aughor.agent.converse_tools import converse_tools
     got = {t.name for t in converse_tools("c1")}
-    assert {"set_preference", "draft_agent", "draft_automation"} <= got
+    assert {"set_preference", "draft_agent", "draft_automation",
+            "pause_or_resume_automation", "propose_agent_grant"} <= got

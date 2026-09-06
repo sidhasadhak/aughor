@@ -16,7 +16,7 @@ the API process exactly as they do for the web app.
 """
 from __future__ import annotations
 
-from typing import Annotated, Optional
+from typing import Annotated, Any, Optional
 
 from mcp.server.fastmcp import FastMCP
 from pydantic import Field
@@ -398,6 +398,63 @@ async def register_automation_tools(client: "AughorClient | None" = None) -> lis
         taken.add(name)
         added.append(name)
     return added
+
+
+async def register_spotlight_tools(client: "AughorClient | None" = None) -> list[str]:
+    """SP-5 — register the DECLARED Spotlight roster, one tool per entry.
+
+    Same posture as `register_automation_tools`: never raises, returns what it added,
+    skips a name collision rather than shadowing. The declaration comes from the API's
+    `/spotlight/tools` listing (the one roster every transport derives from) and each
+    call goes back through the API — one process owns the stores; this one never does.
+    Custody rides the roster, not the transport: every Act entry stages into the one
+    inbox for a human, so nothing an MCP client invokes here executes anything.
+    """
+    api = client or _client
+    try:
+        declared = await api.list_spotlight_tools()
+    except Exception as exc:                       # the API is down, or the route is old
+        _log.warning("could not read the Spotlight roster: %s", exc)
+        return []
+
+    taken = set(getattr(mcp._tool_manager, "_tools", {}) or {})
+    added: list[str] = []
+    for row in declared:
+        name = str(row.get("name") or "")
+        if not name:
+            continue
+        if name in taken:
+            _log.warning("Spotlight tool %r collides with an existing tool — skipped", name)
+            continue
+        mcp.add_tool(_spotlight_runner(api, name), name=name,
+                     description=_spotlight_description(row))
+        taken.add(name)
+        added.append(name)
+    return added
+
+
+def _spotlight_description(row: dict) -> str:
+    """The declared description IS the routing policy on this transport too — plus a
+    compact rendering of the declared arguments, because this transport's runner takes
+    them as one `args` object rather than a native schema."""
+    desc = str(row.get("description") or "").strip()
+    props = ((row.get("parameters") or {}).get("properties") or {})
+    if props:
+        params = "; ".join(f"{k}: {str(v.get('description') or v.get('type') or '')}"
+                           for k, v in props.items())
+        desc += f" Arguments (pass in `args`): {params}"
+    return desc
+
+
+def _spotlight_runner(api: "AughorClient", name: str):
+    """A factory, not a loop lambda — the same late-binding trap the automation
+    runner already refuses. `connection` binds the connection-flavoured tools;
+    org-level reads ignore it."""
+    async def _run(connection: str = "", args: dict | None = None) -> Any:
+        return await api.call_spotlight_tool(name, connection=connection,
+                                             args=dict(args or {}))
+
+    return _run
 
 
 def _automation_description(row: dict) -> str:

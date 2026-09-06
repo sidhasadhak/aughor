@@ -172,16 +172,169 @@ def test_popularity_mined_counts_rank_and_cap(tmp_path, monkeypatch):
 
 # ── the roster itself ──────────────────────────────────────────────────────────────
 
+# ── platform_traces — the wave's trace leftover, metadata only ──────────────────────
+
+def test_traces_listing_is_windowed_and_says_metadata_only(monkeypatch):
+    rows = [
+        {"trace_id": "t1", "started": "2026-09-06T01:00:00Z", "question": "q1",
+         "ok": True, "errors": 0, "tool_calls": 3, "llm_calls": 2,
+         "duration_ms": 900, "total_tokens": 500, "agent_id": "", "conn_id": "c1",
+         "answer": "SECRET PAYLOAD"},
+        {"trace_id": "t2", "started": "2026-09-06T00:00:00Z", "question": "q2",
+         "ok": False, "errors": 1, "tool_calls": 1, "llm_calls": 1,
+         "duration_ms": 100, "total_tokens": 50, "agent_id": "", "conn_id": "c1"},
+    ]
+    seen = {}
+    def fake_recent(**kw):
+        seen.update(kw)
+        return rows
+    monkeypatch.setattr("aughor.obs.session_log.recent_sessions", fake_recent)
+    out = spot.platform_traces({"days": 7})
+    assert seen["since"] and seen["limit"] == 10          # windowed at the reader
+    assert "2 runs" in out["summary"] and "1 of them not ok" in out["summary"]
+    assert "Metadata only" in out["summary"]
+    assert all("answer" not in r for r in out["runs"])    # payload-ish fields dropped
+    assert "note" in out                                  # the scan window, disclosed
+
+
+def test_trace_lookup_absent_is_honest_about_the_two_causes(monkeypatch):
+    monkeypatch.setattr("aughor.obs.session_log.recover_session",
+                        lambda tid, org_id=None: [])
+    out = spot.platform_traces({"trace_id": "nope"})
+    assert out["found"] is False
+    assert "does not exist, or it belongs to another org" in out["summary"]
+
+
+def test_trace_anatomy_quotes_timing_and_errors_without_payloads(monkeypatch):
+    monkeypatch.setattr("aughor.obs.session_log.recover_session",
+                        lambda tid, org_id=None: [{"kind": "user_request"}])
+    monkeypatch.setattr("aughor.obs.trace_summary.build_summary",
+                        lambda tid, events: {
+                            "trace_id": tid, "question": "why slow", "ok": False,
+                            "started_at": "2026-09-06T00:00:00Z",
+                            "counts": {"events": 9, "spans": 4, "model_calls": 2,
+                                       "errors": 1},
+                            "time": {"wall_ms": 1234, "busy_ms": 1000},
+                            "models": ["m:free"],
+                            "slowest_spans": [{"name": "answer", "kind": "tool_call",
+                                               "duration_ms": 800, "pct_of_run": 65,
+                                               "span_id": "s1", "model": "m:free",
+                                               "depth": 1}],
+                            "errors": [{"name": "run_sql", "kind": "tool_call",
+                                        "error_class": "GuardRefusal",
+                                        "at": "x", "span_id": "s2"}],
+                        })
+    out = spot.platform_traces({"trace_id": "t9"})
+    assert out["found"] is True and out["ok"] is False
+    assert "1234 ms wall" in out["summary"] and "GuardRefusal" in out["summary"]
+    assert set(out["slowest_steps"][0]) == {"name", "kind", "duration_ms",
+                                            "pct_of_run"}   # span ids/payload refs cut
+    assert set(out["errors"][0]) == {"name", "kind", "error_class"}
+
+
+# ── platform_audit — the unified feed, relayed not re-derived ───────────────────────
+
+def test_audit_unknown_category_names_the_known_ones():
+    out = spot.platform_audit({"category": "vibes"})
+    assert "unknown category" in out["error"]
+    assert "action_decision" in out["known_categories"]
+
+
+def test_audit_feed_rows_are_compact_and_the_scope_is_disclosed(monkeypatch):
+    from types import SimpleNamespace
+    events = [SimpleNamespace(category="model_call", kind="llm_call",
+                              at="2026-09-06T01:00:00Z", actor="local",
+                              summary="a call", detail={"huge": "blob"})]
+    monkeypatch.setattr("aughor.govern.audit_categories.feed",
+                        lambda category=None, limit=100: events)
+    out = spot.platform_audit({"limit": 5})
+    assert out["events"] == [{"category": "model_call", "kind": "llm_call",
+                              "at": "2026-09-06T01:00:00Z", "actor": "local",
+                              "summary": "a call"}]          # detail stays home
+    assert "recency feed" in out["summary"]                  # never a total
+
+
+# ── platform_premortem — SP-6's proact half: evidence rows, offers, never applies ──
+
+def test_premortem_finds_an_error_streak_with_its_evidence_rows(monkeypatch):
+    # The shared hermetic stores hold whatever earlier tests seeded; lift the scan
+    # and display caps so THIS receipt asserts detection, not cap arithmetic (the
+    # caps' own honesty — "scanned N of M" — has its own receipt below).
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 100_000)
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_FINDINGS", 100_000)
+    from aughor.actions.inbox import list_proposals
+    from aughor.automations.models import Automation, AutomationRun, Condition, Effect
+    from aughor.automations.store import append_run, upsert_automation
+
+    a = upsert_automation(Automation(
+        conn_id="pm-conn", name="always-breaking",
+        conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
+        effects=[Effect(kind="notify", config={"trigger_id": "t1"})]))
+    for i in range(3):
+        append_run(AutomationRun(automation_id=a.id, automation_name=a.name,
+                                 conn_id="pm-conn", outcome="error",
+                                 reason=f"boom {i}"))
+
+    before = len(list_proposals(status="pending"))
+    out = spot.platform_premortem({})
+    streaks = [f for f in out["findings"] if f["kind"] == "automation_error_streak"
+               and f["subject"] == "always-breaking"]
+    assert streaks, "the 3-error streak was not flagged"
+    ev = streaks[0]["evidence"]
+    assert len(ev) >= 3 and all(e["run_id"] for e in ev)     # rows, not vibes
+    assert streaks[0]["offer"]["tool"] == "pause_or_resume_automation"
+    assert "nothing here applies anything" in out["summary"]
+    assert len(list_proposals(status="pending")) == before   # the sweep staged NOTHING
+
+
+def test_premortem_flags_zero_document_agents_and_a_broken_store_is_not_clean(monkeypatch):
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 100_000)
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_FINDINGS", 100_000)
+    from aughor.custom_agents.store import create_agent
+    ag = create_agent("premortem-bare", instructions="A scope and a stance.")
+
+    out = spot.platform_premortem({})
+    bare = [f for f in out["findings"] if f["kind"] == "agent_without_documents"
+            and f["evidence"][0]["agent_id"] == ag.id]
+    assert bare and bare[0]["offer"]["tool"] == ""           # honest page offer
+
+    def boom():
+        raise RuntimeError("agents store gone")
+    monkeypatch.setattr("aughor.custom_agents.store.list_agents", boom)
+    out2 = spot.platform_premortem({})
+    assert "agents" in out2["stores_unavailable"]
+    assert "not a clean bill of health" in out2["summary"]
+
+
+def test_premortem_discloses_a_partial_scan_instead_of_a_clean_bill(monkeypatch):
+    """A capped sweep must say what it did NOT check — the confident-clean-report
+    class, refused. Force the cap below the store's population and read the words."""
+    monkeypatch.setattr(spot, "_PREMORTEM_MAX_AUTOMATIONS", 1)
+    from aughor.automations.models import Automation, Condition, Effect
+    from aughor.automations.store import upsert_automation
+    for n in ("scan-cap-a", "scan-cap-b"):
+        upsert_automation(Automation(
+            conn_id="pm-conn", name=n,
+            conditions=[Condition(kind="schedule", config={"cron": "0 7 * * 1"})],
+            effects=[Effect(kind="notify", config={"trigger_id": "t1"})]))
+    out = spot.platform_premortem({})
+    assert "were NOT checked" in out["summary"]
+
+
+# ── the roster ──────────────────────────────────────────────────────────────────────
+
 def test_spotlight_roster_names_and_read_contract():
     tools = spot.spotlight_tools("c1")
     names = [t.name for t in tools]
     assert names == ["list_platform_connections", "platform_usage", "platform_runs",
-                     "investigation_cadence", "answer_accuracy", "table_popularity"]
+                     "investigation_cadence", "answer_accuracy", "table_popularity",
+                     "platform_traces", "platform_premortem", "platform_audit"]
 
 
 def test_conversation_gets_the_spotlight_roster():
     from aughor.agent.converse_tools import converse_tools
     names = {t.name for t in converse_tools("c1")}
     for expected in ("platform_usage", "list_platform_connections", "table_popularity",
-                     "answer_accuracy", "platform_runs", "investigation_cadence"):
+                     "answer_accuracy", "platform_runs", "investigation_cadence",
+                     "platform_traces", "platform_audit"):
         assert expected in names

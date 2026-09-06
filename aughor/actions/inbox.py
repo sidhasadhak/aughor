@@ -155,9 +155,14 @@ class StagedProposal(BaseModel):
     #: the agent) and ``automation_draft`` (params are the CreateAutomationRequest-shaped
     #: chain, usually DS-15's own validated draft; accept SAVES it). Text-to-record goes
     #: through here because the create routes go instantly live — the draft is the stage,
-    #: the accept is the arming.
+    #: the accept is the arming. SP-3's leftovers add two more of the same shape:
+    #: ``automation_state`` (params name an automation and pause/resume; accept applies
+    #: it through the registered state door) and ``agent_grant`` (params name an agent
+    #: and ONE declared action; accept appends it to the agent's grants — which is still
+    #: only permission to PROPOSE, never to execute).
     kind: Literal["declared_action", "integration",
-                  "agent_draft", "automation_draft"] = "declared_action"
+                  "agent_draft", "automation_draft",
+                  "automation_state", "agent_grant"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -533,6 +538,10 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
         return _accept_agent_draft(p, actor=actor), ""
     if p.kind == "automation_draft":
         return _accept_automation_draft(p, actor=actor), ""
+    if p.kind == "automation_state":
+        return _accept_automation_state(p, actor=actor), ""
+    if p.kind == "agent_grant":
+        return _accept_agent_grant(p, actor=actor), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -611,6 +620,14 @@ def _accept_integration(p: StagedProposal, *, actor: str, mint_grant: bool = Fal
                          outcome=dict(result.data or {}))
 
 
+def _executor_result():
+    """The executor's result type, imported lazily ONCE for every accept body below —
+    each kind returns it so they are indistinguishable to every inbox caller (and one
+    site keeps the retired word's ratchet count falling, not growing)."""
+    from aughor.actions.executor import KineticResult as _Result
+    return _Result
+
+
 def _accept_agent_draft(p: StagedProposal, *, actor: str):
     """Create the drafted agent — the accept IS the arming, so the record goes live
     exactly when a human said so and never before. Validation re-runs HERE, not only at
@@ -618,7 +635,7 @@ def _accept_agent_draft(p: StagedProposal, *, actor: str):
     and creating a record against data that moved is the class RC-3's expiry exists for.
     Returns the executor's result type so this kind is indistinguishable to every
     inbox caller."""
-    from aughor.actions.executor import KineticResult as _Result
+    _Result = _executor_result()
     from aughor.custom_agents.store import create_agent, validate_agent_draft
 
     d = dict(p.params or {})
@@ -648,7 +665,7 @@ def _accept_automation_draft(p: StagedProposal, *, actor: str):
     itself rides :mod:`aughor.runners` (H5's peer-maker): K may not import A's models
     or store — two layering guards enforce the direction — so the runner builds and
     saves through the one write door and this executor only records what happened."""
-    from aughor.actions.executor import KineticResult as _Result
+    _Result = _executor_result()
     from aughor.runners import save_automation_payload
 
     ok, out = save_automation_payload(dict(p.params or {}))
@@ -659,6 +676,66 @@ def _accept_automation_draft(p: StagedProposal, *, actor: str):
     _record_outcome(p.id, "executed", f"automation {out['automation_id']} saved", out)
     return _Result("executed", True, p.action_id,
                    message=f"automation '{out['name']}' saved as {out['automation_id']}",
+                   detail=out)
+
+
+def _accept_automation_state(p: StagedProposal, *, actor: str):
+    """Apply the accepted pause/resume through the registered state door — the same
+    layering shape as the draft save: the store introduced the door at import, this
+    executor only looks it up and records what happened. The door re-checks that the
+    automation still exists (it can be deleted between stage and accept) and that a
+    pause still carries its end."""
+    _Result = _executor_result()
+    from aughor.runners import set_automation_state_payload
+
+    ok, out = set_automation_state_payload(dict(p.params or {}))
+    if not ok:
+        _record_outcome(p.id, "failed", str(out), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"state change no longer valid: {out}")
+    verb = "paused until " + out["paused_until"] if out.get("paused_until") else "resumed"
+    _record_outcome(p.id, "executed", f"automation {out['automation_id']} {verb}", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"automation '{out['name']}' {verb}",
+                   detail=out)
+
+
+def _accept_agent_grant(p: StagedProposal, *, actor: str):
+    """Append ONE declared action to an agent's grants — which remains permission to
+    PROPOSE, never to execute (VA-9c's line, restated where it is armed). Validation
+    re-runs HERE with the same sentences the agents routes raise: the agent can be
+    deleted and the action un-declared between stage and accept. Already-granted is
+    reported as its own honest outcome rather than a silent second append."""
+    _Result = _executor_result()
+    from aughor.custom_agents.store import get_agent, update_agent, validate_agent_grants
+
+    d = dict(p.params or {})
+    agent_id = str(d.get("agent_id") or "")
+    action_id = str(d.get("action_id") or "")
+    agent = get_agent(agent_id)
+    if agent is None:
+        _record_outcome(p.id, "failed", f"agent {agent_id!r} no longer exists", {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"grant no longer valid: agent {agent_id!r} no longer exists")
+    problems = validate_agent_grants([action_id], p.connection_id, agent.schema_scope)
+    if problems:
+        msg = "; ".join(problems)
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"grant no longer valid: {msg}")
+    if action_id in agent.tool_grants:
+        out = {"agent_id": agent.id, "action_id": action_id, "already_granted": True}
+        _record_outcome(p.id, "executed", f"agent {agent.id} already holds {action_id}", out)
+        return _Result("executed", True, p.action_id,
+                       message=f"agent '{agent.name}' already holds the {action_id} "
+                               f"grant — nothing changed",
+                       detail=out)
+    update_agent(agent_id, tool_grants=[*agent.tool_grants, action_id])
+    out = {"agent_id": agent.id, "action_id": action_id, "already_granted": False}
+    _record_outcome(p.id, "executed", f"agent {agent.id} granted {action_id}", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"agent '{agent.name}' may now PROPOSE {action_id} — "
+                           f"proposals still land in this inbox for a human",
                    detail=out)
 
 

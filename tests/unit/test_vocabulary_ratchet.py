@@ -394,7 +394,10 @@ BASELINE: dict[str, int] = {
     # 2026-09-02: 358 → 348. api.ts joined the exempt list (every hit is a frozen wire
     # literal — the `kinetic_action` kind, the `kinetic_inbox` source, the
     # `/ontology/kinetic-actions` route), which removed its ten counted hits.
-    "kinetic": 348,
+    # 2026-09-06: 348 → 347. SP-1/SP-3 leftovers: the inbox's four accept bodies now
+    # share ONE lazy import of the executor's result type (`_executor_result`), so
+    # two new accept kinds arrived while the count still fell by one.
+    "kinetic": 347,
     "mindsdb": 0,
     "palantir": 6,
     "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history

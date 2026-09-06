@@ -31,6 +31,28 @@ export async function getConnections(): Promise<Connection[]> {
   return res.json();
 }
 
+// SP-3/SP-4 — the per-user settings store. Stored preferences follow the USER across
+// browsers and sessions; localStorage is only this device's paint-before-fetch cache.
+export interface MyPreferences {
+  user: string;
+  preferences: Record<string, string>;
+}
+
+export async function getMyPreferences(): Promise<MyPreferences> {
+  const res = await fetch(`${getApiBase()}/me/preferences`);
+  if (!res.ok) throw new Error("Failed to fetch preferences");
+  return res.json();
+}
+
+export async function putMyPreference(key: string, value: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/me/preferences/${encodeURIComponent(key)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ value }),
+  });
+  if (!res.ok) throw new Error("Failed to store preference");
+}
+
 export interface DemoSeedResult {
   /** The demo connection's id — present whether or not this call created it. */
   id: string;

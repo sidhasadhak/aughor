@@ -846,10 +846,12 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
         ToolSpec(
             name="platform_help",
             description=(
-                "How Aughor itself works — connecting a warehouse, exploration, "
+                "What Aughor's pieces ARE — connecting a warehouse, exploration, "
                 "briefings, analysis modes, monitors, packs, governance. Use for "
-                "questions about the PRODUCT ('what can you do', 'how do I connect "
-                "Snowflake'), never for questions about the data."
+                "concept questions about the PRODUCT ('what can you do', 'what is a "
+                "briefing'), never for questions about the data. For a 'how do I…' "
+                "walkthrough grounded in this deployment's live state, use "
+                "platform_guide."
             ),
             parameters=_HELP_PARAMS,
             run=lambda a: platform_help(connection_id, a),

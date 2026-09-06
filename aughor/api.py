@@ -747,6 +747,7 @@ from aughor.routers import (
     components,
     cron,
     preferences,
+    spotlight,
     system,
     agents,
     lifecycle,
@@ -845,3 +846,4 @@ app.include_router(hooks.router)        # DS-17 — the inbound webhook door (ow
 app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log
 app.include_router(control_room.router)  # Wave CR3/CR4 — fleet overview + needs-a-human (views only)
 app.include_router(preferences.router)  # SP-3 — per-user cosmetic preferences (theme/density; the arc's one new store)
+app.include_router(spotlight.router)    # SP-5 — the declared Spotlight roster for out-of-process transports (MCP)

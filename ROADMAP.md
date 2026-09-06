@@ -2452,7 +2452,22 @@ sentence — numbers, units and honesty clauses already worded, built from the S
 locals as the fields so the two cannot disagree — and every description instructs:
 quote it verbatim, never re-derive. Also closed in passing: `cost_is_complete` now
 requires zero unpriced AND zero usage-less calls (it keyed on unpriced alone).
-Remaining for the wave: trace/audit lookup tools · the unified audit read.
+**✅ WAVE CLOSED 2026-09-06 — the trace/audit leftovers built.** Two more reads:
+`platform_traces` (recent runs from the session ledger via `recent_sessions`, or one
+run's anatomy via `recover_session` + the trace summary — step counts, timing,
+models, slowest steps, error classes) and `platform_audit` (the unified feed —
+`govern.audit_categories.feed` IS the aggregator the census asked for, already
+merging every sink with tenant scoping inside; the tool adds only the
+conversation-shaped cap and the honesty line that it is a recency feed, never a
+total). Custody line drawn where §6.4 draws it: the trace tool is METADATA ONLY —
+span inputs/outputs are the audited read on the Traces page, and the tool cannot
+express the request (the binding law applied to depth; it also keeps the
+conversational read from silently skipping the `trace.payload_access` audit the
+route performs). An absent trace is reported as "does not exist or belongs to
+another org — the two look identical from this side." Receipt drive on throwaway
+stores, real writers only (`session_log.emit` under `bind_trace`): listing counted
+2 runs / 1 not ok, the anatomy quoted the guard-refusal error class, the ghost
+lookup refused honestly, the audit feed carried the seeded model call.
 
 #### SP-2 · The summon — ✅ FIRST CUT BUILT 2026-09-06
 
@@ -2542,11 +2557,48 @@ disclosure reaches the APPROVER's reasoning; accept creates / reject byte-identi
 second accept `already_resolved`; accept re-validates moved data; a stale automation
 draft refused with its reason; roster wiring). Neighbor guards green (kinetic,
 grants, agents, hermeticity, prose/binding/flag ratchets). `gen:api` regenerated.
-**Open in the wave:** grant/pause/resume proposals · web consumption of the settings
-store (theme still client-local until the shell reads `/me/preferences`) · the live
-chat receipt (the origin sentence end-to-end) post-merge.
+**✅ LIVE RECEIPT 2026-09-06 (post-merge #453, API restarted):** the prefs door live
+(`PUT /me/preferences/theme` → dark); the arc's ORIGIN SENTENCE driven through the
+product's own chat — and the model MEASURED THE PREMISE FIRST: three Know reads found
+the target connection's orders are US-only (no DE rows exist) and it DECLINED to
+draft a false-premise agent, offering grounded alternatives; on confirmation
+`draft_agent` staged live (pending in the real inbox, empty-docs disclosure spoken —
+the approval left to the human, which is the design), and `draft_automation` relayed
+DS-15's considered refusal verbatim (no brief-delivery effect on this deployment —
+the doors law working). One wobble for the record: the draft's name/instructions
+echoed the earlier per-country frame after the user had agreed to overall scope —
+recommend reject and restage when a draft's params outlive the frame they were
+negotiated under. ⚠️ `GET /kinetic-actions/inbox` defaults to the BUILTIN
+connection — pass `?connection_id=…` when checking for staged rows.
+**✅ Web reads the settings store (2026-09-06, with SP-4):** the shell consults
+`GET /me/preferences` on load (localStorage paints first, the store wins and re-caches)
+and the Settings toggle writes through `PUT /me/preferences/theme` — a theme set from
+chat, another browser, or Spotlight follows the user here on next load. Theme is no
+longer client-local.
+**✅ WAVE CLOSED 2026-09-06 — grant/pause/resume + the live flip built.** Two Act
+tools: `pause_or_resume_automation` (a pause always carries its end — an endless
+mute is disabling, a different act; resume clears it) and `propose_agent_grant`
+(ONE declared action onto an agent's grant list — a grant is permission to
+PROPOSE, never to execute, and the reasoning the approver reads says so). Both
+stage as two more kinds on the ONE inbox (`automation_state`, `agent_grant`);
+accepts apply through the second registered runners door
+(`runners/automation_state.py` — the layering guards' shape, reused) and the ONE
+grant-validation body (`custom_agents/store.validate_agent_grants`, extracted from
+the agents routes so stage, accept and the 422 path speak identical sentences —
+the two-site drift class, closed the way SP-3 closed it for drafts). The write's
+TARGET is bound too: an automation on another connection is refused with its home
+named. The vocabulary ratchet came out one UNDER baseline (347): the inbox's four
+accept bodies now share one lazy import of the executor's result type, so two new
+kinds arrived while the count fell. And the live flip: `useAughorChat` announces a
+finished turn (one hook, every chat surface — panel, /chat, the ⌘K overlay), the
+shell re-reads stored preferences and applies a changed theme without a reload;
+proven in-browser against the live store read-only (DOM drifted, event fired,
+stored value won and re-cached). Receipt drive on throwaway stores: pause staged →
+byte-identical until accept → applied with its end; resume cleared it; the grant
+appended exactly at accept; a deleted automation refused at accept with its
+sentence. **Open in the wave:** nothing.
 
-#### SP-4 · The Guide limb
+#### SP-4 · The Guide limb — ✅ FIRST CUT BUILT 2026-09-06
 
 The curated corpus becomes real and served: KI's SKILL.md lane feeds it; answers ground
 in the registry (what THIS deployment offers — a door the deployment cannot open is
@@ -2555,14 +2607,70 @@ lately); every guidance answer ends in an offered, staged act. **Receipt:** "how
 I create an agent?" yields the real four steps, cites the asker's own agents and their
 eval results, and offers the draft.
 
-#### SP-5 · One roster, every door
+**Built (first cut):** `aughor/agent/spotlight_guide.py` — one tool on the converse
+roster (`platform_guide`), four walkthroughs: creating an agent, creating an
+automation, connecting data, appearance. The split with the concept tool is stated on
+both descriptions (concepts stay with `platform_help`; how-do-I comes here), so the
+router routes by the same claims from either side. Three laws hold per topic: the
+steps are the PRODUCT's — the agent walkthrough quotes the create flow's own stepper
+(Start · Scope · Define · Prove · Reach), the empty-docs trap taught in the Define
+step in the flow's own words; the grounding is live and honest about failure — the
+asker's agents each carry their evaluation state in the eval-basis vocabulary (a
+stale pass chip is named as measured on a configuration that no longer runs, never
+presented as current), the automation topic reads the REAL clock (a stopped clock is
+disclosed before a schedule is implied — DS-17's alt-door honesty) and the trailing
+error count, and a failed store read reports itself unavailable rather than posing as
+an empty deployment; and every walkthrough ends in an offered act from the Act
+roster — `draft_agent`, `draft_automation`, `set_preference` — except connect_data,
+which offers a page and says why (credentials are a person's to type, never a model's
+to relay; no chat door exists, deliberately). An unknown topic answers with the topic
+list, never a guessed walkthrough. Every result carries the pre-composed `summary`
+built from the same locals as its fields (SP-1's hardening, inherited at birth).
+**Receipts:** `tests/unit/test_spotlight_guide.py` (11 — alias resolution; unknown
+topic lists, never guesses; every offered tool exists on the live converse roster;
+the asker's agents cited with pass counts, never-evaluated and stale states worded
+distinctly; a failed grounding read is "could not be read", not "0 agents"; the
+stopped clock disclosed; stored preferences quoted; the stepper stations present;
+staging taught before scheduling; roster wiring). Prose/vocabulary ratchets green.
+**Open in the wave:** deeper corpus service (searching SKILL.md-fed pack prose from
+inside the guide, beyond naming the door) · the live chat receipt post-merge.
+
+#### SP-5 · One roster, every door — ✅ FIRST CUT BUILT 2026-09-06
 
 The converse and MCP rosters unify into one declared registry with two transports;
 Slack summon rides RC-5. **Receipt:** the same staged-proposal flow driven from Slack
 and from an external MCP client; a diff of the two rosters returns empty and is
 ratcheted so it stays empty.
 
-#### SP-6 · Red team, then proact
+**Built (first cut):** the census settled half the wave before any code — **Slack
+already summons the one brain** (the bot service drives the same `POST /ask` every
+chat surface drives, so the whole Spotlight roster, staged proposals included, is
+reachable from Slack by construction), and MCP's `ask` tool likewise. What was
+genuinely missing was DIRECT tool parity, and one-writer-per-`data/` is what shaped
+it: the MCP server is a separate process, so its Spotlight tools must not open the
+stores. The declaration is now ONE function (`agent/spotlight_roster.py` — Know 9 ·
+Act 5 · Guide 1), and every consumer derives from it: converse concatenates it (as
+before, connection bound by closure); two new routes serve it as the out-of-process
+transport seam (`GET /spotlight/tools` lists the declaration — names, descriptions,
+parameter schemas; `POST /spotlight/tools/{tool}` dispatches one call into the same
+bodies conversation runs, auth'd by the API's normal front door, deliberately NOT an
+exempt prefix); and the MCP server registers one tool per declared entry at startup
+(`register_spotlight_tools`, mirroring the automations pattern — never fatal,
+collision-skipped, `--no-spotlight` to opt out), each call riding the route back
+into the one process that owns the stores. Custody rides the roster, not the
+transport: an MCP client's Act call can only stage into the same inbox.
+**Receipts:** `tests/unit/test_spotlight_roster_parity.py` (7) — the parity ratchet
+the wave named: conversation carries exactly the declaration (names AND
+descriptions — the routing policy); the HTTP listing diffs empty against it; the
+real registration function driven over the real listing payload registers exactly
+it (declared descriptions led with verbatim; a name collision skipped, never
+shadowed); the dispatch door runs the same bodies, refuses an unknown tool naming
+the roster, and relays a raising tool as a refusal.
+**Open in the wave:** native per-parameter schemas on the MCP side (arguments
+travel as one `args` object today, schema rendered into the description) · the
+live drives (a staged proposal from Slack and from an external MCP client).
+
+#### SP-6 · Red team, then proact — ✅ FIRST CUT BUILT 2026-09-06 (red team held first, in-branch)
 
 An adversarial pass seeds hostile content into logs, agent names, document text —
 every hole becomes a refusal test in the permanent corpus (EX-9's pattern, arc-wide).
@@ -2570,6 +2678,37 @@ Only after it holds: evidence-backed proposals ("this automation failed four Mon
 running — fix its schedule?") that cite their evidence rows and never auto-apply.
 **Receipt:** the attack corpus IS the test file; one proactive proposal accepted by a
 real user with its evidence chain in the record.
+
+**Built (first cut, red team first as the wave orders):**
+`tests/unit/test_spotlight_redteam.py` is the PERMANENT corpus — instruction
+overrides, fake system/tool framing, exfiltration nudges, SQL-shaped names, and
+10 KB bulk, seeded through the REAL writers (ledger emits under a bound trace, real
+automation and agent records) and driven through the roster. What it pins is what a
+unit test can enforce: hostile content comes back as DATA, clipped
+(`agent/spotlight_text.py` — every name Spotlight interpolates and every free-text
+field it relays now rides one clip; the corpus forced that helper into existence
+across the Know, Act and Guide modules); no attack string changes custody (hostile
+automation references are clean clipped refusals, hostile preference keys/values
+die at the closed registry, hostile reasoning is truncated before an approver reads
+it); every result is size-bounded; and the whole Know roster leaves the inbox
+untouched over hostile data — a read that staged would be the EchoLeak shape. What
+a unit test cannot enforce — whether a model OBEYS relayed text — stays on the
+transport's structure (tool results ride the provider's tool-role channel) and the
+live drives this corpus seeds. THEN the proact half, held to its law:
+`platform_premortem`, a Know read whose findings are deterministic and
+evidence-backed — automations erroring N runs in a row (evidence: the run rows,
+with reasons), agents with zero documents (the sees-less trap), unpriced spend
+(the cost-floor clause) — each finding carrying the roster offer that addresses it
+(`pause_or_resume_automation` for a streak; an honest page pointer where no chat
+door exists), and the tool NEVER applies anything: the receipt pins that a sweep
+stages zero proposals, and an unreadable store reports itself, never a clean bill.
+**Receipts:** the corpus file (9) + two premortem receipts in
+`test_spotlight_tools.py` (streak flagged with run-row evidence and the pause
+offer; zero-doc agent flagged with the honest no-tool offer; a broken store is
+"not a clean bill of health", never silence).
+**Open in the wave:** the LIVE half of the receipt — one proactive proposal
+accepted by a real user with its evidence chain in the record — and periodic live
+red-team drives feeding new corpus entries.
 
 **Traps this arc must not re-pay:** the built-and-inert plane (the popularity flag is
 sitting in it right now) · the god-roster (500 tools, no topics — routing collapses and
@@ -2869,24 +3008,46 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         Census done in-draft; the user's 4-question acceptance suite is green
         on substrate. SP-1 taken first at the user's direction.
         SP-0 ✅ census (in §3.11 itself; re-verify per wave)
-        SP-1 ✅ BUILT 2026-09-05 · LIVE 2026-09-06 — six org-level reads in the
-             converse roster; live drive found 2 real defects (automation count
-             ~16× under via row-scan cap; tables misroute to warehouse SQL over
-             correct tool data), BOTH FIXED same day at the store / the routing
-             policy. Open: trace/audit tools
+        SP-1 ✅ COMPLETE 2026-09-06 — six org-level reads BUILT 09-05, LIVE 09-06
+             (live drive found 2 real defects — automation count ~16× under via
+             row-scan cap; tables misroute to warehouse SQL — both fixed same
+             day); trace/audit leftovers closed 09-06: platform_traces (runs +
+             one run's anatomy, metadata only — span payloads stay behind the
+             audited read) and platform_audit (the unified recency feed over
+             every governance sink). Nine reads with SP-6's premortem.
         SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
              in the overlay (same /ask door, quick-pinned); surface context
-             threaded end-to-end, sanitized. Open: registry async shape,
-             in-context handles, live receipt
-        SP-3 ✅ FIRST CUT BUILT 2026-09-06 — set_preference applies instantly
-             (user_prefs store, closed registry); draft_agent/draft_automation
-             stage as two new kinds on the ONE inbox; accept re-validates then
-             creates, reject byte-identical. Open: grant/pause/resume proposals,
-             web reads the settings store, live chat receipt
-        SP-4 Guide (serve the corpus KI's SKILL.md lane now feeds; answers end
-             in an offered act)
-        SP-5 one roster, every door (converse ∪ MCP unified; Slack via RC-5)
-        SP-6 red-team corpus, THEN evidence-backed proactive proposals
+             threaded end-to-end, sanitized. In-browser receipt done (the user
+             drove ⌘K live). Open: registry async shape, in-context handles,
+             latency measurement
+        SP-3 ✅ COMPLETE 2026-09-06 · LIVE RECEIPT DONE (the origin sentence
+             driven; the model measured the premise and declined a
+             false-premise draft; agent draft staged pending in the real inbox)
+             — set_preference applies instantly (user_prefs store, closed
+             registry); draft_agent/draft_automation/pause-resume/agent-grant
+             stage as four kinds on the ONE inbox; accept re-validates then
+             applies through registered doors, reject byte-identical; the web
+             shell reads the settings store AND re-reads it when a chat turn
+             ends, so a theme switched in conversation is visible without a
+             reload. Nothing open in the wave.
+        SP-4 ✅ FIRST CUT BUILT 2026-09-06 — platform_guide: four grounded
+             walkthroughs (agent · automation · connect · appearance), steps
+             quoted from the product's own flows, live grounding honest about
+             failure, every answer ending in an offered staged act. Open:
+             corpus search over pack prose, live receipt
+        SP-5 ✅ FIRST CUT BUILT 2026-09-06 — the roster declared ONCE
+             (spotlight_roster: Know 9 · Act 5 · Guide 1); Slack + palette +
+             chat already rode /ask; MCP now registers the same declaration at
+             startup through the new /spotlight transport routes (stores stay
+             behind their one writer); parity ratchet holds the diff at empty.
+             Open: native MCP parameter schemas, live Slack/MCP drives
+        SP-6 ✅ FIRST CUT BUILT 2026-09-06 — the red-team corpus is a permanent
+             test file (hostile content through real writers; data-not-
+             instructions pinned; clips forced into every interpolation site;
+             reads stage nothing), and it held BEFORE the proact half landed:
+             platform_premortem, deterministic evidence-backed findings with
+             roster offers, never self-applying. Open: the live accepted-
+             proposal receipt, periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
 ```
 

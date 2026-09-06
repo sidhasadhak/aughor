@@ -88,6 +88,17 @@ export function useAughorChat({
         }),
         onError: (e) => onErrorRef.current?.(e),
         onData: (part) => onDataRef.current?.(part),
+        // SP-3/SP-4 — a finished turn may have changed the caller's stored
+        // preferences (Spotlight's set_preference applies at the store). The shell
+        // listens for this and re-reads /me/preferences, so "switch to dark mode"
+        // said in ANY chat surface — panel, /chat, the ⌘K overlay — is visible
+        // without a reload. An event, not an import: every chat surface drives
+        // this one hook, and the shell owns the theme.
+        onFinish: () => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("aughor:turn-complete"));
+          }
+        },
       }),
     [connectionId, sessionId],
   );

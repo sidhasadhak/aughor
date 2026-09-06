@@ -163,6 +163,23 @@ class AughorClient:
         tools = payload.get("tools") if isinstance(payload, dict) else payload
         return list(tools or [])
 
+    # ── SP-5: the Spotlight roster, one declaration for every transport ─────────
+    async def list_spotlight_tools(self) -> list[dict]:
+        """The declared Spotlight roster (name/description/parameters), read at
+        server start — the MCP transport registers FROM the declaration, never a
+        hand-kept copy, which is what keeps the parity diff empty."""
+        payload = await self._get("/spotlight/tools")
+        tools = payload.get("tools") if isinstance(payload, dict) else payload
+        return list(tools or [])
+
+    async def call_spotlight_tool(self, name: str, *, connection: str = "",
+                                  args: Optional[dict] = None) -> Any:
+        """One Spotlight call through the API — the stores stay behind their one
+        writer; this process never opens them."""
+        return await self._post(f"/spotlight/tools/{name}",
+                                json_body={"connection_id": connection,
+                                           "args": dict(args or {})})
+
     async def run_automation(self, automation_id: str) -> dict:
         """Fire one automation through the SAME route the web app's "Run now" uses.
 
