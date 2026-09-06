@@ -44,6 +44,8 @@ def test_platform_usage_windows_the_read_and_totals_the_rollup(monkeypatch):
     kw = stub.calls[0]
     assert kw["since"] and kw["kind"] and kw["limit"] == spot._USAGE_SCAN
     assert {g["model"] for g in out["groups"]} == {"m:free", "b:free"}
+    # The quotable sentence carries the same numbers as the fields (one set of locals).
+    assert "2 model calls" in out["summary"] and "165 tokens" in out["summary"]
 
 
 def test_platform_usage_cost_honesty_travels(monkeypatch):
@@ -55,6 +57,7 @@ def test_platform_usage_cost_honesty_travels(monkeypatch):
     out = spot.platform_usage({})
     assert out["unpriced_calls"] == 1
     assert out["cost_is_complete"] is False
+    assert "FLOOR" in out["summary"] and "USD" in out["summary"]
 
 
 def test_platform_usage_refuses_an_unknown_axis(monkeypatch):
@@ -90,6 +93,8 @@ def test_platform_runs_counts_both_planes(monkeypatch):
     assert out["automation_runs"]["total"] == 10_646
     assert out["automation_runs"]["by_outcome"]["fired"] == 83
     assert len(asked["floor"]) == 10  # a YYYY-MM-DD day floor reached the store
+    assert "succeeded" in out["summary"] and "10,646 total" in out["summary"]
+    assert "fired 83" in out["summary"]
 
 
 def test_cadence_lists_zero_months_and_averages_over_all_of_them():
@@ -102,6 +107,8 @@ def test_cadence_lists_zero_months_and_averages_over_all_of_them():
         p["started"] > 0 for p in out["series"])       # zero months present, not omitted
     total = sum(p["started"] for p in out["series"])
     assert out["monthly_average"] == round(total / 3, 1)
+    assert "per month on average" in out["summary"]
+    assert str(out["monthly_average"]) in out["summary"]
 
 
 # ── answer_accuracy — Q2, the sample-size honesty ──────────────────────────────────
@@ -114,6 +121,8 @@ def test_accuracy_with_no_gradings_says_there_is_no_number(monkeypatch):
     out = spot.answer_accuracy("c1", {})
     assert out["graded_total"] == 0 and out["acceptance_rate"] is None
     assert "no graded verdicts yet" in out["caveat"]
+    assert "No graded verdicts yet" in out["summary"]
+    assert "not low accuracy" in out["summary"]
 
 
 def test_accuracy_thin_sample_carries_the_caveat(monkeypatch):
@@ -126,6 +135,7 @@ def test_accuracy_thin_sample_carries_the_caveat(monkeypatch):
     out = spot.answer_accuracy("c1", {})
     assert out["acceptance_rate"] == 0.8 and out["graded_total"] == 5
     assert "only 5 graded" in out["caveat"]
+    assert "80.0%" in out["summary"] and "only 5 graded" in out["summary"]
     assert len(out["recent_weeks"]) == spot._MAX_TREND_WEEKS  # trend capped
     assert out["trusted_queries"] == 3
 
@@ -137,6 +147,7 @@ def test_popularity_empty_store_reports_not_mined_not_unpopular(tmp_path, monkey
     out = spot.table_popularity("conn-x", {})
     assert out["mined"] is False
     assert "not mined yet" in out["answer"]
+    assert "not mined yet" in out["summary"]
     assert "cannot be filtered to a date window" in out["scope"]
 
 
@@ -155,6 +166,8 @@ def test_popularity_mined_counts_rank_and_cap(tmp_path, monkeypatch):
     # quotable — the two halves of the live-drive misroute, closed.
     assert out["distinct_tables"] == 3
     assert "cannot be filtered to a date window" in out["scope"]
+    assert "cannot be filtered to a date window" in out["summary"]
+    assert "3 distinct tables" in out["summary"] and "refunds (55)" in out["summary"]
 
 
 # ── the roster itself ──────────────────────────────────────────────────────────────

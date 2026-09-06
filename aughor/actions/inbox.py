@@ -1,6 +1,6 @@
 """Wave A4 — the resolve-once proposal inbox (program doc J1).
 
-Wave K4 produces proposals as a live-only dataclass (``kinetic/propose.py``): the model proposes a
+Wave K4 produces proposals as a live-only dataclass (``actions/propose.py``): the model proposes a
 declared action, the proposal is dry-run validated, and then it dies with the HTTP response — a human
 never gets to accept it later, and a restart forgets it entirely. This module makes a proposal a
 **durable, resolve-once** record:
@@ -16,7 +16,7 @@ never gets to accept it later, and a restart forgets it entirely. This module ma
   graduated-approval act, so :func:`accept_proposal` runs the executor with ``approved=True`` — which
   bypasses the *approval gate only*. Submission criteria still run (they are step 2 of the executor,
   before approval at step 3), so an accept can never push a value the criteria reject. Unattended
-  auto-allow is the standing-grant's job (``kinetic/grants.py``), not the inbox's.
+  auto-allow is the standing-grant's job (``actions/grants.py``), not the inbox's.
 
 * **Pending is bounded (RC-3).** A proposal freezes its *params* at stage time; it cannot freeze the
   world those params were reasoned about. An unbounded pending row is therefore an irreversible
@@ -150,8 +150,14 @@ class StagedProposal(BaseModel):
     #: DS-11 and is the default, so a row from an older release reads correctly with no
     #: backfill: `action_id` names a declared action on `connection_id`'s ontology.
     #: ``integration`` means `action_id` names a declared OPERATION and `grant_id` names
-    #: the vault Connection whose consent it spends.
-    kind: Literal["declared_action", "integration"] = "declared_action"
+    #: the vault Connection whose consent it spends. SP-3 adds the two PLATFORM-RECORD
+    #: drafts: ``agent_draft`` (params are the agent's authoring payload; accept CREATES
+    #: the agent) and ``automation_draft`` (params are the CreateAutomationRequest-shaped
+    #: chain, usually DS-15's own validated draft; accept SAVES it). Text-to-record goes
+    #: through here because the create routes go instantly live — the draft is the stage,
+    #: the accept is the arming.
+    kind: Literal["declared_action", "integration",
+                  "agent_draft", "automation_draft"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -462,6 +468,8 @@ def gov_action_of(p: StagedProposal) -> str:
         op = get_operation(p.action_id)
         if op is not None:
             return op.gov_action
+    if p.kind in ("agent_draft", "automation_draft"):
+        return f"spotlight.{p.kind}"
     return f"kinetic.{p.action_id}"
 
 
@@ -487,7 +495,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
     the approval gate, never the criteria). A second accept resolves zero rows and returns a
     ``KineticResult('already_resolved', ...)`` — never a second dispatch. When ``mint_grant`` and the
     action is single-target eligible, a target-bound standing grant is minted so future UNATTENDED
-    executions of this exact target auto-allow (``kinetic/grants.py``).
+    executions of this exact target auto-allow (``actions/grants.py``).
 
     Returns ``(KineticResult, grant_id_or_empty)``.
     """
@@ -521,6 +529,10 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
     # accept EXECUTES differs, which is the smallest seam the two kinds can meet at.
     if p.kind == "integration":
         return _accept_integration(p, actor=actor, mint_grant=mint_grant), ""
+    if p.kind == "agent_draft":
+        return _accept_agent_draft(p, actor=actor), ""
+    if p.kind == "automation_draft":
+        return _accept_automation_draft(p, actor=actor), ""
 
     action = _load_action(p.connection_id, p.schema_name, p.action_id)
     if action is None:
@@ -597,6 +609,57 @@ def _accept_integration(p: StagedProposal, *, actor: str, mint_grant: bool = Fal
     return KineticResult(status, result.ok, p.action_id,
                          message=(result.message or ("" if result.ok else status)) + note,
                          outcome=dict(result.data or {}))
+
+
+def _accept_agent_draft(p: StagedProposal, *, actor: str):
+    """Create the drafted agent — the accept IS the arming, so the record goes live
+    exactly when a human said so and never before. Validation re-runs HERE, not only at
+    stage time: documents can be deleted and connections removed between the two acts,
+    and creating a record against data that moved is the class RC-3's expiry exists for.
+    Returns the executor's result type so this kind is indistinguishable to every
+    inbox caller."""
+    from aughor.actions.executor import KineticResult as _Result
+    from aughor.custom_agents.store import create_agent, validate_agent_draft
+
+    d = dict(p.params or {})
+    problems = validate_agent_draft(
+        name=d.get("name"), instructions=d.get("instructions"),
+        connection_id=p.connection_id, doc_ids=d.get("doc_ids") or [])
+    if problems:
+        msg = "; ".join(problems)
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    agent = create_agent(
+        str(d.get("name") or ""), instructions=str(d.get("instructions") or ""),
+        connection_id=p.connection_id, schema_scope=str(d.get("schema_scope") or ""),
+        doc_ids=list(d.get("doc_ids") or []), owner=p.org_id)
+    outcome = {"agent_id": agent.id, "name": agent.name}
+    _record_outcome(p.id, "executed", f"agent {agent.id} created", outcome)
+    return _Result("executed", True, p.action_id,
+                   message=f"agent '{agent.name}' created as {agent.id}",
+                   detail=outcome)
+
+
+def _accept_automation_draft(p: StagedProposal, *, actor: str):
+    """Save the drafted chain through the ONE write path (`upsert_automation`), whose
+    integrity refusals (cycles) and the model's own validation both land as a failed
+    outcome with the refusal verbatim — never a crash, never a silent save. The save
+    itself rides :mod:`aughor.runners` (H5's peer-maker): K may not import A's models
+    or store — two layering guards enforce the direction — so the runner builds and
+    saves through the one write door and this executor only records what happened."""
+    from aughor.actions.executor import KineticResult as _Result
+    from aughor.runners import save_automation_payload
+
+    ok, out = save_automation_payload(dict(p.params or {}))
+    if not ok:
+        _record_outcome(p.id, "failed", str(out), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {out}")
+    _record_outcome(p.id, "executed", f"automation {out['automation_id']} saved", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"automation '{out['name']}' saved as {out['automation_id']}",
+                   detail=out)
 
 
 def _owner_of(source: str) -> tuple[str, str]:

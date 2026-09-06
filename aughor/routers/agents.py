@@ -121,24 +121,14 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
 def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[str] = None,
                            connection_id: Optional[str] = None,
                            doc_ids: Optional[list] = None) -> None:
-    from aughor.custom_agents.models import INSTRUCTIONS_MAX, NAME_MAX
-    if name is not None and not (0 < len(name.strip()) <= NAME_MAX):
-        raise HTTPException(status_code=422, detail=f"name must be 1..{NAME_MAX} chars")
-    if instructions is not None and len(instructions) > INSTRUCTIONS_MAX:
-        raise HTTPException(status_code=422,
-                            detail=f"instructions exceed {INSTRUCTIONS_MAX} chars")
-    if connection_id:
-        from aughor.db.registry import BUILTIN_ID, list_connections
-        known = {c.get("id") for c in list_connections()} | {BUILTIN_ID}
-        if connection_id not in known:
-            raise HTTPException(status_code=422,
-                                detail=f"unknown connection '{connection_id}'")
-    if doc_ids:
-        from aughor.knowledge.indexer import get_document
-        missing = [d for d in doc_ids if get_document(d) is None]
-        if missing:
-            raise HTTPException(status_code=422,
-                                detail=f"unknown document id(s): {', '.join(missing)}")
+    # SP-3 extracted the body to the store (`validate_agent_draft`) so the create route
+    # and the draft-staging path check with ONE set of rules; this wrapper only turns
+    # problem sentences into the 422 the form renders.
+    from aughor.custom_agents.store import validate_agent_draft
+    problems = validate_agent_draft(name=name, instructions=instructions,
+                                    connection_id=connection_id, doc_ids=doc_ids)
+    if problems:
+        raise HTTPException(status_code=422, detail="; ".join(problems))
 
 
 def _validate_agent_packs(pack_ids: Optional[list]) -> None:
