@@ -44,6 +44,10 @@ dependencies = [
     "pytz>=2024.1",
     "mcp>=1.28.0",
     "ag-ui-protocol==0.1.19",
+    # VA-10: OIDC bearer verification (security/oidc.py). Already in the tree as a
+    # transitive dep — declared directly because we import it; [crypto] pins the
+    # RS256/ES256 signature backend (cryptography, also already a direct dep).
+    "pyjwt[crypto]>=2.9.0",
 ]
 
 [project.optional-dependencies]

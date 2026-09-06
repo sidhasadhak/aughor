@@ -47,6 +47,9 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/usage"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/usage/cost-sql"): P.ADMIN_MANAGE_BILLING,
     ("GET", "/audit/feed"): P.ADMIN_MANAGE_ORG,
+    # VA-10 — the admin view across users. Metadata only (§6.4: counts, costs, roles);
+    # it names users, so it sits with org administration, never the open-read floor.
+    ("GET", "/admin/users"): P.ADMIN_MANAGE_ORG,
     # Usage caps are governance POLICY: setting one changes what the org may spend, so the
     # writes sit with org administration — and the read sits beside them because a cap
     # list names subjects (user ids), which is more than the open-read floor should carry.

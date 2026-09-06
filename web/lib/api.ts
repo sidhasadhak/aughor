@@ -6178,6 +6178,32 @@ export async function getTrustedAssets(connectionId?: string): Promise<TrustedAs
   return res.json();
 }
 
+// ── VA-10: the admin view across users (metadata only, §6.4) ─────────────────
+
+export interface AdminUser {
+  user_id: string; roles: string[];
+  calls: number; failures: number; total_tokens: number;
+  cost_usd: number; cost_is_complete: boolean;
+  mean_ms: number; failure_rate: number;
+}
+export interface AdminUsers {
+  org_id: string;
+  users: AdminUser[];
+  total_calls: number;
+  unattributed_calls: number;
+  /** Fraction of calls that carry a user id — 0 means identity is not flowing. */
+  coverage: number;
+  identity_required: boolean;
+  oidc_configured: boolean;
+}
+
+/** Null on failure or when the caller lacks org administration — the section hides. */
+export async function getAdminUsers(): Promise<AdminUsers | null> {
+  const res = await fetch(`${getApiBase()}/admin/users`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 // ── MI-3: the dataset plane ──────────────────────────────────────────────────
 // Corpus size per kind and the measured distance to MI-4's entry gates. The gate
 // report is served, never computed client-side — §3.9 made the arc falsifiable by

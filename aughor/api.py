@@ -235,7 +235,12 @@ def _require_auth(request: Request, key: str | None = Security(_api_key_header))
         return
     principal = resolve_principal(request)
     if principal is None:
-        raise HTTPException(status_code=401, detail="identity required (missing X-Aughor-Org)")
+        from aughor.security import oidc
+        detail = ("identity required (present a valid OIDC bearer token; the "
+                  "X-Aughor-* header seam is disabled while an issuer is configured)"
+                  if oidc.configured()
+                  else "identity required (missing X-Aughor-Org)")
+        raise HTTPException(status_code=401, detail=detail)
     request.state.principal = principal
 
 
@@ -744,6 +749,7 @@ async def _start_automation_heartbeat() -> None:
 # ── Router registration ───────────────────────────────────────────────────────
 
 from aughor.routers import (
+    admin,
     components,
     cron,
     preferences,
@@ -815,6 +821,7 @@ app.include_router(metrics.router)
 app.include_router(actions.router)
 app.include_router(security.router)
 app.include_router(governance.router)
+app.include_router(admin.router)  # VA-10 — the cross-user view (metadata only, §6.4)
 app.include_router(query.router)
 app.include_router(monitors.router)
 app.include_router(semantic.router)

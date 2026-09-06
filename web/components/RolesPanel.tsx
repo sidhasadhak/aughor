@@ -2,8 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  getMyAccess, getRoleCatalogue, getRoleAssignments, assignRole, revokeRole,
-  type MyAccess, type RoleInfo, type RoleAssignment,
+  getAdminUsers, getMyAccess, getRoleCatalogue, getRoleAssignments, assignRole, revokeRole,
+  type AdminUsers, type MyAccess, type RoleInfo, type RoleAssignment,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
@@ -30,15 +30,18 @@ export function RolesPanel() {
   const [loading, setLoading] = useState(true);
   const [newUser, setNewUser] = useState("");
   const [newRole, setNewRole] = useState("viewer");
+  // VA-10 — the measured view: who the ledger and the role table know, with usage.
+  const [adminUsers, setAdminUsers] = useState<AdminUsers | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
 
   const canManage = !!me?.permissions.includes("admin.manage_roles");
 
   const load = useCallback(async () => {
-    const [m, cat] = await Promise.all([getMyAccess(), getRoleCatalogue()]);
+    const [m, cat, au] = await Promise.all([getMyAccess(), getRoleCatalogue(), getAdminUsers()]);
     setMe(m);
     setRoles(cat);
+    setAdminUsers(au);
     setAssignments(m?.permissions.includes("admin.manage_roles") ? await getRoleAssignments() : null);
     setLoading(false);
   }, []);
@@ -172,6 +175,50 @@ export function RolesPanel() {
           </div>
         )}
       </div>
+
+      {/* VA-10 — users, measured. Metadata only by design (§6.4): counts and costs
+          answer "is this deployment healthy"; reading anyone's prompts stays behind
+          the audited break-glass and has no door here. */}
+      {adminUsers && (
+        <div>
+          <div className="aug-label" style={{ marginBottom: 10 }}>Users · measured</div>
+          {adminUsers.total_calls > 0 && adminUsers.coverage === 0 && (
+            <div className="aug-fs-xs" style={{ color: "var(--amb4, #f59e0b)", marginBottom: 8, lineHeight: 1.5 }}>
+              None of the {adminUsers.total_calls} recorded calls carry a user —{" "}
+              {adminUsers.oidc_configured
+                ? "identity is configured but nothing authenticated yet."
+                : "identity attribution starts once OIDC is configured and callers present tokens."}
+            </div>
+          )}
+          {adminUsers.users.length === 0 ? (
+            <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+              No identified users yet — the ledger and the role table are both empty of names.
+            </div>
+          ) : (
+            <div style={{ borderRadius: "var(--r3)", border: "1px solid var(--b1)", overflow: "hidden" }}>
+              {adminUsers.users.map((u, i) => (
+                <div key={u.user_id} style={{
+                  display: "flex", alignItems: "center", gap: 10, padding: "8px 12px",
+                  background: "var(--bg-2)",
+                  borderTop: i === 0 ? "none" : "1px solid var(--b1)",
+                }}>
+                  <span className="aug-fs-sm" style={{ flex: 1, color: "var(--t1)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.user_id}</span>
+                  {u.roles.map(r => <Chip key={r} label={r} tint={ROLE_TINT[r]} />)}
+                  <span className="aug-fs-xs" style={{ color: "var(--t2)", fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>
+                    {u.calls} calls{u.cost_usd > 0 && <> · ${u.cost_usd.toFixed(2)}{!u.cost_is_complete && "+"}</>}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+          {adminUsers.total_calls > 0 && adminUsers.coverage > 0 && (
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6 }}>
+              {Math.round(adminUsers.coverage * 100)}% of {adminUsers.total_calls} calls attributed
+              {adminUsers.unattributed_calls > 0 && <> · {adminUsers.unattributed_calls} carry no user and are not shown as a blank cohort</>}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
