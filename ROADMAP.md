@@ -2808,6 +2808,100 @@ exchange feeds Arc MI's funnel; VA-10 gates cross-user Know. CI-2/CI-3 (the plat
 identity and first roster) are, in hindsight, SP's Phase 0 — this arc aims what they
 began.
 
+### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12)
+
+> **Origin.** The user's 2026-09-07 directive, given while wiring Google sign-in:
+> *"any user who goes to vercel deployment should be asked to login using Gmail.. and
+> once logged in the user can create a number of workspaces.. naturally linked to the
+> users Google login."* That is a product shape, not a feature: the hosted deployment
+> stops being a single shared instance behind a login and becomes a self-serve
+> platform where a stranger's first Google sign-in creates a private world.
+>
+> **The thesis: aim the tenancy machinery that already exists; build almost none.**
+> VA-10 (#459/#461) made identity verifiable end to end — OIDC at `resolve_principal`,
+> the sign-in flow in the topbar, the spoofable header seam dead under a configured
+> issuer. The org is already the tenant boundary and already ENFORCED: connections
+> carry `org_id`, every store filters by it, and cross-org access was demonstrated
+> live as a hard 403 (2026-09-04, DATA-06). Workspaces are already org-scoped, and
+> RBAC already crowns the first identified user of an org its owner
+> (`maybe_bootstrap_owner`). What is missing is exactly one mapping and one door:
+> **one user = one org** (derived at token verification), and a **login wall** in
+> front of the app. "Create an account" needs no flow at all — the first verified
+> sign-in IS account creation, which is the cheapest onboarding a product can have.
+
+**Laws that bind every MT wave (standing, not per-slice):**
+
+- **The org id derives from Google's `sub`, never from the email.** `sub` is Google's
+  stable subject identifier; an email can be changed and would silently orphan a
+  user's entire world. The email is display material (§ VA-10's own rule: the client
+  decodes claims for display; the server decides identity).
+- **A fresh org is born CAPPED.** A stranger with a Gmail address must never mean
+  uncapped LLM spend: provisioning writes default usage caps through the G4 store
+  (the `/governance/caps` door shipped 2026-09-06 — this is one call, not a build).
+  Operators raise caps deliberately; nothing raises them by signing up.
+- **Fail-closed inherits from VA-10 unchanged.** An invalid token is nothing; the
+  header seam stays dead under a configured issuer; localhost with identity off stays
+  byte-identical — a laptop install never sees any of this arc.
+- **Provisioning is idempotent and first-touch.** The same token arriving twice
+  provisions once; a returning user's org is looked up, never re-created. No
+  provisioning happens for an unverified caller, ever.
+- **Shared builtins stay shared by design** (the Workspace samples, aughor_ops) —
+  they are demo substrate, not tenant data, and every org sees them. Everything a
+  user CREATES lands in their own org.
+- **One roadmap, one tenancy mechanism.** No per-user ownership columns beside the
+  org boundary — two isolation mechanisms that can disagree is how leaks happen.
+
+**What is true today (measured 2026-09-06/07, receipts in this file and the session):**
+
+- Identity: OIDC verification live (#459), sign-in flow + `/auth/config` + fetch
+  wrapper live (#461, receipted `{oidc_configured:false}` on the local instance —
+  inert until env). `AUGHOR_REQUIRE_IDENTITY=1` would today let the app SHELL render
+  and fail every call with 401s — enforcement without a front door.
+- Tenancy: all verified users land in ONE org (`AUGHOR_OIDC_DEFAULT_ORG`, default
+  "default"); two strangers would be individually identified and jointly staring at
+  the same workspaces. Org isolation itself is enforced and live-proven (403).
+- Cost safety: the caps store has a write door but NO defaults — a fresh org is
+  uncapped until an operator says otherwise. Inverted by this arc's second law.
+- Google side: an External consent screen in "Testing" mode shows an unverified-app
+  warning and limits sign-ins to allow-listed test users; full verification is a
+  later, user-keyed process with Google.
+
+**Waves, in build order:**
+
+- **MT-0 · The login wall.** When `/auth/config` says `identity_required` and no
+  token is held, the app renders a full-screen sign-in page instead of the shell —
+  the Google button front and center, nothing else reachable. Small by design: the
+  config plumbing (#461) anticipated exactly this reader.
+  **Receipt:** an incognito visit to the armed deployment shows only the sign-in
+  page; after sign-in, the app; after sign-out, the wall again.
+- **MT-1 · One user = one org.** A per-user tenancy mode at the verification seam:
+  with the mode on and no org claim configured, `principal_of` derives the org from
+  `sub` (a stable prefix-hashed id, never the raw email). First touch provisions:
+  the org row, a starter workspace, the owner role (the existing bootstrap does
+  this per-org already — verify, don't rebuild), and DEFAULT USAGE CAPS. Idempotent;
+  covered by isolation tests that prove two verified users cannot see each other's
+  workspaces, connections, or history.
+  **Receipt:** two different Gmail identities sign in; each sees a private starter
+  workspace; each creates workspaces the other cannot list; cross-org reads 403.
+- **MT-2 · Arm the hosted deployment.** External consent screen (user's console),
+  client id pasted, three env vars on Vercel (`AUGHOR_OIDC_ISSUER`,
+  `AUGHOR_OIDC_AUDIENCE`, `AUGHOR_REQUIRE_IDENTITY=1`) plus the per-user mode.
+  **Receipt:** the MT-1 two-account receipt taken on the LIVE Vercel deployment.
+
+**Deliberately out of scope (not refused — later):** billing and paid tiers · team
+orgs (a second user JOINING an existing org — invites, membership, role grants;
+the substrate supports it, the join mechanism is a later wave) · Google app
+verification (user-keyed paperwork) · org deletion/export lifecycle · rate-limiting
+beyond the usage-cap defaults.
+
+**Risks, carried in rather than discovered:** (a) serverless provisioning must be
+race-safe — two concurrent first requests from one new user must not double-provision
+(idempotency by derived org id, not by "did I just create this"); (b) the Vercel data
+plane is Postgres — provisioning writes must ride the same store seams as everything
+else, no direct DDL; (c) a capped org's refusal must SAY it is a cap, not fail
+mysteriously — the caps plane's `action` vocabulary already distinguishes alert from
+block.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -3384,7 +3478,7 @@ the browser** · **measure the premise before building.**
 
 ## 6 · Open decisions — the user's, not the builder's
 
-> **Status 2026-09-06: NONE open. All ELEVEN are decided** (items 9 and 10
+> **Status 2026-09-07: NONE open. All TWELVE are decided** (items 9 and 10
 > each stamped YES, both clauses, the same day they were drafted — the KI build ran
 > ahead of its stamp at the user's direction, and SP-1 began the moment item 10 landed).
 > Kept as a register, not a queue — each entry records the reasoning so a settled
@@ -3479,6 +3573,21 @@ the browser** · **measure the premise before building.**
     with a single-org default. The spoofable header seam dies whenever an issuer is
     configured under required identity. What only the user can supply: a real tenant's
     issuer/client id for the live receipt. Full note: §3.5.
+12. ✅ **DECIDED 2026-09-07 — Arc MT is adopted: the hosted deployment becomes
+    self-serve.** The user's directive, verbatim: *"any user who goes to vercel
+    deployment should be asked to login using Gmail.. and once logged in the user can
+    create a number of workspaces.. naturally linked to the users Google login."*
+    Three clauses fall out of it and are recorded together: **(a)** the consent screen
+    is **External** — any Google account, not a Workspace org; Internal was the
+    employees-only reading and is not this product. **(b)** the tenancy mapping is
+    **one user = one org**, derived from Google's stable `sub` — chosen over per-user
+    ownership columns because the org boundary is the isolation mechanism that already
+    exists, is already enforced, and was already proven live (403); two mechanisms
+    that can disagree is how leaks happen. **(c)** a fresh self-serve org is **born
+    capped** — signup must never mean uncapped LLM spend; defaults ride the G4 caps
+    store and only an operator raises them. Not decided here because it isn't ripe:
+    billing, team orgs (joining, not owning), and Google's app-verification paperwork.
+    Full note: §3.12.
 
 ---
 
