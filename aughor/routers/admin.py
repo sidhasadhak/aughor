@@ -27,7 +27,7 @@ def list_users(scan: int = Query(default=5000, ge=1, le=100_000)):
     granted something), and a user with calls and no role is real (the ledger saw
     them) — a view built from either side alone would silently drop the other.
     """
-    from aughor.obs.usage import usage_report
+    from aughor.obs.usage import UNATTRIBUTED, usage_report
     from aughor.org.context import current_org_id
     from aughor.rbac.store import list_assignments
     from aughor.security import oidc
@@ -40,8 +40,11 @@ def list_users(scan: int = Query(default=5000, ge=1, le=100_000)):
     for row in report.rows:
         d = row.to_dict()
         uid = str(d.pop("user_id", "") or "")
-        if not uid:
-            continue  # counted in unattributed below, never shown as a blank cohort
+        if not uid or uid == UNATTRIBUTED:
+            # The rollup keys a missing user as the UNATTRIBUTED placeholder, not "" —
+            # the live drive caught this route rendering that placeholder as a user
+            # with 3,167 calls. It belongs in the count below, never in the roster.
+            continue
         users[uid] = {"user_id": uid, "roles": [], **d}
 
     for assignment in list_assignments(org):

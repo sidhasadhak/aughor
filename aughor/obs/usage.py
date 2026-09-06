@@ -188,6 +188,13 @@ def price_for(provider: str, model: str) -> Optional[Price]:
     return _CATALOGUE_PRICES.get((p, m))
 
 
+#: The key a rollup row carries for a missing axis value. NAMED so readers of the
+#: report can recognize the placeholder cohort — the admin view was rendering it as a
+#: user called "(unattributed)" with 3,167 calls because it compared against "" while
+#: this literal sat inline in `rollup` (found by driving the live route, 2026-09-06).
+UNATTRIBUTED = "(unattributed)"
+
+
 @dataclass
 class UsageRow:
     """One group's usage. Every "missing" is counted, never folded into a zero."""
@@ -290,7 +297,7 @@ def rollup(
             v = str(AXES[axis](e) or "")
             if not v:
                 unattributed[axis] += 1
-                v = "(unattributed)"
+                v = UNATTRIBUTED
             key_values.append(v)
         row = groups.setdefault(tuple(key_values),
                                 UsageRow(key=dict(zip(axes, key_values))))
