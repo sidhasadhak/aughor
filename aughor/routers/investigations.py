@@ -1966,6 +1966,16 @@ def _answer_core(
         )
         if rules_block:
             prompt = rules_block + prompt
+        # The ENGINE's dialect rules — the same block the deep-path SQL writer
+        # carries (`writer_rules`, selected by execution mode). The quick path
+        # generated blind to dialect on native warehouses and lived on luck plus
+        # the repair loop; measured 2026-09-06 on BigQuery, that meant DuckDB-order
+        # DATE_TRUNC and DATE-typed literals in half the answers. Empty on DuckDB?
+        # No — DuckDB gets its own rules; the block is never empty, only shorter.
+        from aughor.db.dialects import writer_rules as _writer_rules
+        _dialect_block = _writer_rules(db)
+        if _dialect_block:
+            prompt = _dialect_block + "\n\n" + prompt
         # User-agent brief (flag `agents.user_defined`) — the active agent's pinned
         # instructions lead the prompt, rules_block-style. Empty (inert) when no
         # agent is active.

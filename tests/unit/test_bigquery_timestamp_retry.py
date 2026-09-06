@@ -142,6 +142,39 @@ def test_other_errors_never_retry(monkeypatch):
     assert len(calls) == 1 and out.error
 
 
+def test_agent_eval_generator_sees_the_dialect_rules():
+    """The suite must measure the path users drive: the quick path now carries
+    `writer_rules`, so the eval generator must too. Both live failure classes on
+    BigQuery were rules the dialect block already taught, unseen by the eval."""
+    from aughor.custom_agents.models import UserAgent
+    from aughor.custom_agents.quality import evaluate_agent
+    from aughor.custom_agents.store import add_golden, create_agent
+
+    agent = create_agent("dialect-rules-reach-eval", instructions="A stance.")
+    add_golden(agent.id, "how many rows?", "SELECT 1")
+
+    class _Db:
+        dialect = "bigquery"
+        writes_native_sql = True
+
+        def get_schema(self):
+            return "orders(created_at TIMESTAMP)"
+
+        def execute(self, hypothesis_id, sql):
+            return QueryResult(hypothesis_id=hypothesis_id, sql=sql,
+                               columns=["n"], rows=[["1"]], row_count=1)
+
+    seen = {}
+
+    def fake_generate(question, schema):
+        seen["schema"] = schema
+        return "SELECT 1"
+
+    evaluate_agent(UserAgent(**agent.model_dump()), db=_Db(), generate=fake_generate)
+    assert "BIGQUERY (GoogleSQL) DIALECT RULES" in seen["schema"]
+    assert "TIMESTAMP vs DATE" in seen["schema"]          # the rule from the live defect
+
+
 def test_clash_with_nothing_rewritable_does_not_retry(monkeypatch):
     conn = _conn()
     calls = []
