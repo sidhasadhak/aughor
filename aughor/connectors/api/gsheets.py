@@ -102,11 +102,23 @@ class GoogleSheetsConnector(Connector):
         self._sheets = [s.strip() for s in str(meta.get("sheets", "")).split(",") if s.strip()]
         self._api_key = meta.get("api_key", "")
 
+        #: Why a sheet (or the extension) failed to load, kept so `test()` can say the
+        #: TRUE reason. The old bare `except: pass` pair made every failure read as
+        #: "check the spreadsheet is shared" — measured on a Vercel deployment where
+        #: the real error was `INSTALL httpfs` failing on the read-only filesystem
+        #: while the sheet was shared perfectly (2026-09-06).
+        self._load_errors: dict[str, str] = {}
+
         self._duckdb = duckdb.connect(":memory:")
         try:
+            # The default extension directory is $HOME/.duckdb, which a serverless
+            # filesystem cannot create. A writable temp dir works on every shape and
+            # changes nothing for a laptop beyond where the extension file lives.
+            ext_dir = Path(_tempfile.gettempdir()) / "aughor_duckdb_ext"
+            self._duckdb.execute(f"SET extension_directory='{ext_dir}'")
             self._duckdb.execute("INSTALL httpfs; LOAD httpfs;")
-        except Exception:
-            pass
+        except Exception as exc:
+            self._load_errors["httpfs"] = str(exc)[:300]
         self._load_sheets()
 
     def _export_url(self, sheet: str | None) -> str:
@@ -173,9 +185,11 @@ class GoogleSheetsConnector(Connector):
                     f"SELECT * FROM read_csv_auto('{url}', header=true, all_varchar=false)"
                 )
                 loaded.append(table)
-            except Exception:
-                # Skip sheets that fail to load rather than break the whole connection.
-                pass
+            except Exception as exc:
+                # Skip sheets that fail rather than break the whole connection — but
+                # KEEP the reason, or `test()` can only guess at one (and guessed wrong
+                # for a fortnight of "check the sharing" on a filesystem error).
+                self._load_errors[table] = str(exc)[:300]
         self._save_to_cache(loaded)
 
     param_style = "duckdb"
@@ -276,11 +290,22 @@ class GoogleSheetsConnector(Connector):
             self._duckdb.execute("SELECT table_name FROM INFORMATION_SCHEMA.TABLES")
             tables = [r[0] for r in self._duckdb.fetchall()]
             if not tables:
+                # The captured reason first — "check the sharing" was this message's
+                # only guess, and on a serverless deployment the true failure was the
+                # httpfs extension, with the sheet shared perfectly.
+                if self._load_errors:
+                    detail = "; ".join(f"{k}: {v}" for k, v in
+                                       list(self._load_errors.items())[:3])
+                    return False, f"No worksheets could be loaded — {detail}"
                 return False, (
                     "No worksheets could be loaded. Check the spreadsheet is shared "
                     "as 'anyone with the link can view' and the sheet names are correct."
                 )
-            return True, f"Loaded {len(tables)} worksheet(s): {', '.join(tables)}"
+            msg = f"Loaded {len(tables)} worksheet(s): {', '.join(tables)}"
+            failed = [k for k in self._load_errors if k != "httpfs"]
+            if failed:
+                msg += f" ({len(failed)} sheet(s) failed: {', '.join(failed)})"
+            return True, msg
         except Exception as e:
             return False, str(e)
 

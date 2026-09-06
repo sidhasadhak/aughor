@@ -170,3 +170,24 @@ def test_admin_users_unions_ledger_and_roles_and_states_coverage(client):
     ada = next(u for u in body["users"] if u["user_id"] == "ada@example.test")
     assert ada["roles"] == ["analyst"]
     assert ada["calls"] == 0  # granted a role, no calls yet — still real
+
+
+def test_admin_users_never_shows_the_unattributed_cohort_as_a_user(client, monkeypatch):
+    """Found by driving the live route after #459: the rollup keys a missing user as
+    the "(unattributed)" placeholder, not "" — and the roster showed it as a user with
+    3,167 calls. The placeholder belongs in `unattributed_calls`, never in `users`."""
+    import aughor.obs.usage as usage_mod
+    from aughor.obs.usage import UNATTRIBUTED, UsageReport, UsageRow
+
+    fake = UsageReport(axes=("user_id",), total_calls=5,
+                       unattributed={"user_id": 4},
+                       rows=[UsageRow(key={"user_id": UNATTRIBUTED}, calls=4),
+                             UsageRow(key={"user_id": "ada@example.test"}, calls=1)])
+    monkeypatch.setattr(usage_mod, "usage_report", lambda **kw: fake)
+
+    body = client.get("/admin/users").json()
+    names = [u["user_id"] for u in body["users"]]
+    assert UNATTRIBUTED not in names
+    assert "ada@example.test" in names
+    assert body["unattributed_calls"] == 4
+    assert body["coverage"] == 0.2

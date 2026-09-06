@@ -90,6 +90,26 @@ def _trusted_export_rows() -> list:
             and (t.question or "").strip() and (t.sql or "").strip()]
 
 
+def _agent_golden_rows() -> list[dict]:
+    """Per-agent goldens — human-authored (question, reference_sql) regression pairs.
+
+    The third graded source, joined 2026-09-06: five live, verified pairs (The Look
+    Analyst's BigQuery goldens among them) sat off-feed while the gate report read
+    zero. They are benchmark-natured BY ROLE — these rows ARE each agent's own eval
+    suite — so they feed ONLY the golden set, never SFT or DPO: splitting them like
+    verdicts would train an adapter on the very cases its agent is measured by, the
+    literal form of §3.9's train-on-its-own-benchmark refusal.
+    """
+    from aughor.custom_agents.store import list_agents, list_goldens
+
+    out: list[dict] = []
+    for agent in list_agents():
+        for g in list_goldens(agent.id):
+            if (g.get("question") or "").strip() and (g.get("reference_sql") or "").strip():
+                out.append(g)
+    return out
+
+
 def export_sft(name: str = "nl2sql-sft", *, task: str = "nl2sql",
                limit: int = 100000) -> dict:
     """Accepted findings + human-approved trusted queries → question → SQL pairs.
@@ -150,6 +170,10 @@ def export_golden(name: str = "nl2sql-golden", *, task: str = "nl2sql",
     rows = list_for_export(("accept",), require_sql=True, limit=limit)
     held = [r for r in rows if _is_golden(r)]
     trusted = [t for t in _trusted_export_rows() if _is_golden({"id": t.id})]
+    # Agent goldens join WHOLE, not through the tenth-split: every one of them is
+    # already a benchmark row (see _agent_golden_rows), so holding out a tenth of a
+    # hold-out would just discard nine tenths of the platform's scarcest material.
+    agent_goldens = _agent_golden_rows()
     examples = _dedupe([
         {"prompt": _scrub(r.get("headline") or ""),
          "completion": _scrub(r.get("sql_source") or ""),
@@ -158,11 +182,16 @@ def export_golden(name: str = "nl2sql-golden", *, task: str = "nl2sql",
     ] + [
         {"prompt": _scrub(t.question), "completion": _scrub(t.sql), "task": task}
         for t in trusted
+    ] + [
+        {"prompt": _scrub(g["question"]), "completion": _scrub(g["reference_sql"]),
+         "task": task}
+        for g in agent_goldens
     ])
     return store.register(
         name, "golden", examples, task=task,
         lineage=([("finding_verdict", r["id"]) for r in held]
-                 + [("trusted_query", t.id) for t in trusted]))
+                 + [("trusted_query", t.id) for t in trusted]
+                 + [("agent_golden", g["id"]) for g in agent_goldens]))
 
 
 def publish_golden_to_evals(node: dict, *, suite_name: Optional[str] = None) -> Optional[str]:
