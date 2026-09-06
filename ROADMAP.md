@@ -2542,11 +2542,28 @@ disclosure reaches the APPROVER's reasoning; accept creates / reject byte-identi
 second accept `already_resolved`; accept re-validates moved data; a stale automation
 draft refused with its reason; roster wiring). Neighbor guards green (kinetic,
 grants, agents, hermeticity, prose/binding/flag ratchets). `gen:api` regenerated.
-**Open in the wave:** grant/pause/resume proposals · web consumption of the settings
-store (theme still client-local until the shell reads `/me/preferences`) · the live
-chat receipt (the origin sentence end-to-end) post-merge.
+**✅ LIVE RECEIPT 2026-09-06 (post-merge #453, API restarted):** the prefs door live
+(`PUT /me/preferences/theme` → dark); the arc's ORIGIN SENTENCE driven through the
+product's own chat — and the model MEASURED THE PREMISE FIRST: three Know reads found
+the target connection's orders are US-only (no DE rows exist) and it DECLINED to
+draft a false-premise agent, offering grounded alternatives; on confirmation
+`draft_agent` staged live (pending in the real inbox, empty-docs disclosure spoken —
+the approval left to the human, which is the design), and `draft_automation` relayed
+DS-15's considered refusal verbatim (no brief-delivery effect on this deployment —
+the doors law working). One wobble for the record: the draft's name/instructions
+echoed the earlier per-country frame after the user had agreed to overall scope —
+recommend reject and restage when a draft's params outlive the frame they were
+negotiated under. ⚠️ `GET /kinetic-actions/inbox` defaults to the BUILTIN
+connection — pass `?connection_id=…` when checking for staged rows.
+**✅ Web reads the settings store (2026-09-06, with SP-4):** the shell consults
+`GET /me/preferences` on load (localStorage paints first, the store wins and re-caches)
+and the Settings toggle writes through `PUT /me/preferences/theme` — a theme set from
+chat, another browser, or Spotlight follows the user here on next load. Theme is no
+longer client-local.
+**Open in the wave:** grant/pause/resume proposals · a live in-session flip (the
+shell re-reading preferences after a chat turn changes them, without a reload).
 
-#### SP-4 · The Guide limb
+#### SP-4 · The Guide limb — ✅ FIRST CUT BUILT 2026-09-06
 
 The curated corpus becomes real and served: KI's SKILL.md lane feeds it; answers ground
 in the registry (what THIS deployment offers — a door the deployment cannot open is
@@ -2554,6 +2571,34 @@ never offered, DS-17's law) and in live state (what YOU have built, what failed
 lately); every guidance answer ends in an offered, staged act. **Receipt:** "how should
 I create an agent?" yields the real four steps, cites the asker's own agents and their
 eval results, and offers the draft.
+
+**Built (first cut):** `aughor/agent/spotlight_guide.py` — one tool on the converse
+roster (`platform_guide`), four walkthroughs: creating an agent, creating an
+automation, connecting data, appearance. The split with the concept tool is stated on
+both descriptions (concepts stay with `platform_help`; how-do-I comes here), so the
+router routes by the same claims from either side. Three laws hold per topic: the
+steps are the PRODUCT's — the agent walkthrough quotes the create flow's own stepper
+(Start · Scope · Define · Prove · Reach), the empty-docs trap taught in the Define
+step in the flow's own words; the grounding is live and honest about failure — the
+asker's agents each carry their evaluation state in the eval-basis vocabulary (a
+stale pass chip is named as measured on a configuration that no longer runs, never
+presented as current), the automation topic reads the REAL clock (a stopped clock is
+disclosed before a schedule is implied — DS-17's alt-door honesty) and the trailing
+error count, and a failed store read reports itself unavailable rather than posing as
+an empty deployment; and every walkthrough ends in an offered act from the Act
+roster — `draft_agent`, `draft_automation`, `set_preference` — except connect_data,
+which offers a page and says why (credentials are a person's to type, never a model's
+to relay; no chat door exists, deliberately). An unknown topic answers with the topic
+list, never a guessed walkthrough. Every result carries the pre-composed `summary`
+built from the same locals as its fields (SP-1's hardening, inherited at birth).
+**Receipts:** `tests/unit/test_spotlight_guide.py` (11 — alias resolution; unknown
+topic lists, never guesses; every offered tool exists on the live converse roster;
+the asker's agents cited with pass counts, never-evaluated and stale states worded
+distinctly; a failed grounding read is "could not be read", not "0 agents"; the
+stopped clock disclosed; stored preferences quoted; the stepper stations present;
+staging taught before scheduling; roster wiring). Prose/vocabulary ratchets green.
+**Open in the wave:** deeper corpus service (searching SKILL.md-fed pack prose from
+inside the guide, beyond naming the door) · the live chat receipt post-merge.
 
 #### SP-5 · One roster, every door
 
@@ -2876,15 +2921,23 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              policy. Open: trace/audit tools
         SP-2 ✅ FIRST CUT BUILT 2026-09-06 — ⌘K free text → Spotlight answer pane
              in the overlay (same /ask door, quick-pinned); surface context
-             threaded end-to-end, sanitized. Open: registry async shape,
-             in-context handles, live receipt
-        SP-3 ✅ FIRST CUT BUILT 2026-09-06 — set_preference applies instantly
-             (user_prefs store, closed registry); draft_agent/draft_automation
-             stage as two new kinds on the ONE inbox; accept re-validates then
-             creates, reject byte-identical. Open: grant/pause/resume proposals,
-             web reads the settings store, live chat receipt
-        SP-4 Guide (serve the corpus KI's SKILL.md lane now feeds; answers end
-             in an offered act)
+             threaded end-to-end, sanitized. In-browser receipt done (the user
+             drove ⌘K live). Open: registry async shape, in-context handles,
+             latency measurement
+        SP-3 ✅ FIRST CUT BUILT 2026-09-06 · LIVE RECEIPT DONE (the origin
+             sentence driven; the model measured the premise and declined a
+             false-premise draft; agent draft staged pending in the real inbox)
+             — set_preference applies instantly (user_prefs store, closed
+             registry); draft_agent/draft_automation stage as two new kinds on
+             the ONE inbox; accept re-validates then creates, reject
+             byte-identical; web now reads the settings store (theme follows
+             the user, not the browser). Open: grant/pause/resume proposals,
+             live in-session theme flip
+        SP-4 ✅ FIRST CUT BUILT 2026-09-06 — platform_guide: four grounded
+             walkthroughs (agent · automation · connect · appearance), steps
+             quoted from the product's own flows, live grounding honest about
+             failure, every answer ending in an offered staged act. Open:
+             corpus search over pack prose, live receipt
         SP-5 one roster, every door (converse ∪ MCP unified; Slack via RC-5)
         SP-6 red-team corpus, THEN evidence-backed proactive proposals
         ⚠ cross-user Know waits on VA-10's auth decision

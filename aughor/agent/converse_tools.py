@@ -405,6 +405,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     from aughor.agent.delegate_tool import delegation_tools
     from aughor.agent.platform_tools import platform_tools
     from aughor.agent.spotlight_act import spotlight_act_tools
+    from aughor.agent.spotlight_guide import spotlight_guide_tools
     from aughor.agent.spotlight_tools import spotlight_tools
 
     return [
@@ -475,6 +476,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
         ),
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_tools(
         connection_id, session_id=session_id) + spotlight_act_tools(
+        connection_id, session_id=session_id) + spotlight_guide_tools(
         connection_id, session_id=session_id) + delegation_tools(
         connection_id, emit=emit, session_id=session_id)
 

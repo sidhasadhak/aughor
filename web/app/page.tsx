@@ -85,6 +85,8 @@ import {
   cancelJob,
   getAgents,
   patchAgent,
+  getMyPreferences,
+  putMyPreference,
   type Connection,
   type ExplorationStatus,
   type OntologyGraph,
@@ -1595,18 +1597,35 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeWs?.id, wsConnections.length, connections, rawSelectedConn]);
 
-  // Theme effect — apply data-theme to <html>
+  // Theme effect — apply data-theme to <html>. localStorage paints first (no flash of
+  // the wrong theme while a request is in flight); then the per-user settings store is
+  // the truth (SP-3/SP-4): a preference set anywhere — this Settings screen, another
+  // browser, or Spotlight's set_preference in chat — wins here on load.
   useEffect(() => {
     const saved = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) as Theme | null : null;
     const initial: Theme = saved || "dark";
     setThemeState(initial);
     document.documentElement.setAttribute("data-theme", initial);
+    getMyPreferences()
+      .then(({ preferences }) => {
+        const stored = preferences.theme;
+        if ((stored === "dark" || stored === "light") && stored !== initial) {
+          setThemeState(stored);
+          document.documentElement.setAttribute("data-theme", stored);
+          if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
+        }
+      })
+      // An unreachable store leaves the cached theme standing — cosmetic, never blocking.
+      .catch(() => {});
   }, []);
 
   const setTheme = (t: Theme) => {
     setThemeState(t);
     document.documentElement.setAttribute("data-theme", t);
     if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, t);
+    // Write through to the settings store so the choice follows the user, not this
+    // browser. Fire-and-forget: the visible change already happened above.
+    putMyPreference("theme", t).catch(() => {});
   };
 
   useEffect(() => {
