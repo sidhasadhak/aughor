@@ -24,7 +24,14 @@ export interface Command {
   icon?: string;        // ICONS key in CommandPalette (defaults to "spark")
   accent?: string;      // CSS colour for the icon (defaults to violet)
   keywords?: string;    // extra fuzzy-match terms, not displayed
-  run: () => void;
+  /** SP-2 — a command may do async work. The palette keeps the overlay open with
+   *  the row busy until the promise settles; a rejection surfaces as a visible
+   *  error line instead of vanishing with the overlay. Sync commands (returning
+   *  void) behave exactly as before. */
+  run: () => void | Promise<void>;
+  /** Keep the overlay open after run() settles — for commands whose work happens
+   *  IN the overlay (e.g. switching it into the Spotlight answer pane). */
+  keepOpen?: boolean;
 }
 
 let scopes: Record<string, Command[]> = {};
@@ -72,4 +79,31 @@ export function useRegisterCommands(scopeId: string, commands: Command[]) {
     registerCommands(scopeId, commands);
     return () => unregisterCommands(scopeId);
   }, [scopeId, commands]);
+}
+
+// ── SP-2: the in-context summon ───────────────────────────────────────────────
+//
+// A view that meets a question mid-flow — an empty Agents screen, a failed run
+// row — summons Spotlight WITH the question, instead of telling the user to go
+// find ⌘K. The seam is deliberately tiny: the question parks here, one event
+// tells the shell to open the palette, and the palette consumes the question on
+// open and asks it straight into the Spotlight pane. Module state rather than
+// props because the summoner and the palette share no ancestor closer than the
+// page shell.
+
+let pendingAsk = "";
+
+/** Summon the Spotlight overlay with a seeded question. */
+export function askSpotlight(question: string) {
+  pendingAsk = (question || "").trim();
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new CustomEvent("aughor:ask-spotlight"));
+  }
+}
+
+/** The parked question, cleared on read — the palette calls this on open. */
+export function consumePendingAsk(): string {
+  const q = pendingAsk;
+  pendingAsk = "";
+  return q;
 }

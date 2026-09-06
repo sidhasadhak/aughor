@@ -176,13 +176,19 @@ def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
                             "(an ISO timestamp); to stop it for good, that is "
                             "disabling, a different act.")}
 
+    # SP-6 — an evidence chain travels VERBATIM onto the record the approver
+    # reads: a proactive proposal that cannot show its rows is an opinion.
+    evidence = str(args.get("evidence") or "").strip()
+    reasoning = (str(args.get("reasoning") or f"{action} requested in conversation")
+                 [:_MAX_REASON])
+    if evidence:
+        reasoning += " EVIDENCE: " + clip(evidence, 400)
     p = stage_proposal(StagedProposal(
         kind="automation_state", org_id=current_org_id() or "",
         connection_id=connection_id, action_id=f"automation-{action}:{clip(a.name, NAME_CLIP)}",
         params={"automation_id": a.id, "action": action,
                 **({"until": until} if action == "pause" else {})},
-        reasoning=(str(args.get("reasoning") or f"{action} requested in conversation")
-                   [:_MAX_REASON]),
+        reasoning=reasoning,
         proposer="spotlight", source="agent"))
     tail = f" until {until}" if action == "pause" else ""
     return {
@@ -301,6 +307,10 @@ _STATE_PARAMS = {
                                  "always has an end."},
         "reasoning": {"type": "string",
                       "description": "One sentence on why, shown to the approver."},
+        "evidence": {"type": "string",
+                     "description": "The evidence rows behind this proposal (e.g. "
+                                    "the run ids from a premortem finding's offer) "
+                                    "— recorded verbatim for the approver."},
     },
     "required": ["automation", "action"],
 }

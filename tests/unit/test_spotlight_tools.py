@@ -282,7 +282,12 @@ def test_premortem_finds_an_error_streak_with_its_evidence_rows(monkeypatch):
     assert streaks, "the 3-error streak was not flagged"
     ev = streaks[0]["evidence"]
     assert len(ev) >= 3 and all(e["run_id"] for e in ev)     # rows, not vibes
-    assert streaks[0]["offer"]["tool"] == "pause_or_resume_automation"
+    offer = streaks[0]["offer"]
+    assert offer["tool"] == "pause_or_resume_automation"
+    # SP-6 — the offer carries its own arguments, evidence chain included, so the
+    # staged proposal cites its rows without the narrator re-typing run ids.
+    assert offer["args"]["automation"] == a.id and offer["args"]["action"] == "pause"
+    assert ev[0]["run_id"] in offer["args"]["evidence"]
     assert "nothing here applies anything" in out["summary"]
     assert len(list_proposals(status="pending")) == before   # the sweep staged NOTHING
 

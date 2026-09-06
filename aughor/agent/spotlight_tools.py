@@ -430,6 +430,13 @@ def platform_premortem(args: dict) -> dict:
                     break
                 streak.append(r)
             if len(streak) >= _PREMORTEM_STREAK:
+                # The chain the approver must see, pre-worded: SP-6's law is that a
+                # proactive proposal CITES its evidence rows, so the offer carries
+                # the exact arguments — including the evidence — rather than hoping
+                # the narrator re-types run ids faithfully.
+                chain = (f"errored {len(streak)} runs in a row: "
+                         + "; ".join(f"run {r.id} at {r.started_at}"
+                                     f" ({clip(r.reason, 60)})" for r in streak))
                 findings.append({
                     "kind": "automation_error_streak",
                     "subject": clip(a.name, NAME_CLIP),
@@ -438,8 +445,12 @@ def platform_premortem(args: dict) -> dict:
                     "evidence": [{"run_id": r.id, "started_at": r.started_at,
                                   "reason": clip(r.reason, TEXT_CLIP)} for r in streak],
                     "offer": {"tool": "pause_or_resume_automation",
+                              "args": {"automation": a.id, "action": "pause",
+                                       "evidence": chain},
                               "sentence": "I can propose pausing it (with an end date) "
-                                          "for your approval in the inbox."},
+                                          "for your approval in the inbox — pass the "
+                                          "offered arguments so the approver sees the "
+                                          "evidence chain."},
                 })
     except Exception as exc:  # noqa: BLE001
         from aughor.kernel.errors import tolerate

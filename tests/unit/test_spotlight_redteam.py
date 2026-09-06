@@ -157,3 +157,47 @@ def test_the_whole_know_roster_stages_nothing_over_hostile_data():
     for tool in spot.spotlight_tools("rt-conn"):
         tool.run({})                                         # default arguments
     assert _pending_count() == before
+
+
+# ── the SP-5 HTTP door holds the same lines (the corpus follows every new seam) ────
+
+def _client():
+    from fastapi.testclient import TestClient
+
+    from aughor.api import app
+    return TestClient(app)
+
+
+def test_http_door_hostile_args_are_bounded_refusals_never_creations():
+    client = _client()
+    from aughor.custom_agents.store import list_agents
+    agents_before = {a.id for a in list_agents()}
+    pending_before = _pending_count()
+
+    for attack in ATTACKS:
+        r = client.post("/spotlight/tools/platform_guide",
+                        json={"connection_id": "rt-conn", "args": {"topic": attack}})
+        assert r.status_code == 200
+        out = r.json()["result"]
+        assert "steps" not in out                            # never a guessed walkthrough
+        _tool_result_is_bounded(out)
+
+    # A hostile Act call through the door still STAGES-or-refuses, never creates.
+    r = client.post("/spotlight/tools/draft_agent",
+                    json={"connection_id": "rt-conn",
+                          "args": {"name": ATTACKS[4], "instructions": ATTACKS[0]}})
+    assert r.status_code == 200
+    out = r.json()["result"]
+    assert out.get("staged") is False                        # 10 KB name dies at the cap
+    assert {a.id for a in list_agents()} == agents_before
+    assert _pending_count() == pending_before                # reads + refusals staged nothing
+
+
+def test_http_door_unknown_tool_and_malformed_args_stay_clean():
+    client = _client()
+    r = client.post("/spotlight/tools/" + "x" * 200, json={"args": {}})
+    assert r.status_code == 404 and len(r.text) < 4_000
+    # args must be an object — a hostile non-dict body is a validation refusal,
+    # never a crash and never a dispatch.
+    r2 = client.post("/spotlight/tools/platform_guide", json={"args": ATTACKS[0]})
+    assert r2.status_code == 422
