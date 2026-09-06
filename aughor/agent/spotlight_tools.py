@@ -11,8 +11,8 @@ Rules, inherited rather than invented:
 
 * **Every tool is a read.** Same contract as :mod:`aughor.agent.platform_tools`, stated
   in the same absolute terms: a roster where "every tool is a read" is nearly true is
-  worse than one where it is exactly true. Spotlight's Act limb (SP-3) will live next
-  door when it exists, the way ``action_tools`` does.
+  worse than one where it is exactly true. Spotlight's Act limb lives next door in
+  :mod:`aughor.agent.spotlight_act` (SP-3), the way ``action_tools`` does.
 * **Claims are bound to tool results** (CI-3's latitude law): these tools exist so the
   model never answers a platform-state question from priors. Where a number is UNKNOWN
   the result says so in its own field — an unpriced call is not a free call, an unmined

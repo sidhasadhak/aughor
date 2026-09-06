@@ -746,6 +746,7 @@ async def _start_automation_heartbeat() -> None:
 from aughor.routers import (
     components,
     cron,
+    preferences,
     system,
     agents,
     lifecycle,
@@ -843,3 +844,4 @@ app.include_router(mcpservers_router.router)  # VA-9d — the MCP allowlist (an 
 app.include_router(hooks.router)        # DS-17 — the inbound webhook door (own token; see _AUTH_EXEMPT)
 app.include_router(obs_router.router)  # Wave CR1/CR2 — traces + activity over the session log
 app.include_router(control_room.router)  # Wave CR3/CR4 — fleet overview + needs-a-human (views only)
+app.include_router(preferences.router)  # SP-3 — per-user cosmetic preferences (theme/density; the arc's one new store)

@@ -797,3 +797,23 @@ def set_probe_baseline(automation_id: str, target: str, version: str) -> None:
             conn.commit()
         finally:
             conn.close()
+
+
+# ── SP-3: the save door introduces itself (see aughor/runners/automation_save.py) ──
+# Registered at import so the ACTION inbox can save an accepted automation draft
+# without importing this package — the layering guards hold in both directions, and
+# the registry is the peer-maker. The callable builds the model (its validation
+# refusing malformed drafts) and saves through the ONE write door above.
+
+def _save_payload_for_inbox(params: dict):
+    from pydantic import ValidationError
+    try:
+        saved = upsert_automation(Automation(**dict(params or {})))
+    except (ValidationError, ValueError, TypeError) as exc:
+        return False, str(exc)[:400]
+    return True, {"automation_id": saved.id, "name": saved.name}
+
+
+from aughor.runners.automation_save import register_automation_save  # noqa: E402
+
+register_automation_save(_save_payload_for_inbox)

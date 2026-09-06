@@ -2502,7 +2502,7 @@ a destination you remember to visit, which is the built-and-inert shape with a d
 action, without leaving the overlay; the same overlay opens from the chrome affordance
 with a mouse alone; palette latency for plain commands unchanged, measured.
 
-#### SP-3 · The Act limb, and the arc's one new store
+#### SP-3 · The Act limb, and the arc's one new store — ✅ FIRST CUT BUILT 2026-09-06
 
 `draft_agent` — the "describe it" NL bootstrap the 2026-08-18 research already
 recommended: an accept/reject DIFF over the five governing fields, the empty-`doc_ids`
@@ -2511,9 +2511,40 @@ dry-run, joining the ONE loop by adoption; grant/pause/resume proposals. All sta
 through the existing inbox; nothing posts live. Plus the per-user settings store
 (theme · density · defaults) — hermetic from day one: env name in `tests/conftest.py`
 AND `scripts/dump_openapi.py` the same commit, one writer per `data/`.
-**Receipt:** the origin sentence, real — "create an agent that watches refund rate in
-DE and briefs me every Monday" → two staged records → approve → live agent + scheduled
-brief; decline → the platform byte-identical.
+
+**Built (first cut):** `aughor/agent/spotlight_act.py` — the Act roster the Know
+module promised by name, wired into converse beside `action_tools`. The custody line
+is mechanical: `set_preference` (cosmetic, self-scoped) applies INSTANTLY against the
+arc's one new store (`db/user_prefs.py`, closed key registry — theme · density ·
+default connection — per-call env resolution, all three hermeticity registrations in
+this commit, plus `GET/PUT /me/preferences`); `draft_agent` and `draft_automation`
+(structural) can only STAGE — two new kinds on the ONE inbox (`agent_draft`,
+`automation_draft`), exactly the seam the inbox's own docstring names ("what differs
+is only what the accept executes"). Accept is the arming: it RE-validates (documents
+can vanish between the two acts — a moved-data draft fails with the problem sentence,
+never creates) and then runs the same one-door writes the create routes use — `create_agent`
+directly, and the automation save through a REGISTERED door
+(`runners/automation_save.py`: the store hangs its save there at import), because
+three layering guards hold in both directions: K may not import A, and the runner
+package may not import its own callers either. Cycle refusals land verbatim. Reject
+leaves the platform byte-identical. `draft_automation` owns none of the drafting —
+DS-15's `propose_chain` validates and attaches the dry-run; a refusal is relayed as
+the considered answer it is. Validation itself became ONE body:
+`custom_agents/store.validate_agent_draft`, with the create route now delegating —
+the two-site drift class, closed at birth. The swallow ratchet shaped the prefs
+reader (unreadable rows route through `tolerate`, never a bare skip); the vocabulary
+ratchet forced the retired term out of the new code AND retired three stale-path
+prose uses in the inbox while it was at it; the layering guards redesigned the
+automation save into the door registry above — three ratchets, three better shapes.
+**Receipts:** `tests/unit/test_spotlight_act.py` (12 — instant-apply + persistence +
+per-call env resolution; unknown key refused naming the registry; the empty-docs
+disclosure reaches the APPROVER's reasoning; accept creates / reject byte-identical /
+second accept `already_resolved`; accept re-validates moved data; a stale automation
+draft refused with its reason; roster wiring). Neighbor guards green (kinetic,
+grants, agents, hermeticity, prose/binding/flag ratchets). `gen:api` regenerated.
+**Open in the wave:** grant/pause/resume proposals · web consumption of the settings
+store (theme still client-local until the shell reads `/me/preferences`) · the live
+chat receipt (the origin sentence end-to-end) post-merge.
 
 #### SP-4 · The Guide limb
 
@@ -2847,8 +2878,11 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              in the overlay (same /ask door, quick-pinned); surface context
              threaded end-to-end, sanitized. Open: registry async shape,
              in-context handles, live receipt
-        SP-3 Act tools (draft_agent/draft_automation as staged DIFFs) + the
-             per-user settings store (the arc's ONE new store)
+        SP-3 ✅ FIRST CUT BUILT 2026-09-06 — set_preference applies instantly
+             (user_prefs store, closed registry); draft_agent/draft_automation
+             stage as two new kinds on the ONE inbox; accept re-validates then
+             creates, reject byte-identical. Open: grant/pause/resume proposals,
+             web reads the settings store, live chat receipt
         SP-4 Guide (serve the corpus KI's SKILL.md lane now feeds; answers end
              in an offered act)
         SP-5 one roster, every door (converse ∪ MCP unified; Slack via RC-5)

@@ -144,6 +144,31 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def validate_agent_draft(*, name=None, instructions=None, connection_id=None,
+                         doc_ids=None) -> list[str]:
+    """The agent-payload checks as PROBLEM SENTENCES, no HTTP in sight — one body for
+    the create route (which turns them into a 422) and SP-3's draft staging (which
+    refuses to stage, and re-checks at accept, with the same words). Extracted so the
+    two callers cannot drift; the rules are the route's originals, verbatim in effect."""
+    from aughor.custom_agents.models import INSTRUCTIONS_MAX, NAME_MAX
+    problems: list[str] = []
+    if name is not None and not (0 < len(str(name).strip()) <= NAME_MAX):
+        problems.append(f"name must be 1..{NAME_MAX} chars")
+    if instructions is not None and len(str(instructions)) > INSTRUCTIONS_MAX:
+        problems.append(f"instructions exceed {INSTRUCTIONS_MAX} chars")
+    if connection_id:
+        from aughor.db.registry import BUILTIN_ID, list_connections
+        known = {c.get("id") for c in list_connections()} | {BUILTIN_ID}
+        if connection_id not in known:
+            problems.append(f"unknown connection '{connection_id}'")
+    if doc_ids:
+        from aughor.knowledge.indexer import get_document
+        missing = [d for d in doc_ids if get_document(d) is None]
+        if missing:
+            problems.append(f"unknown document(s): {', '.join(missing)}")
+    return problems
+
+
 def create_agent(name: str, *, instructions: str = "", purpose: str = "",
                  connection_id: str = "",
                  schema_scope: str = "", doc_ids: Optional[list[str]] = None,
