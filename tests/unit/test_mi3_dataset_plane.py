@@ -107,6 +107,29 @@ def test_golden_and_sft_are_disjoint():
     assert not ({r["completion"] for r in sft} & {r["completion"] for r in golden})
 
 
+def test_agent_goldens_feed_the_golden_set_whole_and_never_sft():
+    """The third graded source (joined 2026-09-06): per-agent goldens are human-verified
+    (question, reference_sql) pairs — and they ARE each agent's own eval suite, so they
+    enter the golden set WHOLE (no tenth-split) and must never appear in SFT, or an
+    adapter would train on the very cases its agent is measured by."""
+    from aughor.custom_agents.store import add_golden, create_agent
+
+    agent = create_agent("Golden Feeder", instructions="answers golden questions")
+    for i in range(3):
+        add_golden(agent.id, f"agent question {i}", f"SELECT {i} FROM agent_table")
+
+    golden = exporters.export_golden(name="ag-golden")
+    sft = exporters.export_sft(name="ag-sft")
+
+    golden_prompts = {r["prompt"] for r in store.rows_of(golden)}
+    sft_prompts = {r["prompt"] for r in store.rows_of(sft)}
+    assert {"agent question 0", "agent question 1", "agent question 2"} <= golden_prompts
+    assert not any(p.startswith("agent question") for p in sft_prompts)
+    # Provenance names the source kind, so MI-4 can answer "which humans fed this".
+    kinds = {entry["source_kind"] for entry in store.lineage_of(golden["id"])}
+    assert "agent_golden" in kinds
+
+
 def test_a_correct_verdict_without_a_correction_is_not_a_preference_pair():
     """A `correct` verdict with no `corrected_sql` is a judgement without a lesson.
     Including it would fabricate a preference nobody expressed — and on the live store
