@@ -15,6 +15,7 @@ import { Table, ConfigProvider, theme, type ThemeConfig } from "antd";
 import type { TableProps, TableColumnsType } from "antd";
 import { cleanLabel, formatTableNumber, formatPercent, displayCellValue } from "@/lib/format";
 import { isMoneyColumn, columnCurrencySymbol } from "@/lib/orgSettings";
+import { sqlColKey, sqlRowObjects } from "@/lib/sqlTable";
 import { useOrgSettings } from "@/lib/useOrgSettings";
 
 // ── Theme-mode hook ──────────────────────────────────────────────────────────
@@ -243,17 +244,24 @@ export function SqlResultTable({
   const hasSummable = sums.some(s => s !== null);
   const firstTextCol = sums.findIndex(s => s === null);
 
-  // Build Ant Design column defs
-  const antCols: TableColumnsType<Record<string, unknown>> = columns.map(col => {
-    const isNum = !ORDINAL_COL.test(col) && rows.length > 0 && isNumericValue(rows[0]?.[columns.indexOf(col)]);
+  // Build Ant Design column defs. Data keys are POSITIONAL (`c0`, `c1`, …), never the
+  // column name: a result can legally carry two columns with the same name (a join, a
+  // headerless import named 0,1,2…), and name-keyed rows silently collapsed the
+  // duplicate's values (Object.fromEntries last-wins) while React warned about the
+  // duplicate key. The name stays what the reader SEES; the position is what the
+  // table is keyed by. (`columns.indexOf(col)` had the same disease — for a
+  // duplicated name it always answered the FIRST occurrence.)
+  const antCols: TableColumnsType<Record<string, unknown>> = columns.map((col, idx) => {
+    const dataKey = sqlColKey(idx);
+    const isNum = !ORDINAL_COL.test(col) && rows.length > 0 && isNumericValue(rows[0]?.[idx]);
     return {
-      key: col,
+      key: dataKey,
       title: cleanLabel(col),
-      dataIndex: col,
+      dataIndex: dataKey,
       ellipsis: true,
       align: isNum ? "right" : "left",
       sorter: (a: Record<string, unknown>, b: Record<string, unknown>) => {
-        const va = a[col], vb = b[col];
+        const va = a[dataKey], vb = b[dataKey];
         if (va == null) return -1;
         if (vb == null) return 1;
         if (isNumericValue(va) && isNumericValue(vb)) return Number(va) - Number(vb);
@@ -275,10 +283,7 @@ export function SqlResultTable({
     };
   });
 
-  const dataSource = rows.map((r, i) => ({
-    key: i,
-    ...Object.fromEntries(columns.map((c, j) => [c, (r as unknown[])[j]])),
-  }));
+  const dataSource = sqlRowObjects(columns, rows as unknown[][]);
 
   const showToggle = totals && hasSummable && rows.length > 0;
 
@@ -288,7 +293,7 @@ export function SqlResultTable({
           <Table.Summary fixed>
             <Table.Summary.Row>
               {columns.map((col, i) => (
-                <Table.Summary.Cell index={i} key={col} align={sums[i] !== null ? "right" : "left"}>
+                <Table.Summary.Cell index={i} key={sqlColKey(i)} align={sums[i] !== null ? "right" : "left"}>
                   {sums[i] !== null ? (
                     <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, fontWeight: 600 }}>
                       {fmt(col, sums[i] as number)}
