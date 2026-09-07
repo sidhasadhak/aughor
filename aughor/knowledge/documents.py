@@ -1,8 +1,13 @@
 """
 Document parsing and chunking for external context ingestion.
 
-Supports: PDF (.pdf), Word (.docx), Markdown (.md), plain text (.txt).
-Install optional deps with:  uv pip install -e ".[docs]"
+Reading is delegated to `knowledge.convert` (anydoc): Word, PowerPoint, Excel,
+OpenDocument, RTF, EPUB, CSV and PDF all arrive here as Markdown, with tables intact.
+Markdown and plain text pass through untouched. This module owns the CHUNKING — how
+that text is cut for embedding — which is the part that has to stay stable, because
+the corpus was indexed under these settings.
+
+Install the readers with:  uv pip install -e ".[docs]"
 """
 from __future__ import annotations
 
@@ -10,6 +15,8 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+from aughor.knowledge.convert import TEXT_SUFFIXES  # noqa: F401  (one definition, re-exported)
 
 CHUNK_CHARS = 1_600    # ~400 tokens
 OVERLAP_CHARS = 200    # ~50 tokens
@@ -130,15 +137,39 @@ class DocumentChunk:
 # ── Text extraction ───────────────────────────────────────────────────────────
 
 def extract_text(path: Path) -> str:
+    """A document file's text, as Markdown, for chunking and embedding.
+
+    Routes through `knowledge.convert` (anydoc) so that tables arrive as tables and
+    fourteen formats are readable instead of two. The function keeps its name and
+    signature because a dozen callers use it; what changed is what it can read and,
+    just as importantly, what it now REFUSES to read.
+
+    It used to end with `return path.read_text(errors="replace")` for anything it did
+    not recognise. Handed a `.pptx` that produced 26,928 characters of decoded ZIP
+    container, which went on to be chunked and embedded as prose — indistinguishable
+    downstream from a real document. Unreadable input now raises.
+
+    The legacy pypdf/python-docx path survives only for installs without the
+    converter, and only for the two formats it ever handled correctly.
+    """
+    from aughor.knowledge.convert import ConversionError, available, to_markdown_file
+
+    if available():
+        return to_markdown_file(path)
+
+    # No converter installed — the pre-anydoc readers, unchanged, for their formats.
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return _extract_pdf(path)
     if suffix == ".docx":
         return _extract_docx(path)
-    if suffix in (".md", ".txt", ".markdown"):
+    if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8", errors="replace")
-    # Fallback: try UTF-8 text
-    return path.read_text(encoding="utf-8", errors="replace")
+    raise ConversionError(
+        f"Cannot read '{suffix or path.name}' without the document converter. "
+        f"Install it with: uv pip install -e '.[docs]'",
+        code="converter_missing",
+    )
 
 
 def _extract_pdf(path: Path) -> str:

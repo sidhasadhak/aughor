@@ -9,13 +9,24 @@ import {
   previewDocumentChunks,
   deleteDocument,
   getKnowledgeStatus,
+  getDocumentFormats,
+  getDocumentMarkdown,
+  documentOriginalUrl,
   type ChunkPreview,
   type ChunkSettings,
   type DocumentEntry,
+  type DocumentFormats,
   type KnowledgeStatus,
 } from "@/lib/api";
 
-const ACCEPTED = ".pdf,.docx,.md,.txt,.markdown";
+/** Until the server answers, accept only what needs no converter. The list used to be
+ *  a hard-coded five and stayed five while the parser grew to twenty — a capability
+ *  that exists and is unreachable from the file picker. This is a floor, not the list. */
+const FALLBACK_ACCEPT = ".md,.markdown,.txt";
+
+/** Formats a browser can display on its own. Everything else previews as Markdown —
+ *  which is what the platform actually reads anyway, so it is the honest preview. */
+const BROWSER_RENDERABLE = new Set([".pdf", ".txt", ".md", ".markdown", ".csv"]);
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime();
@@ -36,6 +47,20 @@ function FileTypeChip({ filename }: { filename: string }) {
     md:       { label: "MD",       chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
     markdown: { label: "MD",       chip: "border-violet-500/30 bg-violet-500/10 text-violet-400" },
     txt:      { label: "TXT",      chip: "border-zinc-600 bg-zinc-800 text-zinc-400"             },
+    docm:     { label: "Word",     chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
+    odt:      { label: "ODT",      chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
+    rtf:      { label: "RTF",      chip: "border-blue-500/30 bg-blue-500/10 text-blue-400"       },
+    pptx:     { label: "Slides",   chip: "border-orange-500/30 bg-orange-500/10 text-orange-400" },
+    ppt:      { label: "Slides",   chip: "border-orange-500/30 bg-orange-500/10 text-orange-400" },
+    pptm:     { label: "Slides",   chip: "border-orange-500/30 bg-orange-500/10 text-orange-400" },
+    odp:      { label: "Slides",   chip: "border-orange-500/30 bg-orange-500/10 text-orange-400" },
+    xlsx:     { label: "Sheet",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+    xls:      { label: "Sheet",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+    xlsm:     { label: "Sheet",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+    xlsb:     { label: "Sheet",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+    ods:      { label: "Sheet",    chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+    csv:      { label: "CSV",      chip: "border-emerald-500/30 bg-emerald-500/10 text-emerald-400" },
+    epub:     { label: "EPUB",     chip: "border-cyan-500/30 bg-cyan-500/10 text-cyan-400"       },
   };
   const style = map[ext] ?? { label: ext.toUpperCase(), chip: "border-zinc-600 bg-zinc-800 text-zinc-400" };
   return (
@@ -67,6 +92,18 @@ export function DocumentUploader() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
+
+  // What this deployment can read, asked of it rather than assumed.
+  const [formats, setFormats] = useState<DocumentFormats | null>(null);
+  const accept = formats?.accept ?? FALLBACK_ACCEPT;
+
+  // Looking at a document that is already stored — distinct from the CHUNK preview
+  // beside the settings, which is about how a file would be cut. This one is about
+  // the document itself: the file as uploaded, and the Markdown everything reads.
+  const [openDoc, setOpenDoc] = useState<DocumentEntry | null>(null);
+  const [openTab, setOpenTab] = useState<"original" | "markdown">("original");
+  const [openMarkdown, setOpenMarkdown] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   // Chunking, as settings rather than three constants nobody could see. Empty means the
   // defaults the corpus was indexed under — an omitted field is the previous behaviour,
@@ -106,6 +143,7 @@ export function DocumentUploader() {
     // and no hint that nothing can be searched — an unreachable embedder looks exactly
     // like a healthy corpus from here.
     getKnowledgeStatus().then(setStatus).catch(() => setStatus(null));
+    getDocumentFormats().then(setFormats).catch(() => setFormats(null));
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
@@ -144,11 +182,28 @@ export function DocumentUploader() {
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
 
+  /** Open a stored document. The original is shown when it was retained and the browser
+   *  can render it; otherwise the Markdown, which is what the platform reads regardless. */
+  const openDocument = useCallback(async (doc: DocumentEntry) => {
+    const suffix = `.${doc.filename.split(".").pop()?.toLowerCase() ?? ""}`;
+    const canRenderOriginal = !!doc.has_original && BROWSER_RENDERABLE.has(suffix);
+    setOpenDoc(doc);
+    setOpenTab(canRenderOriginal ? "original" : "markdown");
+    setOpenMarkdown(null);
+    setOpenError(null);
+    try {
+      setOpenMarkdown(await getDocumentMarkdown(doc.doc_id));
+    } catch (e) {
+      setOpenError(e instanceof Error ? e.message : "Could not read the document");
+    }
+  }, []);
+
   const handleDelete = async (docId: string) => {
     setDeletingId(docId);
     try {
       await deleteDocument(docId);
       setDocs(prev => prev.filter(d => d.doc_id !== docId));
+      setOpenDoc(prev => (prev?.doc_id === docId ? null : prev));
       getKnowledgeStatus().then(setStatus).catch(() => {});
     } catch {
       /* silent */
@@ -163,8 +218,9 @@ export function DocumentUploader() {
       <div>
         <h2 className="aug-fs-ui font-semibold text-zinc-200">Documents</h2>
         <p className="aug-fs-xs text-zinc-500 mt-0.5">
-          Upload PDFs, Word docs, or Markdown files. The Agent and the conversation both
-          retrieve relevant snippets.
+          Upload a document in almost any format — it is converted to Markdown, kept as
+          you uploaded it, and made available as context to the Agent, the conversation
+          and anywhere else on the platform.
         </p>
       </div>
 
@@ -226,7 +282,7 @@ export function DocumentUploader() {
             <input
               ref={inputRef}
               type="file"
-              accept={ACCEPTED}
+              accept={accept}
               multiple
               className="hidden"
               onChange={e => handleFiles(e.target.files)}
@@ -242,7 +298,11 @@ export function DocumentUploader() {
                 <p className="aug-fs-ui text-zinc-300 font-medium">
                   {dragging ? "Drop to upload" : "Drop files here or click to browse"}
                 </p>
-                <p className="aug-fs-xs text-zinc-500">PDF · Word · Markdown · Plain text</p>
+                <p className="aug-fs-xs text-zinc-500">
+                  {formats?.converter === false
+                    ? "Markdown · Plain text — install the document converter for Word, PDF, slides and sheets"
+                    : "PDF · Word · Slides · Sheets · OpenDocument · RTF · EPUB · CSV · Markdown"}
+                </p>
               </div>
             )}
           </div>
@@ -340,7 +400,7 @@ export function DocumentUploader() {
               <input
                 ref={previewRef}
                 type="file"
-                accept={ACCEPTED}
+                accept={accept}
                 className="hidden"
                 onChange={e => runPreview(e.target.files)}
               />
@@ -443,15 +503,25 @@ export function DocumentUploader() {
             {docs.map(doc => (
               <div
                 key={doc.doc_id}
-                className="rounded-md border border-zinc-700 bg-zinc-800/50 px-4 py-3 flex items-center gap-3"
+                className={`rounded-md border bg-zinc-800/50 px-4 py-3 flex items-center gap-3 ${
+                  openDoc?.doc_id === doc.doc_id ? "border-violet-500/60" : "border-zinc-700"
+                }`}
               >
                 <FileTypeChip filename={doc.filename} />
                 <div className="flex-1 min-w-0">
                   <p className="aug-fs-sm font-medium text-zinc-200 truncate">{doc.title}</p>
                   <p className="aug-fs-xs text-zinc-500 font-mono mt-0.5">
                     {doc.filename} · {chunkLabel(doc, status)} · {timeAgo(doc.uploaded_at)}
+                    {doc.has_original === false && " · original not kept"}
                   </p>
                 </div>
+                <button
+                  type="button"
+                  onClick={() => openDocument(doc)}
+                  className="shrink-0 aug-fs-xs text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded px-2 py-1 transition"
+                >
+                  {openDoc?.doc_id === doc.doc_id ? "Viewing" : "View"}
+                </button>
                 <button
                   onClick={() => handleDelete(doc.doc_id)}
                   disabled={deletingId === doc.doc_id}
@@ -461,6 +531,103 @@ export function DocumentUploader() {
                 </button>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── A stored document, as itself and as the platform reads it ────────────
+          Two tabs because they answer different questions. "Original" is the file the
+          person uploaded — the one they recognise. "Markdown" is what actually reaches
+          an agent, a canvas or a prompt, and seeing it is the only way to know whether
+          a table survived the conversion. Neither substitutes for the other. */}
+      {openDoc && (
+        <div className="rounded-md border border-zinc-700 bg-zinc-900/40">
+          <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2.5">
+            <FileTypeChip filename={openDoc.filename} />
+            <div className="min-w-0 flex-1">
+              <p className="aug-fs-sm font-medium text-zinc-200 truncate">{openDoc.title}</p>
+              <p className="aug-fs-xs text-zinc-500 font-mono truncate">{openDoc.filename}</p>
+            </div>
+            <div className="flex shrink-0 rounded border border-zinc-700 overflow-hidden">
+              {(["original", "markdown"] as const).map(tab => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => setOpenTab(tab)}
+                  disabled={tab === "original" && !openDoc.has_original}
+                  className={`aug-fs-xs px-2.5 py-1 transition disabled:opacity-40 ${
+                    openTab === tab ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800"
+                  }`}
+                >
+                  {tab === "original" ? "Original" : "Markdown"}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={() => setOpenDoc(null)}
+              className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+            >
+              Close
+            </button>
+          </div>
+
+          <div className="p-4">
+            {openError && (
+              <p className="aug-fs-xs text-amber-400">{openError}</p>
+            )}
+
+            {openTab === "original" && !openError && (
+              openDoc.has_original ? (
+                BROWSER_RENDERABLE.has(`.${openDoc.filename.split(".").pop()?.toLowerCase() ?? ""}`) ? (
+                  <iframe
+                    src={documentOriginalUrl(openDoc.doc_id)}
+                    title={openDoc.title}
+                    className="w-full h-[28rem] rounded border border-zinc-800 bg-zinc-950"
+                  />
+                ) : (
+                  /* A browser cannot render a .docx or .pptx. Saying so and offering the
+                     file beats an empty frame that looks like a failure. */
+                  <div className="rounded border border-zinc-800 bg-zinc-950/60 p-6 text-center">
+                    <p className="aug-fs-sm text-zinc-300">
+                      A browser cannot display this format directly.
+                    </p>
+                    <p className="aug-fs-xs text-zinc-500 mt-1">
+                      The Markdown tab shows what the platform reads from it.
+                    </p>
+                    <a
+                      href={documentOriginalUrl(openDoc.doc_id)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block mt-3 aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-600 text-zinc-200 hover:bg-zinc-800"
+                    >
+                      Open the original file
+                    </a>
+                  </div>
+                )
+              ) : (
+                <p className="aug-fs-xs text-zinc-500">
+                  This document was uploaded before originals were kept, so only its text
+                  remains. Re-upload it to enable preview.
+                </p>
+              )
+            )}
+
+            {openTab === "markdown" && !openError && (
+              openMarkdown === null ? (
+                <p className="aug-fs-xs text-zinc-500">Reading…</p>
+              ) : (
+                <>
+                  <p className="aug-fs-xs text-zinc-500 mb-2">
+                    {formatCount(openMarkdown.length)} characters · this is the text every
+                    agent, canvas and prompt sees
+                  </p>
+                  <pre className="aug-fs-xs text-zinc-300 font-mono whitespace-pre-wrap max-h-[28rem] overflow-auto rounded border border-zinc-800 bg-zinc-950/60 p-3">
+                    {openMarkdown}
+                  </pre>
+                </>
+              )
+            )}
           </div>
         </div>
       )}

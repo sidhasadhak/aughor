@@ -3164,8 +3164,47 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List Documents Endpoint */
+        /**
+         * List Documents Endpoint
+         * @description The corpus, each row saying what is actually retained for it.
+         *
+         *     `has_original` is the field the UI branches on — it decides whether a row offers
+         *     preview and conversion or only search. It is read from disk per row rather than
+         *     stored on the registry entry, because the registry cannot know that a directory
+         *     was cleared underneath it, and a row claiming a preview that 404s is worse than a
+         *     row that never offered one.
+         */
         get: operations["list_documents_endpoint_documents_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/formats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document Formats
+         * @description What this deployment can actually read, for the drop zone to advertise.
+         *
+         *     The UI used to carry its own copy of the list (`.pdf,.docx,.md,.txt,.markdown`).
+         *     Two hand-written lists of the same fact drift apart, and they drift silently: the
+         *     converter gained fourteen formats and the drop zone went on rejecting them in the
+         *     file picker, so the capability existed and was unreachable. Served, there is one
+         *     list and it is the one the parser enforces.
+         *
+         *     `converter` reports whether the document converter is installed at all — without
+         *     it only Markdown and plain text can be read, and the UI should say so rather than
+         *     offering formats that will fail.
+         */
+        get: operations["document_formats_documents_formats_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -3223,9 +3262,14 @@ export interface paths {
          *     is deliberately not written here: the package names no hosted model, and a rot-guard
          *     enforces that even in prose, because prose is where a convenient default starts.)
          *
-         *     ⚠️ It recovers what the STORE holds and nothing more. Uploaded files are unlinked after
-         *     indexing, so a chunk absent from the store has no source anywhere; the plan reports that
-         *     count as `unrecoverable_chunks` rather than letting a person infer a full recovery.
+         *     ⚠️ It recovers what the STORE holds and nothing more. The plan reports what it cannot
+         *     reach as `unrecoverable_chunks` rather than letting a person infer a full recovery.
+         *
+         *     That count is now smaller than it was, and shrinking. Uploads used to be unlinked
+         *     straight after indexing, so a chunk missing from the store had no source anywhere;
+         *     documents uploaded since retention began keep their original bytes and CAN be read
+         *     again from source. This endpoint does not do that yet — it re-embeds — but the
+         *     material a real re-read needs is on disk, which it never was before.
          */
         post: operations["reindex_documents_documents_reindex_post"];
         delete?: never;
@@ -3295,7 +3339,21 @@ export interface paths {
         put?: never;
         /**
          * Upload Document
-         * @description Upload a PDF, Word, Markdown, or plain-text document for semantic indexing.
+         * @description Upload any supported document: convert it to Markdown, index it, KEEP it.
+         *
+         *     Three things happen here, in an order that matters. The bytes are converted to
+         *     Markdown once. The Markdown is chunked and embedded. Both the original bytes and
+         *     the Markdown are retained under the document's id.
+         *
+         *     That last step is new, and it is the reason the rest of the documents section can
+         *     exist. This handler used to spool the upload to a temp file and unlink it in a
+         *     `finally:` — the document was destroyed the moment it was indexed. A preview had
+         *     nothing to show but chunk text, conversion had nothing to convert, and a re-index
+         *     could only re-embed the old parse because the source was gone.
+         *
+         *     Conversion runs BEFORE indexing on purpose: a file that cannot be read must fail
+         *     with its own reason ("this PDF is scanned", "this document is password-protected")
+         *     rather than producing zero chunks and a generic complaint about no text.
          */
         post: operations["upload_document_documents_upload_post"];
         delete?: never;
@@ -3314,8 +3372,64 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
-        /** Delete Document Endpoint */
+        /**
+         * Delete Document Endpoint
+         * @description Remove a document from the registry, the vector store, AND disk.
+         *
+         *     The retained bytes are deleted here rather than in `delete_document` so that the
+         *     indexer keeps knowing nothing about the blob store. Deleting them is not optional
+         *     housekeeping: a person who deletes a document has asked for their file to be gone,
+         *     and leaving the original on disk after the row disappears would be the one copy
+         *     nothing in the product can see or reach.
+         */
         delete: operations["delete_document_endpoint_documents__doc_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{doc_id}/markdown": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document Markdown
+         * @description The document as Markdown — what every agent, canvas and prompt actually reads.
+         *
+         *     Served from the cache when it is there and re-converted from the original when it
+         *     is not, so this answers for documents stored before the cache existed.
+         */
+        get: operations["document_markdown_documents__doc_id__markdown_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{doc_id}/original": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document Original
+         * @description The document's own bytes, for a real preview.
+         *
+         *     Inline rather than attachment, so a browser renders the PDF instead of downloading
+         *     it; the filename is quoted for a Content-Disposition header and never interpolated
+         *     from user input unescaped.
+         */
+        get: operations["document_original_documents__doc_id__original_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -19167,6 +19281,26 @@ export interface operations {
             };
         };
     };
+    document_formats_documents_formats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     preview_document_chunks_documents_preview_post: {
         parameters: {
             query?: never;
@@ -19335,6 +19469,68 @@ export interface operations {
         };
     };
     delete_document_endpoint_documents__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_markdown_documents__doc_id__markdown_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_original_documents__doc_id__original_get: {
         parameters: {
             query?: never;
             header?: never;
