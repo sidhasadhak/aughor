@@ -654,8 +654,15 @@ finishes a direction already chosen.
 
 > **Shipped as specced, with these measured deltas (the spec text below is kept as
 > written; where they disagree, this ledger is the truth):**
-> - **DS-1** — P0 + served availability shipped. **Open: the P1 port-compatibility filter
->   and the P2 rail.** The port-type→hue map is DEFERRED to DS-10 — no port-type
+> - **DS-1** — P0 + served availability shipped. **P1 (the port-compatibility filter)
+>   SHIPPED 2026-09-02**, verified in code 2026-09-07 (`onConnectEnd` →
+>   `landPrebound` → the palette's `bindFilter`); this line claimed it open for five days
+>   after the receipt was written 70 lines below.
+>   **P2 (the Palette · Runs · Versions rail) IS NOT BUILT** — §5 claims it shipped the same
+>   day and no rail exists; what ships is a category filter (`only=`), which is a different
+>   control. Its PREMISE has also lapsed: the rail was specced "once there is more than one
+>   section", and the Runs layer was retired into Activity → Phases, so there is no second
+>   section to switch to. Re-spec or drop it; do not build it as written. The port-type→hue map is DEFERRED to DS-10 — no port-type
 >   vocabulary exists yet and only six `--chart-N` tokens do (`lint:palette` CVD-validates
 >   additions); colour stays direction+kind keyed. No structured `door` field is served —
 >   the reason sentence names the door until DS-11 gives it destinations (don't serve a
@@ -1511,13 +1518,20 @@ when the author was me:
   and `dataflow.py` and asserts they match** — the drift that file's own comment warns about
   ("a rule mirrored on one side only is a rule that disagrees with itself") now fails a test
   instead of surfacing as a cast the server refuses.
-  ⏳ Still owed — a dedicated PICKER. Bindings are edited as free-text JSON deliberately (a
-  plain input is the only editor that holds either a sentence or a binding), so a control
-  beside each of several bindable fields is a real design change, not a wiring one.
-  It is reachable
-  through the API and the DS-16 import funnel, not from the binding chip. Until that lands
-  this is the arc's own recurring failure (a complete and inert plane), and it is named here
-  rather than left to be discovered.
+  ✅ **PICKER SHIPPED 2026-09-04.** `BindingCast` renders a cast selector beside a bindable
+  field — and **nothing at all** when the field holds a plain value, which is what lets it
+  sit next to a free-text input without cluttering the majority of fields that will never
+  carry a binding. Wired to `slack_post`'s message and channel and to every param an
+  operation DECLARES bindable (offering a conversion on a param that cannot hold a binding
+  would advertise wiring the server refuses). Clearing it **deletes** `$as` rather than
+  setting `""`: `CASTS` has no empty member and `wearsMarker` accepts `$from` plus at most
+  `$as`, so an empty string would be a third state — read as wiring by the client and
+  refused as a conversion by the server. That property has its own test, verified to fail
+  against the naive implementation.
+  The cast is therefore reachable from the binding chip itself, not only through the API and
+  the DS-16 import funnel — which is what closes this item. The arc's recurring failure it
+  was named against (a complete and inert plane) does not apply once the control is where
+  the value is edited.
 - **File I/O** — `Read File`, `Write File`, `File System`.
 - **LLM as a component** — `Language Model`, `Embedding Model`, `Prompt Template`,
   `LLM Selector`. We have the whole plane; it is not droppable, it lives inside
@@ -3032,7 +3046,8 @@ NOW
   ✅ DS-1…DS-5  SHIPPED 2026-08-31 (#417, #418) — the palette that tells this deployment's
         truth · run-to-here · live runs streaming onto nodes · undo/redo, copy/paste,
         minimap, layout sidecar, the last window.prompt dead · the agent Map
-        (spec-deltas in §3.7 Phase 1; DS-1's P1 port-filter + P2 rail remain open)
+        (spec-deltas in §3.7 Phase 1; DS-1's P1 port-filter SHIPPED 2026-09-02; the P2 rail
+        is NOT built and its premise has lapsed — see §3.7's DS-1 ledger)
 
   ✅ DS-6  SHIPPED 2026-08-31 — branch ("Otherwise": else_of, routed on the guard's
         VERDICT, undecided takes neither arm) + join ($from_any: first alternative that
@@ -3098,9 +3113,13 @@ NEXT (order within a band is the user's knob)
                                    AUGHOR_QDRANT_PATH; one serialized client per path;
                                    three bespoke QdrantClient call sites joined the
                                    seam — §3.6)
-  ✅ DS-1 leftovers SHIPPED 2026-09-02  (P1 edge-drop → pre-bound palette filter · P2
-                                   Palette·Runs rail — §3.7 Phase 1 ledger; landed into
-                                   DS-1R's canvas-first shape, same day)
+  ⚠️ DS-1 leftovers — HALF SHIPPED 2026-09-02. **P1** edge-drop → pre-bound palette filter
+                                   is real (verified in code 2026-09-07). **P2's
+                                   Palette·Runs rail was claimed here and never existed** —
+                                   grep finds no rail; the shipped control is a category
+                                   filter. Corrected 2026-09-07 by measuring instead of
+                                   reading. Its premise lapsed too: Runs retired into
+                                   Activity → Phases, so the rail has no second section.
   ✅ tool_grants column SHIPPED 2026-09-02  (migration 6 + store/create/patch + write-time
                                    roster validation + the editor's grants list; grants
                                    stay PROPOSE-only — §1 limit retired)
@@ -3425,8 +3444,9 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
   of what jsdom can prove; they were verified to FAIL without the fix.
 - ~~**The primitive gap**~~ — **CLOSED 2026-09-03** (`e3a56b5c`, #428). Data shaping shipped as
   `$as` on the binding; the conditional-router half was my own false claim and DS-6's `else_of`
-  was always the branch (§3.8a). ✅ 2026-09-04: `$as` is now TAUGHT where bindings are typed. ⏳ A dedicated picker survives it — API and
-  the DS-16 import funnel only, not the binding chip.
+  was always the branch (§3.8a). ✅ 2026-09-04: `$as` is now TAUGHT where bindings are typed, and the dedicated
+  PICKER (`BindingCast`) ships with it — the cast is a control beside the field, not only an
+  API/DS-16 path.
 - ~~**DS-5 Map grants spoke**~~ — **DRAWN 2026-09-03**, closing the last undrawn spoke of the
   DS-5 spec ("its doors; its automations; its tool grants and connections"). One node per
   granted action on the reach side, edged from the agent, pointing at **Attention** — the
