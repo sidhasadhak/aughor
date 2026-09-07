@@ -616,11 +616,30 @@ export function DocumentUploader() {
             {openTab === "original" && !openError && (
               openDoc.has_original ? (
                 BROWSER_RENDERABLE.has(`.${openDoc.filename.split(".").pop()?.toLowerCase() ?? ""}`) ? (
-                  <iframe
-                    src={documentOriginalUrl(openDoc.doc_id)}
-                    title={openDoc.title}
-                    className="w-full h-[28rem] rounded border border-zinc-800 bg-zinc-950"
-                  />
+                  <>
+                    <iframe
+                      src={documentOriginalUrl(openDoc.doc_id)}
+                      title={openDoc.title}
+                      className="w-full h-[28rem] rounded border border-zinc-800 bg-zinc-950"
+                    />
+                    {/* An embedded PDF renders only where the viewer's browser has a PDF
+                        plugin — headless builds, some embedded webviews and some locked-down
+                        corporate profiles have none, and there the frame above is simply
+                        BLANK with nothing to explain it. Observed while capturing this very
+                        panel. A frame that can fail silently needs a way out beside it. */}
+                    <p className="aug-fs-xs text-zinc-600 mt-1.5">
+                      Nothing shown above?{" "}
+                      <a
+                        href={documentOriginalUrl(openDoc.doc_id)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-zinc-400 hover:text-zinc-200 underline"
+                      >
+                        Open the original file
+                      </a>{" "}
+                      — some browsers cannot display it inline. The Markdown tab always works.
+                    </p>
+                  </>
                 ) : (
                   /* A browser cannot render a .docx or .pptx. Saying so and offering the
                      file beats an empty frame that looks like a failure. */
