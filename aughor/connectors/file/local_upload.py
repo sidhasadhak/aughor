@@ -44,6 +44,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import duckdb
+from aughor.db.duckdb_ext import prepare_extensions
 
 from aughor.db.single_flight import single_flight_build
 from aughor.connectors.base import Connector
@@ -139,6 +140,7 @@ def _ensure_excel_extension(con) -> None:
     other format, and the spreadsheet path fails with DuckDB's own message rather
     than an import error from here.
     """
+    prepare_extensions(con)
     try:
         con.execute("INSTALL excel")
     except Exception:

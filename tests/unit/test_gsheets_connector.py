@@ -17,8 +17,7 @@ capture and the test message are the subjects, not Google's endpoint.
 """
 from __future__ import annotations
 
-import tempfile
-from pathlib import Path
+import os
 
 from aughor.connectors.api.gsheets import GoogleSheetsConnector, invalidate_sheet_cache
 
@@ -34,13 +33,38 @@ def _connector(monkeypatch, url_for: dict[str, str], sheets: str = "") -> Google
     return GoogleSheetsConnector("gsheet://test-sheet-id", meta={"sheets": sheets})
 
 
-def test_extension_directory_is_writable_tmp_not_home(monkeypatch, tmp_path):
+def test_a_host_with_no_writable_home_can_still_install_httpfs(monkeypatch, tmp_path):
+    """The Vercel shape. Asserts the OUTCOME, not the setting.
+
+    The previous version of this test asserted `extension_directory` was a temp dir
+    and passed — while the deployment kept dying on `INSTALL httpfs`, because DuckDB
+    resolves the home directory FIRST. Here the home is broken the way a serverless
+    image breaks it, and the subject is whether the home error is gone.
+    """
+    for var in ("HOME", "USERPROFILE", "DUCKDB_HOME"):
+        monkeypatch.delenv(var, raising=False)
     csv = tmp_path / "ok.csv"
     csv.write_text("a,b\n1,2\n")
     conn = _connector(monkeypatch, {"": str(csv)})
-    row = conn._duckdb.execute("SELECT current_setting('extension_directory')").fetchone()
-    assert str(Path(tempfile.gettempdir()) / "aughor_duckdb_ext") in str(row[0])
-    conn.close()
+    try:
+        assert "home directory" not in conn._load_errors.get("httpfs", "")
+        home = conn._duckdb.execute("SELECT current_setting('home_directory')").fetchone()[0]
+        assert home and os.access(str(home), os.W_OK)
+    finally:
+        conn.close()
+
+
+def test_a_writable_home_keeps_the_shared_extension_cache(monkeypatch, tmp_path):
+    """A laptop/CI must not be pushed onto a temp extension dir (network on every run)."""
+    monkeypatch.setenv("HOME", str(tmp_path))
+    csv = tmp_path / "ok.csv"
+    csv.write_text("a,b\n1,2\n")
+    conn = _connector(monkeypatch, {"": str(csv)})
+    try:
+        ext = conn._duckdb.execute("SELECT current_setting('extension_directory')").fetchone()[0]
+        assert str(ext) == ""  # untouched default -> ~/.duckdb
+    finally:
+        conn.close()
 
 
 def test_a_load_failure_reaches_test_with_the_true_reason(monkeypatch):

@@ -69,6 +69,8 @@ def read_tabular(filename: str, data: bytes) -> tuple[list[str], list[dict]]:
             f.flush()
             con = duckdb.connect(":memory:")
             try:
+                from aughor.db.duckdb_ext import prepare_extensions
+                prepare_extensions(con)
                 try:
                     con.execute("INSTALL excel")
                 except Exception as exc:
