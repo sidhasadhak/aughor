@@ -203,17 +203,33 @@ def test_the_backend_branch_is_named(tmp_path, monkeypatch) -> None:
     """`connect_store` taking the SQLite branch is invisible from outside, and its
     consequences are not — on an ephemeral host the registry and workspaces live and
     die with the instance. It is also a SECOND way for the pool counters to read
-    zero, so the two have to be tellable apart."""
-    from aughor.stats import stats
+    zero, so the two have to be tellable apart.
+
+    The counter is observed through a LOCAL recorder rather than by differencing
+    `stats.snapshot()`. `stats` is process-global: in a full-suite run other tests and
+    background threads open SQLite stores between the two reads, so `after - before == 1`
+    was really asserting "nothing else in this 9,000-test process opened a store while I
+    was looking". It held most of the time and failed intermittently on any machine —
+    measured deltas of +3 locally and +30 on CI, both on branches that changed no Python.
+    Stubbing the sink measures THIS call and nothing else.
+    """
     from aughor.db import backend
+    import aughor.stats as stats_mod
 
-    def n(k: str) -> int:
-        return stats.snapshot()["counters"].get(f"store.backend.{k}", 0)
+    seen: list[str] = []
+    real = stats_mod.stats          # captured BEFORE the patch, or __getattr__ recurses
 
+    class _Recorder:
+        def inc(self, key: str, *a, **k) -> None:
+            seen.append(key)
+        def __getattr__(self, name):        # every other stats call passes through
+            return getattr(real, name)
+
+    monkeypatch.setattr(stats_mod, "stats", _Recorder())
     monkeypatch.setattr(backend, "is_postgres", lambda: False)
-    s0 = n("sqlite")
     backend.connect_store(tmp_path / "a.db").close()
-    assert n("sqlite") - s0 == 1
+    assert seen.count("store.backend.sqlite") == 1, seen
+    assert not any(k == "store.backend.postgres" for k in seen), seen
 
 
 def test_sqlite_is_not_pooled(tmp_path, monkeypatch) -> None:
