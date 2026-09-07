@@ -342,7 +342,10 @@ def _fallback_model_for(backend: str, role: Role) -> str:
 
 # ── Runtime config (data/llm_config.json) ────────────────────────────────────
 # Schema: {backend?: str, models?: {coder,narrator,fast}, base_urls?: {ollama,lmstudio},
-#          keys?: {groq,together,anthropic}}  — keys are secretvault-encrypted strings.
+#          keys?: {groq,together,anthropic}, json_mode?: {<backend>: [<model>, …]}}
+#          — keys are secretvault-encrypted strings.
+# `json_mode` is keyed by BACKEND then model, not "backend/model": model ids contain
+# slashes (`nvidia/nemotron-…`), so a flat composite key cannot be split back apart.
 
 _runtime: Optional[dict] = None
 _config_version = 0          # bumped on every config (re)load
@@ -797,9 +800,33 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     # (the conservative mode) when the answer is not known yet.
     # The declaration is taken at face value. When it turns out to be false the call
     # FAILS, loudly and by name — see `_raise_if_tools_declaration_false`. Answering in
-    # another mode instead would leave a model that misreports itself quietly in place.
-    mode = instructor.Mode.TOOLS if model_supports_tools(model) else instructor.Mode.JSON
+    # another mode on our own initiative would leave a model that misreports itself
+    # quietly in place; an operator who pins `json_mode` has decided that for themselves.
+    use_tools = model_supports_tools(model) and not forces_json_mode("ollama", model)
+    mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
     return instructor.from_openai(raw, mode=mode)
+
+
+#: Backends whose client builder consults `forces_json_mode`. Vended to the UI so it
+#: offers the pin only where it does something: a control that silently has no effect is
+#: worse than an absent one. lmstudio already builds in JSON_SCHEMA mode and the hosted
+#: OpenAI-compatible backends do not choose their mode from a model declaration, so
+#: ollama is the whole list today.
+JSON_MODE_PINNABLE: tuple[str, ...] = ("ollama",)
+
+
+def forces_json_mode(backend: str, model: str) -> bool:
+    """Has the operator pinned this (backend, model) to JSON structured output?
+
+    The deliberate counterpart to :class:`ToolsDeclarationError`. That error refuses a
+    model which advertises tool calling and then does not do it, because working around
+    a false declaration silently leaves a model that misreports itself in place. This is
+    the same outcome ASKED FOR: an operator who knows their model cannot do tool calling
+    and wants it used anyway says so once, in config, and the binding stops pretending
+    to try. The distinction is consent — not whether JSON mode is ever used.
+    """
+    pinned = (_cfg().get("json_mode") or {}).get(backend) or []
+    return model in pinned
 
 
 class ToolsDeclarationError(RuntimeError):
@@ -2632,6 +2659,10 @@ def current_config() -> dict:
         # explicit overrides on disk (so the UI shows set vs default), never secrets:
         "models_set": dict(cfg.get("models") or {}),
         "base_urls_set": dict(cfg.get("base_urls") or {}),
+        # Models the operator has pinned to JSON structured output, per backend, and
+        # where the pin is honoured at all.
+        "json_mode": {b: list(v) for b, v in (cfg.get("json_mode") or {}).items()},
+        "json_mode_backends": list(JSON_MODE_PINNABLE),
         "backends": list(BACKENDS),
         "needs_key": list(NEEDS_KEY),
         "local_backends": list(LOCAL_BACKENDS),
@@ -2678,6 +2709,21 @@ def set_config(patch: dict) -> dict:
         if patch["backend"] not in BACKENDS:
             raise ValueError(f"unknown backend {patch['backend']!r}")
         cfg["backend"] = patch["backend"]
+
+    if isinstance(patch.get("json_mode"), dict):
+        # Per backend, the list REPLACES that backend's pins; [] clears them. Replace
+        # rather than merge so the UI's "off" is expressible — with merge-only semantics
+        # a pin could be added and never removed.
+        pins = dict(cfg.get("json_mode") or {})
+        for b, models in patch["json_mode"].items():
+            if b not in BACKENDS:
+                raise ValueError(f"unknown backend {b!r}")
+            cleaned = [str(m).strip() for m in (models or []) if str(m).strip()]
+            if cleaned:
+                pins[b] = sorted(set(cleaned))
+            else:
+                pins.pop(b, None)
+        cfg["json_mode"] = pins
 
     if isinstance(patch.get("models"), dict):
         effective_backend = str(cfg.get("backend") or _active_backend())

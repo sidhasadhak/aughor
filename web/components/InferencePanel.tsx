@@ -262,6 +262,10 @@ export function InferencePanel() {
   // Free-by-default: binding a paid OpenRouter model requires this explicit ack —
   // the server refuses without it, this checkbox is how the user grants it.
   const [paidAck, setPaidAck] = useState(false);
+  // Models pinned to JSON structured output on the CURRENT backend. A model that
+  // advertises tool calling and does not do it makes the binding fail by name
+  // (`tools_unsupported`); this is how an operator who knows that says "use it anyway".
+  const [jsonPins, setJsonPins] = useState<string[]>([]);
   // The fallback binding — where calls go when the primary refuses. "" = the built-in
   // order, "none" = no fallback, else the one chosen backend.
   const [fallbackBackend, setFallbackBackend] = useState("");
@@ -278,6 +282,7 @@ export function InferencePanel() {
         setKeys({});
         setFallbackBackend(c.fallback?.backend ?? "");
         setFallbackModel(c.fallback?.model ?? "");
+        setJsonPins([...(c.json_mode?.[c.backend] ?? [])]);
       })
       .catch((e) => setLoadErr(e instanceof Error ? e.message : String(e)));
 
@@ -348,6 +353,13 @@ export function InferencePanel() {
   // "configured" here while the provider rejected it — which sends a person to rotate a
   // key that was fine. `keys_state` names the real fault; `keys_set` is kept for older
   // payloads and now means USABLE.
+  // Does this backend honour a JSON-mode pin? The server says so; the UI does not guess,
+  // because offering a control that silently does nothing is worse than omitting it.
+  const jsonPinnable = (cfg.json_mode_backends ?? []).includes(backend);
+  // The distinct models currently bound across the roles — what a pin can apply to.
+  const boundModels = Array.from(new Set(
+    Object.values(models).map(m => (m ?? "").trim()).filter(Boolean)));
+
   const keyState = cfg.keys_state?.[backend] ?? (cfg.keys_set[backend] ? "set" : "unset");
   const keySet = keyState === "set";
   const keyUnreadable = keyState === "unreadable";
@@ -361,6 +373,9 @@ export function InferencePanel() {
     // lets the fallback chain dispatch to that backend at all.
     setBackend(b);
     setModels({ ...(cfg?.models_by_backend?.[b] ?? {}) });
+    // Pins are per backend too — carrying the previous provider's over would silently
+    // apply a decision made about a different model.
+    setJsonPins([...(cfg?.json_mode?.[b] ?? [])]);
     setResult(null);
     setSaved(false);
   };
@@ -387,6 +402,9 @@ export function InferencePanel() {
         keys: Object.fromEntries(Object.entries(keys).filter(([, v]) => v && v.trim())),
         fallback: { backend: fallbackBackend, model: fallbackModel.trim() },
         ...(paidBindings.length > 0 ? { allow_paid: paidAck } : {}),
+        // Only for a backend that honours the pin — sending it elsewhere would store a
+        // setting nothing reads.
+        ...(jsonPinnable ? { json_mode: { [backend]: jsonPins } } : {}),
       });
       setCfg(next);
       setBackend(next.backend);
@@ -395,6 +413,7 @@ export function InferencePanel() {
       setKeys({});
       setFallbackBackend(next.fallback?.backend ?? "");
       setFallbackModel(next.fallback?.model ?? "");
+      setJsonPins([...(next.json_mode?.[next.backend] ?? [])]);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
     } catch (e) {
@@ -515,6 +534,31 @@ export function InferencePanel() {
           with a message saying so. Any model id works: the list is what this provider
           reports serving, not a restriction.
         </div>
+        {jsonPinnable && boundModels.length > 0 && (
+          <div className="aug-fs-xs" style={{
+            lineHeight: 1.5, padding: "7px 10px", borderRadius: "var(--r2)",
+            background: "var(--bg-1)", color: "var(--t2)", border: "1px solid var(--b1)",
+            display: "flex", flexDirection: "column", gap: 6,
+          }}>
+            <span>
+              <strong>Structured output</strong> — a model that advertises tool calling and
+              then does not do it makes its binding fail as{" "}
+              <code className="aug-fs-xs">tools_unsupported</code>. Tick a model here to
+              run it in JSON mode instead.
+            </span>
+            {boundModels.map(m => (
+              <label key={m} style={{ display: "flex", alignItems: "center", gap: 7, cursor: "pointer" }}>
+                <input
+                  type="checkbox"
+                  checked={jsonPins.includes(m)}
+                  onChange={e => setJsonPins(prev =>
+                    e.target.checked ? Array.from(new Set([...prev, m])) : prev.filter(x => x !== m))}
+                />
+                <span>Use JSON structured output for <code className="aug-fs-xs">{m}</code></span>
+              </label>
+            ))}
+          </div>
+        )}
         {paidBindings.length > 0 && (
           <div style={{
             fontSize: 11, lineHeight: 1.5, padding: "8px 10px", borderRadius: "var(--r2)",

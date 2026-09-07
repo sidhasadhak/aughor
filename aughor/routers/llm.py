@@ -35,6 +35,9 @@ class _ConfigPatch(BaseModel):
     # Free-by-default: binding a non-`:free` OpenRouter model is refused unless
     # this is set — paying must be a deliberate act, never a typo.
     allow_paid: Optional[bool] = None
+    # {backend: [model, …]} — models the operator has decided to run in JSON structured
+    # output instead of tool calling. Per backend the list REPLACES; [] clears.
+    json_mode: Optional[dict] = None
 
 
 @router.post("/llm/config", dependencies=[gate(Capability.SECURITY_SUITE)])

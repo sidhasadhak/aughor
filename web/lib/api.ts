@@ -4935,6 +4935,12 @@ export interface LlmConfig {
    *  provider is switched, so a previous choice is not retyped; the fallback chain
    *  dispatches with the same values. Absent on a config written before this shipped. */
   models_by_backend?: Record<string, Record<string, string>>;
+  /** Models the operator has pinned to JSON structured output instead of tool calling,
+   *  per backend. The deliberate counterpart to the `tools_unsupported` refusal. */
+  json_mode?: Record<string, string[]>;
+  /** Backends where that pin is actually honoured — the UI offers the control only
+   *  here, because a setting that silently does nothing is worse than an absent one. */
+  json_mode_backends?: string[];
   /** Where calls go when the primary fails. `backend` is "" for the built-in order,
    *  "none" for no fallback, else the one chosen link; `chain` is what will actually be
    *  tried (an env pin outranks the choice); `active` is true when the primary is spent
@@ -4955,6 +4961,8 @@ export interface LlmConfigPatch {
   fallback?: { backend?: string; model?: string };
   /** Free-by-default: required to bind a non-`:free` OpenRouter model. */
   allow_paid?: boolean;
+  /** {backend: [model, …]} — per backend the list REPLACES; [] clears it. */
+  json_mode?: Record<string, string[]>;
 }
 
 export async function getLlmConfig(): Promise<LlmConfig> {
