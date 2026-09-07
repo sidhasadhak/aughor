@@ -12903,6 +12903,10 @@ export interface components {
             fallback?: {
                 [key: string]: unknown;
             } | null;
+            /** Json Mode */
+            json_mode?: {
+                [key: string]: unknown;
+            } | null;
             /** Keys */
             keys?: {
                 [key: string]: unknown;
