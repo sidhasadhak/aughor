@@ -795,52 +795,72 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     # call in JSON mode — "structured output empty: the model returned no content", on
     # a model that supports exactly what was needed. Now we ask, and fall back to JSON
     # (the conservative mode) when the answer is not known yet.
-    # `_tools_declaration_disproved` is the runtime correction to that answer: a model
-    # that already failed to produce a tool call this process is not asked again.
-    use_tools = (model_supports_tools(model)
-                 and not _tools_declaration_disproved("ollama", model))
-    mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
+    # The declaration is taken at face value. When it turns out to be false the call
+    # FAILS, loudly and by name — see `_raise_if_tools_declaration_false`. Answering in
+    # another mode instead would leave a model that misreports itself quietly in place.
+    mode = instructor.Mode.TOOLS if model_supports_tools(model) else instructor.Mode.JSON
     return instructor.from_openai(raw, mode=mode)
 
 
-#: (backend, model) pairs whose declared `tools` capability was DISPROVED at runtime —
-#: the JSON-mode fallback below succeeded where the tool call produced nothing. Without
-#: this every structured call would keep paying a doomed TOOLS attempt first, which on a
-#: local 14B model is whole seconds of latency per call. Process-local on purpose: it is
-#: a measurement, not a setting, and a re-pulled or upgraded model deserves a fresh try.
-_TOOLS_DECLARATION_DISPROVED: set[tuple[str, str]] = set()
+class ToolsDeclarationError(RuntimeError):
+    """A model that advertises tool calling and then does not do it.
 
+    Measured 2026-09-07: an Ollama model advertising
+    ``capabilities: [completion, tools, insert]`` answered a tool-choice-forced call with
+    ``tool_calls: null``, rendering the call as plain text — ``{"name": "Ping",
+    "arguments": {}}``, its required field absent.
 
-def _tools_declaration_disproved(backend: str, model: str) -> bool:
-    return (backend, model) in _TOOLS_DECLARATION_DISPROVED
-
-
-def _json_mode_fallback_client(client) -> Optional[instructor.Instructor]:
-    """The same connection in JSON mode, for a TOOLS-mode call that produced nothing.
-
-    A model's declared ``tools`` capability is a CLAIM, and some models cannot honour it
-    through an OpenAI-compatible shim. Measured 2026-09-07: ``qwen2.5-coder:14b`` on
-    Ollama advertises ``capabilities: [completion, tools, insert]``, yet a
-    tool-choice-forced call returns ``tool_calls: null`` with the call rendered as plain
-    text — ``{"name": "Ping", "arguments": {}}``, the required field absent. The very
-    same model in JSON mode returns ``{"ok": true}`` on the first attempt.
-
-    ``_build_ollama_client`` asks the model instead of guessing from its name, which is
-    right — the keyword list it replaced denied tools to models that had them. This is
-    the other half of trusting an answer: believe it, and fall back when it proves false,
-    rather than failing the whole binding over a capability the model got wrong about
-    itself. Returns None when there is nothing to fall back FROM (already JSON mode).
+    Raised rather than quietly re-asking in JSON mode. The mode is chosen from the
+    model's OWN declaration, so answering around a false one would leave a model that
+    misreports itself in place, working by accident and only for the calls that happen
+    not to need a tool — the same reasoning that makes `BindingConfigError` refuse to
+    walk the fallback chain. The operator is the one who can fix this, by choosing a
+    model that honours the capability it advertises.
     """
-    if getattr(client, "mode", None) != instructor.Mode.TOOLS:
-        return None
-    raw = getattr(client, "client", None)
-    if raw is None:
+
+    def __init__(self, backend: str, model: str, cause: BaseException):
+        self.backend, self.model = backend, model
+        super().__init__(
+            f"{backend}/{model} declares tool calling but returned no tool call. "
+            f"This binding cannot produce schema-native structured output — choose a "
+            f"model that honours tool calling on this backend.")
+        self.__cause__ = cause
+
+
+def _tool_call_absent(exc: BaseException) -> Optional[bool]:
+    """Did the provider's response carry NO tool call at all?
+
+    None when the response cannot be reached from ``exc`` — and then no accusation is
+    made. A model that genuinely supports tools can still fail a schema; what it does
+    NOT do is answer a forced tool call with prose. Only the absence of any tool call
+    is evidence that the declaration was false, so only that is acted on.
+    """
+    completion = (getattr(exc, "last_completion", None)
+                  or getattr(exc, "raw_response", None))
+    if completion is None:
         return None
     try:
-        return instructor.from_openai(raw, mode=instructor.Mode.JSON)
-    except Exception:  # pragma: no cover - a client shape instructor cannot re-wrap
-        logger.debug("llm: could not build a JSON-mode fallback client", exc_info=True)
+        choices = getattr(completion, "choices", None) or []
+        message = getattr(choices[0], "message", None) if choices else None
+        if message is None:
+            return None
+        return not getattr(message, "tool_calls", None)
+    except Exception:  # pragma: no cover - a response shape we do not recognise
         return None
+
+
+def _raise_if_tools_declaration_false(client, backend: str, model: str,
+                                      exc: BaseException) -> None:
+    """Turn a disproved ``tools`` declaration into a named configuration fault."""
+    if getattr(client, "mode", None) != instructor.Mode.TOOLS:
+        return
+    if not _is_structured_failure(exc):
+        return
+    if _tool_call_absent(exc) is not True:
+        return          # no evidence — never accuse a model on a guess
+    logger.warning("llm: %s/%s declared tool support and returned no tool call",
+                   backend, model)
+    raise ToolsDeclarationError(backend, model, exc)
 
 
 def _build_lmstudio_client(base_url: str) -> instructor.Instructor:
@@ -1202,7 +1222,7 @@ _WRONG_ENDPOINT_MSGS = (
 #: the operator must DO, which is the only thing a health check is for.
 PROVIDER_ERROR_CLASSES = (
     "bad_key", "model_not_found", "quota_exhausted", "rate_limited",
-    "wrong_endpoint", "unreachable", "timeout", "config", "unknown",
+    "wrong_endpoint", "unreachable", "timeout", "tools_unsupported", "config", "unknown",
 )
 
 _ERROR_HINTS = {
@@ -1213,6 +1233,7 @@ _ERROR_HINTS = {
     "wrong_endpoint": "The base URL does not look like this provider's API root.",
     "unreachable": "Nothing answered at that address — check the server is running and the URL.",
     "timeout": "The endpoint accepted the request but did not answer in time.",
+    "tools_unsupported": "This model advertises tool calling but does not do it — pick a model that honours it.",
     "config": "The client could not be built — usually a missing key or an unknown backend.",
     "unknown": "Unrecognised failure — the provider's own message is in `error`.",
 }
@@ -1237,6 +1258,10 @@ def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
     404 says "not found" whether the *model* or the *URL* is wrong. The specific
     evidence has to be consumed before the generic phrasing can claim it.
     """
+    # A type check outranks every prose marker below: this one was raised by us, from
+    # evidence, rather than inferred from a provider's wording.
+    if isinstance(exc, ToolsDeclarationError):
+        return "tools_unsupported"
     msg = str(exc).lower()
     if any(k in msg for k in _BAD_KEY_MSGS) or getattr(exc, "status_code", None) in (401, 403):
         return "bad_key"
@@ -2194,41 +2219,20 @@ class LLMProvider:
             if recovered is not None:
                 out, raw = recovered
             else:
-                # The model may have lied about supporting tools. One JSON-mode retry
-                # before this binding is declared unusable — see
-                # `_json_mode_fallback_client` for the measurement that motivates it.
-                retried = None
-                if _is_structured_failure(exc):
-                    alt = _json_mode_fallback_client(client)
-                    if alt is not None:
-                        logger.warning(
-                            "llm: %s/%s declared tool support but returned no tool call; "
-                            "retrying once in JSON mode", backend, model)
-                        try:
-                            alt_ep = alt.chat.completions
-                            alt_cwc = getattr(alt_ep, "create_with_completion", None)
-                            retried = (alt_cwc(**kwargs) if alt_cwc is not None
-                                       else (alt_ep.create(**kwargs), None))
-                        except Exception:
-                            logger.debug("llm: JSON-mode retry also failed", exc_info=True)
-                            retried = None
-                if retried is not None:
-                    out, raw = retried
-                    # Remember, so the next call skips the attempt that cannot work.
-                    _TOOLS_DECLARATION_DISPROVED.add((backend, model))
-                    _stats["salvaged"] = True
-                    _stats.setdefault("repairs", []).append("json_mode_fallback")
-                else:
-                    # A call that fails past its retries must still leave a record —
-                    # otherwise "which model fails" is unanswerable precisely when it
-                    # matters, and the log flatters the provider it is meant to audit.
-                    _record_llm_call(backend=backend, model=model, role=role,
-                                     prompt_tokens=None, completion_tokens=None,
-                                     ms=(time.monotonic() - _t0) * 1000.0, ok=False,
-                                     error_class=type(exc).__name__,
-                                     retries=_stats.get("retries", 0), temperature=temperature,
-                                     fallback=fallback, system=system, user=user)
-                    raise _typed_structured_error(exc, response_model)
+                # A call that fails past its retries must still leave a record —
+                # otherwise "which model fails" is unanswerable precisely when it
+                # matters, and the log flatters the provider it is meant to audit.
+                _record_llm_call(backend=backend, model=model, role=role,
+                                 prompt_tokens=None, completion_tokens=None,
+                                 ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                                 error_class=type(exc).__name__,
+                                 retries=_stats.get("retries", 0), temperature=temperature,
+                                 fallback=fallback, system=system, user=user)
+                # A model that DECLARED tool calling and then returned no tool call at
+                # all has misreported itself, and that is a configuration fault the
+                # operator must see by name.
+                _raise_if_tools_declaration_false(client, backend, model, exc)
+                raise _typed_structured_error(exc, response_model)
         pt, ct = _extract_usage(raw)
         _ms = (time.monotonic() - _t0) * 1000.0
         metering.record_llm(pt, ct, _ms)

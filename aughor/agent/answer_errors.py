@@ -52,6 +52,7 @@ _POLICY: dict[str, tuple[bool, str, str]] = {
     "bad_key":          (False, FIX_CONFIG,   "The API key is missing, wrong, or lacks access. Fix it in Settings → Inference."),
     "model_not_found":  (False, FIX_CONFIG,   "The configured model id is not one this provider serves. Pick another in Settings → Inference."),
     "wrong_endpoint":   (False, FIX_CONFIG,   "The base URL does not look like this provider's API root."),
+    "tools_unsupported": (False, FIX_CONFIG,  "This model advertises tool calling but does not do it, so it cannot produce structured answers. Pick a model that honours tool calling in Settings → Inference."),
     "unreachable":      (True,  RETRY,        "Nothing answered at that address. Check the server is running, then retry."),
     "timeout":          (True,  RETRY,        "The model did not answer in time. Retry, or switch to a faster model."),
     "config":           (False, FIX_CONFIG,   "The model client could not be built — usually a missing key."),
