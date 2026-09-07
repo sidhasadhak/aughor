@@ -2916,6 +2916,72 @@ else, no direct DDL; (c) a capped org's refusal must SAY it is a cap, not fail
 mysteriously — the caps plane's `action` vocabulary already distinguishes alert from
 block.
 
+### 3.13 · Arc DX — the documents plane (built 2026-09-07)
+
+> **Origin.** The user's 2026-09-07 directive: *"I want people to upload any document
+> and convert it to any format ... and when they upload, they should have a preview,
+> those should be usable as context in canvases, for agents, practically anywhere in
+> the platform."*
+>
+> **What measurement found before any code was written.** The plane read five file
+> types and its reading was worse than its chunk counts suggested. On a Word file
+> holding a four-row revenue table, `extract_text` returned 117 characters and every
+> number was gone — `python-docx`'s `.paragraphs` does not walk tables, so the table
+> was dropped in silence. The same table in a PDF came back as orphaned cells with no
+> grid. And a `.pptx` reaching the `read_text(errors="replace")` fallback produced
+> **26,928 characters of decoded ZIP container**, chunked and embedded as if it were
+> prose — a failure that looked exactly like success, guarded only by a hand-written
+> extension list that `index_text`'s connector callers never pass through.
+>
+> **The shape: Markdown is the PIVOT.** anydoc (Firecrawl's Rust converter; MIT,
+> prebuilt abi3 wheels, no ML model, no network) brings fourteen formats IN as
+> Markdown; the `ExportDoc` renderers already in `aughor/export/` — which had exactly
+> one producer, an investigation's `report_json` — take it back OUT as PDF, Word,
+> PowerPoint, HTML or text. Fourteen readers plus six writers is twenty seams; the
+> format-pair matrix would have been eighty-four.
+
+**Laws this arc establishes:**
+
+- **Fail closed on input you cannot place.** Dispatch on what the bytes ARE
+  (`format_from_bytes`), never on what they are called. A mislabelled binary raises a
+  typed error; nothing returns a best-effort string, because "we could not read this"
+  must never reach the index disguised as content.
+- **Retention is the keystone.** Upload used to `unlink` the file in a `finally:`.
+  Preview had nothing to show but chunk text, conversion had nothing to convert, and
+  a re-index could only re-embed the old parse. Originals are kept org-pathed, with
+  the Markdown cached beside them as a DISPOSABLE artefact — deleting the `.md` is
+  always safe because the original can be re-read.
+- **An allowlist is asked, never restated.** The router's accepted set and the drop
+  zone's `accept` both come from the converter's declared formats. The old
+  hand-written five stayed five while the parser grew to twenty: a capability that
+  existed and was unreachable.
+- **Pinning is not fencing.** An AGENT's `doc_ids` RESTRICT (fail-closed — its context
+  is what its creator gave it). A CANVAS's `doc_ids` PIN — they add to what is in
+  reach without removing the corpus, because a canvas is a place, not a fence. Pinned
+  documents are searched against the question so a 200-chunk report cannot flood the
+  prompt, and an agent still fences a canvas: widening would turn a restriction into
+  a suggestion.
+- **Hosted OCR is a network call.** anydoc can delegate scanned PDFs to Firecrawl.
+  Off unless `AUGHOR_DOC_OCR=hosted`; consent for sending a document off the box is
+  external, like every other outbound seam.
+
+**Shipped:** the converter seam (`knowledge/convert.py`), byte retention
+(`knowledge/blobs.py`), the outbound renderer (`knowledge/render.py`), preview and
+convert routes, canvas document binding wired at all three retrieval sites, and the
+UI for both.
+
+**Defect fixed on the way through, worth remembering:** routing upload through
+`index_text` turned a loud 422 into a silent **201** — `index_text` returns early
+WITHOUT registering when chunking yields nothing, so any document shorter than
+`min_chars` came back "Created" with a doc_id that appeared in no listing and 404'd on
+fetch and delete. The same early return still applies to the Confluence/Notion
+connectors, where a short page vanishes the same way and nothing reports it.
+
+**Open:** a re-index that genuinely RE-READS retained originals (today it re-embeds
+the stored chunks — the material is now on disk, the code is not written); documents
+as canvas nodes on the ReactFlow surface rather than only as a canvas-level binding;
+`.potx`/`.pages`/`.html` are not anydoc formats and are refused.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

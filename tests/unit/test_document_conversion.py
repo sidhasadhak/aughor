@@ -353,3 +353,30 @@ def test_a_refused_upload_leaves_no_orphaned_bytes(client):
                 files={"file": ("tiny3.md", b"# Hi\n\nShort.\n", "text/markdown")})
 
     assert count() == before, "a refused upload still wrote bytes to disk"
+
+
+def test_preview_reads_the_formats_upload_accepts(client):
+    """One list, both doors. A preview that accepted what upload rejects would show
+    someone chunks they can never index; the reverse hides a working format."""
+    import io
+
+    d = docx.Document()
+    d.add_heading("Q3 Revenue Review", level=1)
+    d.add_paragraph("Revenue grew across every region this quarter, "
+                    "with EMEA leading on margin and APAC on growth.")
+    buf = io.BytesIO()
+    d.save(buf)
+
+    r = client.post("/documents/preview", files={"file": ("r.docx", buf.getvalue(), "")})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["total_chunks"] >= 1
+    assert "Q3 Revenue Review" in body["chunks"][0]["text"]
+
+
+def test_preview_refuses_an_unreadable_file_with_the_same_reason_upload_gives(client):
+    """Both doors answer alike, or a person debugs two different products."""
+    r = client.post("/documents/preview",
+                    files={"file": ("empty.md", b"", "text/markdown")})
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "empty"

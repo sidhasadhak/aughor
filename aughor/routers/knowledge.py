@@ -141,10 +141,18 @@ async def preview_document_chunks(file: UploadFile = File(...),
     from aughor.knowledge.documents import (DEFAULT_CHUNK_SETTINGS, chunk_text,
                                             extract_text)
 
+    from aughor.knowledge.convert import ConversionError
+
     settings = _settings_from(chunk_settings)
     path = await _spool(file)
     try:
         raw = extract_text(path)
+    except ConversionError as exc:
+        # The same typed reason upload gives. A preview that answers "No text could be
+        # extracted" for a scanned PDF sends a person to look at their file, when what
+        # they need to be told is that it has no text layer.
+        raise HTTPException(status_code=422,
+                            detail={"message": str(exc), "code": exc.code})
     except Exception:
         logger.exception("Document parsing failed during preview")
         raise HTTPException(status_code=422, detail="No text could be extracted")
