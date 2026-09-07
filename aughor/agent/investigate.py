@@ -9484,7 +9484,8 @@ def ada_synthesize(state: AgentState) -> dict:
     external_context_section = ""
     try:
         from aughor.knowledge.indexer import build_external_context_section
-        external_context_section = build_external_context_section(question, top_k=4)
+        external_context_section = build_external_context_section(
+            question, top_k=4, canvas_id=state.get("canvas_id"))
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "external-document context is advisory; synthesis proceeds without "

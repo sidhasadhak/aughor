@@ -164,9 +164,17 @@ def causal_context(question: str, connection_id: str) -> str:
                  "grounding: causal context")
 
 
-def external_docs(question: str, connection_id: str = "") -> str:
+def external_docs(question: str, connection_id: str = "", canvas_id: str = "") -> str:
+    """Uploaded-document context, including any pinned to the active canvas.
+
+    `canvas_id` rides the same `**k` every other canvas-aware grounder here reads
+    (`custom_instructions` already did). Without it a workspace's own documents
+    reached this block only if a global similarity search happened to surface them.
+    """
     from aughor.knowledge.indexer import build_external_context_section
-    return _safe(lambda: build_external_context_section(question, top_k=2), "grounding: connection documents")
+    return _safe(lambda: build_external_context_section(question, top_k=2,
+                                                        canvas_id=canvas_id or None),
+                 "grounding: connection documents")
 
 
 def governed_metrics(question: str, connection_id: str, *, db: Optional[object] = None,
@@ -235,7 +243,8 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
     ("sql_examples", "Prior-analysis SQL examples", lambda q, c, **k: sql_examples(q, c), False),
     ("exploration", "Exploration annotations", lambda q, c, **k: exploration_annotations(q, c), False),
     ("causal", "Causal context", lambda q, c, **k: causal_context(q, c), False),
-    ("docs", "Connection documents", lambda q, c, **k: external_docs(q, c), False),
+    ("docs", "Connection documents",
+     lambda q, c, **k: external_docs(q, c, k.get("canvas_id") or ""), False),
 ]
 
 

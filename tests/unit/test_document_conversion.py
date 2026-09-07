@@ -314,3 +314,42 @@ def test_an_unsupported_type_is_refused_with_the_list_of_what_works(client):
                     files={"file": ("movie.mp4", b"\x00\x00\x00\x20ftyp", "video/mp4")})
     assert r.status_code == 422
     assert ".docx" in str(r.json()["detail"])
+
+
+def test_a_document_too_short_to_index_is_refused_not_silently_accepted(client):
+    """A 201 that indexes nothing is the worst possible answer.
+
+    `index_text` returns early WITHOUT registering when chunking yields nothing —
+    which happens for any document shorter than `min_chars` (50 by default, and a
+    chunk below it is discarded rather than kept). Reported as success, the caller
+    gets a doc_id that appears in no listing, fetches 404 and deletes 404: they were
+    told "Created" and have nothing.
+
+    The message names `min_chars` because it is a setting the person controls in this
+    very panel — "no text could be extracted" would send them looking at their file.
+    """
+    before = len(client.get("/documents").json())
+    r = client.post("/documents/upload",
+                    files={"file": ("tiny2.md", b"# Hi\n\nShort.\n", "text/markdown")})
+
+    assert r.status_code == 422, "a zero-chunk upload reported success"
+    detail = r.json()["detail"]
+    assert detail["code"] == "no_chunks"
+    assert "minimum chunk length" in detail["message"].lower()
+    # Delta, not absolute: the registry is shared across this module's tests, and
+    # asserting an empty corpus would pass alone and fail in the file.
+    assert len(client.get("/documents").json()) == before, \
+        "an unindexed document reached the registry"
+
+
+def test_a_refused_upload_leaves_no_orphaned_bytes(client):
+    """Retention happens after indexing succeeds. Storing bytes under a doc_id that
+    was never registered would leave a file nothing in the product can reach."""
+    root = Path(os.environ["AUGHOR_DOCUMENTS_DIR"])
+    count = lambda: len(list(root.rglob("original*"))) if root.is_dir() else 0
+    before = count()
+
+    client.post("/documents/upload",
+                files={"file": ("tiny3.md", b"# Hi\n\nShort.\n", "text/markdown")})
+
+    assert count() == before, "a refused upload still wrote bytes to disk"

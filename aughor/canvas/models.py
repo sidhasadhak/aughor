@@ -47,6 +47,16 @@ class Canvas(BaseModel):
     name: str
     description: str = ""
     scopes: List[CanvasScope] = Field(default_factory=list)
+    #: Documents pinned to this workspace. A canvas scopes DATA (connection, schema,
+    #: tables); these are the prose that belongs with it — the spec, the policy, the
+    #: last quarter's report — so work done here is grounded in both.
+    #:
+    #: PINNED, not restrictive, and the distinction is deliberate. An agent's
+    #: `doc_ids` fence it in: an agent with no documents sees none, because its
+    #: context is what its creator gave it. A canvas is a place a person works, so
+    #: binding a document here ADDS it to what is always in reach without taking the
+    #: rest of the corpus away. Empty means exactly today's behaviour.
+    doc_ids: List[str] = Field(default_factory=list)
     is_legacy: bool = False   # True for auto-generated connection→Canvas migrations
     created_at: str = ""
     updated_at: str = ""

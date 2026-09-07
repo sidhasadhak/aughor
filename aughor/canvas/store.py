@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import List, Optional
 
 from aughor.canvas.models import Canvas, CanvasScope, CanvasArtifact
+from aughor.db.migrations import add_column_if_missing
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
 from aughor.db.store_pool import ensure_once
@@ -42,17 +43,27 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             updated_at  TEXT NOT NULL
         )
     """)
+    # Additive, and idempotent on a store that already has it. This DB carries no
+    # `user_version`, so it uses the column probe rather than a numbered migration —
+    # `add_column_if_missing` is the same helper the numbered path calls, minus the
+    # numbering there is nothing here to number against.
+    add_column_if_missing(c, "canvases", "doc_ids_json", "TEXT NOT NULL DEFAULT '[]'")
     c.commit()
 
 
 def _row_to_canvas(row: sqlite3.Row) -> Canvas:
     scopes_raw = json.loads(row["scopes_json"] or "[]")
     scopes = [CanvasScope(**s) for s in scopes_raw]
+    # `.keys()` rather than a bare subscript: a row read through a connection that
+    # predates the column would raise, and a canvas must still load.
+    doc_ids = (json.loads(row["doc_ids_json"] or "[]")
+               if "doc_ids_json" in row.keys() else [])
     return Canvas(
         id=row["id"],
         name=row["name"],
         description=row["description"] or "",
         scopes=scopes,
+        doc_ids=doc_ids,
         is_legacy=bool(row["is_legacy"]),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
@@ -67,6 +78,7 @@ def create_canvas(
     description: str = "",
     is_legacy: bool = False,
     canvas_id: Optional[str] = None,
+    doc_ids: Optional[List[str]] = None,
 ) -> Canvas:
     """Create and persist a new Canvas. Returns the created Canvas."""
     if len(scopes) > 1:
@@ -77,17 +89,18 @@ def create_canvas(
     cid = canvas_id or uuid.uuid4().hex[:8]
     now = _now()
     scopes_json = json.dumps([s.model_dump() for s in scopes])
+    docs = list(doc_ids or [])
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "INSERT INTO canvases (id, name, description, scopes_json, is_legacy, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (cid, name, description, scopes_json, int(is_legacy), now, now),
+        "INSERT INTO canvases (id, name, description, scopes_json, doc_ids_json, "
+        "is_legacy, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (cid, name, description, scopes_json, json.dumps(docs), int(is_legacy), now, now),
     )
     c.commit()
     return Canvas(
-        id=cid, name=name, description=description,
-        scopes=scopes, is_legacy=is_legacy, created_at=now, updated_at=now,
+        id=cid, name=name, description=description, scopes=scopes, doc_ids=docs,
+        is_legacy=is_legacy, created_at=now, updated_at=now,
     )
 
 
@@ -115,6 +128,7 @@ def update_canvas(
     name: Optional[str] = None,
     description: Optional[str] = None,
     scopes: Optional[List[CanvasScope]] = None,
+    doc_ids: Optional[List[str]] = None,
 ) -> Optional[Canvas]:
     existing = get_canvas(canvas_id)
     if not existing:
@@ -125,11 +139,17 @@ def update_canvas(
     new_name = name if name is not None else existing.name
     new_desc = description if description is not None else existing.description
     new_scopes = scopes if scopes is not None else existing.scopes
+    # None means "leave alone"; [] means "unbind everything". A single parameter
+    # cannot express both without that distinction, and unbinding is the operation a
+    # person reaches for when a document turns out to be the wrong context.
+    new_docs = list(doc_ids) if doc_ids is not None else list(existing.doc_ids)
     scopes_json = json.dumps([s.model_dump() for s in new_scopes])
     c = _conn()
+    ensure_once(c, _ensure_schema)
     c.execute(
-        "UPDATE canvases SET name=?, description=?, scopes_json=?, updated_at=? WHERE id=?",
-        (new_name, new_desc, scopes_json, now, canvas_id),
+        "UPDATE canvases SET name=?, description=?, scopes_json=?, doc_ids_json=?, "
+        "updated_at=? WHERE id=?",
+        (new_name, new_desc, scopes_json, json.dumps(new_docs), now, canvas_id),
     )
     c.commit()
     updated = get_canvas(canvas_id)
@@ -154,7 +174,10 @@ def _record_revision(cv: Optional[Canvas]) -> None:
     try:
         save_draft("canvas", f"canvas:{cv.id}",
                    {"name": cv.name, "description": cv.description,
-                    "scopes": [s.model_dump() for s in cv.scopes]},
+                    "scopes": [s.model_dump() for s in cv.scopes],
+                    # Part of what a canvas IS. Omitted, a restore would quietly
+                    # unbind every document the workspace was grounded in.
+                    "doc_ids": list(cv.doc_ids)},
                    conn_id=(cv.scopes[0].connection_id if cv.scopes else None))
     except Exception as exc:
         tolerate(exc, "recording a canvas revision is best-effort; the canvas itself is "

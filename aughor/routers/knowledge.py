@@ -217,6 +217,23 @@ async def upload_document(file: UploadFile = File(...),
         logger.exception("Document indexing failed")
         raise HTTPException(status_code=500, detail="Indexing failed")
 
+    # Zero chunks is a FAILED upload, and it has to be said out loud here.
+    # `index_text` returns early without registering when chunking yields nothing,
+    # so a 201 at this point would hand back a doc_id that is in no list, cannot be
+    # fetched and cannot be deleted — the person is told "Created" and has nothing.
+    # The usual cause is a document shorter than `min_chars`, which is a setting they
+    # control, so the message names it instead of saying "no text could be extracted".
+    if not entry.get("chunk_count"):
+        from aughor.knowledge.documents import DEFAULT_CHUNK_SETTINGS
+        floor = (settings or DEFAULT_CHUNK_SETTINGS).min_chars
+        raise HTTPException(
+            status_code=422,
+            detail={"message": (
+                        f"Nothing was indexed: the document is {len(markdown)} "
+                        f"characters and chunks shorter than {floor} are discarded. "
+                        f"Lower the minimum chunk length to index it."),
+                    "code": "no_chunks"})
+
     doc_id = entry["doc_id"]
     try:
         blobs.put_original(doc_id, filename, data)
