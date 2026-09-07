@@ -51,6 +51,11 @@ class AddConnectionRequest(BaseModel):
     dsn: str = ""
     schema_name: Optional[str] = None
     meta: dict = {}
+    #: The workspace the caller is looking at. A connection is only visible to gates
+    #: that resolve through `accessible_catalog_ids()` once some workspace tracks it,
+    #: so creating one from a non-default workspace used to file it under Default and
+    #: leave the active catalogue empty. Omitted → the default workspace.
+    workspace_id: Optional[str] = None
 
 
 class InstructionsRequest(BaseModel):
@@ -160,7 +165,8 @@ async def create_connection(req: AddConnectionRequest,
     if not ok:
         raise HTTPException(status_code=400, detail=f"Connection test failed: {msg}")
 
-    conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn, meta=combined_meta)
+    conn_id = add_connection(name=req.name, conn_type=req.conn_type, dsn=req.dsn,
+                             meta=combined_meta, workspace_id=req.workspace_id)
     remember("connection", idempotency_key, conn_id)
 
     # Auto-onboarding: kick off schema exploration in the background so a brand-new

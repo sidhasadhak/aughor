@@ -499,11 +499,16 @@ export async function addConnection(
   dsn: string,
   schema_name?: string,
   meta?: Record<string, string>,
+  workspace_id?: string,
 ): Promise<{ id: string; message: string; test_result: string }> {
   const res = await fetch(`${getApiBase()}/connections`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, conn_type, dsn: dsn || "", schema_name: schema_name || null, meta: meta || {} }),
+    // `workspace_id` is what makes the new connection VISIBLE in the catalogue the
+    // caller is looking at — without it the server files it under Default and this
+    // workspace's tree silently omits it.
+    body: JSON.stringify({ name, conn_type, dsn: dsn || "", schema_name: schema_name || null,
+                           meta: meta || {}, workspace_id: workspace_id || null }),
   });
   if (!res.ok) {
     const err = await res.json();

@@ -610,13 +610,24 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
 
 // ── Main page ────────────────────────────────────────────────────────────────
 
-export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdded: () => void }) {
+export function AddDataPanel({ onClose, onAdded, workspaceId }: {
+  onClose: () => void;
+  /** Refresh the catalogue. Returns whether `connId` is now VISIBLE in it, so the
+   *  panel can keep the user informed instead of closing on hope. */
+  onAdded: (connId?: string) => void | Promise<boolean>;
+  workspaceId?: string;
+}) {
   const [types, setTypes]     = useState<ConnectorTypeInfo[]>([]);
   const [search, setSearch]   = useState("");
   const [picked, setPicked]   = useState<ConnectorTypeInfo | null>(null);
   const [name, setName]       = useState("");
   const [values, setValues]   = useState<Record<string, string>>({});
   const [saving, setSaving]   = useState(false);
+  //: What the submit is doing right now. The create used to close the panel the
+  //: instant the POST resolved, while the catalogue refresh was still in flight —
+  //: so the user landed on a Catalog that did not yet list what they had just made
+  //: and could not tell a slow refresh from a failed ingest.
+  const [phase, setPhase]     = useState("");
   const [error, setError]     = useState("");
 
   useEffect(() => { getConnectorTypes().then(setTypes).catch(() => setTypes([])); }, []);
@@ -664,13 +675,34 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
         else if (f.key === "schema_name") schema = v || undefined;
         else if (v) m[f.key] = v;
       }
-      await addConnection(name.trim() || meta(picked.type).label, picked.type, dsn, schema, m);
-      onAdded();
+      setPhase("Testing the connection…");
+      const created = await addConnection(
+        name.trim() || meta(picked.type).label, picked.type, dsn, schema, m, workspaceId);
+
+      // Wait for the catalogue to actually show it. Schema discovery runs in the
+      // background, so the tree can answer before the registry write is reflected;
+      // a few short retries cover that without making a healthy create feel slow.
+      setPhase("Adding to the catalogue…");
+      let visible = (await onAdded(created.id)) !== false;
+      for (let attempt = 0; !visible && attempt < 3; attempt++) {
+        await new Promise(r => setTimeout(r, 500 * (attempt + 1)));
+        setPhase("Waiting for the catalogue…");
+        visible = (await onAdded(created.id)) !== false;
+      }
+      if (!visible) {
+        // Stay open and say so. Closing here is what made a failed ingest look
+        // identical to a slow one.
+        setError("Connection created, but it has not appeared in the catalogue yet. "
+                 + "It may still be loading — reopen Catalog in a moment, or check "
+                 + "the connection's workspace.");
+        return;
+      }
       onClose();
     } catch (ex: unknown) {
       setError((ex as Error).message);
     } finally {
       setSaving(false);
+      setPhase("");
     }
   };
 
@@ -777,7 +809,7 @@ export function AddDataPanel({ onClose, onAdded }: { onClose: () => void; onAdde
               <Button variant="ghost" type="submit" disabled={saving}
                 className="h-auto p-0"
                 style={{ fontSize: 13, fontWeight: 600, padding: "9px 20px", borderRadius: 6, cursor: saving ? "not-allowed" : "pointer", background: "var(--blue3)", color: "#fff", border: "none", opacity: saving ? 0.6 : 1 }}>
-                {saving ? "Connecting…" : "Create connection"}
+                {saving ? (phase || "Connecting…") : "Create connection"}
               </Button>
               <Button variant="ghost" type="button" onClick={() => setPicked(null)}
                 className="h-auto p-0 font-normal"

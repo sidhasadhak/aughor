@@ -10027,6 +10027,8 @@ export interface components {
             name: string;
             /** Schema Name */
             schema_name?: string | null;
+            /** Workspace Id */
+            workspace_id?: string | null;
         };
         /**
          * AgentAlertRuleBody
