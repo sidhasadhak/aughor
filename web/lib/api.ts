@@ -2512,6 +2512,29 @@ export async function getDocumentMarkdown(docId: string): Promise<string> {
   return (await res.json()).markdown as string;
 }
 
+/** What a stored document can be turned into ON THIS deployment. PDF and PowerPoint
+ *  need the `export` extra; offering them where it is absent produces a button that
+ *  fails at the click, which is worse than one that was never shown. */
+export interface ConvertFormat {
+  format: string;
+  label: string;
+  media_type: string;
+  suffix: string;
+  available: boolean;
+}
+
+export async function getDocumentConvertFormats(docId: string): Promise<ConvertFormat[]> {
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}/formats`);
+  if (!res.ok) return [];
+  return (await res.json()).formats ?? [];
+}
+
+/** A URL that renders the document as `format` and downloads it. */
+export function documentConvertUrl(docId: string, format: string): string {
+  return `${getApiBase()}/documents/${encodeURIComponent(docId)}/convert`
+    + `?to=${encodeURIComponent(format)}`;
+}
+
 /** A URL for the document's own bytes, for an <iframe>/<img> preview.
  *  Served inline, so the browser renders a PDF rather than downloading it. Only
  *  meaningful when `has_original` — otherwise the request 409s. */

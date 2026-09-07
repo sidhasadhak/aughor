@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path as _Path
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -32,6 +34,17 @@ def _allowed_suffixes() -> frozenset[str]:
 #: Chunks returned by a preview. Enough to judge the settings, not the whole document —
 #: this runs on every keystroke-ish adjustment and the point is that it stays cheap.
 _PREVIEW_CHUNKS = 10
+
+
+def _safe_download_name(stem: str) -> str:
+    """A filename safe to put in a Content-Disposition header.
+
+    The title comes from an uploaded file's name, so it is attacker-influenceable. A
+    quote or a newline in it would break out of the quoted string and let a caller
+    write their own headers; stripping to a conservative set is the whole defence.
+    """
+    cleaned = re.sub(r'[^A-Za-z0-9 ._-]', "_", stem).strip() or "document"
+    return cleaned[:120]
 
 
 def _settings_from(raw: Optional[str]):
@@ -242,6 +255,68 @@ def document_markdown(doc_id: str):
                                "enable preview and conversion.",
                     "code": "no_original"})
     return {"doc_id": doc_id, "markdown": text, "characters": len(text)}
+
+
+@router.get("/documents/{doc_id}/convert")
+def convert_document(doc_id: str, to: str = "pdf"):
+    """Hand a stored document back in a different format.
+
+    The other half of the pivot. Anything readable became Markdown on the way in; this
+    renders that Markdown into any format the deployment can write — so a PowerPoint
+    deck can leave as a PDF, and a scanned-in Word report as clean HTML, without a
+    converter per pair.
+
+    Rendered from the CACHED Markdown, or re-converted from the original when the
+    cache is cold. A document whose original was never retained can still be converted
+    if its Markdown survives; only one with neither is refused.
+    """
+    from fastapi.responses import Response
+
+    from aughor.knowledge import blobs
+    from aughor.knowledge.indexer import get_document
+    from aughor.knowledge.render import RenderError, render
+
+    doc = get_document(doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    markdown = blobs.markdown(doc_id)
+    if markdown is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Nothing is retained for this document to convert from. "
+                               "Re-upload it to enable conversion.",
+                    "code": "no_original"})
+
+    title = doc.get("title") or "Document"
+    try:
+        data, media_type, suffix = render(markdown, to, title=title)
+    except RenderError as exc:
+        # 422 for "you asked for a format that does not exist", 501 for "this
+        # deployment cannot write it" — a person can fix the first and only an
+        # operator can fix the second.
+        status = 501 if exc.code == "renderer_missing" else 422
+        raise HTTPException(status_code=status,
+                            detail={"message": str(exc), "code": exc.code})
+
+    stem = _Path(doc.get("filename") or title).stem or "document"
+    return Response(
+        content=data, media_type=media_type,
+        headers={"Content-Disposition":
+                 f'attachment; filename="{_safe_download_name(stem)}{suffix}"'})
+
+
+@router.get("/documents/{doc_id}/formats")
+def document_convert_formats(doc_id: str):
+    """What this document can be turned into HERE — not what the code can do in theory.
+
+    PDF and PowerPoint need the `export` extra; offering them on a deployment without
+    it produces a button that fails at the click, which is worse than a button that
+    was never shown.
+    """
+    from aughor.knowledge.render import available_formats
+
+    return {"doc_id": doc_id, "formats": available_formats()}
 
 
 @router.get("/documents/{doc_id}/original")

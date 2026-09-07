@@ -3388,6 +3388,59 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/{doc_id}/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Convert Document
+         * @description Hand a stored document back in a different format.
+         *
+         *     The other half of the pivot. Anything readable became Markdown on the way in; this
+         *     renders that Markdown into any format the deployment can write — so a PowerPoint
+         *     deck can leave as a PDF, and a scanned-in Word report as clean HTML, without a
+         *     converter per pair.
+         *
+         *     Rendered from the CACHED Markdown, or re-converted from the original when the
+         *     cache is cold. A document whose original was never retained can still be converted
+         *     if its Markdown survives; only one with neither is refused.
+         */
+        get: operations["convert_document_documents__doc_id__convert_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/{doc_id}/formats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Document Convert Formats
+         * @description What this document can be turned into HERE — not what the code can do in theory.
+         *
+         *     PDF and PowerPoint need the `export` extra; offering them on a deployment without
+         *     it produces a button that fails at the click, which is worse than a button that
+         *     was never shown.
+         */
+        get: operations["document_convert_formats_documents__doc_id__formats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/{doc_id}/markdown": {
         parameters: {
             query?: never;
@@ -19469,6 +19522,70 @@ export interface operations {
         };
     };
     delete_document_endpoint_documents__doc_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    convert_document_documents__doc_id__convert_get: {
+        parameters: {
+            query?: {
+                to?: string;
+            };
+            header?: never;
+            path: {
+                doc_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    document_convert_formats_documents__doc_id__formats_get: {
         parameters: {
             query?: never;
             header?: never;

@@ -11,11 +11,14 @@ import {
   getKnowledgeStatus,
   getDocumentFormats,
   getDocumentMarkdown,
+  getDocumentConvertFormats,
   documentOriginalUrl,
+  documentConvertUrl,
   type ChunkPreview,
   type ChunkSettings,
   type DocumentEntry,
   type DocumentFormats,
+  type ConvertFormat,
   type KnowledgeStatus,
 } from "@/lib/api";
 
@@ -104,6 +107,7 @@ export function DocumentUploader() {
   const [openTab, setOpenTab] = useState<"original" | "markdown">("original");
   const [openMarkdown, setOpenMarkdown] = useState<string | null>(null);
   const [openError, setOpenError] = useState<string | null>(null);
+  const [convertFormats, setConvertFormats] = useState<ConvertFormat[]>([]);
 
   // Chunking, as settings rather than three constants nobody could see. Empty means the
   // defaults the corpus was indexed under — an omitted field is the previous behaviour,
@@ -191,6 +195,8 @@ export function DocumentUploader() {
     setOpenTab(canRenderOriginal ? "original" : "markdown");
     setOpenMarkdown(null);
     setOpenError(null);
+    setConvertFormats([]);
+    getDocumentConvertFormats(doc.doc_id).then(setConvertFormats).catch(() => {});
     try {
       setOpenMarkdown(await getDocumentMarkdown(doc.doc_id));
     } catch (e) {
@@ -571,6 +577,36 @@ export function DocumentUploader() {
               Close
             </button>
           </div>
+
+          {/* Convert — the outbound half of the pivot. Anything readable became
+              Markdown coming in, so it can leave as anything this deployment renders.
+              Formats the install cannot write are shown disabled with the reason
+              rather than hidden, so an operator can see what installing an extra
+              would add. */}
+          {convertFormats.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5 border-b border-zinc-800 px-4 py-2">
+              <span className="aug-fs-xs text-zinc-500 mr-1">Download as</span>
+              {convertFormats.map(f => (
+                f.available ? (
+                  <a
+                    key={f.format}
+                    href={documentConvertUrl(openDoc.doc_id, f.format)}
+                    className="aug-fs-xs px-2 py-1 rounded border border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-zinc-100 transition"
+                  >
+                    {f.label}
+                  </a>
+                ) : (
+                  <span
+                    key={f.format}
+                    title="This deployment cannot render that format — the export extra is not installed."
+                    className="aug-fs-xs px-2 py-1 rounded border border-zinc-800 text-zinc-600 cursor-not-allowed"
+                  >
+                    {f.label}
+                  </span>
+                )
+              ))}
+            </div>
+          )}
 
           <div className="p-4">
             {openError && (
