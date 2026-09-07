@@ -2658,6 +2658,10 @@ export interface Canvas {
   name: string;
   description: string;
   scopes: CanvasScope[];
+  /** Documents pinned to this workspace. PINNED, not restrictive: they are always in
+   *  reach for work done here, and the rest of the corpus stays searchable. (An
+   *  agent's `doc_ids` are the other shape — those fence it in.) */
+  doc_ids?: string[];
   is_legacy: boolean;
   created_at: string;
   updated_at: string;
@@ -2714,13 +2718,18 @@ export async function createCanvas(
 
 export async function updateCanvas(
   id: string,
-  patch: { name?: string; description?: string; scopes?: CanvasScope[] },
+  patch: { name?: string; description?: string; scopes?: CanvasScope[]; doc_ids?: string[] },
 ): Promise<Canvas> {
-  // Backend UpdateCanvasRequest takes a flat { name, description, tables }.
-  const body: { name?: string; description?: string; tables?: string[] } = {};
+  // Backend UpdateCanvasRequest takes a flat { name, description, tables, doc_ids }.
+  const body: {
+    name?: string; description?: string; tables?: string[]; doc_ids?: string[];
+  } = {};
   if (patch.name !== undefined) body.name = patch.name;
   if (patch.description !== undefined) body.description = patch.description;
   if (patch.scopes !== undefined) body.tables = patch.scopes[0]?.tables ?? [];
+  // Omitted leaves the binding alone; [] unbinds everything. Sending it
+  // unconditionally would clear every pin on an unrelated rename.
+  if (patch.doc_ids !== undefined) body.doc_ids = patch.doc_ids;
   const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -2949,6 +2958,21 @@ export async function getCanvasSchema(id: string): Promise<string> {
   if (!res.ok) throw new Error("Failed to fetch canvas schema");
   const data = await res.json();
   return (data as { schema: string }).schema;
+}
+
+/** A document pinned to a canvas. `missing` marks a binding whose document has since
+ *  been deleted — reported rather than dropped, because a pin that silently vanishes
+ *  is how a workspace loses its context without anyone noticing. */
+export interface CanvasDocument extends Partial<DocumentEntry> {
+  doc_id: string;
+  missing: boolean;
+}
+
+export async function getCanvasDocuments(canvasId: string): Promise<CanvasDocument[]> {
+  const res = await fetch(
+    `${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/documents`);
+  if (!res.ok) return [];
+  return (await res.json()).documents ?? [];
 }
 
 export interface CanvasHistoryItem {

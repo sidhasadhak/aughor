@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from "react";
 import type { Canvas, Connection, CanvasHistoryItem as HistoryItem } from "@/lib/api";
-import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts, deleteCanvasArtifact, type CanvasArtifact } from "@/lib/api";
+import { getCanvasHistory, updateCanvas, deleteInvestigation, getCanvasArtifacts, deleteCanvasArtifact, getCanvasDocuments, listDocuments, type CanvasArtifact, type CanvasDocument, type DocumentEntry } from "@/lib/api";
 import { ConfigurePanel } from "@/components/ConfigurePanel";
 import { ChatPanel } from "@/components/ChatPanel";
 import { HistoryDetailPanel } from "@/components/HistoryDetailPanel";
@@ -238,6 +238,117 @@ function CanvasCatalog({
   );
 }
 
+// ── Pinned documents ──────────────────────────────────────────────────────────
+
+/** Bind uploaded documents to this canvas.
+ *
+ *  A canvas scopes DATA — a connection, a schema, a set of tables. This is the prose
+ *  that belongs with it: the spec, the policy, last quarter's report. Work done here
+ *  is then grounded in both, without anyone having to hope a similarity search
+ *  surfaces the right file.
+ *
+ *  Pinned, not restrictive. Binding a document ADDS it to what is always in reach and
+ *  leaves the rest of the corpus searchable — unlike an agent's documents, which fence
+ *  it in. The wording below says so, because the two are easy to confuse and the
+ *  consequence of guessing wrong is a workspace that quietly sees less than expected. */
+function CanvasDocuments({ canvas, onSaved }: {
+  canvas: Canvas;
+  onSaved: (updated: Canvas) => void;
+}) {
+  const [pinned, setPinned] = useState<CanvasDocument[]>([]);
+  const [all, setAll] = useState<DocumentEntry[]>([]);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    getCanvasDocuments(canvas.id).then(setPinned).catch(() => setPinned([]));
+    listDocuments().then(setAll).catch(() => setAll([]));
+  }, [canvas.id]);
+
+  const setBinding = async (docIds: string[]) => {
+    setBusy(true);
+    try {
+      onSaved(await updateCanvas(canvas.id, { doc_ids: docIds }));
+      setPinned(await getCanvasDocuments(canvas.id));
+    } catch {
+      /* the popover stays open; the previous binding is still what is shown */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const pinnedIds = pinned.map(d => d.doc_id);
+  const unpinned = all.filter(d => !pinnedIds.includes(d.doc_id));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Documents</div>
+
+      {pinned.length === 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          None pinned. Pinned documents are always in reach here; the rest of the
+          library stays searchable.
+        </div>
+      )}
+
+      {pinned.map(doc => (
+        <div key={doc.doc_id} style={{
+          display: "flex", alignItems: "center", gap: 6,
+          background: "var(--bg-3)", border: "1px solid var(--b1)",
+          borderRadius: "var(--r2)", padding: "5px 8px",
+        }}>
+          <span className="aug-fs-xs" style={{
+            color: doc.missing ? "var(--t4)" : "var(--t2)",
+            flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+          }}>
+            {/* A binding whose document was deleted is SHOWN, not hidden — otherwise a
+                workspace loses context with nothing to see. */}
+            {doc.missing ? `${doc.doc_id} — deleted` : (doc.title || doc.filename)}
+          </span>
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => setBinding(pinnedIds.filter(id => id !== doc.doc_id))}
+            className="aug-fs-xs"
+            style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: "var(--t4)", padding: 0,
+            }}
+          >
+            Unpin
+          </button>
+        </div>
+      ))}
+
+      {unpinned.length > 0 && (
+        <select
+          value=""
+          disabled={busy}
+          onChange={e => { if (e.target.value) setBinding([...pinnedIds, e.target.value]); }}
+          className="aug-fs-xs"
+          style={{
+            background: "var(--bg-3)", border: "1px solid var(--b1)",
+            borderRadius: "var(--r2)", padding: "6px 8px",
+            color: "var(--t2)", outline: "none",
+            fontFamily: "var(--font-ui)",
+          }}
+        >
+          <option value="">Pin a document…</option>
+          {unpinned.map(doc => (
+            <option key={doc.doc_id} value={doc.doc_id}>{doc.title || doc.filename}</option>
+          ))}
+        </select>
+      )}
+
+      {all.length === 0 && (
+        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          No documents uploaded yet — add them on the Documents surface.
+        </div>
+      )}
+    </div>
+  );
+}
+
+
 // ── Settings popover ──────────────────────────────────────────────────────────
 
 function SettingsPopover({
@@ -304,6 +415,12 @@ function SettingsPopover({
             }}
           />
         </label>
+
+        {/* Pinned documents save on change rather than on Save, because they are a
+            binding rather than a field: Cancel restores the name you were editing,
+            and an unpin that silently came back would be worse than no Cancel at all. */}
+        <CanvasDocuments canvas={canvas} onSaved={onSaved} />
+
         <div style={{ display: "flex", gap: 6, justifyContent: "flex-end", marginTop: 4 }}>
           <Button onClick={onClose} variant="ghost" size="xs">Cancel</Button>
           <Button
