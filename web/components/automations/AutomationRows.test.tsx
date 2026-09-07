@@ -14,7 +14,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { EffectRow, effectsForWire } from "@/components/automations/AutomationRows";
+import { BindingCast, EffectRow, effectsForWire } from "@/components/automations/AutomationRows";
 import { getIntegrationConnections, getIntegrationOperations } from "@/lib/api";
 import type { AutoEffect } from "@/lib/api";
 
@@ -323,5 +323,58 @@ describe("the integration editor", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({
       config: expect.objectContaining({ connection_id: "", operation: "", params: {} }),
     }));
+  });
+});
+
+
+// ── §3.8a · the cast picker ──────────────────────────────────────────────────────────
+
+describe("BindingCast", () => {
+  const cast = () => screen.queryByLabelText("convert the bound value");
+
+  it("renders NOTHING for a plain value", () => {
+    // The reason it can live beside a free-text field at all. A control on every field
+    // would be clutter on the majority that will never hold a binding.
+    render(<BindingCast value="just a sentence" onChange={() => {}} />);
+    expect(cast()).toBeNull();
+  });
+
+  it("renders nothing for an array, which is a value and not wiring", () => {
+    render(<BindingCast value={["a", "b"]} onChange={() => {}} />);
+    expect(cast()).toBeNull();
+  });
+
+  it("appears when the field holds a binding", () => {
+    render(<BindingCast value={{ $from: "step1.answer" }} onChange={() => {}} />);
+    expect(cast()).not.toBeNull();
+  });
+
+  it("shows the cast already declared", () => {
+    render(<BindingCast value={{ $from: "s.count", $as: "text" }} onChange={() => {}} />);
+    expect((cast() as HTMLSelectElement).value).toBe("text");
+  });
+
+  it("writes $as without disturbing the reference", () => {
+    const seen: unknown[] = [];
+    render(<BindingCast value={{ $from: "s.count" }} onChange={v => seen.push(v)} />);
+    fireEvent.change(cast()!, { target: { value: "text" } });
+    expect(seen[0]).toEqual({ $from: "s.count", $as: "text" });
+  });
+
+  it("DELETES $as when cleared, rather than setting an empty string", () => {
+    // The design decision. `CASTS` has no empty member and `wearsMarker` accepts `$from`
+    // plus at most `$as`, so `$as: ""` would be a third state — read as wiring by the
+    // client and refused as a conversion by the server.
+    const seen: Record<string, unknown>[] = [];
+    render(<BindingCast value={{ $from: "s.count", $as: "text" }}
+                       onChange={v => seen.push(v as Record<string, unknown>)} />);
+    fireEvent.change(cast()!, { target: { value: "" } });
+    expect(seen[0]).toEqual({ $from: "s.count" });
+    expect("$as" in seen[0]).toBe(false);
+  });
+
+  it("works on a $from_any join too", () => {
+    render(<BindingCast value={{ $from_any: ["a.x", "b.x"] }} onChange={() => {}} />);
+    expect(cast()).not.toBeNull();
   });
 });
