@@ -380,3 +380,39 @@ def test_preview_refuses_an_unreadable_file_with_the_same_reason_upload_gives(cl
                     files={"file": ("empty.md", b"", "text/markdown")})
     assert r.status_code == 422
     assert r.json()["detail"]["code"] == "empty"
+
+
+def test_a_lean_install_still_reads_its_own_allowlist(monkeypatch):
+    """Without the `docs` extra the plane still offers `.md`/`.txt` — and must then
+    actually accept them.
+
+    `_anydoc()` RAISES when the extra is absent. Letting that escape from `sniff` made
+    a lean install refuse its own allowlist: `supported_suffixes()` advertised `.md`
+    and the upload answered "install the docs extra" for a file needing no converter.
+    """
+    monkeypatch.setattr(convert, "available", lambda: False)
+
+    assert convert.supported_suffixes() == convert.TEXT_SUFFIXES
+    assert convert.to_markdown(b"# Notes\n\nno converter needed", "notes.md") \
+        == "# Notes\n\nno converter needed"
+    with pytest.raises(convert.ConversionError) as exc:
+        convert.to_markdown(b"%PDF-1.4 ...", "report.pdf")
+    assert exc.value.code == "unsupported", "a lean install must refuse, not decode"
+
+
+def test_content_beats_a_text_extension_too(revenue_docx: Path):
+    """The ordering that keeps the mojibake bug dead.
+
+    Checking the extension first would be the tidier-looking guard and would quietly
+    re-open the hole: a binary renamed `.md` is exactly the file most likely to be
+    mislabelled, and 'it ends in .md' would send it straight to the text decoder.
+    """
+    assert convert.sniff(revenue_docx.read_bytes(), "renamed.md") == "docx"
+    assert "Q3 Revenue Review" in convert.to_markdown(
+        revenue_docx.read_bytes(), "renamed.md")
+
+
+def test_prose_is_not_mistaken_for_a_spreadsheet():
+    """A `.txt` of prose with commas in it must stay prose, not become a CSV table."""
+    assert convert.sniff(b"plain prose, with a comma", "notes.txt") == "text"
+    assert convert.sniff(b"a,b,c\n1,2,3\n", "notes.txt") == "text"

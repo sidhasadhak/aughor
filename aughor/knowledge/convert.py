@@ -159,13 +159,19 @@ def sniff(data: bytes, filename: str = "") -> str | None:
     Returns a canonical anydoc format name, `"text"` for the native text path, or
     None when neither can place it.
     """
-    if data:
+    # CONTENT FIRST, so a PDF named `.md` is still recognised as a PDF rather than
+    # decoded as text — losing that ordering brings the mojibake bug back for exactly
+    # the files most likely to be mislabelled.
+    #
+    # Guarded by `available()` rather than by catching: `_anydoc()` RAISES when the
+    # extra is absent, and letting that escape made a lean install refuse its own
+    # allowlist — `supported_suffixes()` offers `.md`, and the upload then failed with
+    # "install the docs extra" for a file that never needed one.
+    if data and available():
         try:
             detected = _anydoc().format_from_bytes(data)
             if detected:
                 return str(detected)
-        except ConversionError:
-            raise
         except Exception:
             pass  # Unrecognised signature — fall through to the extension.
     suffix = Path(filename or "").suffix.lower()
