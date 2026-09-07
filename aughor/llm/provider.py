@@ -755,14 +755,35 @@ def require_model(backend: str, role: Role) -> str:
 
 # ── Client builders ───────────────────────────────────────────────────────────
 
+def _ollama_openai_base(base_url: str) -> str:
+    """Ollama's OpenAI-compatible base — the inverse of ``models._ollama_root``.
+
+    Ollama advertises itself as ``http://localhost:11434``: that is what ``ollama serve``
+    prints and what its own documentation shows. Its OpenAI-compatible surface, though,
+    lives under ``/v1``. An operator who pasted the URL Ollama handed them had every call
+    POSTed to ``/chat/completions``, which Ollama answers with a bare ``404 page not
+    found`` — classified here as ``wrong_endpoint``, a message that names the base URL
+    without ever saying which segment is missing. Measured 2026-09-07 against a live
+    daemon: ``/chat/completions`` 404, ``/v1/chat/completions`` 200 on the same model.
+
+    The native side already accepts both spellings (``_ollama_root`` strips ``/v1``
+    before calling ``/api/tags``). This is the missing other direction, so either form
+    of the base URL now works everywhere rather than only on half the endpoints.
+    """
+    root = base_url.rstrip("/")
+    if not root:
+        return base_url
+    return root if root.endswith("/v1") else root + "/v1"
+
+
 def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     # Cloud-backed models (e.g. kimi:cloud, qwen3-coder-next:cloud) go through Ollama
     # to an external API and can hang indefinitely without a timeout.
     # connect=30s, read=300s (5 min) — enough for any realistic single inference call.
     import httpx
     _timeout = httpx.Timeout(connect=30.0, read=300.0, write=30.0, pool=10.0)
-    raw = OpenAI(base_url=base_url, api_key="ollama", timeout=_timeout,
-                 max_retries=_SDK_RETRIES)
+    raw = OpenAI(base_url=_ollama_openai_base(base_url), api_key="ollama",
+                 timeout=_timeout, max_retries=_SDK_RETRIES)
     # TOOLS mode when the model declares native tool calling, so <think>…</think>
     # tokens stay isolated from structured output; JSON mode lets reasoning tokens
     # pollute it and the call comes back empty.
@@ -774,8 +795,52 @@ def _build_ollama_client(model: str, base_url: str) -> instructor.Instructor:
     # call in JSON mode — "structured output empty: the model returned no content", on
     # a model that supports exactly what was needed. Now we ask, and fall back to JSON
     # (the conservative mode) when the answer is not known yet.
-    mode = instructor.Mode.TOOLS if model_supports_tools(model) else instructor.Mode.JSON
+    # `_tools_declaration_disproved` is the runtime correction to that answer: a model
+    # that already failed to produce a tool call this process is not asked again.
+    use_tools = (model_supports_tools(model)
+                 and not _tools_declaration_disproved("ollama", model))
+    mode = instructor.Mode.TOOLS if use_tools else instructor.Mode.JSON
     return instructor.from_openai(raw, mode=mode)
+
+
+#: (backend, model) pairs whose declared `tools` capability was DISPROVED at runtime —
+#: the JSON-mode fallback below succeeded where the tool call produced nothing. Without
+#: this every structured call would keep paying a doomed TOOLS attempt first, which on a
+#: local 14B model is whole seconds of latency per call. Process-local on purpose: it is
+#: a measurement, not a setting, and a re-pulled or upgraded model deserves a fresh try.
+_TOOLS_DECLARATION_DISPROVED: set[tuple[str, str]] = set()
+
+
+def _tools_declaration_disproved(backend: str, model: str) -> bool:
+    return (backend, model) in _TOOLS_DECLARATION_DISPROVED
+
+
+def _json_mode_fallback_client(client) -> Optional[instructor.Instructor]:
+    """The same connection in JSON mode, for a TOOLS-mode call that produced nothing.
+
+    A model's declared ``tools`` capability is a CLAIM, and some models cannot honour it
+    through an OpenAI-compatible shim. Measured 2026-09-07: ``qwen2.5-coder:14b`` on
+    Ollama advertises ``capabilities: [completion, tools, insert]``, yet a
+    tool-choice-forced call returns ``tool_calls: null`` with the call rendered as plain
+    text — ``{"name": "Ping", "arguments": {}}``, the required field absent. The very
+    same model in JSON mode returns ``{"ok": true}`` on the first attempt.
+
+    ``_build_ollama_client`` asks the model instead of guessing from its name, which is
+    right — the keyword list it replaced denied tools to models that had them. This is
+    the other half of trusting an answer: believe it, and fall back when it proves false,
+    rather than failing the whole binding over a capability the model got wrong about
+    itself. Returns None when there is nothing to fall back FROM (already JSON mode).
+    """
+    if getattr(client, "mode", None) != instructor.Mode.TOOLS:
+        return None
+    raw = getattr(client, "client", None)
+    if raw is None:
+        return None
+    try:
+        return instructor.from_openai(raw, mode=instructor.Mode.JSON)
+    except Exception:  # pragma: no cover - a client shape instructor cannot re-wrap
+        logger.debug("llm: could not build a JSON-mode fallback client", exc_info=True)
+        return None
 
 
 def _build_lmstudio_client(base_url: str) -> instructor.Instructor:
@@ -1123,6 +1188,11 @@ _UNREACHABLE_MSGS = (
     "nodename nor servname", "failed to establish", "temporary failure in name resolution",
     "getaddrinfo", "max retries exceeded", "connection aborted", "ssl",
 )
+#: How far `classify_provider_error` follows an exception's __cause__/__context__ chain
+#: looking for the evidence a wrapper's prose dropped. Bounded so a self-referential or
+#: cyclic chain cannot spin.
+_CAUSE_DEPTH_CAP = 5
+
 _WRONG_ENDPOINT_MSGS = (
     "404 page not found", "not found for url", "invalid url", "no route matched",
     "<!doctype html", "<html", "unexpected content type",
@@ -1159,7 +1229,7 @@ def error_hint(reason: str) -> str:
     return _ERROR_HINTS.get(reason, "")
 
 
-def classify_provider_error(exc: BaseException) -> str:
+def classify_provider_error(exc: BaseException, *, _depth: int = 0) -> str:
     """One of :data:`PROVIDER_ERROR_CLASSES` for a failed provider call.
 
     Ordered most-specific first, because the classes overlap in prose: a bad key often
@@ -1186,6 +1256,17 @@ def classify_provider_error(exc: BaseException) -> str:
         return "model_not_found"
     if isinstance(exc, (ValueError, RuntimeError)) and "api key" in msg:
         return "config"
+    # A WRAPPER'S PROSE IS NOT THE EVIDENCE. `StructuredOutputError` (and any other
+    # re-raise) replaces the provider's own words with a summary: "structured output
+    # unavailable: the request never reached the model (wrong endpoint) — The base URL
+    # does not look like this provider's API root." carries none of the markers above,
+    # so a fault this function HAD classified came back "unknown" and the health check
+    # told the operator "Unrecognised failure" about a wrong base URL it had named
+    # correctly one layer down (measured 2026-09-07 on an Ollama binding).
+    # `__cause__` is kept precisely so the evidence survives the wrap — follow it.
+    cause = getattr(exc, "__cause__", None) or getattr(exc, "__context__", None)
+    if cause is not None and cause is not exc and _depth < _CAUSE_DEPTH_CAP:
+        return classify_provider_error(cause, _depth=_depth + 1)
     return "unknown"
 
 
@@ -2113,16 +2194,41 @@ class LLMProvider:
             if recovered is not None:
                 out, raw = recovered
             else:
-                # A call that fails past its retries must still leave a record —
-                # otherwise "which model fails" is unanswerable precisely when it
-                # matters, and the log flatters the provider it is meant to audit.
-                _record_llm_call(backend=backend, model=model, role=role,
-                                 prompt_tokens=None, completion_tokens=None,
-                                 ms=(time.monotonic() - _t0) * 1000.0, ok=False,
-                                 error_class=type(exc).__name__,
-                                 retries=_stats.get("retries", 0), temperature=temperature,
-                                 fallback=fallback, system=system, user=user)
-                raise _typed_structured_error(exc, response_model)
+                # The model may have lied about supporting tools. One JSON-mode retry
+                # before this binding is declared unusable — see
+                # `_json_mode_fallback_client` for the measurement that motivates it.
+                retried = None
+                if _is_structured_failure(exc):
+                    alt = _json_mode_fallback_client(client)
+                    if alt is not None:
+                        logger.warning(
+                            "llm: %s/%s declared tool support but returned no tool call; "
+                            "retrying once in JSON mode", backend, model)
+                        try:
+                            alt_ep = alt.chat.completions
+                            alt_cwc = getattr(alt_ep, "create_with_completion", None)
+                            retried = (alt_cwc(**kwargs) if alt_cwc is not None
+                                       else (alt_ep.create(**kwargs), None))
+                        except Exception:
+                            logger.debug("llm: JSON-mode retry also failed", exc_info=True)
+                            retried = None
+                if retried is not None:
+                    out, raw = retried
+                    # Remember, so the next call skips the attempt that cannot work.
+                    _TOOLS_DECLARATION_DISPROVED.add((backend, model))
+                    _stats["salvaged"] = True
+                    _stats.setdefault("repairs", []).append("json_mode_fallback")
+                else:
+                    # A call that fails past its retries must still leave a record —
+                    # otherwise "which model fails" is unanswerable precisely when it
+                    # matters, and the log flatters the provider it is meant to audit.
+                    _record_llm_call(backend=backend, model=model, role=role,
+                                     prompt_tokens=None, completion_tokens=None,
+                                     ms=(time.monotonic() - _t0) * 1000.0, ok=False,
+                                     error_class=type(exc).__name__,
+                                     retries=_stats.get("retries", 0), temperature=temperature,
+                                     fallback=fallback, system=system, user=user)
+                    raise _typed_structured_error(exc, response_model)
         pt, ct = _extract_usage(raw)
         _ms = (time.monotonic() - _t0) * 1000.0
         metering.record_llm(pt, ct, _ms)
