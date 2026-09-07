@@ -1522,7 +1522,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
 
   const loadTree = () => {
     setTreeL(true);
-    getCatalogTree(workspaceId)
+    return getCatalogTree(workspaceId)
       .then(t => {
         setTree(t);
         const uc = t.sections.find(s => s.id === "connections");
@@ -1535,8 +1535,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
             return n;
           });
         }
+        return t;   // callers await this to confirm a new connection is really listed
       })
-      .catch(err => console.error("[CatalogScreen] tree load failed:", err))
+      .catch(err => { console.error("[CatalogScreen] tree load failed:", err); return null; })
       .finally(() => setTreeL(false));
   };
 
@@ -1714,8 +1715,16 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   if (showAddData) {
     return (
       <AddDataPanel
+        workspaceId={workspaceId}
         onClose={() => setShowAddData(false)}
-        onAdded={() => { loadTree(); refreshSchema(); }}
+        onAdded={async (connId?: string) => {
+          const t = await loadTree();
+          refreshSchema();
+          if (!connId) return true;
+          // "Visible" means the gate that hides connections let this one through —
+          // the exact check that used to fail silently.
+          return !!t?.sections.some(s => s.entries.some(e => e.conn_id === connId));
+        }}
       />
     );
   }

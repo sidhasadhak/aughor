@@ -196,6 +196,47 @@ def drop_connection_everywhere(conn_id: str) -> int:
     return changed
 
 
+def join_connection(conn_id: str, workspace_id: Optional[str] = None) -> Optional[str]:
+    """Give `conn_id` workspace membership, so the data-path gate can SEE it.
+
+    The counterpart of `drop_connection_everywhere`, and the reason it exists: a
+    newly registered connection belonged to no workspace at all, and every gate that
+    resolves through `accessible_catalog_ids()` — the catalog tree above all —
+    silently `continue`s past a connection it cannot place. The row was in the
+    registry, the create returned 201, and the catalogue stayed empty.
+
+    Membership was granted only by `ensure_default_workspace()`, which runs at
+    startup and inside `GET /workspaces` — nowhere on the create path. So a new
+    connection appeared if some later request happened to list workspaces, and
+    otherwise not at all: the "shows up after a while, sometimes never" measured
+    2026-09-07.
+
+    `workspace_id` names the workspace to join (the caller's active one); the
+    default workspace is the fallback. Idempotent, and it never drags a connection
+    that another workspace already tracks back into Default.
+
+    Returns the workspace joined, or None when there was nothing to join.
+    """
+    target = workspace_id or DEFAULT_WORKSPACE_ID
+    ws = get_workspace(target)
+    if ws is None:
+        if workspace_id:
+            return None            # caller named a workspace that does not exist
+        # No default yet: the bootstrap creates it AND folds in every untracked id.
+        ensure_default_workspace()
+        return DEFAULT_WORKSPACE_ID if get_workspace(DEFAULT_WORKSPACE_ID) else None
+    if conn_id in (ws.connection_ids or []):
+        return ws.id               # already a member
+    if workspace_id is None:
+        # Same rule as ensure_default_workspace: Default claims only connections no
+        # workspace tracks, so one deliberately moved elsewhere is not dragged back.
+        for other in list_workspaces():
+            if conn_id in (other.connection_ids or []):
+                return other.id
+    update_workspace(ws.id, connection_ids=[*(ws.connection_ids or []), conn_id])
+    return ws.id
+
+
 def prune_dangling_members() -> dict[str, list[str]]:
     """Drop membership ids with no connection behind them, for workspaces that
     already carry them. Returns {workspace_id: [removed ids]}.

@@ -26,6 +26,7 @@ import time
 from pathlib import Path
 
 import duckdb
+from aughor.db.duckdb_ext import prepare_extensions
 
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
@@ -111,11 +112,10 @@ class GoogleSheetsConnector(Connector):
 
         self._duckdb = duckdb.connect(":memory:")
         try:
-            # The default extension directory is $HOME/.duckdb, which a serverless
-            # filesystem cannot create. A writable temp dir works on every shape and
-            # changes nothing for a laptop beyond where the extension file lives.
-            ext_dir = Path(_tempfile.gettempdir()) / "aughor_duckdb_ext"
-            self._duckdb.execute(f"SET extension_directory='{ext_dir}'")
+            # $HOME/.duckdb is unwritable on a serverless filesystem, and DuckDB
+            # resolves the HOME directory before it looks at extension_directory —
+            # see aughor.db.duckdb_ext for the measurement.
+            prepare_extensions(self._duckdb)
             self._duckdb.execute("INSTALL httpfs; LOAD httpfs;")
         except Exception as exc:
             self._load_errors["httpfs"] = str(exc)[:300]

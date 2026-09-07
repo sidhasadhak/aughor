@@ -24,6 +24,7 @@ import time
 from typing import TYPE_CHECKING
 
 import duckdb
+from aughor.db.duckdb_ext import prepare_extensions
 
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
@@ -81,10 +82,11 @@ class FederatedConnection(Connector):
         if conn_type_name == "PostgresConnection":
             try:
                 _, dsn = get_dsn(conn_id)
+                prepare_extensions(self._duckdb)
                 try:
                     self._duckdb.execute("INSTALL postgres; LOAD postgres;")
                 except Exception:
-                    pass
+                    logger.debug("duckdb postgres install/load failed", exc_info=True)
                 self._duckdb.execute(
                     f"ATTACH '{dsn}' AS \"{ns}\" (TYPE postgres, READ_ONLY)"
                 )

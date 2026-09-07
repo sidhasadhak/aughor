@@ -217,7 +217,8 @@ def _decrypt_meta(meta: dict | None) -> dict:
     return {k: (decrypt_secret(v) if is_encrypted(v) else v) for k, v in (meta or {}).items()}
 
 
-def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None) -> str:
+def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None,
+                   workspace_id: str | None = None) -> str:
     conn_id = str(uuid.uuid4())[:8]
     with _db() as conn:
         conn.execute(
@@ -225,6 +226,19 @@ def add_connection(name: str, conn_type: str, dsn: str, meta: dict | None = None
             [conn_id, name, conn_type, _encrypt(dsn), json.dumps(_encrypt_meta(conn_type, meta)), current_org_id()],
         )
         conn.commit()
+    # Membership is what makes the connection VISIBLE: `accessible_catalog_ids()`
+    # skips any connection no workspace tracks, so without this the catalogue stays
+    # empty until something calls `GET /workspaces`. Placed here, beside the INSERT,
+    # for the same reason the delete-side cleanup lives in `delete_connection` — it
+    # covers every add path rather than only the HTTP route.
+    try:
+        from aughor.workspace.store import join_connection
+        join_connection(conn_id, workspace_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "workspace membership on add is best-effort; the startup "
+                      "ensure_default_workspace repairs what this misses",
+                 counter="registry.workspace.membership")
     return conn_id
 
 

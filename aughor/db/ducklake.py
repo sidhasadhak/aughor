@@ -19,9 +19,11 @@ from pathlib import Path
 import duckdb
 
 from aughor.db.connection import DuckDBConnection, apply_lane_envelope
+from aughor.db.duckdb_ext import prepare_extensions
 
 
 def _attach_ducklake(conn, catalog_path: str, alias: str, *, read_only: bool = False) -> None:
+    prepare_extensions(conn)
     conn.execute("INSTALL ducklake")
     conn.execute("LOAD ducklake")
     ro = " (READ_ONLY)" if read_only else ""

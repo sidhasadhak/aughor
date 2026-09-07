@@ -14,6 +14,7 @@ Note: httpfs is bundled with duckdb>=0.8 — no pip install needed.
 """
 from __future__ import annotations
 
+import logging
 import time
 from urllib.parse import urlparse, parse_qs
 
@@ -21,6 +22,9 @@ import duckdb
 
 from aughor.connectors.base import Connector
 from aughor.control_plane.contracts.execution import QueryResult
+from aughor.db.duckdb_ext import prepare_extensions
+
+logger = logging.getLogger(__name__)
 
 MAX_ROWS = 2000
 
@@ -68,10 +72,13 @@ class S3Connection(Connector):
     def _setup_httpfs(self) -> None:
         """Install and load httpfs; configure S3 credentials."""
         p = self._params
+        prepare_extensions(self._duckdb)
         try:
             self._duckdb.execute("INSTALL httpfs; LOAD httpfs;")
         except Exception:
-            pass  # already installed
+            # Already installed is the common case; a serverless host with no
+            # writable home used to land here too and read as "already installed".
+            logger.debug("duckdb httpfs install/load failed", exc_info=True)
 
         secret_sql_parts = [
             "TYPE S3",
