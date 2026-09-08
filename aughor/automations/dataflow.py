@@ -382,6 +382,19 @@ GUARD_SKIP = "condition not met"
 #: one-writer rule: `graph.py` reads this constant, never the prose.
 BRANCH_SKIP = "branch not taken"
 
+#: The prefix a STARVED skip carries — a step that did not run because the step it reads
+#: produced nothing. Its own constant for exactly the reason the two above have theirs,
+#: and the reason is sharper here: `GUARD_SKIP` and `BRANCH_SKIP` are the design WORKING,
+#: and this one is the design BREAKING, while all three share the `skipped` status.
+#:
+#: Measured 2026-09-06 on the theLook briefing: an investigate step hit its 900s budget
+#: and returned an investigation_id with no summary, the Slack post skipped for want of
+#: `step1.summary`, and the run was recorded `fired` with `failed=0` — a briefing that
+#: never arrived, filed as a success, with nobody told. The engine already wrote these
+#: words; it wrote them as a bare literal in two places, so nothing could read them
+#: without sniffing prose.
+STARVED_SKIP = "upstream data unavailable"
+
 
 def else_target(effect: Any) -> str:
     """DS-6 — the step this one runs OTHERWISE of, or ``"" `` when it is unrouted.

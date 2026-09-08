@@ -612,6 +612,18 @@ def dry_run_draft(body: CreateAutomationRequest, until: Optional[str] = None):
     return _dry_run_payload(automation, until)
 
 
+def _starved(effect) -> bool:
+    """Did this step skip because the step it reads produced nothing?
+
+    Read off the constant the engine writes, never sniffed out of the prose — the law
+    `graph.py` states for the guard skip, and a starved skip needs it more, because this
+    is the one whose absence makes an outage look like a clean run.
+    """
+    from aughor.automations.dataflow import STARVED_SKIP
+    return (getattr(effect, "status", "") == "skipped"
+            and str(getattr(effect, "message", "")).startswith(STARVED_SKIP))
+
+
 #: What the run PICKER offers, and what "latest" means. A scheduled automation appends a
 #: `not_fired` row on every tick — once a minute for a daily cron — so an unfiltered rail
 #: shows twelve identical did-nothing rows spanning twelve MINUTES, and `latest` selects a
@@ -658,8 +670,15 @@ def graph(automation_id: str, run: str = ""):
         {"id": r.id, "outcome": r.outcome, "at": r.started_at,
          "duration_ms": r.duration_ms,
          "steps": len(r.effects or []),
+         # A STARVED skip counts. Excluding every skip was right for the two skips that
+         # mean the design is working (a guard held, a branch went the other way) and
+         # wrong for the one that means it broke: measured 2026-09-06, a briefing whose
+         # investigate returned no summary skipped its Slack post and was filed `fired`
+         # with failed=0 — an outage that looked like a clean run in every surface.
          "failed": sum(1 for e in (r.effects or [])
-                       if e.status not in ("executed", "skipped"))}
+                       if e.status not in ("executed", "skipped")
+                       or _starved(e)),
+         "starved": sum(1 for e in (r.effects or []) if _starved(e))}
         for r in get_runs(automation_id=automation_id, outcomes=EXECUTED_OUTCOMES,
                           limit=12)
     ]

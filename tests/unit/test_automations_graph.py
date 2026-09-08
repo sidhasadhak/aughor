@@ -342,3 +342,51 @@ def test_the_runs_rail_offers_executions_not_a_window_of_scheduler_ticks(client)
     assert len(client.get(f"/automations/{a.id}/runs",
                           params={"limit": 200}).json()["runs"]) == 61
 
+
+
+def test_a_starved_skip_is_told_apart_from_a_guard_holding():
+    """Three skips share one status, and only one of them means something broke.
+
+    Measured 2026-09-06 on the live theLook briefing: the investigate step hit its 900s
+    budget and returned an investigation_id with no summary, so the Slack post skipped
+    for want of `step1.summary` — and the run was filed `fired` with failed=0. A briefing
+    that never arrived, indistinguishable from a working automation in every surface.
+    """
+    from aughor.automations.dataflow import BRANCH_SKIP, GUARD_SKIP, STARVED_SKIP
+
+    a = _automation(_effect())
+    starved = _Run([EffectOutcome(kind="slack_post", target="step2", status="skipped",
+                                  message=f"{STARVED_SKIP}: step 'step1' has no 'summary'")])
+    node = [n for n in build_graph(a, starved)["nodes"] if n["type"] == "effect"][0]
+    assert node["starved"] is True
+    assert node["guarded"] is False and node["not_taken"] is False
+
+    for msg, key in ((f"{GUARD_SKIP}: x", "guarded"), (f"{BRANCH_SKIP}", "not_taken")):
+        run = _Run([EffectOutcome(kind="slack_post", target="step2",
+                                  status="skipped", message=msg)])
+        n = [x for x in build_graph(a, run)["nodes"] if x["type"] == "effect"][0]
+        assert n[key] is True, msg
+        assert n["starved"] is False, "the design working must never read as broken"
+
+
+def test_the_rail_stops_calling_a_starved_run_clean(client):
+    from aughor.automations.dataflow import GUARD_SKIP, STARVED_SKIP
+    from aughor.automations.models import AutomationRun
+    from aughor.automations.store import append_run, upsert_automation as save_automation
+
+    a = save_automation(_automation(_effect()))
+    append_run(AutomationRun(automation_id=a.id, outcome="fired", effects=[
+        EffectOutcome(kind="investigate", target="step1", status="executed"),
+        EffectOutcome(kind="slack_post", target="step2", status="skipped",
+                      message=f"{STARVED_SKIP}: step 'step1' has no 'summary'")]))
+    row = client.get(f"/automations/{a.id}/graph", params={"run": "latest"}).json()["runs"][0]
+    assert row["starved"] == 1
+    assert row["failed"] == 1, "an outage must not read as a clean run"
+
+    # ...while a guard holding stays clean, because that is the design working.
+    b = save_automation(_automation(_effect()))
+    append_run(AutomationRun(automation_id=b.id, outcome="fired", effects=[
+        EffectOutcome(kind="slack_post", target="step2", status="skipped",
+                      message=f"{GUARD_SKIP}: nothing to report")]))
+    row = client.get(f"/automations/{b.id}/graph", params={"run": "latest"}).json()["runs"][0]
+    assert row["starved"] == 0 and row["failed"] == 0
