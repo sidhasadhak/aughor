@@ -1706,7 +1706,10 @@ def _answer_core(
 
         def _docs() -> str:
             from aughor.knowledge.indexer import build_external_context_section
-            s = build_external_context_section(question, top_k=2)
+            # The canvas is passed so ITS pinned documents reach the prompt. Without
+            # it a workspace's own documents were retrievable only by coincidence of
+            # embedding similarity, which is not what binding one means.
+            s = build_external_context_section(question, top_k=2, canvas_id=canvas_id)
             return (s + "\n\n") if s else ""
 
         def _pb_match():

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import logging
+import re
+from pathlib import Path as _Path
 from typing import Optional
 
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
@@ -15,13 +17,34 @@ router = APIRouter(tags=["knowledge"])
 
 # ── Documents ─────────────────────────────────────────────────────────────────
 
-#: The file types the parser can read. One list, used by upload AND preview — a preview
-#: that accepted what upload rejects would show a person chunks they can never index.
-_ALLOWED_SUFFIXES = {".pdf", ".docx", ".md", ".txt", ".markdown"}
+def _allowed_suffixes() -> frozenset[str]:
+    """The file types the parser can read — ASKED of the converter, not restated here.
+
+    This was a hand-written set of five. A hand-written allowlist is a claim about
+    another module's capability, and it rots in the safe-looking direction: the
+    converter gained fourteen formats and the set kept refusing them, so the product
+    was capped by a literal nobody remembered to edit. Derived, it cannot drift.
+
+    Still one source for upload AND preview — a preview that accepted what upload
+    rejects would show a person chunks they can never index.
+    """
+    from aughor.knowledge.convert import supported_suffixes
+    return supported_suffixes()
 
 #: Chunks returned by a preview. Enough to judge the settings, not the whole document —
 #: this runs on every keystroke-ish adjustment and the point is that it stays cheap.
 _PREVIEW_CHUNKS = 10
+
+
+def _safe_download_name(stem: str) -> str:
+    """A filename safe to put in a Content-Disposition header.
+
+    The title comes from an uploaded file's name, so it is attacker-influenceable. A
+    quote or a newline in it would break out of the quoted string and let a caller
+    write their own headers; stripping to a conservative set is the whole defence.
+    """
+    cleaned = re.sub(r'[^A-Za-z0-9 ._-]', "_", stem).strip() or "document"
+    return cleaned[:120]
 
 
 def _settings_from(raw: Optional[str]):
@@ -44,22 +67,61 @@ def _settings_from(raw: Optional[str]):
         raise HTTPException(status_code=422, detail=str(exc))
 
 
+async def _read_upload(file: UploadFile) -> bytes:
+    """The upload's bytes, with its extension checked before anything reads them.
+
+    The extension check is a courtesy that fails fast with a helpful message; it is
+    NOT the safety boundary. `convert.to_markdown` decides what a file really is from
+    its content, so a `.pdf` that is secretly a ZIP is refused there even though it
+    passes here.
+    """
+    from pathlib import Path as _Path
+
+    allowed = _allowed_suffixes()
+    suffix = _Path(file.filename or "").suffix.lower()
+    if suffix not in allowed:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unsupported file type '{suffix or '(none)'}'. "
+                   f"Allowed: {', '.join(sorted(allowed))}",
+        )
+    return await file.read()
+
+
 async def _spool(file: UploadFile):
-    """Write an upload to a temp file the parsers can read, after checking its type."""
+    """`_read_upload` to a temp file, for the callers that still need a path."""
     import tempfile
     from pathlib import Path as _Path
 
+    content = await _read_upload(file)
     suffix = _Path(file.filename or "").suffix.lower()
-    if suffix not in _ALLOWED_SUFFIXES:
-        raise HTTPException(
-            status_code=422,
-            detail=f"Unsupported file type '{suffix}'. "
-                   f"Allowed: {', '.join(sorted(_ALLOWED_SUFFIXES))}",
-        )
-    content = await file.read()
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp.write(content)
         return _Path(tmp.name)
+
+
+@router.get("/documents/formats")
+def document_formats():
+    """What this deployment can actually read, for the drop zone to advertise.
+
+    The UI used to carry its own copy of the list (`.pdf,.docx,.md,.txt,.markdown`).
+    Two hand-written lists of the same fact drift apart, and they drift silently: the
+    converter gained fourteen formats and the drop zone went on rejecting them in the
+    file picker, so the capability existed and was unreachable. Served, there is one
+    list and it is the one the parser enforces.
+
+    `converter` reports whether the document converter is installed at all — without
+    it only Markdown and plain text can be read, and the UI should say so rather than
+    offering formats that will fail.
+    """
+    from aughor.knowledge.convert import available, document_suffixes
+
+    return {
+        "suffixes": sorted(_allowed_suffixes()),
+        "accept": ",".join(sorted(_allowed_suffixes())),
+        "converter": available(),
+        "converts": sorted(document_suffixes()),
+    }
 
 
 @router.post("/documents/preview")
@@ -77,12 +139,20 @@ async def preview_document_chunks(file: UploadFile = File(...),
     settings are sane before they queue an upload.
     """
     from aughor.knowledge.documents import (DEFAULT_CHUNK_SETTINGS, chunk_text,
-                                            extract_text)
+                                            extract_text, numeric_run_lines)
+
+    from aughor.knowledge.convert import ConversionError
 
     settings = _settings_from(chunk_settings)
     path = await _spool(file)
     try:
         raw = extract_text(path)
+    except ConversionError as exc:
+        # The same typed reason upload gives. A preview that answers "No text could be
+        # extracted" for a scanned PDF sends a person to look at their file, when what
+        # they need to be told is that it has no text layer.
+        raise HTTPException(status_code=422,
+                            detail={"message": str(exc), "code": exc.code})
     except Exception:
         logger.exception("Document parsing failed during preview")
         raise HTTPException(status_code=422, detail="No text could be extracted")
@@ -99,6 +169,11 @@ async def preview_document_chunks(file: UploadFile = File(...),
         # The settings that PRODUCED this, echoed back — a preview whose settings are
         # implicit cannot be compared with the next one.
         "settings": (settings or DEFAULT_CHUNK_SETTINGS).as_dict(),
+        # Same rule as upload, reported the same way — a preview that silently kept
+        # what upload holds back would misrepresent what is searchable.
+        "suppressed_numeric_runs": len(
+            numeric_run_lines(raw)
+            if (settings or DEFAULT_CHUNK_SETTINGS).suppress_numeric_runs else []),
         "chunks": [{
             "index": c.chunk_index,
             "characters": len(c.text),
@@ -113,25 +188,218 @@ async def preview_document_chunks(file: UploadFile = File(...),
 @router.post("/documents/upload", status_code=201)
 async def upload_document(file: UploadFile = File(...),
                           chunk_settings: Optional[str] = Form(None)):
-    """Upload a PDF, Word, Markdown, or plain-text document for semantic indexing."""
+    """Upload any supported document: convert it to Markdown, index it, KEEP it.
+
+    Three things happen here, in an order that matters. The bytes are converted to
+    Markdown once. The Markdown is chunked and embedded. Both the original bytes and
+    the Markdown are retained under the document's id.
+
+    That last step is new, and it is the reason the rest of the documents section can
+    exist. This handler used to spool the upload to a temp file and unlink it in a
+    `finally:` — the document was destroyed the moment it was indexed. A preview had
+    nothing to show but chunk text, conversion had nothing to convert, and a re-index
+    could only re-embed the old parse because the source was gone.
+
+    Conversion runs BEFORE indexing on purpose: a file that cannot be read must fail
+    with its own reason ("this PDF is scanned", "this document is password-protected")
+    rather than producing zero chunks and a generic complaint about no text.
+    """
     from pathlib import Path as _Path
 
+    from aughor.knowledge import blobs
+    from aughor.knowledge.convert import ConversionError, convert_document
+
     settings = _settings_from(chunk_settings)
-    tmp_path = await _spool(file)
+    filename = file.filename or "document"
+    data = await _read_upload(file)
+
     try:
-        from aughor.knowledge.indexer import index_file
-        entry = index_file(tmp_path,
-                           title=_Path(file.filename or "").stem.replace("_", " ").replace("-", " ").title(),
+        converted = convert_document(data, filename)
+    except ConversionError as exc:
+        # 422 with the machine-readable code, so a client can offer the right remedy
+        # (OCR, a password, a smaller file) instead of parsing the English.
+        raise HTTPException(status_code=422,
+                            detail={"message": str(exc), "code": exc.code})
+    markdown = converted.markdown
+
+    # What was held back from SEARCH. Quietly indexing less than the document
+    # contains is the same class of failure as quietly indexing more, so the count
+    # travels with the response and the lines themselves stay in the document.
+    from aughor.knowledge.documents import DEFAULT_CHUNK_SETTINGS, numeric_run_lines
+    effective = settings or DEFAULT_CHUNK_SETTINGS
+    suppressed = numeric_run_lines(markdown) if effective.suppress_numeric_runs else []
+
+    title = _Path(filename).stem.replace("_", " ").replace("-", " ").title()
+    try:
+        from aughor.knowledge.indexer import index_text
+        entry = index_text(text=markdown, title=title, source=filename,
                            settings=settings)
-        entry["filename"] = file.filename or entry["filename"]
-        return entry
-    except RuntimeError as e:
-        raise HTTPException(status_code=422, detail=str(e))
     except Exception:
         logger.exception("Document indexing failed")
         raise HTTPException(status_code=500, detail="Indexing failed")
-    finally:
-        tmp_path.unlink(missing_ok=True)
+
+    # Zero chunks is a FAILED upload, and it has to be said out loud here.
+    # `index_text` returns early without registering when chunking yields nothing,
+    # so a 201 at this point would hand back a doc_id that is in no list, cannot be
+    # fetched and cannot be deleted — the person is told "Created" and has nothing.
+    # The usual cause is a document shorter than `min_chars`, which is a setting they
+    # control, so the message names it instead of saying "no text could be extracted".
+    if not entry.get("chunk_count"):
+        from aughor.knowledge.documents import DEFAULT_CHUNK_SETTINGS
+        floor = (settings or DEFAULT_CHUNK_SETTINGS).min_chars
+        raise HTTPException(
+            status_code=422,
+            detail={"message": (
+                        f"Nothing was indexed: the document is {len(markdown)} "
+                        f"characters and chunks shorter than {floor} are discarded. "
+                        f"Lower the minimum chunk length to index it."),
+                    "code": "no_chunks"})
+
+    doc_id = entry["doc_id"]
+    try:
+        blobs.put_original(doc_id, filename, data)
+        blobs.put_markdown(doc_id, markdown)
+    except OSError:
+        # Retention is best-effort against a full or read-only disk. The document IS
+        # indexed and searchable at this point; losing the original costs preview and
+        # conversion, which `has_original: false` reports honestly, and is not worth
+        # failing an otherwise successful upload over.
+        logger.exception("Could not retain original bytes for %s", doc_id)
+
+    entry["filename"] = filename
+    entry["characters"] = len(markdown)
+    # A part-scanned PDF imports the pages that HAVE a text layer, so the response has
+    # to say which ones did not — otherwise "indexed" reads as "all of it", and the
+    # pages behind a scanned cover go missing with nothing to notice.
+    if converted.page_count:
+        entry["page_count"] = converted.page_count
+        entry["pages_read"] = len(converted.pages_read)
+        entry["pages_needing_ocr"] = converted.pages_needing_ocr
+        # Reported apart, because the remedies differ: OCR fixes one and nothing the
+        # person can buy fixes the other.
+        entry["pages_failed"] = converted.pages_failed
+    if suppressed:
+        entry["suppressed_numeric_runs"] = len(suppressed)
+        # A sample, not the lot: enough for a person to recognise what was held back
+        # and object if it was wrong, without shipping the document back to them.
+        entry["suppressed_sample"] = [line.strip()[:160] for line in suppressed[:3]]
+    entry.update(blobs.info(doc_id))
+    return entry
+
+
+@router.get("/documents/{doc_id}/markdown")
+def document_markdown(doc_id: str):
+    """The document as Markdown — what every agent, canvas and prompt actually reads.
+
+    Served from the cache when it is there and re-converted from the original when it
+    is not, so this answers for documents stored before the cache existed.
+    """
+    from aughor.knowledge import blobs
+    from aughor.knowledge.indexer import get_document
+
+    if get_document(doc_id) is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    text = blobs.markdown(doc_id)
+    if text is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "This document was uploaded before originals were "
+                               "retained, so it cannot be re-read. Re-upload it to "
+                               "enable preview and conversion.",
+                    "code": "no_original"})
+    return {"doc_id": doc_id, "markdown": text, "characters": len(text)}
+
+
+@router.get("/documents/{doc_id}/convert")
+def convert_document(doc_id: str, to: str = "pdf"):
+    """Hand a stored document back in a different format.
+
+    The other half of the pivot. Anything readable became Markdown on the way in; this
+    renders that Markdown into any format the deployment can write — so a PowerPoint
+    deck can leave as a PDF, and a scanned-in Word report as clean HTML, without a
+    converter per pair.
+
+    Rendered from the CACHED Markdown, or re-converted from the original when the
+    cache is cold. A document whose original was never retained can still be converted
+    if its Markdown survives; only one with neither is refused.
+    """
+    from fastapi.responses import Response
+
+    from aughor.knowledge import blobs
+    from aughor.knowledge.indexer import get_document
+    from aughor.knowledge.render import RenderError, render
+
+    doc = get_document(doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+
+    markdown = blobs.markdown(doc_id)
+    if markdown is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "Nothing is retained for this document to convert from. "
+                               "Re-upload it to enable conversion.",
+                    "code": "no_original"})
+
+    title = doc.get("title") or "Document"
+    try:
+        data, media_type, suffix = render(markdown, to, title=title)
+    except RenderError as exc:
+        # 422 for "you asked for a format that does not exist", 501 for "this
+        # deployment cannot write it" — a person can fix the first and only an
+        # operator can fix the second.
+        status = 501 if exc.code == "renderer_missing" else 422
+        raise HTTPException(status_code=status,
+                            detail={"message": str(exc), "code": exc.code})
+
+    stem = _Path(doc.get("filename") or title).stem or "document"
+    return Response(
+        content=data, media_type=media_type,
+        headers={"Content-Disposition":
+                 f'attachment; filename="{_safe_download_name(stem)}{suffix}"'})
+
+
+@router.get("/documents/{doc_id}/formats")
+def document_convert_formats(doc_id: str):
+    """What this document can be turned into HERE — not what the code can do in theory.
+
+    PDF and PowerPoint need the `export` extra; offering them on a deployment without
+    it produces a button that fails at the click, which is worse than a button that
+    was never shown.
+    """
+    from aughor.knowledge.render import available_formats
+
+    return {"doc_id": doc_id, "formats": available_formats()}
+
+
+@router.get("/documents/{doc_id}/original")
+def document_original(doc_id: str):
+    """The document's own bytes, for a real preview.
+
+    Inline rather than attachment, so a browser renders the PDF instead of downloading
+    it; the filename is quoted for a Content-Disposition header and never interpolated
+    from user input unescaped.
+    """
+    import mimetypes
+
+    from fastapi.responses import FileResponse
+
+    from aughor.knowledge import blobs
+    from aughor.knowledge.indexer import get_document
+
+    doc = get_document(doc_id)
+    if doc is None:
+        raise HTTPException(status_code=404, detail="Document not found")
+    path = blobs.original_path(doc_id)
+    if path is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": "The original was not retained for this document.",
+                    "code": "no_original"})
+    name = doc.get("filename") or path.name
+    media = mimetypes.guess_type(name)[0] or "application/octet-stream"
+    return FileResponse(path, media_type=media,
+                        content_disposition_type="inline", filename=name)
 
 
 class ReindexIn(BaseModel):
@@ -151,9 +419,14 @@ def reindex_documents(body: ReindexIn):
     is deliberately not written here: the package names no hosted model, and a rot-guard
     enforces that even in prose, because prose is where a convenient default starts.)
 
-    ⚠️ It recovers what the STORE holds and nothing more. Uploaded files are unlinked after
-    indexing, so a chunk absent from the store has no source anywhere; the plan reports that
-    count as `unrecoverable_chunks` rather than letting a person infer a full recovery.
+    ⚠️ It recovers what the STORE holds and nothing more. The plan reports what it cannot
+    reach as `unrecoverable_chunks` rather than letting a person infer a full recovery.
+
+    That count is now smaller than it was, and shrinking. Uploads used to be unlinked
+    straight after indexing, so a chunk missing from the store had no source anywhere;
+    documents uploaded since retention began keep their original bytes and CAN be read
+    again from source. This endpoint does not do that yet — it re-embeds — but the
+    material a real re-read needs is on disk, which it never was before.
     """
     from aughor.knowledge import reindex
 
@@ -217,15 +490,36 @@ def knowledge_status_endpoint():
 
 @router.get("/documents")
 def list_documents_endpoint():
+    """The corpus, each row saying what is actually retained for it.
+
+    `has_original` is the field the UI branches on — it decides whether a row offers
+    preview and conversion or only search. It is read from disk per row rather than
+    stored on the registry entry, because the registry cannot know that a directory
+    was cleared underneath it, and a row claiming a preview that 404s is worse than a
+    row that never offered one.
+    """
+    from aughor.knowledge import blobs
     from aughor.knowledge.indexer import list_documents
-    return list_documents()
+
+    return [{**doc, **blobs.info(doc["doc_id"])} for doc in list_documents()]
 
 
 @router.delete("/documents/{doc_id}")
 def delete_document_endpoint(doc_id: str):
+    """Remove a document from the registry, the vector store, AND disk.
+
+    The retained bytes are deleted here rather than in `delete_document` so that the
+    indexer keeps knowing nothing about the blob store. Deleting them is not optional
+    housekeeping: a person who deletes a document has asked for their file to be gone,
+    and leaving the original on disk after the row disappears would be the one copy
+    nothing in the product can see or reach.
+    """
+    from aughor.knowledge import blobs
     from aughor.knowledge.indexer import delete_document
+
     if not delete_document(doc_id):
         raise HTTPException(status_code=404, detail="Document not found")
+    blobs.delete(doc_id)
     return {"ok": True, "doc_id": doc_id}
 
 

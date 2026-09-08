@@ -2916,6 +2916,114 @@ else, no direct DDL; (c) a capped org's refusal must SAY it is a cap, not fail
 mysteriously — the caps plane's `action` vocabulary already distinguishes alert from
 block.
 
+### 3.13 · Arc DX — the documents plane (built 2026-09-07)
+
+> **Origin.** The user's 2026-09-07 directive: *"I want people to upload any document
+> and convert it to any format ... and when they upload, they should have a preview,
+> those should be usable as context in canvases, for agents, practically anywhere in
+> the platform."*
+>
+> **What measurement found before any code was written.** The plane read five file
+> types and its reading was worse than its chunk counts suggested. On a Word file
+> holding a four-row revenue table, `extract_text` returned 117 characters and every
+> number was gone — `python-docx`'s `.paragraphs` does not walk tables, so the table
+> was dropped in silence. The same table in a PDF came back as orphaned cells with no
+> grid. And a `.pptx` reaching the `read_text(errors="replace")` fallback produced
+> **26,928 characters of decoded ZIP container**, chunked and embedded as if it were
+> prose — a failure that looked exactly like success, guarded only by a hand-written
+> extension list that `index_text`'s connector callers never pass through.
+>
+> **The shape: Markdown is the PIVOT.** anydoc (Firecrawl's Rust converter; MIT,
+> prebuilt abi3 wheels, no ML model, no network) brings fourteen formats IN as
+> Markdown; the `ExportDoc` renderers already in `aughor/export/` — which had exactly
+> one producer, an investigation's `report_json` — take it back OUT as PDF, Word,
+> PowerPoint, HTML or text. Fourteen readers plus six writers is twenty seams; the
+> format-pair matrix would have been eighty-four.
+
+**Laws this arc establishes:**
+
+- **Fail closed on input you cannot place.** Dispatch on what the bytes ARE
+  (`format_from_bytes`), never on what they are called. A mislabelled binary raises a
+  typed error; nothing returns a best-effort string, because "we could not read this"
+  must never reach the index disguised as content.
+- **Retention is the keystone.** Upload used to `unlink` the file in a `finally:`.
+  Preview had nothing to show but chunk text, conversion had nothing to convert, and
+  a re-index could only re-embed the old parse. Originals are kept org-pathed, with
+  the Markdown cached beside them as a DISPOSABLE artefact — deleting the `.md` is
+  always safe because the original can be re-read.
+- **An allowlist is asked, never restated.** The router's accepted set and the drop
+  zone's `accept` both come from the converter's declared formats. The old
+  hand-written five stayed five while the parser grew to twenty: a capability that
+  existed and was unreachable.
+- **Pinning is not fencing.** An AGENT's `doc_ids` RESTRICT (fail-closed — its context
+  is what its creator gave it). A CANVAS's `doc_ids` PIN — they add to what is in
+  reach without removing the corpus, because a canvas is a place, not a fence. Pinned
+  documents are searched against the question so a 200-chunk report cannot flood the
+  prompt, and an agent still fences a canvas: widening would turn a restriction into
+  a suggestion.
+- **Hosted OCR is a network call.** anydoc can delegate scanned PDFs to Firecrawl.
+  Off unless `AUGHOR_DOC_OCR=hosted`; consent for sending a document off the box is
+  external, like every other outbound seam.
+
+**Shipped:** the converter seam (`knowledge/convert.py`), byte retention
+(`knowledge/blobs.py`), the outbound renderer (`knowledge/render.py`), preview and
+convert routes, canvas document binding wired at all three retrieval sites, and the
+UI for both.
+
+**Defect fixed on the way through, worth remembering:** routing upload through
+`index_text` turned a loud 422 into a silent **201** — `index_text` returns early
+WITHOUT registering when chunking yields nothing, so any document shorter than
+`min_chars` came back "Created" with a doc_id that appeared in no listing and 404'd on
+fetch and delete. The same early return still applies to the Confluence/Notion
+connectors, where a short page vanishes the same way and nothing reports it.
+
+**Measured on a live 40-page investor deck (2026-09-08), which found three defects
+and one limit that cannot be coded away:**
+
+- 🔴 **A row wider than its header had its extra cells TRUNCATED**, and converters do
+  not escape pipes inside a cell — so a slide labelled `Luxury | Mytheresa` emitted
+  three cells under a two-cell header and the parser kept `Luxury`, dropped
+  `Mytheresa`, and threw away the whole bullet list of results beside it. The deck's
+  headline table came out as `[['Luxury'], ['Luxury'], ['Off-price']]` and the
+  rendered PDF looked perfectly well-formed with every GMV, Net Sales and NPS figure
+  gone. A table is now as wide as its WIDEST row; widening can leave an empty column,
+  truncating loses content, and only one of those is visible to the reader.
+- 🔴 `str.strip("|")` is GREEDY — `||Highlights|` lost both leading pipes and parsed
+  one cell narrower than its own body rows, which is what fed the truncation above.
+  Strip exactly one pipe per side.
+- 🔴 **A per-page marker asserted a cause it did not know.** Every page failure was
+  reported as "an image with no text layer", including ones that failed for other
+  reasons. Only `NeedsOcrError` / `UnsupportedError` license that claim; anything else
+  says only that the page could not be read, and `pages_failed` is reported apart from
+  `pages_needing_ocr` because OCR fixes one and nothing fixes the other.
+- ⚠️ **CHART DATA LOSES ITS LABELS, and no converter can fix it.** A bar chart's
+  numbers are positioned graphics, not structure, so they extract as an unattributed
+  run: `Value (GMV)245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7` with
+  `Q1 Q2 Q3 Q1 Q2 Q3 Q1 Q2 Q3` on a separate line. Real tables are unaffected — the
+  same deck yielded 158 well-formed table rows against one chart slide — but those
+  orphan numbers ARE chunked and embedded, so an agent asked for one segment's GMV can
+  retrieve the run and answer confidently from the wrong position — the
+  well-formed-wrong-answer trap on the intake side.
+  **Answered 2026-09-08 (the user's call): those runs are held OUT OF THE INDEX**
+  (`ChunkSettings.suppress_numeric_runs`, the one default here chosen rather than
+  inherited). It is a different KIND of setting from `strip_urls_emails` beside it:
+  that deletes from the DOCUMENT, this only from the index — every figure stays in the
+  stored Markdown, the preview and every conversion, and turning it off and
+  re-indexing puts it back. A line qualifies only when four or more numeric tokens
+  OUTNUMBER the words among the non-numeric ones (a unit welded to its value belongs
+  to the number: counting the "bps" in "+140bps" as a word let nine bare deltas score
+  themselves a sentence), and table rows and fenced code are never runs because their
+  header or fence IS the attribution. Measured on the live deck: **5 lines of 522,
+  0.78% of characters**, and every figure that matters survived because it also
+  appears in a real table. Both doors report the count; the UI says what was held back
+  and offers the switch. What remains open is the harder half — a chart's meaning is
+  recoverable only by reading the page as an image.
+
+**Open:** a re-index that genuinely RE-READS retained originals (today it re-embeds
+the stored chunks — the material is now on disk, the code is not written); documents
+as canvas nodes on the ReactFlow surface rather than only as a canvas-level binding;
+`.potx`/`.pages`/`.html` are not anydoc formats and are refused.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)

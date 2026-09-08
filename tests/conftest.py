@@ -189,6 +189,11 @@ os.environ["AUGHOR_COLUMN_CONFIG_ROOT"] = os.path.join(_test_stores_dir,
 # R8a — the documents registry (data/documents.json) is written by every index/delete;
 # isolate it so suite-driven indexing can never mutate the live registry.
 os.environ["AUGHOR_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "documents.json")
+# The ORIGINAL uploaded bytes (data/documents/{org}/{doc_id}/) — the registry's
+# sibling, isolated in the same commit that introduced it. Without this a single
+# upload test writes a real file into the developer's tree and, worse, a delete test
+# rmtree()s a directory there. The registry above is metadata; this is the payload.
+os.environ["AUGHOR_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
 
 # Layer 0.2 — the runtime LLM config (data/llm_config.json) was the LAST store tests
 # inherited from the developer's machine: it holds the operator's chosen backend AND

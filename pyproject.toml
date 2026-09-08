@@ -93,7 +93,15 @@ export = [
     # renderPM rasterize that SVG for embedding. matplotlib's parallel port is gone.
     "svglib>=1.5.1",
 ]
+# Document ingestion. `firecrawl-anydoc` is the converter for every binary format
+# (Word/PowerPoint/Excel/OpenDocument/RTF/EPUB/CSV/PDF → Markdown): a pure-Rust
+# library shipped as abi3 wheels, so it adds no build step and no ML model. It
+# replaced a pypdf/python-docx text path that dropped tables silently and read
+# unknown binaries as mojibake — see aughor/knowledge/convert.py.
+# pypdf and python-docx REMAIN: they are the outbound renderers' dependencies and
+# the fallback reader on installs that predate the converter.
 docs = [
+    "firecrawl-anydoc>=0.2.4",
     "pypdf>=6.4.0",
     "python-docx>=1.0.0",
 ]

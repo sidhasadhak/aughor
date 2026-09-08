@@ -50,6 +50,16 @@ def test_the_constants_became_defaults_and_did_not_move():
                                                            MIN_CHUNK_CHARS)
     assert s.delimiter == "\n\n" and s.collapse_whitespace is True
     assert s.strip_urls_emails is False, "deleting URLs must be opt-in, not assumed"
+    # The one default here that was CHOSEN rather than inherited, so it is pinned with
+    # its reason. It is a different kind of setting from the one above: that deletes
+    # from the DOCUMENT, this only from the INDEX — every number stays in the stored
+    # Markdown, the preview and every converted file, and turning it off and
+    # re-indexing puts it back. It exists because a bar chart's labels are positioned
+    # graphics, so its values extract as a headless run in which every figure is
+    # correct and none is attached to what it measures.
+    assert s.suppress_numeric_runs is True, (
+        "unattributed numeric runs must stay OUT of the index — a correct number "
+        "retrieved against the wrong label is worse than a missing one")
 
 
 def test_no_settings_produces_what_the_old_chunker_produced():
@@ -166,10 +176,44 @@ def test_preview_refuses_impossible_settings_with_the_reason():
 
 def test_preview_refuses_the_same_file_types_upload_does():
     """A preview that accepted what upload rejects shows a person chunks they can never
-    index."""
-    r = _preview(name="notes.pptx")
+    index.
 
-    assert r.status_code == 422 and "Unsupported file type" in r.json()["detail"]
+    The fixture used to be `notes.pptx`, and PowerPoint being unreadable was the whole
+    premise. Arc DX made it readable, so the test now uses a type nothing here claims —
+    and asserts the property that actually matters, which is that BOTH doors answer
+    from the same list rather than that any particular extension is absent from it.
+    """
+    r = _preview(name="clip.mp4")
+    assert r.status_code == 422
+    assert "Unsupported file type" in str(r.json()["detail"])
+
+    upload = client.post("/documents/upload",
+                         files={"file": ("clip.mp4", io.BytesIO(b"data"), "video/mp4")})
+    assert upload.status_code == 422
+    assert "Unsupported file type" in str(upload.json()["detail"])
+
+
+def test_preview_reads_powerpoint_now_that_the_converter_does():
+    """The other half of the same law. `.pptx` was refused here because the parser
+    could not read it; when the parser gained it, a hand-written list would have gone
+    on refusing it silently. The list is derived, so this passes without an edit."""
+    from aughor.knowledge.convert import supported_suffixes
+
+    assert ".pptx" in supported_suffixes()
+    # Real bytes, because content is what decides — a `.pptx` name over text is not one.
+    pptx = pytest.importorskip("pptx", reason="the 'export' extra is not installed")
+    presentation = pptx.Presentation()
+    slide = presentation.slides.add_slide(presentation.slide_layouts[1])
+    slide.shapes.title.text = "Quarterly review"
+    slide.placeholders[1].text = ("Revenue grew across every region this quarter, "
+                                  "with EMEA leading on margin.")
+    buf = io.BytesIO()
+    presentation.save(buf)
+
+    r = client.post("/documents/preview",
+                    files={"file": ("deck.pptx", buf.getvalue(), "")})
+    assert r.status_code == 200, r.text
+    assert "Quarterly review" in r.json()["chunks"][0]["text"]
 
 
 def test_preview_is_bounded():

@@ -323,36 +323,99 @@ def search_documents(query: str, top_k: int = 4) -> list[dict]:
         return []
 
 
-def build_external_context_section(query: str, top_k: int = 4) -> str:
+def build_external_context_section(query: str, top_k: int = 4,
+                                   canvas_id: Optional[str] = None) -> str:
     """
     Retrieve relevant document snippets and format them for prompt injection.
     Returns empty string when no documents are indexed or Qdrant is unavailable.
 
-    When a user-defined agent is active (flag `agents.user_defined`), retrieval
-    is scoped to THAT agent's bound documents: search wider, keep only its
-    doc_ids. An agent with no bound documents sees none (fail-closed — its
-    context is what its creator gave it). No agent → unchanged global behavior.
+    Two scopes act here, and they are deliberately not the same shape.
+
+    An AGENT's documents RESTRICT. When a user-defined agent is active, retrieval is
+    scoped to its bound documents: search wider, keep only its doc_ids. An agent with
+    no bound documents sees none — fail-closed, because its context is what its
+    creator gave it.
+
+    A CANVAS's documents PIN. A canvas is a place a person works, so a document bound
+    there is context for everything done in it; binding one ADDS to what is in reach
+    rather than taking the rest of the corpus away. Pinned documents are searched
+    SEPARATELY against the same query and placed first, which is what makes "pinned"
+    survive contact with a large corpus: a workspace document that a global search
+    would rank twentieth still arrives, but only its passages that bear on the
+    question do, so a 200-chunk report cannot flood the prompt.
+
+    Where both apply the agent still fences: a canvas cannot widen an agent past what
+    it was given, because that is the direction that turns a restriction into a
+    suggestion.
     """
     from aughor.custom_agents.context import agent_doc_ids
     allowed = agent_doc_ids()
     if allowed is not None and not allowed:
         return ""
+
+    pinned_ids = canvas_doc_ids(canvas_id)
+    if allowed is not None:
+        pinned_ids = [d for d in pinned_ids if d in allowed]
+
+    pinned_hits: list[dict] = []
+    if pinned_ids:
+        wide = search_documents(query, top_k=max(top_k * 8, 32))
+        pinned_hits = [h for h in wide if h.get("doc_id") in set(pinned_ids)][:top_k]
+
     hits = search_documents(query, top_k=top_k if allowed is None else max(top_k * 4, 16))
     if allowed is not None:
-        hits = [h for h in hits if h.get("doc_id") in allowed][:top_k]
-    if not hits:
+        hits = [h for h in hits if h.get("doc_id") in allowed]
+    seen = {(h.get("doc_id"), h.get("chunk_index")) for h in pinned_hits}
+    hits = [h for h in hits
+            if (h.get("doc_id"), h.get("chunk_index")) not in seen][:top_k]
+
+    if not pinned_hits and not hits:
         return ""
-    header = ("AGENT DOCUMENTS (this agent's bound context — use where relevant):"
-              if allowed is not None else
-              "EXTERNAL CONTEXT (from uploaded documents — use where relevant):")
-    lines = [header]
+
+    lines: list[str] = []
+    if pinned_hits:
+        lines.append("WORKSPACE DOCUMENTS (pinned to this canvas — treat as "
+                     "authoritative context for this work):")
+        lines.extend(_context_lines(pinned_hits))
+    if hits:
+        if pinned_hits:
+            lines.append("")
+        lines.append("AGENT DOCUMENTS (this agent's bound context — use where relevant):"
+                     if allowed is not None else
+                     "EXTERNAL CONTEXT (from uploaded documents — use where relevant):")
+        lines.extend(_context_lines(hits))
+    return "\n".join(lines)
+
+
+def _context_lines(hits: list[dict]) -> list[str]:
+    """One retrieved chunk per stanza, each carrying where it came from."""
+    lines: list[str] = []
     for h in hits:
         # R8a — a compiled schema doc cites its ontology node (the FQN) so the
         # model can name exactly where a fact came from; uploads keep the filename.
         provenance = h.get("fqn") or h.get("filename", "")
         lines.append(f"\n── {h['title']} ({provenance}) ──")
         lines.append(h["text"])
-    return "\n".join(lines)
+    return lines
+
+
+def canvas_doc_ids(canvas_id: Optional[str]) -> list[str]:
+    """The documents pinned to a canvas ([] for none, an unknown id, or no canvas).
+
+    Fail-open on purpose: a canvas that cannot be read must not take down the answer
+    path. Losing a pinned document degrades the context; raising would lose the reply.
+    """
+    if not canvas_id:
+        return []
+    try:
+        from aughor.canvas.store import get_canvas
+        canvas = get_canvas(canvas_id)
+        return list(canvas.doc_ids) if canvas else []
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "reading a canvas's pinned documents is best-effort; the answer "
+                      "proceeds on the unpinned corpus", counter="canvas.doc_ids")
+        return []
 
 
 # ── Internal ──────────────────────────────────────────────────────────────────

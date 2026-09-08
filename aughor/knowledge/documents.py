@@ -1,8 +1,13 @@
 """
 Document parsing and chunking for external context ingestion.
 
-Supports: PDF (.pdf), Word (.docx), Markdown (.md), plain text (.txt).
-Install optional deps with:  uv pip install -e ".[docs]"
+Reading is delegated to `knowledge.convert` (anydoc): Word, PowerPoint, Excel,
+OpenDocument, RTF, EPUB, CSV and PDF all arrive here as Markdown, with tables intact.
+Markdown and plain text pass through untouched. This module owns the CHUNKING — how
+that text is cut for embedding — which is the part that has to stay stable, because
+the corpus was indexed under these settings.
+
+Install the readers with:  uv pip install -e ".[docs]"
 """
 from __future__ import annotations
 
@@ -10,6 +15,8 @@ import re
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
+
+from aughor.knowledge.convert import TEXT_SUFFIXES  # noqa: F401  (one definition, re-exported)
 
 CHUNK_CHARS = 1_600    # ~400 tokens
 OVERLAP_CHARS = 200    # ~50 tokens
@@ -37,6 +44,24 @@ class ChunkSettings:
     `strip_urls_emails` defaults OFF, unlike the tool that inspired it. Deleting URLs from a
     document is destructive to meaning as often as it is helpful — a policy that cites a
     source loses the citation — so it is offered, not assumed.
+
+    `suppress_numeric_runs` defaults ON, and it is the one default here that was
+    deliberately chosen rather than inherited. The rule above — a changed default makes
+    old and new documents incomparable — is what makes that worth explaining.
+
+    It is a different KIND of setting from the one beside it. `strip_urls_emails`
+    deletes from the document; this deletes only from the INDEX. Every number stays in
+    the stored Markdown, in the preview and in every converted file, so nothing is lost
+    and a re-index can always put it back by turning this off.
+
+    What it prevents is specific and was measured on a live investor deck: a bar
+    chart's labels are positioned graphics, so its values extract as
+    `245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7` with the quarters on
+    another line. Indexed, that is a retrievable passage in which every figure is
+    correct and none is attached to what it measures — so an agent asked for one
+    segment's GMV can answer confidently from the wrong position. A correct number
+    against the wrong label is worse than a missing one, because it arrives looking
+    exactly like a good answer.
     """
 
     delimiter: str = "\n\n"
@@ -45,6 +70,7 @@ class ChunkSettings:
     min_chars: int = MIN_CHUNK_CHARS
     collapse_whitespace: bool = True
     strip_urls_emails: bool = False
+    suppress_numeric_runs: bool = True
 
     def __post_init__(self) -> None:
         if self.max_chars < 1:
@@ -69,7 +95,8 @@ class ChunkSettings:
         return {"delimiter": self.delimiter, "max_chars": self.max_chars,
                 "overlap_chars": self.overlap_chars, "min_chars": self.min_chars,
                 "collapse_whitespace": self.collapse_whitespace,
-                "strip_urls_emails": self.strip_urls_emails}
+                "strip_urls_emails": self.strip_urls_emails,
+                "suppress_numeric_runs": self.suppress_numeric_runs}
 
     @classmethod
     def from_dict(cls, raw: dict | None) -> "ChunkSettings":
@@ -85,6 +112,22 @@ class ChunkSettings:
 
 
 DEFAULT_CHUNK_SETTINGS = ChunkSettings()
+
+#: A numeric token: 1,234.5 · 47.1% · (12.9%) · +140bps · €279.6 · 2026. Signs,
+#: currency, thousands separators, parentheses-as-negative and a trailing unit all
+#: belong to the number rather than to the words around it.
+_NUMERIC_TOKEN = re.compile(
+    r"^[(\[]?[+\-−]?[€$£¥]?\d[\d,.\s]*\)?%?(?:bps|bp|k|m|bn|mm|x)?[)\]]?[.,;:]?$",
+    re.IGNORECASE)
+#: A word: two or more letters in a row. "Q1", "FY26" and "H1" deliberately do not
+#: qualify — an axis of quarter labels is exactly as unattributed as the bars above it.
+_WORD_TOKEN = re.compile(r"[^\W\d_]{2,}", re.UNICODE)
+
+#: How many numbers it takes before a line is treated as a data run rather than as a
+#: sentence that happens to cite figures. Four is deliberately conservative: a pair of
+#: numbers under a heading ("774 847") is usually still readable from its context,
+#: while a run of four or more is a chart axis.
+_NUMERIC_RUN_MIN = 4
 
 _URL_RE = re.compile(r"https?://\S+|www\.\S+")
 _EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+\.[\w.-]+\b")
@@ -130,15 +173,39 @@ class DocumentChunk:
 # ── Text extraction ───────────────────────────────────────────────────────────
 
 def extract_text(path: Path) -> str:
+    """A document file's text, as Markdown, for chunking and embedding.
+
+    Routes through `knowledge.convert` (anydoc) so that tables arrive as tables and
+    fourteen formats are readable instead of two. The function keeps its name and
+    signature because a dozen callers use it; what changed is what it can read and,
+    just as importantly, what it now REFUSES to read.
+
+    It used to end with `return path.read_text(errors="replace")` for anything it did
+    not recognise. Handed a `.pptx` that produced 26,928 characters of decoded ZIP
+    container, which went on to be chunked and embedded as prose — indistinguishable
+    downstream from a real document. Unreadable input now raises.
+
+    The legacy pypdf/python-docx path survives only for installs without the
+    converter, and only for the two formats it ever handled correctly.
+    """
+    from aughor.knowledge.convert import ConversionError, available, to_markdown_file
+
+    if available():
+        return to_markdown_file(path)
+
+    # No converter installed — the pre-anydoc readers, unchanged, for their formats.
     suffix = path.suffix.lower()
     if suffix == ".pdf":
         return _extract_pdf(path)
     if suffix == ".docx":
         return _extract_docx(path)
-    if suffix in (".md", ".txt", ".markdown"):
+    if suffix in TEXT_SUFFIXES:
         return path.read_text(encoding="utf-8", errors="replace")
-    # Fallback: try UTF-8 text
-    return path.read_text(encoding="utf-8", errors="replace")
+    raise ConversionError(
+        f"Cannot read '{suffix or path.name}' without the document converter. "
+        f"Install it with: uv pip install -e '.[docs]'",
+        code="converter_missing",
+    )
 
 
 def _extract_pdf(path: Path) -> str:
@@ -171,6 +238,86 @@ def _extract_docx(path: Path) -> str:
 
 # ── Chunking ──────────────────────────────────────────────────────────────────
 
+def is_numeric_run(line: str) -> bool:
+    """Is this line a run of numbers with nothing to attribute them to?
+
+    The shape a bar chart leaves behind. A chart's data labels are positioned
+    graphics, not structure, so a slide of three series across three quarters
+    extracts as `245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7` with the axis
+    `Q1 Q2 Q3 Q1 Q2 Q3 Q1 Q2 Q3` on a separate line. Every value is correct and not
+    one of them is attached to what it measures.
+
+    Two guards keep prose and tables out of it:
+
+      * A TABLE ROW is attributed — its header names the column — so a line of pipes
+        is never a run, however many numbers it holds.
+      * Numbers must DOMINATE. "GMV increased by +11.3% ex-FX (+7.0% reported) and
+        Net Sales by +9.9%" has four numbers and fifteen words; it is a sentence, and
+        a sentence carries its own attribution.
+    """
+    stripped = line.strip()
+    if not stripped or stripped.startswith("|"):
+        return False
+    tokens = stripped.split()
+    numeric = [t for t in tokens if _NUMERIC_TOKEN.match(t)]
+    if len(numeric) < _NUMERIC_RUN_MIN:
+        return False
+    # Words are counted among the NON-numeric tokens only. A unit welded to its value
+    # belongs to the number, not to the prose: counting the "bps" in "+140bps" as a
+    # word let a line of nine bare deltas score nine words and score itself as a
+    # sentence, which is precisely the line this exists to catch.
+    words = sum(1 for t in tokens
+                if t not in numeric and _WORD_TOKEN.search(t))
+    return len(numeric) > words
+
+
+def numeric_run_lines(text: str) -> list[str]:
+    """The lines `is_numeric_run` would suppress — for REPORTING, never mutation.
+
+    The door uses this to tell a person what was held back from search, because
+    quietly indexing less than the document contains is the same class of failure as
+    quietly indexing more.
+    """
+    return [line for line in _outside_code_fences(text) if is_numeric_run(line)]
+
+
+def _outside_code_fences(text: str):
+    """Every line that is not inside a fenced code block.
+
+    Numbers in a code block are program output or data a person pasted deliberately;
+    the surrounding fence IS their attribution, so they are never a run.
+    """
+    inside = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            inside = not inside
+            continue
+        if not inside:
+            yield line
+
+
+def _strip_numeric_runs(text: str) -> str:
+    """Drop unattributed numeric runs from text destined for the INDEX.
+
+    Only the index. The lines stay in the stored Markdown, in the preview and in
+    every converted file, so nothing is deleted from the document — what changes is
+    that semantic search will not offer a headless row of figures as the source of an
+    answer. A correct number retrieved against the wrong label is worse than no
+    number at all, and it arrives looking exactly like a good answer.
+    """
+    kept: list[str] = []
+    inside = False
+    for line in text.splitlines():
+        if line.lstrip().startswith("```"):
+            inside = not inside
+            kept.append(line)
+            continue
+        if not inside and is_numeric_run(line):
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def _split_into_chunks(text: str, settings: ChunkSettings | None = None) -> list[str]:
     """
     Delimiter-aware chunker. Breaks at the delimiter where it can, then falls back to hard
@@ -189,6 +336,8 @@ def _split_into_chunks(text: str, settings: ChunkSettings | None = None) -> list
         text = text.strip()
     if s.strip_urls_emails:
         text = _EMAIL_RE.sub("", _URL_RE.sub("", text))
+    if s.suppress_numeric_runs:
+        text = _strip_numeric_runs(text)
 
     paragraphs = [p.strip() for p in text.split(s.delimiter) if p.strip()]
 

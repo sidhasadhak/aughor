@@ -35,6 +35,9 @@ class UpdateCanvasRequest(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     tables: Optional[list[str]] = None
+    #: Documents pinned to this workspace. None leaves the binding alone; [] unbinds
+    #: everything — a single field cannot mean both without that distinction.
+    doc_ids: Optional[list[str]] = None
 
 
 class CanvasInstructionsRequest(BaseModel):
@@ -144,8 +147,60 @@ def update_canvas_endpoint(canvas_id: str, req: UpdateCanvasRequest):
     if req.tables is not None and existing.scopes:
         old_scope = existing.scopes[0]
         new_scopes = [CanvasScope(connection_id=old_scope.connection_id, schema_name=old_scope.schema_name, tables=req.tables)]
-    canvas = update_canvas(canvas_id, name=req.name, description=req.description, scopes=new_scopes)
+    canvas = update_canvas(canvas_id, name=req.name, description=req.description,
+                           scopes=new_scopes, doc_ids=_checked_doc_ids(req.doc_ids))
     return canvas.model_dump()
+
+
+def _checked_doc_ids(doc_ids: Optional[list[str]]) -> Optional[list[str]]:
+    """Refuse a binding to a document that does not exist.
+
+    A canvas pointing at a deleted or mistyped doc_id fails SILENTLY at retrieval
+    time: the pin matches nothing, no error is raised anywhere, and the workspace
+    simply behaves as though it were never bound. Checking at write time is the only
+    moment the mistake is attributable to the person who made it.
+    """
+    if doc_ids is None:
+        return None
+    from aughor.knowledge.indexer import get_document
+
+    seen: list[str] = []
+    for doc_id in doc_ids:
+        if doc_id in seen:
+            continue                       # binding a document twice is not an error
+        if get_document(doc_id) is None:
+            raise HTTPException(status_code=422,
+                                detail=f"No such document: {doc_id}")
+        seen.append(doc_id)
+    return seen
+
+
+@router.get("/canvases/{canvas_id}/documents")
+def canvas_documents(canvas_id: str):
+    """The documents pinned to this canvas, as full rows rather than bare ids.
+
+    Returns what the registry holds for each binding, so a client can render titles
+    and retention state without a second call per document. A binding whose document
+    has since been deleted is reported with `missing: true` rather than dropped — a
+    pin that silently disappears is how a workspace loses context without anyone
+    noticing.
+    """
+    from aughor.canvas.store import get_canvas
+    from aughor.knowledge import blobs
+    from aughor.knowledge.indexer import get_document
+
+    canvas = get_canvas(canvas_id)
+    if canvas is None:
+        raise HTTPException(status_code=404, detail="Canvas not found")
+
+    documents = []
+    for doc_id in canvas.doc_ids:
+        doc = get_document(doc_id)
+        if doc is None:
+            documents.append({"doc_id": doc_id, "missing": True})
+        else:
+            documents.append({**doc, **blobs.info(doc_id), "missing": False})
+    return {"canvas_id": canvas_id, "documents": documents}
 
 
 @router.delete("/canvases/{canvas_id}", status_code=204)

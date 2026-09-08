@@ -2360,6 +2360,57 @@ export interface DocumentEntry {
   title: string;
   chunk_count: number;
   uploaded_at: string;
+  /** Whether the uploaded file itself was kept. Uploads used to be deleted the moment
+   *  they were indexed, so documents from before retention have a row and no bytes —
+   *  a real state to render, not a missing file. Preview and conversion are offered
+   *  on this flag alone; the server reports it per row from disk. */
+  has_original?: boolean;
+  original_bytes?: number;
+  original_suffix?: string;
+  has_markdown?: boolean;
+  /** Characters of Markdown the document converted to. Present on a fresh upload. */
+  characters?: number;
+  /** PDFs only. A part-scanned PDF imports the pages that HAVE a text layer, so these
+   *  say which did not — an "indexed" that hides missing pages reads as "all of it". */
+  page_count?: number;
+  pages_read?: number;
+  /** Pages with no text layer — OCR would fix these. */
+  pages_needing_ocr?: number[];
+  /** Pages that failed for some other reason. Separate, because OCR fixes one and
+   *  nothing the person can buy fixes the other. */
+  pages_failed?: number[];
+  /** Lines of unattributed figures held back from the index (not from the document). */
+  suppressed_numeric_runs?: number;
+  suppressed_sample?: string[];
+}
+
+/** Why a document could not be read, in a form a client can branch on.
+ *  A scanned PDF, a password-protected file and a wrong file type are three different
+ *  problems, and a person can only act on the one they actually have. */
+export type DocumentErrorCode =
+  | "needs_ocr" | "encrypted" | "too_large" | "empty"
+  | "unsupported" | "resource_limit" | "converter_missing"
+  | "unconvertible" | "no_original";
+
+export class DocumentError extends Error {
+  code: DocumentErrorCode;
+  constructor(message: string, code: DocumentErrorCode = "unconvertible") {
+    super(message);
+    this.name = "DocumentError";
+    this.code = code;
+  }
+}
+
+/** The API returns `detail` as either a string or `{message, code}`. Reading it
+ *  blindly with `err.detail ?? "..."` renders "[object Object]" in the UI — which is
+ *  precisely the message a person gets at the moment they most need a real one. */
+async function documentError(res: Response, fallback: string): Promise<DocumentError> {
+  const body = await res.json().catch(() => null);
+  const detail = body?.detail;
+  if (detail && typeof detail === "object" && "message" in detail) {
+    return new DocumentError(String(detail.message), detail.code as DocumentErrorCode);
+  }
+  return new DocumentError(typeof detail === "string" ? detail : fallback);
 }
 
 /** What the knowledge plane can actually do right now — see `aughor/knowledge/health.py`.
@@ -2398,6 +2449,23 @@ export async function getKnowledgeStatus(): Promise<KnowledgeStatus | null> {
   return res.json();
 }
 
+/** What this deployment can actually read. Served, not mirrored: the drop zone used to
+ *  carry its own copy of the list and went on refusing formats the parser had gained. */
+export interface DocumentFormats {
+  suffixes: string[];
+  /** Ready for an <input accept="…"> attribute. */
+  accept: string;
+  /** False when the converter is not installed — only Markdown and plain text work. */
+  converter: boolean;
+  converts: string[];
+}
+
+export async function getDocumentFormats(): Promise<DocumentFormats | null> {
+  const res = await fetch(`${getApiBase()}/documents/formats`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
 export async function listDocuments(): Promise<DocumentEntry[]> {
   const res = await fetch(`${getApiBase()}/documents`);
   if (!res.ok) return [];
@@ -2413,12 +2481,17 @@ export interface ChunkSettings {
   min_chars: number;
   collapse_whitespace: boolean;
   strip_urls_emails: boolean;
+  /** Keep headless runs of figures OUT of the index. Defaults ON, and unlike the rule
+   *  above it does not touch the document — the numbers stay in the stored Markdown,
+   *  the preview and every conversion; only retrieval skips them. */
+  suppress_numeric_runs: boolean;
 }
 
 export interface ChunkPreview {
   total_chunks: number;
   shown: number;
   characters: number;
+  suppressed_numeric_runs?: number;
   settings: ChunkSettings;
   chunks: { index: number; characters: number; tokens_estimate: number; text: string }[];
 }
@@ -2432,10 +2505,7 @@ export async function previewDocumentChunks(
   form.append("file", file);
   if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
   const res = await fetch(`${getApiBase()}/documents/preview`, { method: "POST", body: form });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Preview failed");
-  }
+  if (!res.ok) throw await documentError(res, "Preview failed");
   return res.json();
 }
 
@@ -2446,11 +2516,47 @@ export async function uploadDocument(
   form.append("file", file);
   if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
   const res = await fetch(`${getApiBase()}/documents/upload`, { method: "POST", body: form });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ detail: res.statusText }));
-    throw new Error(err.detail ?? "Upload failed");
-  }
+  if (!res.ok) throw await documentError(res, "Upload failed");
   return res.json();
+}
+
+/** The document as Markdown — what agents, canvases and prompts actually read.
+ *  Served from cache, or re-converted from the retained original when the cache is
+ *  cold, so it answers for documents stored before the cache existed. */
+export async function getDocumentMarkdown(docId: string): Promise<string> {
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}/markdown`);
+  if (!res.ok) throw await documentError(res, "Could not read the document");
+  return (await res.json()).markdown as string;
+}
+
+/** What a stored document can be turned into ON THIS deployment. PDF and PowerPoint
+ *  need the `export` extra; offering them where it is absent produces a button that
+ *  fails at the click, which is worse than one that was never shown. */
+export interface ConvertFormat {
+  format: string;
+  label: string;
+  media_type: string;
+  suffix: string;
+  available: boolean;
+}
+
+export async function getDocumentConvertFormats(docId: string): Promise<ConvertFormat[]> {
+  const res = await fetch(`${getApiBase()}/documents/${encodeURIComponent(docId)}/formats`);
+  if (!res.ok) return [];
+  return (await res.json()).formats ?? [];
+}
+
+/** A URL that renders the document as `format` and downloads it. */
+export function documentConvertUrl(docId: string, format: string): string {
+  return `${getApiBase()}/documents/${encodeURIComponent(docId)}/convert`
+    + `?to=${encodeURIComponent(format)}`;
+}
+
+/** A URL for the document's own bytes, for an <iframe>/<img> preview.
+ *  Served inline, so the browser renders a PDF rather than downloading it. Only
+ *  meaningful when `has_original` — otherwise the request 409s. */
+export function documentOriginalUrl(docId: string): string {
+  return `${getApiBase()}/documents/${encodeURIComponent(docId)}/original`;
 }
 
 export async function deleteDocument(docId: string): Promise<void> {
@@ -2569,6 +2675,10 @@ export interface Canvas {
   name: string;
   description: string;
   scopes: CanvasScope[];
+  /** Documents pinned to this workspace. PINNED, not restrictive: they are always in
+   *  reach for work done here, and the rest of the corpus stays searchable. (An
+   *  agent's `doc_ids` are the other shape — those fence it in.) */
+  doc_ids?: string[];
   is_legacy: boolean;
   created_at: string;
   updated_at: string;
@@ -2625,13 +2735,18 @@ export async function createCanvas(
 
 export async function updateCanvas(
   id: string,
-  patch: { name?: string; description?: string; scopes?: CanvasScope[] },
+  patch: { name?: string; description?: string; scopes?: CanvasScope[]; doc_ids?: string[] },
 ): Promise<Canvas> {
-  // Backend UpdateCanvasRequest takes a flat { name, description, tables }.
-  const body: { name?: string; description?: string; tables?: string[] } = {};
+  // Backend UpdateCanvasRequest takes a flat { name, description, tables, doc_ids }.
+  const body: {
+    name?: string; description?: string; tables?: string[]; doc_ids?: string[];
+  } = {};
   if (patch.name !== undefined) body.name = patch.name;
   if (patch.description !== undefined) body.description = patch.description;
   if (patch.scopes !== undefined) body.tables = patch.scopes[0]?.tables ?? [];
+  // Omitted leaves the binding alone; [] unbinds everything. Sending it
+  // unconditionally would clear every pin on an unrelated rename.
+  if (patch.doc_ids !== undefined) body.doc_ids = patch.doc_ids;
   const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -2860,6 +2975,21 @@ export async function getCanvasSchema(id: string): Promise<string> {
   if (!res.ok) throw new Error("Failed to fetch canvas schema");
   const data = await res.json();
   return (data as { schema: string }).schema;
+}
+
+/** A document pinned to a canvas. `missing` marks a binding whose document has since
+ *  been deleted — reported rather than dropped, because a pin that silently vanishes
+ *  is how a workspace loses its context without anyone noticing. */
+export interface CanvasDocument extends Partial<DocumentEntry> {
+  doc_id: string;
+  missing: boolean;
+}
+
+export async function getCanvasDocuments(canvasId: string): Promise<CanvasDocument[]> {
+  const res = await fetch(
+    `${getApiBase()}/canvases/${encodeURIComponent(canvasId)}/documents`);
+  if (!res.ok) return [];
+  return (await res.json()).documents ?? [];
 }
 
 export interface CanvasHistoryItem {
