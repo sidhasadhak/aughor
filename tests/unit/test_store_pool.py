@@ -216,12 +216,23 @@ def test_the_backend_branch_is_named(tmp_path, monkeypatch) -> None:
     from aughor.db import backend
     import aughor.stats as stats_mod
 
+    import threading
+
     seen: list[str] = []
     real = stats_mod.stats          # captured BEFORE the patch, or __getattr__ recurses
+    mine = threading.get_ident()
 
     class _Recorder:
         def inc(self, key: str, *a, **k) -> None:
-            seen.append(key)
+            # THIS thread's calls only. Stubbing the sink narrowed the window from the
+            # whole process to this test, but the sink is still process-global, so a
+            # background thread opening stores while the patch is installed landed
+            # here too — observed on CI as `assert 120 == 1`. Other threads keep
+            # counting for real; losing their metrics to a test would be its own bug.
+            if threading.get_ident() == mine:
+                seen.append(key)
+            else:
+                real.inc(key, *a, **k)
         def __getattr__(self, name):        # every other stats call passes through
             return getattr(real, name)
 

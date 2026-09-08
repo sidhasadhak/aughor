@@ -13,6 +13,7 @@ id, channel id, and the first characters of the secret — on every fire, succes
 from __future__ import annotations
 
 import logging
+import threading
 
 import pytest
 import requests
@@ -25,8 +26,30 @@ HOOK = "https://hooks.slack.com/services/T-PLACEHOLDER/B-PLACEHOLDER/not-a-real-
 
 @pytest.fixture(autouse=True)
 def _no_sleeping(monkeypatch):
+    """Record what THIS thread slept for, and let every other thread sleep for real.
+
+    `ex.time` is the real `time` module, so patching `sleep` on it patches the whole
+    process. Anything running on a background thread during these tests — a retrying
+    HTTP client, a scheduler — appended its own backoff here, and the assertion
+    `slept == [7.0]` then failed against a list starting with jittered values like
+    0.418 and 0.799. Seen on CI, where an unreachable service makes those retries
+    frequent; the test was asserting "no other thread in this process slept while I
+    was looking".
+
+    Other threads get the REAL sleep rather than a no-op: swallowing their wait would
+    turn a polite backoff into a spin.
+    """
     slept: list[float] = []
-    monkeypatch.setattr(ex.time, "sleep", lambda s: slept.append(s))
+    mine = threading.get_ident()
+    real_sleep = ex.time.sleep
+
+    def _sleep(seconds):
+        if threading.get_ident() == mine:
+            slept.append(seconds)
+            return
+        real_sleep(seconds)
+
+    monkeypatch.setattr(ex.time, "sleep", _sleep)
     return slept
 
 
