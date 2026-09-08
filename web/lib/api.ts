@@ -6158,6 +6158,34 @@ export async function listAgentTemplates(): Promise<AgentTemplate[]> {
   return (await res.json()).templates ?? [];
 }
 
+/** What the platform drafted from a description, and why. Nothing is created. */
+export type AgentProposal = {
+  verdict: "proposed" | "refused";
+  reason: string;
+  draft: {
+    name?: string; purpose?: string; instructions?: string;
+    connection_id?: string; schema_scope?: string;
+    doc_ids?: string[]; pack_ids?: string[];
+  };
+  goldens: { question: string; why: string; reference_sql: string; certified: boolean }[];
+  /** Written by the BACKEND, not the model — render every one. */
+  disclosures: string[];
+  /** Which tables made it choose this scope, in the drafter's words. */
+  evidence: string;
+  notes: string;
+};
+
+export async function proposeUserAgent(body: {
+  description: string; connection_id: string;
+}): Promise<AgentProposal> {
+  const res = await fetch(`${getApiBase()}/agents/custom/propose`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `draft failed (${res.status})`);
+  return res.json();
+}
+
 export async function createUserAgentFromTemplate(body: {
   pack_id: string; name?: string; connection_id?: string; schema_scope?: string;
 }): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {
