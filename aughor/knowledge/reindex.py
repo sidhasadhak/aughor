@@ -96,6 +96,49 @@ def plan(*, purge_orphans: bool = False) -> dict:
     }
 
 
+def purge_orphans_only() -> dict:
+    """Delete chunks whose document is not in the registry — and embed NOTHING.
+
+    `run(purge_orphans=True)` also removes orphans, but its order is
+    read → embed EVERYTHING → drop → recreate → write, so on a hosted embedder it
+    charges for re-embedding the whole corpus in order to delete a few stragglers.
+    Measured on a live install: 148 chunks re-embedded to remove 14.
+
+    An orphan needs no vector computed to be deleted — its doc_id is enough. This does
+    only that, through the same `delete_by_filter` seam `delete_document` uses, so a
+    pgvector or embedded deployment deletes from the index it actually reads.
+    """
+    from aughor.knowledge.indexer import delete_chunks, list_documents
+    from aughor.semantic import vector_store
+
+    try:
+        registry = {d["doc_id"] for d in list_documents()}
+    except Exception as exc:
+        return {"ok": False, "error": f"registry unreadable: {type(exc).__name__}"}
+
+    payloads = vector_store.scroll_payloads(DOCS_COLLECTION, limit=_SCAN_LIMIT)
+    if len(payloads) >= _SCAN_LIMIT:
+        # The same refusal `run` makes: a partial read would call every unseen document
+        # an orphan and delete the corpus.
+        return {"ok": False,
+                "error": f"read hit the {_SCAN_LIMIT}-point scan limit; a partial read "
+                         f"would treat unseen documents as orphans"}
+
+    counts: dict[str, int] = {}
+    for payload in payloads:
+        doc_id = str(payload.get("doc_id") or "")
+        counts[doc_id] = counts.get(doc_id, 0) + 1
+    orphans = {doc: n for doc, n in counts.items() if doc not in registry}
+
+    for doc_id in orphans:
+        delete_chunks(doc_id)
+
+    return {"ok": True, "purged_documents": sorted(orphans),
+            "purged_chunks": sum(orphans.values()),
+            "kept_chunks": len(payloads) - sum(orphans.values()),
+            "embedded": 0}
+
+
 def run(*, purge_orphans: bool = False, progress: Optional[callable] = None) -> dict:
     """Re-embed and rebuild. Destructive; call `plan()` first.
 

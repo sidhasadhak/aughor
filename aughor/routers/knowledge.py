@@ -185,6 +185,63 @@ async def preview_document_chunks(file: UploadFile = File(...),
     }
 
 
+@router.post("/documents/convert")
+async def convert_document_only(file: UploadFile = File(...),
+                                chunk_settings: Optional[str] = Form(None)):
+    """Convert a document and hand back the Markdown WITHOUT indexing or keeping it.
+
+    The look-before-you-commit step. Upload used to convert, chunk, embed and register
+    in one motion, so the first time anyone saw what the converter made of their file
+    was after it was already in the corpus — and on a hosted embedder, already paid
+    for. A scanned deck that yields eight unreadable pages, or a spreadsheet that comes
+    out as a wall of numbers, is a decision a person should get to make BEFORE it costs
+    anything and before it starts answering questions.
+
+    Writes nothing: no registry row, no vectors, no retained bytes. The client keeps the
+    file and posts it again to `/documents/upload` on approval — deliberately, so there
+    is no staging area to expire, sweep, or leak. Conversion is deterministic, so what
+    is approved here is exactly what is indexed there.
+
+    Reports the same page and suppression detail upload reports, because the decision
+    being asked for is whether THIS is worth indexing.
+    """
+    from aughor.knowledge.convert import ConversionError, convert_document
+    from aughor.knowledge.documents import (DEFAULT_CHUNK_SETTINGS, chunk_text,
+                                            numeric_run_lines)
+
+    settings = _settings_from(chunk_settings)
+    filename = file.filename or "document"
+    data = await _read_upload(file)
+
+    try:
+        converted = convert_document(data, filename)
+    except ConversionError as exc:
+        raise HTTPException(status_code=422,
+                            detail={"message": str(exc), "code": exc.code})
+
+    effective = settings or DEFAULT_CHUNK_SETTINGS
+    suppressed = (numeric_run_lines(converted.markdown)
+                  if effective.suppress_numeric_runs else [])
+    # The chunk count this WOULD produce, so "add it" is not a leap in the dark. Costs
+    # nothing: chunking is string work, and no embedder is touched.
+    chunks = chunk_text(converted.markdown, title=filename, filename=filename,
+                        settings=settings)
+
+    return {
+        "filename": filename,
+        "markdown": converted.markdown,
+        "characters": len(converted.markdown),
+        "would_index_chunks": len(chunks),
+        "page_count": converted.page_count,
+        "pages_read": len(converted.pages_read),
+        "pages_needing_ocr": converted.pages_needing_ocr,
+        "pages_failed": converted.pages_failed,
+        "suppressed_numeric_runs": len(suppressed),
+        "suppressed_sample": [line.strip()[:160] for line in suppressed[:3]],
+        "settings": effective.as_dict(),
+    }
+
+
 @router.post("/documents/upload", status_code=201)
 async def upload_document(file: UploadFile = File(...),
                           chunk_settings: Optional[str] = Form(None)):
@@ -441,6 +498,28 @@ def reindex_documents(body: ReindexIn):
         raise HTTPException(status_code=500, detail="Re-index failed; the corpus is unchanged")
 
 
+@router.post("/documents/purge-orphans")
+def purge_orphans_endpoint(dry_run: bool = True):
+    """Remove chunks whose document is no longer in the registry, WITHOUT re-embedding.
+
+    Separate from `/documents/reindex` because the costs are not comparable. That route
+    re-embeds the entire corpus on its way past the orphans — on a hosted embedder,
+    148 chunks paid for to delete 14. An orphan needs no vector to be deleted.
+
+    `dry_run` defaults TRUE, like its sibling: everything below it is destructive.
+    """
+    from aughor.knowledge import reindex
+
+    if dry_run:
+        return {"dry_run": True, **reindex.plan(purge_orphans=True)}
+    try:
+        return {"dry_run": False, **reindex.purge_orphans_only()}
+    except Exception:
+        logger.exception("Orphan purge failed")
+        raise HTTPException(status_code=500,
+                            detail="Purge failed; the index is unchanged")
+
+
 class RestoreDoctreesIn(BaseModel):
     """`dry_run` defaults TRUE, like its sibling. `connection_id` limits it to one."""
     dry_run: bool = True
@@ -499,9 +578,15 @@ def list_documents_endpoint():
     row that never offered one.
     """
     from aughor.knowledge import blobs
-    from aughor.knowledge.indexer import list_documents
+    from aughor.knowledge.indexer import is_generated, list_documents
 
-    return [{**doc, **blobs.info(doc["doc_id"])} for doc in list_documents()]
+    return [{**doc, **blobs.info(doc["doc_id"]),
+             # Compiled schema documentation shares this collection with uploads, which
+             # is right for retrieval and wrong for this list. Flagged rather than
+             # filtered: the surface decides how to present them, and a caller that
+             # wants everything still gets everything.
+             "generated": is_generated(doc["doc_id"])}
+            for doc in list_documents()]
 
 
 @router.delete("/documents/{doc_id}")

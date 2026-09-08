@@ -12,12 +12,14 @@ import {
   getDocumentFormats,
   getDocumentMarkdown,
   getDocumentConvertFormats,
+  convertDocument,
   documentOriginalUrl,
   documentConvertUrl,
   type ChunkPreview,
   type ChunkSettings,
   type DocumentEntry,
   type DocumentFormats,
+  type DocumentConversion,
   type ConvertFormat,
   type KnowledgeStatus,
 } from "@/lib/api";
@@ -26,6 +28,14 @@ import {
  *  a hard-coded five and stayed five while the parser grew to twenty — a capability
  *  that exists and is unreachable from the file picker. This is a floor, not the list. */
 const FALLBACK_ACCEPT = ".md,.markdown,.txt";
+
+/** A one-file FileList, so the approval path reuses the same uploader the drop zone
+ *  used to call — one code path indexes, whatever route reached it. */
+function fileListOf(file: File): FileList {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  return dt.files;
+}
 
 /** Formats a browser can display on its own. Everything else previews as Markdown —
  *  which is what the platform actually reads anyway, so it is the honest preview. */
@@ -93,6 +103,12 @@ export function DocumentUploader() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [partialNotes, setPartialNotes] = useState<string[]>([]);
   const [suppressedNotes, setSuppressedNotes] = useState<string[]>([]);
+
+  // Files converted and WAITING for a decision. Nothing here has been indexed, paid
+  // for, or written anywhere — the File objects are held in the browser and posted
+  // again on approval, so there is no staging area on the server to expire or leak.
+  const [pending, setPending] = useState<{ file: File; result: DocumentConversion }[]>([]);
+  const [converting, setConverting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -120,6 +136,13 @@ export function DocumentUploader() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewName, setPreviewName] = useState<string>("");
   const previewRef = useRef<HTMLInputElement>(null);
+
+  // The server flags which rows it compiled; this surface only decides how to show
+  // them. `generated === undefined` (an older API) counts as an upload — a person's own
+  // document must never be the thing that gets folded away by a missing field.
+  const uploaded = docs.filter(d => !d.generated);
+  const generated = docs.filter(d => d.generated);
+  const generatedChunks = generated.reduce((n, d) => n + (d.chunk_count ?? 0), 0);
 
   const setNum = (k: keyof ChunkSettings) => (v: string) => {
     const n = Number(v);
@@ -153,6 +176,34 @@ export function DocumentUploader() {
   }, []);
 
   useEffect(() => { refresh(); }, [refresh]);
+
+  /** Convert what was dropped and show it. Indexes nothing.
+   *
+   *  Dropping a file used to convert, chunk, embed and register in one motion, so the
+   *  first sight of what the converter made of it came after it was in the corpus —
+   *  and on a hosted embedder, already paid for. Now the result is shown and waits. */
+  const convertFiles = useCallback(async (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+    setUploadError(null);
+    setPartialNotes([]);
+    setSuppressedNotes([]);
+    setConverting(true);
+    const converted: { file: File; result: DocumentConversion }[] = [];
+    const errors: string[] = [];
+    for (const file of Array.from(files)) {
+      try {
+        converted.push({ file, result: await convertDocument(file, settings) });
+      } catch (e) {
+        errors.push(`${file.name}: ${e instanceof Error ? e.message : "failed"}`);
+      }
+    }
+    setPending(prev => [...prev, ...converted]);
+    if (errors.length > 0) setUploadError(errors.join("\n"));
+    setConverting(false);
+  }, [settings]);
+
+  const discardPending = (name: string) =>
+    setPending(prev => prev.filter(p => p.file.name !== name));
 
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -202,6 +253,7 @@ export function DocumentUploader() {
       return `${r.filename}: read ${r.pages_read} of ${r.page_count} pages — ${why}.`;
     }));
     if (errors.length > 0) setUploadError(errors.join("\n"));
+    setPending(prev => prev.filter(p => !results.some(r => r.filename === p.file.name)));
     setUploading(false);
     getKnowledgeStatus().then(setStatus).catch(() => {});
   }, [settings]);
@@ -209,8 +261,8 @@ export function DocumentUploader() {
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    handleFiles(e.dataTransfer.files);
-  }, [handleFiles]);
+    convertFiles(e.dataTransfer.files);
+  }, [convertFiles]);
 
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
@@ -320,12 +372,14 @@ export function DocumentUploader() {
               accept={accept}
               multiple
               className="hidden"
-              onChange={e => handleFiles(e.target.files)}
+              onChange={e => convertFiles(e.target.files)}
             />
-            {uploading ? (
+            {uploading || converting ? (
               <div className="space-y-2">
                 <div className="h-5 w-5 rounded-[var(--r-pill)] border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
-                <p className="aug-fs-ui text-zinc-400">Indexing…</p>
+                <p className="aug-fs-ui text-zinc-400">
+                  {converting ? "Reading…" : "Indexing…"}
+                </p>
               </div>
             ) : (
               <div className="space-y-1">
@@ -535,6 +589,78 @@ export function DocumentUploader() {
       {/* Connected sources — the other way content reaches this same corpus. */}
       <KnowledgeSourcesSection />
 
+      {/* ── Waiting for a decision ────────────────────────────────────────────
+          Converted and shown, indexed nowhere. This is the moment the person can see
+          what the platform will actually read — a scanned deck missing eight pages, a
+          table that survived, a wall of figures — and say no before it costs anything
+          or starts answering questions. */}
+      {pending.map(({ file, result }) => (
+        <div key={file.name}
+             className="rounded-md border border-violet-500/40 bg-violet-500/5">
+          <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2.5">
+            <FileTypeChip filename={file.name} />
+            <div className="min-w-0 flex-1">
+              <p className="aug-fs-sm font-medium text-zinc-200 truncate">{file.name}</p>
+              <p className="aug-fs-xs text-zinc-500">
+                {formatCount(result.characters)} characters ·{" "}
+                {formatCount(result.would_index_chunks)} chunk
+                {result.would_index_chunks !== 1 ? "s" : ""} to index
+                {result.page_count > 0 && ` · ${result.pages_read} of ${result.page_count} pages read`}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => discardPending(file.name)}
+              className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+            >
+              Discard
+            </button>
+            <button
+              type="button"
+              disabled={uploading}
+              onClick={() => handleFiles(fileListOf(file))}
+              className="shrink-0 aug-fs-xs px-2.5 py-1 rounded border border-violet-500/50 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 disabled:opacity-50"
+            >
+              {uploading ? "Adding…" : "Add to knowledge"}
+            </button>
+          </div>
+
+          {/* Losses named BEFORE the decision, not after. Approving something whose
+              gaps were only disclosed afterwards is not approval. */}
+          {(result.pages_needing_ocr.length > 0 || result.pages_failed.length > 0) && (
+            <p className="aug-fs-xs text-amber-300 px-4 pt-2.5">
+              {result.pages_needing_ocr.length > 0 && (
+                <>Page{result.pages_needing_ocr.length !== 1 ? "s" : ""}{" "}
+                {result.pages_needing_ocr.slice(0, 8).join(", ")}
+                {result.pages_needing_ocr.length > 8 ? "…" : ""}{" "}
+                {result.pages_needing_ocr.length !== 1 ? "are" : "is"} scanned — no text layer. </>
+              )}
+              {result.pages_failed.length > 0 && (
+                <>Page{result.pages_failed.length !== 1 ? "s" : ""}{" "}
+                {result.pages_failed.join(", ")} could not be read.</>
+              )}
+            </p>
+          )}
+          {result.suppressed_numeric_runs > 0 && (
+            <p className="aug-fs-xs text-zinc-500 px-4 pt-1.5">
+              {result.suppressed_numeric_runs} line
+              {result.suppressed_numeric_runs !== 1 ? "s" : ""} of unlabelled figures will
+              be kept out of search. They stay in the document and in every download.
+            </p>
+          )}
+
+          <div className="p-4">
+            <p className="aug-fs-xs text-zinc-500 mb-2">
+              This is exactly what will be indexed and what every agent, canvas and
+              prompt will see.
+            </p>
+            <pre className="aug-fs-xs text-zinc-300 font-mono whitespace-pre-wrap max-h-[24rem] overflow-auto rounded border border-zinc-800 bg-zinc-950/60 p-3">
+              {result.markdown}
+            </pre>
+          </div>
+        </div>
+      ))}
+
       {/* Indexed less than the document holds, said out loud. Neutral rather than
           amber: nothing is wrong and nothing is lost — the figures are still in the
           file and in every download, they are simply not offered as search results. */}
@@ -575,14 +701,19 @@ export function DocumentUploader() {
         </div>
       )}
 
-      {/* Document list */}
-      {docs.length > 0 && (
+      {/* ── Document list ──────────────────────────────────────────────────────
+          Split, because these are not the same kind of thing. Compiled schema
+          documentation shares the collection with uploads (right for retrieval — an
+          agent asking about a table wants the schema doc) and shared this list too,
+          which was wrong: on a live install 15 of 16 rows were `doctree::`, so one real
+          file read as sixteen documents nobody uploaded and nobody can act on. */}
+      {uploaded.length > 0 && (
         <div className="space-y-2">
           <p className="aug-fs-xs text-zinc-500 uppercase tracking-widest font-mono">
-            {docs.length} document{docs.length !== 1 ? "s" : ""} indexed
+            {uploaded.length} document{uploaded.length !== 1 ? "s" : ""} indexed
           </p>
           <div className="space-y-2">
-            {docs.map(doc => (
+            {uploaded.map(doc => (
               <div
                 key={doc.doc_id}
                 className={`rounded-md border bg-zinc-800/50 px-4 py-3 flex items-center gap-3 ${
@@ -761,6 +892,35 @@ export function DocumentUploader() {
             )}
           </div>
         </div>
+      )}
+
+      {/* Generated schema docs, behind a disclosure. Present because they ARE part of
+          what search will return — hiding them entirely would misrepresent the corpus —
+          but folded away because they are not the person's material. */}
+      {generated.length > 0 && (
+        <details className="rounded-md border border-zinc-800 bg-zinc-900/30">
+          <summary className="aug-fs-xs text-zinc-500 px-4 py-2.5 cursor-pointer select-none">
+            {generated.length} schema document{generated.length !== 1 ? "s" : ""} compiled
+            by the platform — {formatCount(generatedChunks)} chunk
+            {generatedChunks !== 1 ? "s" : ""}, searchable, not uploaded by you
+          </summary>
+          <div className="px-4 pb-3 space-y-1">
+            <p className="aug-fs-xs text-zinc-600 mb-2">
+              Built from each connection&rsquo;s schema so agents can answer questions about
+              your tables. They rebuild themselves; removing one here is temporary.
+            </p>
+            {generated.map(doc => (
+              <div key={doc.doc_id} className="flex items-center gap-2">
+                <span className="aug-fs-xs text-zinc-400 font-mono truncate flex-1">
+                  {doc.filename || doc.doc_id}
+                </span>
+                <span className="aug-fs-xs text-zinc-600 shrink-0">
+                  {chunkLabel(doc, status)}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {docs.length === 0 && !uploading && (

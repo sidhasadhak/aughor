@@ -2382,6 +2382,53 @@ export interface DocumentEntry {
   /** Lines of unattributed figures held back from the index (not from the document). */
   suppressed_numeric_runs?: number;
   suppressed_sample?: string[];
+  /** True for schema documentation the platform COMPILED, false for a person's upload.
+   *  They share a collection because retrieval wants them together; this surface does
+   *  not, and without the flag one real file looked like sixteen documents. */
+  generated?: boolean;
+}
+
+/** What a document WOULD become, before anything is indexed or paid for. */
+export interface DocumentConversion {
+  filename: string;
+  markdown: string;
+  characters: number;
+  would_index_chunks: number;
+  page_count: number;
+  pages_read: number;
+  pages_needing_ocr: number[];
+  pages_failed: number[];
+  suppressed_numeric_runs: number;
+  suppressed_sample: string[];
+  settings: ChunkSettings;
+}
+
+/** Convert and show, indexing NOTHING and keeping nothing.
+ *
+ *  The look-before-you-commit step. The file stays in the browser and is posted again
+ *  to `uploadDocument` on approval — deliberately, so there is no staging area to
+ *  expire or leak. Conversion is deterministic, so what was approved is what is
+ *  indexed. */
+export async function convertDocument(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<DocumentConversion> {
+  const form = new FormData();
+  form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
+  const res = await fetch(`${getApiBase()}/documents/convert`, { method: "POST", body: form });
+  if (!res.ok) throw await documentError(res, "Could not read that document");
+  return res.json();
+}
+
+/** Chunks with no document — usually schema docs whose connection was deleted.
+ *  Separate from re-index because that one re-embeds the whole corpus on its way past
+ *  them; deleting an orphan needs no vector computed. */
+export async function purgeOrphanChunks(dryRun = true): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/documents/purge-orphans?dry_run=${dryRun ? "true" : "false"}`,
+    { method: "POST" });
+  if (!res.ok) throw await documentError(res, "Purge failed");
+  return res.json();
 }
 
 /** Why a document could not be read, in a form a client can branch on.
