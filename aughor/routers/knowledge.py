@@ -139,7 +139,7 @@ async def preview_document_chunks(file: UploadFile = File(...),
     settings are sane before they queue an upload.
     """
     from aughor.knowledge.documents import (DEFAULT_CHUNK_SETTINGS, chunk_text,
-                                            extract_text)
+                                            extract_text, numeric_run_lines)
 
     from aughor.knowledge.convert import ConversionError
 
@@ -169,6 +169,11 @@ async def preview_document_chunks(file: UploadFile = File(...),
         # The settings that PRODUCED this, echoed back — a preview whose settings are
         # implicit cannot be compared with the next one.
         "settings": (settings or DEFAULT_CHUNK_SETTINGS).as_dict(),
+        # Same rule as upload, reported the same way — a preview that silently kept
+        # what upload holds back would misrepresent what is searchable.
+        "suppressed_numeric_runs": len(
+            numeric_run_lines(raw)
+            if (settings or DEFAULT_CHUNK_SETTINGS).suppress_numeric_runs else []),
         "chunks": [{
             "index": c.chunk_index,
             "characters": len(c.text),
@@ -216,6 +221,13 @@ async def upload_document(file: UploadFile = File(...),
         raise HTTPException(status_code=422,
                             detail={"message": str(exc), "code": exc.code})
     markdown = converted.markdown
+
+    # What was held back from SEARCH. Quietly indexing less than the document
+    # contains is the same class of failure as quietly indexing more, so the count
+    # travels with the response and the lines themselves stay in the document.
+    from aughor.knowledge.documents import DEFAULT_CHUNK_SETTINGS, numeric_run_lines
+    effective = settings or DEFAULT_CHUNK_SETTINGS
+    suppressed = numeric_run_lines(markdown) if effective.suppress_numeric_runs else []
 
     title = _Path(filename).stem.replace("_", " ").replace("-", " ").title()
     try:
@@ -266,6 +278,11 @@ async def upload_document(file: UploadFile = File(...),
         # Reported apart, because the remedies differ: OCR fixes one and nothing the
         # person can buy fixes the other.
         entry["pages_failed"] = converted.pages_failed
+    if suppressed:
+        entry["suppressed_numeric_runs"] = len(suppressed)
+        # A sample, not the lot: enough for a person to recognise what was held back
+        # and object if it was wrong, without shipping the document back to them.
+        entry["suppressed_sample"] = [line.strip()[:160] for line in suppressed[:3]]
     entry.update(blobs.info(doc_id))
     return entry
 

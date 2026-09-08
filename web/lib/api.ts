@@ -2379,6 +2379,9 @@ export interface DocumentEntry {
   /** Pages that failed for some other reason. Separate, because OCR fixes one and
    *  nothing the person can buy fixes the other. */
   pages_failed?: number[];
+  /** Lines of unattributed figures held back from the index (not from the document). */
+  suppressed_numeric_runs?: number;
+  suppressed_sample?: string[];
 }
 
 /** Why a document could not be read, in a form a client can branch on.
@@ -2478,12 +2481,17 @@ export interface ChunkSettings {
   min_chars: number;
   collapse_whitespace: boolean;
   strip_urls_emails: boolean;
+  /** Keep headless runs of figures OUT of the index. Defaults ON, and unlike the rule
+   *  above it does not touch the document — the numbers stay in the stored Markdown,
+   *  the preview and every conversion; only retrieval skips them. */
+  suppress_numeric_runs: boolean;
 }
 
 export interface ChunkPreview {
   total_chunks: number;
   shown: number;
   characters: number;
+  suppressed_numeric_runs?: number;
   settings: ChunkSettings;
   chunks: { index: number; characters: number; tokens_estimate: number; text: string }[];
 }

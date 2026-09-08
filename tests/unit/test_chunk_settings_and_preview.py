@@ -50,6 +50,16 @@ def test_the_constants_became_defaults_and_did_not_move():
                                                            MIN_CHUNK_CHARS)
     assert s.delimiter == "\n\n" and s.collapse_whitespace is True
     assert s.strip_urls_emails is False, "deleting URLs must be opt-in, not assumed"
+    # The one default here that was CHOSEN rather than inherited, so it is pinned with
+    # its reason. It is a different kind of setting from the one above: that deletes
+    # from the DOCUMENT, this only from the INDEX — every number stays in the stored
+    # Markdown, the preview and every converted file, and turning it off and
+    # re-indexing puts it back. It exists because a bar chart's labels are positioned
+    # graphics, so its values extract as a headless run in which every figure is
+    # correct and none is attached to what it measures.
+    assert s.suppress_numeric_runs is True, (
+        "unattributed numeric runs must stay OUT of the index — a correct number "
+        "retrieved against the wrong label is worse than a missing one")
 
 
 def test_no_settings_produces_what_the_old_chunker_produced():

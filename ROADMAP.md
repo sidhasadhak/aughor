@@ -3002,10 +3002,22 @@ and one limit that cannot be coded away:**
   `Q1 Q2 Q3 Q1 Q2 Q3 Q1 Q2 Q3` on a separate line. Real tables are unaffected — the
   same deck yielded 158 well-formed table rows against one chart slide — but those
   orphan numbers ARE chunked and embedded, so an agent asked for one segment's GMV can
-  retrieve the run and answer confidently from the wrong position. This is the
-  well-formed-wrong-answer trap on the intake side, and it needs a real answer
-  (vision over the page, or refusing to index unattributed numeric runs) before
-  documents like this are trusted for figures.
+  retrieve the run and answer confidently from the wrong position — the
+  well-formed-wrong-answer trap on the intake side.
+  **Answered 2026-09-08 (the user's call): those runs are held OUT OF THE INDEX**
+  (`ChunkSettings.suppress_numeric_runs`, the one default here chosen rather than
+  inherited). It is a different KIND of setting from `strip_urls_emails` beside it:
+  that deletes from the DOCUMENT, this only from the index — every figure stays in the
+  stored Markdown, the preview and every conversion, and turning it off and
+  re-indexing puts it back. A line qualifies only when four or more numeric tokens
+  OUTNUMBER the words among the non-numeric ones (a unit welded to its value belongs
+  to the number: counting the "bps" in "+140bps" as a word let nine bare deltas score
+  themselves a sentence), and table rows and fenced code are never runs because their
+  header or fence IS the attribution. Measured on the live deck: **5 lines of 522,
+  0.78% of characters**, and every figure that matters survived because it also
+  appears in a real table. Both doors report the count; the UI says what was held back
+  and offers the switch. What remains open is the harder half — a chart's meaning is
+  recoverable only by reading the page as an image.
 
 **Open:** a re-index that genuinely RE-READS retained originals (today it re-embeds
 the stored chunks — the material is now on disk, the code is not written); documents

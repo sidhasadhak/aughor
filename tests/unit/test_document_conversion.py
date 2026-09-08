@@ -543,3 +543,109 @@ def test_uploading_a_part_scanned_pdf_succeeds_and_says_what_was_missed(client, 
     assert body["pages_read"] == 3
     assert body["pages_needing_ocr"] == [1, 4]
     assert body["chunk_count"] >= 1, "the readable pages should be indexed"
+
+
+# ── Unattributed numeric runs stay out of the index ───────────────────────────
+
+CHART_RUN = "### Value (GMV)245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7"
+
+
+def test_a_chart_run_is_recognised_and_a_sentence_is_not():
+    """The line this exists for, and the line it must not touch.
+
+    A bar chart's labels are positioned graphics, so three series across three
+    quarters extract as nine correct figures attached to nothing. A sentence citing
+    the same figures carries its own attribution and must survive.
+    """
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run(CHART_RUN) is True
+    assert is_numeric_run("+140bps +700bps +70bps +240bps (60bps) +390bps") is True, \
+        "a unit welded to a value belongs to the number, not to the prose"
+    assert is_numeric_run(
+        "GMV increased by +11.3% ex-FX (+7.0% reported) and Net Sales by +9.9%") is False
+    assert is_numeric_run("Revenue grew across all regions.") is False
+
+
+def test_a_table_row_is_never_a_run_however_many_numbers_it_holds():
+    """Its header names the column, so every figure in it is attributed. This is the
+    guard that keeps the financial tables — the part worth indexing — intact."""
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run("| EMEA | 4,200,000 | 12% | 47.1% | 86.8 | 1,064 |") is False
+
+
+def test_two_numbers_are_left_alone():
+    """Four is the floor on purpose. A pair under a heading is usually readable from
+    its context, and suppressing it would widen the blast radius for no gain."""
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run("#### 774 847") is False
+
+
+def test_numbers_inside_a_code_fence_are_kept():
+    """The fence IS their attribution — that is program output or data someone pasted
+    deliberately, not a chart axis."""
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    fenced = "```\n1.1 2.2 3.3 4.4 5.5 6.6\n```\n"
+    assert "1.1 2.2 3.3" in _strip_numeric_runs(fenced)
+
+
+def test_suppression_removes_the_run_from_the_index_but_not_the_document(client):
+    """The distinction the whole feature rests on.
+
+    The numbers stay in the stored Markdown — so preview, download and every
+    conversion are faithful — and only what is embedded for retrieval changes.
+    """
+    body = (f"# Deck\n\n{CHART_RUN}\n\n"
+            "Revenue grew across every region this quarter, with EMEA leading on "
+            "margin and APAC on growth, as the table below sets out.\n")
+    r = client.post("/documents/upload",
+                    files={"file": ("deck.md", body.encode(), "text/markdown")})
+    assert r.status_code == 201, r.text
+    entry = r.json()
+
+    assert entry["suppressed_numeric_runs"] == 1
+    assert "245.9" in entry["suppressed_sample"][0]
+
+    # The DOCUMENT still has it — this is the half that must not be lost.
+    stored = client.get(f"/documents/{entry['doc_id']}/markdown").json()["markdown"]
+    assert "245.9" in stored, "suppression reached the document, not just the index"
+
+    # And every conversion is faithful to the document, not to the index.
+    converted = client.get(f"/documents/{entry['doc_id']}/convert", params={"to": "txt"})
+    assert "245.9" in converted.text
+
+
+def test_turning_it_off_indexes_the_run_again(client):
+    """It is a setting, not a law — and it is reversible by re-indexing."""
+    import json
+
+    body = f"# Deck\n\n{CHART_RUN}\n\nSome prose to carry the chunk over the minimum.\n"
+    r = client.post("/documents/upload",
+                    files={"file": ("deck2.md", body.encode(), "text/markdown")},
+                    data={"chunk_settings": json.dumps({"suppress_numeric_runs": False})})
+    assert r.status_code == 201, r.text
+    assert "suppressed_numeric_runs" not in r.json()
+
+
+def test_the_preview_door_reports_the_same_suppression(client):
+    """Two doors, one rule — a preview that kept what upload holds back would
+    misrepresent what is actually searchable."""
+    body = f"# Deck\n\n{CHART_RUN}\n\nProse long enough to clear the minimum length.\n"
+    r = client.post("/documents/preview",
+                    files={"file": ("deck.md", body.encode(), "text/markdown")})
+    assert r.status_code == 200
+    assert r.json()["suppressed_numeric_runs"] == 1
+
+
+def test_the_setting_round_trips_through_the_registry():
+    """A re-index has to reproduce what cut a document, including this."""
+    from aughor.knowledge.documents import ChunkSettings
+
+    off = ChunkSettings(suppress_numeric_runs=False)
+    assert off.as_dict()["suppress_numeric_runs"] is False
+    assert ChunkSettings.from_dict(off.as_dict()) == off
+    # Absence still means the defaults, which now include suppression.
+    assert ChunkSettings.from_dict(None).suppress_numeric_runs is True

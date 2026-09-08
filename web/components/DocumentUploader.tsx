@@ -92,6 +92,7 @@ export function DocumentUploader() {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [partialNotes, setPartialNotes] = useState<string[]>([]);
+  const [suppressedNotes, setSuppressedNotes] = useState<string[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -157,6 +158,7 @@ export function DocumentUploader() {
     if (!files || files.length === 0) return;
     setUploadError(null);
     setPartialNotes([]);
+    setSuppressedNotes([]);
     setUploading(true);
     const results: DocumentEntry[] = [];
     const errors: string[] = [];
@@ -178,6 +180,12 @@ export function DocumentUploader() {
     // rather than inside them, because the document did import and is searchable —
     // but saying only "indexed" would let the pages behind a scanned cover go missing
     // with nothing to notice.
+    // Held back from SEARCH, not from the document — reported so it is never silent.
+    setSuppressedNotes(results
+      .filter(r => (r.suppressed_numeric_runs ?? 0) > 0)
+      .map(r => `${r.filename}: ${r.suppressed_numeric_runs} line`
+              + `${r.suppressed_numeric_runs !== 1 ? "s" : ""} of unlabelled figures`));
+
     const partial = results.filter(
       r => (r.pages_needing_ocr?.length ?? 0) + (r.pages_failed?.length ?? 0) > 0);
     setPartialNotes(partial.map(r => {
@@ -410,8 +418,22 @@ export function DocumentUploader() {
                 />
                 Delete all URLs and email addresses
               </label>
-              <p className="aug-fs-xs text-zinc-600 mt-2">
+              <p className="aug-fs-xs text-zinc-600 mt-2 mb-2">
                 Off by default: a policy that cites a source loses the citation.
+              </p>
+              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={settings.suppress_numeric_runs ?? true}
+                  onChange={e => setSettings(prev => ({ ...prev, suppress_numeric_runs: e.target.checked }))}
+                />
+                Keep unlabelled runs of figures out of search
+              </label>
+              <p className="aug-fs-xs text-zinc-600 mt-2">
+                On by default, and it does not change the document — a chart&rsquo;s labels
+                are graphics, so its values arrive as a headless row where every figure is
+                right and none is attached to what it measures. They stay in the file and
+                in every download; only search skips them.
               </p>
             </div>
 
@@ -512,6 +534,23 @@ export function DocumentUploader() {
 
       {/* Connected sources — the other way content reaches this same corpus. */}
       <KnowledgeSourcesSection />
+
+      {/* Indexed less than the document holds, said out loud. Neutral rather than
+          amber: nothing is wrong and nothing is lost — the figures are still in the
+          file and in every download, they are simply not offered as search results. */}
+      {suppressedNotes.length > 0 && (
+        <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-3 space-y-1">
+          <p className="aug-fs-sm text-zinc-300">Kept out of search</p>
+          {suppressedNotes.map(note => (
+            <p key={note} className="aug-fs-xs text-zinc-400">{note}</p>
+          ))}
+          <p className="aug-fs-xs text-zinc-500">
+            Chart labels extract as figures attached to nothing, so an answer drawn from
+            them can be confidently wrong. They remain in the document and in every
+            download. Turn this off in chunk settings to index them.
+          </p>
+        </div>
+      )}
 
       {/* Imported, but not all of it. Amber rather than red: the document IS indexed
           and searchable, and the person's next move is OCR or a different export —
