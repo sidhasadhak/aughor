@@ -202,19 +202,20 @@ async def upload_document(file: UploadFile = File(...),
     from pathlib import Path as _Path
 
     from aughor.knowledge import blobs
-    from aughor.knowledge.convert import ConversionError, to_markdown
+    from aughor.knowledge.convert import ConversionError, convert_document
 
     settings = _settings_from(chunk_settings)
     filename = file.filename or "document"
     data = await _read_upload(file)
 
     try:
-        markdown = to_markdown(data, filename)
+        converted = convert_document(data, filename)
     except ConversionError as exc:
         # 422 with the machine-readable code, so a client can offer the right remedy
         # (OCR, a password, a smaller file) instead of parsing the English.
         raise HTTPException(status_code=422,
                             detail={"message": str(exc), "code": exc.code})
+    markdown = converted.markdown
 
     title = _Path(filename).stem.replace("_", " ").replace("-", " ").title()
     try:
@@ -255,6 +256,16 @@ async def upload_document(file: UploadFile = File(...),
 
     entry["filename"] = filename
     entry["characters"] = len(markdown)
+    # A part-scanned PDF imports the pages that HAVE a text layer, so the response has
+    # to say which ones did not — otherwise "indexed" reads as "all of it", and the
+    # pages behind a scanned cover go missing with nothing to notice.
+    if converted.page_count:
+        entry["page_count"] = converted.page_count
+        entry["pages_read"] = len(converted.pages_read)
+        entry["pages_needing_ocr"] = converted.pages_needing_ocr
+        # Reported apart, because the remedies differ: OCR fixes one and nothing the
+        # person can buy fixes the other.
+        entry["pages_failed"] = converted.pages_failed
     entry.update(blobs.info(doc_id))
     return entry
 

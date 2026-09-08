@@ -2977,6 +2977,36 @@ WITHOUT registering when chunking yields nothing, so any document shorter than
 fetch and delete. The same early return still applies to the Confluence/Notion
 connectors, where a short page vanishes the same way and nothing reports it.
 
+**Measured on a live 40-page investor deck (2026-09-08), which found three defects
+and one limit that cannot be coded away:**
+
+- 🔴 **A row wider than its header had its extra cells TRUNCATED**, and converters do
+  not escape pipes inside a cell — so a slide labelled `Luxury | Mytheresa` emitted
+  three cells under a two-cell header and the parser kept `Luxury`, dropped
+  `Mytheresa`, and threw away the whole bullet list of results beside it. The deck's
+  headline table came out as `[['Luxury'], ['Luxury'], ['Off-price']]` and the
+  rendered PDF looked perfectly well-formed with every GMV, Net Sales and NPS figure
+  gone. A table is now as wide as its WIDEST row; widening can leave an empty column,
+  truncating loses content, and only one of those is visible to the reader.
+- 🔴 `str.strip("|")` is GREEDY — `||Highlights|` lost both leading pipes and parsed
+  one cell narrower than its own body rows, which is what fed the truncation above.
+  Strip exactly one pipe per side.
+- 🔴 **A per-page marker asserted a cause it did not know.** Every page failure was
+  reported as "an image with no text layer", including ones that failed for other
+  reasons. Only `NeedsOcrError` / `UnsupportedError` license that claim; anything else
+  says only that the page could not be read, and `pages_failed` is reported apart from
+  `pages_needing_ocr` because OCR fixes one and nothing fixes the other.
+- ⚠️ **CHART DATA LOSES ITS LABELS, and no converter can fix it.** A bar chart's
+  numbers are positioned graphics, not structure, so they extract as an unattributed
+  run: `Value (GMV)245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7` with
+  `Q1 Q2 Q3 Q1 Q2 Q3 Q1 Q2 Q3` on a separate line. Real tables are unaffected — the
+  same deck yielded 158 well-formed table rows against one chart slide — but those
+  orphan numbers ARE chunked and embedded, so an agent asked for one segment's GMV can
+  retrieve the run and answer confidently from the wrong position. This is the
+  well-formed-wrong-answer trap on the intake side, and it needs a real answer
+  (vision over the page, or refusing to index unattributed numeric runs) before
+  documents like this are trusted for figures.
+
 **Open:** a re-index that genuinely RE-READS retained originals (today it re-embeds
 the stored chunks — the material is now on disk, the code is not written); documents
 as canvas nodes on the ReactFlow surface rather than only as a canvas-level binding;

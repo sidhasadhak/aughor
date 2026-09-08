@@ -254,3 +254,47 @@ def test_the_download_header_stays_well_formed_over_the_wire(client):
     assert disposition.count('"') == 2, f"unbalanced quoting: {disposition!r}"
     assert disposition.endswith('.md"')
     assert "\n" not in disposition and "\r" not in disposition
+
+
+# ── Malformed tables from real converters ─────────────────────────────────────
+
+def test_a_row_wider_than_its_header_keeps_every_cell():
+    """Truncating to the header's width silently DELETED data on a real document.
+
+    Converters do not escape pipes inside a cell, so a slide whose row label is
+    "Luxury | Mytheresa" emits three cells under a two-cell header. Truncation kept
+    "Luxury", dropped "Mytheresa", and threw away the entire bullet list of results
+    beside it — measured on a live 40-page investor deck, where the table holding
+    every GMV, Net Sales and NPS figure came out as [['Luxury'], ['Luxury'],
+    ['Off-price']]. The rendered PDF looked perfectly well-formed with its numbers
+    gone, which is the worst shape a failure can take.
+    """
+    md = ("||Business Highlights|\n"
+          "| --- | --- |\n"
+          "|Luxury | Mytheresa|GMV +11.3%, NPS 86.8|\n"
+          "|Off-price | YOOX|GMV -8.9%, NPS 48.8|\n")
+    table = parse_markdown(md, title="t").blocks[0]
+
+    assert table.kind == "table"
+    flat = " ".join(" ".join(r) for r in table.rows)
+    for kept in ("Mytheresa", "GMV +11.3%", "NPS 86.8", "YOOX", "GMV -8.9%"):
+        assert kept in flat, f"{kept!r} was dropped"
+    assert all(len(r) == len(table.columns) for r in table.rows), "ragged after widening"
+
+
+def test_an_empty_leading_cell_is_not_eaten():
+    """`str.strip('|')` is greedy: `||Highlights|` lost BOTH pipes and came back one
+    cell narrower than the rows beneath it, which is what fed the truncation."""
+    md = "||Highlights|\n| --- | --- |\n|a|b|\n"
+    table = parse_markdown(md, title="t").blocks[0]
+
+    assert len(table.columns) == 2, f"header parsed as {table.columns}"
+    assert table.rows == [["a", "b"]]
+
+
+def test_the_numbers_survive_a_real_deck_shaped_table():
+    """End to end through a renderer, on the shape that lost them."""
+    md = ("||Business Highlights|\n| --- | --- |\n"
+          "|Luxury | Mytheresa|GMV +11.3% and NPS 86.8|\n")
+    text = render(md, "txt", title="Deck")[0].decode()
+    assert "Mytheresa" in text and "86.8" in text

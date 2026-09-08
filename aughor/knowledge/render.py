@@ -97,8 +97,20 @@ def strip_inline(text: str) -> str:
 
 
 def _split_row(line: str) -> list[str]:
-    """A pipe-table row's cells. The outer pipes are delimiters, not content."""
-    return [c.strip() for c in line.strip().strip("|").split("|")]
+    """A pipe-table row's cells. The outer pipes are delimiters, not content.
+
+    Strips exactly ONE pipe from each end, not every pipe there. `str.strip("|")` is
+    greedy, so a row that opens with an empty leading cell — `||Highlights|`, which is
+    how a converted slide renders a blank corner — had BOTH pipes eaten and came back
+    one cell narrower than the rows beneath it. That mismatch is what fed the
+    truncation below, and between them they deleted a table's entire contents.
+    """
+    text = line.strip()
+    if text.startswith("|"):
+        text = text[1:]
+    if text.endswith("|"):
+        text = text[:-1]
+    return [c.strip() for c in text.split("|")]
 
 
 @dataclass
@@ -160,13 +172,23 @@ def parse_markdown(markdown: str, title: str = "Document"):
             i += 2
             rows: list[list[str]] = []
             while i < len(lines) and _TABLE_ROW.match(lines[i]):
-                cells = [strip_inline(c) for c in _split_row(lines[i])]
-                # Ragged rows are padded rather than dropped: a converted spreadsheet
-                # ends rows early where trailing cells were empty, and losing the row
-                # would lose data that is merely short.
-                cells += [""] * (len(columns) - len(cells))
-                rows.append(cells[:len(columns)] if len(cells) > len(columns) else cells)
+                rows.append([strip_inline(c) for c in _split_row(lines[i])])
                 i += 1
+            # The table is as wide as its WIDEST row, never as wide as its header.
+            #
+            # This used to truncate to the header's width, and that silently deleted
+            # data on real input. Converters do not escape pipes inside a cell, so a
+            # slide whose row label is "Luxury | Mytheresa" emits three cells under a
+            # two-cell header — and truncation kept "Luxury", dropped "Mytheresa", and
+            # threw away the entire bullet list of results beside it. The rendered PDF
+            # looked perfectly well-formed with its numbers gone, which is the worst
+            # shape a failure can take.
+            #
+            # Widening can leave an empty column; truncating loses content. Only one of
+            # those is recoverable by the person looking at it.
+            width = max([len(columns)] + [len(r) for r in rows]) if rows else len(columns)
+            columns += [""] * (width - len(columns))
+            rows = [r + [""] * (width - len(r)) for r in rows]
             blocks.append(Block("table", columns=columns, rows=rows))
             continue
 

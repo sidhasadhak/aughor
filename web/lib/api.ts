@@ -2370,6 +2370,15 @@ export interface DocumentEntry {
   has_markdown?: boolean;
   /** Characters of Markdown the document converted to. Present on a fresh upload. */
   characters?: number;
+  /** PDFs only. A part-scanned PDF imports the pages that HAVE a text layer, so these
+   *  say which did not — an "indexed" that hides missing pages reads as "all of it". */
+  page_count?: number;
+  pages_read?: number;
+  /** Pages with no text layer — OCR would fix these. */
+  pages_needing_ocr?: number[];
+  /** Pages that failed for some other reason. Separate, because OCR fixes one and
+   *  nothing the person can buy fixes the other. */
+  pages_failed?: number[];
 }
 
 /** Why a document could not be read, in a form a client can branch on.

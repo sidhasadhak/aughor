@@ -91,6 +91,7 @@ export function DocumentUploader() {
   const [dragging, setDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [partialNotes, setPartialNotes] = useState<string[]>([]);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -155,6 +156,7 @@ export function DocumentUploader() {
   const handleFiles = useCallback(async (files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploadError(null);
+    setPartialNotes([]);
     setUploading(true);
     const results: DocumentEntry[] = [];
     const errors: string[] = [];
@@ -172,6 +174,25 @@ export function DocumentUploader() {
         return [...prev, ...results.filter(r => !existing.has(r.doc_id))];
       });
     }
+    // A part-scanned PDF is a SUCCESS with a hole in it. Reported beside the errors
+    // rather than inside them, because the document did import and is searchable —
+    // but saying only "indexed" would let the pages behind a scanned cover go missing
+    // with nothing to notice.
+    const partial = results.filter(
+      r => (r.pages_needing_ocr?.length ?? 0) + (r.pages_failed?.length ?? 0) > 0);
+    setPartialNotes(partial.map(r => {
+      const list = (p: number[]) => p.slice(0, 8).join(", ") + (p.length > 8 ? "…" : "");
+      const scanned = r.pages_needing_ocr ?? [];
+      const broken = r.pages_failed ?? [];
+      // The two causes are named separately: OCR fixes one and nothing fixes the
+      // other, so merging them would send a person to buy OCR they do not need.
+      const why = [
+        scanned.length ? `page${scanned.length !== 1 ? "s" : ""} ${list(scanned)} `
+                       + `${scanned.length !== 1 ? "are" : "is"} scanned (no text layer)` : "",
+        broken.length ? `page${broken.length !== 1 ? "s" : ""} ${list(broken)} could not be read` : "",
+      ].filter(Boolean).join("; ");
+      return `${r.filename}: read ${r.pages_read} of ${r.page_count} pages — ${why}.`;
+    }));
     if (errors.length > 0) setUploadError(errors.join("\n"));
     setUploading(false);
     getKnowledgeStatus().then(setStatus).catch(() => {});
@@ -491,6 +512,22 @@ export function DocumentUploader() {
 
       {/* Connected sources — the other way content reaches this same corpus. */}
       <KnowledgeSourcesSection />
+
+      {/* Imported, but not all of it. Amber rather than red: the document IS indexed
+          and searchable, and the person's next move is OCR or a different export —
+          not a retry of the same upload. */}
+      {partialNotes.length > 0 && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3 space-y-1">
+          <p className="aug-fs-sm text-amber-300">Imported with pages missing</p>
+          {partialNotes.map(note => (
+            <p key={note} className="aug-fs-xs text-zinc-400">{note}</p>
+          ))}
+          <p className="aug-fs-xs text-zinc-500">
+            The rest of the document is indexed and searchable. Scanned pages need OCR,
+            which is off by default because it sends the file to a third party.
+          </p>
+        </div>
+      )}
 
       {/* Error */}
       {uploadError && (

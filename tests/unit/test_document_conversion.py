@@ -416,3 +416,130 @@ def test_prose_is_not_mistaken_for_a_spreadsheet():
     """A `.txt` of prose with commas in it must stay prose, not become a CSV table."""
     assert convert.sniff(b"plain prose, with a comma", "notes.txt") == "text"
     assert convert.sniff(b"a,b,c\n1,2,3\n", "notes.txt") == "text"
+
+
+# ── Part-scanned PDFs: read what CAN be read ──────────────────────────────────
+
+@pytest.fixture
+def scanned_deck(tmp_path: Path) -> bytes:
+    """A deck shaped like a real investor presentation: a scanned cover, text pages
+    with a table, a full-bleed image page, then more text.
+
+    The shape that motivated this: a live 40-page deck was refused whole because
+    pages 1, 33 and 40 are images — a designed cover and two chart pages — throwing
+    away 37 pages of perfectly good text.
+    """
+    Image = pytest.importorskip("PIL.Image", reason="pillow is not installed")
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Image as RLImage
+    from reportlab.platypus import (PageBreak, Paragraph, SimpleDocTemplate, Spacer,
+                                    Table, TableStyle)
+
+    png = tmp_path / "cover.png"
+    Image.new("RGB", (600, 800), (31, 56, 100)).save(png)
+    st = getSampleStyleSheet()
+    table = Table(TABLE_ROWS)
+    table.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.5, colors.black)]))
+
+    def cover():
+        return RLImage(str(png), width=120 * mm, height=160 * mm)
+
+    out = tmp_path / "deck.pdf"
+    SimpleDocTemplate(str(out), pagesize=A4).build([
+        cover(), PageBreak(),                                        # 1 scanned
+        Paragraph("Q3 Performance", st["Heading1"]),
+        Paragraph("Revenue grew across all regions.", st["BodyText"]),
+        Spacer(1, 12), table, PageBreak(),                           # 2 text + table
+        Paragraph("Outlook", st["Heading1"]),
+        Paragraph("APAC leads on growth.", st["BodyText"]), PageBreak(),   # 3 text
+        cover(), PageBreak(),                                        # 4 scanned
+        Paragraph("Appendix", st["Heading1"]),
+        Paragraph("Definitions and methodology.", st["BodyText"]),   # 5 text
+    ])
+    return out.read_bytes()
+
+
+def test_a_part_scanned_pdf_keeps_the_pages_that_can_be_read(scanned_deck: bytes):
+    """All-or-nothing is the wrong trade when 'nothing' is the common case.
+
+    Any deck with a designed cover has an image page one. Refusing the document over
+    it discards every readable page — including, here, the table that is the entire
+    point of the deck.
+    """
+    result = convert.convert_document(scanned_deck, "deck.pdf")
+
+    assert result.page_count == 5
+    assert result.pages_needing_ocr == [1, 4]
+    assert result.pages_read == [2, 3, 5]
+    assert result.partial is True
+    # The table on a readable page survives — that is what was being thrown away.
+    for _, revenue, _ in TABLE_ROWS[1:]:
+        assert revenue in result.markdown
+
+
+def test_an_unreadable_page_leaves_a_visible_marker_where_it_falls(scanned_deck: bytes):
+    """Nothing may go missing silently. A reader — person or model — must see the gap
+    at the point it occurs, not infer a document that flows across a hole."""
+    markdown = convert.convert_document(scanned_deck, "deck.pdf").markdown
+
+    assert "Page 1 could not be read" in markdown
+    assert "Page 4 could not be read" in markdown
+    assert markdown.index("Page 1 could not be read") < markdown.index("Q3 Performance")
+    assert markdown.index("Page 4 could not be read") < markdown.index("Appendix")
+
+
+def test_a_fully_scanned_pdf_is_still_refused(tmp_path: Path):
+    """Recovery must not turn a document with NO text into a successful import of
+    nothing — that is the failure that looks like success, one level up."""
+    Image = pytest.importorskip("PIL.Image", reason="pillow is not installed")
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Image as RLImage
+    from reportlab.platypus import PageBreak, SimpleDocTemplate
+
+    png = tmp_path / "page.png"
+    Image.new("RGB", (600, 800), (20, 20, 20)).save(png)
+
+    def page():
+        return RLImage(str(png), width=120 * mm, height=160 * mm)
+
+    out = tmp_path / "all-scanned.pdf"
+    SimpleDocTemplate(str(out), pagesize=A4).build([page(), PageBreak(), page()])
+
+    with pytest.raises(convert.ConversionError) as exc:
+        convert.convert_document(out.read_bytes(), "all-scanned.pdf")
+    assert exc.value.code == "needs_ocr"
+    assert "all 2 pages" in str(exc.value)
+
+
+def test_a_clean_pdf_reports_no_pages_and_takes_the_fast_path(revenue_docx: Path):
+    """`page_count` is 0 for anything that did not need per-page recovery, so the UI
+    shows a scanned-pages warning only when there is one."""
+    result = convert.convert_document(revenue_docx.read_bytes(), "revenue.docx")
+    assert result.page_count == 0
+    assert result.partial is False
+    assert result.pages_needing_ocr == []
+
+
+def test_to_markdown_still_returns_a_plain_string(revenue_docx: Path):
+    """A dozen callers want the string. Adding page detail must not change them."""
+    text = convert.to_markdown(revenue_docx.read_bytes(), "revenue.docx")
+    assert isinstance(text, str)
+    assert "Q3 Revenue Review" in text
+
+
+def test_uploading_a_part_scanned_pdf_succeeds_and_says_what_was_missed(client, scanned_deck):
+    """It imports — and the response names the pages that did not, so the UI can too.
+    'Indexed' alone would read as 'all of it'."""
+    r = client.post("/documents/upload",
+                    files={"file": ("deck.pdf", scanned_deck, "application/pdf")})
+
+    assert r.status_code == 201, r.text
+    body = r.json()
+    assert body["page_count"] == 5
+    assert body["pages_read"] == 3
+    assert body["pages_needing_ocr"] == [1, 4]
+    assert body["chunk_count"] >= 1, "the readable pages should be indexed"

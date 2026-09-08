@@ -50,9 +50,11 @@ for that is external, the way every other outbound seam here works.
 """
 from __future__ import annotations
 
+import io
 import logging
 import os
 import typing
+from dataclasses import dataclass, field
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -61,6 +63,12 @@ logger = logging.getLogger(__name__)
 #: not list these — asking it to convert Markdown to Markdown is not a no-op, it is a
 #: reparse — so they are ours to handle and are named here on purpose.
 TEXT_SUFFIXES: frozenset[str] = frozenset({".md", ".markdown", ".txt"})
+
+#: Above this many pages, a PDF that needs OCR is refused rather than recovered
+#: page by page. Recovery costs one split and one convert per page; on a document
+#: this long that is slow enough to hold a request open, and a document that long
+#: which is also part-scanned is better handled deliberately than silently.
+MAX_RECOVERY_PAGES = 400
 
 #: Bytes above this are refused before anydoc sees them. anydoc has its own internal
 #: safety limits (decompression ratio, nesting depth, node count — it raises
@@ -180,8 +188,107 @@ def sniff(data: bytes, filename: str = "") -> str | None:
     return None
 
 
-def to_markdown(data: bytes, filename: str = "") -> str:
-    """Convert a document's bytes to GitHub-Flavoured Markdown.
+@dataclass
+class Conversion:
+    """A document's Markdown plus what could NOT be read.
+
+    `to_markdown` returns only the string, because a dozen callers want exactly
+    that. This is for the door, which has to tell a person that page 1 of their
+    deck is a scanned cover — a number they can act on, rather than prose they have
+    to parse.
+    """
+
+    markdown: str
+    #: 0 when the format has no pages (everything but PDF).
+    page_count: int = 0
+    pages_read: list[int] = field(default_factory=list)
+    #: 1-indexed pages anydoc identified as having NO TEXT LAYER — OCR would fix them.
+    pages_needing_ocr: list[int] = field(default_factory=list)
+    #: Pages that failed for some other reason. Kept apart from the list above because
+    #: "scan this" and "this page is broken" are different problems with different
+    #: remedies, and merging them would tell a person to buy OCR they do not need.
+    pages_failed: list[int] = field(default_factory=list)
+
+    @property
+    def missing_pages(self) -> list[int]:
+        return sorted(self.pages_needing_ocr + self.pages_failed)
+
+    @property
+    def partial(self) -> bool:
+        return bool(self.pages_needing_ocr or self.pages_failed)
+
+
+def _recover_readable_pages(data: bytes) -> Conversion:
+    """Convert a part-scanned PDF page by page, keeping what has a text layer.
+
+    Why this exists, in one real example: a 40-page investor deck was refused whole
+    because pages 1, 33 and 40 are images — a scanned cover and two full-bleed chart
+    pages. Thirty-seven pages of perfectly good text, including its tables, were
+    thrown away to avoid admitting that three were unreadable. All-or-nothing is the
+    wrong trade when "nothing" is the common case for any deck with a designed cover.
+
+    Nothing is lost silently. Each unreadable page leaves a visible marker in the
+    Markdown, so a reader — person or model — sees the gap where it falls instead of
+    inferring a document that flows continuously across a hole.
+    """
+    try:
+        import pypdf
+    except ImportError:
+        raise ConversionError(
+            "This PDF has scanned pages. Reading the rest needs pypdf: "
+            "uv pip install -e '.[docs]'", code="needs_ocr")
+
+    anydoc = _anydoc()
+    reader = pypdf.PdfReader(io.BytesIO(data))
+    total = len(reader.pages)
+    if total > MAX_RECOVERY_PAGES:
+        raise ConversionError(
+            f"This {total}-page PDF has scanned pages, and is too long to recover "
+            f"page by page (limit {MAX_RECOVERY_PAGES}).", code="needs_ocr")
+
+    parts: list[str] = []
+    read: list[int] = []
+    no_text: list[int] = []
+    failed: list[int] = []
+    for number, page in enumerate(reader.pages, start=1):
+        writer = pypdf.PdfWriter()
+        writer.add_page(page)
+        buf = io.BytesIO()
+        writer.write(buf)
+        try:
+            text = anydoc.to_markdown_bytes(buf.getvalue()).strip()
+        except (anydoc.NeedsOcrError, anydoc.UnsupportedError):
+            # The page HAS no text layer — anydoc says so by name, either as
+            # "needs OCR" or as "no extractable text (ImageBased)". Only here is the
+            # marker below entitled to state that cause.
+            no_text.append(number)
+            parts.append(f"> _Page {number} could not be read — it is an image with "
+                         f"no text layer._")
+        except Exception as exc:
+            # Something ELSE went wrong: malformed, a resource limit, a missing part.
+            # A marker naming a cause it does not know is a small lie in the middle of
+            # a document, and downstream it becomes a confident wrong answer about why
+            # a number is missing. Say only what is true.
+            logger.warning("Page %d of a PDF failed to convert: %s: %s",
+                           number, type(exc).__name__, exc)
+            failed.append(number)
+            parts.append(f"> _Page {number} could not be read._")
+        else:
+            read.append(number)
+            if text:
+                parts.append(text)
+
+    if not read:
+        raise ConversionError(
+            f"This PDF is scanned — all {total} pages are images with no text layer. "
+            f"OCR is needed to read it.", code="needs_ocr")
+
+    return Conversion(markdown="\n\n".join(parts), page_count=total,
+                      pages_read=read, pages_needing_ocr=no_text, pages_failed=failed)
+
+
+def convert_document(data: bytes, filename: str = "") -> Conversion:
+    """Convert a document's bytes to GitHub-Flavoured Markdown, with page detail.
 
     Dispatches on what the bytes ARE (see `sniff`), not on what they are called, which
     is what stops a mislabelled binary from being read as text. Text formats are
@@ -201,7 +308,7 @@ def to_markdown(data: bytes, filename: str = "") -> str:
 
     detected = sniff(data, filename)
     if detected == "text":
-        return data.decode("utf-8", errors="replace")
+        return Conversion(markdown=data.decode("utf-8", errors="replace"))
     if detected is None:
         suffix = Path(filename or "").suffix.lower() or "(no extension)"
         raise ConversionError(
@@ -214,8 +321,19 @@ def to_markdown(data: bytes, filename: str = "") -> str:
     anydoc = _anydoc()
     mode, api_key = _ocr_mode()
     try:
-        return anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key)
+        return Conversion(
+            markdown=anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key))
     except anydoc.NeedsOcrError as exc:
+        # SOME pages are images. Refusing the document because of them throws away
+        # every page that reads perfectly — see `_recover_readable_pages`. Recovery
+        # re-raises with the same `needs_ocr` code when genuinely nothing is legible,
+        # so a fully scanned document still fails exactly as it did.
+        if detected == "pdf":
+            recovered = _recover_readable_pages(data)
+            logger.info("Recovered %d of %d pages from a part-scanned PDF; %d need OCR",
+                        len(recovered.pages_read), recovered.page_count,
+                        len(recovered.pages_needing_ocr))
+            return recovered
         pages = getattr(exc, "pages", None) or []
         count = getattr(exc, "page_count", None)
         where = (f"page{'s' if len(pages) != 1 else ''} "
@@ -223,8 +341,8 @@ def to_markdown(data: bytes, filename: str = "") -> str:
                  f"{'…' if len(pages) > 10 else ''}") if pages else "some pages"
         scope = f" of {count}" if count else ""
         raise ConversionError(
-            f"This PDF is scanned — {where}{scope} are images with no text layer. "
-            f"OCR is needed to read it.",
+            f"This document is scanned — {where}{scope} are images with no text "
+            f"layer. OCR is needed to read it.",
             code="needs_ocr",
         ) from exc
     except anydoc.EncryptedError as exc:
@@ -246,6 +364,15 @@ def to_markdown(data: bytes, filename: str = "") -> str:
         # because to a person they are all "this file did not open".
         raise ConversionError(f"Could not read the document: {exc}",
                               code="unconvertible") from exc
+
+
+def to_markdown(data: bytes, filename: str = "") -> str:
+    """The Markdown alone — what almost every caller wants.
+
+    A thin wrapper so `extract_text`, the blob store and the renderers keep their
+    existing shape; only the upload door needs the page detail.
+    """
+    return convert_document(data, filename).markdown
 
 
 def to_markdown_file(path: Path) -> str:
