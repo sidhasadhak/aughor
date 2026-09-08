@@ -44,6 +44,25 @@ Revenue grew across all regions.
 AMOUNTS = ("4,200,000", "7,850,000", "3,100,000")
 
 
+@pytest.fixture(autouse=True)
+def _offline_embedder(monkeypatch):
+    """Index without reaching a live embedder.
+
+    These tests upload, and uploading embeds. A developer machine usually has a local
+    embedder answering, and CI has none — so this file passed here and failed on the
+    first machine without one, with a 500 and `Connection refused`. That is the
+    "run the suite without what only your machine has" trap in its purest form: the
+    thing under test never needed a real embedder, the test just silently used one.
+
+    768 is the width the rest of the suite caches. `embedding_dim()` memoizes into a
+    module-level cache that outlives monkeypatch, so a narrower fake would be compared
+    against an earlier test's 768 and every write refused.
+    """
+    monkeypatch.setattr("aughor.semantic.embedder.embed",
+                        lambda texts: [[0.0] * 768 for _ in texts])
+    monkeypatch.setattr("aughor.semantic.embedder.embedding_dim", lambda: 768)
+
+
 # ── Parsing to blocks ─────────────────────────────────────────────────────────
 
 def test_markdown_becomes_the_block_model_the_renderers_already_speak():
