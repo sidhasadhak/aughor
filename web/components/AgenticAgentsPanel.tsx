@@ -220,7 +220,7 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
   onOpenAutomations?: (automationId: string) => void;
   onOpenIntegrations?: () => void;
 }) {
-  const [tab, setTab] = useState<"overview" | "map" | "configure">("overview");
+  const [tab, setTab] = useState<"overview" | "map" | "benchmark" | "configure">("overview");
   const [busy, setBusy] = useState(false);
 
   const togglePause = async () => {
@@ -261,11 +261,15 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
             automation canvas's own mode label, and this surface edits nothing. */}
         <Button variant={tab === "map" ? "secondary" : "ghost"} size="xs"
           onClick={() => setTab("map")}>Map</Button>
+        <Button variant={tab === "benchmark" ? "secondary" : "ghost"} size="xs"
+          onClick={() => setTab("benchmark")}>Benchmark</Button>
         <Button variant={tab === "configure" ? "secondary" : "ghost"} size="xs"
           onClick={() => setTab("configure")}>Configure</Button>
       </div>
       {tab === "overview" ? (
         <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
+      ) : tab === "benchmark" ? (
+        <PersonaBenchmark agent={agent} onChanged={onChanged} onError={onError} />
       ) : tab === "map" ? (
         <AgentMap agent={agent}
           onOpenConnection={onOpenConnection}
@@ -370,6 +374,112 @@ function PersonaOverview({ agent, onOpenTrace }: {
 
 /** The agent's editable surface — fields, bindings and the golden suite
  *  (ported from AgentsAdminPanel, which this panel replaces). */
+/** Benchmark — the agent's own regression suite, as a PEER of using it and watching it.
+ *
+ *  It lived inside Configure, three scrolls below the instructions box, which said the
+ *  quiet part: measuring the agent was a setting. It is not. An agent has three questions
+ *  about it — what does it say, what has it been doing, and is it right — and the third
+ *  is the only one with an answer you can defend. So it gets a tab.
+ *
+ *  Nothing about the suite's rules changed: `reference_sql` is still a human's to write
+ *  (a suite the model writes for itself measures itself), and evaluation is still the
+ *  same synchronous call.
+ */
+function PersonaBenchmark({ agent, onChanged, onError }: {
+  agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
+}) {
+  const [goldens, setGoldens] = useState<AgentGolden[]>([]);
+  const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
+  const [evaluating, setEvaluating] = useState(false);
+  const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
+
+  useEffect(() => {
+    listAgentGoldens(agent.id).then(setGoldens).catch(() => {});
+  }, [agent.id]);
+
+  const addGolden = async () => {
+    if (!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
+    try {
+      const g = await createAgentGolden(agent.id, goldenDraft);
+      setGoldens(gs => [...gs, g]);
+      setGoldenDraft({ question: "", reference_sql: "" });
+    } catch (e) { onError(e instanceof Error ? e.message : "Add golden failed."); }
+  };
+
+  const runEvaluation = async () => {
+    setEvaluating(true);
+    onError(null);
+    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); }
+    catch (e) { onError(e instanceof Error ? e.message : "Evaluation failed."); }
+    finally { setEvaluating(false); }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+      {goldens.length === 0 && (
+        <p className="aug-fs-sm" style={{
+          color: "var(--t2)", margin: 0, padding: "8px 11px", background: "var(--bg-1)",
+          border: "1px solid var(--b1)", borderRadius: "var(--r2)",
+        }}>
+          This agent has no golden questions, so it ships unmeasured — every answer it
+          gives is unfalsifiable. Add the questions where being wrong would matter.
+        </p>
+      )}
+      {/* the agent's own regression suite */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
+        border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span className="aug-label">Golden questions</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
+            re-run after editing instructions or documents
+          </span>
+          <span style={{ marginLeft: "auto" }}>
+            <Button size="xs" variant="outline" onClick={runEvaluation}
+              disabled={evaluating || goldens.length === 0}>
+              {evaluating ? "Evaluating…" : "Run evaluation"}
+            </Button>
+          </span>
+        </div>
+        {evalResult && (
+          <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
+            ? "var(--grn5)" : "var(--amb5)" }}>
+            {evalResult.passed}/{evalResult.total} passing
+            {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
+              <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 12 }}>
+                ✗ {p.question} — {p.error}
+              </div>
+            ))}
+          </div>
+        )}
+        {goldens.map(g => (
+          <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8,
+            fontSize: 12, color: "var(--t2)" }}>
+            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
+              whiteSpace: "nowrap" }} title={g.reference_sql}>{g.question}</span>
+            <Button variant="ghost" size="xs" onClick={async () => {
+              await deleteAgentGolden(agent.id, g.id);
+              setGoldens(gs => gs.filter(x => x.id !== g.id));
+            }}>Remove</Button>
+          </div>
+        ))}
+        <input className="aug-input" placeholder="Golden question — e.g. How many active customers?"
+          value={goldenDraft.question}
+          onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
+        <textarea className="aug-input" rows={2}
+          placeholder="Reference SQL (the known-correct answer; read-only)"
+          value={goldenDraft.reference_sql}
+          onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
+        <span>
+          <Button size="xs" variant="secondary" onClick={addGolden}
+            disabled={!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()}>
+            Add golden
+          </Button>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
   agent: UserAgent; onChanged: () => void; onDeleted: () => void;
   onError: (e: string | null) => void;
@@ -383,17 +493,12 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
   const [packs, setPacks] = useState<PackSummary[]>([]);
-  const [goldens, setGoldens] = useState<AgentGolden[]>([]);
-  const [goldenDraft, setGoldenDraft] = useState({ question: "", reference_sql: "" });
   const [saving, setSaving] = useState(false);
-  const [evaluating, setEvaluating] = useState(false);
-  const [evalResult, setEvalResult] = useState<AgentEvalResult | null>(null);
 
   useEffect(() => {
     getConnections().then(setConnections).catch(() => {});
     listDocuments().then(setDocuments).catch(() => {});
     getPacks().then(r => setPacks((r.packs || []).filter(p => p.ok))).catch(() => {});
-    listAgentGoldens(agent.id).then(setGoldens).catch(() => {});
   }, [agent.id]);
 
   // VA-9c — the declared-action roster grants pick from, keyed to the CONNECTION the
@@ -435,23 +540,6 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
     if (!window.confirm(`Delete agent “${agent.name}”? Its instructions and bindings are removed; documents stay.`)) return;
     await deleteUserAgent(agent.id);
     onDeleted();
-  };
-
-  const addGolden = async () => {
-    if (!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()) return;
-    try {
-      const g = await createAgentGolden(agent.id, goldenDraft);
-      setGoldens(gs => [...gs, g]);
-      setGoldenDraft({ question: "", reference_sql: "" });
-    } catch (e) { onError(e instanceof Error ? e.message : "Add golden failed."); }
-  };
-
-  const runEvaluation = async () => {
-    setEvaluating(true);
-    onError(null);
-    try { setEvalResult(await evaluateUserAgent(agent.id)); onChanged(); }
-    catch (e) { onError(e instanceof Error ? e.message : "Evaluation failed."); }
-    finally { setEvaluating(false); }
   };
 
   const toggleIn = (key: "doc_ids" | "pack_ids" | "tool_grants", id: string) =>
@@ -576,57 +664,6 @@ function PersonaConfigure({ agent, onChanged, onDeleted, onError }: {
         })()}
       </div>
 
-      {/* the agent's own regression suite */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 6, padding: "12px 14px",
-        border: "1px solid var(--b1)", borderRadius: "var(--r2)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <span className="aug-label">Golden questions</span>
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>
-            re-run after editing instructions or documents
-          </span>
-          <span style={{ marginLeft: "auto" }}>
-            <Button size="xs" variant="outline" onClick={runEvaluation}
-              disabled={evaluating || goldens.length === 0}>
-              {evaluating ? "Evaluating…" : "Run evaluation"}
-            </Button>
-          </span>
-        </div>
-        {evalResult && (
-          <div style={{ fontSize: 12, color: evalResult.passed === evalResult.total
-            ? "var(--grn5)" : "var(--amb5)" }}>
-            {evalResult.passed}/{evalResult.total} passing
-            {evalResult.per_question.filter(p => !p.passed).slice(0, 3).map(p => (
-              <div key={p.golden_id} style={{ color: "var(--t3)", fontSize: 12 }}>
-                ✗ {p.question} — {p.error}
-              </div>
-            ))}
-          </div>
-        )}
-        {goldens.map(g => (
-          <div key={g.id} style={{ display: "flex", alignItems: "center", gap: 8,
-            fontSize: 12, color: "var(--t2)" }}>
-            <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis",
-              whiteSpace: "nowrap" }} title={g.reference_sql}>{g.question}</span>
-            <Button variant="ghost" size="xs" onClick={async () => {
-              await deleteAgentGolden(agent.id, g.id);
-              setGoldens(gs => gs.filter(x => x.id !== g.id));
-            }}>Remove</Button>
-          </div>
-        ))}
-        <input className="aug-input" placeholder="Golden question — e.g. How many active customers?"
-          value={goldenDraft.question}
-          onChange={e => setGoldenDraft(d => ({ ...d, question: e.target.value }))} />
-        <textarea className="aug-input" rows={2}
-          placeholder="Reference SQL (the known-correct answer; read-only)"
-          value={goldenDraft.reference_sql}
-          onChange={e => setGoldenDraft(d => ({ ...d, reference_sql: e.target.value }))} />
-        <span>
-          <Button size="xs" variant="secondary" onClick={addGolden}
-            disabled={!goldenDraft.question.trim() || !goldenDraft.reference_sql.trim()}>
-            Add golden
-          </Button>
-        </span>
-      </div>
 
       <AgentGuardrailsSection agent={agent} onError={onError} />
 
