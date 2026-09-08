@@ -195,6 +195,21 @@ os.environ["AUGHOR_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "docume
 # rmtree()s a directory there. The registry above is metadata; this is the payload.
 os.environ["AUGHOR_DOCUMENTS_DIR"] = os.path.join(_test_stores_dir, "documents")
 
+# No CLOCKS in a test process. The `client` fixture is session-scoped, so the app's
+# lifespan runs once and its APScheduler threads then tick for the WHOLE session —
+# daemon threads, which the lifespan's event-loop teardown never reached.
+#
+# Measured, not assumed: the automation heartbeat (`TICK_SECONDS = 60`) opens ~5 stores
+# per tick via `tick_once` → `list_automations` → `connect_store`, on
+# `ThreadPoolExecutor-3_0`. Across an 11-minute run that is scores of background store
+# opens and sleeps landing in whatever a later test has patched onto a process-global
+# seam — which is exactly how `test_store_pool` came to assert `120 == 1` and
+# `test_slack_delivery` found jittered backoff in a list that must equal `[7.0]`.
+#
+# Set here rather than fixed per-test because the damage is done by threads that
+# outlive the test that started them. Tests that want a tick call it directly.
+os.environ["AUGHOR_DISABLE_SCHEDULERS"] = "1"
+
 # Layer 0.2 — the runtime LLM config (data/llm_config.json) was the LAST store tests
 # inherited from the developer's machine: it holds the operator's chosen backend AND
 # secretvault-encrypted API keys, and aughor/api.py's import-time load_dotenv() brings

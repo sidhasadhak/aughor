@@ -158,6 +158,14 @@ async def _lifespan(app: "FastAPI"):
     # serverless path for exploration, when it lands).
     if os.environ.get("VERCEL"):
         logger.info("serverless: in-process schedulers OFF — Vercel Cron drives /cron/tick")
+    elif _schedulers_disabled():
+        # Announced at WARNING, not INFO. This variable turns off monitors, automations
+        # and continuous exploration in a process that otherwise looks completely
+        # healthy — every route answers, and nothing happens on a clock. If it is ever
+        # set somewhere real, the log has to be the thing that says so.
+        logger.warning("AUGHOR_DISABLE_SCHEDULERS is set — in-process clocks are OFF: "
+                       "no monitor evaluation, no automation heartbeat, no continuous "
+                       "exploration. Intended for TEST processes only.")
     else:
         await _start_continuous_exploration_loop()
         await _start_monitor_scheduler()
@@ -170,6 +178,16 @@ async def _lifespan(app: "FastAPI"):
     if not os.environ.get("VERCEL"):
         from aughor.db.serving import release
         release()
+    # The schedulers run APScheduler DAEMON THREADS, not asyncio tasks, so the
+    # event-loop teardown named above does not reach them: both modules have carried a
+    # `stop()` since they were written and nothing has ever called it. In production
+    # the process exits and the threads die with it, which is why this was invisible.
+    # In any process that outlives one app instance — a test session above all — they
+    # keep ticking, opening stores and sleeping on a background thread long after the
+    # app that started them is gone. Measured: ~5 store opens per 60-second tick,
+    # landing inside whatever a later test had patched onto a process-global seam.
+    _stop_schedulers()
+
     global _CTX_EXECUTOR
     if _CTX_EXECUTOR is not None:
         try:
@@ -706,6 +724,30 @@ async def _continuous_exploration_loop() -> None:
                 logger.info("Continuous exploration re-armed %d connection(s)", n)
         except Exception as exc:
             logger.warning("Continuous exploration tick error: %s", exc)
+
+
+def _schedulers_disabled() -> bool:
+    """Whether in-process clocks are switched off for this process.
+
+    Read PER CALL rather than captured at import, so a test process that sets it in
+    `conftest` before the app is constructed is honoured.
+    """
+    return (os.environ.get("AUGHOR_DISABLE_SCHEDULERS") or "").strip().lower() not in (
+        "", "0", "false", "no")
+
+
+def _stop_schedulers() -> None:
+    """Stop both APScheduler clocks. Idempotent, and safe when neither was started.
+
+    Best-effort by construction: each module's `stop()` already tolerates its own
+    failure, and a scheduler that will not stop must not keep an app from shutting
+    down.
+    """
+    for module in ("aughor.monitors.scheduler", "aughor.automations.scheduler"):
+        try:
+            __import__(module, fromlist=["stop"]).stop()
+        except Exception as exc:                      # noqa: BLE001
+            logger.warning("%s.stop() failed (non-fatal): %s", module, exc)
 
 
 async def _start_continuous_exploration_loop() -> None:
