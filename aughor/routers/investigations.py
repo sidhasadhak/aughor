@@ -732,12 +732,14 @@ async def salvage_orphaned_investigation(
         if salvaged:
             logger.info("boot recovery: salvaged a partial report for orphaned investigation %s", inv_id)
         else:
-            fail_investigation(inv_id, status="failed")
+            fail_investigation(inv_id, status="failed",
+                               reason="orphaned by a restart and nothing could be salvaged")
             logger.info("boot recovery: nothing to salvage for %s — marked failed", inv_id)
     except Exception:
         logger.warning("boot recovery: salvage crashed for %s", inv_id, exc_info=True)
         try:
-            fail_investigation(inv_id, status="failed")
+            fail_investigation(inv_id, status="failed",
+                               reason="orphaned by a restart; the salvage attempt itself crashed")
         except Exception:
             logger.debug("salvage fallback fail_investigation failed for %s", inv_id, exc_info=True)
     finally:
@@ -4289,7 +4291,8 @@ async def _stream_investigation(
             else:
                 yield _sse("error", _error_event(
                     message=f"Investigation timed out after {_TIMEOUT}s.", reason="run_timeout"))
-                fail_investigation(inv_id, status="timed_out")
+                fail_investigation(inv_id, status="timed_out",
+                                   reason=f"timed out after {_TIMEOUT}s")
         elif not report_emitted:
             # The graph terminated without reaching a synthesis node — e.g. every
             # query errored and the loop exhausted its iterations. First try a
@@ -4301,7 +4304,8 @@ async def _stream_investigation(
                 yield salvaged
             else:
                 yield _sse("error", _error_event(message=_stall_summary(merged), reason="stalled"))
-                fail_investigation(inv_id, status="failed")
+                fail_investigation(inv_id, status="failed",
+                                   reason=_stall_summary(merged))
 
     except Exception as e:
         # An unhandled node exception still shouldn't lose partial work — salvage
@@ -4314,7 +4318,8 @@ async def _stream_investigation(
         if salvaged:
             yield salvaged
         else:
-            fail_investigation(inv_id, status="failed")
+            fail_investigation(inv_id, status="failed",
+                               reason=str(e))
             yield _sse("error", _error_event(e))
     finally:
         # Orphan reconcile. If we reach here with the row still 'running', no
@@ -4328,7 +4333,9 @@ async def _stream_investigation(
         try:
             _inv_now = get_investigation(inv_id)
             if _inv_now and _inv_now.get("status") == "running":
-                fail_investigation(inv_id, status="failed")
+                fail_investigation(inv_id, status="failed",
+                                   reason="the run ended without a terminal status — cancelled "
+                                   "(deadline or budget) or the caller went away")
         except Exception:
             logger.debug("finally orphan-reconcile failed", exc_info=True)
         _telemetry.end_trace(trace_id)
@@ -4454,7 +4461,8 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
             if time.monotonic() > deadline:
                 yield _sse("error", _error_event(
                     message="Timed out waiting for synthesis.", reason="run_timeout"))
-                fail_investigation(inv_id, status="timed_out")
+                fail_investigation(inv_id, status="timed_out",
+                                   reason="timed out waiting for synthesis")
                 return
             if "__report_delta__" in event:            # R6 live synthesis prose (flag-gated via the sink)
                 yield _sse("report_delta", {"executive_summary": event["__report_delta__"]})
@@ -4500,7 +4508,8 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=inv["question"], connection_id=inv.get("connection_id", ""))
                 _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)
     except Exception as e:
-        fail_investigation(inv_id, status="failed")
+        fail_investigation(inv_id, status="failed",
+                           reason=str(e))
         yield _sse("error", _error_event(e))
     finally:
         # Same orphan-reconcile as the main stream: a client disconnect raises
@@ -4509,7 +4518,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         try:
             _inv_now = get_investigation(inv_id)
             if _inv_now and _inv_now.get("status") == "running":
-                fail_investigation(inv_id, status="failed")
+                fail_investigation(inv_id, status="failed",
+                                   reason="the run ended without a terminal status — cancelled "
+                                   "(deadline or budget) or the caller went away")
         except Exception:
             logger.debug("resume finally orphan-reconcile failed", exc_info=True)
         db.close()
@@ -4718,7 +4729,9 @@ async def _job_streamed_body(
                 try:
                     _row = get_investigation(seen_inv)
                     if _row and _row.get("status") == "running":
-                        fail_investigation(seen_inv, status="failed")
+                        fail_investigation(seen_inv, status="failed",
+                                           reason="the SSE stream ended with the run still 'running' — "
+                                           "the client disconnected")
                 except Exception:
                     logger.debug("bridge reconcile failed for %s", seen_inv, exc_info=True)
             # Always release the client drainer, even on cancellation/error.

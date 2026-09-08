@@ -132,11 +132,17 @@ def test_salvage_fails_cleanly_when_no_evidence(monkeypatch):
     fail_calls = []
     monkeypatch.setattr(inv_mod, "_try_salvage", lambda *a, **k: None)
     monkeypatch.setattr(inv_mod, "fail_investigation",
-                        lambda inv_id, status="failed": fail_calls.append((inv_id, status)))
+                        lambda inv_id, status="failed", reason="":
+                            fail_calls.append((inv_id, status, reason)))
 
     asyncio.run(inv_mod.salvage_orphaned_investigation("inv2", "conn1", None, "q"))
 
-    assert fail_calls == [("inv2", "failed")]   # reaches a terminal status, never orphans
+    # Reaches a terminal status, never orphans — and now SAYS WHY it got there. A run
+    # marked failed with no reason is the silence this branch exists to end.
+    assert len(fail_calls) == 1
+    inv, status, reason = fail_calls[0]
+    assert (inv, status) == ("inv2", "failed")
+    assert "salvage" in reason or "orphaned" in reason, reason
 
 
 def test_boot_wires_salvage_after_kernel_recovery():
