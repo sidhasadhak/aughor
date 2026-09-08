@@ -531,7 +531,9 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             {seeds.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>
-                  Suggested by the {template?.name} pack
+                  {template
+                    ? `Suggested by the ${template.name} pack`
+                    : "Drafted from your description — none is certified until it has reference SQL"}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {seeds.map(s => (
