@@ -243,6 +243,43 @@ def format_value_samples(values: list) -> str:
 
 # ── Pure schema-string helpers (no DB, no agent) ──────────────────────────────
 
+_INLINE_COLS = re.compile(r"\[(.*)\]\s*$")
+_COL_NAME = re.compile(r"[A-Za-z_]\w*")
+
+
+def parse_inline_columns(table_line: str) -> list[tuple[str, str]]:
+    """Columns rendered inline on a ``TABLE:`` line → ``[(name, type), ...]``.
+
+    Two schema dialects reach these parsers. The house format puts each column on
+    its own two-space-indented line; five warehouse connectors — BigQuery,
+    Snowflake, MySQL, MotherDuck, Exasol — instead render the whole column list
+    inline in brackets::
+
+        TABLE: orders (124934 rows) [order_id INTEGER, created_at TIMESTAMP]
+
+    A parser that only knows the indented form reads such a table as having zero
+    columns, which is indistinguishable from a table that genuinely has none.
+
+    Returns ``[]`` for a house-format ``TABLE:`` line, which carries no bracket,
+    so a caller can use this unconditionally. The name filter drops the fragments
+    a bare comma-split makes of a type like ``DECIMAL(10,2)`` — the type of such a
+    column survives truncated (``DECIMAL(10``), which every consumer already
+    tolerates because they strip parenthesised precision anyway. It also rejects
+    the S3 connector's ``[source: s3://bucket/prefix]``, which is not a column
+    list at all.
+    """
+    m = _INLINE_COLS.search(table_line)
+    if not m:
+        return []
+    out: list[tuple[str, str]] = []
+    for frag in m.group(1).split(","):
+        parts = frag.strip().split()
+        if not parts or not _COL_NAME.fullmatch(parts[0]):
+            continue
+        out.append((parts[0], " ".join(parts[1:]) or "VARCHAR"))
+    return out
+
+
 def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     """Parse TABLE: blocks from a schema string → {table: [col_name, ...]}."""
     table_cols: dict[str, list[str]] = {}
@@ -255,18 +292,9 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
         if m:
             current = m.group(1)
             table_cols[current] = []
-            # Warehouse connectors render columns inline on the TABLE line —
-            # `TABLE: orders (124934 rows) [id INTEGER, created_at TIMESTAMP]` —
-            # which the line-per-column branch below never sees, so every such
-            # table parsed as zero columns (and freshness, the join map and the
-            # profile all worked from nothing). The name filter drops the
-            # fragments a bare comma-split makes of types like DECIMAL(10,2).
-            bracket = re.search(r"\[(.*)\]\s*$", line)
-            if bracket:
-                for frag in bracket.group(1).split(","):
-                    name = frag.strip().split(" ")[0]
-                    if re.fullmatch(r"[A-Za-z_]\w*", name):
-                        table_cols[current].append(name)
+            inline = parse_inline_columns(line)
+            if inline:
+                table_cols[current].extend(name for name, _ in inline)
                 current = None
         elif current:
             col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
