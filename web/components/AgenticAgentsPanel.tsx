@@ -269,7 +269,7 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
       {tab === "overview" ? (
         <PersonaOverview agent={agent} onOpenTrace={onOpenTrace} />
       ) : tab === "benchmark" ? (
-        <PersonaBenchmark agent={agent} onChanged={onChanged} onError={onError} />
+        <AgentBenchmark agent={agent} onChanged={onChanged} onError={onError} />
       ) : tab === "map" ? (
         <AgentMap agent={agent}
           onOpenConnection={onOpenConnection}
@@ -385,7 +385,7 @@ function PersonaOverview({ agent, onOpenTrace }: {
  *  (a suite the model writes for itself measures itself), and evaluation is still the
  *  same synchronous call.
  */
-function PersonaBenchmark({ agent, onChanged, onError }: {
+function AgentBenchmark({ agent, onChanged, onError }: {
   agent: UserAgent; onChanged: () => void; onError: (e: string | null) => void;
 }) {
   const [goldens, setGoldens] = useState<AgentGolden[]>([]);

@@ -208,13 +208,13 @@ class OntologyRelationship(BaseModel):
 class DefinitionSource(BaseModel):
     """One place a definition for a metric was found, and whose it is.
 
-    The Genie Ontology's insight, ported: a business definition is not a fact the
-    warehouse holds, it is a CLAIM some asset makes and some person is behind. When two
-    dashboards disagree about "revenue", the useful question is not which string is
-    prettier — it is which claim came from where, who stands behind it, and how many
-    things already rely on it.
+    Ported from the warehouse-vendor context layer studied 2026-09-08: a business
+    definition is not a fact the warehouse holds, it is a CLAIM some asset makes and some
+    person is behind. When two dashboards disagree about "revenue", the useful question is
+    not which string is prettier — it is which claim came from where, who stands behind
+    it, and how many things already rely on it.
 
-    🔑 What we do NOT port is ranking by authority alone. Databricks weighs source
+    🔑 What we do NOT port is ranking by authority alone. That design weighs source
     authority, reliance and freshness; we already do something strictly stronger for the
     part that matters, which is EXECUTE the formula against the live database. So
     `verified` is a tier, not a tiebreak: a verified definition outranks an unverified one

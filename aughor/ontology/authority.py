@@ -1,8 +1,9 @@
 """Which definition wins when the warehouse disagrees with itself — and why.
 
-Ported from the Genie Ontology (studied 2026-09-08), with one deliberate inversion.
+Ported from the warehouse-vendor context layer studied 2026-09-08, with one deliberate
+inversion. (The full citation lives in the study note, not in this file.)
 
-Databricks ranks competing business definitions by AUTHORITY: where a definition came
+That design ranks competing business definitions by AUTHORITY: where a definition came
 from, the standing of its author, how often people rely on it, how close it sits to
 certified assets, how fresh it is. That is a good answer to "whose claim should I trust"
 when nobody can check the claim.

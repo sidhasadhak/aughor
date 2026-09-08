@@ -1,9 +1,9 @@
 """The law that decides which definition wins when the warehouse disagrees with itself.
 
-Ported from the Genie Ontology with one inversion, and this file is where that inversion
-is pinned: Databricks ranks competing definitions by AUTHORITY (source standing, reliance,
-freshness). We can do something they never claim — EXECUTE the formula against the live
-database — so verification is a TIER and authority is only a tiebreak within it.
+Ported from a warehouse vendor's context layer with one inversion, and this is where that
+inversion is pinned: they rank competing definitions by AUTHORITY (source standing,
+reliance, freshness). We can do something they never claim — EXECUTE the formula against
+the live database — so verification is a TIER and authority is only a tiebreak within it.
 
 The test that matters most is `test_verification_beats_every_authority_signal_at_once`:
 popularity ranking gets that case wrong, confidently.
