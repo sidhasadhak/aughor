@@ -1,161 +1,227 @@
 "use client";
 
-import { useRef, useLayoutEffect, useState } from "react";
-import { formatCount } from "@/lib/format";
-import { RichSchema, SchemaTable, SchemaJoin } from "@/lib/api";
+/**
+ * ERDiagram — the schema's entity-relationship view.
+ *
+ * Rendering is React Flow, the same engine as the automation graph, the trace
+ * view and the agent map; layout is dagre. What used to live here was a
+ * hand-written layering pass plus a hand-written measure-and-draw loop for the
+ * connector lines — roughly two hundred lines re-implementing pan, zoom, drag
+ * and edge routing that the canvas already had.
+ *
+ * Two things survived that rewrite because no library knows them:
+ *
+ *   1. The semantic bucketing (dimension / bridge / fact / isolated). That is
+ *      warehouse knowledge read off join direction, and it is the reason the
+ *      diagram reads left-to-right the way an analyst expects.
+ *   2. Column-level anchoring. An edge lands on the exact field it joins on,
+ *      not on the side of the card, which is what makes a wide schema legible.
+ *
+ * Both are preserved here — (1) as dagre rank hints, (2) as one pair of React
+ * Flow handles per column row.
+ */
+
+import { createContext, memo, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import {
+  Background,
+  Controls,
+  Handle,
+  Position,
+  ReactFlow,
+  useNodesState,
+  type Edge as RFEdge,
+  type Node as RFNode,
+} from "@xyflow/react";
+import "@xyflow/react/dist/style.css";
+import dagre from "@dagrejs/dagre";
+
 import { Icon } from "@/components/ui/icon";
+import { formatCount } from "@/lib/format";
+import type { RichSchema, SchemaColumn, SchemaJoin, SchemaTable } from "@/lib/api";
 
-// ── Layout constants ──────────────────────────────────────────────────────────
-const CARD_W     = 264;   // card body width
-const LABEL_H    = 18;    // "Table" label above the card
-const HEADER_H   = 54;    // card header (icon + name + row count)
-const ROW_H      = 26;    // height of each column row
-const FOOTER_H   = 32;    // "Show N more" button
-const LAYER_GAP  = 130;   // horizontal gap between layers
-const CARD_GAP_Y = 40;    // vertical gap between cards in the same layer
-const PAD        = 56;    // canvas edge padding
+// ── Card geometry ─────────────────────────────────────────────────────────────
+// dagre is told the height each card will occupy, so these have to match what
+// TableNode actually renders. Change one, change the other.
+const CARD_W    = 264;
+const LABEL_H   = 18;   // the "Table" caption above the card
+const LABEL_GAP = 4;    // the gap-1 between caption and card
+const HEADER_H  = 54;
+const ROW_H     = 26;
+const FOOTER_H  = 32;   // "Show N more"
 
-// ── Layout engine ─────────────────────────────────────────────────────────────
+const LAYER_GAP = 130;
+const CARD_GAP  = 40;
 
-interface CardLayout {
-  table: SchemaTable;
-  layer: number;
-  x: number;
-  y: number;           // top of the wrapper (includes label)
-  wrapperH: number;    // total wrapper height (label + card body)
-}
+// ── Semantics ─────────────────────────────────────────────────────────────────
 
-function computeLayout(
-  tables: SchemaTable[],
-  joins: SchemaJoin[],
-  expanded: Set<string>,
-  pkSet: Set<string>,
-): { cards: CardLayout[]; canvasW: number; canvasH: number } {
-
-  // Degree counting: t1 = FK side (references), t2 = PK side (referenced)
-  const outDeg: Record<string, number> = {};
-  const inDeg:  Record<string, number> = {};
-  for (const t of tables) { outDeg[t.name] = 0; inDeg[t.name] = 0; }
-  for (const j of joins) {
-    outDeg[j.t1] = (outDeg[j.t1] ?? 0) + 1;
-    inDeg[j.t2]  = (inDeg[j.t2]  ?? 0) + 1;
-  }
-
-  // Layer assignment
-  //   0 — pure dimensions (only referenced, never reference others)
-  //   1 — bridge tables   (both reference and are referenced)
-  //   2 — pure facts      (reference others, never referenced themselves)
-  //   3 — isolated        (no joins at all)
-  const layerOf: Record<string, number> = {};
-  for (const t of tables) {
-    const o = outDeg[t.name], i = inDeg[t.name];
-    if (o === 0 && i === 0) layerOf[t.name] = 3;
-    else if (o === 0)       layerOf[t.name] = 0;  // pure dimension
-    else if (i === 0)       layerOf[t.name] = 2;  // pure fact
-    else                    layerOf[t.name] = 1;  // bridge
-  }
-
-  // Group & sort alphabetically within each layer
-  const byLayer: Record<number, SchemaTable[]> = {};
-  for (const t of tables) {
-    const l = layerOf[t.name];
-    (byLayer[l] ??= []).push(t);
-  }
-  for (const arr of Object.values(byLayer))
-    arr.sort((a, b) => a.name.localeCompare(b.name));
-
-  // Compute wrapper height for a given table.
-  // Default: only PK/FK columns visible. Expanded: all columns.
-  function wrapperH(t: SchemaTable): number {
-    const isExp = expanded.has(t.name);
-    const keyCols = t.columns.filter(
-      c => pkSet.has(`${t.name}.${c.name}`) || c.is_fk,
-    );
-    const visCols = isExp ? t.columns.length : keyCols.length;
-    const hasMore = !isExp && t.columns.length > keyCols.length;
-    return LABEL_H + HEADER_H + visCols * ROW_H + (hasMore ? FOOTER_H : 0);
-  }
-
-  // Only use layers that contain tables; map to sequential X positions
-  const usedLayers = ([0, 1, 2, 3] as number[]).filter(l => byLayer[l]?.length);
-  const layerX: Record<number, number> = {};
-  usedLayers.forEach((l, i) => {
-    layerX[l] = PAD + i * (CARD_W + LAYER_GAP);
-  });
-
-  // Stack cards top-to-bottom within each layer
-  const cards: CardLayout[] = [];
-  for (const layer of usedLayers) {
-    let y = PAD;
-    for (const t of byLayer[layer]) {
-      const h = wrapperH(t);
-      cards.push({ table: t, layer, x: layerX[layer], y, wrapperH: h });
-      y += h + CARD_GAP_Y;
-    }
-  }
-
-  const canvasW = (usedLayers.length > 0
-    ? layerX[usedLayers[usedLayers.length - 1]] + CARD_W + PAD
-    : PAD * 2 + CARD_W);
-
-  const canvasH = Math.max(
-    400,
-    ...usedLayers.map(l => {
-      let h = PAD;
-      for (const t of byLayer[l]) h += wrapperH(t) + CARD_GAP_Y;
-      return h + PAD - CARD_GAP_Y;
-    }),
-  );
-
-  return { cards, canvasW, canvasH };
-}
-
-// ── PK inference ──────────────────────────────────────────────────────────────
-
+/** Columns that are a primary key: literally named `id`, or referenced by a join. */
 function buildPkSet(tables: SchemaTable[], joins: SchemaJoin[]): Set<string> {
   const pks = new Set<string>();
   for (const t of tables)
     for (const c of t.columns)
       if (c.name.toLowerCase() === "id") pks.add(`${t.name}.${c.name}`);
-  for (const j of joins)
-    pks.add(`${j.t2}.${j.c2}`);
+  for (const j of joins) pks.add(`${j.t2}.${j.c2}`);
   return pks;
 }
 
-// Sort columns: PKs → FKs → rest (alpha) so key columns are always in the visible slice
-function sortCols(table: SchemaTable, pkSet: Set<string>) {
+/** PKs → FKs → the rest, so key columns are always in the collapsed slice. */
+function sortCols(table: SchemaTable, pkSet: Set<string>): SchemaColumn[] {
   return [...table.columns].sort((a, b) => {
-    const rank = (c: typeof a) =>
+    const rank = (c: SchemaColumn) =>
       pkSet.has(`${table.name}.${c.name}`) ? 0 : c.is_fk ? 1 : 2;
     return rank(a) !== rank(b) ? rank(a) - rank(b) : a.name.localeCompare(b.name);
   });
 }
 
-// ── Table card ────────────────────────────────────────────────────────────────
-
-interface TableCardProps {
-  layout: CardLayout;
-  pkSet: Set<string>;
-  expanded: boolean;
-  onExpand: () => void;
-  registerRow: (key: string, el: HTMLDivElement | null) => void;
+/**
+ * Columns visible while collapsed. Every join endpoint is included even when it
+ * is neither an inferred PK nor flagged `is_fk` — an edge whose handle is not
+ * rendered is an edge React Flow silently drops.
+ */
+function buildKeySet(tables: SchemaTable[], joins: SchemaJoin[], pkSet: Set<string>): Set<string> {
+  const keys = new Set<string>(pkSet);
+  for (const t of tables)
+    for (const c of t.columns)
+      if (c.is_fk) keys.add(`${t.name}.${c.name}`);
+  for (const j of joins) {
+    keys.add(`${j.t1}.${j.c1}`);
+    keys.add(`${j.t2}.${j.c2}`);
+  }
+  return keys;
 }
 
-function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCardProps) {
-  const { table } = layout;
-  const sorted = sortCols(table, pkSet);
-  const keyCols = sorted.filter(c => pkSet.has(`${table.name}.${c.name}`) || c.is_fk);
-  const otherCols = sorted.filter(c => !pkSet.has(`${table.name}.${c.name}`) && !c.is_fk);
-  const visible = expanded ? sorted : keyCols;
-  const hiddenCount = otherCols.length;
+/**
+ * The role each table plays, read off join direction:
+ *   0 dimension — only referenced, never references
+ *   1 bridge    — both
+ *   2 fact      — references others, never referenced
+ *   3 isolated  — no joins at all
+ */
+function semanticLayers(tables: SchemaTable[], joins: SchemaJoin[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  const inn: Record<string, number> = {};
+  for (const t of tables) { out[t.name] = 0; inn[t.name] = 0; }
+  for (const j of joins) {
+    if (j.t1 in out) out[j.t1] += 1;
+    if (j.t2 in inn) inn[j.t2] += 1;
+  }
+  const layer: Record<string, number> = {};
+  for (const t of tables) {
+    const o = out[t.name], i = inn[t.name];
+    layer[t.name] = (o === 0 && i === 0) ? 3 : o === 0 ? 0 : i === 0 ? 2 : 1;
+  }
+  return layer;
+}
+
+function cardHeight(table: SchemaTable, keySet: Set<string>, expanded: boolean): number {
+  const visible = expanded
+    ? table.columns.length
+    : table.columns.filter(c => keySet.has(`${table.name}.${c.name}`)).length;
+  const hasMore = table.columns.length > visible;
+  return LABEL_H + LABEL_GAP + HEADER_H + visible * ROW_H + (hasMore ? FOOTER_H : 0);
+}
+
+// ── Layout ────────────────────────────────────────────────────────────────────
+
+/**
+ * dagre, constrained so a table stays in its own role's lane.
+ *
+ * Left to itself dagre's network simplex shortens edges, which drags a pure
+ * dimension into the middle of the diagram whenever that makes its outgoing
+ * edges shorter. Measured on theLook: `users` (a dimension) landed in column 1
+ * and `events` (a fact) a column early.
+ *
+ * A `minlen` lower bound alone does not fix that — it can push a node right,
+ * never pull one left, so a node already past its minimum is unaffected. The
+ * fix is to bound both sides: one invisible anchor per role, chained, with each
+ * table pinned between its own anchor and the next. dagre rejects `minlen: 0`,
+ * so the anchors sit two ranks apart and each table is pinned one past its own.
+ *
+ * Note this does not guarantee one column per role: two bridge tables that join
+ * each other cannot share a rank, because dagre will not route an edge inside
+ * one. That lane splits, which is honest — it shows the dependency.
+ */
+function layout(
+  tables: SchemaTable[],
+  joins: SchemaJoin[],
+  keySet: Set<string>,
+  expanded: Set<string>,
+): Record<string, { x: number; y: number }> {
+  const layerOf = semanticLayers(tables, joins);
+  const maxLayer = Math.max(0, ...Object.values(layerOf));
+
+  const g = new dagre.graphlib.Graph();
+  g.setGraph({
+    rankdir: "LR",
+    ranksep: LAYER_GAP,
+    nodesep: CARD_GAP,
+    marginx: 48,
+    marginy: 48,
+    ranker: "network-simplex",
+  });
+  g.setDefaultEdgeLabel(() => ({}));
+
+  for (const t of tables)
+    g.setNode(t.name, { width: CARD_W, height: cardHeight(t, keySet, expanded.has(t.name)) });
+
+  // PK side → FK side, so dimensions rank left and facts right.
+  for (const j of joins)
+    if (j.t1 !== j.t2) g.setEdge(j.t2, j.t1, { minlen: 1, weight: 1 });
+
+  for (let i = 0; i <= maxLayer + 1; i += 1)
+    g.setNode(`__lane${i}`, { width: 0, height: 0 });
+  for (let i = 0; i < maxLayer + 1; i += 1)
+    g.setEdge(`__lane${i}`, `__lane${i + 1}`, { minlen: 2, weight: 1 });
+  for (const t of tables) {
+    const l = layerOf[t.name];
+    g.setEdge(`__lane${l}`, t.name, { minlen: 1, weight: 1000 });       // not before its lane
+    g.setEdge(t.name, `__lane${l + 1}`, { minlen: 1, weight: 1000 });   // not after it
+  }
+
+  dagre.layout(g);
+
+  const pos: Record<string, { x: number; y: number }> = {};
+  for (const t of tables) {
+    const n = g.node(t.name);
+    // dagre centres a node; React Flow positions by top-left.
+    pos[t.name] = { x: n.x - n.width / 2, y: n.y - n.height / 2 };
+  }
+  return pos;
+}
+
+// ── Node ──────────────────────────────────────────────────────────────────────
+
+/**
+ * The expand callback reaches TableNode through context rather than through
+ * `data`. A handler in `data` is a new function identity on every render, which
+ * defeats the `memo` below and re-renders every card on any state change.
+ */
+const ExpandContext = createContext<(table: string) => void>(() => {});
+
+interface TableNodeData extends Record<string, unknown> {
+  table: SchemaTable;
+  keys: string[];
+  pks: string[];
+  expanded: boolean;
+}
+
+const TableNode = memo(function TableNode({ data }: { data: TableNodeData }) {
+  const onExpand = useContext(ExpandContext);
+  const { table, expanded } = data;
+
+  const pkSet  = useMemo(() => new Set(data.pks), [data.pks]);
+  const keySet = useMemo(() => new Set(data.keys), [data.keys]);
+
+  const sorted = useMemo(() => sortCols(table, pkSet), [table, pkSet]);
+  const visible = expanded ? sorted : sorted.filter(c => keySet.has(`${table.name}.${c.name}`));
+  const hiddenCount = sorted.length - visible.length;
 
   return (
-    <div
-      className="absolute flex flex-col gap-1"
-      style={{ left: layout.x, top: layout.y, width: CARD_W }}
-    >
-      {/* "Table" label */}
-      <span className="aug-fs-xs text-zinc-500 px-0.5" style={{ height: LABEL_H, lineHeight: `${LABEL_H}px` }}>
+    <div className="flex flex-col gap-1" style={{ width: CARD_W }}>
+      <span
+        className="aug-fs-xs text-zinc-500 px-0.5"
+        style={{ height: LABEL_H, lineHeight: `${LABEL_H}px` }}
+      >
         Table
       </span>
 
@@ -180,19 +246,32 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
           </div>
         </div>
 
-        {/* Column rows */}
+        {/* Column rows — each one carries its own pair of anchors, which is what
+            lets an edge land on the field it actually joins on. */}
         <div className="bg-zinc-800 divide-y divide-zinc-700/40">
-          {visible.map((col) => {
+          {visible.map(col => {
             const isPk = pkSet.has(`${table.name}.${col.name}`);
             const type = col.type.replace(/\(.*\)/, "").trim();
             return (
               <div
                 key={col.name}
-                ref={el => registerRow(`${table.name}:${col.name}`, el as HTMLDivElement | null)}
-                className="flex items-center gap-2 px-3 hover:bg-zinc-700/30 transition-colors"
+                className="relative flex items-center gap-2 px-3 hover:bg-zinc-700/30 transition-colors"
                 style={{ height: ROW_H }}
               >
-                {/* Badge — fixed 28px slot */}
+                <Handle
+                  type="target"
+                  id={`${col.name}__t`}
+                  position={Position.Left}
+                  isConnectable={false}
+                  style={{ opacity: 0 }}
+                />
+                <Handle
+                  type="source"
+                  id={`${col.name}__s`}
+                  position={Position.Right}
+                  isConnectable={false}
+                  style={{ opacity: 0 }}
+                />
                 <div className="w-7 flex items-center justify-center shrink-0">
                   {isPk ? (
                     <span className="aug-fs-xs font-bold text-amber-400 border border-amber-400/50 rounded px-[3px] py-px leading-tight">
@@ -215,165 +294,101 @@ function TableCard({ layout, pkSet, expanded, onExpand, registerRow }: TableCard
           })}
         </div>
 
-        {/* Show more footer */}
-        {hiddenCount > 0 && (
+        {(hiddenCount > 0 || expanded) && (
           <button
-            onClick={onExpand}
+            onClick={() => onExpand(table.name)}
             className="w-full bg-zinc-800 aug-fs-xs text-zinc-500 hover:text-zinc-300 hover:bg-zinc-700/50 transition-colors border-t border-zinc-700/50 text-center"
             style={{ height: FOOTER_H, lineHeight: `${FOOTER_H}px` }}
           >
-            {expanded ? "Show less" : `Show ${hiddenCount} more column${hiddenCount !== 1 ? "s" : ""}`}
+            {expanded
+              ? "Show less"
+              : `Show ${hiddenCount} more column${hiddenCount !== 1 ? "s" : ""}`}
           </button>
         )}
       </div>
     </div>
   );
-}
+});
 
-// ── Connection lines ──────────────────────────────────────────────────────────
+const NODE_TYPES = { erTable: TableNode };
 
-interface Conn {
-  x1: number; y1: number;
-  x2: number; y2: number;
-  match: "exact" | "inferred";
-}
-
-function Connections({ lines, w, h }: { lines: Conn[]; w: number; h: number }) {
-  if (!lines.length) return null;
-  return (
-    <svg
-      className="absolute inset-0 pointer-events-none"
-      width={w} height={h}
-      style={{ zIndex: 0 }}
-    >
-      <defs>
-        <marker id="mk-inf"   markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-          <path d="M0,1 L6,3.5 L0,6 Z" fill="#575755" />
-        </marker>
-        <marker id="mk-exact" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
-          <path d="M0,1 L6,3.5 L0,6 Z" fill="#7c6fd4" />
-        </marker>
-      </defs>
-      {lines.map((c, i) => {
-        const goRight = c.x2 > c.x1;
-        const dx = Math.max(50, Math.abs(c.x2 - c.x1) * 0.45);
-        const cpx1 = c.x1 + (goRight ? dx : -dx);
-        const cpx2 = c.x2 - (goRight ? dx : -dx);
-        const d = `M${c.x1},${c.y1} C${cpx1},${c.y1} ${cpx2},${c.y2} ${c.x2},${c.y2}`;
-        const exact = c.match === "exact";
-        return (
-          <path
-            key={i}
-            d={d}
-            fill="none"
-            stroke={exact ? "#7c6fd4" : "#575755"}
-            strokeWidth={exact ? 1.5 : 1}
-            strokeDasharray={exact ? undefined : "5 3"}
-            markerEnd={exact ? "url(#mk-exact)" : "url(#mk-inf)"}
-            opacity={0.85}
-          />
-        );
-      })}
-    </svg>
-  );
-}
-
-// ── Main export ───────────────────────────────────────────────────────────────
+// ── Diagram ───────────────────────────────────────────────────────────────────
 
 export function ERDiagram({ schema }: { schema: RichSchema }) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const rowRefs      = useRef<Record<string, HTMLDivElement | null>>({});
-  const [lines, setLines]       = useState<Conn[]>([]);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const [nodes, setNodes, onNodesChange] = useNodesState<RFNode<TableNodeData>>([]);
 
-  const pkSet = buildPkSet(schema.tables, schema.joins);
-  const { cards, canvasW, canvasH } = computeLayout(schema.tables, schema.joins, expanded, pkSet);
-  const cardMap = Object.fromEntries(cards.map(c => [c.table.name, c]));
+  const onExpand = useCallback((name: string) => {
+    setExpanded(prev => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name); else next.add(name);
+      return next;
+    });
+  }, []);
 
-  const registerRow = (key: string, el: HTMLDivElement | null) => {
-    rowRefs.current[key] = el;
-  };
+  const pkSet  = useMemo(() => buildPkSet(schema.tables, schema.joins), [schema]);
+  const keySet = useMemo(() => buildKeySet(schema.tables, schema.joins, pkSet), [schema, pkSet]);
 
-  const toggleExpand = (name: string) =>
-    setExpanded(prev => { const s = new Set(prev); s.has(name) ? s.delete(name) : s.add(name); return s; });
+  // Positions are recomputed whenever the schema or an expansion changes; drag
+  // is handled by onNodesChange and deliberately survives until the next relayout.
+  const positions = useMemo(
+    () => layout(schema.tables, schema.joins, keySet, expanded),
+    [schema, keySet, expanded],
+  );
 
-  // Measure column row positions → draw connection lines
-  useLayoutEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+  useEffect(() => {
+    const pks  = [...pkSet];
+    const keys = [...keySet];
+    setNodes(schema.tables.map(t => ({
+      id: t.name,
+      type: "erTable",
+      position: positions[t.name] ?? { x: 0, y: 0 },
+      data: { table: t, keys, pks, expanded: expanded.has(t.name) },
+      draggable: true,
+    })) as RFNode<TableNodeData>[]);
+  }, [schema, positions, expanded, pkSet, keySet, setNodes]);
 
-    const measure = () => {
-      const cr = container.getBoundingClientRect();
-      const sl = container.scrollLeft;
-      const st = container.scrollTop;
-
-      const newLines: Conn[] = [];
-      for (const j of schema.joins) {
-        const srcCard = cardMap[j.t1];
-        const tgtCard = cardMap[j.t2];
-        if (!srcCard || !tgtCard) continue;
-
-        // Y anchored to the column row if visible, else card body center
-        const getY = (tableName: string, colName: string, card: CardLayout) => {
-          const el = rowRefs.current[`${tableName}:${colName}`];
-          if (el) {
-            const r = el.getBoundingClientRect();
-            return r.top + r.height / 2 - cr.top + st;
-          }
-          // Fallback: center of card body
-          return card.y + LABEL_H + HEADER_H + (card.wrapperH - LABEL_H - HEADER_H) / 2;
-        };
-
-        const y1 = getY(j.t1, j.c1, srcCard);
-        const y2 = getY(j.t2, j.c2, tgtCard);
-
-        // Exit/enter from the horizontal edge closest to the other table
-        let x1: number, x2: number;
-        if (srcCard.x + CARD_W <= tgtCard.x) {
-          x1 = srcCard.x + CARD_W; x2 = tgtCard.x;       // src left of tgt
-        } else {
-          x1 = srcCard.x;          x2 = tgtCard.x + CARD_W; // src right of tgt
-        }
-
-        newLines.push({ x1, y1, x2, y2, match: j.match });
-      }
-      setLines(newLines);
-    };
-
-    const raf = requestAnimationFrame(measure);
-    return () => cancelAnimationFrame(raf);
-  }, [schema, expanded]);  // re-measure when schema or expansion changes
+  const edges = useMemo<RFEdge[]>(() => schema.joins.map((j, i) => ({
+    id: `${j.t2}.${j.c2}→${j.t1}.${j.c1}#${i}`,
+    source: j.t2,
+    sourceHandle: `${j.c2}__s`,
+    target: j.t1,
+    targetHandle: `${j.c1}__t`,
+    type: "smoothstep",
+    style: {
+      stroke: j.match === "exact" ? "var(--blue4)" : "var(--t3)",
+      strokeWidth: 1.4,
+      strokeDasharray: j.match === "exact" ? undefined : "4 3",
+    },
+  })), [schema]);
 
   if (!schema.tables.length) {
     return (
       <div className="flex items-center justify-center h-48">
-        <span className="text-xs text-zinc-500">No tables found.</span>
+        <span className="aug-fs-xs text-zinc-500">No tables found.</span>
       </div>
     );
   }
 
   return (
-    <div
-      ref={containerRef}
-      className="w-full h-full overflow-auto"
-      style={{
-        backgroundImage: "radial-gradient(circle, #3f3f3d 1px, transparent 1px)",
-        backgroundSize: "20px 20px",
-      }}
-    >
-      <div className="relative" style={{ width: canvasW, height: canvasH }}>
-        <Connections lines={lines} w={canvasW} h={canvasH} />
-        {cards.map(card => (
-          <TableCard
-            key={card.table.name}
-            layout={card}
-            pkSet={pkSet}
-            expanded={expanded.has(card.table.name)}
-            onExpand={() => toggleExpand(card.table.name)}
-            registerRow={registerRow}
-          />
-        ))}
+    <ExpandContext.Provider value={onExpand}>
+      <div className="w-full h-full">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          nodeTypes={NODE_TYPES}
+          fitView
+          fitViewOptions={{ padding: 0.12 }}
+          minZoom={0.15}
+          maxZoom={1.8}
+          nodesConnectable={false}
+          proOptions={{ hideAttribution: true }}
+        >
+          <Background color="#3f3f3d" gap={20} size={1} />
+          <Controls showInteractive={false} />
+        </ReactFlow>
       </div>
-    </div>
+    </ExpandContext.Provider>
   );
 }
