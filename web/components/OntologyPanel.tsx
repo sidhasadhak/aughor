@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+
+import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { Button }      from "@/components/ui/button";
 import {
   getOntology,
@@ -158,6 +160,9 @@ function EntityDetailDrawer({
   const [draft, setDraft] = useState(entity.description);
   const [saving, setSaving] = useState(false);
   const [lifecycleCounts, setLifecycleCounts] = useState<LifecycleCount[] | null>(null);
+  // Which metric has its provenance open. One at a time: the panel answers "whose
+  // definition is this", and that question is asked about one number, not about a list.
+  const [provFor, setProvFor] = useState<string | null>(null);
   const { width: drawerWidth, handle: resizeHandle } = useResizableDrawer();
 
   useEffect(() => {
@@ -483,11 +488,18 @@ function EntityDetailDrawer({
                   <div className="flex items-center gap-2">
                     <p className="text-xs font-semibold text-zinc-200">{m.display_name}</p>
                     {m.unit && <span className="aug-fs-xs text-zinc-500">{m.unit}</span>}
+                    <Button variant="ghost" size="xs" className="ml-auto"
+                      onClick={() => setProvFor(provFor === m.id ? null : m.id)}>
+                      {provFor === m.id ? "Hide provenance" : "Whose definition?"}
+                    </Button>
                   </div>
                   {m.description && <p className="text-zinc-500">{m.description}</p>}
                   <code className="block aug-fs-xs font-code text-emerald-300 bg-zinc-950 border border-zinc-700/40 rounded px-2 py-1.5">
                     {m.formula_sql}
                   </code>
+                  {provFor === m.id && (
+                    <MetricProvenancePanel metricId={m.id} connectionId={connectionId} />
+                  )}
                 </div>
               ))
             )}

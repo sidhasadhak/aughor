@@ -6175,6 +6175,44 @@ export type AgentProposal = {
   notes: string;
 };
 
+/** One recorded definition of a metric, and who is behind it. */
+export type DefinitionSource = {
+  formula_sql: string;
+  source_asset: string;
+  source_kind: string;
+  author: string;
+  recorded_at: string;
+  use_count: number;
+  certified: boolean;
+  /** The formula BOUND against the live database. The only field here that is evidence
+   *  about the data rather than about people — and the reason it outranks the rest. */
+  verified: boolean;
+  verification_note: string;
+};
+
+export type MetricProvenance = {
+  metric_id: string;
+  display_name: string;
+  definitions: DefinitionSource[];
+  chosen: DefinitionSource | null;
+  /** The best claim that DISAGREES with the winner, if any. */
+  dissenter: DefinitionSource | null;
+  contested: boolean;
+  why: string;
+  known_divergent_calculations: string[];
+};
+
+export async function getMetricProvenance(
+  metricId: string, connectionId: string, schemaName?: string,
+): Promise<MetricProvenance> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/metrics/${encodeURIComponent(metricId)}/provenance?${q}`);
+  if (!res.ok) throw new Error((await res.text()) || `provenance failed (${res.status})`);
+  return res.json();
+}
+
 export async function proposeUserAgent(body: {
   description: string; connection_id: string;
 }): Promise<AgentProposal> {

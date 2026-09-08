@@ -8003,6 +8003,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/metrics/{metric_id}/provenance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Metric Provenance
+         * @description Every recorded definition of one metric, who is behind each, and which one wins.
+         *
+         *     The panel beside an answer reads this. It exists because "revenue" having two
+         *     definitions is not a bug to resolve quietly — it is a fact about the business that the
+         *     person reading the number is entitled to see, along with whose definition they are
+         *     looking at.
+         *
+         *     Harvest is best-effort per SOURCE: a deployment with no overrides, or a history store
+         *     that cannot be read, still returns the claims the other sources could evidence. What
+         *     it must never do is return a definition it could not evidence, so a failed source
+         *     contributes nothing rather than a placeholder.
+         */
+        get: operations["get_metric_provenance_ontology_metrics__metric_id__provenance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/overrides": {
         parameters: {
             query?: never;
@@ -27508,6 +27538,40 @@ export interface operations {
                 "application/json": components["schemas"]["_MetricOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_metric_provenance_ontology_metrics__metric_id__provenance_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                metric_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
