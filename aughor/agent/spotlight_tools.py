@@ -423,7 +423,12 @@ def platform_premortem(args: dict) -> dict:
             scan_notes.append(f"scanned {len(autos)} of {len(enabled)} enabled "
                               f"automations — the rest were NOT checked")
         for a in autos:
-            runs = get_runs(automation_id=a.id, limit=_PREMORTEM_STREAK + 2)
+            # EXECUTIONS only. A scheduled automation writes a `not_fired` row every
+            # tick, so an unfiltered window put one at index 0 and the streak walk below
+            # broke on it — this scan could never see an errored streak on precisely the
+            # automations that run unattended.
+            runs = get_runs(automation_id=a.id, outcomes=("fired", "error"),
+                            limit=_PREMORTEM_STREAK + 2)
             streak = []
             for r in runs:                       # newest first; stop at the first non-error
                 if r.outcome != "error":
