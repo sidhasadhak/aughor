@@ -301,3 +301,44 @@ def test_the_graph_route_offers_the_runs_rail(client):
     assert body["runs"], "a canvas must be able to ask 'which run?' in one request"
     assert {"id", "outcome", "at", "steps", "failed"} <= set(body["runs"][0])
     assert body["run_id"], "and know which one it is currently showing"
+
+
+def test_the_runs_rail_offers_executions_not_a_window_of_scheduler_ticks(client):
+    """"Which run?" is a question about runs that DID something.
+
+    A scheduled automation appends a `not_fired` row on every tick — once a minute for a
+    daily cron. Measured 2026-09-08 on the live theLook briefing: the rail offered twelve
+    identical did-nothing rows spanning twelve MINUTES, `latest` selected a tick with no
+    steps, and the run that had posted to Slack that morning was unreachable from its own
+    canvas. The tick history is still whole on `/runs`; the PICKER is what changed.
+    """
+    from aughor.automations.store import (append_run, get_runs,
+                                          upsert_automation as save_automation)
+    from aughor.automations.models import AutomationRun
+    from aughor.automations.engine import run_automation
+
+    a = save_automation(_automation(_effect()))
+    run_automation(a, persist=True, dispatch=lambda e, au: EffectOutcome(
+        kind=e.kind, target="t", status="executed"),
+        probe=lambda *x, **k: True, sleeper=lambda _s: None, rng=lambda: 0.0)
+    real = get_runs(automation_id=a.id, outcomes=("fired",), limit=1)[0]
+
+    # ...then a day of the scheduler deciding there was nothing to do.
+    for _ in range(60):
+        append_run(AutomationRun(automation_id=a.id, outcome="not_fired"))
+
+    body = client.get(f"/automations/{a.id}/graph", params={"run": "latest"}).json()
+    assert body.get("run_missing") is not True
+    assert body["run_id"] == real.id, "latest must mean the last EXECUTION, not the last tick"
+    assert body["runs"], "the rail must still offer something to pick"
+    assert all(r["outcome"] != "not_fired" for r in body["runs"]), \
+        "a picker full of did-nothing ticks cannot reach the run that did the work"
+
+    # An execution stays reachable by id once the ticks have buried it.
+    by_id = client.get(f"/automations/{a.id}/graph", params={"run": real.id}).json()
+    assert by_id.get("run_missing") is not True and by_id["run_id"] == real.id
+
+    # The audit trail itself is untouched: every tick is still there.
+    assert len(client.get(f"/automations/{a.id}/runs",
+                          params={"limit": 200}).json()["runs"]) == 61
+
