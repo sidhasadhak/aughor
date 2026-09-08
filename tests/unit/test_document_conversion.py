@@ -668,3 +668,124 @@ def test_the_setting_round_trips_through_the_registry():
     assert ChunkSettings.from_dict(off.as_dict()) == off
     # Absence still means the defaults, which now include suppression.
     assert ChunkSettings.from_dict(None).suppress_numeric_runs is True
+
+
+# ── Look before you commit ────────────────────────────────────────────────────
+
+def test_convert_shows_the_result_without_indexing_anything(client):
+    """The decision this exists for.
+
+    Upload used to convert, chunk, embed and register in one motion, so the first
+    sight of what the converter made of a file came after it was in the corpus — and
+    on a hosted embedder, already paid for.
+    """
+    before = len(client.get("/documents").json())
+    body = ("# Q3\n\n| Region | Revenue |\n| --- | --- |\n| EMEA | 4,200,000 |\n\n"
+            "Revenue grew across every region this quarter, with EMEA leading.\n")
+
+    r = client.post("/documents/convert",
+                    files={"file": ("q3.md", body.encode(), "text/markdown")})
+
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert "4,200,000" in out["markdown"]
+    assert out["would_index_chunks"] >= 1, "a person deciding needs the chunk count"
+    # Nothing was written anywhere.
+    assert len(client.get("/documents").json()) == before, "convert registered a document"
+
+
+def test_convert_retains_no_bytes(client):
+    """No staging area means nothing to expire, sweep or leak."""
+    root = Path(os.environ["AUGHOR_DOCUMENTS_DIR"])
+    count = lambda: len(list(root.rglob("original*"))) if root.is_dir() else 0
+    before = count()
+
+    client.post("/documents/convert",
+                files={"file": ("x.md", b"# Title\n\nEnough prose to clear the floor.\n",
+                                "text/markdown")})
+
+    assert count() == before
+
+
+def test_convert_reports_what_upload_would_hold_back(client):
+    """The preview has to show the same losses the upload would incur, or approving it
+    means approving something you were not shown."""
+    body = f"# Deck\n\n{CHART_RUN}\n\nProse long enough to clear the minimum length.\n"
+
+    out = client.post("/documents/convert",
+                      files={"file": ("d.md", body.encode(), "text/markdown")}).json()
+
+    assert out["suppressed_numeric_runs"] == 1
+    assert "245.9" in out["suppressed_sample"][0]
+    # And the figures are still IN the markdown being shown — suppression is index-only.
+    assert "245.9" in out["markdown"]
+
+
+def test_convert_refuses_what_upload_refuses(client):
+    """Two doors, one answer — approving something upload will reject is worse than a
+    plain refusal."""
+    r = client.post("/documents/convert",
+                    files={"file": ("empty.md", b"", "text/markdown")})
+    assert r.status_code == 422
+    assert r.json()["detail"]["code"] == "empty"
+
+
+def test_what_convert_shows_is_what_upload_indexes(client):
+    """Conversion is deterministic, which is what makes the client re-post safe: the
+    approved Markdown and the indexed Markdown are the same string."""
+    body = b"# Report\n\nRevenue grew across every region this quarter, led by EMEA.\n"
+
+    shown = client.post("/documents/convert",
+                        files={"file": ("r.md", body, "text/markdown")}).json()["markdown"]
+    entry = client.post("/documents/upload",
+                        files={"file": ("r.md", body, "text/markdown")}).json()
+    stored = client.get(f"/documents/{entry['doc_id']}/markdown").json()["markdown"]
+
+    assert shown == stored
+
+
+# ── Generated schema docs are not the person's uploads ────────────────────────
+
+def test_the_listing_says_which_rows_the_platform_generated(client):
+    """Measured on a live install: 15 of 16 rows were compiled schema docs, so one real
+    upload looked like sixteen documents nobody could act on."""
+    from aughor.knowledge.indexer import index_text, is_generated
+
+    client.post("/documents/upload",
+                files={"file": ("mine.md",
+                                b"# Mine\n\nA document a person actually uploaded here.\n",
+                                "text/markdown")})
+    index_text(text="Schema documentation for a table.\n" * 3, title="Schema doc",
+               source="schema-docs/conn/default", doc_id="doctree::conn::default")
+
+    rows = {d["doc_id"]: d for d in client.get("/documents").json()}
+    assert rows["doctree::conn::default"]["generated"] is True
+    mine = [d for d in rows.values() if d.get("filename") == "mine.md"]
+    assert mine and mine[0]["generated"] is False
+
+    assert is_generated("doctree::anything::x") is True
+    assert is_generated("9bdef0884d5b4d5189cb24b8096e1114") is False
+
+
+# ── Purging orphans must not cost an embedding run ────────────────────────────
+
+def test_purging_orphans_embeds_nothing(client, monkeypatch):
+    """`/documents/reindex` re-embeds the whole corpus on its way past the orphans —
+    148 chunks paid for to delete 14 on the live install. An orphan needs no vector to
+    be deleted."""
+    from aughor.knowledge import reindex
+
+    def _forbidden(*a, **k):
+        raise AssertionError("purging orphans must never call the embedder")
+
+    monkeypatch.setattr("aughor.semantic.embedder.embed", _forbidden)
+
+    result = reindex.purge_orphans_only()
+    assert result["ok"] is True
+    assert result["embedded"] == 0
+
+
+def test_the_purge_door_defaults_to_a_dry_run(client):
+    r = client.post("/documents/purge-orphans")
+    assert r.status_code == 200
+    assert r.json()["dry_run"] is True

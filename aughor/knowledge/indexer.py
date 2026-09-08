@@ -221,15 +221,45 @@ def index_file(path: Path, title: Optional[str] = None, settings=None) -> dict:
     }
 
 
+def delete_chunks(doc_id: str) -> None:
+    """Drop one document's vectors, leaving the registry alone.
+
+    The public half of `_delete_doc_chunks`, for the orphan purge: an orphan has no
+    registry row to deregister, so `delete_document` would do half its job and report
+    False for it. Named rather than reached into — a cross-module private import is a
+    coupling the ratchet in `test_kernel_contracts` exists to keep from spreading.
+    """
+    _delete_doc_chunks(doc_id)
+
+
 def delete_document(doc_id: str) -> bool:
     """Delete a document from both the registry and Qdrant."""
     _delete_doc_chunks(doc_id)
     return _deregister(doc_id)
 
 
+#: Prefix of every doc_id the ontology GENERATES. One definition, used by the id
+#: builder below and by `is_generated` — the surface that hides these from a person's
+#: own uploads must not carry its own copy of the rule.
+DOCTREE_PREFIX = "doctree::"
+
+
 def doctree_doc_id(connection_id: str, schema: str = "") -> str:
     """The deterministic doc_id for one (connection, schema) doc tree."""
-    return f"doctree::{connection_id}::{schema or 'default'}"
+    return f"{DOCTREE_PREFIX}{connection_id}::{schema or 'default'}"
+
+
+def is_generated(doc_id: str) -> bool:
+    """Was this document COMPILED by the platform rather than uploaded by a person?
+
+    Schema documentation is embedded into the same collection as uploads, which is
+    right for retrieval — an agent asking about a table wants the schema doc — and
+    wrong for the Documents surface, where it made a corpus of one real file look like
+    sixteen. Measured on a live install: 15 of 16 rows were `doctree::` and 102 of 148
+    chunks, so a person's own document was outnumbered ten to one by artifacts they
+    never created and cannot act on.
+    """
+    return (doc_id or "").startswith(DOCTREE_PREFIX)
 
 
 def doctree_chunks(tree, *, connection_id: str, schema: str = "") -> list[DocumentChunk]:

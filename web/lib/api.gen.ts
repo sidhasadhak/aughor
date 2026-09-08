@@ -3209,6 +3209,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/documents/convert": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Convert Document Only
+         * @description Convert a document and hand back the Markdown WITHOUT indexing or keeping it.
+         *
+         *     The look-before-you-commit step. Upload used to convert, chunk, embed and register
+         *     in one motion, so the first time anyone saw what the converter made of their file
+         *     was after it was already in the corpus — and on a hosted embedder, already paid
+         *     for. A scanned deck that yields eight unreadable pages, or a spreadsheet that comes
+         *     out as a wall of numbers, is a decision a person should get to make BEFORE it costs
+         *     anything and before it starts answering questions.
+         *
+         *     Writes nothing: no registry row, no vectors, no retained bytes. The client keeps the
+         *     file and posts it again to `/documents/upload` on approval — deliberately, so there
+         *     is no staging area to expire, sweep, or leak. Conversion is deterministic, so what
+         *     is approved here is exactly what is indexed there.
+         *
+         *     Reports the same page and suppression detail upload reports, because the decision
+         *     being asked for is whether THIS is worth indexing.
+         */
+        post: operations["convert_document_only_documents_convert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/documents/formats": {
         parameters: {
             query?: never;
@@ -3262,6 +3297,32 @@ export interface paths {
          *     settings are sane before they queue an upload.
          */
         post: operations["preview_document_chunks_documents_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/documents/purge-orphans": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Purge Orphans Endpoint
+         * @description Remove chunks whose document is no longer in the registry, WITHOUT re-embedding.
+         *
+         *     Separate from `/documents/reindex` because the costs are not comparable. That route
+         *     re-embeds the entire corpus on its way past the orphans — on a hosted embedder,
+         *     148 chunks paid for to delete 14. An orphan needs no vector to be deleted.
+         *
+         *     `dry_run` defaults TRUE, like its sibling: everything below it is destructive.
+         */
+        post: operations["purge_orphans_endpoint_documents_purge_orphans_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -10594,6 +10655,13 @@ export interface components {
             files: string[];
             /** Schema */
             schema?: string | null;
+        };
+        /** Body_convert_document_only_documents_convert_post */
+        Body_convert_document_only_documents_convert_post: {
+            /** Chunk Settings */
+            chunk_settings?: string | null;
+            /** File */
+            file: string;
         };
         /** Body_preview_document_chunks_documents_preview_post */
         Body_preview_document_chunks_documents_preview_post: {
@@ -19393,6 +19461,39 @@ export interface operations {
             };
         };
     };
+    convert_document_only_documents_convert_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["Body_convert_document_only_documents_convert_post"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     document_formats_documents_formats_get: {
         parameters: {
             query?: never;
@@ -19425,6 +19526,37 @@ export interface operations {
                 "multipart/form-data": components["schemas"]["Body_preview_document_chunks_documents_preview_post"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    purge_orphans_endpoint_documents_purge_orphans_post: {
+        parameters: {
+            query?: {
+                dry_run?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
