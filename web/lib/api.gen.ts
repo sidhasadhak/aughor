@@ -268,6 +268,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/agents/custom/propose": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Propose User Agent
+         * @description Describe an agent; get a drafted one back with its evidence. Nothing is created.
+         *
+         *     Declared BEFORE the `/agents/custom/{agent_id}` routes for the reason the automations
+         *     router learned the hard way: FastAPI matches in declaration order, and a static segment
+         *     behind a path-parameter route is never reached.
+         *
+         *     The catalogue, documents and packs are read HERE and handed to a pure proposer, so the
+         *     judgment half stays testable without a database and without spending a token.
+         */
+        post: operations["propose_user_agent_agents_custom_propose_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/agents/custom/{agent_id}": {
         parameters: {
             query?: never;
@@ -10303,6 +10330,19 @@ export interface components {
             /** Workspace Id */
             workspace_id?: string | null;
         };
+        /** AgentProposeRequest */
+        AgentProposeRequest: {
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
         /** AllowRequest */
         AllowRequest: {
             /** Action */
@@ -14237,6 +14277,39 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    propose_user_agent_agents_custom_propose_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentProposeRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
