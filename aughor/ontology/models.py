@@ -205,6 +205,45 @@ class OntologyRelationship(BaseModel):
     value_overlap: Optional[float] = None
 
 
+class DefinitionSource(BaseModel):
+    """One place a definition for a metric was found, and whose it is.
+
+    Ported from the warehouse-vendor context layer studied 2026-09-08: a business
+    definition is not a fact the warehouse holds, it is a CLAIM some asset makes and some
+    person is behind. When two dashboards disagree about "revenue", the useful question is
+    not which string is prettier — it is which claim came from where, who stands behind
+    it, and how many things already rely on it.
+
+    🔑 What we do NOT port is ranking by authority alone. That design weighs source
+    authority, reliance and freshness; we already do something strictly stronger for the
+    part that matters, which is EXECUTE the formula against the live database. So
+    `verified` is a tier, not a tiebreak: a verified definition outranks an unverified one
+    no matter who wrote it or how popular it is. Authority only orders candidates that are
+    equally verified. Popularity is evidence about people; execution is evidence about the
+    data. See :mod:`aughor.ontology.authority`.
+    """
+    #: What THIS source says the metric is. May disagree with its siblings — that
+    #: disagreement is the thing worth surfacing, not a conflict to silently resolve.
+    formula_sql: str = ""
+    #: The asset the claim came from, by name: "DAIS 2026 Sales Dashboard",
+    #: "rpt_summit_registration", a saved query's title, a document.
+    source_asset: str = ""
+    source_kind: Literal["dashboard", "query", "table", "pipeline",
+                         "document", "manual", "unknown"] = "unknown"
+    #: WHOSE definition. Empty is honest — an unattributed claim is weaker evidence, and
+    #: `authority` scores it that way rather than inventing an owner.
+    author: str = ""
+    recorded_at: str = ""
+    #: How many things already rely on this definition. Reliance is evidence about people.
+    use_count: int = 0
+    #: The SOURCE is a blessed/certified asset (not: the formula is correct).
+    certified: bool = False
+    #: THIS formula executed successfully against the live database. The only field here
+    #: that is evidence about the DATA, which is why it outranks all the others.
+    verified: bool = False
+    verification_note: str = ""
+
+
 class OntologyMetric(BaseModel):
     id: str                                    # "revenue", "customer_ltv"
     display_name: str
@@ -225,6 +264,12 @@ class OntologyMetric(BaseModel):
     # formulas are demoted (never injected with "use this exact expression").
     verified: bool = False
     verification_note: str = ""
+    #: Every definition we have SEEN for this metric, with its provenance — including the
+    #: ones that lost. `known_divergent_calculations` records THAT the warehouse disagrees
+    #: with itself; this records WHERE each disagreeing claim came from and who is behind
+    #: it, which is what a person needs to settle it. Additive and defaulted: every graph
+    #: written before this field loads unchanged with an empty list.
+    definitions: list[DefinitionSource] = Field(default_factory=list)
 
 
 class ActionParameter(BaseModel):

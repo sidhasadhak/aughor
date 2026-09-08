@@ -495,6 +495,42 @@ _THREAD_TURN_KINDS = ("(kind = 'chat' OR (kind = 'investigation'"
                       " AND status NOT IN ('running', 'paused')))")
 
 
+def recent_executed_sql(connection_id: str = "", limit: int = 500) -> list[str]:
+    """SQL this deployment actually RAN, newest first — the reliance signal.
+
+    Read for :mod:`aughor.ontology.harvest`, which counts how many executed statements
+    contain a candidate formula. Reliance is evidence about people (how many things lean
+    on a definition), never about whether the definition is right — `authority` caps it
+    and never lets it cross the verification tier.
+
+    Chat turns store their statement inside `report_json`, so the extraction happens in
+    Python rather than as a `json_extract` in SQL: this column has held several report
+    shapes over time, and a shape that lost the key should yield NOTHING for that row
+    rather than fail the whole read.
+    """
+    c = _conn()
+    ensure_once(c, _ensure_schema)
+    try:
+        where, params = "WHERE report_json IS NOT NULL", []
+        if connection_id:
+            where += " AND connection_id = ?"
+            params.append(connection_id)
+        rows = c.execute(
+            f"SELECT report_json FROM investigations {where} "
+            "ORDER BY started_at DESC LIMIT ?", [*params, int(limit)]).fetchall()
+    finally:
+        c.close()
+    out: list[str] = []
+    for (blob,) in rows:
+        try:
+            sql = (json.loads(blob) or {}).get("sql")
+        except (ValueError, TypeError):
+            continue
+        if isinstance(sql, str) and sql.strip():
+            out.append(sql)
+    return out
+
+
 def get_session_turns(session_id: str) -> list[dict]:
     """Return all turns for a session, oldest first — quick chat turns AND the
     thread's terminal deep runs (FL-6, see ``_THREAD_TURN_KINDS``).

@@ -43,7 +43,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Callable, Optional
 
 from aughor.automations.dataflow import (
-    BRANCH_SKIP, FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, MAX_FAN_OUT, FanRefused,
+    BRANCH_SKIP, FAN_EMPTY_SKIP, GUARD_SKIP, ITEM_ALIAS, MAX_FAN_OUT, STARVED_SKIP,
+    FanRefused,
     UnresolvedBinding,
     alias_for, effect_refs, else_target, evaluate_guard_verdict, fan_items, fan_source,
     guard_clauses, is_binding, item_context, item_refs, parse_ref, render_clause, resolve,
@@ -1541,7 +1542,7 @@ def _walk_automation(
             step_outcomes.append(EffectOutcome(
                 kind=effect.kind, target=alias, status="skipped",
                 agent_id=acting_agent(effect, automation),
-                message=f"upstream data unavailable: {exc}"))
+                message=f"{STARVED_SKIP}: {exc}"))
             return step_outcomes, None, False, None
         except FanRefused as exc:
             # Not an upstream absence — the step's OWN source is unusable — so it reads
@@ -1613,7 +1614,7 @@ def _walk_automation(
                 step_outcomes.append(EffectOutcome(
                     kind=effect.kind, target=label, status="skipped", **fan,
                     agent_id=acting_agent(effect, automation),
-                    message=f"upstream data unavailable: {exc}"))
+                    message=f"{STARVED_SKIP}: {exc}"))
                 continue
             if not should_run:
                 # `skipped`, whose own definition is "did not run, and that is not a failure

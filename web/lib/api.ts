@@ -6205,6 +6205,72 @@ export async function listAgentTemplates(): Promise<AgentTemplate[]> {
   return (await res.json()).templates ?? [];
 }
 
+/** What the platform drafted from a description, and why. Nothing is created. */
+export type AgentProposal = {
+  verdict: "proposed" | "refused";
+  reason: string;
+  draft: {
+    name?: string; purpose?: string; instructions?: string;
+    connection_id?: string; schema_scope?: string;
+    doc_ids?: string[]; pack_ids?: string[];
+  };
+  goldens: { question: string; why: string; reference_sql: string; certified: boolean }[];
+  /** Written by the BACKEND, not the model — render every one. */
+  disclosures: string[];
+  /** Which tables made it choose this scope, in the drafter's words. */
+  evidence: string;
+  notes: string;
+};
+
+/** One recorded definition of a metric, and who is behind it. */
+export type DefinitionSource = {
+  formula_sql: string;
+  source_asset: string;
+  source_kind: string;
+  author: string;
+  recorded_at: string;
+  use_count: number;
+  certified: boolean;
+  /** The formula BOUND against the live database. The only field here that is evidence
+   *  about the data rather than about people — and the reason it outranks the rest. */
+  verified: boolean;
+  verification_note: string;
+};
+
+export type MetricProvenance = {
+  metric_id: string;
+  display_name: string;
+  definitions: DefinitionSource[];
+  chosen: DefinitionSource | null;
+  /** The best claim that DISAGREES with the winner, if any. */
+  dissenter: DefinitionSource | null;
+  contested: boolean;
+  why: string;
+  known_divergent_calculations: string[];
+};
+
+export async function getMetricProvenance(
+  metricId: string, connectionId: string, schemaName?: string,
+): Promise<MetricProvenance> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/metrics/${encodeURIComponent(metricId)}/provenance?${q}`);
+  if (!res.ok) throw new Error((await res.text()) || `provenance failed (${res.status})`);
+  return res.json();
+}
+
+export async function proposeUserAgent(body: {
+  description: string; connection_id: string;
+}): Promise<AgentProposal> {
+  const res = await fetch(`${getApiBase()}/agents/custom/propose`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `draft failed (${res.status})`);
+  return res.json();
+}
+
 export async function createUserAgentFromTemplate(body: {
   pack_id: string; name?: string; connection_id?: string; schema_scope?: string;
 }): Promise<{ agent: UserAgent; suggested_goldens: { question: string; needs: string }[] }> {

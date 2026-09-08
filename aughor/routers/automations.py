@@ -20,6 +20,7 @@ from aughor.automations.store import (
     delete_automation,
     get_automation,
     get_layout,
+    get_run,
     get_runs,
     list_automations,
     pause_automation,
@@ -611,6 +612,28 @@ def dry_run_draft(body: CreateAutomationRequest, until: Optional[str] = None):
     return _dry_run_payload(automation, until)
 
 
+def _starved(effect) -> bool:
+    """Did this step skip because the step it reads produced nothing?
+
+    Read off the constant the engine writes, never sniffed out of the prose — the law
+    `graph.py` states for the guard skip, and a starved skip needs it more, because this
+    is the one whose absence makes an outage look like a clean run.
+    """
+    from aughor.automations.dataflow import STARVED_SKIP
+    return (getattr(effect, "status", "") == "skipped"
+            and str(getattr(effect, "message", "")).startswith(STARVED_SKIP))
+
+
+#: What the run PICKER offers, and what "latest" means. A scheduled automation appends a
+#: `not_fired` row on every tick — once a minute for a daily cron — so an unfiltered rail
+#: shows twelve identical did-nothing rows spanning twelve MINUTES, and `latest` selects a
+#: tick with no steps. Measured 2026-09-08 on the theLook briefing: the run that posted to
+#: Slack that morning was unreachable from its own canvas. The tick history stays whole and
+#: unfiltered on `/runs` — that audit trail is the point of the table — but "which run?" is
+#: a question about runs that DID something.
+EXECUTED_OUTCOMES = ("fired", "error")
+
+
 @router.get("/automations/{automation_id}/graph")
 def graph(automation_id: str, run: str = ""):
     """The automation as a graph — the same shape whether it has run or not.
@@ -625,9 +648,15 @@ def graph(automation_id: str, run: str = ""):
 
     chosen = None
     if run:
-        runs_ = get_runs(automation_id=automation_id, limit=1 if run == "latest" else 50)
-        chosen = (runs_[0] if runs_ else None) if run == "latest" else \
-            next((r for r in runs_ if r.id == run), None)
+        if run == "latest":
+            runs_ = get_runs(automation_id=automation_id, outcomes=EXECUTED_OUTCOMES,
+                             limit=1)
+            chosen = runs_[0] if runs_ else None
+        else:
+            # By id, from the store — not by scanning a window. An execution worth
+            # linking to is older than the ticks that have piled up since it.
+            one = get_run(run)
+            chosen = one if one is not None and one.automation_id == automation_id else None
         if chosen is None:
             # An honest empty rather than a 404: the automation exists and its STRUCTURE
             # is exactly what the caller asked to see decorated. Refusing the whole
@@ -641,9 +670,17 @@ def graph(automation_id: str, run: str = ""):
         {"id": r.id, "outcome": r.outcome, "at": r.started_at,
          "duration_ms": r.duration_ms,
          "steps": len(r.effects or []),
+         # A STARVED skip counts. Excluding every skip was right for the two skips that
+         # mean the design is working (a guard held, a branch went the other way) and
+         # wrong for the one that means it broke: measured 2026-09-06, a briefing whose
+         # investigate returned no summary skipped its Slack post and was filed `fired`
+         # with failed=0 — an outage that looked like a clean run in every surface.
          "failed": sum(1 for e in (r.effects or [])
-                       if e.status not in ("executed", "skipped"))}
-        for r in get_runs(automation_id=automation_id, limit=12)
+                       if e.status not in ("executed", "skipped")
+                       or _starved(e)),
+         "starved": sum(1 for e in (r.effects or []) if _starved(e))}
+        for r in get_runs(automation_id=automation_id, outcomes=EXECUTED_OUTCOMES,
+                          limit=12)
     ]
     graph["run_id"] = getattr(chosen, "id", "") if chosen is not None else ""
     return graph

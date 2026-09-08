@@ -23,7 +23,7 @@ import logging
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 from aughor.automations.models import Automation, AutomationRun
 from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
@@ -571,12 +571,29 @@ def append_run(run: AutomationRun) -> AutomationRun:
 
 
 def get_runs(automation_id: Optional[str] = None, conn_id: Optional[str] = None,
-             limit: int = 100) -> list[AutomationRun]:
+             limit: int = 100,
+             outcomes: Optional[Sequence[str]] = None) -> list[AutomationRun]:
+    """Newest-first runs, optionally narrowed to particular outcomes.
+
+    ``outcomes`` is not a convenience. A scheduled automation appends a ``not_fired``
+    row on EVERY tick — once a minute, ~1,440 a day for a daily cron — so a caller
+    asking "what did the last run that actually executed do?" by taking the newest N
+    rows and filtering in Python is reading a window of MINUTES and concluding there
+    is no history. Measured 2026-09-08 on the theLook briefing: 400 consecutive rows,
+    every one ``not_fired``, while the previous fired run sat ~1,440 rows back.
+
+    Same law as ``count_runs_since`` below, and the same way of obeying it: a windowed
+    question gets a windowed query.
+    """
     clauses, params = [], []
     if automation_id:
         clauses.append("automation_id = ?"); params.append(automation_id)
     if conn_id:
         clauses.append("conn_id = ?"); params.append(conn_id)
+    if outcomes:
+        outcomes = tuple(outcomes)
+        clauses.append(f"outcome IN ({', '.join('?' * len(outcomes))})")
+        params.extend(outcomes)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with _LOCK:
         conn = _connect()

@@ -245,3 +245,32 @@ def test_count_runs_since_windows_at_the_store():
     assert counts.get("fired", 0) >= 1
     assert counts.get("not_fired", 0) >= 1
     assert "error" not in counts or counts["error"] == 0
+
+
+def test_get_runs_filters_outcomes_in_sql_not_in_a_row_window():
+    """A windowed question gets a windowed query — the `count_runs_since` law, applied
+    to the run list.
+
+    Scheduled automations append a `not_fired` row per tick, so "the last run that
+    actually executed" is invisible to any caller that takes the newest N rows and
+    filters afterwards. Two callers did exactly that (the scheduled-run previous-report
+    note; the premortem error-streak scan) and both were blind in production.
+    """
+    from aughor.automations.store import append_run, get_runs
+    from aughor.automations.models import AutomationRun
+
+    append_run(AutomationRun(automation_id="a-out", outcome="fired"))
+    append_run(AutomationRun(automation_id="a-out", outcome="error"))
+    for _ in range(200):
+        append_run(AutomationRun(automation_id="a-out", outcome="not_fired"))
+
+    # The newest 5 rows are all ticks; the filtered question still reaches the real runs.
+    assert [r.outcome for r in get_runs(automation_id="a-out", limit=5)] == ["not_fired"] * 5
+    assert [r.outcome for r in get_runs(automation_id="a-out",
+                                        outcomes=("fired",), limit=5)] == ["fired"]
+    assert sorted(r.outcome for r in get_runs(automation_id="a-out",
+                                              outcomes=("fired", "error"),
+                                              limit=5)) == ["error", "fired"]
+    # No filter = unchanged behaviour for every existing caller.
+    assert len(get_runs(automation_id="a-out", limit=500)) == 202
+
