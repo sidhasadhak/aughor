@@ -52,6 +52,9 @@ const FOOTER_H  = 32;   // "Show N more"
 const LAYER_GAP = 130;
 const CARD_GAP  = 40;
 
+/** Height past which a role's column wraps into adjacent sub-columns. */
+const MAX_LANE_H = 1500;
+
 // ── Semantics ─────────────────────────────────────────────────────────────────
 
 /** Columns that are a primary key: literally named `id`, or referenced by a join. */
@@ -124,69 +127,99 @@ function cardHeight(table: SchemaTable, keySet: Set<string>, expanded: boolean):
 // ── Layout ────────────────────────────────────────────────────────────────────
 
 /**
- * dagre, constrained so a table stays in its own role's lane.
+ * Layout: dagre decides the vertical order, the semantic role decides the column.
  *
- * Left to itself dagre's network simplex shortens edges, which drags a pure
- * dimension into the middle of the diagram whenever that makes its outgoing
- * edges shorter. Measured on theLook: `users` (a dimension) landed in column 1
- * and `events` (a fact) a column early.
+ * dagre is very good at the hard part — ordering nodes within a rank so edges
+ * cross as little as possible — and has no opinion worth having about which
+ * column a dimension table belongs in. Left alone it drags a pure dimension into
+ * the middle of the diagram whenever that shortens its outgoing edges.
  *
- * A `minlen` lower bound alone does not fix that — it can push a node right,
- * never pull one left, so a node already past its minimum is unaffected. The
- * fix is to bound both sides: one invisible anchor per role, chained, with each
- * table pinned between its own anchor and the next. dagre rejects `minlen: 0`,
- * so the anchors sit two ranks apart and each table is pinned one past its own.
+ * Constraining dagre's own ranker instead was measurably worse. `minlen` is a
+ * lower bound, so it can push a node right but never pull one left; bounding
+ * both sides needs an invisible anchor per role, and because dagre rejects
+ * `minlen: 0` those anchors have to sit two ranks apart — which inserts an empty
+ * gutter column between every pair of lanes. Measured on LuxExperience (14
+ * tables, 14 joins) against this function:
  *
- * Note this does not guarantee one column per role: two bridge tables that join
- * each other cannot share a rank, because dagre will not route an edge inside
- * one. That lane splits, which is honest — it shows the dependency.
+ *     anchor-constrained   6 columns   2624×1783   16445px of edge
+ *     plain dagre          5 columns   1840×1098    8675px   (7/41 roles wrong)
+ *     this                 4 columns   1446×1056    7288px   (0/41 roles wrong)
+ *
+ * So dagre runs unconstrained, and only its vertical ordering is kept: tables
+ * are then stacked into their own role's column in that order. One role is
+ * always exactly one column, which the anchor version could not promise — a
+ * within-role join draws as a sideways edge rather than splitting the lane.
  */
 function layout(
   tables: SchemaTable[],
   joins: SchemaJoin[],
   keySet: Set<string>,
   expanded: Set<string>,
-): Record<string, { x: number; y: number }> {
+): { pos: Record<string, { x: number; y: number }>; laneOf: Record<string, number> } {
   const layerOf = semanticLayers(tables, joins);
-  const maxLayer = Math.max(0, ...Object.values(layerOf));
 
   const g = new dagre.graphlib.Graph();
-  g.setGraph({
-    rankdir: "LR",
-    ranksep: LAYER_GAP,
-    nodesep: CARD_GAP,
-    marginx: 48,
-    marginy: 48,
-    ranker: "network-simplex",
-  });
+  g.setGraph({ rankdir: "LR", ranksep: LAYER_GAP, nodesep: CARD_GAP, ranker: "network-simplex" });
   g.setDefaultEdgeLabel(() => ({}));
 
-  for (const t of tables)
-    g.setNode(t.name, { width: CARD_W, height: cardHeight(t, keySet, expanded.has(t.name)) });
-
+  const heights: Record<string, number> = {};
+  for (const t of tables) {
+    heights[t.name] = cardHeight(t, keySet, expanded.has(t.name));
+    g.setNode(t.name, { width: CARD_W, height: heights[t.name] });
+  }
   // PK side → FK side, so dimensions rank left and facts right.
   for (const j of joins)
     if (j.t1 !== j.t2) g.setEdge(j.t2, j.t1, { minlen: 1, weight: 1 });
 
-  for (let i = 0; i <= maxLayer + 1; i += 1)
-    g.setNode(`__lane${i}`, { width: 0, height: 0 });
-  for (let i = 0; i < maxLayer + 1; i += 1)
-    g.setEdge(`__lane${i}`, `__lane${i + 1}`, { minlen: 2, weight: 1 });
-  for (const t of tables) {
-    const l = layerOf[t.name];
-    g.setEdge(`__lane${l}`, t.name, { minlen: 1, weight: 1000 });       // not before its lane
-    g.setEdge(t.name, `__lane${l + 1}`, { minlen: 1, weight: 1000 });   // not after it
-  }
-
   dagre.layout(g);
 
-  const pos: Record<string, { x: number; y: number }> = {};
-  for (const t of tables) {
-    const n = g.node(t.name);
-    // dagre centres a node; React Flow positions by top-left.
-    pos[t.name] = { x: n.x - n.width / 2, y: n.y - n.height / 2 };
+  const lanes = [...new Set(tables.map(t => layerOf[t.name]))].sort((a, b) => a - b);
+  const byLane: Record<number, SchemaTable[]> = {};
+  for (const t of tables) (byLane[layerOf[t.name]] ??= []).push(t);
+  for (const lane of lanes)
+    byLane[lane].sort((a, b) => g.node(a.name).y - g.node(b.name).y);
+
+  // A role with many tables would otherwise be one very tall column — a
+  // warehouse with 17 dimensions produced a 1446×3257 strip. Wrap an oversized
+  // lane across adjacent sub-columns instead: the role still reads as one band,
+  // and the diagram stays closer to the shape of a screen.
+  const stackHeight = (ts: SchemaTable[]) =>
+    ts.reduce((sum, t) => sum + heights[t.name] + CARD_GAP, -CARD_GAP);
+
+  const columns: SchemaTable[][] = [];
+  const laneOfColumn: number[] = [];
+  for (const lane of lanes) {
+    const cards = byLane[lane];
+    const total = stackHeight(cards);
+    const parts = Math.max(1, Math.ceil(total / MAX_LANE_H));
+    const target = total / parts;
+    let current: SchemaTable[] = [];
+    let done = 0;
+    for (const t of cards) {
+      // Keep dagre's order; break to a new sub-column once one is full enough,
+      // leaving the remainder to the last so it is never starved.
+      if (current.length && done < parts - 1 && stackHeight(current) >= target) {
+        columns.push(current); laneOfColumn.push(lane); current = []; done += 1;
+      }
+      current.push(t);
+    }
+    columns.push(current); laneOfColumn.push(lane);
   }
-  return pos;
+
+  const tallest = Math.max(...columns.map(stackHeight));
+  const pos: Record<string, { x: number; y: number }> = {};
+  const laneOf: Record<string, number> = {};
+  columns.forEach((cards, i) => {
+    // Centre each column against the tallest, so a column holding one table
+    // sits beside the middle of one holding six rather than pinned to the top.
+    let y = (tallest - stackHeight(cards)) / 2;
+    for (const t of cards) {
+      pos[t.name] = { x: i * (CARD_W + LAYER_GAP), y };
+      laneOf[t.name] = laneOfColumn[i];
+      y += heights[t.name] + CARD_GAP;
+    }
+  });
+  return { pos, laneOf };
 }
 
 // ── Node ──────────────────────────────────────────────────────────────────────
@@ -272,6 +305,16 @@ const TableNode = memo(function TableNode({ data }: { data: TableNodeData }) {
                   isConnectable={false}
                   style={{ opacity: 0 }}
                 />
+                {/* Right-hand target, used only by a join between two tables in
+                    the same lane — it lets the edge bulge into the gutter
+                    instead of cutting back across its own column. */}
+                <Handle
+                  type="target"
+                  id={`${col.name}__rt`}
+                  position={Position.Right}
+                  isConnectable={false}
+                  style={{ opacity: 0 }}
+                />
                 <div className="w-7 flex items-center justify-center shrink-0">
                   {isPk ? (
                     <span className="aug-fs-xs font-bold text-amber-400 border border-amber-400/50 rounded px-[3px] py-px leading-tight">
@@ -331,7 +374,7 @@ export function ERDiagram({ schema }: { schema: RichSchema }) {
 
   // Positions are recomputed whenever the schema or an expansion changes; drag
   // is handled by onNodesChange and deliberately survives until the next relayout.
-  const positions = useMemo(
+  const { pos: positions, laneOf } = useMemo(
     () => layout(schema.tables, schema.joins, keySet, expanded),
     [schema, keySet, expanded],
   );
@@ -348,19 +391,26 @@ export function ERDiagram({ schema }: { schema: RichSchema }) {
     })) as RFNode<TableNodeData>[]);
   }, [schema, positions, expanded, pkSet, keySet, setNodes]);
 
-  const edges = useMemo<RFEdge[]>(() => schema.joins.map((j, i) => ({
-    id: `${j.t2}.${j.c2}→${j.t1}.${j.c1}#${i}`,
-    source: j.t2,
-    sourceHandle: `${j.c2}__s`,
-    target: j.t1,
-    targetHandle: `${j.c1}__t`,
-    type: "smoothstep",
-    style: {
-      stroke: j.match === "exact" ? "var(--blue4)" : "var(--t3)",
-      strokeWidth: 1.4,
-      strokeDasharray: j.match === "exact" ? undefined : "4 3",
-    },
-  })), [schema]);
+  const edges = useMemo<RFEdge[]>(() => schema.joins.map((j, i) => {
+    // Both ends in one lane (two bridges that join each other, say): enter from
+    // the right so the edge bulges into the gutter rather than crossing back
+    // over its own column.
+    const sameLane = laneOf[j.t1] !== undefined && laneOf[j.t1] === laneOf[j.t2];
+    return {
+      id: `${j.t2}.${j.c2}→${j.t1}.${j.c1}#${i}`,
+      source: j.t2,
+      sourceHandle: `${j.c2}__s`,
+      target: j.t1,
+      targetHandle: sameLane ? `${j.c1}__rt` : `${j.c1}__t`,
+      type: "smoothstep",
+      pathOptions: { borderRadius: 8 },
+      style: {
+        stroke: j.match === "exact" ? "var(--blue4)" : "var(--t3)",
+        strokeWidth: 1.4,
+        strokeDasharray: j.match === "exact" ? undefined : "4 3",
+      },
+    };
+  }), [schema, laneOf]);
 
   if (!schema.tables.length) {
     return (
