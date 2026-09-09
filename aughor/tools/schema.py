@@ -22,6 +22,7 @@ from aughor.db.schema_render import (  # noqa: F401
     ROOT_SUFFIXES,
     SECTION_STOP,
     fk_root,
+    parse_inline_columns,
     parse_schema_tables,
     render_raw_schema,
 )
@@ -320,6 +321,11 @@ def build_mermaid_er(schema_str: str) -> str:
         if m:
             current = m.group(1)
             table_col_types[current] = []
+            # Warehouse connectors put the columns inline on this line instead.
+            inline = parse_inline_columns(line)
+            if inline:
+                table_col_types[current].extend(inline)
+                current = None
         elif current:
             col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
@@ -384,6 +390,13 @@ def build_rich_schema(schema_str: str) -> dict:
                 table_col_types[current] = []
                 if m.group(2):
                     table_row_counts[current] = m.group(2).replace(",", "")
+            # Warehouse connectors put the columns inline on this line instead.
+            # No per-column description is available in that dialect, so the
+            # cards render name + type only.
+            inline = parse_inline_columns(line)
+            if inline:
+                table_col_types[current].extend((n, t, "") for n, t in inline)
+                current = None
         elif current:
             col_m = re.match(r"^\s{2}(.+?)\s{2,}(\S+)", line)
             if col_m and not line.strip().startswith("--"):
