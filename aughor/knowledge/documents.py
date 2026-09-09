@@ -115,7 +115,9 @@ DEFAULT_CHUNK_SETTINGS = ChunkSettings()
 
 #: A numeric token: 1,234.5 · 47.1% · (12.9%) · +140bps · €279.6 · 2026. Signs,
 #: currency, thousands separators, parentheses-as-negative and a trailing unit all
-#: belong to the number rather than to the words around it.
+#: belong to the number rather than to the words around it. A trailing COLON matches
+#: here too, but `is_numeric_run` reads it as a label — `2026:` names a period, it
+#: does not report one.
 _NUMERIC_TOKEN = re.compile(
     r"^[(\[]?[+\-−]?[€$£¥]?\d[\d,.\s]*\)?%?(?:bps|bp|k|m|bn|mm|x)?[)\]]?[.,;:]?$",
     re.IGNORECASE)
@@ -247,10 +249,18 @@ def is_numeric_run(line: str) -> bool:
     `Q1 Q2 Q3 Q1 Q2 Q3 Q1 Q2 Q3` on a separate line. Every value is correct and not
     one of them is attached to what it measures.
 
-    Two guards keep prose and tables out of it:
+    Three guards keep prose and tables out of it:
 
       * A TABLE ROW is attributed — its header names the column — so a line of pipes
         is never a run, however many numbers it holds.
+      * A COLON NAMES the figure after it, so a colon-terminated token is a label and
+        not one of the headless numbers. Measured on a retail market deck:
+        `Take-up H1 2026: 24,000 sqm | H1 2025: 32,000 sqm | Ø 5 years 24,000 sqm`
+        scored `2026:` and `2025:` among six numbers against five words and was
+        suppressed — one per city, and the only line on the page where every figure
+        was attached to the period it measures. A colon is the one attribution that
+        survives a PowerPoint export intact, because it is typed into the text box
+        while position is not.
       * Numbers must DOMINATE. "GMV increased by +11.3% ex-FX (+7.0% reported) and
         Net Sales by +9.9%" has four numbers and fifteen words; it is a sentence, and
         a sentence carries its own attribution.
@@ -260,7 +270,12 @@ def is_numeric_run(line: str) -> bool:
         return False
     tokens = stripped.split()
     numeric = [t for t in tokens if _NUMERIC_TOKEN.match(t)]
-    if len(numeric) < _NUMERIC_RUN_MIN:
+    # A label is not a measurement. Only what a colon has NOT named can make a run,
+    # and the colon rescues just the name it terminates — every figure downstream of
+    # it still counts, so a name in front of a stream ("Prime rent: 340 320 300 280
+    # 260") names the stream and is still an axis.
+    measured = [t for t in numeric if not t.endswith(":")]
+    if len(measured) < _NUMERIC_RUN_MIN:
         return False
     # Words are counted among the NON-numeric tokens only. A unit welded to its value
     # belongs to the number, not to the prose: counting the "bps" in "+140bps" as a
@@ -268,7 +283,7 @@ def is_numeric_run(line: str) -> bool:
     # sentence, which is precisely the line this exists to catch.
     words = sum(1 for t in tokens
                 if t not in numeric and _WORD_TOKEN.search(t))
-    return len(numeric) > words
+    return len(measured) > words
 
 
 def numeric_run_lines(text: str) -> list[str]:

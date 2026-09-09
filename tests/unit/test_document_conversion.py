@@ -586,6 +586,37 @@ def test_a_chart_run_is_recognised_and_a_sentence_is_not():
     assert is_numeric_run("Revenue grew across all regions.") is False
 
 
+def test_a_colon_names_the_figure_that_follows_it():
+    """The line the guard was suppressing, from a live retail market deck.
+
+    `2026:` and `2025:` are periods being named, not figures being reported. Scored
+    among the numbers they made six against five words — `H1` and `Ø` are not words
+    by design — and the one line per city where every figure was attached to the
+    period it measures was held out of the index, while the scrambled chart axes
+    around it, being shorter than four numbers, went in.
+    """
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run(
+        "Take-up H1 2026: 24,000 sqm | H1 2025: 32,000 sqm | Ø 5 years 24,000 sqm"
+    ) is False
+
+
+def test_one_label_does_not_launder_an_axis():
+    """The limit of the colon rule, and what makes it safe to widen the filter.
+
+    Only the colon-terminated token stops counting as a figure; everything after it
+    still counts. So a name in front of a stream names the STREAM, not each value in
+    it, and a labelled axis is still an axis. These are the lines that would come
+    back into the index if the rescue were applied to the whole line instead.
+    """
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run("Prime rent: 340 320 300 280 260") is True
+    assert is_numeric_run("Take-up: 24,000 32,000 18,000 9,000") is True
+    assert is_numeric_run("Hamburg 235 200 170 165 150 Cologne 230 150") is True
+
+
 def test_a_table_row_is_never_a_run_however_many_numbers_it_holds():
     """Its header names the column, so every figure in it is attributed. This is the
     guard that keeps the financial tables — the part worth indexing — intact."""
