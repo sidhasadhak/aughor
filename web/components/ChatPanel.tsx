@@ -49,7 +49,7 @@ interface Props {
   /** Optional landing block rendered atop the empty state (e.g. canvas Capabilities). */
   capabilities?: React.ReactNode;
   /** PX-5 — arrive already talking to one agent (the agent surface's Chat door).
-   *  Seeds the composer's persona picker; the person can still switch or clear it. */
+   *  Seeds the composer's agent picker; the person can still switch or clear it. */
   initialAgentId?: string;
 }
 

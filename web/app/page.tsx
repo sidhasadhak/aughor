@@ -26,7 +26,7 @@ import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
-import type { AgenticOpsLayer } from "@/components/AgenticOpsWorkspace";
+import type { AgenticOpsLayer as AgentsLayer } from "@/components/AgenticOpsWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
@@ -1287,7 +1287,7 @@ const VALID_LAYERS = new Set<IntelLayer>([
  *  workspace it belongs to, so a stale or foreign value is ignored, not routed to. */
 const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "spend", "security"]);
 const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
-const AGENTIC_LAYERS = new Set<AgenticOpsLayer>([
+const AGENTIC_LAYERS = new Set<AgentsLayer>([
   "fleet", "agents", "attention", "activity", "automations",
 ]);
 
@@ -1334,7 +1334,7 @@ export default function Home() {
   // deep-link reader and URL sync below now read and write all of them.
   const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
   const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
-  const [agenticOpsLayer, setAgenticOpsLayer] = useState<AgenticOpsLayer>("fleet");
+  const [agentsLayer, setAgentsLayer] = useState<AgentsLayer>("fleet");
   const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
   const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
@@ -1347,7 +1347,7 @@ export default function Home() {
     if (target === "intelligence" && VALID_LAYERS.has(l as IntelLayer)) { setIntelLayer(l as IntelLayer); return true; }
     if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return true; }
     if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return true; }
-    if (target === "agentic-ops" && AGENTIC_LAYERS.has(l as AgenticOpsLayer)) { setAgenticOpsLayer(l as AgenticOpsLayer); return true; }
+    if (target === "agentic-ops" && AGENTIC_LAYERS.has(l as AgentsLayer)) { setAgentsLayer(l as AgentsLayer); return true; }
     return false;
   };
 
@@ -1454,7 +1454,7 @@ export default function Home() {
         pending.tab === "intelligence" ? intelLayer
         : pending.tab === "operations" ? opsLayer
         : pending.tab === "evals" ? evalsLayer
-        : pending.tab === "agentic-ops" ? agenticOpsLayer
+        : pending.tab === "agentic-ops" ? agentsLayer
         : null;
       if ((pending.tab && tab !== pending.tab)
           || (pending.layer && pendingLayerCurrent !== pending.layer)
@@ -1476,7 +1476,7 @@ export default function Home() {
       tab === "intelligence" ? intelLayer
       : tab === "operations" ? opsLayer
       : tab === "evals" ? evalsLayer
-      : tab === "agentic-ops" ? agenticOpsLayer
+      : tab === "agentic-ops" ? agentsLayer
       : null;
     // Only the workspace is addressed by a canvas; elsewhere the id is noise that would
     // survive into screens it means nothing on.
@@ -1494,7 +1494,7 @@ export default function Home() {
     } else {
       window.history.pushState(null, "", next);
     }
-  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agenticOpsLayer, dataLayer, activeCanvas]);
+  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agentsLayer, dataLayer, activeCanvas]);
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
@@ -1728,7 +1728,7 @@ export default function Home() {
     setChatInitialQuestion(q);
     setChatInitialInsightId(insightId);
     // PX-5 — the agent surface's Chat door arrives already talking to that agent.
-    // Cleared on every other entry, so a stale persona never haunts a fresh chat.
+    // Cleared on every other entry, so a stale selection never haunts a fresh chat.
     setChatInitialAgentId(agentId);
     if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
@@ -1805,7 +1805,7 @@ export default function Home() {
 
   // Fleet / Agents / Control Room merged into ONE Agentic Ops workspace — the
   // legacy rail ids and deep links land on the matching layer.
-  const LEGACY_AGENTIC_LAYER: Partial<Record<NavTab, AgenticOpsLayer>> = {
+  const LEGACY_AGENTIC_LAYER: Partial<Record<NavTab, AgentsLayer>> = {
     fleet: "fleet",
     agents: "agents",
     "control-room": "fleet",
@@ -1862,7 +1862,7 @@ export default function Home() {
     // Fleet / Agents / Control Room deep-links open Agentic Ops at the matching layer.
     const agentic = LEGACY_AGENTIC_LAYER[t];
     if (agentic) {
-      setAgenticOpsLayer(agentic);
+      setAgentsLayer(agentic);
       setTab("agentic-ops");
       return;
     }
@@ -2144,7 +2144,7 @@ export default function Home() {
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation}
-                  onOpenMachineView={() => { setAgenticOpsLayer("activity"); setTab("agentic-ops"); }}
+                  onOpenMachineView={() => { setAgentsLayer("activity"); setTab("agentic-ops"); }}
                   workspaceId={selectedWorkspace} />
               </div>
             )}
@@ -2202,15 +2202,15 @@ export default function Home() {
               <ErrorBoundary label="The Agents workspace hit an error.">
                 <AgenticOpsWorkspace
                   connId={selectedConn ?? undefined}
-                  layer={agenticOpsLayer}
-                  onLayerChange={setAgenticOpsLayer}
+                  layer={agentsLayer}
+                  onLayerChange={setAgentsLayer}
                   workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
                   workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
                   onOpenInvestigation={invId => {
                     setSelectedHistoryInvId(invId);
                     handleNavigate("recents");
                   }}
-                  onOpenAutomations={() => setAgenticOpsLayer("automations")}
+                  onOpenAutomations={() => setAgentsLayer("automations")}
                   // DS-5 — an agent's Map sends the reader to the surface that owns the
                   // thing they clicked: the provider catalog for a Slack door, the data
                   // catalog (scoped to that connection) for the connection it answers on.

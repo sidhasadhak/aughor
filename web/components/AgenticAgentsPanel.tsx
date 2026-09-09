@@ -278,8 +278,8 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
         <Button variant="ghost" size="xs" disabled={busy} onClick={togglePause}>
           {agent.enabled ? "Pause" : "Resume"}
         </Button>
-        {/* PX-5 — the Genie-surface composition completed: the agent page could
-            monitor and benchmark this agent but not TALK to it. Chat leads. */}
+        {/* PX-5 — the agent surface completed: this page could monitor and
+            benchmark the agent but not TALK to it. Chat leads. */}
         {onChatWithAgent && (
           <Button variant="default" size="xs" data-testid="agent-chat"
             onClick={() => onChatWithAgent(agent.id)}>Chat</Button>

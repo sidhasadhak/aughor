@@ -382,7 +382,7 @@ BASELINE: dict[str, int] = {
     # `insight_id` field references (the guard clause + its test) by rewording three
     # prose lines to the glossary's words — a finding references, narrative post-answer.
     # saying "finding" there (the glossary word) paid for the API names they must import.
-    "insight": 1958,
+    "insight": 1883,
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     "investigation_in_web": 617,
