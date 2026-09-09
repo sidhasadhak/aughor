@@ -43,6 +43,7 @@ import {
   runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ShortcutSheet } from "@/components/query/ShortcutSheet";
 
 type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
 
@@ -443,6 +444,10 @@ export function SqlMode({
           >
             <Icon name="clock" size={14} />
           </Button>
+          {/* SE-6 — the keys, listed. Ten commands were added to this editor and none
+              of them says so anywhere on screen; a verb nobody can find is a verb that
+              does not exist. */}
+          <ShortcutSheet />
           {runAllSummary && !error && (
             <span className="aug-fs-ui" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>
               {runAllSummary}
