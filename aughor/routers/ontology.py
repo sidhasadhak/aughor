@@ -528,6 +528,91 @@ def get_ontology_relationships(
     return {rid: r.model_dump() for rid, r in graph.relationships.items()}
 
 
+@router.get("/ontology/metrics/{metric_id}/provenance")
+def get_metric_provenance(
+    metric_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Every recorded definition of one metric, who is behind each, and which one wins.
+
+    The panel beside an answer reads this. It exists because "revenue" having two
+    definitions is not a bug to resolve quietly — it is a fact about the business that the
+    person reading the number is entitled to see, along with whose definition they are
+    looking at.
+
+    Harvest is best-effort per SOURCE: a deployment with no overrides, or a history store
+    that cannot be read, still returns the claims the other sources could evidence. What
+    it must never do is return a definition it could not evidence, so a failed source
+    contributes nothing rather than a placeholder.
+    """
+    from aughor.ontology import harvest as harvest_mod
+    from aughor.ontology.authority import choose
+
+    graph = _get_ontology_graph(connection_id, schema_name)
+    metric = (graph.metrics.get(metric_id) if graph is not None else None)
+    if metric is None:
+        raise HTTPException(status_code=404, detail="No such metric")
+
+    overrides = []
+    try:
+        from aughor.ontology.overrides import load_overrides
+        overrides = [o for o in load_overrides(connection_id, schema_name or "")
+                     if getattr(o, "target_kind", "") == "metric"
+                     and getattr(o, "target_id", "") == metric_id]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "override harvest is per-source best-effort",
+                 counter="ontology.provenance.overrides")
+
+    registry = None
+    try:
+        from aughor.semantic.metrics import list_metrics
+        registry = next((m for m in list_metrics(connection_id=connection_id)
+                         if getattr(m, "name", "") == metric_id
+                         or getattr(m, "label", "") == metric.display_name), None)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "registry harvest is per-source best-effort",
+                 counter="ontology.provenance.registry")
+
+    executed: list[str] = []
+    try:
+        from aughor.db.history import recent_executed_sql
+        executed = recent_executed_sql(connection_id)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "reliance is a tiebreak, never a blocker",
+                 counter="ontology.provenance.reliance")
+
+    definitions = harvest_mod.harvest(harvest_mod.Evidence(
+        overrides=overrides, registry=registry, executed_sql=executed))
+
+    # The graph's OWN formula is a claim too, and often the only one — but it is only
+    # `verified` if the graph says it was bound, never because it is the incumbent.
+    if metric.formula_sql.strip() and not any(
+            d.formula_sql.strip() == metric.formula_sql.strip() for d in definitions):
+        from aughor.ontology.models import DefinitionSource
+        definitions.append(DefinitionSource(
+            formula_sql=metric.formula_sql, source_asset="the ontology graph",
+            source_kind="table", verified=bool(metric.verified),
+            verification_note=metric.verification_note,
+            use_count=harvest_mod.reliance(metric.formula_sql, executed)))
+
+    chosen = choose(definitions)
+    return {
+        "metric_id": metric_id,
+        "display_name": metric.display_name,
+        "definitions": [d.model_dump() for d in definitions],
+        "chosen": chosen.winner.model_dump() if chosen.winner else None,
+        "dissenter": chosen.dissenter.model_dump() if chosen.dissenter else None,
+        "contested": chosen.contested,
+        "why": chosen.why,
+        # Recorded divergences the graph already knew about, for the same panel.
+        "known_divergent_calculations": list(metric.known_divergent_calculations),
+    }
+
+
 @router.get("/ontology/duplicate-entities")
 def get_duplicate_entities(
     connection_id: str = BUILTIN_ID,

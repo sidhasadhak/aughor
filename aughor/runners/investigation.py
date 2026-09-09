@@ -254,18 +254,61 @@ def run_investigation(
         seen.pop("headline_is_final", None)   # a drain marker, not a result field
         _note_dispatch(caller, req, seen)
 
+    #: Terminal statuses that mean the investigation did NOT answer. Read from the
+    #: investigation RECORD, which is the authority — the stream is a proxy for it.
+    _FAILED_STATUSES = ("failed", "timed_out", "interrupted")
+
+    def _record_failure(inv_id: str) -> str:
+        """The persisted verdict for ``inv_id`` when it is a failure, else ``""``.
+
+        Best-effort: an unreadable history store must not turn a completed run into a
+        reported failure. It only ever ADDS a failure the stream missed.
+        """
+        if not inv_id:
+            return ""
+        try:
+            from aughor.db.history import get_investigation
+            row = get_investigation(inv_id) or {}
+        except Exception:
+            return ""
+        status = str(row.get("status") or "")
+        if status not in _FAILED_STATUSES:
+            return ""
+        # The row's own words when it has them. `fail_investigation` records a reason now,
+        # so this stops being "it ended failed" and starts being the cause — which is the
+        # whole point of asking the record instead of the stream.
+        why = str(row.get("error") or "").strip()
+        head = (f"the investigation ended {status} after "
+                f"{int(row.get('query_count') or 0)} queries, with no answer")
+        return f"{head} — {why}" if why else head
+
     def _inline(reason: str) -> InvestigationRun:
         """Drain to completion and report what came back — the only path that has waited,
-        and therefore the only one that can report a failure or an answer."""
+        and therefore the only one that can report a failure or an answer.
+
+        🔑 The stream is not the authority on whether this failed. An `error` event is one
+        way a run reports failure and not the only one: measured 2026-09-06, an
+        investigation hit its 900s time budget, was persisted `failed` with no headline
+        and ZERO queries — and emitted no `error` event, so this returned `executed` with
+        an empty summary. The Slack step then skipped for missing upstream data and the
+        run was filed `fired`, `failed=0`: a briefing that never arrived, recorded as a
+        success. That is the exact failure H5's comment below says it fixed, arriving
+        through the one door H5 did not cover.
+
+        So after draining, ASK THE RECORD. The stream is a proxy; the investigation row is
+        the measure, and this path has waited, so the row is already terminal.
+        """
         _work()
-        if seen.get("error"):
-            return InvestigationRun("failed", seen["error"], basis="inline",
-                                    investigation_id=seen.get("investigation_id", ""),
+        inv_id = seen.get("investigation_id", "")
+        error = seen.get("error") or _record_failure(inv_id)
+        if error:
+            return InvestigationRun("failed", error, basis="inline",
+                                    investigation_id=inv_id,
                                     receipt_id=seen.get("receipt_id", ""),
                                     headline=seen.get("headline", ""),
                                     summary=seen.get("summary", ""))
         return InvestigationRun("executed", reason, basis="inline",
-                                investigation_id=seen.get("investigation_id", ""),
+                                investigation_id=inv_id,
                                 receipt_id=seen.get("receipt_id", ""),
                                 headline=seen.get("headline", ""),
                                 summary=seen.get("summary", ""))

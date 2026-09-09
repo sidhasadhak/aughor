@@ -242,6 +242,67 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
     return made
 
 
+class AgentProposeRequest(BaseModel):
+    #: What the agent should be able to answer, in the person's own words.
+    description: str = ""
+    #: Which connection it will answer on. The scope is drafted WITHIN this.
+    connection_id: str = ""
+
+
+@router.post("/agents/custom/propose")
+async def propose_user_agent(body: AgentProposeRequest):
+    """Describe an agent; get a drafted one back with its evidence. Nothing is created.
+
+    Declared BEFORE the `/agents/custom/{agent_id}` routes for the reason the automations
+    router learned the hard way: FastAPI matches in declaration order, and a static segment
+    behind a path-parameter route is never reached.
+
+    The catalogue, documents and packs are read HERE and handed to a pure proposer, so the
+    judgment half stays testable without a database and without spending a token.
+    """
+    from aughor.custom_agents.propose import propose_agent
+
+    conn_id = (body.connection_id or "").strip()
+    if not conn_id:
+        # 200 with a refusal, not a 422: "which connection?" is an answer to the question
+        # asked, and the flow renders it as a step rather than as a form error.
+        return {"verdict": "refused", "reason": "choose a connection first — an agent's "
+                "scope is drafted inside one", "draft": {}, "goldens": [],
+                "disclosures": [], "evidence": "", "notes": ""}
+
+    catalogue: list[dict] = []
+    try:
+        from aughor.routers.catalog import get_catalog_tree
+        tree = await get_catalog_tree()
+        for section in tree.get("sections", []):
+            for entry in section.get("entries", []):
+                if entry.get("conn_id") == conn_id:
+                    catalogue = entry.get("schemas") or []
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "agent proposal catalogue read", counter="agents.propose_catalogue")
+
+    documents: list[dict] = []
+    try:
+        from aughor.knowledge.indexer import list_documents
+        documents = list_documents() or []
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "agent proposal document read", counter="agents.propose_documents")
+
+    packs: list[dict] = []
+    try:
+        from aughor.packs.intake import active_packs
+        packs = [{"id": p.id, "name": getattr(p, "name", ""),
+                  "description": getattr(p, "description", "")} for p in active_packs()]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "agent proposal pack read", counter="agents.propose_packs")
+
+    return propose_agent(body.description, conn_id=conn_id, catalogue=catalogue,
+                         documents=documents, packs=packs).as_response()
+
+
 @router.post("/agents/custom", status_code=201)
 def create_user_agent(body: UserAgentCreate):
     _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)

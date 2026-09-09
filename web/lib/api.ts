@@ -2382,6 +2382,53 @@ export interface DocumentEntry {
   /** Lines of unattributed figures held back from the index (not from the document). */
   suppressed_numeric_runs?: number;
   suppressed_sample?: string[];
+  /** True for schema documentation the platform COMPILED, false for a person's upload.
+   *  They share a collection because retrieval wants them together; this surface does
+   *  not, and without the flag one real file looked like sixteen documents. */
+  generated?: boolean;
+}
+
+/** What a document WOULD become, before anything is indexed or paid for. */
+export interface DocumentConversion {
+  filename: string;
+  markdown: string;
+  characters: number;
+  would_index_chunks: number;
+  page_count: number;
+  pages_read: number;
+  pages_needing_ocr: number[];
+  pages_failed: number[];
+  suppressed_numeric_runs: number;
+  suppressed_sample: string[];
+  settings: ChunkSettings;
+}
+
+/** Convert and show, indexing NOTHING and keeping nothing.
+ *
+ *  The look-before-you-commit step. The file stays in the browser and is posted again
+ *  to `uploadDocument` on approval — deliberately, so there is no staging area to
+ *  expire or leak. Conversion is deterministic, so what was approved is what is
+ *  indexed. */
+export async function convertDocument(
+  file: File, settings?: Partial<ChunkSettings>,
+): Promise<DocumentConversion> {
+  const form = new FormData();
+  form.append("file", file);
+  if (settings && Object.keys(settings).length) form.append("chunk_settings", JSON.stringify(settings));
+  const res = await fetch(`${getApiBase()}/documents/convert`, { method: "POST", body: form });
+  if (!res.ok) throw await documentError(res, "Could not read that document");
+  return res.json();
+}
+
+/** Chunks with no document — usually schema docs whose connection was deleted.
+ *  Separate from re-index because that one re-embeds the whole corpus on its way past
+ *  them; deleting an orphan needs no vector computed. */
+export async function purgeOrphanChunks(dryRun = true): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/documents/purge-orphans?dry_run=${dryRun ? "true" : "false"}`,
+    { method: "POST" });
+  if (!res.ok) throw await documentError(res, "Purge failed");
+  return res.json();
 }
 
 /** Why a document could not be read, in a form a client can branch on.
@@ -6156,6 +6203,72 @@ export async function listAgentTemplates(): Promise<AgentTemplate[]> {
   const res = await fetch(`${getApiBase()}/agents/templates`);
   if (!res.ok) return [];
   return (await res.json()).templates ?? [];
+}
+
+/** What the platform drafted from a description, and why. Nothing is created. */
+export type AgentProposal = {
+  verdict: "proposed" | "refused";
+  reason: string;
+  draft: {
+    name?: string; purpose?: string; instructions?: string;
+    connection_id?: string; schema_scope?: string;
+    doc_ids?: string[]; pack_ids?: string[];
+  };
+  goldens: { question: string; why: string; reference_sql: string; certified: boolean }[];
+  /** Written by the BACKEND, not the model — render every one. */
+  disclosures: string[];
+  /** Which tables made it choose this scope, in the drafter's words. */
+  evidence: string;
+  notes: string;
+};
+
+/** One recorded definition of a metric, and who is behind it. */
+export type DefinitionSource = {
+  formula_sql: string;
+  source_asset: string;
+  source_kind: string;
+  author: string;
+  recorded_at: string;
+  use_count: number;
+  certified: boolean;
+  /** The formula BOUND against the live database. The only field here that is evidence
+   *  about the data rather than about people — and the reason it outranks the rest. */
+  verified: boolean;
+  verification_note: string;
+};
+
+export type MetricProvenance = {
+  metric_id: string;
+  display_name: string;
+  definitions: DefinitionSource[];
+  chosen: DefinitionSource | null;
+  /** The best claim that DISAGREES with the winner, if any. */
+  dissenter: DefinitionSource | null;
+  contested: boolean;
+  why: string;
+  known_divergent_calculations: string[];
+};
+
+export async function getMetricProvenance(
+  metricId: string, connectionId: string, schemaName?: string,
+): Promise<MetricProvenance> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  const res = await fetch(
+    `${getApiBase()}/ontology/metrics/${encodeURIComponent(metricId)}/provenance?${q}`);
+  if (!res.ok) throw new Error((await res.text()) || `provenance failed (${res.status})`);
+  return res.json();
+}
+
+export async function proposeUserAgent(body: {
+  description: string; connection_id: string;
+}): Promise<AgentProposal> {
+  const res = await fetch(`${getApiBase()}/agents/custom/propose`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error((await res.text()) || `draft failed (${res.status})`);
+  return res.json();
 }
 
 export async function createUserAgentFromTemplate(body: {

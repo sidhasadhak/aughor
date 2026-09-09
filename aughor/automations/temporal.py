@@ -105,6 +105,16 @@ def observation_note(now: datetime, cron: str, lag_days: int = DEFAULT_LAG_DAYS)
         f"Never treat the current, in-progress period (today is {today.isoformat()} "
         "UTC and it is partial by construction) as an observation period, and never "
         "compare a partial period against a complete one.")
+    if lag > 1:
+        # Without this the reader gets a correctly-lagged report that LOOKS stale: the
+        # theLook briefing posted "On September 5th..." on September 8 with nothing
+        # saying why, and the first thing its owner said was "today's date is wrong".
+        lines.append(
+            f"Say in the report which period you observed AND that it is {lag} days "
+            f"behind today ({today.isoformat()} UTC), because this source restates its "
+            "most recent days. A reader must never have to guess why the newest figure "
+            "you quote is dated earlier than today — undated, a lagged report is "
+            "indistinguishable from a broken one.")
     return "\n".join(lines)
 
 
@@ -117,9 +127,11 @@ def previous_report_note(automation_id: str) -> str:
     a failed run."""
     try:
         from aughor.automations.store import get_runs
-        for run in get_runs(automation_id=automation_id, limit=25):
-            if run.outcome != "fired":
-                continue
+        # outcomes= at the STORE, never a Python filter over the newest N rows: a daily
+        # cron ticks once a minute, so the newest 25 rows are 25 minutes of `not_fired`
+        # and the previous report sits ~1,440 rows behind them. Measured 2026-09-08 —
+        # this note had returned '' on every production run since it shipped.
+        for run in get_runs(automation_id=automation_id, outcomes=("fired",), limit=25):
             for eff in run.effects or []:
                 data = getattr(eff, "data", None) or {}
                 kind = getattr(eff, "kind", "")

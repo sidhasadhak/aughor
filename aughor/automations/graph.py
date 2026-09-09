@@ -26,7 +26,8 @@ from __future__ import annotations
 from typing import Any
 
 from aughor.automations.dataflow import (
-    BRANCH_SKIP, FAN_PUBLISHED, GUARD_SKIP, alias_for, collect_refs, effect_refs,
+    BRANCH_SKIP, FAN_PUBLISHED, GUARD_SKIP, STARVED_SKIP, alias_for, collect_refs,
+    effect_refs,
     else_target, fan_source, guard_clauses, is_binding, parse_ref, render_clause, FROM,
 )
 
@@ -208,6 +209,13 @@ def build_graph(automation: Any, run: Any = None) -> dict:
                 # over, and the dim `skipped` grey is the colour of something wrong.
                 node["not_taken"] = all(
                     str(getattr(x, "message", "")).startswith(BRANCH_SKIP)
+                    for x in group if getattr(x, "status", "") == "skipped")
+                # The third kind, and the only one that means something BROKE: the step
+                # this one reads produced nothing. Same constant discipline as its two
+                # siblings — a starved step wearing the guarded step's dim grey is how a
+                # missing briefing looks like a working automation.
+                node["starved"] = any(
+                    str(getattr(x, "message", "")).startswith(STARVED_SKIP)
                     for x in group if getattr(x, "status", "") == "skipped")
             # VA-4c — which step was slow, and how many attempts it took. The run's single
             # duration could not answer either. W2 — summed and maxed across the

@@ -92,6 +92,44 @@ def test_previous_report_is_the_last_fired_investigate_summary(runs_store):
     assert "restated its own history" in note
 
 
+def test_previous_report_survives_a_real_day_of_not_fired_ticks(runs_store):
+    """The population is the scheduler's, not a hand-picked pair.
+
+    The two `not_fired` rows above are what this note was born with, and they are the
+    reason it shipped broken: the ENGINE appends a row on every tick, so a daily cron
+    lays down ~1,440 `not_fired` rows between one fired run and the next. Measured on
+    the live theLook briefing 2026-09-08: 400 consecutive rows, all `not_fired`, and
+    this note had therefore returned '' on every production run since it shipped —
+    the agent was never once told its source restates history.
+
+    300 rows is well past any window this could be tempted to take; the fix is that
+    there IS no window over ticks, because the outcome filter runs in SQL.
+    """
+    _run(runs_store, "auto1", "fired", "Orders were 1,745 on September 4.")
+    for _ in range(300):
+        _run(runs_store, "auto1", "not_fired")
+
+    note = temporal.previous_report_note("auto1")
+    assert "Orders were 1,745 on September 4." in note, (
+        "the previous report was buried under a day of scheduler ticks")
+
+
+def test_lag_makes_the_report_disclose_its_own_age(runs_store):
+    """A correctly-lagged report that does not say so reads as a broken one.
+
+    The live briefing posted "On September 5th, 2026..." on September 8 with nothing
+    explaining the gap, and its owner's first words were "today's date is wrong".
+    """
+    note = temporal.observation_note(NOW, "0 9 * * *", lag_days=3)
+    assert "3 days behind today (2026-09-06 UTC)" in note
+    assert "restates its most recent days" in note
+
+
+def test_no_lag_means_no_disclosure_sentence(runs_store):
+    # lag=1 is just "yesterday" — nothing to explain, and no extra prompt weight.
+    assert "behind today" not in temporal.observation_note(NOW, "0 9 * * *")
+
+
 def test_no_history_means_no_note(runs_store):
     assert temporal.previous_report_note("never-ran") == ""
 

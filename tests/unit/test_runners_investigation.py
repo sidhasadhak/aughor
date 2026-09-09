@@ -148,6 +148,82 @@ def test_an_inline_run_that_errored_is_a_failure_not_an_executed_tick(monkeypatc
     assert "unreachable" in run.message
 
 
+def test_an_inline_run_the_RECORD_calls_failed_is_a_failure_even_with_no_error_event(
+        monkeypatch):
+    """The Sep 6 briefing, reproduced.
+
+    An `error` event is one way a run reports failure, not the only one. Measured live:
+    an investigation hit its 900s budget, was persisted `failed` with no headline and
+    ZERO queries, and emitted NO error event — so the inline path returned `executed`
+    with an empty summary, the Slack step skipped for missing upstream data, and the run
+    was filed `fired` with failed=0. A briefing that never arrived, recorded as a success.
+
+    The stream is a proxy. The investigation row is the measure, and this path waited for
+    it, so it is already terminal by the time we look.
+    """
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-900"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": "failed", "query_count": 0})
+
+    run = run_investigation(_req(), idempotency_key="k")
+
+    assert run.status == "failed" and not run.ok
+    assert "ended failed" in run.message and "0 queries" in run.message
+
+
+@pytest.mark.parametrize("status", ["failed", "timed_out", "interrupted"])
+def test_every_non_answering_terminal_status_is_a_failure(monkeypatch, status):
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch, {"type": "start", "investigation_id": "inv-t"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": status, "query_count": 0})
+    assert run_investigation(_req(), idempotency_key="k").status == "failed"
+
+
+def test_a_completed_record_stays_an_executed_tick(monkeypatch):
+    """The guard must not invert: a run that finished is not made a failure by this."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-ok"},
+              {"type": "headline", "headline": "Refunds rose 4%"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": "complete", "query_count": 7})
+
+    run = run_investigation(_req(), idempotency_key="k")
+    assert run.status == "executed" and run.ok
+
+
+def test_an_unreadable_history_store_never_invents_a_failure(monkeypatch):
+    """Best-effort in ONE direction: this may only ADD a failure the stream missed. A
+    store that cannot be read must not turn a completed run into a reported one."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-x"},
+              {"type": "headline", "headline": "Refunds rose 4%"})
+
+    def _boom(_i):
+        raise RuntimeError("history store unreadable")
+    monkeypatch.setattr("aughor.db.history.get_investigation", _boom)
+
+    run = run_investigation(_req(), idempotency_key="k")
+    assert run.status == "executed" and run.ok
+
+
+def test_the_stream_error_still_wins_and_is_reported_verbatim(monkeypatch):
+    """The record is a SECOND source, not a replacement: a stream error is more specific
+    than 'ended failed', so it is the one the reader gets."""
+    _no_loop(monkeypatch)
+    _fake_ask(monkeypatch,
+              {"type": "start", "investigation_id": "inv-e"},
+              {"type": "error", "message": "connection 'conn-h5' is unreachable"})
+    monkeypatch.setattr("aughor.db.history.get_investigation",
+                        lambda i: {"status": "failed", "query_count": 0})
+
+    run = run_investigation(_req(), idempotency_key="k")
+    assert run.status == "failed" and "unreachable" in run.message
+
+
 # ── the join a submitted run cannot return ───────────────────────────────────────
 
 def test_the_dispatch_join_is_recorded_so_a_submitted_run_is_still_traceable(monkeypatch):

@@ -39,16 +39,22 @@ import { StatusChip } from "@/components/brief/StatusChip";
 import { Button } from "@/components/ui/button";
 import {
   createAgentGolden, createUserAgent, createUserAgentFromTemplate, getCatalogTree,
-  getConnections, getPacks, listAgentTemplates, listDocuments,
-  type AgentTemplate, type CatalogTree, type Connection, type DocumentEntry,
+  getConnections, getPacks, listAgentTemplates, listDocuments, proposeUserAgent,
+  type AgentProposal, type AgentTemplate, type CatalogTree, type Connection,
+  type DocumentEntry,
   type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 
-type Step = "start" | "scope" | "define" | "prove" | "reach";
+type Step = "describe" | "start" | "scope" | "define" | "prove" | "reach";
 type Seed = { question: string; needs: string };
 
 const STEPS: { id: Step; label: string; blurb: string }[] = [
+  // The step every incumbent now opens on, and the one this flow was missing: nobody can
+  // choose a schema before they know the catalogue, so the platform reads it and DRAFTS,
+  // and the person certifies. It is still a step and not a replacement — the draft lands
+  // in the same fields the next four steps edit, so nothing here is a black box.
+  { id: "describe", label: "Describe", blurb: "say what it should answer" },
   { id: "start",  label: "Start",  blurb: "from a pack, or from scratch" },
   { id: "scope",  label: "Scope",  blurb: "where it may look" },
   { id: "define", label: "Define", blurb: "how it should think" },
@@ -92,7 +98,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
   onCreated: (agent: UserAgent) => void;
   onCancel: () => void;
 }) {
-  const [step, setStep] = useState<Step>("start");
+  const [step, setStep] = useState<Step>("describe");
   const [templates, setTemplates] = useState<AgentTemplate[]>([]);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [documents, setDocuments] = useState<DocumentEntry[]>([]);
@@ -110,6 +116,12 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
   const [seeds, setSeeds] = useState<Seed[]>([]);
   const [goldens, setGoldens] = useState<{ question: string; reference_sql: string }[]>([]);
   const [draft, setDraft] = useState<{ question: string; sql: string }>({ question: "", sql: "" });
+
+  // The describe step. `proposal` is what the platform drafted; nothing is created until
+  // the person adopts it and walks the rest of the flow.
+  const [description, setDescription] = useState("");
+  const [proposal, setProposal] = useState<AgentProposal | null>(null);
+  const [drafting, setDrafting] = useState(false);
 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,6 +148,33 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
     setInstructions(t.instructions);
     setPackIds([t.pack_id]);
     setSeeds(t.suggested_goldens ?? []);
+    setStep("scope");
+  };
+
+  const askForADraft = useCallback(async () => {
+    setDrafting(true); setError(null); setProposal(null);
+    try {
+      setProposal(await proposeUserAgent({ description, connection_id: connectionId }));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "could not draft an agent");
+    } finally {
+      setDrafting(false);
+    }
+  }, [description, connectionId]);
+
+  /** Adopt a draft into the SAME fields the rest of the flow edits — never a hidden
+   *  config. The person lands on Scope with everything filled and every field editable. */
+  const adoptDraft = (p: AgentProposal) => {
+    setTemplate(null);
+    setName(p.draft.name ?? "");
+    setInstructions(p.draft.instructions ?? "");
+    setSchemaScope(p.draft.schema_scope ?? "");
+    setDocIds(p.draft.doc_ids ?? []);
+    setPackIds(p.draft.pack_ids ?? []);
+    // Drafted goldens arrive as QUESTIONS with no reference SQL — the model is not
+    // allowed to certify its own suite — so they ride the `seeds` rail the Prove step
+    // already renders as "questions still needing SQL".
+    setSeeds((p.goldens ?? []).map(g => ({ question: g.question, needs: g.why })));
     setStep("scope");
   };
 
@@ -233,6 +272,102 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
       )}
 
       {/* ── 1 · Start ── */}
+      {step === "describe" && (
+        <>
+          <Section title="Say what this agent should be able to answer"
+            note="The platform reads your catalogue and drafts the scope, the stance and the
+                  questions worth being right about. You edit every one of them next —
+                  nothing is created here.">
+            <Field label="Which connection?"
+              hint="An agent's scope is drafted inside one connection.">
+              <select className="aug-input" value={connectionId}
+                onChange={e => { setConnectionId(e.target.value); setSchemaScope(""); }}
+                style={{ width: "100%", maxWidth: 420 }}>
+                <option value="">Choose a connection…</option>
+                {connections.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="What should it answer?"
+              hint="Plain words. Name the decisions it should support, not the tables.">
+              <textarea className="aug-input" rows={3} value={description}
+                onChange={e => setDescription(e.target.value)}
+                placeholder="e.g. Answer questions about order volume and returns for the retail team, and always flag when a day is still partial."
+                style={{ width: "100%", maxWidth: 640 }} />
+            </Field>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <Button variant="default" size="sm" onClick={askForADraft}
+                disabled={drafting || !description.trim() || !connectionId}>
+                {drafting ? "Reading your catalogue…" : "Draft it"}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => setStep("start")}>
+                Skip — start from a pack instead
+              </Button>
+            </div>
+          </Section>
+
+          {proposal?.verdict === "refused" && (
+            <Section title="It declined to draft this">
+              <Note>{proposal.reason || "nothing here can support that agent"}</Note>
+            </Section>
+          )}
+
+          {proposal?.verdict === "proposed" && (
+            <Section title={`Drafted: ${proposal.draft.name}`}
+              note="Nothing exists yet. Adopt it and every field stays editable.">
+              {proposal.evidence && (
+                <p className="aug-fs-sm" style={{ color: "var(--t2)", margin: "0 0 10px" }}>
+                  <strong>Why this scope:</strong> {proposal.evidence}
+                </p>
+              )}
+              <Field label="Scope">
+                <span className="aug-fs-sm" style={{ color: "var(--t1)" }}>
+                  {proposal.draft.schema_scope || "every schema on this connection"}
+                  {" · "}
+                  {(proposal.draft.doc_ids?.length ?? 0)} document(s)
+                  {" · "}
+                  {(proposal.draft.pack_ids?.length ?? 0)} pack(s)
+                </span>
+              </Field>
+              <Field label="Stance">
+                <p className="aug-fs-sm" style={{
+                  color: "var(--t1)", margin: 0, whiteSpace: "pre-wrap",
+                  background: "var(--bg-1)", border: "1px solid var(--b1)",
+                  borderRadius: "var(--r2)", padding: "8px 11px", maxWidth: 640,
+                }}>{proposal.draft.instructions}</p>
+              </Field>
+
+              {proposal.goldens.length > 0 && (
+                <Field label={`${proposal.goldens.length} question(s) worth being right about`}
+                  hint="Drafted, not certified — you write the reference SQL on the Prove step.">
+                  <ul className="aug-fs-sm" style={{
+                    color: "var(--t1)", margin: 0, paddingLeft: 18,
+                  }}>
+                    {proposal.goldens.map((g, i) => <li key={i}>{g.question}</li>)}
+                  </ul>
+                </Field>
+              )}
+
+              {/* Backend-written, never the drafter's. Each is a fact it had an incentive
+                  to omit and no obligation to notice. */}
+              {proposal.disclosures.map((d, i) => (
+                <div key={i} style={{ marginBottom: 6 }}><Note>{d}</Note></div>
+              ))}
+
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <Button variant="default" size="sm" onClick={() => adoptDraft(proposal)}>
+                  Use this draft
+                </Button>
+                <Button variant="ghost" size="sm" onClick={askForADraft} disabled={drafting}>
+                  Draft again
+                </Button>
+              </div>
+            </Section>
+          )}
+        </>
+      )}
+
       {step === "start" && (
         <Section title="Start from a pack, or from scratch">
           {templates.length === 0 ? (
@@ -396,7 +531,9 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
             {seeds.length > 0 && (
               <div style={{ marginBottom: 12 }}>
                 <div className="aug-label" style={{ color: "var(--t2)", marginBottom: 6 }}>
-                  Suggested by the {template?.name} pack
+                  {template
+                    ? `Suggested by the ${template.name} pack`
+                    : "Drafted from your description — none is certified until it has reference SQL"}
                 </div>
                 <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                   {seeds.map(s => (
