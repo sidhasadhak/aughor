@@ -370,6 +370,21 @@ def _nameless_in_run_block(lines: list[str], block: list[int]) -> set[int]:
             if not _has_word(lines[i]) and not lines[i].lstrip().startswith("#")}
 
 
+def figures_without_words(text: str) -> bool:
+    """Does this carry figures and nothing to name them?
+
+    The question `is_numeric_run` asks, without its four-figure floor. The floor exists
+    because a pair of numbers in PROSE is usually readable from its surroundings — but
+    a caller looking at one cell of a table has no surroundings to read, so a single
+    bare figure is already the whole answer. Public because the converter needs it to
+    tell a laid-out slide from a table, and reaching across for the patterns themselves
+    would couple it to how this module happens to spell them.
+    """
+    tokens = text.split()
+    numeric = [t for t in tokens if _NUMERIC_TOKEN.match(t)]
+    return bool(numeric) and not any(_WORD_TOKEN.search(t) for t in tokens)
+
+
 def numeric_run_lines(text: str) -> list[str]:
     """The lines that would be suppressed — for REPORTING, never mutation.
 

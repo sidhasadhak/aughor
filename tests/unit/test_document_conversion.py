@@ -616,6 +616,61 @@ def test_a_table_too_short_to_judge_is_left_alone():
     assert _repair_wrapped_headers(short) == short.rstrip("\n")
 
 
+# ── A slide laid out with invisible cells is not a table ──────────────────────
+
+MAP_LEGEND = """| | Mass-market location Premium location |
+|---|---|
+| MITTE | |
+| | 2 |
+| 5 | |
+| | 3 |
+"""
+
+LETTINGS = """| Quarter / year | Address | Retailer | Gross lease area |
+|---|---|---|---|
+| 2024 Q1 | Prager Straße 10 | C&A | 3,400 sqm |
+| 2025 Q3 | Schloßstraße 1 | Papenbreer | 1,800 sqm |
+| 2023 Q1 | Prager Straße 3 | Go Asia | 1,500 sqm |
+"""
+
+
+def test_a_city_map_is_not_a_data_table():
+    """Measured on a retail deck. "MITTE" is a map panel's title and 2, 5 and 3 are the
+    numbered PINS printed on it — read as a table it says Mitte has five mass-market and
+    three premium locations, which is nowhere in the document.
+
+    It is armoured, too: a table row is never suppressed as a numeric run, on the
+    grounds that its header names the column. Here the header names a legend.
+    """
+    from aughor.knowledge.convert import _demote_layout_tables
+
+    demoted = _demote_layout_tables(MAP_LEGEND)
+
+    assert "|" not in demoted, "it should no longer claim to be a table"
+    # Demoted, not deleted — the words stay searchable and the figures fall back under
+    # the ordinary rule instead of being exempt from it.
+    assert "MITTE" in demoted
+    assert "Mass-market location" in demoted
+
+
+def test_a_real_table_with_figures_in_every_row_is_left_alone():
+    """The rule keys on rows that have figures and NO words. A data table's rows have
+    both, which is exactly what makes their header meaningful."""
+    from aughor.knowledge.convert import _demote_layout_tables
+
+    assert _demote_layout_tables(LETTINGS) == LETTINGS.rstrip("\n")
+
+
+def test_one_odd_row_does_not_condemn_a_table():
+    """Most of the rows have to be bare figures. A single sparse row is a gap in a real
+    table, not evidence that the whole thing is layout."""
+    from aughor.knowledge.convert import _demote_layout_tables
+
+    with_gap = LETTINGS.replace("| 2023 Q1 | Prager Straße 3 | Go Asia | 1,500 sqm |",
+                                "| | | | 1,500 |")
+    assert _demote_layout_tables(with_gap) == with_gap.rstrip("\n")
+
+
 # ── Unattributed numeric runs stay out of the index ───────────────────────────
 
 CHART_RUN = "### Value (GMV)245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7"

@@ -261,6 +261,65 @@ def _rejoin_header(rows: list[str], out: list[str], at: list[int]) -> None:
     out[at[2]] = "| " + " | ".join(data[0]) + " |"
 
 
+def _demote_layout_tables(markdown: str) -> str:
+    """Un-table the things that were never tables.
+
+    A slide laid out with invisible cells converts to Markdown as a table, and the
+    converter cannot tell that apart from a real one. Measured on a retail deck, a
+    RETAIL CITY MAP came through as:
+
+        ||Mass-market location Premium location|
+        |MITTE||
+        ||2|
+        |5||
+
+    "MITTE" is a map panel's title and 2, 5 and 3 are the numbered PINS printed on it.
+    Read as a table it says Mitte has five mass-market and three premium locations,
+    which is not in the document at all. Worse, it is armoured: `is_numeric_run` never
+    suppresses a table row, on the grounds that its header names the column. Here the
+    header names a legend and the rows are map furniture.
+
+    So the same question is asked of a table row that is asked of every other line —
+    is there anything here to attribute these figures to? A row of bare figures with no
+    word anywhere in it is not attributed by a header it does not belong to. Where most
+    of a table's rows are like that, the table is layout, and it is DEMOTED to text
+    rather than deleted: the words stay searchable, the figures fall back under the
+    ordinary numeric-run rule, and nothing claims to be data that is not.
+
+    Deliberately narrow. The deck's other layout tables — the city tiles, the contacts
+    page — carry words in every row and are left exactly as they are; they are noise,
+    not fabricated data, and rewriting them would risk real tables for no gain.
+    """
+    from aughor.knowledge.documents import figures_without_words
+
+    out: list[str] = []
+    block: list[str] = []
+
+    def flush() -> None:
+        if len(block) >= 4:
+            rows = [_split_row(r) for r in block]
+            body = [cells for cells in rows[2:] if any(c for c in cells)]
+            bare = [cells for cells in body
+                    if figures_without_words(" ".join(cells))]
+            if len(bare) >= 2 and len(bare) * 2 > len(body):
+                out.extend(" ".join(c for c in cells if c).strip()
+                           for cells in rows if any(c for c in cells)
+                           and not all(set(c) <= set("-: ") for c in cells))
+                block.clear()
+                return
+        out.extend(block)
+        block.clear()
+
+    for line in markdown.splitlines():
+        if line.lstrip().startswith("|"):
+            block.append(line)
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
 def _post_convert(conversion: Conversion, data: bytes, detected: str) -> Conversion:
     """Repair what the converter split, then append what it could not carry.
 
@@ -284,7 +343,8 @@ def _post_convert(conversion: Conversion, data: bytes, detected: str) -> Convers
     `reconstruct` returns nothing rather than raising and this leaves the Markdown
     exactly as anydoc made it. See `aughor.knowledge.charts` for what "proved" means.
     """
-    conversion.markdown = _repair_wrapped_headers(conversion.markdown)
+    conversion.markdown = _demote_layout_tables(
+        _repair_wrapped_headers(conversion.markdown))
     if detected != "pdf":
         return conversion
     from aughor.knowledge.charts import as_markdown, reconstruct
