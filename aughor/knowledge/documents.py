@@ -268,47 +268,117 @@ def is_numeric_run(line: str) -> bool:
     stripped = line.strip()
     if not stripped or stripped.startswith("|"):
         return False
-    tokens = stripped.split()
-    numeric = [t for t in tokens if _NUMERIC_TOKEN.match(t)]
-    # A label is not a measurement. Only what a colon has NOT named can make a run,
-    # and the colon rescues just the name it terminates — every figure downstream of
-    # it still counts, so a name in front of a stream ("Prime rent: 340 320 300 280
-    # 260") names the stream and is still an axis.
-    measured = [t for t in numeric if not t.endswith(":")]
-    if len(measured) < _NUMERIC_RUN_MIN:
-        return False
-    # Words are counted among the NON-numeric tokens only. A unit welded to its value
-    # belongs to the number, not to the prose: counting the "bps" in "+140bps" as a
-    # word let a line of nine bare deltas score nine words and score itself as a
-    # sentence, which is precisely the line this exists to catch.
-    words = sum(1 for t in tokens
-                if t not in numeric and _WORD_TOKEN.search(t))
-    return len(measured) > words
+    figures, words = _weigh([stripped])
+    return figures >= _NUMERIC_RUN_MIN and figures > words
+
+
+def _weigh(lines: list[str]) -> tuple[int, int]:
+    """Figures and words across a group of lines — the scale both rules read.
+
+    A label is not a measurement, so a colon-terminated token weighs nothing: the
+    colon rescues just the name it terminates, and every figure downstream of it still
+    counts, so a name in front of a stream ("Prime rent: 340 320 300 280 260") names
+    the stream and is still an axis.
+
+    Words are counted among the NON-numeric tokens only. A unit welded to its value
+    belongs to the number, not to the prose: counting the "bps" in "+140bps" as a word
+    let a line of nine bare deltas score nine words and call itself a sentence, which
+    is precisely the line this exists to catch.
+    """
+    figures = words = 0
+    for line in lines:
+        tokens = line.split()
+        numeric = [t for t in tokens if _NUMERIC_TOKEN.match(t)]
+        figures += sum(1 for t in numeric if not t.endswith(":"))
+        words += sum(1 for t in tokens if t not in numeric and _WORD_TOKEN.search(t))
+    return figures, words
+
+
+def _has_word(line: str) -> bool:
+    """Does this line carry a name of any kind? `52.225.499 Friedrichstr.` does."""
+    return any(_WORD_TOKEN.search(t) for t in line.split())
+
+
+def _run_lines(text: str) -> set[int]:
+    """Line numbers carrying figures with nothing to attribute them to.
+
+    A chart leaves TWO shapes and the per-line rule only ever saw one of them.
+
+    The first is the long headless row `is_numeric_run` describes. The second is the
+    same chart spread thin: a PowerPoint export interleaves two side-by-side charts
+    into a column of two- and three-figure fragments — `40.000 80 79`, then
+    `73 70 65 66 65`, then `37` — and most of those are under the floor a single line
+    has to clear. Measured on an 83-page retail deck, the per-line rule held back 83
+    lines and left 73 more of exactly this kind in the index, where a plausible-looking
+    fragment of two charts is worse company than the long row ever was.
+
+    So the NEIGHBOURHOOD is evidence. A figure with nothing to attribute it to on its
+    own line might still be named by the line above it — unless that line is nameless
+    too. Judge the paragraph: where its figures outnumber its words and there are at
+    least four of them, the nameless lines in it are what a chart left behind.
+
+    Three things are never taken this way, because each is already a claim of
+    attribution:
+
+      * a TABLE — its header names the column, so a block holding one is left alone
+        entirely rather than picked over;
+      * a HEADING — `##### 2021 - H1 2026` is the period a chart covers, and dropping
+        it would take a chunk's only remaining context with it;
+      * any line carrying a WORD — `52.225.499 Friedrichstr.` has its name on it, and
+        the block around it cannot take that away.
+    """
+    lines = text.splitlines()
+    # Numbers inside a code fence are program output or data someone pasted
+    # deliberately; the fence IS their attribution, so they are never candidates.
+    open_air = [True] * len(lines)
+    inside = False
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            inside = not inside
+            open_air[i] = False
+        elif inside:
+            open_air[i] = False
+
+    drop = {i for i, line in enumerate(lines) if open_air[i] and is_numeric_run(line)}
+
+    # A block is a run of consecutive lines with no blank between them — the same
+    # split the chunker makes, so what is judged together is what travels together.
+    block: list[int] = []
+    for i, line in enumerate(lines):
+        if open_air[i] and line.strip():
+            block.append(i)
+            continue
+        drop |= _nameless_in_run_block(lines, block)
+        block = []
+    drop |= _nameless_in_run_block(lines, block)
+    return drop
+
+
+def _nameless_in_run_block(lines: list[str], block: list[int]) -> set[int]:
+    """The lines a figure-dominated paragraph gives up. See `_run_lines`.
+
+    An empty block weighs nothing and gives up nothing, so the caller can flush
+    unconditionally rather than guard every call site.
+    """
+    group = [lines[i] for i in block]
+    if any(line.lstrip().startswith("|") for line in group):
+        return set()
+    figures, words = _weigh(group)
+    if figures < _NUMERIC_RUN_MIN or figures <= words:
+        return set()
+    return {i for i in block
+            if not _has_word(lines[i]) and not lines[i].lstrip().startswith("#")}
 
 
 def numeric_run_lines(text: str) -> list[str]:
-    """The lines `is_numeric_run` would suppress — for REPORTING, never mutation.
+    """The lines that would be suppressed — for REPORTING, never mutation.
 
     The door uses this to tell a person what was held back from search, because
     quietly indexing less than the document contains is the same class of failure as
     quietly indexing more.
     """
-    return [line for line in _outside_code_fences(text) if is_numeric_run(line)]
-
-
-def _outside_code_fences(text: str):
-    """Every line that is not inside a fenced code block.
-
-    Numbers in a code block are program output or data a person pasted deliberately;
-    the surrounding fence IS their attribution, so they are never a run.
-    """
-    inside = False
-    for line in text.splitlines():
-        if line.lstrip().startswith("```"):
-            inside = not inside
-            continue
-        if not inside:
-            yield line
+    lines = text.splitlines()
+    return [lines[i] for i in sorted(_run_lines(text))]
 
 
 def _strip_numeric_runs(text: str) -> str:
@@ -320,17 +390,8 @@ def _strip_numeric_runs(text: str) -> str:
     answer. A correct number retrieved against the wrong label is worse than no
     number at all, and it arrives looking exactly like a good answer.
     """
-    kept: list[str] = []
-    inside = False
-    for line in text.splitlines():
-        if line.lstrip().startswith("```"):
-            inside = not inside
-            kept.append(line)
-            continue
-        if not inside and is_numeric_run(line):
-            continue
-        kept.append(line)
-    return "\n".join(kept)
+    drop = _run_lines(text)
+    return "\n".join(line for i, line in enumerate(text.splitlines()) if i not in drop)
 
 
 def _split_into_chunks(text: str, settings: ChunkSettings | None = None) -> list[str]:

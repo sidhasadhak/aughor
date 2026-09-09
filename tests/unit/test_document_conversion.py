@@ -617,6 +617,86 @@ def test_one_label_does_not_launder_an_axis():
     assert is_numeric_run("Hamburg 235 200 170 165 150 Cologne 230 150") is True
 
 
+# A chart interleaved into fragments. Not one of these lines reaches the four-figure
+# floor on its own, which is exactly why the per-line rule left all of them in.
+INTERLEAVED = "40.000 80 79\n25.000 50\n37"
+
+
+def test_a_chart_spread_thin_is_still_a_chart():
+    """The second shape a chart leaves, and the one the line rule could not see.
+
+    A PowerPoint export interleaves two side-by-side charts into a column of two- and
+    three-figure fragments. Measured on an 83-page retail deck: the per-line rule held
+    back 83 lines and left 73 more of this kind in the index — a plausible-looking
+    splice of two different charts, which is worse company than the long row ever was.
+    """
+    from aughor.knowledge.documents import _strip_numeric_runs, is_numeric_run
+
+    # The premise: every line here is individually innocent.
+    for line in INTERLEAVED.splitlines():
+        assert is_numeric_run(line) is False, f"{line!r} should be under the line floor"
+
+    assert _strip_numeric_runs(INTERLEAVED).strip() == ""
+
+
+def test_a_line_that_carries_a_name_survives_the_block_around_it():
+    """The neighbourhood is evidence, not a verdict.
+
+    `52.225.499 Friedrichstr.` is a footfall count with its street on the same line. It
+    sits in the middle of the axis debris the block rule is there to take, and it is
+    the one line in that block nothing else attributes.
+    """
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    kept = _strip_numeric_runs("40.000 80 79\n52.225.499 Friedrichstr.\n25.000 50\n37")
+    assert kept.strip() == "52.225.499 Friedrichstr."
+
+
+def test_a_heading_survives_the_block_around_it():
+    """`##### 2021 - H1 2026` is the period a chart covers. It has no words in it — `H1`
+    is not one by design — so only its heading marker keeps it, and it must: dropping it
+    takes away the chunk's last remaining context."""
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    kept = _strip_numeric_runs("40.000 80 79\n##### 2021 - H1 2026\n25.000 50\n37")
+    assert kept.strip() == "##### 2021 - H1 2026"
+
+
+def test_prose_beside_a_headless_row_does_not_rescue_it():
+    """The block rule WIDENS the line rule, it does not replace it.
+
+    Sat next to a sentence, a headless row is in a paragraph where words dominate — so
+    the block says nothing about it and the line rule still has to. Reading only the
+    block would have quietly let this back into the index.
+    """
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    prose = "Revenue rose sharply across every region we operate in this year."
+    kept = _strip_numeric_runs(f"{prose}\n245.9 268.9 279.6 224.5")
+    assert kept.strip() == prose
+
+
+def test_a_pair_in_its_own_paragraph_is_still_left_alone():
+    """The floor holds at the block level too — four figures, not two. A heading and a
+    pair is a shape people write on purpose."""
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    assert _strip_numeric_runs("#### 774 847").strip() == "#### 774 847"
+
+
+def test_what_is_reported_is_exactly_what_is_removed():
+    """The count shown at the door and the lines taken from the index come from one
+    answer. They were two passes over the same text, which is a drift waiting to
+    happen — and the number is the only thing a person sees before approving."""
+    from aughor.knowledge.documents import _strip_numeric_runs, numeric_run_lines
+
+    text = f"# Deck\n\n{INTERLEAVED}\n\nSome prose that carries the chunk.\n\n{CHART_RUN}\n"
+    removed = [line for line in text.splitlines()
+               if line not in _strip_numeric_runs(text).splitlines()]
+    assert numeric_run_lines(text) == removed
+    assert len(removed) == 4
+
+
 def test_a_table_row_is_never_a_run_however_many_numbers_it_holds():
     """Its header names the column, so every figure in it is attributed. This is the
     guard that keeps the financial tables — the part worth indexing — intact."""
