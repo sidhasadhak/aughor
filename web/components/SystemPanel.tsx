@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { getDevStats, resetDevStats, getSystemFlags, setSystemFlag, type DevStats, type SystemFlag } from "@/lib/api";
+import { getDevStats, resetDevStats, getEvalGraduations, getSystemFlags, setSystemFlag, type DevStats, type EvalGraduation, type SystemFlag } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { PacksManager } from "@/components/PacksManager";
 import { subscribeKernelEvents } from "@/lib/events";
@@ -351,8 +351,20 @@ function FeatureFlags() {
   const [flags, setFlags] = useState<Record<string, SystemFlag>>({});
   const [busy, setBusy] = useState("");
   const [query, setQuery] = useState("");
+  // PX-4 — the graduation EVIDENCE, joined to the queue it decides. The flag panel
+  // showed "queued to graduate" from the flag registry while the eval plane's recorded
+  // decisions (pass rate vs bar, blockers, receipt) sat in a different store with no
+  // reader — two halves of one gate, wired to different stores.
+  const [graduations, setGraduations] = useState<Map<string, EvalGraduation>>(new Map());
 
   useEffect(() => { getSystemFlags().then(setFlags).catch(() => setFlags({})); }, []);
+  useEffect(() => {
+    getEvalGraduations().then(list => {
+      const latest = new Map<string, EvalGraduation>();
+      for (const g of list) if (!latest.has(g.flag)) latest.set(g.flag, g); // newest first
+      setGraduations(latest);
+    }).catch(() => setGraduations(new Map()));
+  }, []);
 
   const toggle = async (name: string, value: boolean) => {
     setBusy(name);
@@ -420,8 +432,11 @@ function FeatureFlags() {
             <span className="aug-fs-xs leading-snug truncate" style={{ color: "var(--t4)" }}>— {g.hint}</span>
           </summary>
           {byGroup.get(g.key)!.map(([name, f]) => (
-            <FlagRow key={name} name={name} f={f} chip={sourceChip(f)}
-                     busy={busy === name} onToggle={v => toggle(name, v)} />
+            <div key={name}>
+              <FlagRow name={name} f={f} chip={sourceChip(f)}
+                       busy={busy === name} onToggle={v => toggle(name, v)} />
+              {g.key === "graduation_queue" && <GraduationEvidence g={graduations.get(name)} />}
+            </div>
           ))}
         </details>
       ))}
@@ -487,3 +502,32 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
 
 
 
+
+/** PX-4 — one flag's latest recorded graduation decision, under its queue row.
+ *  Read-side only: recording a decision needs a suite and a run, which live on the
+ *  Evals surface; what belongs HERE is whether the evidence says this queued flag
+ *  has earned its default — and what blocks it when it hasn't. */
+function GraduationEvidence({ g }: { g?: EvalGraduation }) {
+  if (!g) {
+    return (
+      <p className="aug-fs-xs pl-2 pb-1.5" style={{ color: "var(--t4)" }}>
+        No graduation decision recorded yet — run its suite and record one from Evals.
+      </p>
+    );
+  }
+  const verdictColor = g.can_graduate ? "var(--grn4)" : "var(--amb4)";
+  return (
+    <div className="aug-fs-xs pl-2 pb-1.5" style={{ color: "var(--t3)" }}>
+      <span style={{ color: verdictColor, fontWeight: 500 }}>
+        {g.can_graduate ? "evidence says: graduate" : "evidence says: not yet"}
+      </span>
+      {g.pass_rate != null && (
+        <span> · pass rate {fmtPct(g.pass_rate)}{g.bar != null && <> against a bar of {fmtPct(g.bar)}</>}</span>
+      )}
+      {g.decided_at && <span> · decided {String(g.decided_at).slice(0, 10)}</span>}
+      {!g.can_graduate && g.reasons.length > 0 && (
+        <span style={{ color: "var(--amb4)" }}> — {g.reasons.join("; ")}</span>
+      )}
+    </div>
+  );
+}
