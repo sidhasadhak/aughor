@@ -564,6 +564,58 @@ def test_uploading_a_part_scanned_pdf_succeeds_and_says_what_was_missed(client, 
     assert body["chunk_count"] >= 1, "the readable pages should be indexed"
 
 
+# ── A header that wrapped in the original ─────────────────────────────────────
+
+WRAPPED = """| Quarter / |  | Address | Retailer | Gross lease |
+|---|---|---|---|---|
+| year 2024 Q1 |  | Prager Straße 10 | C&A | area 3,400 sqm |
+| 2025 Q3 |  | Schloßstraße 1 | Papenbreer | 1,800 sqm |
+| 2023 Q1 |  | Prager Straße 3 | Go Asia | 1,500 sqm |
+"""
+
+
+def test_a_two_line_header_is_put_back_together():
+    """Measured on four "selected lettings" tables in a retail deck.
+
+    The header wrapped in the original, so its second line landed in the first data
+    row: "Quarter /" lost its "year" and the first letting read `year 2024 Q1`. It
+    matters more than it looks because a TABLE is trusted downstream — its header names
+    the column, which is why a table row is never suppressed as a numeric run. A
+    corrupted row inside one is content nothing else will question.
+    """
+    from aughor.knowledge.convert import _repair_wrapped_headers
+
+    fixed = _repair_wrapped_headers(WRAPPED).splitlines()
+
+    assert "Quarter / year" in fixed[0]
+    assert "Gross lease area" in fixed[0]
+    assert "| 2024 Q1 |" in fixed[2]
+    assert "| 3,400 sqm |" in fixed[2]
+    assert "year" not in fixed[2]
+
+
+def test_a_first_row_that_is_merely_first_is_left_alone():
+    """The rule is that the leading word is UNIQUE to the first row. A word the column
+    genuinely holds appears again further down, and moving it would eat real data."""
+    from aughor.knowledge.convert import _repair_wrapped_headers
+
+    honest = """| Quarter | Tenant |
+|---|---|
+| 2024 Q1 | flagship store |
+| 2025 Q3 | flagship outlet |
+| 2023 Q1 | pop-up |
+"""
+    assert _repair_wrapped_headers(honest) == honest.rstrip("\n")
+
+
+def test_a_table_too_short_to_judge_is_left_alone():
+    """"No other row starts with it" means nothing across two rows."""
+    from aughor.knowledge.convert import _repair_wrapped_headers
+
+    short = "| Quarter / | Area |\n|---|---|\n| year 2024 Q1 | area 3,400 sqm |\n"
+    assert _repair_wrapped_headers(short) == short.rstrip("\n")
+
+
 # ── Unattributed numeric runs stay out of the index ───────────────────────────
 
 CHART_RUN = "### Value (GMV)245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7"

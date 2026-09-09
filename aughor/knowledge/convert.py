@@ -188,8 +188,91 @@ def sniff(data: bytes, filename: str = "") -> str | None:
     return None
 
 
-def _with_charts(conversion: Conversion, data: bytes, detected: str) -> Conversion:
-    """Append every chart this PDF can PROVE, as Markdown tables.
+def _repair_wrapped_headers(markdown: str) -> str:
+    """Put a two-line table header back together.
+
+    A header that wraps in the original arrives split: the converter takes its first
+    line as the header and the second line lands in the FIRST DATA ROW. Measured on a
+    retail deck's "selected lettings" tables — four of them, one per city:
+
+        |Quarter /||Address||Retailer|Sectors|Gross lease|
+        |year 2024 Q1||Prager Straße 10||C&A|Fashion|area 3,400 sqm|
+        |2025 Q3||Schloßstraße 1||Papenbreer|Fashion|1,800 sqm|
+
+    "Quarter /" is missing its "year", "Gross lease" its "area", and the first letting
+    reads `year 2024 Q1` and `area 3,400 sqm` while every other row is clean. This is
+    worse than a cosmetic problem because a TABLE is trusted downstream — its header
+    names the column, which is exactly why `documents.is_numeric_run` never suppresses
+    one. A corrupted row inside a table is content nothing else will question.
+
+    The signal is that the leading word is UNIQUE to the first row: no other row in the
+    column begins with it, so it is not data that column holds. Conservative on every
+    axis — the word must be lowercase and alphabetic, the column must already have a
+    header to continue, and there must be enough rows for "no other row" to mean
+    something. Anything less certain is left exactly as the converter made it.
+    """
+    lines = markdown.splitlines()
+    out: list[str] = []
+    block: list[int] = []
+
+    def flush() -> None:
+        if len(block) >= 5:                       # header + rule + 3 data rows
+            _rejoin_header([out[i] for i in block], out, block)
+        block.clear()
+
+    for line in lines:
+        out.append(line)
+        if line.lstrip().startswith("|"):
+            block.append(len(out) - 1)
+        else:
+            flush()
+    flush()
+    return "\n".join(out)
+
+
+def _split_row(row: str) -> list[str]:
+    return [c.strip() for c in row.strip().strip("|").split("|")]
+
+
+def _rejoin_header(rows: list[str], out: list[str], at: list[int]) -> None:
+    """See `_repair_wrapped_headers`. Rewrites `out` in place."""
+    header = _split_row(rows[0])
+    data = [_split_row(r) for r in rows[2:]]
+    if not all(len(r) == len(header) for r in data):
+        return
+    moved = False
+    for col, cell in enumerate(header):
+        if not cell:
+            continue
+        first = data[0][col].split()
+        if not first:
+            continue
+        word = first[0]
+        if not (word.isalpha() and word.islower()):
+            continue
+        if any(later[col].split()[:1] == [word] for later in data[1:]):
+            continue
+        header[col] = f"{cell} {word}"
+        data[0][col] = " ".join(first[1:])
+        moved = True
+    if not moved:
+        return
+    out[at[0]] = "| " + " | ".join(header) + " |"
+    out[at[2]] = "| " + " | ".join(data[0]) + " |"
+
+
+def _post_convert(conversion: Conversion, data: bytes, detected: str) -> Conversion:
+    """Repair what the converter split, then append what it could not carry.
+
+    Both jobs are about the same loss. A wrapped table header arrives broken because
+    Markdown has no way to say "this header is two lines"; a chart arrives headless
+    because Markdown has no way to say "this figure sits above that label". Neither is
+    a conversion failure, and neither can be fixed anywhere later — by the time the
+    Markdown is chunked, the second line of the header is indistinguishable from data
+    and the bytes are gone.
+
+    Appending charts is PDF-only; the header repair is not, because any format can
+    wrap a header.
 
     Markdown cannot carry a chart: its data labels are positioned graphics, and `104`
     means `2018` only because they share an x coordinate. Conversion is where that
@@ -201,6 +284,7 @@ def _with_charts(conversion: Conversion, data: bytes, detected: str) -> Conversi
     `reconstruct` returns nothing rather than raising and this leaves the Markdown
     exactly as anydoc made it. See `aughor.knowledge.charts` for what "proved" means.
     """
+    conversion.markdown = _repair_wrapped_headers(conversion.markdown)
     if detected != "pdf":
         return conversion
     from aughor.knowledge.charts import as_markdown, reconstruct
@@ -352,7 +436,7 @@ def convert_document(data: bytes, filename: str = "") -> Conversion:
     anydoc = _anydoc()
     mode, api_key = _ocr_mode()
     try:
-        return _with_charts(Conversion(
+        return _post_convert(Conversion(
             markdown=anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key)),
             data, detected)
     except anydoc.NeedsOcrError as exc:
@@ -365,7 +449,7 @@ def convert_document(data: bytes, filename: str = "") -> Conversion:
             logger.info("Recovered %d of %d pages from a part-scanned PDF; %d need OCR",
                         len(recovered.pages_read), recovered.page_count,
                         len(recovered.pages_needing_ocr))
-            return _with_charts(recovered, data, detected)
+            return _post_convert(recovered, data, detected)
         pages = getattr(exc, "pages", None) or []
         count = getattr(exc, "page_count", None)
         where = (f"page{'s' if len(pages) != 1 else ''} "
