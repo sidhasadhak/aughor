@@ -1420,6 +1420,7 @@ export default function Home() {
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
+  const [chatInitialAgentId, setChatInitialAgentId] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
   // SE-1: a legacy `?tab=builder` link opens the workbench in Visual; everything else
   // takes the workbench's own default (SQL).
@@ -1818,11 +1819,15 @@ export default function Home() {
     }
   };
 
-  const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string) => {
+  const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string,
+                    agentId?: string) => {
     setSelectedChatSessionId(null);
     setSelectedHistoryInvId(null);
     setChatInitialQuestion(q);
     setChatInitialInsightId(insightId);
+    // PX-5 — the agent surface's Chat door arrives already talking to that agent.
+    // Cleared on every other entry, so a stale persona never haunts a fresh chat.
+    setChatInitialAgentId(agentId);
     if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
     setTab("chat");
@@ -2225,6 +2230,7 @@ export default function Home() {
                           initialQuestion={chatInitialQuestion}
                           initialMode={chatInitialMode}
                           initialInsightId={chatInitialInsightId}
+                          initialAgentId={chatInitialAgentId}
                         />
                       </div>
                     </div>
@@ -2309,6 +2315,8 @@ export default function Home() {
                     setSelectedConn(connectionId);
                     handleNavigate("catalog");
                   }}
+                  // PX-5 — the agent surface's Chat door: arrive already talking to it.
+                  onChatWithAgent={agentId => goToChat(undefined, undefined, undefined, agentId)}
                 />
               </ErrorBoundary>
             )}

@@ -485,9 +485,23 @@ function EntityDetailDrawer({
             ) : (
               metrics.map(m => (
                 <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-[var(--r3)] p-3 space-y-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-xs font-semibold text-zinc-200">{m.display_name}</p>
                     {m.unit && <span className="aug-fs-xs text-zinc-500">{m.unit}</span>}
+                    {/* PX-5 — verification is the loudest fact on the card, not a line
+                        buried in the provenance drawer. A verified formula EXECUTED
+                        against this database; an unverified one is demoted and never
+                        injected as an exact expression. */}
+                    {m.verified ? (
+                      <span className="aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5 text-emerald-300 border-emerald-700/50">
+                        ✓ executed against your database
+                      </span>
+                    ) : (
+                      <span className="aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5 text-amber-300 border-amber-700/50"
+                        title="Never injected as an exact expression until a run verifies it.">
+                        unverified — demoted
+                      </span>
+                    )}
                     <Button variant="ghost" size="xs" className="ml-auto"
                       onClick={() => setProvFor(provFor === m.id ? null : m.id)}>
                       {provFor === m.id ? "Hide provenance" : "Whose definition?"}

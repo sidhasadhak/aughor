@@ -83,6 +83,8 @@ type Props = {
   /** DS-5 — destinations an agent's Map can send a reader to, when the shell has them. */
   onOpenIntegrations?: () => void;
   onOpenConnection?: (connectionId: string) => void;
+  /** PX-5 — open the chat already talking to this agent (the agent surface's Chat door). */
+  onChatWithAgent?: (agentId: string) => void;
 };
 
 /**
@@ -94,7 +96,7 @@ type Props = {
 export function AgenticOpsWorkspace({
   layer, onLayerChange, workspaceId, workspaceName,
   connId, onOpenInvestigation, onOpenAutomations,
-  onOpenIntegrations, onOpenConnection,
+  onOpenIntegrations, onOpenConnection, onChatWithAgent,
 }: Props) {
   // Cross-layer focus: a trace opened from Fleet/Agents/Attention lands in the
   // Activity layer's runs mode; an agent opened from Fleet lands in Agents.
@@ -172,7 +174,8 @@ export function AgenticOpsWorkspace({
             // app and are only offered when the shell passes them down.
             onOpenAutomations={() => onLayerChange("automations")}
             onOpenIntegrations={onOpenIntegrations}
-            onOpenConnection={onOpenConnection} />
+            onOpenConnection={onOpenConnection}
+            onChatWithAgent={onChatWithAgent} />
         );
         if (id === "attention") return (
           <NeedsHumanPanel onOpenInvestigation={onOpenInvestigation}

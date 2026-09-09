@@ -1244,6 +1244,10 @@ export interface OntologyMetric {
   unit: string;
   tables: string[];
   known_divergent_calculations: string[];
+  /** M24c self-validation: the formula was EXECUTED against the live database.
+   *  Unverified formulas are demoted — never injected as an exact expression.
+   *  The backend has always sent this; the type omitted it (PX-5 renders it loud). */
+  verified: boolean;
 }
 
 export interface OntologyGraph {

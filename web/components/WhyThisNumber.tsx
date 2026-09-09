@@ -17,6 +17,7 @@ import {
   type AnswerTrace, type PublicReceipt, type PublicReceiptGuard, type TracedNode,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
@@ -144,6 +145,9 @@ function Drawer({ receiptId, preloaded, onClose }: {
   const [rec, setRec] = useState<PublicReceipt | null>(preloaded ?? null);
   const [state, setState] = useState<"loading" | "ready" | "missing">(
     preloaded ? "ready" : "loading");
+  // PX-5 — which used metric's definition provenance is open. One at a time: the
+  // drawer answers "whose definition am I looking at", not "list every claimant".
+  const [provFor, setProvFor] = useState<string | null>(null);
 
   useEffect(() => {
     // The glance row above already fetched this receipt; re-fetching on open would make
@@ -330,6 +334,27 @@ function Drawer({ receiptId, preloaded, onClose }: {
                     {rec.metrics.drifted.map((m, i) => <StatusChip key={`d:${i}`} hue="caution" strength="soft">⚠ {m.metric} · non-governed</StatusChip>)}
                     {rec.metrics.available.map((m, i) => <StatusChip key={`a:${i}`} hue="muted" strength="soft">{m}</StatusChip>)}
                   </div>
+                  {/* PX-5 — the provenance panel ON the answer: whose definition this
+                      number used, from which asset, and whether it rests on a check or
+                      only on standing. Live-resolved (like the trace), so it sits
+                      outside the signed body by design. */}
+                  {rec.metrics.used.length > 0 && rec.connection?.id && (
+                    <div style={{ marginTop: 8 }}>
+                      {rec.metrics.used.map((m, i) => (
+                        <div key={`p:${i}`} style={{ marginTop: 4 }}>
+                          <Button variant="ghost" size="xs" data-testid={`wtn-prov-${m}`}
+                            onClick={() => setProvFor(provFor === m ? null : m)}>
+                            {provFor === m ? `Hide ${m}'s provenance` : `Whose definition is “${m}”?`}
+                          </Button>
+                          {provFor === m && (
+                            <div style={{ marginTop: 4 }}>
+                              <MetricProvenancePanel metricId={m} connectionId={rec.connection.id ?? ""} />
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </Section>
               )}
 
