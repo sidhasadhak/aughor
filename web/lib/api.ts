@@ -7723,3 +7723,262 @@ export async function exportIntakeBundle(connectionId: string): Promise<IntakeEx
   if (!res.ok) await intakeError(res);
   return res.json();
 }
+
+// ── PX-2 · the governed-spend cockpit ──────────────────────────────────────
+// Caps (G4's store, formless until now), the usage rollup, per-model health,
+// the route mix, and the cross-cutting governance feed.
+
+export interface UsageCap {
+  scope: string;          // org | user
+  subject: string;        // "*" or a user id
+  metric: string;         // calls | total_tokens | cost_usd
+  limit: number;
+  window_hours: number;
+  action: string;         // alert | block
+  set_by?: string;
+  set_at?: string;
+  /** The metric's measured value over this cap's own window — served with the list. */
+  observed?: number | null;
+}
+
+export interface UsageCapsResponse {
+  caps: UsageCap[];
+  scopes: string[];
+  metrics: string[];
+  actions: string[];
+}
+
+export async function getUsageCaps(): Promise<UsageCapsResponse> {
+  const res = await fetch(`${getApiBase()}/governance/caps`);
+  if (!res.ok) throw new Error(`Failed to fetch caps (${res.status})`);
+  return res.json();
+}
+
+export async function putUsageCap(cap: {
+  scope: string; subject?: string; metric: string; limit: number;
+  window_hours?: number; action?: string;
+}): Promise<UsageCap> {
+  const res = await fetch(`${getApiBase()}/governance/caps`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cap),
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function deleteUsageCap(cap: {
+  scope: string; metric: string; subject?: string; window_hours?: number;
+}): Promise<void> {
+  const q = new URLSearchParams({ scope: cap.scope, metric: cap.metric,
+    subject: cap.subject ?? "*", window_hours: String(cap.window_hours ?? 24) });
+  const res = await fetch(`${getApiBase()}/governance/caps?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+}
+
+export interface UsageRow {
+  calls: number;
+  failures: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  calls_without_usage: number;
+  unpriced_calls: number;
+  cost_usd: number;
+  cost_is_complete: boolean;
+  mean_ms: number;
+  failure_rate: number;
+  [axis: string]: unknown;   // the grouping axes ride the row (provider, model, …)
+}
+
+export interface UsageReport {
+  axes: string[];
+  total_calls: number;
+  rows: UsageRow[];
+  unattributed: Record<string, number>;
+  [k: string]: unknown;
+}
+
+export async function getUsageReport(by = "provider,model"): Promise<UsageReport> {
+  const res = await fetch(`${getApiBase()}/usage?by=${encodeURIComponent(by)}`);
+  if (!res.ok) throw new Error(`Failed to fetch usage (${res.status})`);
+  return res.json();
+}
+
+export async function getCostSql(): Promise<{ sql: string; table: string; kind: string }> {
+  const res = await fetch(`${getApiBase()}/usage/cost-sql`);
+  if (!res.ok) throw new Error(`Failed to fetch the cost query (${res.status})`);
+  return res.json();
+}
+
+export interface AuditFeedEvent {
+  category: string;
+  kind: string;
+  at: string;
+  actor: string;
+  org_id: string;
+  conn_id: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+export async function getAuditFeed(category = "", limit = 100): Promise<{
+  categories: string[]; category: string | null; count: number; events: AuditFeedEvent[];
+}> {
+  const q = new URLSearchParams();
+  if (category) q.set("category", category);
+  q.set("limit", String(limit));
+  const res = await fetch(`${getApiBase()}/audit/feed?${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch the governance feed (${res.status})`);
+  return res.json();
+}
+
+export interface ModelUsageRow {
+  provider: string;
+  model: string;
+  calls: number;
+  failures: number;
+  total_tokens: number;
+  calls_without_usage: number;
+  retried_calls: number;
+  [k: string]: unknown;
+}
+
+export async function getModelUsage(): Promise<{ models: ModelUsageRow[] }> {
+  const res = await fetch(`${getApiBase()}/obs/model-usage`);
+  if (!res.ok) throw new Error(`Failed to fetch model usage (${res.status})`);
+  return res.json();
+}
+
+export async function getRouteMix(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getApiBase()}/obs/route-mix`);
+  if (!res.ok) throw new Error(`Failed to fetch route mix (${res.status})`);
+  return res.json();
+}
+
+// ── PX-4 · the learning write half + graduation evidence ───────────────────
+
+export interface TrustedQueryRow {
+  id: string;
+  connection_id: string;
+  question: string;
+  sql: string;
+  tables: string[];
+  note: string;
+  tags: string[];
+  status: string;        // draft | proposed | approved | deprecated
+  version: number;
+  proposed_by?: string;
+  verified_by?: string;
+  verified_at?: string;
+  verification?: Record<string, unknown> | null;
+  [k: string]: unknown;
+}
+
+export async function listTrustedQueries(connectionId = ""): Promise<TrustedQueryRow[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/trusted${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch trusted queries (${res.status})`);
+  return (await res.json()).queries;
+}
+
+async function learningError(res: Response): Promise<never> {
+  const text = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(text)?.detail;
+    if (detail) {
+      throw new Error(typeof detail === "string" ? detail
+        : String(detail.message ?? JSON.stringify(detail)));
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+  }
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+/** Seed one trusted query — verified NOW (executed + guard battery). Passing lands
+ *  `proposed`; failing lands `draft` with the report. Approval is a separate act. */
+export async function createTrustedQuery(body: {
+  connection_id: string; question: string; sql: string; actor: string;
+  tables?: string[]; note?: string; tags?: string[];
+}): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getApiBase()}/learning/trusted`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tables: [], note: "", tags: [], source: "api", ...body }),
+  });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+/** Edit re-verifies and RESETS the lifecycle — an approval covers what it approved. */
+export async function editTrustedQuery(id: string, body: {
+  actor: string; question?: string; sql?: string; tables?: string[];
+  note?: string; tags?: string[];
+}): Promise<{ trusted_query: TrustedQueryRow; verification: Record<string, unknown> }> {
+  const res = await fetch(`${getApiBase()}/learning/trusted/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+/** propose | approve | reject | deprecate. `propose` re-verifies first and refuses
+ *  (409, report attached) when verification fails. `approve` is what makes the entry
+ *  prompt-authoritative. */
+export async function transitionTrustedQuery(id: string, action: string, actor: string):
+  Promise<{ trusted_query: TrustedQueryRow; audit: Record<string, unknown> }> {
+  const res = await fetch(
+    `${getApiBase()}/learning/trusted/${encodeURIComponent(id)}/transition`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, actor }),
+    });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+export async function deleteTrustedQuery(id: string, actor: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/learning/trusted/${encodeURIComponent(id)}?actor=${encodeURIComponent(actor)}`,
+    { method: "DELETE" });
+  if (!res.ok) await learningError(res);
+}
+
+export interface LearningDatasetDetail {
+  found: boolean;
+  name?: string;
+  dataset?: Record<string, unknown>;
+  lineage?: Record<string, unknown>[];
+}
+
+export async function getLearningDataset(name: string): Promise<LearningDatasetDetail> {
+  const res = await fetch(`${getApiBase()}/learning/datasets/${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`Failed to fetch dataset (${res.status})`);
+  return res.json();
+}
+
+export interface EvalGraduation {
+  flag: string;
+  can_graduate: boolean;
+  pass_rate: number | null;
+  baseline_pass_rate: number | null;
+  bar: number | null;
+  reasons: string[];
+  run_id: string;
+  suite_id: string;
+  current_default: boolean;
+  already_default_on: boolean;
+  id?: string;
+  decided_at?: string;
+  [k: string]: unknown;
+}
+
+export async function getEvalGraduations(flag = ""): Promise<EvalGraduation[]> {
+  const q = flag ? `?flag=${encodeURIComponent(flag)}` : "";
+  const res = await fetch(`${getApiBase()}/evals/graduations${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch graduations (${res.status})`);
+  return (await res.json()).graduations;
+}

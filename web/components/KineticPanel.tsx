@@ -56,8 +56,13 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
   const [kind, setKind] = useState("side_effect");
   const [description, setDescription] = useState("");
   const [risk, setRisk] = useState("high");
-  const [params, setParams] = useState('[{"name": "amount_eur", "data_type": "NUMERIC", "required": true}]');
-  const [criteria, setCriteria] = useState('[{"expr": "amount_eur <= 10000", "message": "Refunds over EUR 10,000 need finance sign-off."}]');
+  // PX-2 — params and criteria are typed ROWS, not JSON textareas. The crown-jewel
+  // governance plane had the least-designed authoring surface on the platform: two
+  // unlabeled JSON blobs. Both are lists of flat shapes, so rows are lossless.
+  const [params, setParams] = useState<{ name: string; data_type: string; required: boolean }[]>(
+    [{ name: "amount_eur", data_type: "NUMERIC", required: true }]);
+  const [criteria, setCriteria] = useState<{ expr: string; message: string }[]>(
+    [{ expr: "amount_eur <= 10000", message: "Refunds over EUR 10,000 need finance sign-off." }]);
   // DS-13 — the declarative custom component. Named fields rather than a JSON blob, which
   // is the whole claim: the competitor's "new component" opens a Python editor and this
   // opens a form. `params` and `criteria` above stay JSON because they are lists of a
@@ -80,8 +85,12 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
     setErr(null);
     try {
       const body: any = { kind, description, risk };
-      if (params.trim()) body.params = JSON.parse(params);
-      if (criteria.trim()) body.submission_criteria = JSON.parse(criteria);
+      const cleanParams = params.filter(p => p.name.trim());
+      if (cleanParams.length) body.params = cleanParams.map(p => ({
+        name: p.name.trim(), data_type: p.data_type, required: p.required }));
+      const cleanCriteria = criteria.filter(c => c.expr.trim());
+      if (cleanCriteria.length) body.submission_criteria = cleanCriteria.map(c => ({
+        expr: c.expr.trim(), message: c.message.trim() }));
       if (kind === "side_effect" && httpUrl.trim()) {
         const config: any = { url: httpUrl.trim(), method: httpMethod };
         if (httpHeaders.trim()) config.headers = JSON.parse(httpHeaders);
@@ -145,10 +154,43 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
           </select>
         </div>
         <input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
-        <label style={hint}>params (JSON)</label>
-        <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={params} onChange={e => setParams(e.target.value)} />
-        <label style={hint}>submission criteria (JSON) — each message is shown verbatim on failure</label>
-        <textarea style={{ ...input, minHeight: 44, fontFamily: "monospace" }} value={criteria} onChange={e => setCriteria(e.target.value)} />
+        <label style={hint}>the parameters a proposal must fill</label>
+        {params.map((p, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
+              value={p.name} onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+            <select style={{ ...input, flex: 1 }} value={p.data_type}
+              onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, data_type: e.target.value } : x))}>
+              {["TEXT", "NUMERIC", "INTEGER", "BOOLEAN", "DATE"].map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+            <label className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4, marginBottom: 6, whiteSpace: "nowrap" }}>
+              <input type="checkbox" checked={p.required}
+                onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
+              required
+            </label>
+            <Button size="xs" variant="ghost" className="mb-1.5"
+              onClick={() => setParams(ps => ps.filter((_, j) => j !== i))}>✕</Button>
+          </div>
+        ))}
+        <Button size="xs" variant="ghost" className="mb-2"
+          onClick={() => setParams(ps => [...ps, { name: "", data_type: "TEXT", required: true }])}>
+          + Add a parameter
+        </Button>
+        <label style={hint}>what a proposal must satisfy — the message is shown verbatim when it fails</label>
+        {criteria.map((c, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input style={{ ...input, flex: 2, fontFamily: "var(--font-mono)" }} placeholder="amount_eur <= 10000"
+              value={c.expr} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, expr: e.target.value } : x))} />
+            <input style={{ ...input, flex: 3 }} placeholder="why — shown to the proposer on failure"
+              value={c.message} onChange={e => setCriteria(cs => cs.map((x, j) => j === i ? { ...x, message: e.target.value } : x))} />
+            <Button size="xs" variant="ghost" className="mb-1.5"
+              onClick={() => setCriteria(cs => cs.filter((_, j) => j !== i))}>✕</Button>
+          </div>
+        ))}
+        <Button size="xs" variant="ghost" className="mb-2"
+          onClick={() => setCriteria(cs => [...cs, { expr: "", message: "" }])}>
+          + Add a criterion
+        </Button>
         {kind === "side_effect" && (
           <>
             <label style={hint}>the call this action makes — described, never coded</label>

@@ -109,6 +109,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 
 type NavTab =
   | "home"              // overview dashboard — stats, health, recents, quick input
+  | "spend"             // PX-2 — Operations ▸ Spend (caps, usage, model health, audit feed)
   | "chat"              // active investigation / chat (hidden from nav)
   | "canvases"
   | "canvas-workspace"
@@ -342,6 +343,8 @@ const NAV_SECTIONS = [
       { id: "monitors", icon: "activity", label: "Monitors" },
       { id: "actions",  icon: "spark",    label: "Notifications" },
       { id: "integrations", icon: "plug", label: "Integrations" },
+      // PX-2 — the governed-spend cockpit: caps, usage, model health, the audit feed.
+      { id: "spend",    icon: "scales",   label: "Spend" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
       { id: "evals",    icon: "check",    label: "Evals" },
     ],
@@ -1324,7 +1327,7 @@ const THEME_KEY = "aughor_theme";
  *  than next/navigation: the shell is one client page, and a query-param sync
  *  has no server-render surface to disagree with. */
 const VALID_TABS = new Set<NavTab>([
-  "home", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
+  "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
   "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
@@ -1380,7 +1383,7 @@ const VALID_LAYERS = new Set<IntelLayer>([
  *  (before this, Evals▸Experiments or Agent Ops▸Attention could not survive a
  *  reload). One vocabulary per workspace; a `?layer=` value is honoured only on the
  *  workspace it belongs to, so a stale or foreign value is ignored, not routed to. */
-const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "security"]);
+const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "spend", "security"]);
 const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
 const AGENTIC_LAYERS = new Set<AgenticOpsLayer>([
   "fleet", "agents", "attention", "activity", "automations",
@@ -1884,6 +1887,7 @@ export default function Home() {
     monitors: "monitors",
     actions:  "actions",
     integrations: "integrations",
+    spend: "spend",
     security: "security",
   };
 
