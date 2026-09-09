@@ -36,6 +36,14 @@ Only a chart that can be proved from its own geometry:
   * exactly ONE value per category, each sitting within a fraction of the pitch of its
     category's centre.
 
+One tier is different in kind. A stacked bar with NO printed labels holds values that
+are not text anywhere in the file, so they cannot be read — but the bars are drawn as
+rectangles with exact coordinates and the value axis gives a scale, so they can be
+MEASURED. Those tables say so, and their figures are rounded to the resolution a point
+of height actually carries. Checked against the deck's own printed headlines across
+seven cities, the worst disagreement was 3.8% — and those headlines are themselves
+rounded to the nearest thousand, so most of that is their rounding, not the ruler's.
+
 A horizontal bar chart is the same problem transposed and is read the same way. There
 the value sits at the end of its bar, sharing a ROW with the label rather than a
 column, so nothing lines up in x at all: everything since the previous figure names the
@@ -113,6 +121,10 @@ class Chart:
     title: str
     categories: list[str]
     series: list[Series]
+    #: True when the figures were MEASURED off the drawing rather than read from it —
+    #: the chart printed no labels, so its heights were scaled against its own axis.
+    #: Said out loud in the table, because the two are not equally certain.
+    measured: bool = False
 
     @property
     def values(self) -> list[str]:
@@ -132,7 +144,9 @@ class Chart:
             "| " + " | ".join(_cell(v) for v in [category]
                               + [s.values[i] for s in self.series]) + " |"
             for i, category in enumerate(self.categories))
-        return (f"#### {self.title or 'Chart'} — page {self.page}\n\n"
+        note = ("\n\nMeasured from the bar heights against this chart's own axis — "
+                "these values are not printed on it." if self.measured else "")
+        return (f"#### {self.title or 'Chart'} — page {self.page}{note}\n\n"
                 f"| Category | {heads} |\n{rule}\n{rows}\n")
 
 
@@ -392,13 +406,19 @@ def reconstruct(data: bytes) -> list[Chart]:
                     charts.extend(_ranked_charts_on_page(words, number))
                     charts.extend(_stacked_charts_on_page(words, number))
                     charts.extend(_donut_charts_on_page(words, number))
+                    charts.extend(_measured_stacks_on_page(page, words, number))
                 except Exception:
                     logger.debug("chart reconstruction skipped page %d", number,
                                  exc_info=True)
     except Exception:
         logger.debug("chart reconstruction could not read the document", exc_info=True)
         return []
-    return charts
+    # READ beats MEASURED. Where a chart's values are printed, the reading is exact and
+    # the measurement is an approximation of the same thing; offering both would put two
+    # answers to one question in the index, one of them needlessly less certain.
+    read = {(c.page, tuple(c.categories)) for c in charts if not c.measured}
+    return [c for c in charts
+            if not c.measured or (c.page, tuple(c.categories)) not in read]
 
 
 def as_markdown(charts: list[Chart]) -> str:
@@ -875,3 +895,178 @@ def _donut_title(words: list[dict], loose: list[dict]) -> str:
     left = min(w["x0"] for w in loose)
     right = max(w["x1"] for w in loose)
     return _title_for(words, (min(w["top"] for w in loose), 0.0), left, right)
+
+
+# ── Bars with no labels at all: measured, not read ────────────────────────────
+
+#: A tick like "60.000" or "1,200" — thousands separators, either convention. Not a
+#: decimal: an axis counts in whole units, and the evenly-spaced check settles the rest.
+_AXIS_NUMBER = re.compile(r"^\d{1,3}(?:[.,]\d{3})*$")
+
+#: A drawn segment thinner than this is a rounding artefact of the renderer, not data.
+_MIN_SEGMENT_POINTS = 0.6
+
+#: How far a stack's foot may sit from the axis zero, and each segment from the next.
+_SEAM_TOLERANCE = 1.5
+
+
+def _axis_number(text: str) -> float | None:
+    if not _AXIS_NUMBER.match(text):
+        return None
+    return float(text.replace(".", "").replace(",", ""))
+
+
+def _value_axes(words: list[dict]) -> list[tuple[float, float, float, float]]:
+    """Every numeric value axis on the page: (zero centre, units per point, top, x).
+
+    All of them, not the best one. A page carries two charts side by side and their
+    axes are the same height, so choosing globally picks whichever sorts first — on the
+    deck that measured take-up in square metres against the lettings chart's 0-120
+    scale, off by a factor of five hundred. Each axis is paired with the chart standing
+    beside it instead.
+
+    Fitted on the label CENTRES, not their tops: a tick label is centred on its
+    gridline, and using the top biases every reading by half a line of type.
+    """
+    found = []
+    for column in _columns([w for w in words if _axis_number(w["text"]) is not None],
+                           _TICK_COLUMN_WIDTH / 2):
+        ticks = sorted(((_axis_number(w["text"]), (w["top"] + w["bottom"]) / 2)
+                        for w in column), key=lambda t: t[0])
+        if len(ticks) < _MIN_TICKS or len({v for v, _ in ticks}) != len(ticks):
+            continue
+        if not (_evenly_spaced([v for v, _ in ticks])
+                and _evenly_spaced([c for _, c in ticks])):
+            continue
+        span = ticks[-1][0] - ticks[0][0]
+        points = ticks[0][1] - ticks[-1][1]
+        if span <= 0 or points <= 0:
+            continue
+        zero = ticks[0][1] + ticks[0][0] * (points / span)
+        found.append((zero, span / points, ticks[-1][1],
+                      statistics.fmean([_centre(w) for w in column])))
+    return found
+
+
+def _fill(shape: dict) -> str:
+    return str(shape.get("non_stroking_color"))
+
+
+def _swatch_names(rects: list[dict], words: list[dict]) -> tuple[dict[str, str], set]:
+    """Fill colour → series name, taken from the legend.
+
+    A legend entry is a small filled patch with its name immediately to the right. That
+    patch is the ONLY thing tying a drawn segment to a series — the segments themselves
+    carry no text at all — so a colour with no swatch is a series that cannot be named,
+    and its chart is refused rather than labelled by position.
+    """
+    names: dict[str, str] = {}
+    swatches: set = set()
+    for rect in rects:
+        if rect["height"] > 12 or rect["width"] > 40:
+            continue
+        middle = (rect["top"] + rect["bottom"]) / 2
+        to_right = [w for w in words if w["x0"] >= rect["x1"] - 1
+                    and w["x0"] - rect["x1"] < 12
+                    and w["top"] <= middle <= w["bottom"] + _ROW_TOLERANCE]
+        if len(to_right) == 1:
+            names.setdefault(_fill(rect), to_right[0]["text"])
+            # Returned so the caller can exclude them. A swatch is a small filled patch
+            # in exactly the colour of the series it names, and one of them sat close
+            # enough to a column to be read as a fifth segment of that bar.
+            swatches.add((round(rect["x0"], 2), round(rect["top"], 2)))
+    return names, swatches
+
+
+def _measured_stacks_on_page(page, words: list[dict], page_number: int) -> list[Chart]:
+    """Stacked bars whose values were never printed, measured against their own axis.
+
+    Every other reader here REFUSES this chart, and rightly: nothing on it says what
+    the segments are worth. But the bars are drawn as rectangles with exact
+    coordinates, and the value axis gives a scale, so the heights can be measured — a
+    different kind of answer, and it is labelled as one. These tables say MEASURED, and
+    the figures are rounded to the resolution a point of height actually carries
+    (about 250 sqm on this deck) rather than to the spurious precision of the division.
+
+    What has to hold before a single number is emitted:
+
+      * the segments of a bar are CONTIGUOUS — each one's foot is the next one's head,
+        which is what makes it a stack rather than four rectangles in a column;
+      * the bottom segment stands ON the axis zero, so the bar is measured from the
+        baseline the axis defines and not from wherever it happens to start;
+      * every fill has a legend swatch, because a colour nobody named is a series this
+        cannot attribute;
+      * each stack sits under a category label.
+    """
+    axes = _value_axes(words)
+    names, swatches = _swatch_names(page.rects, words)
+    if not axes or not names:
+        return []
+
+    found: list[Chart] = []
+    for row in _rows(words):
+        for cluster in _clusters(sorted(row, key=lambda w: w["x0"])):
+            if len(cluster) < _MIN_CATEGORIES:
+                continue
+            if not all(_CATEGORY.match(w["text"]) for w in cluster):
+                continue
+            labels = _merge_labels(cluster)
+            centres = [c for _, c in labels]
+            pitch = _pitch(centres)
+            if pitch is None:
+                continue
+            baseline = min(w["top"] for w in cluster)
+
+            # The axis that belongs to THIS chart: below the labels' baseline, to their
+            # left, and the nearest such. The legend row sits above every axis and is
+            # dropped here — it is four evenly spaced labels and nothing else.
+            candidates = [a for a in axes if a[0] < baseline and a[3] < centres[0]]
+            if not candidates:
+                continue
+            zero, per_point, axis_top, _ = max(candidates, key=lambda a: a[3])
+
+            bars = [r for r in page.rects
+                    if r["height"] >= _MIN_SEGMENT_POINTS and r["width"] < pitch
+                    and axis_top - 20 <= r["top"]
+                    and r["bottom"] <= zero + _SEAM_TOLERANCE
+                    and (round(r["x0"], 2), round(r["top"], 2)) not in swatches
+                    and _fill(r) in names]
+            # Every segment of one bar shares that bar's centre exactly, so the window
+            # is tight. A wide one reached into the neighbouring column and returned a
+            # stack with five segments and a quarter appearing twice.
+            columns = [sorted((r for r in bars
+                               if abs((r["x0"] + r["x1"]) / 2 - centre)
+                               <= max(3.0, pitch * 0.12)),
+                              key=lambda r: r["bottom"], reverse=True)
+                       for centre in centres]
+            if not all(columns) or not all(_is_stack(s, zero) for s in columns):
+                continue
+
+            # A column may legitimately be short: the deck's last bar is a HALF year, so
+            # it has no Q3 or Q4 rectangle at all. That is absence, not zero, and it is
+            # written as absence — claiming a zero would invent a quarter's worth of
+            # nothing where the chart simply stops.
+            order = list(dict.fromkeys(_fill(r) for stack in columns for r in stack))
+            if any(len({_fill(r) for r in stack}) != len(stack) for stack in columns):
+                continue
+            step = 10 ** round(math.log10(per_point)) if per_point > 0 else 1
+            series = [
+                Series(names[fill],
+                       [next((f"{round(r['height'] * per_point / step) * step:,.0f}"
+                              for r in stack if _fill(r) == fill), "—")
+                        for stack in columns])
+                for fill in order]
+            found.append(Chart(page=page_number,
+                               title=_title_for(words, (axis_top, zero),
+                                                centres[0] - 60, centres[-1]),
+                               categories=[t for t, _ in labels],
+                               series=series, measured=True))
+    return found
+
+
+def _is_stack(stack: list[dict], zero: float) -> bool:
+    """Contiguous segments standing on the axis zero. See `_measured_stacks_on_page`."""
+    if abs(stack[0]["bottom"] - zero) > _SEAM_TOLERANCE:
+        return False
+    return all(abs(lower["top"] - upper["bottom"]) <= _SEAM_TOLERANCE
+               for lower, upper in zip(stack, stack[1:]))
