@@ -87,3 +87,38 @@ def test_unscoped_read_still_falls_back_when_nothing_matches(cache, monkeypatch)
     monkeypatch.setattr(router, "get_meta", lambda cid: {"schema_name": "main"})
 
     assert router._get_ontology_graph("c1", None).schema_name == "ecommerce"
+
+
+# ── The skills key resolver has the same rule ────────────────────────────────
+
+def test_skill_schema_prefers_the_configured_schema(monkeypatch):
+    """`/ontology/skills` keys learned skills by schema. It resolved that key through
+    `load_latest_ontology(id, None)` — the arbitrary last cache entry — so on the live
+    instance it answered `ecommerce` for a connection registered against `main`. A skill
+    saved under one schema and read back under another is a skill that disappears."""
+    from aughor.memory import skills
+
+    entries = {"main": _Graph("main"), "ecommerce": _Graph("ecommerce")}
+
+    def _load_latest(connection_id, schema_name=None):
+        if schema_name:
+            return entries.get(schema_name)
+        return list(entries.values())[-1]
+
+    monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", _load_latest)
+    monkeypatch.setattr("aughor.db.registry.get_meta", lambda cid: {"schema_name": "main"})
+
+    assert skills.resolve_active_schema("c1") == "main"
+
+
+def test_skill_schema_still_answers_when_the_configured_one_is_unbuilt(monkeypatch):
+    from aughor.memory import skills
+
+    entries = {"ecommerce": _Graph("ecommerce")}
+    monkeypatch.setattr(
+        "aughor.ontology.store.load_latest_ontology",
+        lambda cid, schema_name=None: entries.get(schema_name) if schema_name
+        else (list(entries.values())[-1] if entries else None))
+    monkeypatch.setattr("aughor.db.registry.get_meta", lambda cid: {"schema_name": "main"})
+
+    assert skills.resolve_active_schema("c1") == "ecommerce"
