@@ -109,6 +109,19 @@ def _migrate_v4(c: sqlite3.Connection) -> None:
     add_column_if_missing(c, "investigations", "purpose", "TEXT NOT NULL DEFAULT ''")
 
 
+def _migrate_v6(c: sqlite3.Connection) -> None:
+    """Why a run failed, on the row that records THAT it failed.
+
+    `fail_investigation` took a status and nothing else, so the reason was discarded at
+    the one moment it was known and every failed investigation was unexplainable by
+    construction. Measured 2026-09-06: run a0c735ef sat at status=failed, headline=None,
+    hypotheses=0, queries=0, report={} — 878 seconds and not one word about why.
+
+    Additive and defaulted, like every migration here; rows written before it read ''
+    (unknown), which is honest rather than a fabricated cause."""
+    add_column_if_missing(c, "investigations", "error", "TEXT NOT NULL DEFAULT ''")
+
+
 def _migrate_v5(c: sqlite3.Connection) -> None:
     """CA-5 — per-thread metadata (the rail's rename).
 
@@ -134,6 +147,8 @@ _MIGRATIONS = [
     Migration(3, "add agent_id (per-agent run history)", _migrate_v3),
     Migration(4, "add purpose (starter provenance)", _migrate_v4),
     Migration(5, "chat_session_meta (thread rename, CA-5)", _migrate_v5),
+    Migration(6, "investigation failure reason (the row said failed and never why)",
+              _migrate_v6),
 ]
 
 
@@ -150,6 +165,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             query_count INTEGER DEFAULT 0,
             headline TEXT,
             report_json TEXT,
+            error TEXT NOT NULL DEFAULT '',
             hypotheses_json TEXT,
             query_history_json TEXT,
             kind TEXT DEFAULT 'investigation',
@@ -269,16 +285,24 @@ def pause_investigation(inv_id: str) -> None:
     _emit_lifecycle(inv_id, "investigation.paused", conn_id=_conn_scope, canvas_id=_canvas_scope)
 
 
-def fail_investigation(inv_id: str, status: InvStatus = "timed_out") -> None:
-    """
-    Mark an investigation as timed_out or failed.
+def fail_investigation(inv_id: str, status: InvStatus = "timed_out",
+                       reason: str = "") -> None:
+    """Mark an investigation timed_out or failed, and say WHY.
+
     Deliberately does NOT index — partial results must not pollute the cache.
+
+    ``reason`` is the whole point of this function's second life. It used to take a status
+    and nothing else, so the cause was thrown away at the one moment anything knew it:
+    measured 2026-09-06, a run sat at failed/878s with zero hypotheses, zero queries and
+    no report, and nothing anywhere could say what happened. A caller that has an
+    exception, a stall summary or a deadline passes it here; a caller that genuinely does
+    not know passes nothing and the row honestly reads ''.
     """
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "UPDATE investigations SET completed_at = ?, status = ? WHERE id = ?",
-        (_now(), status, inv_id),
+        "UPDATE investigations SET completed_at = ?, status = ?, error = ? WHERE id = ?",
+        (_now(), status, str(reason or "")[:2000], inv_id),
     )
     c.commit()
     _conn_scope, _canvas_scope = _inv_scope(c, inv_id)

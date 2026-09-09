@@ -274,8 +274,13 @@ def run_investigation(
         status = str(row.get("status") or "")
         if status not in _FAILED_STATUSES:
             return ""
-        return (f"the investigation ended {status} after "
+        # The row's own words when it has them. `fail_investigation` records a reason now,
+        # so this stops being "it ended failed" and starts being the cause — which is the
+        # whole point of asking the record instead of the stream.
+        why = str(row.get("error") or "").strip()
+        head = (f"the investigation ended {status} after "
                 f"{int(row.get('query_count') or 0)} queries, with no answer")
+        return f"{head} — {why}" if why else head
 
     def _inline(reason: str) -> InvestigationRun:
         """Drain to completion and report what came back — the only path that has waited,
