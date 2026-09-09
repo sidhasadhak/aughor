@@ -172,7 +172,7 @@ export function SqlEditorPane({
     //   ⌘J      the live-template list (see templates.ts) — explicit completion with
     //           the templates already in it
     //   ⌘/ ⌥⌘/  toggle a line / block comment, DataGrip's own pair
-    //   ⌘G      go to line
+    //   ⌘L      go to line (DataGrip's key; ⌘G is the browser's Find Next)
     //   ⌘F ⌥⌘F  find / find-and-replace: `searchKeymap` was ALREADY registered here
     //           and did nothing, because the panel it opens is provided by the
     //           `search()` extension, which was not. ⌘F was a dead key.
@@ -184,7 +184,11 @@ export function SqlEditorPane({
       { key: "Mod-j", preventDefault: true, run: startCompletion },
       { key: "Mod-/", preventDefault: true, run: toggleComment },
       { key: "Mod-Alt-/", preventDefault: true, run: toggleBlockComment },
-      { key: "Mod-g", preventDefault: true, run: gotoLine },
+      // ⌘L, DataGrip's own go-to-line. NOT ⌘G: measured in the browser, ⌘G never
+      // reaches the editor — it is Find Next at the browser level and is not
+      // preventable from the page. A key we advertise and the OS eats is worse than
+      // no key. `searchKeymap`'s own ⌥⌘G stays bound as well.
+      { key: "Mod-l", preventDefault: true, run: gotoLine },
       { key: "Mod-f", preventDefault: true, run: openSearchPanel },
       { key: "Mod-Alt-f", preventDefault: true, run: openSearchPanel },
     ]));

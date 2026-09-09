@@ -119,10 +119,25 @@ export const aughorEditorTheme = EditorView.theme({
     color: "var(--t3)", background: "none", border: "none", cursor: "pointer",
     fontSize: "var(--aug-fs-h2)", padding: "0 4px",
   },
-  ".cm-panel.cm-gotoLine": { padding: "6px 8px", display: "flex", alignItems: "center", gap: "6px" },
-  ".cm-panel.cm-gotoLine input": {
-    backgroundColor: "var(--bg-1)", color: "var(--t1)",
+  // Go-to-line renders as CM6's generic dialog panel in this version — `cm-dialog`
+  // with `cm-textfield` / `cm-button` inside, NOT the `cm-gotoLine` class an older
+  // reference documents. Found by opening it and reading the DOM, after a first draft
+  // styled a selector that matches nothing and left a white box on the dark chrome.
+  ".cm-panel.cm-dialog": { padding: "6px 8px", display: "flex", alignItems: "center", gap: "6px" },
+  ".cm-textfield": {
+    backgroundColor: "var(--bg-1)", color: "var(--t1)", fontFamily: "var(--font-ui)",
+    fontSize: "var(--aug-fs-sm)",
     border: "1px solid var(--b1)", borderRadius: "var(--r1)", padding: "3px 7px", outline: "none",
+  },
+  ".cm-textfield:focus": { borderColor: "var(--blue3)" },
+  ".cm-button": {
+    backgroundColor: "var(--bg-3)", backgroundImage: "none", color: "var(--t2)",
+    fontFamily: "var(--font-ui)", fontSize: "var(--aug-fs-sm)",
+    border: "1px solid var(--b1)", borderRadius: "var(--r1)", padding: "3px 8px", cursor: "pointer",
+  },
+  ".cm-button:hover": { color: "var(--t1)", borderColor: "var(--b2)" },
+  ".cm-dialog-close": {
+    color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: "0 4px",
   },
   ".cm-searchMatch": { backgroundColor: "var(--bg-3)", outline: "1px solid var(--b2)" },
   ".cm-searchMatch.cm-searchMatch-selected": { backgroundColor: "var(--amb1)" },

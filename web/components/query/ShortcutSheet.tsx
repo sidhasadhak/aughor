@@ -59,7 +59,11 @@ function groups(mod: string): Group[] {
       title: "Find",
       keys: [
         [`${mod}F`, "Find and replace"],
-        [`${mod}G`, "Go to line"],
+        [`${mod}L`, "Go to line"],
+        // The same command under CodeMirror's own binding. Kept on the list because
+        // ⌘L is the browser's address bar on some hosts and does not always reach the
+        // page; ⌥⌘G is claimed by nothing and always does.
+        [`⌥${mod}G`, "Go to line — the alternative, when the browser eats ⌘L"],
       ],
     },
     {
