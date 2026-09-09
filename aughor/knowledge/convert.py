@@ -188,6 +188,176 @@ def sniff(data: bytes, filename: str = "") -> str | None:
     return None
 
 
+def _repair_wrapped_headers(markdown: str) -> str:
+    """Put a two-line table header back together.
+
+    A header that wraps in the original arrives split: the converter takes its first
+    line as the header and the second line lands in the FIRST DATA ROW. Measured on a
+    retail deck's "selected lettings" tables — four of them, one per city:
+
+        |Quarter /||Address||Retailer|Sectors|Gross lease|
+        |year 2024 Q1||Prager Straße 10||C&A|Fashion|area 3,400 sqm|
+        |2025 Q3||Schloßstraße 1||Papenbreer|Fashion|1,800 sqm|
+
+    "Quarter /" is missing its "year", "Gross lease" its "area", and the first letting
+    reads `year 2024 Q1` and `area 3,400 sqm` while every other row is clean. This is
+    worse than a cosmetic problem because a TABLE is trusted downstream — its header
+    names the column, which is exactly why `documents.is_numeric_run` never suppresses
+    one. A corrupted row inside a table is content nothing else will question.
+
+    The signal is that the leading word is UNIQUE to the first row: no other row in the
+    column begins with it, so it is not data that column holds. Conservative on every
+    axis — the word must be lowercase and alphabetic, the column must already have a
+    header to continue, and there must be enough rows for "no other row" to mean
+    something. Anything less certain is left exactly as the converter made it.
+    """
+    lines = markdown.splitlines()
+    out: list[str] = []
+    block: list[int] = []
+
+    def flush() -> None:
+        if len(block) >= 5:                       # header + rule + 3 data rows
+            _rejoin_header([out[i] for i in block], out, block)
+        block.clear()
+
+    for line in lines:
+        out.append(line)
+        if line.lstrip().startswith("|"):
+            block.append(len(out) - 1)
+        else:
+            flush()
+    flush()
+    return "\n".join(out)
+
+
+def _split_row(row: str) -> list[str]:
+    return [c.strip() for c in row.strip().strip("|").split("|")]
+
+
+def _rejoin_header(rows: list[str], out: list[str], at: list[int]) -> None:
+    """See `_repair_wrapped_headers`. Rewrites `out` in place."""
+    header = _split_row(rows[0])
+    data = [_split_row(r) for r in rows[2:]]
+    if not all(len(r) == len(header) for r in data):
+        return
+    moved = False
+    for col, cell in enumerate(header):
+        if not cell:
+            continue
+        first = data[0][col].split()
+        if not first:
+            continue
+        word = first[0]
+        if not (word.isalpha() and word.islower()):
+            continue
+        if any(later[col].split()[:1] == [word] for later in data[1:]):
+            continue
+        header[col] = f"{cell} {word}"
+        data[0][col] = " ".join(first[1:])
+        moved = True
+    if not moved:
+        return
+    out[at[0]] = "| " + " | ".join(header) + " |"
+    out[at[2]] = "| " + " | ".join(data[0]) + " |"
+
+
+def _demote_layout_tables(markdown: str) -> str:
+    """Un-table the things that were never tables.
+
+    A slide laid out with invisible cells converts to Markdown as a table, and the
+    converter cannot tell that apart from a real one. Measured on a retail deck, a
+    RETAIL CITY MAP came through as:
+
+        ||Mass-market location Premium location|
+        |MITTE||
+        ||2|
+        |5||
+
+    "MITTE" is a map panel's title and 2, 5 and 3 are the numbered PINS printed on it.
+    Read as a table it says Mitte has five mass-market and three premium locations,
+    which is not in the document at all. Worse, it is armoured: `is_numeric_run` never
+    suppresses a table row, on the grounds that its header names the column. Here the
+    header names a legend and the rows are map furniture.
+
+    So the same question is asked of a table row that is asked of every other line —
+    is there anything here to attribute these figures to? A row of bare figures with no
+    word anywhere in it is not attributed by a header it does not belong to. Where most
+    of a table's rows are like that, the table is layout, and it is DEMOTED to text
+    rather than deleted: the words stay searchable, the figures fall back under the
+    ordinary numeric-run rule, and nothing claims to be data that is not.
+
+    Deliberately narrow. The deck's other layout tables — the city tiles, the contacts
+    page — carry words in every row and are left exactly as they are; they are noise,
+    not fabricated data, and rewriting them would risk real tables for no gain.
+    """
+    from aughor.knowledge.documents import figures_without_words
+
+    out: list[str] = []
+    block: list[str] = []
+
+    def flush() -> None:
+        if len(block) >= 4:
+            rows = [_split_row(r) for r in block]
+            body = [cells for cells in rows[2:] if any(c for c in cells)]
+            bare = [cells for cells in body
+                    if figures_without_words(" ".join(cells))]
+            if len(bare) >= 2 and len(bare) * 2 > len(body):
+                out.extend(" ".join(c for c in cells if c).strip()
+                           for cells in rows if any(c for c in cells)
+                           and not all(set(c) <= set("-: ") for c in cells))
+                block.clear()
+                return
+        out.extend(block)
+        block.clear()
+
+    for line in markdown.splitlines():
+        if line.lstrip().startswith("|"):
+            block.append(line)
+        else:
+            flush()
+            out.append(line)
+    flush()
+    return "\n".join(out)
+
+
+def _post_convert(conversion: Conversion, data: bytes, detected: str) -> Conversion:
+    """Repair what the converter split, then append what it could not carry.
+
+    Both jobs are about the same loss. A wrapped table header arrives broken because
+    Markdown has no way to say "this header is two lines"; a chart arrives headless
+    because Markdown has no way to say "this figure sits above that label". Neither is
+    a conversion failure, and neither can be fixed anywhere later — by the time the
+    Markdown is chunked, the second line of the header is indistinguishable from data
+    and the bytes are gone.
+
+    Appending charts is PDF-only; the header repair is not, because any format can
+    wrap a header.
+
+    Markdown cannot carry a chart: its data labels are positioned graphics, and `104`
+    means `2018` only because they share an x coordinate. Conversion is where that
+    coordinate is lost, so this is where it has to be read — from the same bytes,
+    before they are let go.
+
+    Deliberately additive and deliberately silent about failure. The document has
+    already converted; a chart that cannot be proved is not an import error, so
+    `reconstruct` returns nothing rather than raising and this leaves the Markdown
+    exactly as anydoc made it. See `aughor.knowledge.charts` for what "proved" means.
+    """
+    conversion.markdown = _demote_layout_tables(
+        _repair_wrapped_headers(conversion.markdown))
+    if detected != "pdf":
+        return conversion
+    from aughor.knowledge.charts import as_markdown, reconstruct
+
+    found = reconstruct(data)
+    if not found:
+        return conversion
+    conversion.markdown += as_markdown(found)
+    conversion.charts_recovered = len(found)
+    conversion.chart_pages = sorted({chart.page for chart in found})
+    return conversion
+
+
 @dataclass
 class Conversion:
     """A document's Markdown plus what could NOT be read.
@@ -208,6 +378,11 @@ class Conversion:
     #: "scan this" and "this page is broken" are different problems with different
     #: remedies, and merging them would tell a person to buy OCR they do not need.
     pages_failed: list[int] = field(default_factory=list)
+    #: Charts read back from the PDF's own geometry and appended as tables. Reported
+    #: because a document that gained content deserves to say so at the door, the same
+    #: way one that lost pages does.
+    charts_recovered: int = 0
+    chart_pages: list[int] = field(default_factory=list)
 
     @property
     def missing_pages(self) -> list[int]:
@@ -321,8 +496,9 @@ def convert_document(data: bytes, filename: str = "") -> Conversion:
     anydoc = _anydoc()
     mode, api_key = _ocr_mode()
     try:
-        return Conversion(
-            markdown=anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key))
+        return _post_convert(Conversion(
+            markdown=anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key)),
+            data, detected)
     except anydoc.NeedsOcrError as exc:
         # SOME pages are images. Refusing the document because of them throws away
         # every page that reads perfectly — see `_recover_readable_pages`. Recovery
@@ -333,7 +509,7 @@ def convert_document(data: bytes, filename: str = "") -> Conversion:
             logger.info("Recovered %d of %d pages from a part-scanned PDF; %d need OCR",
                         len(recovered.pages_read), recovered.page_count,
                         len(recovered.pages_needing_ocr))
-            return recovered
+            return _post_convert(recovered, data, detected)
         pages = getattr(exc, "pages", None) or []
         count = getattr(exc, "page_count", None)
         where = (f"page{'s' if len(pages) != 1 else ''} "

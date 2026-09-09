@@ -564,6 +564,113 @@ def test_uploading_a_part_scanned_pdf_succeeds_and_says_what_was_missed(client, 
     assert body["chunk_count"] >= 1, "the readable pages should be indexed"
 
 
+# ── A header that wrapped in the original ─────────────────────────────────────
+
+WRAPPED = """| Quarter / |  | Address | Retailer | Gross lease |
+|---|---|---|---|---|
+| year 2024 Q1 |  | Prager Straße 10 | C&A | area 3,400 sqm |
+| 2025 Q3 |  | Schloßstraße 1 | Papenbreer | 1,800 sqm |
+| 2023 Q1 |  | Prager Straße 3 | Go Asia | 1,500 sqm |
+"""
+
+
+def test_a_two_line_header_is_put_back_together():
+    """Measured on four "selected lettings" tables in a retail deck.
+
+    The header wrapped in the original, so its second line landed in the first data
+    row: "Quarter /" lost its "year" and the first letting read `year 2024 Q1`. It
+    matters more than it looks because a TABLE is trusted downstream — its header names
+    the column, which is why a table row is never suppressed as a numeric run. A
+    corrupted row inside one is content nothing else will question.
+    """
+    from aughor.knowledge.convert import _repair_wrapped_headers
+
+    fixed = _repair_wrapped_headers(WRAPPED).splitlines()
+
+    assert "Quarter / year" in fixed[0]
+    assert "Gross lease area" in fixed[0]
+    assert "| 2024 Q1 |" in fixed[2]
+    assert "| 3,400 sqm |" in fixed[2]
+    assert "year" not in fixed[2]
+
+
+def test_a_first_row_that_is_merely_first_is_left_alone():
+    """The rule is that the leading word is UNIQUE to the first row. A word the column
+    genuinely holds appears again further down, and moving it would eat real data."""
+    from aughor.knowledge.convert import _repair_wrapped_headers
+
+    honest = """| Quarter | Tenant |
+|---|---|
+| 2024 Q1 | flagship store |
+| 2025 Q3 | flagship outlet |
+| 2023 Q1 | pop-up |
+"""
+    assert _repair_wrapped_headers(honest) == honest.rstrip("\n")
+
+
+def test_a_table_too_short_to_judge_is_left_alone():
+    """"No other row starts with it" means nothing across two rows."""
+    from aughor.knowledge.convert import _repair_wrapped_headers
+
+    short = "| Quarter / | Area |\n|---|---|\n| year 2024 Q1 | area 3,400 sqm |\n"
+    assert _repair_wrapped_headers(short) == short.rstrip("\n")
+
+
+# ── A slide laid out with invisible cells is not a table ──────────────────────
+
+MAP_LEGEND = """| | Mass-market location Premium location |
+|---|---|
+| MITTE | |
+| | 2 |
+| 5 | |
+| | 3 |
+"""
+
+LETTINGS = """| Quarter / year | Address | Retailer | Gross lease area |
+|---|---|---|---|
+| 2024 Q1 | Prager Straße 10 | C&A | 3,400 sqm |
+| 2025 Q3 | Schloßstraße 1 | Papenbreer | 1,800 sqm |
+| 2023 Q1 | Prager Straße 3 | Go Asia | 1,500 sqm |
+"""
+
+
+def test_a_city_map_is_not_a_data_table():
+    """Measured on a retail deck. "MITTE" is a map panel's title and 2, 5 and 3 are the
+    numbered PINS printed on it — read as a table it says Mitte has five mass-market and
+    three premium locations, which is nowhere in the document.
+
+    It is armoured, too: a table row is never suppressed as a numeric run, on the
+    grounds that its header names the column. Here the header names a legend.
+    """
+    from aughor.knowledge.convert import _demote_layout_tables
+
+    demoted = _demote_layout_tables(MAP_LEGEND)
+
+    assert "|" not in demoted, "it should no longer claim to be a table"
+    # Demoted, not deleted — the words stay searchable and the figures fall back under
+    # the ordinary rule instead of being exempt from it.
+    assert "MITTE" in demoted
+    assert "Mass-market location" in demoted
+
+
+def test_a_real_table_with_figures_in_every_row_is_left_alone():
+    """The rule keys on rows that have figures and NO words. A data table's rows have
+    both, which is exactly what makes their header meaningful."""
+    from aughor.knowledge.convert import _demote_layout_tables
+
+    assert _demote_layout_tables(LETTINGS) == LETTINGS.rstrip("\n")
+
+
+def test_one_odd_row_does_not_condemn_a_table():
+    """Most of the rows have to be bare figures. A single sparse row is a gap in a real
+    table, not evidence that the whole thing is layout."""
+    from aughor.knowledge.convert import _demote_layout_tables
+
+    with_gap = LETTINGS.replace("| 2023 Q1 | Prager Straße 3 | Go Asia | 1,500 sqm |",
+                                "| | | | 1,500 |")
+    assert _demote_layout_tables(with_gap) == with_gap.rstrip("\n")
+
+
 # ── Unattributed numeric runs stay out of the index ───────────────────────────
 
 CHART_RUN = "### Value (GMV)245.9 268.9 279.6 224.5 290.7 243.4 118.6 125.3 130.7"
@@ -584,6 +691,117 @@ def test_a_chart_run_is_recognised_and_a_sentence_is_not():
     assert is_numeric_run(
         "GMV increased by +11.3% ex-FX (+7.0% reported) and Net Sales by +9.9%") is False
     assert is_numeric_run("Revenue grew across all regions.") is False
+
+
+def test_a_colon_names_the_figure_that_follows_it():
+    """The line the guard was suppressing, from a live retail market deck.
+
+    `2026:` and `2025:` are periods being named, not figures being reported. Scored
+    among the numbers they made six against five words — `H1` and `Ø` are not words
+    by design — and the one line per city where every figure was attached to the
+    period it measures was held out of the index, while the scrambled chart axes
+    around it, being shorter than four numbers, went in.
+    """
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run(
+        "Take-up H1 2026: 24,000 sqm | H1 2025: 32,000 sqm | Ø 5 years 24,000 sqm"
+    ) is False
+
+
+def test_one_label_does_not_launder_an_axis():
+    """The limit of the colon rule, and what makes it safe to widen the filter.
+
+    Only the colon-terminated token stops counting as a figure; everything after it
+    still counts. So a name in front of a stream names the STREAM, not each value in
+    it, and a labelled axis is still an axis. These are the lines that would come
+    back into the index if the rescue were applied to the whole line instead.
+    """
+    from aughor.knowledge.documents import is_numeric_run
+
+    assert is_numeric_run("Prime rent: 340 320 300 280 260") is True
+    assert is_numeric_run("Take-up: 24,000 32,000 18,000 9,000") is True
+    assert is_numeric_run("Hamburg 235 200 170 165 150 Cologne 230 150") is True
+
+
+# A chart interleaved into fragments. Not one of these lines reaches the four-figure
+# floor on its own, which is exactly why the per-line rule left all of them in.
+INTERLEAVED = "40.000 80 79\n25.000 50\n37"
+
+
+def test_a_chart_spread_thin_is_still_a_chart():
+    """The second shape a chart leaves, and the one the line rule could not see.
+
+    A PowerPoint export interleaves two side-by-side charts into a column of two- and
+    three-figure fragments. Measured on an 83-page retail deck: the per-line rule held
+    back 83 lines and left 73 more of this kind in the index — a plausible-looking
+    splice of two different charts, which is worse company than the long row ever was.
+    """
+    from aughor.knowledge.documents import _strip_numeric_runs, is_numeric_run
+
+    # The premise: every line here is individually innocent.
+    for line in INTERLEAVED.splitlines():
+        assert is_numeric_run(line) is False, f"{line!r} should be under the line floor"
+
+    assert _strip_numeric_runs(INTERLEAVED).strip() == ""
+
+
+def test_a_line_that_carries_a_name_survives_the_block_around_it():
+    """The neighbourhood is evidence, not a verdict.
+
+    `52.225.499 Friedrichstr.` is a footfall count with its street on the same line. It
+    sits in the middle of the axis debris the block rule is there to take, and it is
+    the one line in that block nothing else attributes.
+    """
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    kept = _strip_numeric_runs("40.000 80 79\n52.225.499 Friedrichstr.\n25.000 50\n37")
+    assert kept.strip() == "52.225.499 Friedrichstr."
+
+
+def test_a_heading_survives_the_block_around_it():
+    """`##### 2021 - H1 2026` is the period a chart covers. It has no words in it — `H1`
+    is not one by design — so only its heading marker keeps it, and it must: dropping it
+    takes away the chunk's last remaining context."""
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    kept = _strip_numeric_runs("40.000 80 79\n##### 2021 - H1 2026\n25.000 50\n37")
+    assert kept.strip() == "##### 2021 - H1 2026"
+
+
+def test_prose_beside_a_headless_row_does_not_rescue_it():
+    """The block rule WIDENS the line rule, it does not replace it.
+
+    Sat next to a sentence, a headless row is in a paragraph where words dominate — so
+    the block says nothing about it and the line rule still has to. Reading only the
+    block would have quietly let this back into the index.
+    """
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    prose = "Revenue rose sharply across every region we operate in this year."
+    kept = _strip_numeric_runs(f"{prose}\n245.9 268.9 279.6 224.5")
+    assert kept.strip() == prose
+
+
+def test_a_pair_in_its_own_paragraph_is_still_left_alone():
+    """The floor holds at the block level too — four figures, not two. A heading and a
+    pair is a shape people write on purpose."""
+    from aughor.knowledge.documents import _strip_numeric_runs
+
+    assert _strip_numeric_runs("#### 774 847").strip() == "#### 774 847"
+
+
+def test_what_is_reported_is_exactly_what_is_removed():
+    """The count shown at the door and the lines taken from the index come from one
+    answer. They were two passes over the same text, which is a drift waiting to
+    happen — and the number is the only thing a person sees before approving."""
+    from aughor.knowledge.documents import _strip_numeric_runs, numeric_run_lines
+
+    text = f"# Deck\n\n{INTERLEAVED}\n\nSome prose that carries the chunk.\n\n{CHART_RUN}\n"
+    removed = [line for line in text.splitlines()
+               if line not in _strip_numeric_runs(text).splitlines()]
+    assert numeric_run_lines(text) == removed
+    assert len(removed) == 4
 
 
 def test_a_table_row_is_never_a_run_however_many_numbers_it_holds():

@@ -22,6 +22,7 @@ import type { DocumentEntry, KnowledgeStatus } from "@/lib/api";
 const listDocuments = vi.fn();
 const getKnowledgeStatus = vi.fn();
 const previewDocumentChunks = vi.fn();
+const convertDocument = vi.fn();
 const uploadDocument = vi.fn();
 
 vi.mock("@/lib/api", async importOriginal => {
@@ -31,6 +32,7 @@ vi.mock("@/lib/api", async importOriginal => {
     listDocuments: (...a: unknown[]) => listDocuments(...a),
     getKnowledgeStatus: (...a: unknown[]) => getKnowledgeStatus(...a),
     previewDocumentChunks: (...a: unknown[]) => previewDocumentChunks(...a),
+    convertDocument: (...a: unknown[]) => convertDocument(...a),
     uploadDocument: (...a: unknown[]) => uploadDocument(...a),
     deleteDocument: vi.fn(),
   };
@@ -52,10 +54,34 @@ const status = (over: Partial<KnowledgeStatus> = {}): KnowledgeStatus => ({
   ...over,
 });
 
+const conversion = (over: Record<string, unknown> = {}) => ({
+  filename: "policy.md", markdown: "# Policy\n\nbody text", characters: 4096,
+  would_index_chunks: 3, page_count: 0, pages_read: 0,
+  pages_needing_ocr: [], pages_failed: [], suppressed_numeric_runs: 0,
+  suppressed_sample: [], settings: {}, ...over,
+});
+
+const chunkPreview = (over: Record<string, unknown> = {}) => ({
+  total_chunks: 3, shown: 2, characters: 4096,
+  settings: { delimiter: "\n\n", max_chars: 1200, overlap_chars: 100,
+              min_chars: 50, collapse_whitespace: true, strip_urls_emails: false },
+  chunks: [{ index: 0, characters: 900, tokens_estimate: 225, text: "first chunk" },
+           { index: 1, characters: 880, tokens_estimate: 220, text: "second chunk" }],
+  ...over,
+});
+
+/** ① — choosing a file. The panel makes no request for this, by design. */
+const choose = (name = "policy.md") => {
+  const picker = document.querySelector('input[type="file"][multiple]');
+  fireEvent.change(picker!, { target: { files: [new File(["body"], name)] } });
+};
+
 beforeEach(() => {
   vi.clearAllMocks();
   listDocuments.mockResolvedValue([doc()]);
   getKnowledgeStatus.mockResolvedValue(status());
+  convertDocument.mockResolvedValue(conversion());
+  previewDocumentChunks.mockResolvedValue(chunkPreview());
 });
 
 describe("what the panel says about the plane", () => {
@@ -168,45 +194,88 @@ describe("curation — settings that were only reachable through the API", () =>
     expect(screen.getByLabelText(/Chunk overlap/)).toBeTruthy();
   });
 
-  it("previews chunking without indexing anything", async () => {
-    previewDocumentChunks.mockResolvedValue({
-      total_chunks: 3, shown: 2, characters: 4096,
-      settings: { delimiter: "\n\n", max_chars: 1200, overlap_chars: 100,
-                  min_chars: 50, collapse_whitespace: true, strip_urls_emails: false },
-      chunks: [{ index: 0, characters: 900, tokens_estimate: 225, text: "first chunk" },
-               { index: 1, characters: 880, tokens_estimate: 220, text: "second chunk" }],
-    });
-
+  it("makes no request at all when a file is merely chosen", async () => {
+    // ① is a choice, not a commitment. Dropping a file used to convert it on the spot,
+    // under whatever was in the settings fields — which put ② after the conversion it
+    // was supposed to govern, and spent a conversion on every misdrop.
     render(<DocumentUploader />);
     await screen.findByText("Handbook");
 
-    const picker = document.querySelector('input[type="file"].hidden:not([multiple])');
-    fireEvent.change(picker!, { target: { files: [new File(["body"], "policy.md")] } });
+    choose();
 
-    expect(await screen.findByText(/Showing 2 of 3 chunks/)).toBeTruthy();
-    expect(screen.getByText(/Chunk-1/)).toBeTruthy();
-    expect(screen.getByText(/first chunk/)).toBeTruthy();
-    // The property that makes preview safe to press repeatedly.
+    // Both ① and ④ say so — the tray and the reader agree that nothing has been read.
+    expect(await screen.findAllByText(/not read yet/)).toHaveLength(2);
+    expect(convertDocument).not.toHaveBeenCalled();
+    expect(previewDocumentChunks).not.toHaveBeenCalled();
     expect(uploadDocument).not.toHaveBeenCalled();
   });
 
-  it("carries changed settings into the preview call", async () => {
-    previewDocumentChunks.mockResolvedValue({
-      total_chunks: 1, shown: 1, characters: 10,
-      settings: { delimiter: "\n\n", max_chars: 400, overlap_chars: 100,
-                  min_chars: 50, collapse_whitespace: true, strip_urls_emails: false },
-      chunks: [{ index: 0, characters: 10, tokens_estimate: 3, text: "x" }],
-    });
+  it("reads the file at step 3 and indexes nothing", async () => {
+    render(<DocumentUploader />);
+    await screen.findByText("Handbook");
+    choose();
 
+    fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
+
+    // The Markdown is the decision — it is literally what every agent will read.
+    expect(await screen.findByText(/body text/)).toBeTruthy();
+    // …and the same press answers what ② does to it, from the SAME file. That used to
+    // need a second picker and a second choice of the same document.
+    fireEvent.click(screen.getByRole("button", { name: "Chunks" }));
+    expect(await screen.findByText(/Showing 2 of 3 chunks/)).toBeTruthy();
+    expect(screen.getByText(/first chunk/)).toBeTruthy();
+    // The property that makes ③ safe to press repeatedly.
+    expect(uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it("carries changed settings into both calls", async () => {
     render(<DocumentUploader />);
     await screen.findByText("Handbook");
     fireEvent.change(screen.getByLabelText(/Maximum chunk length/), { target: { value: "400" } });
-
-    const picker = document.querySelector('input[type="file"].hidden:not([multiple])');
-    fireEvent.change(picker!, { target: { files: [new File(["body"], "policy.md")] } });
+    choose();
+    fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
 
     await waitFor(() => expect(previewDocumentChunks).toHaveBeenCalled());
+    expect(convertDocument.mock.calls[0][1]).toMatchObject({ max_chars: 400 });
     expect(previewDocumentChunks.mock.calls[0][1]).toMatchObject({ max_chars: 400 });
+  });
+
+  it("will not index anything that has not been read", async () => {
+    // ⑤ is the only call on the panel that writes. It stays shut until ③ has produced a
+    // review, because "confirm" has no meaning if there is nothing to have looked at.
+    render(<DocumentUploader />);
+    await screen.findByText("Handbook");
+    choose();
+
+    const add = screen.getByRole("button", { name: /Add to knowledge/ });
+    expect(add.hasAttribute("disabled")).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
+    await screen.findByText(/body text/);
+    await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+
+    uploadDocument.mockResolvedValue(doc({ doc_id: "d2", filename: "policy.md" }));
+    fireEvent.click(add);
+    await waitFor(() => expect(uploadDocument).toHaveBeenCalled());
+  });
+
+  it("marks a review stale when the settings move under it", async () => {
+    // A review describes a document AS CUT BY settings. Change them and it is no longer
+    // a description of what would be indexed — so it stops counting as one, rather than
+    // standing there looking approved.
+    render(<DocumentUploader />);
+    await screen.findByText("Handbook");
+    choose();
+    fireEvent.click(screen.getByRole("button", { name: /Convert & review/ }));
+    await screen.findByText(/body text/);
+
+    const add = screen.getByRole("button", { name: /Add to knowledge/ });
+    await waitFor(() => expect(add.hasAttribute("disabled")).toBe(false));
+
+    fireEvent.change(screen.getByLabelText(/Maximum chunk length/), { target: { value: "400" } });
+
+    expect(add.hasAttribute("disabled")).toBe(true);
+    expect(screen.getByText(/read under the previous settings/)).toBeTruthy();
   });
 
   it("names the embedder in force even when everything is healthy", async () => {

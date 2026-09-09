@@ -29,16 +29,55 @@ import {
  *  that exists and is unreachable from the file picker. This is a floor, not the list. */
 const FALLBACK_ACCEPT = ".md,.markdown,.txt";
 
-/** A one-file FileList, so the approval path reuses the same uploader the drop zone
- *  used to call — one code path indexes, whatever route reached it. */
-function fileListOf(file: File): FileList {
-  const dt = new DataTransfer();
-  dt.items.add(file);
-  return dt.files;
+/** Bytes, for a file that has not been read yet. Everything else on this panel counts
+ *  characters or chunks, but neither exists until ③ converts. */
+function sizeLabel(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-/** Formats a browser can display on its own. Everything else previews as Markdown —
- *  which is what the platform actually reads anyway, so it is the honest preview. */
+/** The numeral for one step.
+ *
+ *  `now` is where the person is, `done` is behind them, `todo` is not yet reachable —
+ *  a disabled-looking button with no explanation is the failure this replaces. */
+function StepDot({ n, state }: { n: number; state: "todo" | "now" | "done" }) {
+  return (
+    <span
+      className={`inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-[var(--r-pill)] aug-fs-xs font-mono ${
+        state === "done"
+          ? "border border-violet-500/40 bg-violet-500/15 text-violet-300"
+          : state === "now"
+            ? "bg-violet-500 text-white"
+            : "border border-zinc-700 text-zinc-600"
+      }`}
+    >
+      {n}
+    </span>
+  );
+}
+
+/** A numbered step heading.
+ *
+ *  The order was always there and was never shown, so the panel read as five things a
+ *  person could do rather than five things they do in sequence — which is why the
+ *  common path was to drop a file, not realise it had already been converted under the
+ *  defaults, and go looking for the settings afterwards. */
+function StepHeading({ n, state, title, hint }: {
+  n: number; state: "todo" | "now" | "done"; title: string; hint?: string;
+}) {
+  return (
+    <div className="flex items-center gap-2">
+      <StepDot n={n} state={state} />
+      <span className={`aug-fs-ui font-semibold ${state === "todo" ? "text-zinc-500" : "text-zinc-200"}`}>
+        {title}
+      </span>
+      {hint && <span className="aug-fs-xs text-zinc-500 truncate">{hint}</span>}
+    </div>
+  );
+}
+
+
 const BROWSER_RENDERABLE = new Set([".pdf", ".txt", ".md", ".markdown", ".csv"]);
 
 function timeAgo(iso: string): string {
@@ -104,10 +143,20 @@ export function DocumentUploader() {
   const [partialNotes, setPartialNotes] = useState<string[]>([]);
   const [suppressedNotes, setSuppressedNotes] = useState<string[]>([]);
 
-  // Files converted and WAITING for a decision. Nothing here has been indexed, paid
-  // for, or written anywhere — the File objects are held in the browser and posted
-  // again on approval, so there is no staging area on the server to expire or leak.
-  const [pending, setPending] = useState<{ file: File; result: DocumentConversion }[]>([]);
+  // ① CHOSEN, and nothing more. No request has been made for these — they are File
+  // objects sitting in the browser. Dropping a file used to convert it on the spot
+  // under whatever settings happened to be in the fields, which put ② after ③ for
+  // anyone who had not already scrolled down and set them.
+  const [staged, setStaged] = useState<File[]>([]);
+  // ③ produced these, keyed by filename. Still indexed nowhere: the File objects are
+  // posted again on approval, so there is no staging area on the server to expire,
+  // sweep or leak, and conversion is deterministic so what is approved is what lands.
+  const [reviews, setReviews] = useState<Record<string, DocumentConversion>>({});
+  const [cuts, setCuts] = useState<Record<string, ChunkPreview>>({});
+  // The settings ③ ran under, serialised. A review describes a document AS CUT BY
+  // settings; move them afterwards and it is describing something that would no
+  // longer be indexed, so the panel says so instead of letting it stand.
+  const [reviewedUnder, setReviewedUnder] = useState<string | null>(null);
   const [converting, setConverting] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -131,11 +180,14 @@ export function DocumentUploader() {
   // defaults the corpus was indexed under — an omitted field is the previous behaviour,
   // so a person who never opens this panel gets exactly what they got before.
   const [settings, setSettings] = useState<Partial<ChunkSettings>>({});
-  const [preview, setPreview] = useState<ChunkPreview | null>(null);
-  const [previewing, setPreviewing] = useState(false);
-  const [previewError, setPreviewError] = useState<string | null>(null);
-  const [previewName, setPreviewName] = useState<string>("");
-  const previewRef = useRef<HTMLInputElement>(null);
+
+  // ④ which staged file is being read, and as what. The chunk preview had its own
+  // file picker beside the settings, so a person chose the same document twice — once
+  // to see how it would be cut and once to actually ingest it — and the two answers
+  // were about different uploads. One file, three views of it.
+  const [shown, setShown] = useState(0);
+  const [reviewTab, setReviewTab] = useState<"original" | "markdown" | "chunks">("original");
+  const [originalUrl, setOriginalUrl] = useState<string | null>(null);
 
   // The server flags which rows it compiled; this surface only decides how to show
   // them. `generated === undefined` (an older API) counts as an upload — a person's own
@@ -151,20 +203,26 @@ export function DocumentUploader() {
       : { ...prev, [k]: n }));
   };
 
-  const runPreview = useCallback(async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
-    setPreviewError(null);
-    setPreviewing(true);
-    try {
-      setPreviewName(files[0].name);
-      setPreview(await previewDocumentChunks(files[0], settings));
-    } catch (e) {
-      setPreview(null);
-      setPreviewError(e instanceof Error ? e.message : "Preview failed");
-    } finally {
-      setPreviewing(false);
-    }
-  }, [settings]);
+  // What ④ is currently showing, and whether ⑤ may fire at all.
+  const file = staged[shown];
+  const review = file ? reviews[file.name] : undefined;
+  const cut = file ? cuts[file.name] : undefined;
+  const settingsKey = JSON.stringify(settings);
+  const stale = reviewedUnder !== null && reviewedUnder !== settingsKey;
+  const reviewed = staged.length > 0 && staged.every(f => reviews[f.name]) && !stale;
+
+  /** The staged file as itself, for ④.
+   *
+   *  A blob URL, because the file has not been uploaded and must not be: the whole
+   *  point of this step is to look before anything leaves the browser. Guarded because
+   *  `createObjectURL` is absent in jsdom and in some locked-down webviews, and the
+   *  panel has to render without it rather than throw on mount. */
+  useEffect(() => {
+    if (!file || typeof URL.createObjectURL !== "function") { setOriginalUrl(null); return; }
+    const url = URL.createObjectURL(file);
+    setOriginalUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
 
   const refresh = useCallback(() => {
     listDocuments().then(setDocs).catch(() => {});
@@ -177,43 +235,78 @@ export function DocumentUploader() {
 
   useEffect(() => { refresh(); }, [refresh]);
 
-  /** Convert what was dropped and show it. Indexes nothing.
-   *
-   *  Dropping a file used to convert, chunk, embed and register in one motion, so the
-   *  first sight of what the converter made of it came after it was in the corpus —
-   *  and on a hosted embedder, already paid for. Now the result is shown and waits. */
-  const convertFiles = useCallback(async (files: FileList | null) => {
+  /** ① Hold what was chosen. Deliberately makes no request at all. */
+  const stageFiles = useCallback((files: FileList | null) => {
     if (!files || files.length === 0) return;
     setUploadError(null);
     setPartialNotes([]);
     setSuppressedNotes([]);
+    setStaged(Array.from(files));
+    setReviews({});
+    setCuts({});
+    setReviewedUnder(null);
+    setShown(0);
+    setReviewTab("original");
+  }, []);
+
+  const unstage = (name: string) => {
+    setStaged(prev => prev.filter(f => f.name !== name));
+    setShown(0);
+  };
+
+  const resetStaged = useCallback(() => {
+    setStaged([]);
+    setReviews({});
+    setCuts({});
+    setReviewedUnder(null);
+    setShown(0);
+    setUploadError(null);
+  }, []);
+
+  /** ③ Convert and cut the staged files, indexing nothing.
+   *
+   *  Two calls per file and neither writes: the Markdown is the decision — it is
+   *  literally what every agent will read — and the chunk cut is what ②'s numbers do
+   *  to it. Asking for both here is what lets ② be a set of fields with a visible
+   *  effect instead of three numbers you have to imagine. */
+  const convertStaged = useCallback(async () => {
+    if (staged.length === 0) return;
+    setUploadError(null);
     setConverting(true);
-    const converted: { file: File; result: DocumentConversion }[] = [];
+    const converted: Record<string, DocumentConversion> = {};
+    const cutBy: Record<string, ChunkPreview> = {};
     const errors: string[] = [];
-    for (const file of Array.from(files)) {
+    for (const f of staged) {
       try {
-        converted.push({ file, result: await convertDocument(file, settings) });
+        converted[f.name] = await convertDocument(f, settings);
       } catch (e) {
-        errors.push(`${file.name}: ${e instanceof Error ? e.message : "failed"}`);
+        errors.push(`${f.name}: ${e instanceof Error ? e.message : "failed"}`);
+        continue;
       }
+      // The cut is detail; the Markdown is the decision. A preview that fails must not
+      // cost the review that succeeded.
+      try {
+        cutBy[f.name] = await previewDocumentChunks(f, settings);
+      } catch { /* the Chunks tab says so */ }
     }
-    setPending(prev => [...prev, ...converted]);
+    setReviews(converted);
+    setCuts(cutBy);
+    setReviewedUnder(JSON.stringify(settings));
+    setReviewTab(Object.keys(converted).length > 0 ? "markdown" : "original");
     if (errors.length > 0) setUploadError(errors.join("\n"));
     setConverting(false);
-  }, [settings]);
+  }, [staged, settings]);
 
-  const discardPending = (name: string) =>
-    setPending(prev => prev.filter(p => p.file.name !== name));
-
-  const handleFiles = useCallback(async (files: FileList | null) => {
-    if (!files || files.length === 0) return;
+  /** ⑤ The only call on this panel that writes anything. */
+  const commitStaged = useCallback(async (files: File[]) => {
+    if (files.length === 0) return;
     setUploadError(null);
     setPartialNotes([]);
     setSuppressedNotes([]);
     setUploading(true);
     const results: DocumentEntry[] = [];
     const errors: string[] = [];
-    for (const file of Array.from(files)) {
+    for (const file of files) {
       try {
         const entry = await uploadDocument(file, settings);
         results.push(entry);
@@ -253,7 +346,15 @@ export function DocumentUploader() {
       return `${r.filename}: read ${r.pages_read} of ${r.page_count} pages — ${why}.`;
     }));
     if (errors.length > 0) setUploadError(errors.join("\n"));
-    setPending(prev => prev.filter(p => !results.some(r => r.filename === p.file.name)));
+    // Only what actually landed leaves the tray. A file that failed stays staged with
+    // its review intact, so the retry does not start again at ①.
+    const landed = new Set(results.map(r => r.filename));
+    setStaged(prev => prev.filter(f => !landed.has(f.name)));
+    setReviews(prev => Object.fromEntries(
+      Object.entries(prev).filter(([name]) => !landed.has(name))));
+    setCuts(prev => Object.fromEntries(
+      Object.entries(prev).filter(([name]) => !landed.has(name))));
+    setShown(0);
     setUploading(false);
     getKnowledgeStatus().then(setStatus).catch(() => {});
   }, [settings]);
@@ -261,8 +362,8 @@ export function DocumentUploader() {
   const onDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setDragging(false);
-    convertFiles(e.dataTransfer.files);
-  }, [convertFiles]);
+    stageFiles(e.dataTransfer.files);
+  }, [stageFiles]);
 
   const onDragOver = (e: React.DragEvent) => { e.preventDefault(); setDragging(true); };
   const onDragLeave = () => setDragging(false);
@@ -346,320 +447,448 @@ export function DocumentUploader() {
         </div>
       )}
 
-      {/* Ingest — settings on the left, what they DO on the right.
-          Chunk settings and preview both existed in the API and neither was reachable, so
-          the only way to see a setting's effect was upload → read a count → delete → try
-          again, an embedding call per attempt. Side by side is the whole point: a number
-          in a field means nothing until you can see the cut it produces. */}
-      <div className="grid gap-4 lg:grid-cols-2 items-start">
+      {/* ── Add a document: one file, one set of settings, one decision ────────
+          This was three unrelated motions sharing a screen. Dropping a file converted
+          it on the spot under whatever happened to be in the settings fields — so the
+          settings came AFTER the conversion they were supposed to govern. The chunk
+          preview had its own separate file picker, so the same document was chosen
+          twice to answer two different questions. And the thing actually being decided
+          — the Markdown — appeared far below, past the sources list, in a card most
+          people never scrolled to.
 
-        {/* ── left: what to ingest, and how ─────────────────────────────────── */}
-        <div className="space-y-4">
-          <div
-            onDrop={onDrop}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onClick={() => inputRef.current?.click()}
-            className={`relative rounded-md border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
-              dragging
-                ? "border-violet-500 bg-violet-500/10"
-                : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"
-            }`}
-          >
-            <input
-              ref={inputRef}
-              type="file"
-              accept={accept}
-              multiple
-              className="hidden"
-              onChange={e => convertFiles(e.target.files)}
-            />
-            {uploading || converting ? (
-              <div className="space-y-2">
-                <div className="h-5 w-5 rounded-[var(--r-pill)] border-2 border-violet-500 border-t-transparent animate-spin mx-auto" />
-                <p className="aug-fs-ui text-zinc-400">
-                  {converting ? "Reading…" : "Indexing…"}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                <p className="aug-fs-h2">📄</p>
-                <p className="aug-fs-ui text-zinc-300 font-medium">
-                  {dragging ? "Drop to upload" : "Drop files here or click to browse"}
-                </p>
-                <p className="aug-fs-xs text-zinc-500">
-                  {formats?.converter === false
-                    ? "Markdown · Plain text — install the document converter for Word, PDF, slides and sheets"
-                    : "PDF · Word · Slides · Sheets · OpenDocument · RTF · EPUB · CSV · Markdown"}
-                </p>
-              </div>
-            )}
-          </div>
-
-          <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-4 space-y-4">
-            <div>
-              <div className="flex items-center gap-2">
-                <h3 className="aug-fs-ui font-semibold text-zinc-200">Chunk settings</h3>
-                <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded-[var(--r-pill)] px-1.5">
-                  General
-                </span>
-                <span className="aug-fs-xs text-zinc-600 ml-auto">
-                  {Object.keys(settings).length === 0
-                    ? "defaults"
-                    : `${Object.keys(settings).length} changed`}
-                </span>
-              </div>
-              <p className="aug-fs-xs text-zinc-500 mt-1">
-                One chunk per delimiter block. The same chunk is retrieved and given as context.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor="chunk-delimiter">
-                  Delimiter
-                </label>
-                <input
-                  id="chunk-delimiter"
-                  type="text"
-                  value={settings.delimiter ?? ""}
-                  placeholder="\n\n"
-                  onChange={e => setSettings(prev => (e.target.value
-                    ? { ...prev, delimiter: e.target.value }
-                    : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== "delimiter"))))}
-                  className="aug-input w-full font-mono"
-                />
-              </div>
-              {([
-                ["max_chars", "Maximum chunk length", "characters"],
-                ["overlap_chars", "Chunk overlap", "characters"],
-                ["min_chars", "Minimum chunk length", "below this a chunk is DISCARDED"],
-              ] as const).map(([key, label, hint]) => (
-                <div key={key}>
-                  <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor={`chunk-${key}`}>
-                    {label}
-                  </label>
-                  <input
-                    id={`chunk-${key}`}
-                    type="number"
-                    min={1}
-                    value={settings[key] ?? ""}
-                    placeholder={String(preview?.settings?.[key] ?? "default")}
-                    onChange={e => setNum(key)(e.target.value)}
-                    className="aug-input w-full"
-                  />
-                  <p className="aug-fs-xs text-zinc-600 mt-1">{hint}</p>
-                </div>
-              ))}
-            </div>
-
-            <div>
-              <p className="aug-fs-xs text-zinc-300 font-medium">Text pre-processing rules</p>
-              <p className="aug-fs-xs text-zinc-600 mb-2">Applied before chunking and embedding.</p>
-              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400 mb-1">
-                <input
-                  type="checkbox"
-                  checked={settings.collapse_whitespace ?? true}
-                  onChange={e => setSettings(prev => ({ ...prev, collapse_whitespace: e.target.checked }))}
-                />
-                Replace consecutive spaces, newlines and tabs
-              </label>
-              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
-                <input
-                  type="checkbox"
-                  checked={settings.strip_urls_emails ?? false}
-                  onChange={e => setSettings(prev => ({ ...prev, strip_urls_emails: e.target.checked }))}
-                />
-                Delete all URLs and email addresses
-              </label>
-              <p className="aug-fs-xs text-zinc-600 mt-2 mb-2">
-                Off by default: a policy that cites a source loses the citation.
-              </p>
-              <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
-                <input
-                  type="checkbox"
-                  checked={settings.suppress_numeric_runs ?? true}
-                  onChange={e => setSettings(prev => ({ ...prev, suppress_numeric_runs: e.target.checked }))}
-                />
-                Keep unlabelled runs of figures out of search
-              </label>
-              <p className="aug-fs-xs text-zinc-600 mt-2">
-                On by default, and it does not change the document — a chart&rsquo;s labels
-                are graphics, so its values arrive as a headless row where every figure is
-                right and none is attached to what it measures. They stay in the file and
-                in every download; only search skips them.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => previewRef.current?.click()}
-                disabled={previewing}
-                className="aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-600 text-zinc-200 hover:bg-zinc-800 disabled:opacity-50"
-              >
-                {previewing ? "Chunking…" : "Preview chunks"}
-              </button>
-              <input
-                ref={previewRef}
-                type="file"
-                accept={accept}
-                className="hidden"
-                onChange={e => runPreview(e.target.files)}
-              />
-              <button
-                type="button"
-                onClick={() => { setSettings({}); setPreview(null); setPreviewName(""); }}
-                className="aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
-              >
-                Reset
-              </button>
-            </div>
-            {previewError && <p className="aug-fs-xs text-red-400">{previewError}</p>}
-          </div>
-
-          {/* The model in force. A corpus is only comparable with itself under ONE model,
-              so this is part of reading the list — not an error state. It is chosen by
-              configuration, and saying so beats a picker that could not take effect. */}
-          <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-4">
-            <h3 className="aug-fs-ui font-semibold text-zinc-200">Embedding model</h3>
-            {status?.embedder?.ok ? (
-              <>
-                <div className="mt-2 flex items-baseline justify-between">
-                  <span className="aug-fs-xs text-zinc-500">Model</span>
-                  <span className="aug-fs-xs text-zinc-200 font-mono">{status.embedder.model}</span>
-                </div>
-                {status.embedder.dim != null && (
-                  <div className="mt-1 flex items-baseline justify-between">
-                    <span className="aug-fs-xs text-zinc-500">Vector width</span>
-                    <span className="aug-fs-xs text-zinc-200 font-mono">
-                      {status.embedder.dim} dimensions
-                    </span>
-                  </div>
-                )}
-                <p className="aug-fs-xs text-zinc-600 mt-2">
-                  Set by configuration, not here. Changing it means re-embedding the whole
-                  corpus — a different model is a different vector space.
-                </p>
-              </>
-            ) : (
-              <p className="aug-fs-xs text-zinc-500 mt-2">
-                No embedder is answering, so nothing can be indexed or searched.
-              </p>
-            )}
-          </div>
+          Numbered, because the sequence is the whole point: nothing is converted until
+          ③, nothing is indexed until ⑤, and moving ② after ③ marks the review stale
+          rather than leaving it to describe a cut that is no longer in force. */}
+      <div className="rounded-md border border-zinc-700 bg-zinc-900/40">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5 border-b border-zinc-800 px-4 py-2.5">
+          <h3 className="aug-fs-ui font-semibold text-zinc-200">Add a document</h3>
+          <p className="aug-fs-xs text-zinc-500">
+            Choose it, say how it should be cut, then read what the platform will
+            actually see. Nothing is converted until ③ and nothing is stored until ⑤.
+          </p>
         </div>
 
-        {/* ── right: what those settings actually do ─────────────────────────── */}
-        <div className="rounded-md border border-zinc-700 bg-zinc-900/40 p-4 lg:sticky lg:top-2">
-          <h3 className="aug-fs-ui font-semibold text-zinc-200">Preview</h3>
-          <p className="aug-fs-xs text-zinc-500 mt-0.5">
-            {preview
-              ? `${previewName || "document"} · ${formatCount(preview.total_chunks)} chunk${preview.total_chunks !== 1 ? "s" : ""} · ${formatCount(preview.characters)} characters`
-              : "Indexes nothing — no embedder, no writes. Works while search is down."}
-          </p>
+        <div className="grid gap-4 lg:grid-cols-2 items-start p-4">
 
-          {!preview ? (
-            <p className="aug-fs-xs text-zinc-600 mt-4">
-              Choose a file with <span className="text-zinc-400">Preview chunks</span> to see
-              how these settings cut it, before anything is embedded.
-            </p>
-          ) : (
-            <div className="mt-3 space-y-2">
-              <p className="aug-fs-xs text-zinc-500">
-                Showing {preview.shown} of {formatCount(preview.total_chunks)} chunks
-              </p>
-              {preview.chunks.map(c => (
-                <div key={c.index} className="rounded border border-zinc-800 bg-zinc-950/60 p-2.5">
-                  <p className="aug-fs-xs text-zinc-500 font-mono mb-1">
-                    <span className="text-zinc-300">Chunk-{c.index + 1}</span>
-                    {" · "}{formatCount(c.characters)} characters
-                    {" · "}~{formatCount(c.tokens_estimate)} tokens
-                  </p>
-                  <p className="aug-fs-xs text-zinc-400 whitespace-pre-wrap line-clamp-6">
-                    {c.text}
-                  </p>
+          {/* ── left: what to ingest, and how ─────────────────────────────────── */}
+          <div className="space-y-4">
+
+            <div className="space-y-2">
+              <StepHeading
+                n={1}
+                state={staged.length > 0 ? "done" : "now"}
+                title="Choose a file"
+                hint={staged.length > 0 ? `${staged.length} staged · nothing sent yet` : undefined}
+              />
+              {staged.length === 0 ? (
+                <div
+                  onDrop={onDrop}
+                  onDragOver={onDragOver}
+                  onDragLeave={onDragLeave}
+                  onClick={() => inputRef.current?.click()}
+                  className={`relative rounded-md border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
+                    dragging
+                      ? "border-violet-500 bg-violet-500/10"
+                      : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"
+                  }`}
+                >
+                  <div className="space-y-1">
+                    <p className="aug-fs-h2">📄</p>
+                    <p className="aug-fs-ui text-zinc-300 font-medium">
+                      {dragging ? "Drop to choose" : "Drop files here or click to browse"}
+                    </p>
+                    <p className="aug-fs-xs text-zinc-500">
+                      {formats?.converter === false
+                        ? "Markdown · Plain text — install the document converter for Word, PDF, slides and sheets"
+                        : "PDF · Word · Slides · Sheets · OpenDocument · RTF · EPUB · CSV · Markdown"}
+                    </p>
+                  </div>
                 </div>
-              ))}
+              ) : (
+                <div className="rounded-md border border-zinc-700 bg-zinc-950/30 divide-y divide-zinc-800">
+                  {staged.map((f, i) => (
+                    <div
+                      key={f.name}
+                      onClick={() => { setShown(i); }}
+                      className={`flex items-center gap-2 px-3 py-2 cursor-pointer ${
+                        i === shown ? "bg-zinc-800/60" : "hover:bg-zinc-800/30"
+                      }`}
+                    >
+                      <FileTypeChip filename={f.name} />
+                      <div className="min-w-0 flex-1">
+                        <p className="aug-fs-sm text-zinc-200 truncate">{f.name}</p>
+                        <p className="aug-fs-xs text-zinc-500 font-mono">
+                          {sizeLabel(f.size)}
+                          {reviews[f.name]
+                            ? ` · ${formatCount(reviews[f.name].would_index_chunks)} chunk${
+                                reviews[f.name].would_index_chunks !== 1 ? "s" : ""} to index`
+                            : " · not read yet"}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={e => { e.stopPropagation(); unstage(f.name); }}
+                        className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => inputRef.current?.click()}
+                    className="w-full aug-fs-xs text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800/40 px-3 py-2 text-left"
+                  >
+                    Choose different files…
+                  </button>
+                </div>
+              )}
+              <input
+                ref={inputRef}
+                type="file"
+                accept={accept}
+                multiple
+                className="hidden"
+                onChange={e => stageFiles(e.target.files)}
+              />
             </div>
-          )}
+
+            <div className="space-y-2">
+              <StepHeading
+                n={2}
+                state={staged.length === 0 ? "todo" : reviewed ? "done" : "now"}
+                title="Set how it is cut"
+                hint={Object.keys(settings).length === 0
+                  ? "defaults"
+                  : `${Object.keys(settings).length} changed`}
+              />
+              <div className="rounded-md border border-zinc-700 bg-zinc-950/30 p-4 space-y-4">
+                <p className="aug-fs-xs text-zinc-500">
+                  One chunk per delimiter block. The same chunk is retrieved and given as
+                  context.
+                </p>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor="chunk-delimiter">
+                    Delimiter
+                  </label>
+                  <input
+                    id="chunk-delimiter"
+                    type="text"
+                    value={settings.delimiter ?? ""}
+                    placeholder="\n\n"
+                    onChange={e => setSettings(prev => (e.target.value
+                      ? { ...prev, delimiter: e.target.value }
+                      : Object.fromEntries(Object.entries(prev).filter(([k]) => k !== "delimiter"))))}
+                    className="aug-input w-full font-mono"
+                  />
+                </div>
+                {([
+                  ["max_chars", "Maximum chunk length", "characters"],
+                  ["overlap_chars", "Chunk overlap", "characters"],
+                  ["min_chars", "Minimum chunk length", "below this a chunk is DISCARDED"],
+                ] as const).map(([key, label, hint]) => (
+                  <div key={key}>
+                    <label className="block aug-fs-xs text-zinc-400 mb-1" htmlFor={`chunk-${key}`}>
+                      {label}
+                    </label>
+                    <input
+                      id={`chunk-${key}`}
+                      type="number"
+                      min={1}
+                      value={settings[key] ?? ""}
+                      placeholder={String(cut?.settings?.[key] ?? "default")}
+                      onChange={e => setNum(key)(e.target.value)}
+                      className="aug-input w-full"
+                    />
+                    <p className="aug-fs-xs text-zinc-600 mt-1">{hint}</p>
+                  </div>
+                ))}
+              </div>
+
+              <div>
+                <p className="aug-fs-xs text-zinc-300 font-medium">Text pre-processing rules</p>
+                <p className="aug-fs-xs text-zinc-600 mb-2">Applied before chunking and embedding.</p>
+                <label className="flex items-center gap-2 aug-fs-xs text-zinc-400 mb-1">
+                  <input
+                    type="checkbox"
+                    checked={settings.collapse_whitespace ?? true}
+                    onChange={e => setSettings(prev => ({ ...prev, collapse_whitespace: e.target.checked }))}
+                  />
+                  Replace consecutive spaces, newlines and tabs
+                </label>
+                <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={settings.strip_urls_emails ?? false}
+                    onChange={e => setSettings(prev => ({ ...prev, strip_urls_emails: e.target.checked }))}
+                  />
+                  Delete all URLs and email addresses
+                </label>
+                <p className="aug-fs-xs text-zinc-600 mt-2 mb-2">
+                  Off by default: a policy that cites a source loses the citation.
+                </p>
+                <label className="flex items-center gap-2 aug-fs-xs text-zinc-400">
+                  <input
+                    type="checkbox"
+                    checked={settings.suppress_numeric_runs ?? true}
+                    onChange={e => setSettings(prev => ({ ...prev, suppress_numeric_runs: e.target.checked }))}
+                  />
+                  Keep unlabelled runs of figures out of search
+                </label>
+                <p className="aug-fs-xs text-zinc-600 mt-2">
+                  On by default, and it does not change the document — a chart&rsquo;s labels
+                  are graphics, so its values arrive as a headless row where every figure is
+                  right and none is attached to what it measures. They stay in the file and
+                  in every download; only search skips them.
+                </p>
+              </div>
+              </div>
+            </div>
+
+            {/* ③ and ⑤ — the two moments that do something, on one line, in order.
+                ⑤ cannot fire until ③ has produced a review of the settings now in
+                force, which is what makes "confirm" mean something. */}
+            <div className="space-y-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={convertStaged}
+                  disabled={staged.length === 0 || converting}
+                  className="inline-flex items-center gap-1.5 aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-600 text-zinc-200 hover:bg-zinc-800 disabled:opacity-40"
+                >
+                  <StepDot n={3} state={staged.length > 0 && !reviewed ? "now" : reviewed ? "done" : "todo"} />
+                  {converting ? "Reading…" : reviewed ? "Convert again" : "Convert & review"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { setSettings({}); resetStaged(); }}
+                  className="aug-fs-xs px-2.5 py-1.5 rounded border border-zinc-700 text-zinc-400 hover:bg-zinc-800"
+                >
+                  Reset
+                </button>
+                <button
+                  type="button"
+                  onClick={() => commitStaged(staged)}
+                  disabled={!reviewed || uploading}
+                  className="ml-auto inline-flex items-center gap-1.5 aug-fs-xs px-2.5 py-1.5 rounded border border-violet-500/50 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 disabled:opacity-40 disabled:hover:bg-violet-500/15"
+                >
+                  <StepDot n={5} state={reviewed ? "now" : "todo"} />
+                  {uploading
+                    ? "Adding…"
+                    : `Add ${staged.length > 1 ? `${staged.length} documents` : "to knowledge"}`}
+                </button>
+              </div>
+              <p className="aug-fs-xs text-zinc-600">
+                {staged.length === 0
+                  ? "Choose a file to begin. Converting reads it and indexes nothing."
+                  : stale
+                    ? "Settings changed since the last read — convert again to see what they do now."
+                    : reviewed
+                      ? "Read it on the right. Adding embeds it and makes it searchable."
+                      : "Converting reads the file and indexes nothing. It works while search is down."}
+              </p>
+            </div>
+
+            {/* The model in force. A corpus is only comparable with itself under ONE model,
+                so this is part of reading the list — not an error state. It is chosen by
+                configuration, and saying so beats a picker that could not take effect. */}
+            <div className="rounded-md border border-zinc-700 bg-zinc-950/30 p-4">
+              <h3 className="aug-fs-ui font-semibold text-zinc-200">Embedding model</h3>
+              {status?.embedder?.ok ? (
+                <>
+                  <div className="mt-2 flex items-baseline justify-between">
+                    <span className="aug-fs-xs text-zinc-500">Model</span>
+                    <span className="aug-fs-xs text-zinc-200 font-mono">{status.embedder.model}</span>
+                  </div>
+                  {status.embedder.dim != null && (
+                    <div className="mt-1 flex items-baseline justify-between">
+                      <span className="aug-fs-xs text-zinc-500">Vector width</span>
+                      <span className="aug-fs-xs text-zinc-200 font-mono">
+                        {status.embedder.dim} dimensions
+                      </span>
+                    </div>
+                  )}
+                  <p className="aug-fs-xs text-zinc-600 mt-2">
+                    Set by configuration, not here. Changing it means re-embedding the whole
+                    corpus — a different model is a different vector space.
+                  </p>
+                </>
+              ) : (
+                <p className="aug-fs-xs text-zinc-500 mt-2">
+                  No embedder is answering, so nothing can be indexed or searched.
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* ── right: ④ the file as itself, and as the platform will read it ──── */}
+          <div className="space-y-2 lg:sticky lg:top-2">
+            <StepHeading
+              n={4}
+              state={reviewed ? "done" : staged.length > 0 ? "now" : "todo"}
+              title="Read it before you commit"
+              hint={file?.name}
+            />
+            <div className="rounded-md border border-zinc-700 bg-zinc-950/30">
+              <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2">
+                <div className="flex shrink-0 rounded border border-zinc-700 overflow-hidden">
+                  {([
+                    ["original", "Original"],
+                    ["markdown", "Markdown"],
+                    ["chunks", "Chunks"],
+                  ] as const).map(([tab, label]) => (
+                    <button
+                      key={tab}
+                      type="button"
+                      onClick={() => setReviewTab(tab)}
+                      disabled={!file || (tab !== "original" && !review)}
+                      className={`aug-fs-xs px-2.5 py-1 transition disabled:opacity-40 ${
+                        reviewTab === tab ? "bg-zinc-700 text-zinc-100" : "text-zinc-400 hover:bg-zinc-800"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <p className="aug-fs-xs text-zinc-500 ml-auto truncate">
+                  {review
+                    ? `${formatCount(review.characters)} characters · ${
+                        formatCount(review.would_index_chunks)} chunk${
+                        review.would_index_chunks !== 1 ? "s" : ""} to index${
+                        review.page_count > 0
+                          ? ` · ${review.pages_read} of ${review.page_count} pages read`
+                          : ""}`
+                    : file
+                      ? `${sizeLabel(file.size)} · not read yet`
+                      : "nothing chosen"}
+                </p>
+              </div>
+
+              {/* Losses named BEFORE the decision, not after. Approving something whose
+                  gaps were only disclosed afterwards is not approval. */}
+              {review && (review.pages_needing_ocr.length > 0 || review.pages_failed.length > 0) && (
+                <p className="aug-fs-xs text-amber-300 px-3 pt-2">
+                  {review.pages_needing_ocr.length > 0 && (
+                    <>Page{review.pages_needing_ocr.length !== 1 ? "s" : ""}{" "}
+                    {review.pages_needing_ocr.slice(0, 8).join(", ")}
+                    {review.pages_needing_ocr.length > 8 ? "…" : ""}{" "}
+                    {review.pages_needing_ocr.length !== 1 ? "are" : "is"} scanned — no text layer. </>
+                  )}
+                  {review.pages_failed.length > 0 && (
+                    <>Page{review.pages_failed.length !== 1 ? "s" : ""}{" "}
+                    {review.pages_failed.join(", ")} could not be read.</>
+                  )}
+                </p>
+              )}
+              {review && (review.charts_recovered ?? 0) > 0 && (
+                <p className="aug-fs-xs text-emerald-300/90 px-3 pt-2">
+                  {review.charts_recovered} chart
+                  {review.charts_recovered !== 1 ? "s" : ""} read back from page
+                  {(review.chart_pages?.length ?? 0) !== 1 ? "s" : ""}{" "}
+                  {review.chart_pages?.slice(0, 8).join(", ")}
+                  {(review.chart_pages?.length ?? 0) > 8 ? "…" : ""} and appended as
+                  tables. A chart&rsquo;s values are exact text the Markdown could not
+                  carry; only their positions said what they measured.
+                </p>
+              )}
+              {review && review.suppressed_numeric_runs > 0 && (
+                <p className="aug-fs-xs text-zinc-500 px-3 pt-2">
+                  {review.suppressed_numeric_runs} line
+                  {review.suppressed_numeric_runs !== 1 ? "s" : ""} of unlabelled figures will
+                  be kept out of search. They stay in the document and in every download.
+                </p>
+              )}
+              {stale && (
+                <p className="aug-fs-xs text-amber-300 px-3 pt-2">
+                  This was read under the previous settings.
+                </p>
+              )}
+
+              <div className="p-3">
+                {!file ? (
+                  <p className="aug-fs-xs text-zinc-600">
+                    Choose a file at ① to see it here — the file itself, the Markdown the
+                    platform reads from it, and the chunks ② would cut it into.
+                  </p>
+                ) : reviewTab === "original" ? (
+                  BROWSER_RENDERABLE.has(`.${file.name.split(".").pop()?.toLowerCase() ?? ""}`)
+                    && originalUrl ? (
+                    <>
+                      <iframe
+                        src={originalUrl}
+                        title={file.name}
+                        className="w-full h-[26rem] rounded border border-zinc-800 bg-zinc-950"
+                      />
+                      {/* An embedded PDF renders only where the viewer's browser has a PDF
+                          plugin — headless builds, some embedded webviews and some
+                          locked-down corporate profiles have none, and there the frame
+                          above is simply BLANK with nothing to explain it. */}
+                      <p className="aug-fs-xs text-zinc-600 mt-1.5">
+                        Nothing shown above? Some browsers cannot display a file inline. The
+                        Markdown tab always works, and it is what actually gets indexed.
+                      </p>
+                    </>
+                  ) : (
+                    <div className="rounded border border-zinc-800 bg-zinc-950/60 p-6 text-center">
+                      <p className="aug-fs-sm text-zinc-300">
+                        A browser cannot display this format directly.
+                      </p>
+                      <p className="aug-fs-xs text-zinc-500 mt-1">
+                        The Markdown tab shows what the platform reads from it — which is the
+                        half that matters for search.
+                      </p>
+                    </div>
+                  )
+                ) : reviewTab === "markdown" ? (
+                  review ? (
+                    <>
+                      <p className="aug-fs-xs text-zinc-500 mb-2">
+                        This is exactly what will be indexed and what every agent, canvas and
+                        prompt will see.
+                      </p>
+                      <pre className="aug-fs-xs text-zinc-300 font-mono whitespace-pre-wrap max-h-[26rem] overflow-auto rounded border border-zinc-800 bg-zinc-950/60 p-3">
+                        {review.markdown}
+                      </pre>
+                    </>
+                  ) : (
+                    <p className="aug-fs-xs text-zinc-600">Convert at ③ to read this.</p>
+                  )
+                ) : cut ? (
+                  <div className="space-y-2">
+                    <p className="aug-fs-xs text-zinc-500">
+                      Showing {cut.shown} of {formatCount(cut.total_chunks)} chunks ·{" "}
+                      {formatCount(cut.characters)} characters
+                    </p>
+                    {cut.chunks.map(c => (
+                      <div key={c.index} className="rounded border border-zinc-800 bg-zinc-950/60 p-2.5">
+                        <p className="aug-fs-xs text-zinc-500 font-mono mb-1">
+                          <span className="text-zinc-300">Chunk-{c.index + 1}</span>
+                          {" · "}{formatCount(c.characters)} characters
+                          {" · "}~{formatCount(c.tokens_estimate)} tokens
+                        </p>
+                        <p className="aug-fs-xs text-zinc-400 whitespace-pre-wrap line-clamp-6">
+                          {c.text}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="aug-fs-xs text-zinc-600">
+                    {review
+                      ? "The cut could not be previewed for this file. The Markdown tab is the decision."
+                      : "Convert at ③ to see the cut."}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
         </div>
       </div>
 
       {/* Connected sources — the other way content reaches this same corpus. */}
       <KnowledgeSourcesSection />
-
-      {/* ── Waiting for a decision ────────────────────────────────────────────
-          Converted and shown, indexed nowhere. This is the moment the person can see
-          what the platform will actually read — a scanned deck missing eight pages, a
-          table that survived, a wall of figures — and say no before it costs anything
-          or starts answering questions. */}
-      {pending.map(({ file, result }) => (
-        <div key={file.name}
-             className="rounded-md border border-violet-500/40 bg-violet-500/5">
-          <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-2.5">
-            <FileTypeChip filename={file.name} />
-            <div className="min-w-0 flex-1">
-              <p className="aug-fs-sm font-medium text-zinc-200 truncate">{file.name}</p>
-              <p className="aug-fs-xs text-zinc-500">
-                {formatCount(result.characters)} characters ·{" "}
-                {formatCount(result.would_index_chunks)} chunk
-                {result.would_index_chunks !== 1 ? "s" : ""} to index
-                {result.page_count > 0 && ` · ${result.pages_read} of ${result.page_count} pages read`}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => discardPending(file.name)}
-              className="shrink-0 aug-fs-xs text-zinc-500 hover:text-zinc-200 border border-zinc-700 rounded px-2 py-1"
-            >
-              Discard
-            </button>
-            <button
-              type="button"
-              disabled={uploading}
-              onClick={() => handleFiles(fileListOf(file))}
-              className="shrink-0 aug-fs-xs px-2.5 py-1 rounded border border-violet-500/50 bg-violet-500/15 text-violet-200 hover:bg-violet-500/25 disabled:opacity-50"
-            >
-              {uploading ? "Adding…" : "Add to knowledge"}
-            </button>
-          </div>
-
-          {/* Losses named BEFORE the decision, not after. Approving something whose
-              gaps were only disclosed afterwards is not approval. */}
-          {(result.pages_needing_ocr.length > 0 || result.pages_failed.length > 0) && (
-            <p className="aug-fs-xs text-amber-300 px-4 pt-2.5">
-              {result.pages_needing_ocr.length > 0 && (
-                <>Page{result.pages_needing_ocr.length !== 1 ? "s" : ""}{" "}
-                {result.pages_needing_ocr.slice(0, 8).join(", ")}
-                {result.pages_needing_ocr.length > 8 ? "…" : ""}{" "}
-                {result.pages_needing_ocr.length !== 1 ? "are" : "is"} scanned — no text layer. </>
-              )}
-              {result.pages_failed.length > 0 && (
-                <>Page{result.pages_failed.length !== 1 ? "s" : ""}{" "}
-                {result.pages_failed.join(", ")} could not be read.</>
-              )}
-            </p>
-          )}
-          {result.suppressed_numeric_runs > 0 && (
-            <p className="aug-fs-xs text-zinc-500 px-4 pt-1.5">
-              {result.suppressed_numeric_runs} line
-              {result.suppressed_numeric_runs !== 1 ? "s" : ""} of unlabelled figures will
-              be kept out of search. They stay in the document and in every download.
-            </p>
-          )}
-
-          <div className="p-4">
-            <p className="aug-fs-xs text-zinc-500 mb-2">
-              This is exactly what will be indexed and what every agent, canvas and
-              prompt will see.
-            </p>
-            <pre className="aug-fs-xs text-zinc-300 font-mono whitespace-pre-wrap max-h-[24rem] overflow-auto rounded border border-zinc-800 bg-zinc-950/60 p-3">
-              {result.markdown}
-            </pre>
-          </div>
-        </div>
-      ))}
 
       {/* Indexed less than the document holds, said out loud. Neutral rather than
           amber: nothing is wrong and nothing is lost — the figures are still in the
