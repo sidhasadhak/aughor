@@ -52,6 +52,7 @@ step earlier: a correct number against the wrong label is worse than a missing o
 from __future__ import annotations
 
 import logging
+import math
 import re
 import statistics
 from dataclasses import dataclass
@@ -389,6 +390,8 @@ def reconstruct(data: bytes) -> list[Chart]:
                     words = page.extract_words()
                     charts.extend(_charts_on_page(words, number))
                     charts.extend(_ranked_charts_on_page(words, number))
+                    charts.extend(_stacked_charts_on_page(words, number))
+                    charts.extend(_donut_charts_on_page(words, number))
                 except Exception:
                     logger.debug("chart reconstruction skipped page %d", number,
                                  exc_info=True)
@@ -579,3 +582,296 @@ def _by_gap(items: list, key, gutter: float) -> list[list]:
         else:
             out.append([item])
     return out
+
+
+# ── A 100% stacked column, and a donut ────────────────────────────────────────
+
+_PERCENT = re.compile(r"^(\d{1,3})%$")
+
+#: A ring, or a stack, must account for everything. Rounding to whole percents lets a
+#: set of eight land a few points either side of 100.
+_WHOLE = (95.0, 105.0)
+
+#: How far a stacked label may sit from the position its own cumulative band predicts.
+#: Measured on a retail deck the worst was 0.3pt, so this is slack, not a search.
+_STACK_TOLERANCE = 4.0
+
+#: Words of one legend entry ("101-200 sqm") sit closer together than two entries do.
+_LEGEND_ENTRY_GAP = 8.0
+
+#: How far apart two of a ring's labels may sit and still belong to the same ring. A
+#: two-ring chart spreads its labels over the whole band, so this is wide — and it can
+#: afford to be: on the deck the nearest thing that is NOT the ring, the slide's own
+#: headline, sits 226 points away.
+_DONUT_REACH = 110.0
+
+
+def _percent(word: dict) -> float | None:
+    m = _PERCENT.match(word["text"])
+    return float(m.group(1)) if m else None
+
+
+def _columns(words: list[dict], width: float) -> list[list[dict]]:
+    """Words grouped into vertical columns by the proximity of their centres."""
+    out: list[list[dict]] = []
+    for word in sorted(words, key=_centre):
+        if out and _centre(word) - _centre(out[-1][-1]) <= width:
+            out[-1].append(word)
+        else:
+            out.append([word])
+    return out
+
+
+def _axis_scale(column: list[dict]) -> tuple[float, float] | None:
+    """(top of 0%, points per percent) from a column of percentage ticks.
+
+    The ticks must be evenly spaced in BOTH value and position — that is what makes
+    them a scale rather than a set of figures that share an x.
+    """
+    ticks = sorted(((_percent(w), w["top"]) for w in column if _percent(w) is not None),
+                   key=lambda t: t[0])
+    if len(ticks) < _MIN_TICKS:
+        return None
+    # A value axis reads DOWNWARD — 100% at the top, 0% at the bottom — so its steps are
+    # negative in `top` and positive in value. `_longest_regular_run` wants an ascending
+    # sequence and rejected every axis in the deck until this was checked directly.
+    if not (_evenly_spaced([v for v, _ in ticks])
+            and _evenly_spaced([t for _, t in ticks])):
+        return None
+    span = ticks[-1][0] - ticks[0][0]
+    if span <= 0:
+        return None
+    per_percent = (ticks[0][1] - ticks[-1][1]) / span
+    return ticks[0][1] + ticks[0][0] * per_percent, per_percent
+
+
+def _evenly_spaced(values: list[float]) -> bool:
+    """Constant step, in either direction."""
+    steps = [b - a for a, b in zip(values, values[1:])]
+    if not steps or steps[0] == 0:
+        return False
+    return all(abs(s - steps[0]) <= abs(steps[0]) * _MAX_PITCH_VARIATION for s in steps)
+
+
+def _legend_row(words: list[dict], above: float, left: float,
+                right: float, count: int) -> tuple[list[str], float] | None:
+    """The nearest row above a chart that reads as exactly `count` legend entries."""
+    # Not clipped to the column's own width: a legend spans the whole chart while the
+    # labelled bar may be one column of ten, and narrowing to the bar cut a five-entry
+    # legend down to the three that happened to sit above it. The exact-count match is
+    # what keeps this honest, not the window.
+    candidates = [w for w in words if w["top"] < above - 1
+                  and left - 40 <= _centre(w) <= right + 40 and _percent(w) is None]
+    for row in sorted(_rows(candidates), key=lambda r: -r[0]["top"]):
+        ordered = sorted(row, key=lambda w: w["x0"])
+        entries, current = [], [ordered[0]]
+        for word in ordered[1:]:
+            if word["x0"] - current[-1]["x1"] > _LEGEND_ENTRY_GAP:
+                entries.append(current)
+                current = [word]
+            else:
+                current.append(word)
+        entries.append(current)
+        if len(entries) == count:
+            return ([" ".join(w["text"] for w in e) for e in entries],
+                    min(w["top"] for w in ordered))
+    return None
+
+
+def _stacked_charts_on_page(words: list[dict], page_number: int) -> list[Chart]:
+    """A 100% stacked column whose segments are labelled.
+
+    Refused by the column-chart reader, which allows one value per category: here one
+    column carries five. The attribution is not a guess though, it is PROVABLE. The
+    segments sum to 100, the value axis gives a scale, and each label sits at the
+    midpoint of its own cumulative band — so assuming the stack runs in legend order
+    bottom to top predicts every label's position. Measured on a retail deck the worst
+    error was 0.3pt; a wrong order would miss by tens of points.
+    """
+    percents = [w for w in words if _percent(w) is not None]
+    columns = _columns(percents, _TICK_COLUMN_WIDTH / 2)
+    scales = [s for c in columns if (s := _axis_scale(c)) is not None]
+    if not scales:
+        return []
+
+    found: list[Chart] = []
+    for column in columns:
+        stack = sorted(column, key=lambda w: -w["top"])          # bottom of the bar up
+        values = [_percent(w) for w in stack]
+        if len(stack) < _MIN_TICKS or not _WHOLE[0] <= sum(values) <= _WHOLE[1]:
+            continue
+        for zero, per_percent in scales:
+            cumulative, proved = 0.0, True
+            for word, value in zip(stack, values):
+                middle = cumulative + value / 2
+                proved &= abs((zero - middle * per_percent) - word["top"]) <= _STACK_TOLERANCE
+                cumulative += value
+            if not proved:
+                continue
+            left = min(w["x0"] for w in column)
+            right = max(w["x1"] for w in column)
+            legend = _legend_row(words, min(w["top"] for w in column) - 20,
+                                 0.0, max(w["x1"] for w in words), len(stack))
+            if legend is None:
+                continue
+            names, legend_top = legend
+            # The column's own category, read from the axis BELOW it — the legend above
+            # names the segments, not the bar.
+            series = _category_below(words, zero, (left + right) / 2)
+            found.append(Chart(
+                page=page_number,
+                # Above the LEGEND, not above the bar: the legend names the segments
+                # and the title names the chart.
+                title=_title_for(words, (legend_top, zero), left - 300, right),
+                categories=names,
+                series=[Series(series, [w["text"] for w in stack])]))
+            break
+    return found
+
+
+def _donut_charts_on_page(words: list[dict], page_number: int) -> list[Chart]:
+    """A donut, including the two-ring kind, read from where its labels sit.
+
+    A ring has no axis and nothing lines up, so the geometry is polar: each label sits
+    at the angular middle of its segment, and a two-ring chart puts the same sector's
+    two readings at the same angle and different radii. Pair by angle, and the farther
+    of each pair is the outer ring.
+
+    Three things have to agree before any of it is emitted, and on the deck all three
+    did: each ring sums to 100, the angular order matches the legend, and the outer
+    ring reproduces the slide's own headline — "Fashion: 27%, Food & Beverage: 19%,
+    Leisure: 9%" against a reading of 27, 19, 9.
+    """
+    # Every percentage, clustered by position — no filtering by column first. Three of
+    # this ring's labels happened to share an x with each other, and excluding shared
+    # columns to keep the value axis out took them with it. Position alone is enough:
+    # the axis and the stacked bar sit 270 points away and fall into their own blobs.
+    percents = [w for w in words if _percent(w) is not None]
+    for loose in _blobs(percents, _DONUT_REACH):
+        if len(loose) >= 8 and not len(loose) % 2:
+            chart = _donut_from(words, loose, page_number)
+            if chart is not None:
+                return [chart]
+    return []
+
+
+def _blobs(words: list[dict], reach: float) -> list[list[dict]]:
+    """Words grouped into 2-D clusters — anything within `reach` of the group joins it.
+
+    A ring's labels sit around its centre and nothing else on the page does. Taking
+    every scattered percentage instead swept in the slide's own headline, whose
+    "27%, 19%, 9%" paired off against the ring and left both totals wrong.
+    """
+    remaining = list(words)
+    out: list[list[dict]] = []
+    while remaining:
+        group = [remaining.pop()]
+        moved = True
+        while moved:
+            moved = False
+            for word in list(remaining):
+                if any(math.dist((_centre(word), word["top"]), (_centre(g), g["top"]))
+                       <= reach for g in group):
+                    group.append(word)
+                    remaining.remove(word)
+                    moved = True
+        out.append(group)
+    return sorted(out, key=len, reverse=True)
+
+
+def _donut_from(words: list[dict], loose: list[dict], page_number: int) -> Chart | None:
+    x = statistics.fmean([_centre(w) for w in loose])
+    y = statistics.fmean([(w["top"] + w["bottom"]) / 2 for w in loose])
+    polar = []
+    for word in loose:
+        dx, dy = _centre(word) - x, (word["top"] + word["bottom"]) / 2 - y
+        polar.append((math.hypot(dx, dy),
+                      (math.degrees(math.atan2(dx, -dy)) + 360) % 360, word))
+
+    pairs, used = [], set()
+    for i, one in enumerate(polar):
+        if i in used:
+            continue
+        rest = [(j, p) for j, p in enumerate(polar) if j != i and j not in used]
+        if not rest:
+            return None
+        j, other = min(rest, key=lambda jp: abs(jp[1][1] - one[1]))
+        used |= {i, j}
+        inner, outer = sorted([one, other], key=lambda p: p[0])
+        pairs.append((min(one[1], other[1]), inner[2], outer[2]))
+    pairs.sort()
+
+    rings = {"outer": [p[2] for p in pairs], "inner": [p[1] for p in pairs]}
+    if not all(_WHOLE[0] <= sum(_percent(w) for w in ring) <= _WHOLE[1]
+               for ring in rings.values()):
+        return None
+
+    names = _legend_column(words, len(pairs))
+    if names is None:
+        return None
+    labels = _ring_labels(words)
+    return Chart(page=page_number, title=_donut_title(words, loose),
+                 categories=names,
+                 series=[Series(labels[key], [w["text"] for w in ring])
+                         for key, ring in rings.items()])
+
+
+def _category_below(words: list[dict], axis_top: float, centre: float) -> str:
+    """The category label under a column — "H1 2026" beneath the bar it names."""
+    below = [w for w in words if w["top"] > axis_top - _ROW_TOLERANCE
+             and abs(_centre(w) - centre) < 18]
+    if not below:
+        return ""
+    line = min(below, key=lambda w: w["top"])["top"]
+    return " ".join(w["text"] for w in
+                    sorted((w for w in below if abs(w["top"] - line) <= _ROW_TOLERANCE),
+                           key=lambda w: w["x0"]))
+
+
+def _legend_column(words: list[dict], count: int) -> list[str] | None:
+    """A legend written down the side: `count` rows sharing a left edge, evenly pitched."""
+    # Grouped by PROXIMITY of the shared edge, not into fixed buckets — the third time
+    # in this module that a fixed grid split something that lines up, here two legend
+    # entries whose right edges landed a fraction either side of a boundary. And on
+    # BOTH edges, because a legend down the side of a chart may be aligned either way.
+    ordered_rows = [sorted(r, key=lambda w: w["x0"])
+                    for r in _rows([w for w in words if _percent(w) is None])]
+    groups: list[list[list[dict]]] = []
+    for edge in (lambda r: r[0]["x0"], lambda r: r[-1]["x1"]):
+        for cluster in _by_gap(sorted(ordered_rows, key=edge), edge, 4.0):
+            groups.append(cluster)
+    for rows in groups:
+        if len(rows) != count:
+            continue
+        tops = sorted(r[0]["top"] for r in rows)
+        if _longest_regular_run(tops) != (0, len(tops) - 1):
+            continue
+        return [" ".join(w["text"] for w in r)
+                for r in sorted(rows, key=lambda r: r[0]["top"])]
+    return None
+
+
+def _ring_labels(words: list[dict]) -> dict[str, str]:
+    """What the chart calls its rings, taken from the chart. It usually says."""
+    text = " ".join(w["text"] for w in sorted(words, key=lambda w: (w["top"], w["x0"])))
+    out = {"outer": "Outer ring", "inner": "Inner ring"}
+    for key in out:
+        # Bounded on purpose: the joined page text runs straight on into the chart's
+        # own figures, and an unbounded capture swallowed the entire slide.
+        found = re.search(rf"{key}\s+circle\s*=\s*((?:\S+ ){{0,3}}\S+)",
+                          text, re.IGNORECASE)
+        if found:
+            # The joined page text runs straight on into the other ring's caption and
+            # then into the chart's own figures; an unbounded capture swallowed the
+            # slide. Trimmed at whichever comes first.
+            label = re.split(r"\s+(?:outer|inner)\s+circle|\s+\d{1,3}%",
+                             found.group(1), flags=re.IGNORECASE)[0].strip()
+            if label:
+                out[key] = label
+    return out
+
+
+def _donut_title(words: list[dict], loose: list[dict]) -> str:
+    left = min(w["x0"] for w in loose)
+    right = max(w["x1"] for w in loose)
+    return _title_for(words, (min(w["top"] for w in loose), 0.0), left, right)

@@ -11,6 +11,7 @@ figure by figure against the rendered pages: Berlin 98/104/70/65/73/79/66/61/65/
 Duesseldorf 59/59/27/39/27/20/39/41/27/20, Stuttgart 29/35/39/26/12/11/11/12/24/20.
 """
 import io
+import math
 import re
 
 import pytest
@@ -288,3 +289,83 @@ def test_a_gap_in_the_rows_refuses_the_ranking():
             at(300 + i * 7, top, str(value))
 
     assert reconstruct(_page(draw)) == []
+
+
+# ── A 100% stacked column, and a donut ────────────────────────────────────────
+
+_SIZES = ["<=100 sqm", "101-200 sqm", "201-500 sqm", "501-1,000 sqm", ">1,000 sqm"]
+
+
+def _stacked(at, values, *, x=300.0, zero=400.0, per_percent=2.0):
+    """A 100% stacked bar: a value axis, one labelled column, a legend, a category."""
+    for tick in range(0, 101, 20):
+        at(90, zero - tick * per_percent, f"{tick}%", centred=False)
+    for i, name in enumerate(_SIZES):
+        at(140 + i * 90, 170.0, name)                    # the legend, entry per swatch
+    cumulative = 0.0
+    for value in values:
+        at(x, zero - (cumulative + value / 2) * per_percent, f"{value}%")
+        cumulative += value
+    at(x, zero + 12, "H1 2026")                          # the category under the bar
+
+
+def test_a_stacked_column_is_attributed_by_its_own_geometry():
+    """Refused by the column reader, which allows one value per category — here one
+    column carries five. The attribution is provable: the segments sum to 100 and each
+    label sits at the midpoint of its own cumulative band, so legend order bottom to top
+    predicts every position. A wrong order would miss by tens of points."""
+    chart = reconstruct(_page(lambda at: _stacked(at, [24, 27, 22, 5, 22])))[0]
+
+    assert chart.categories == _SIZES
+    assert chart.values == ["24%", "27%", "22%", "5%", "22%"]
+    assert chart.series[0].name == "H1 2026"
+
+
+def test_a_stack_that_does_not_account_for_everything_is_refused():
+    """The first of the two proofs. Segments that do not sum to 100 are not a 100%
+    stacked bar, and whatever they are cannot be read this way."""
+    assert reconstruct(_page(lambda at: _stacked(at, [24, 27, 22, 5, 8]))) == []
+
+
+def test_a_stack_whose_labels_sit_wrong_is_refused():
+    """The second proof, and the one that pins the ORDER. The values still sum to 100;
+    only their positions disagree with the bands they claim."""
+    def draw(at):
+        _stacked(at, [24, 27, 22, 5, 22])
+        at(300, 300.0, "22%")            # a sixth label, off its band
+
+    assert reconstruct(_page(draw)) == []
+
+
+def _donut(at, outer, inner, names, *, cx=200.0, cy=300.0):
+    for i, (out_v, in_v) in enumerate(zip(outer, inner)):
+        angle = math.radians(22.5 + i * 45)
+        for radius, value in ((100.0, out_v), (55.0, in_v)):
+            at(cx + radius * math.sin(angle), cy - radius * math.cos(angle), f"{value}%")
+    at(cx, cy - 150, "outer circle = 2022-H1 2026 inner circle = 2017-2021")
+    for i, name in enumerate(names):
+        at(360, 250.0 + i * 20, name, centred=False)
+
+
+_SECTORS = ["Fashion", "Beverage", "Leisure", "Food", "Furnishings", "Leather",
+            "Jewellery", "Others"]
+
+
+def test_a_two_ring_donut_comes_back_as_two_columns():
+    """A ring has no axis and nothing lines up, so the geometry is polar: the same
+    sector's two readings share an angle and differ in radius, and the farther is the
+    outer ring. One table, because the comparison is the point."""
+    chart = reconstruct(_page(lambda at: _donut(
+        at, [27, 19, 9, 9, 8, 6, 6, 16], [23, 26, 7, 9, 9, 7, 3, 16], _SECTORS)))[0]
+
+    assert chart.categories == _SECTORS
+    assert [s.name for s in chart.series] == ["2022-H1 2026", "2017-2021"]
+    assert chart.series[0].values[:2] == ["27%", "19%"]
+    assert chart.series[1].values[:2] == ["23%", "26%"]
+
+
+def test_a_ring_that_does_not_sum_to_a_whole_is_refused():
+    """The check that makes the radius rule safe. Split the rings the wrong way and the
+    totals stop being 100, which is exactly what a mis-paired chart looks like."""
+    assert reconstruct(_page(lambda at: _donut(
+        at, [27, 19, 9, 9, 8, 6, 6, 16], [23, 26, 7, 9, 9, 7, 3, 40], _SECTORS))) == []
