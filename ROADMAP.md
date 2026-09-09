@@ -3112,13 +3112,27 @@ as canvas nodes on the ReactFlow surface rather than only as a canvas-level bind
 **Waves, in build order (each small; every wave touches `page.tsx`, so they land one
 at a time under the one-branch law):**
 
-- **PX-0 · The first five minutes.** Land on `home`; the landing void gets an empty
+- ✅ **PX-0 · The first five minutes — SHIPPED 2026-09-09 (`2c560b55`).** Every receipt
+  taken live: cold `/` lands on Home; `?tab=evals&layer=experiments` and
+  `?tab=agentic-ops&layer=attention` open their layers and survive reload; both
+  palette entries land somewhere real ("Add a data source" opens the form over the
+  Catalog); the former landing void reads "Reading this connection's schemas…"; one
+  shared `EmptyState` (four locals retired, two emoji became icons, the font ratchet
+  came DOWN 1174 → 1166); eight missing palette destinations added under the
+  sidebar's own words. Original spec: land on `home`; the landing void gets an empty
   state that offers the door; shared `EmptyState` primitive (four locals retire); fix
   the two broken palette targets; write `?layer=` for every workspace;
   palette↔sidebar naming parity ("Agent runs" vs "Agent history").
   **Receipt:** an incognito visit lands on Home with the funnel; every sidebar
   destination survives reload; both palette entries land somewhere real.
-- **PX-1 · The language pass.** Display titles for scheduled runs (preamble stays
+- ✅ **PX-1 · The language pass — SHIPPED 2026-09-09 (`5883b00b`).** `runTitle.ts`
+  derives run titles display-side (fixtures are the cross-language tripwire on
+  temporal.py's constants); keyFigure refuses bare years ("2014" was a live tile);
+  tile prose rides the precision policy; Catalog/Documents/Inbox stop lying;
+  Playbook leads with the sentence; `countNoun()` ends "1 entities". Deferred from
+  this wave, honestly: eval-suite names are STORED DATA (renaming is curation, not
+  rendering) and a static title-shape lint gate (the deriver's tests carry the
+  contract instead). Original spec: display titles for scheduled runs (preamble stays
   model-only); Playbook rules titled for people (key demoted to metadata); eval
   suites named by purpose; number formatting (percentages, pluralization, the
   stat-tile extraction mismatch); the three lying states corrected to tell this
@@ -3133,7 +3147,12 @@ at a time under the one-branch law):**
   declared-action authoring becomes a form (typed fields; JSON behind "advanced").
   **Receipt:** set a cap in the UI, hit it, and the refusal names the cap and links
   the door that raises it.
-- **PX-3 · The intake door.** The KI lane's UI: upload → per-object PLAN
+- ✅ **PX-3 · The intake door — SHIPPED FIRST 2026-09-09 (`0cd5b40c`, §6 item 13's
+  knob-turn).** Semantic Layer ▸ Import; all 12 endpoints consumed; driven live end
+  to end (plan → accept through governance → provenance trail → dedupe → export
+  round-trip). The drive found and fixed the paste-door listing gap (a bundle
+  without its own `connection_id` was invisible to the per-connection listing).
+  Original spec: the KI lane's UI: upload → per-object PLAN
   (new/changed/identical/conflict) → accept/edit/dismiss → apply receipt + re-export.
   **Receipt:** the KI golden bundle driven end-to-end through the browser.
 - **PX-4 · Grading made possible.** The `/learning` write half (author, edit,
