@@ -139,9 +139,10 @@ describe("what the panel says about the numbers", () => {
     expect(await screen.findByText(/5 chunks indexed of 59 claimed/)).toBeTruthy();
   });
 
-  it("reports chunks that are in the index but on no listed document", async () => {
-    /** Orphans are found by search and cannot be removed from here — the panel has to say
-     *  so, because every control it offers works off the list. */
+  it("reports orphan chunks and offers the purge door (PX-6)", async () => {
+    /** Orphans are found by search; the panel used to say they "cannot be removed
+     *  from here" — true until the purge endpoint got its button. Now the sentence
+     *  names the fact and the door sits beside it, no re-embed implied. */
     getKnowledgeStatus.mockResolvedValue(status({
       chunks: 46,
       consistency: { ok: false, orphan_documents: 5, orphan_chunks: 41,
@@ -152,7 +153,8 @@ describe("what the panel says about the numbers", () => {
     render(<DocumentUploader />);
 
     expect(await screen.findByText(/index and this list disagree/)).toBeTruthy();
-    expect(screen.getByText(/cannot be removed from here/)).toBeTruthy();
+    expect(screen.getByText(/41 chunks across 5 documents are in the index but not listed/)).toBeTruthy();
+    expect(screen.getByText(/Purge orphans \(no re-embed\)/)).toBeTruthy();
   });
 });
 

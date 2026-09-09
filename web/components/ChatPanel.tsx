@@ -48,6 +48,9 @@ interface Props {
   initialInsightId?: string;
   /** Optional landing block rendered atop the empty state (e.g. canvas Capabilities). */
   capabilities?: React.ReactNode;
+  /** PX-5 — arrive already talking to one agent (the agent surface's Chat door).
+   *  Seeds the composer's agent picker; the person can still switch or clear it. */
+  initialAgentId?: string;
 }
 
 /** The modes a person can PICK in the composer. `auto` is deliberately absent: the
@@ -502,7 +505,7 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
 // all afternoon. Module scope is exactly that lifetime.
 let _urlSessionUnclaimed = true;
 
-export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities }: Props) {
+export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities, initialAgentId }: Props) {
   // Read during the first render, into a ref, because both this component and page.tsx's
   // URL-sync effect rewrite the query string — whichever ran first would erase the id
   // before the restore below could read it. A ref initializer is safe here specifically
@@ -591,7 +594,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [mode, setMode]             = useState<ChatMode>("investigate");
   // User-defined agents: the roster + the picked persona.
   const [agents, setAgents]         = useState<UserAgent[]>([]);
-  const [agentId, setAgentId]       = useState<string>("");
+  const [agentId, setAgentId]       = useState<string>(initialAgentId ?? "");
   useEffect(() => { listUserAgents().then(setAgents).catch(() => {}); }, []);
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
   const [loadingStarters, setLoadingStarters] = useState(false);

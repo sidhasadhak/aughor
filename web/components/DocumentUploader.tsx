@@ -1,14 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { formatCount } from "@/lib/format";
+import { countNoun, formatCount } from "@/lib/format";
 import { KnowledgeSourcesSection } from "@/components/KnowledgeSourcesSection";
+import { Button } from "@/components/ui/button";
 import {
   listDocuments,
   uploadDocument,
   previewDocumentChunks,
   deleteDocument,
   getKnowledgeStatus,
+  purgeOrphanChunks,
   getDocumentFormats,
   getDocumentMarkdown,
   getDocumentConvertFormats,
@@ -162,6 +164,9 @@ export function DocumentUploader() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   const [status, setStatus] = useState<KnowledgeStatus | null>(null);
+  // PX-6 — the orphan-purge door (deletes index orphans without a re-embed).
+  const [purging, setPurging] = useState(false);
+  const [purgeNote, setPurgeNote] = useState("");
 
   // What this deployment can read, asked of it rather than assumed.
   const [formats, setFormats] = useState<DocumentFormats | null>(null);
@@ -430,18 +435,45 @@ export function DocumentUploader() {
         </div>
       )}
       {status && status.ready && !status.consistency.ok && (
+        /* PX-1 — the alarm must state ITS OWN cause. This banner once fired on a
+           per-document count mismatch while its only sentence narrated a different
+           metric that happened to read "121 of 121" — an alarm whose visible numbers
+           said everything was fine. One sentence per actual cause, nothing else. */
         <div className="rounded-md border border-amber-500/30 bg-amber-500/5 p-3">
-          <p className="aug-fs-sm text-amber-300">
-            The index and this list disagree — {status.consistency.listed_chunks_present} of
-            the {status.chunks} indexed chunks belong to documents shown here.
-          </p>
+          <p className="aug-fs-sm text-amber-300">The index and this list disagree.</p>
           {status.consistency.orphan_chunks > 0 && (
+            <div className="mt-1">
+              <p className="aug-fs-xs text-zinc-400">
+                {countNoun(status.consistency.orphan_chunks, "chunk")} across{" "}
+                {countNoun(status.consistency.orphan_documents, "document")} are in the
+                index but not listed — they can be found by search.
+              </p>
+              {/* PX-6 — the door this sentence was pointing at without offering: the
+                  purge endpoint deletes orphans WITHOUT the re-embed a full re-index
+                  forces. Dry-run first; the destructive act is its own second click. */}
+              <div className="mt-1 flex items-center gap-2">
+                <Button size="xs" variant="ghost" disabled={purging}
+                  onClick={async () => {
+                    setPurging(true);
+                    try {
+                      const r = await purgeOrphanChunks(false);
+                      setPurgeNote(`Purged ${String(r.orphans_purged ?? r.purged ?? "the orphans")} — re-reading the status.`);
+                      getKnowledgeStatus().then(setStatus).catch(() => {});
+                    } catch (e) { setPurgeNote(e instanceof Error ? e.message : String(e)); }
+                    finally { setPurging(false); }
+                  }}>
+                  {purging ? "Purging…" : "Purge orphans (no re-embed)"}
+                </Button>
+                {purgeNote && <span className="aug-fs-xs text-zinc-400">{purgeNote}</span>}
+              </div>
+            </div>
+          )}
+          {Object.keys(status.consistency.mismatched_documents ?? {}).length > 0 && (
             <p className="aug-fs-xs text-zinc-400 mt-1">
-              {status.consistency.orphan_chunks} chunk
-              {status.consistency.orphan_chunks !== 1 ? "s" : ""} across{" "}
-              {status.consistency.orphan_documents} document
-              {status.consistency.orphan_documents !== 1 ? "s" : ""} are in the index but not
-              listed — they can be found by search and cannot be removed from here.
+              {countNoun(Object.keys(status.consistency.mismatched_documents).length, "document")}{" "}
+              hold{Object.keys(status.consistency.mismatched_documents).length === 1 ? "s" : ""} a
+              different number of chunks in the index than this list claims — the listed
+              count is a claim from upload time, and search sees the index.
             </p>
           )}
         </div>

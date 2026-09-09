@@ -12,6 +12,7 @@ import { installAuthFetch } from "@/lib/auth";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
+import { runDisplayTitle } from "@/lib/runTitle";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
@@ -25,7 +26,7 @@ import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
 import type { OpsLayer } from "@/components/OperationsWorkspace";
 import type { EvalsLayer } from "@/components/EvalsWorkspace";
-import type { AgenticOpsLayer } from "@/components/AgenticOpsWorkspace";
+import type { AgenticOpsLayer as AgentsLayer } from "@/components/AgenticOpsWorkspace";
 import { Workspace as WorkspaceShell, type WorkspaceLayer } from "@/components/Workspace";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
@@ -43,9 +44,8 @@ const loading = () => <LoadingPanel />;
 const ConfigurePanel    = dynamic(() => import("@/components/ConfigurePanel").then(m => ({ default: m.ConfigurePanel })),    { ssr: false, loading });
 const HistoryPanel      = dynamic(() => import("@/components/HistoryPanel").then(m => ({ default: m.HistoryPanel })),        { ssr: false, loading });
 const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel").then(m => ({ default: m.HistoryDetailPanel })), { ssr: false, loading });
-// The four Intelligence perspectives (Ontology / Hub / Domain Intel / Org Intel)
-// are now lazily loaded *inside* IntelligenceWorkspace, which fans them into
-// layers of one unified workspace.
+// The Intelligence perspectives are lazily loaded *inside* IntelligenceWorkspace,
+// which fans them into layers of one unified workspace.
 const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
 const OperationsWorkspace = dynamic(() => import("@/components/OperationsWorkspace").then(m => ({ default: m.OperationsWorkspace })), { ssr: false, loading });
 const EvalsWorkspace = dynamic(() => import("@/components/EvalsWorkspace").then(m => ({ default: m.EvalsWorkspace })), { ssr: false, loading });
@@ -108,6 +108,7 @@ import { subscribeKernelEvents } from "@/lib/events";
 
 type NavTab =
   | "home"              // overview dashboard — stats, health, recents, quick input
+  | "spend"             // PX-2 — Operations ▸ Spend (caps, usage, model health, audit feed)
   | "chat"              // active investigation / chat (hidden from nav)
   | "canvases"
   | "canvas-workspace"
@@ -185,7 +186,10 @@ function AughorLogo() {
 /** A finding headline shown as a plain one-line list subtitle: strip markdown emphasis (no bold
  *  rendering here, so `**…**` would otherwise leak literal asterisks) and honour the currency. */
 function plainSubtitle(text: string): string {
-  return localizeCurrency(text).replace(/\*+/g, "");
+  // PX-1 — a scheduled run's stored question leads with a code-written grounding
+  // block; that text is for the model, and rendering it as a title put
+  // "[Scheduled-run context — …]" on five cards of one screen. Derive, display-side.
+  return localizeCurrency(runDisplayTitle(text).title).replace(/\*+/g, "");
 }
 
 function timeAgo(iso: string): string {
@@ -294,12 +298,11 @@ function Topbar({
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
-// ── Two-tier nav (SOTA pattern: ≤5 primary rail + collapsible secondary) ────────
-// Primary rail: the five destinations a user touches every session. Everything
-// else is grouped into collapsible sections (collapsed by default), keeping the
-// default sidebar to 5 prominent items without losing any feature. Settings lives
-// in the topbar (gear). Each id maps 1:1 to an existing render block — no screen
-// is removed, only the navigation hierarchy is flattened.
+// ── Two-tier nav: a short primary rail, then labelled sections. The section
+// headers are static labels (an earlier draft planned collapsible ones — never
+// built, and this comment once claimed they were); Settings sits pinned in the
+// sidebar footer, not the topbar. Each id maps 1:1 to a render block. (PX-6:
+// this comment now describes the nav that exists, not the one once planned.)
 const NAV_PRIMARY = [
   { id: "home",         icon: "home",   label: "Home" },
   { id: "inbox",        icon: "inbox",  label: "Inbox" },
@@ -338,6 +341,8 @@ const NAV_SECTIONS = [
       { id: "monitors", icon: "activity", label: "Monitors" },
       { id: "actions",  icon: "spark",    label: "Notifications" },
       { id: "integrations", icon: "plug", label: "Integrations" },
+      // PX-2 — the governed-spend cockpit: caps, usage, model health, the audit feed.
+      { id: "spend",    icon: "scales",   label: "Spend" },
       { id: "security", icon: "shield",   label: "Security & Audit" },
       { id: "evals",    icon: "check",    label: "Evals" },
     ],
@@ -421,119 +426,6 @@ function Sidebar({
   );
 }
 
-// ── Search overlay ─────────────────────────────────────────────────────────────
-
-function SearchOverlay({
-  onClose,
-  onNavigate,
-  onGoToChat,
-}: {
-  onClose: () => void;
-  onNavigate: (t: NavTab) => void;
-  onGoToChat: (q?: string) => void;
-}) {
-  const [q, setQ] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-  useEffect(() => {
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", fn);
-    return () => window.removeEventListener("keydown", fn);
-  }, [onClose]);
-
-  const suggestions = [
-    { label: "New Investigation", icon: "spark",    action: () => { onGoToChat(); onClose(); } },
-    { label: "Browse Schema",     icon: "catalog",  action: () => { onNavigate("catalog"); onClose(); } },
-    { label: "Ontology Graph",    icon: "node",     action: () => { onNavigate("ontology"); onClose(); } },
-    { label: "Domain Intelligence", icon: "process", action: () => { onNavigate("intel"); onClose(); } },
-    { label: "Activity Log",      icon: "activity", action: () => { onNavigate("activity"); onClose(); } },
-    { label: "Playbook",          icon: "playbook", action: () => { onNavigate("playbook"); onClose(); } },
-    { label: "Documents",         icon: "folder",   action: () => { onNavigate("documents"); onClose(); } },
-  ].filter(s => !q || s.label.toLowerCase().includes(q.toLowerCase()));
-
-  const questions = [
-    "Why did revenue drop 8% last month?",
-    "Which customers have the highest payment failure rate?",
-    "What is our MRR this month?",
-    "Show top 10 products by revenue",
-    "Is APAC churn a trend or one-time event?",
-  ].filter(s => !q || s.toLowerCase().includes(q.toLowerCase()));
-
-  return (
-    <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }} />
-      <div style={{
-        position: "fixed", top: "16%", left: "50%", transform: "translateX(-50%)",
-        zIndex: 201, width: "100%", maxWidth: 560,
-        background: "var(--bg-3)", border: "1px solid var(--b2)",
-        borderRadius: "var(--r3)", overflow: "hidden",
-        boxShadow: "var(--shadow-xl)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid var(--b1)" }}>
-          <NavIcon name="search" size={14} color="var(--t3)" />
-          <input
-            ref={inputRef}
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Search tables, analyses, metrics…"
-            style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)" }}
-          />
-          <kbd
-            onClick={onClose}
-            style={{ fontSize: 11, padding: "2px 6px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
-          >
-            ESC
-          </kbd>
-        </div>
-        <div style={{ maxHeight: 360, overflowY: "auto" }}>
-          {suggestions.length > 0 && (
-            <div style={{ padding: "6px 0" }}>
-              <div className="aug-label" style={{ padding: "4px 14px 2px" }}>Navigation</div>
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={s.action} style={{
-                  width: "100%", display: "flex", alignItems: "center", gap: 10,
-                  padding: "8px 14px", background: "none", border: "none",
-                  color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "all .1s", textAlign: "left",
-                }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--t1)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--t2)"; }}
-                >
-                  <NavIcon name={s.icon} size={13} />{s.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {questions.length > 0 && (
-            <div style={{ padding: "6px 0", borderTop: "1px solid var(--b0)" }}>
-              <div className="aug-label" style={{ padding: "4px 14px 2px" }}>Ask a question</div>
-              {questions.map((question, i) => (
-                <button key={i} onClick={() => { onGoToChat(question); onClose(); }} style={{
-                  width: "100%", display: "flex", alignItems: "center", gap: 10,
-                  padding: "8px 14px", background: "none", border: "none",
-                  color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "all .1s", textAlign: "left",
-                }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--t1)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--t2)"; }}
-                >
-                  <NavIcon name="spark" size={13} />{question}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ padding: "6px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 12 }}>
-          {[["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]].map(([k, l]) => (
-            <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>{l}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
 
@@ -795,7 +687,7 @@ function HomeScreen({
 
 // ── Recents screen ─────────────────────────────────────────────────────────────
 
-function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; workspaceId?: string }) {
+function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; onOpenMachineView?: () => void; workspaceId?: string }) {
   const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
 
@@ -837,6 +729,16 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
             </button>
           ))}
         </div>
+        {/* PX-6 — the seven-surfaces audit measured these as views over DIFFERENT data
+            planes, not duplicates: this list is the person's run history
+            (/investigations); the machine view (event stream, traces, spans) lives in
+            Agent Ops ▸ Activity. One cross-link instead of a merge that would have
+            fused two planes. */}
+        {onOpenMachineView && (
+          <Button variant="ghost" size="xs" className="ml-auto" onClick={onOpenMachineView}>
+            Machine view: traces &amp; spans →
+          </Button>
+        )}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
         {activities.length > 0 && (
@@ -1196,7 +1098,14 @@ function AddConnectionForm({
             <div style={{ padding: "12px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", fontSize: 12, color: "var(--t3)", lineHeight: 1.5 }}>
               {type === "local_upload"
                 ? <>Local Files: create the connection, then upload CSV/Parquet/Excel files to it via the Files tab.</>
-                : <>Federated connections span multiple sources. Use <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t2)" }}>POST /connections/federate</code> with a list of connection IDs.</>
+                // PX-6 (the PX-1 language law, applied late): this used to print a curl
+                // command at the person. A federated connection has no form yet because
+                // its planner is still an experiment flag — say that, name the flag,
+                // and stop pretending an API string is a UI.
+                : <>A federated connection joins two sources in one question. There is no
+                    form for it yet — its planner is still an experiment
+                    (<code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t2)" }}>federation.planner</code>,
+                    Settings ▸ System ▸ Feature flags); when it graduates, the form lands here.</>
               }
             </div>
           ) : (
@@ -1320,7 +1229,7 @@ const THEME_KEY = "aughor_theme";
  *  than next/navigation: the shell is one client page, and a query-param sync
  *  has no server-render surface to disagree with. */
 const VALID_TABS = new Set<NavTab>([
-  "home", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
+  "home", "spend", "chat", "canvases", "canvas-workspace", "recents", "fleet", "agents",
   "inbox", "briefing", "intelligence", "intel-hub", "intel", "org-intel",
   "ontology", "operations", "agentic-ops", "control-room", "evals", "data",
   "health", "playbook", "documents", "catalog", "builder", "query", "connections", "metrics",
@@ -1339,6 +1248,10 @@ const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
   builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
   query:    "query",
   semantic: "semantic",
+  // PX-0 (§3.14) — "connections" was a tab with no render branch: the palette's two
+  // entries and any old link navigated to a blank pane. Connections live in the
+  // Catalog, so the id resolves there on every path (navigate, cold load, popstate).
+  connections: "catalog",
 };
 
 /** The inverse, for the rail's active mark. Two ids collapse onto `query` above, so
@@ -1368,15 +1281,26 @@ const VALID_LAYERS = new Set<IntelLayer>([
   "briefing", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org",
 ]);
 
-function layerFromUrl(): IntelLayer | null {
+/** PX-0 (§3.14) — every workspace's layer is addressable, not only Intelligence's
+ *  (before this, Evals▸Experiments or Agent Ops▸Attention could not survive a
+ *  reload). One vocabulary per workspace; a `?layer=` value is honoured only on the
+ *  workspace it belongs to, so a stale or foreign value is ignored, not routed to. */
+const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "spend", "security"]);
+const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
+const AGENTIC_LAYERS = new Set<AgentsLayer>([
+  "fleet", "agents", "attention", "activity", "automations",
+]);
+
+function layerFromUrl(): string | null {
   if (typeof window === "undefined") return null;
-  const l = new URLSearchParams(window.location.search).get("layer") as IntelLayer | null;
-  return l && VALID_LAYERS.has(l) ? l : null;
+  return new URLSearchParams(window.location.search).get("layer");
 }
 
 export default function Home() {
-  // v2 nav IA: land on the Briefing (the intelligence digest), not the Home
-  // overview — unless the URL names a screen (S1: deep links win).
+  // PX-0 (§3.14): land on Home — unless the URL names a screen (S1: deep links win).
+  // The previous default was `intelligence`, which for a connection without a briefing
+  // rendered a void, and which meant the first-run funnel (rendered only on Home) was
+  // on a screen a new user was never shown.
   //
   // This starts at the default rather than reading the URL in the initializer. `/` is
   // statically prerendered, so the server cannot see `?tab=` — a URL-seeded initial
@@ -1385,7 +1309,7 @@ export default function Home() {
   // server said Briefing was the active nav item while the client said Data Canvas).
   // The deep link is applied just below instead, after mount. Same for intelLayer and
   // the `?table=` entity link.
-  const [tab, setTab] = useState<NavTab>("intelligence");
+  const [tab, setTab] = useState<NavTab>("home");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [rawSelectedConn, setSelectedConn] = useState("");
 
@@ -1398,6 +1322,7 @@ export default function Home() {
   const [selectedChatSessionId, setSelectedChatSessionId] = useState<string | null>(null);
   const [chatKey, setChatKey] = useState(0);
   const [chatInitialQuestion, setChatInitialQuestion] = useState<string | undefined>(undefined);
+  const [chatInitialAgentId, setChatInitialAgentId] = useState<string | undefined>(undefined);
   const [chatInitialMode, setChatInitialMode] = useState<"ask" | "investigate">("investigate");
   // SE-1: a legacy `?tab=builder` link opens the workbench in Visual; everything else
   // takes the workbench's own default (SQL).
@@ -1405,19 +1330,37 @@ export default function Home() {
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
+  // PX-0 — the other workspaces' layers, declared here (not further down) because the
+  // deep-link reader and URL sync below now read and write all of them.
+  const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
+  const [agentsLayer, setAgentsLayer] = useState<AgentsLayer>("fleet");
+  const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
+  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
   const [initialGraphTable, setInitialGraphTable] = useState<string | undefined>(undefined);
+
+  /** Apply a `?layer=` value to the workspace `target` names; true when it was a real
+   *  layer of that workspace. Setters are stable, so mount/popstate closures may hold
+   *  the first instance safely. */
+  const applyLayerFor = (target: NavTab, l: string): boolean => {
+    if (target === "intelligence" && VALID_LAYERS.has(l as IntelLayer)) { setIntelLayer(l as IntelLayer); return true; }
+    if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return true; }
+    if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return true; }
+    if (target === "agentic-ops" && AGENTIC_LAYERS.has(l as AgentsLayer)) { setAgentsLayer(l as AgentsLayer); return true; }
+    return false;
+  };
 
   // S1 — deep links win, applied after mount so the first client render still matches
   // the server's HTML. Whatever this sets is recorded as pending, because the URL-sync
   // effect below runs in the SAME commit as this one — still closed over the default
   // tab — and would otherwise rewrite `?tab=canvases` to `?tab=intelligence` before the
   // link ever reached state, silently destroying the deep link it was meant to honour.
-  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: IntelLayer | null; canvas: string | null } | null>(null);
+  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: string | null; canvas: string | null } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = tabFromUrl();
-    const l = layerFromUrl();
+    const rawLayer = layerFromUrl();
     const table = params.get("table");
     const canvasId = params.get("canvas");
     // A Data rail id in the URL is a LAYER alias, not a tab that renders — resolve it
@@ -1431,10 +1374,16 @@ export default function Home() {
       // string, so the workbench cannot read it back for itself.
       if (t === "builder") setQueryInitialMode("visual");
     }
-    if (l) setIntelLayer(l);
+    // PX-0 — the layer lands on whichever workspace the tab resolved to.
+    const layerApplied = rawLayer && resolved
+      ? applyLayerFor(resolved.tab, rawLayer) : false;
     if (table) setInitialGraphTable(table);
-    if (t || l || canvasId) {
-      pendingDeepLink.current = { tab: resolved?.tab ?? t, layer: l, canvas: canvasId };
+    if (t || rawLayer || canvasId) {
+      pendingDeepLink.current = {
+        tab: resolved?.tab ?? t,
+        layer: layerApplied ? rawLayer : null,
+        canvas: canvasId,
+      };
     }
 
     // The canvas is the one deep link that cannot resolve in this tick. `?tab=` and
@@ -1501,7 +1450,14 @@ export default function Home() {
       // `pending.canvas` is still set while the roster is in flight. Writing now would
       // delete the `?canvas=` that the fetch is on its way to resolve — the same
       // self-erasing race the tab had before, one async hop longer.
-      if ((pending.tab && tab !== pending.tab) || (pending.layer && intelLayer !== pending.layer)
+      const pendingLayerCurrent =
+        pending.tab === "intelligence" ? intelLayer
+        : pending.tab === "operations" ? opsLayer
+        : pending.tab === "evals" ? evalsLayer
+        : pending.tab === "agentic-ops" ? agentsLayer
+        : null;
+      if ((pending.tab && tab !== pending.tab)
+          || (pending.layer && pendingLayerCurrent !== pending.layer)
           || pending.canvas) return;
       pendingDeepLink.current = null;
     }
@@ -1510,24 +1466,35 @@ export default function Home() {
     const urlConn = params.get("conn");
     const urlLayer = params.get("layer");
     const urlCanvas = params.get("canvas");
-    const wantLayer = tab === "intelligence" ? intelLayer : null;
+    // PX-0 — every workspace writes its layer, so what the screen shows survives a
+    // reload. The Data workspace writes its layer AS the tab (`catalog` / `query` /
+    // `semantic` are aliases the deep-link resolver already reads back) — `builder`
+    // is deliberately never written, so its forced visual mode stays a property of
+    // real legacy links only.
+    const writeTab: NavTab = tab === "data" ? (dataLayer as NavTab) : tab;
+    const wantLayer =
+      tab === "intelligence" ? intelLayer
+      : tab === "operations" ? opsLayer
+      : tab === "evals" ? evalsLayer
+      : tab === "agentic-ops" ? agentsLayer
+      : null;
     // Only the workspace is addressed by a canvas; elsewhere the id is noise that would
     // survive into screens it means nothing on.
     const wantCanvas = tab === "canvas-workspace" ? (activeCanvas?.id ?? null) : null;
-    if (urlTab === tab && (urlConn ?? "") === rawSelectedConn
+    if (urlTab === writeTab && (urlConn ?? "") === rawSelectedConn
         && (urlLayer ?? null) === wantLayer && (urlCanvas ?? null) === wantCanvas) return;
-    params.set("tab", tab);
+    params.set("tab", writeTab);
     if (rawSelectedConn) params.set("conn", rawSelectedConn); else params.delete("conn");
     if (wantLayer) params.set("layer", wantLayer); else params.delete("layer");
     if (wantCanvas) params.set("canvas", wantCanvas); else params.delete("canvas");
     const next = `${window.location.pathname}?${params.toString()}`;
-    if (!urlSyncReady.current || urlTab === tab) {
+    if (!urlSyncReady.current || urlTab === writeTab) {
       window.history.replaceState(null, "", next);
       urlSyncReady.current = true;
     } else {
       window.history.pushState(null, "", next);
     }
-  }, [tab, rawSelectedConn, intelLayer, activeCanvas]);
+  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agentsLayer, dataLayer, activeCanvas]);
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
@@ -1537,18 +1504,14 @@ export default function Home() {
         const r = resolveDeepLinkTab(t);
         setTab(r.tab);
         if (r.dataLayer) setDataLayer(r.dataLayer);
+        const l = layerFromUrl();
+        if (l) applyLayerFor(r.tab, l);
       }
-      const l = layerFromUrl();
-      if (l) setIntelLayer(l);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
-  const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
-  const [agenticOpsLayer, setAgenticOpsLayer] = useState<AgenticOpsLayer>("fleet");
-  const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
-  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);
@@ -1758,11 +1721,15 @@ export default function Home() {
     }
   };
 
-  const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string) => {
+  const goToChat = (q?: string, mode?: "ask" | "investigate", insightId?: string,
+                    agentId?: string) => {
     setSelectedChatSessionId(null);
     setSelectedHistoryInvId(null);
     setChatInitialQuestion(q);
     setChatInitialInsightId(insightId);
+    // PX-5 — the agent surface's Chat door arrives already talking to that agent.
+    // Cleared on every other entry, so a stale selection never haunts a fresh chat.
+    setChatInitialAgentId(agentId);
     if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
     setTab("chat");
@@ -1827,6 +1794,7 @@ export default function Home() {
     monitors: "monitors",
     actions:  "actions",
     integrations: "integrations",
+    spend: "spend",
     security: "security",
   };
 
@@ -1837,7 +1805,7 @@ export default function Home() {
 
   // Fleet / Agents / Control Room merged into ONE Agentic Ops workspace — the
   // legacy rail ids and deep links land on the matching layer.
-  const LEGACY_AGENTIC_LAYER: Partial<Record<NavTab, AgenticOpsLayer>> = {
+  const LEGACY_AGENTIC_LAYER: Partial<Record<NavTab, AgentsLayer>> = {
     fleet: "fleet",
     agents: "agents",
     "control-room": "fleet",
@@ -1894,7 +1862,7 @@ export default function Home() {
     // Fleet / Agents / Control Room deep-links open Agentic Ops at the matching layer.
     const agentic = LEGACY_AGENTIC_LAYER[t];
     if (agentic) {
-      setAgenticOpsLayer(agentic);
+      setAgentsLayer(agentic);
       setTab("agentic-ops");
       return;
     }
@@ -2164,6 +2132,7 @@ export default function Home() {
                           initialQuestion={chatInitialQuestion}
                           initialMode={chatInitialMode}
                           initialInsightId={chatInitialInsightId}
+                          initialAgentId={chatInitialAgentId}
                         />
                       </div>
                     </div>
@@ -2174,7 +2143,9 @@ export default function Home() {
             {/* ── RECENTS ── */}
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} workspaceId={selectedWorkspace} />
+                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation}
+                  onOpenMachineView={() => { setAgentsLayer("activity"); setTab("agentic-ops"); }}
+                  workspaceId={selectedWorkspace} />
               </div>
             )}
 
@@ -2231,15 +2202,15 @@ export default function Home() {
               <ErrorBoundary label="The Agents workspace hit an error.">
                 <AgenticOpsWorkspace
                   connId={selectedConn ?? undefined}
-                  layer={agenticOpsLayer}
-                  onLayerChange={setAgenticOpsLayer}
+                  layer={agentsLayer}
+                  onLayerChange={setAgentsLayer}
                   workspaceId={activeWs && !activeWs.is_default ? activeWs.id : undefined}
                   workspaceName={activeWs && !activeWs.is_default ? activeWs.name : undefined}
                   onOpenInvestigation={invId => {
                     setSelectedHistoryInvId(invId);
                     handleNavigate("recents");
                   }}
-                  onOpenAutomations={() => setAgenticOpsLayer("automations")}
+                  onOpenAutomations={() => setAgentsLayer("automations")}
                   // DS-5 — an agent's Map sends the reader to the surface that owns the
                   // thing they clicked: the provider catalog for a Slack door, the data
                   // catalog (scoped to that connection) for the connection it answers on.
@@ -2248,6 +2219,8 @@ export default function Home() {
                     setSelectedConn(connectionId);
                     handleNavigate("catalog");
                   }}
+                  // PX-5 — the agent surface's Chat door: arrive already talking to it.
+                  onChatWithAgent={agentId => goToChat(undefined, undefined, undefined, agentId)}
                 />
               </ErrorBoundary>
             )}
@@ -2398,7 +2371,11 @@ export default function Home() {
       )}
 
       {/* ── Command palette (⌘K) ── */}
-      <GlobalCommands onNavigate={t => handleNavigate(t as NavTab)} onGoToChat={q => goToChat(q)} />
+      <GlobalCommands
+        onNavigate={t => handleNavigate(t as NavTab)}
+        onGoToChat={q => goToChat(q)}
+        onAddSource={() => { handleNavigate("catalog"); setShowAddConn(true); }}
+      />
       <CommandPalette
         open={showSearch}
         onClose={() => setShowSearch(false)}

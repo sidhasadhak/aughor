@@ -298,3 +298,21 @@ def test_intake_governance_kind_is_categorized_and_sunk():
            if e.kind == "intake.governance"
            and (e.detail or {}).get("bundle") == "ib_feedcheck"]
     assert got and "3 accepted" in got[0].summary
+
+
+# ── PX-3's live find: a pasted bundle must list under its connection ─────────────────
+
+
+def test_bundle_without_connection_key_lists_under_its_connection(stores, demo_conn):
+    """The paste door sends connection_id on the REQUEST; a YAML that omits its own
+    key used to stage fine and then be invisible to `GET /intake/bundles?connection_id=`
+    (the row copies the bundle's key). Found by driving the PX-3 door live."""
+    b = _bundle()
+    del b["connection_id"]
+    r = client.post("/intake/bundles", json={
+        "actor": "ana@example.com", "source": "pasted",
+        "connection_id": CONN, "bundle": b})
+    assert r.status_code == 201
+    listed = client.get(f"/intake/bundles?connection_id={CONN}").json()["bundles"]
+    assert r.json()["bundle"]["id"] in {x["id"] for x in listed}
+    assert r.json()["bundle"]["connection_id"] == CONN

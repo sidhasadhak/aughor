@@ -83,9 +83,15 @@ export function extractKeyFigure(finding: string): KeyFigure | null {
   }
 
   // 4) Largest grouped integer (thousands or more) — a raw count worth surfacing.
+  //    A year is a DATE, not a magnitude: "revenue concentrated in 2014" once put
+  //    "2014" on a digest tile as the headline stat (PX-1's live specimen). A bare
+  //    4-digit token in the calendar range is excluded here; when the finding's only
+  //    numbers are years, the honest answer is no key figure at all.
+  const yearish = (x: { raw: string; n: number }) =>
+    /^\d{4}$/.test(x.raw) && x.n >= 1900 && x.n <= 2100;
   const ints = [...text.matchAll(new RegExp(`\\b(${NUM})\\b`, "g"))]
     .map(m => ({ raw: m[1], n: toNum(m[1]), i: m.index ?? 0 }))
-    .filter(x => !isNaN(x.n));
+    .filter(x => !isNaN(x.n) && !yearish(x));
   if (ints.length) {
     const big = ints.reduce((a, b) => (b.n > a.n ? b : a));
     if (big.n >= 1000) return { value: fig(big.raw), sublabel: sublabelBefore(text, big.i) };

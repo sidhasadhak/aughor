@@ -17,6 +17,7 @@ const MonitorsPanel      = dynamic(() => import("@/components/MonitorsPanel").th
 const ActionHubPanel     = dynamic(() => import("@/components/ActionHubPanel").then(m => ({ default: m.ActionHubPanel })),         { ssr: false, loading });
 const IntegrationsPanel  = dynamic(() => import("@/components/IntegrationsPanel").then(m => ({ default: m.IntegrationsPanel })),   { ssr: false, loading });
 const SecurityAuditPanel = dynamic(() => import("@/components/SecurityAuditPanel").then(m => ({ default: m.SecurityAuditPanel })), { ssr: false, loading });
+const SpendPanel         = dynamic(() => import("@/components/SpendPanel").then(m => ({ default: m.SpendPanel })),                 { ssr: false, loading });
 
 // Icon paths mirror the sidebar's NavIcon set (activity / gear / spark / shield).
 /**
@@ -45,12 +46,16 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 // `LEGACY_OPS_LAYER` never mapped a nav route to it, no URL parameter persists this layer,
 // and the command palette has no entry for it. It was reachable only by clicking the tab
 // that no longer exists, so keeping the id would be defensive code against nothing.
-export type OpsLayer = "monitors" | "actions" | "integrations" | "security";
+export type OpsLayer = "monitors" | "actions" | "integrations" | "spend" | "security";
 
 const LAYERS: WorkspaceLayer<OpsLayer>[] = [
   { id: "monitors",    icon: "activity", label: "Monitors",         blurb: "Metric watches & alerts" },
   { id: "actions",     icon: "spark",    label: "Notifications",    blurb: "Webhook, Slack & Jira triggers" },
   { id: "integrations", icon: "plug",    label: "Integrations",     blurb: "Connect Google, Slack & Microsoft" },
+  // PX-2 — the governed-spend cockpit. The caps store shipped 2026-09-06 with a write
+  // door and no form; usage, model health and the audit feed were folds with no route
+  // to an eye. This layer is those endpoints given a screen.
+  { id: "spend",       icon: "scales",   label: "Spend",            blurb: "Usage, caps & the governance feed" },
   { id: "security",    icon: "shield",   label: "Security & Audit", blurb: "Access, PII & the audit trail" },
 ];
 
@@ -86,6 +91,7 @@ export function OperationsWorkspace({ connId, workspaceId, layer, onLayerChange,
         if (id === "monitors")    return <MonitorsPanel connId={connId} workspaceId={workspaceId} />;
         if (id === "actions")     return <ActionHubPanel />;
         if (id === "integrations") return <IntegrationsPanel />;
+        if (id === "spend")       return <SpendPanel />;
         return <SecurityAuditPanel connId={connId} lens={secLens} onLensChange={onSecLensChange} />; // "security"
       }}
     />

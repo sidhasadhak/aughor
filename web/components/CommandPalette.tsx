@@ -139,17 +139,24 @@ interface CommandPaletteProps {
  * Renders nothing; mount it once (next to <CommandPalette/>). Handlers are held in
  * refs so the command closures stay stable yet always call the latest callback.
  */
-export function GlobalCommands({ onNavigate, onGoToChat }: { onNavigate: (t: string) => void; onGoToChat: (q?: string) => void }) {
+export function GlobalCommands({ onNavigate, onGoToChat, onAddSource }: {
+  onNavigate: (t: string) => void;
+  onGoToChat: (q?: string) => void;
+  /** PX-0 — opens the Add Connection form. Before this, "Add a data source" navigated
+   *  to `connections`, a tab with no render branch, and landed on a blank pane. */
+  onAddSource?: () => void;
+}) {
   const navRef = useRef(onNavigate);
   const chatRef = useRef(onGoToChat);
-  useEffect(() => { navRef.current = onNavigate; chatRef.current = onGoToChat; });
+  const addRef = useRef(onAddSource);
+  useEffect(() => { navRef.current = onNavigate; chatRef.current = onGoToChat; addRef.current = onAddSource; });
 
   const commands = useMemo<Command[]>(() => [
     { id: "cmd-ask",         label: "Ask a question",     sublabel: "Start a new Agent run",       icon: "spark",    accent: "var(--blue3)", keywords: "new chat investigate ask question analyze", run: () => chatRef.current() },
     { id: "cmd-new-canvas",  label: "New Data Canvas",    sublabel: "Create or browse Data Canvases",  icon: "canvas",   accent: "var(--blue3)", keywords: "create canvas new workspace",             run: () => navRef.current("canvases") },
     { id: "cmd-new-monitor", label: "New monitor",        sublabel: "Watch a metric for threshold, drift or staleness", icon: "activity", accent: "var(--grn3)", keywords: "create alert watch threshold notify", run: () => navRef.current("monitors") },
     { id: "cmd-new-query",   label: "Build a query",      sublabel: "Open the visual Query Builder",   icon: "builder",  accent: "var(--t2)",    keywords: "sql query builder new compose",           run: () => navRef.current("builder") },
-    { id: "cmd-add-source",  label: "Add a data source",  sublabel: "Connect or upload data",          icon: "plug",     accent: "var(--grn3)", keywords: "connect connection upload csv source database", run: () => navRef.current("connections") },
+    { id: "cmd-add-source",  label: "Add a data source",  sublabel: "Connect or upload data",          icon: "plug",     accent: "var(--grn3)", keywords: "connect connection upload csv source database", run: () => { (addRef.current ?? (() => navRef.current("catalog")))(); } },
   ], []);
 
   useRegisterCommands("global", commands);
@@ -271,10 +278,16 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
 
   // ── Static nav action items ───────────────────────────────────────────────
 
+  // PX-0 — every sidebar destination is findable here, under the sidebar's own word
+  // for it (naming drift between the two was how surfaces got "lost": the sidebar
+  // said "Agent runs" while this list said "Agent history").
   const NAV_ACTIONS: Omit<PaletteItem, "onSelect">[] = [
+    { id: "nav-home",        label: "Home",                 sublabel: "Ask, get started, recent activity", type: "action", icon: "home",     accent: "var(--t3)" },
     { id: "nav-canvases",    label: "Data Canvas",           sublabel: "Browse and open Data Canvases",     type: "action", icon: "canvas",   accent: "var(--blue3)" },
-    { id: "nav-recents",     label: "Agent history", sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
+    { id: "nav-briefing",    label: "Briefing",             sublabel: "The connection's intelligence digest", type: "action", icon: "brief",  accent: "var(--blue3)" },
+    { id: "nav-recents",     label: "Agent runs",           sublabel: "View all past analyses",            type: "action", icon: "clock",    accent: "var(--t3)" },
     { id: "nav-inbox",       label: "Inbox",                sublabel: "Act on Aughor's recommendations",   type: "action", icon: "inbox",    accent: "var(--amb3)" },
+    { id: "nav-documents",   label: "Documents",            sublabel: "Upload and review knowledge documents", type: "action", icon: "folder", accent: "var(--t2)" },
     { id: "nav-intel",       label: "Profile",              sublabel: "Per-domain findings and coverage",  type: "action", icon: "process",  accent: "var(--cyn3)" },
     { id: "nav-ontology",    label: "Ontology",             sublabel: "Entity graph and lifecycle states", type: "action", icon: "node",     accent: "var(--grn3)" },
     { id: "nav-health",      label: "Health",               sublabel: "Business metric targets and status",type: "action", icon: "activity", accent: "var(--grn3)" },
@@ -283,16 +296,25 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     { id: "nav-playbook",    label: "Playbook",             sublabel: "Strategic decision patterns",        type: "action", icon: "playbook", accent: "var(--t2)" },
     { id: "nav-catalog",     label: "Catalog",              sublabel: "Browse tables, columns, row counts", type: "action", icon: "db",       accent: "var(--blue3)" },
     { id: "nav-builder",     label: "SQL Editor",           sublabel: "Write SQL, or compose visually, with live results",type: "action", icon: "builder", accent: "var(--t2)" },
-    { id: "nav-connections", label: "Connections",          sublabel: "Manage data source connections",     type: "action", icon: "plug",     accent: "var(--grn3)" },
+    { id: "nav-semantic",    label: "Semantic Layer",       sublabel: "Annotations, knowledge, metrics, import", type: "action", icon: "layers", accent: "var(--amb3)" },
+    { id: "nav-connections", label: "Connections",          sublabel: "Data source connections live in the Catalog", type: "action", icon: "plug", accent: "var(--grn3)" },
     { id: "nav-metrics",     label: "Metrics Catalog",      sublabel: "Semantic KPI definitions",           type: "action", icon: "metric",   accent: "var(--amb3)" },
+    { id: "nav-monitors",    label: "Monitors",             sublabel: "Thresholds, drift and staleness watches", type: "action", icon: "activity", accent: "var(--grn3)" },
     { id: "nav-actions",     label: "Notifications",        sublabel: "Webhooks, Slack, Jira integrations", type: "action", icon: "inbox",    accent: "var(--vio3)" },
+    { id: "nav-integrations", label: "Integrations",        sublabel: "OAuth accounts, Slack apps, MCP servers", type: "action", icon: "plug",  accent: "var(--grn3)" },
+    { id: "nav-spend",       label: "Spend",                sublabel: "Model usage, cost, caps and the governance feed", type: "action", icon: "scales", accent: "var(--amb3)" },
+    { id: "nav-security",    label: "Security & Audit",     sublabel: "Query audit, approvals, guardrail activity", type: "action", icon: "shield", accent: "var(--red3)" },
+    { id: "nav-evals",       label: "Evals",                sublabel: "Suites, runs and experiments",       type: "action", icon: "flask",    accent: "var(--cyn3)" },
     { id: "nav-settings",    label: "Settings",             sublabel: "Theme, model, system configuration", type: "action", icon: "settings", accent: "var(--t3)" },
   ];
 
   const NAV_DISPATCH: Record<string, () => void> = {
+    "nav-home":        () => onNavigate("home"),
     "nav-canvases":    () => onNavigate("canvases"),
+    "nav-briefing":    () => onNavigate("intelligence"),
     "nav-recents":     () => onNavigate("recents"),
     "nav-inbox":       () => onNavigate("inbox"),
+    "nav-documents":   () => onNavigate("documents"),
     "nav-intel":       () => onNavigate("intel"),
     "nav-ontology":    () => onNavigate("ontology"),
     "nav-health":      () => onNavigate("health"),
@@ -311,9 +333,17 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     "nav-playbook":    () => onNavigate("playbook"),
     "nav-catalog":     () => onNavigate("catalog"),
     "nav-builder":     () => onNavigate("builder"),
+    "nav-semantic":    () => onNavigate("semantic"),
+    // "connections" resolves to the Catalog on every path now (PX-0) — this entry
+    // exists so someone TYPING "connections" still finds the place they mean.
     "nav-connections": () => onNavigate("connections"),
     "nav-metrics":     () => onNavigate("metrics"),
+    "nav-monitors":    () => onNavigate("monitors"),
     "nav-actions":     () => onNavigate("actions"),
+    "nav-integrations": () => onNavigate("integrations"),
+    "nav-spend":       () => onNavigate("spend"),
+    "nav-security":    () => onNavigate("security"),
+    "nav-evals":       () => onNavigate("evals"),
     "nav-settings":    () => onNavigate("settings"),
   };
 

@@ -15,6 +15,7 @@ import {
 } from "@/lib/api";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { takeMonitorDraft } from "@/lib/query/monitorDraft";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -754,12 +755,10 @@ function TypeBadge({ type }: { type: AlertOn }) {
 
 function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
-    <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
-      <div style={{ fontSize: 28, marginBottom: 12 }}>📡</div>
-      <div style={{ fontSize: 15, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No monitors yet</div>
-      <div style={{ fontSize: 12, marginBottom: 20 }}>Set up a monitor to get alerted when metrics cross thresholds, drift, or go stale.</div>
-      <Button variant="ghost" className="h-auto" onClick={onAdd}>Create first monitor</Button>
-    </div>
+    <SharedEmptyState icon="gauge" title="No monitors yet"
+      action={<Button variant="ghost" className="h-auto" onClick={onAdd}>Create first monitor</Button>}>
+      Set up a monitor to get alerted when metrics cross thresholds, drift, or go stale.
+    </SharedEmptyState>
   );
 }
 

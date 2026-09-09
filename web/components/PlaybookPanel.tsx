@@ -190,11 +190,14 @@ export function PlaybookPanel() {
             >
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
-                  <p className="aug-fs-xs font-mono truncate" style={{ color: "var(--t3)" }}>{e.trigger_metric}</p>
-                  <p className="aug-fs-sm mt-0.5 leading-snug" style={{ color: "var(--t1)" }}
+                  {/* PX-1 — the human sentence is the title; the machine key is
+                      metadata. 392 rows titled `air_load_factor` read as a config
+                      dump, not a playbook. */}
+                  <p className="aug-fs-sm leading-snug" style={{ color: "var(--t1)" }}
                     title={e.recommendation}>
                     {e.recommendation.length > 80 ? e.recommendation.slice(0, 78) + "…" : e.recommendation}
                   </p>
+                  <p className="aug-fs-xs font-mono truncate mt-0.5" style={{ color: "var(--t4)" }}>{e.trigger_metric}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0 mt-0.5">
                   <StatusChip status={e.status} />

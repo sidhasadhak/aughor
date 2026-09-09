@@ -40,7 +40,7 @@ import {
   type DocumentEntry, type LlmConfig, type PackSummary, type UserAgent,
 } from "@/lib/api";
 import { evalChip } from "@/lib/agentEval";
-import { compactNumber, formatTimestamp } from "@/lib/format";
+import { compactNumber, countNoun, formatTimestamp } from "@/lib/format";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
 
 type Selection =
@@ -59,7 +59,8 @@ function fmtBudget(n: number | null): string {
 }
 
 export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, focusAgent,
-  range, createSignal, onOpenConnection, onOpenAutomations, onOpenIntegrations }: {
+  range, createSignal, onOpenConnection, onOpenAutomations, onOpenIntegrations,
+  onChatWithAgent }: {
   workspaceId?: string;
   workspaceName?: string;
   /** CR1 drill-in: open a run's trace in the Activity layer's runs mode. */
@@ -69,6 +70,8 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
   onOpenConnection?: (connectionId: string) => void;
   onOpenAutomations?: (automationId: string) => void;
   onOpenIntegrations?: () => void;
+  /** PX-5 — the agent surface's Chat door: open the chat already talking to it. */
+  onChatWithAgent?: (agentId: string) => void;
   /** An agent opened from the Overview table — selected on arrival. */
   focusAgent?: { id: string; kind: "charter" | "persona" } | null;
   /** The surface's shared window — the agent page's own figures scope to it. */
@@ -169,7 +172,8 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
             onError={setError} onOpenTrace={onOpenTrace}
             onOpenConnection={onOpenConnection}
             onOpenAutomations={onOpenAutomations}
-            onOpenIntegrations={onOpenIntegrations} />
+            onOpenIntegrations={onOpenIntegrations}
+            onChatWithAgent={onChatWithAgent} />
         ) : charter ? (
           <CharterDetail key={charter.id} charter={charter} workspaceId={workspaceId} range={range}
             onChanged={reload} onError={setError} />
@@ -210,7 +214,7 @@ function RosterRow({ name, kind, enabled, sub, active, reserved, onClick }: {
 // ── custom-agent detail ───────────────────────────────────────────────────────────────
 
 function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
-  onOpenConnection, onOpenAutomations, onOpenIntegrations }: {
+  onOpenConnection, onOpenAutomations, onOpenIntegrations, onChatWithAgent }: {
   agent: UserAgent; onChanged: () => void; onDeleted: () => void;
   onError: (e: string | null) => void;
   onOpenTrace?: (investigationId: string) => void;
@@ -219,9 +223,29 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
   onOpenConnection?: (connectionId: string) => void;
   onOpenAutomations?: (automationId: string) => void;
   onOpenIntegrations?: () => void;
+  onChatWithAgent?: (agentId: string) => void;
 }) {
   const [tab, setTab] = useState<"overview" | "map" | "benchmark" | "configure">("overview");
   const [busy, setBusy] = useState(false);
+  // PX-5 — grounding is NAMED in the header, in the reader's words: the connection's
+  // NAME (an id like `baef6c3e` tells a reader nothing), the documents, the packs,
+  // the grants. One line, composed only of what this agent actually holds.
+  const [connName, setConnName] = useState<string>("");
+  useEffect(() => {
+    if (!agent.connection_id) { setConnName(""); return; }
+    let alive = true;
+    getConnections()
+      .then(cs => { if (alive) setConnName(cs.find(c => c.id === agent.connection_id)?.name ?? agent.connection_id); })
+      .catch(() => { if (alive) setConnName(agent.connection_id); });
+    return () => { alive = false; };
+  }, [agent.connection_id]);
+  const grounding = [
+    connName ? `answers on ${connName}` : "answers on any connection",
+    agent.schema_scope ? `schema ${agent.schema_scope}` : "",
+    agent.doc_ids.length ? countNoun(agent.doc_ids.length, "document") : "",
+    agent.pack_ids.length ? countNoun(agent.pack_ids.length, "skill pack") : "",
+    agent.tool_grants.length ? `${countNoun(agent.tool_grants.length, "action grant")} (propose-only)` : "",
+  ].filter(Boolean).join(" · ");
 
   const togglePause = async () => {
     setBusy(true);
@@ -235,10 +259,9 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 14 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{agent.name}</div>
-          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}>
-            custom · {agent.connection_id || "any connection"}
-            {agent.schema_scope ? ` · ${agent.schema_scope}` : ""}
-            {agent.pack_ids.length > 0 ? ` · ${agent.pack_ids.length} pack${agent.pack_ids.length === 1 ? "" : "s"}` : ""}
+          <div style={{ fontSize: 11, color: "var(--t2)", marginTop: 2 }}
+            data-testid="agent-grounding">
+            {grounding}
           </div>
         </div>
         {(() => {
@@ -255,6 +278,12 @@ function AgentDetail({ agent, onChanged, onDeleted, onError, onOpenTrace,
         <Button variant="ghost" size="xs" disabled={busy} onClick={togglePause}>
           {agent.enabled ? "Pause" : "Resume"}
         </Button>
+        {/* PX-5 — the agent surface completed: this page could monitor and
+            benchmark the agent but not TALK to it. Chat leads. */}
+        {onChatWithAgent && (
+          <Button variant="default" size="xs" data-testid="agent-chat"
+            onClick={() => onChatWithAgent(agent.id)}>Chat</Button>
+        )}
         <Button variant={tab === "overview" ? "secondary" : "ghost"} size="xs"
           onClick={() => setTab("overview")}>Overview</Button>
         {/* DS-5 — "Map", not "Design": that word is the automation card's button and the

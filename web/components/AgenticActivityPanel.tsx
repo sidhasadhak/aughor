@@ -2,7 +2,7 @@
 
 /**
  * Agent Ops · Activity — one layer over one substrate (`session_events`), three zoom
- * levels: **Usage** (what the fleet spent, by model / call site / role), the live
+ * levels: **Usage** (what the agents spent, by model / call site / role), the live
  * **Stream**, and one **Run** reconstructed as a trace. Folded together because they are
  * the same rows at three magnifications, and every drill between them is a zoom rather
  * than a navigation — clicking a model in Usage lands in the Stream already filtered to it.
@@ -27,7 +27,7 @@ import { RunGraphsPanel } from "@/components/RunGraphsPanel";
 type Mode = "usage" | "stream" | "runs" | "phases";
 
 const MODE_BLURB: Record<Mode, string> = {
-  usage: "what the fleet spent, and on what",
+  usage: "what the agents spent, and on what",
   stream: "every event as it happens",
   // "Traces", not "Runs". Agent Ops already has a top-level Runs layer, so this
   // sub-tab was the second control labelled "Runs" in one header. It is also the

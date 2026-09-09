@@ -258,25 +258,6 @@ export async function rescopeContext(connectionId: string, keep: string[]): Prom
   return res.json();
 }
 
-/** Editable plan gate (P3): resume a paused investigation, keeping only the chosen
- * sub-questions. Returns the SSE Response so the caller can stream the resumed run. */
-export function resumeInvestigationPlan(invId: string, keepSubquestions: number[]): Promise<Response> {
-  return fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ feedback: "plan approved", keep_subquestions: keepSubquestions }),
-  });
-}
-
-/** Resume a clarify_pending pause with the metric reading the user chose (P4). */
-export function resumeInvestigationClarify(invId: string, clarifyChoice: string): Promise<Response> {
-  return fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ feedback: "clarify answered", clarify_choice: clarifyChoice }),
-  });
-}
-
 /** Reject a pending plan — cancel the paused investigation outright. */
 export async function cancelInvestigation(invId: string): Promise<void> {
   await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
@@ -536,40 +517,6 @@ export async function getConnectorTypes(): Promise<ConnectorTypeInfo[]> {
   if (!res.ok) return [];
   const data = await res.json();
   return data.types ?? [];
-}
-
-export async function createFederatedConnection(
-  name: string,
-  connectionIds: string[],
-): Promise<{ id: string; message: string; test_result: string }> {
-  const res = await fetch(`${getApiBase()}/connections/federate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, connection_ids: connectionIds }),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail ?? "Federation failed");
-  }
-  return res.json();
-}
-
-export async function triggerSync(
-  connId: string,
-  incremental = true,
-): Promise<{ message: string }> {
-  const res = await fetch(
-    `${getApiBase()}/connections/${encodeURIComponent(connId)}/sync?incremental=${incremental}`,
-    { method: "POST" },
-  );
-  if (!res.ok) throw new Error("Sync trigger failed");
-  return res.json();
-}
-
-export async function getSyncStatus(connId: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/sync-status`);
-  if (!res.ok) return {};
-  return res.json();
 }
 
 export interface ImportOptions {
@@ -898,23 +845,9 @@ export async function getCatalogTree(workspaceId?: string): Promise<CatalogTree>
   return res.json();
 }
 
-export async function getSchema(id: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/connections/${id}/schema`);
-  if (!res.ok) throw new Error("Failed to fetch schema");
-  const data = await res.json();
-  return data.schema as string;
-}
-
 export async function refreshSchemaCache(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/connections/${id}/schema/refresh`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh schema cache");
-}
-
-export async function getSchemaDiagram(id: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/connections/${id}/schema/mermaid`);
-  if (!res.ok) throw new Error("Failed to fetch schema diagram");
-  const data = await res.json();
-  return data.diagram as string;
 }
 
 // ── Metrics Catalog ───────────────────────────────────────────────────────────
@@ -1244,6 +1177,10 @@ export interface OntologyMetric {
   unit: string;
   tables: string[];
   known_divergent_calculations: string[];
+  /** M24c self-validation: the formula was EXECUTED against the live database.
+   *  Unverified formulas are demoted — never injected as an exact expression.
+   *  The backend has always sent this; the type omitted it (PX-5 renders it loud). */
+  verified: boolean;
 }
 
 export interface OntologyGraph {
@@ -3021,13 +2958,6 @@ export async function deleteCanvas(id: string): Promise<void> {
   await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function getCanvasSchema(id: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/schema`);
-  if (!res.ok) throw new Error("Failed to fetch canvas schema");
-  const data = await res.json();
-  return (data as { schema: string }).schema;
-}
-
 /** A document pinned to a canvas. `missing` marks a binding whose document has since
  *  been deleted — reported rather than dropped, because a pin that silently vanishes
  *  is how a workspace loses its context without anyone noticing. */
@@ -3068,19 +2998,6 @@ export async function getCanvasArtifacts(canvasId: string): Promise<CanvasArtifa
   if (!res.ok) throw new Error("Failed to fetch artifacts");
   const data = await res.json();
   return data.artifacts ?? [];
-}
-
-export async function createCanvasArtifact(
-  canvasId: string,
-  payload: Omit<CanvasArtifact, "id" | "canvas_id" | "created_at">,
-): Promise<CanvasArtifact> {
-  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to create artifact");
-  return res.json();
 }
 
 export async function deleteCanvasArtifact(canvasId: string, artifactId: string): Promise<void> {
@@ -3134,13 +3051,6 @@ export async function editPlaybookRecommendation(id: string, recommendation: str
 export async function deleteInvestigation(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to remove history item");
-}
-
-export async function getCanvasRecents(id: string, limit = 10): Promise<Array<{ question: string; status: string; created_at: string }>> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/recents?limit=${limit}`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data as { recents: Array<{ question: string; status: string; created_at: string }> }).recents ?? [];
 }
 
 // ── M3 / M11 — Direct Query Runner ───────────────────────────────────────────
@@ -3351,26 +3261,6 @@ export interface BuildSqlFilter {
   col: string;
   op: string;
   val: string;
-}
-
-export async function buildQuerySql(params: {
-  table: string;
-  dimensions: string[];
-  measures: BuildSqlMeasure[];
-  filters: BuildSqlFilter[];
-  order_by: string;
-  limit: number;
-}): Promise<{ sql: string }> {
-  const res = await fetch(`${getApiBase()}/query/build-sql`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "SQL build failed");
-  }
-  return res.json();
 }
 
 // Query Builder Layer-3 — reverse-compile raw SQL into the builder's chips.
@@ -3609,12 +3499,6 @@ export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired
   return res.json();
 }
 
-export async function getMonitorAlerts(monitorId: string, limit = 50): Promise<MonitorAlert[]> {
-  const res = await fetch(`${getApiBase()}/monitors/${monitorId}/alerts?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to fetch alerts");
-  return res.json();
-}
-
 export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
   const qs = new URLSearchParams();
   if (connId) qs.set("conn_id", connId);
@@ -3628,12 +3512,6 @@ export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: s
 export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
   const res = await fetch(`${getApiBase()}/alerts/${alertId}/acknowledge`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to acknowledge alert");
-  return res.json();
-}
-
-export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
-  const res = await fetch(`${getApiBase()}/monitors/digest?conn_id=${connId}&period=${period}`);
-  if (!res.ok) throw new Error("Failed to fetch digest");
   return res.json();
 }
 
@@ -3783,25 +3661,6 @@ export interface Component {
   exposable_as_tool: boolean;
   /** The module that governs using this component — the registry's law, on the wire. */
   governed_by: string;
-}
-
-/** The whole roster, or one family of it, or whatever matches a word. */
-export async function getComponents(
-  opts: { connId?: string; family?: ComponentFamily; q?: string } = {},
-): Promise<{ components: Component[]; total: number; byFamily: Record<string, number> }> {
-  const p = new URLSearchParams();
-  if (opts.connId) p.set("conn_id", opts.connId);
-  if (opts.family) p.set("family", opts.family);
-  if (opts.q) p.set("q", opts.q);
-  const qs = p.toString();
-  const res = await fetch(`${getApiBase()}/components${qs ? `?${qs}` : ""}`);
-  if (!res.ok) throw new Error(`components: ${res.status}`);
-  const body = await res.json();
-  return {
-    components: (body.components ?? []) as Component[],
-    total: (body.total ?? 0) as number,
-    byFamily: (body.by_family ?? {}) as Record<string, number>,
-  };
 }
 
 export interface AutomationPaletteEntry {
@@ -4649,14 +4508,6 @@ export async function dryRunAutomationDraft(
   return parsed;
 }
 
-/** Preview a STORED automation, exactly as it sits. */
-export async function dryRunAutomation(id: string): Promise<AutomationDryRun> {
-  const res = await fetch(`${getApiBase()}/automations/${id}/dry-run`, { method: "POST" });
-  const parsed = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
-  return parsed;
-}
-
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {
   const qs = run ? `?run=${encodeURIComponent(run)}` : "";
   const res = await fetch(`${getApiBase()}/automations/${id}/graph${qs}`);
@@ -5325,12 +5176,6 @@ export async function restartExplorer(connectionId: string): Promise<{ ok: boole
   return res.json();
 }
 
-export async function resetExplorer(connectionId: string): Promise<{ ok: boolean; reset: boolean }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/reset`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to reset explorer");
-  return res.json();
-}
-
 export async function triggerDomainIntelligence(connectionId: string): Promise<{
   ok: boolean;
   reason?: string;
@@ -5464,12 +5309,6 @@ export async function getJobs(params?: { state?: string; conn_id?: string; kind?
   return res.json();
 }
 
-export async function getJobLogs(jobId: string): Promise<{ seq: number; at: string; kind: string; payload: unknown }[]> {
-  const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/logs`);
-  if (!res.ok) return [];
-  return res.json();
-}
-
 export async function cancelJob(jobId: string): Promise<{ job_id: string; cancelled: boolean }> {
   const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
   if (!res.ok) return { job_id: jobId, cancelled: false };
@@ -5584,16 +5423,6 @@ export async function groundBriefingNumber(
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { detail?: string }).detail ?? "Grounding failed");
   }
-  return res.json();
-}
-
-/** K3-wide Trust Receipt for a chat or deep-analysis answer (404 if it predates receipts).
- *  `kind` is a ROUTE SEGMENT — the `/ada/` path is a wire name, frozen. */
-export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id: string): Promise<InsightReceipt | null> {
-  const res = await fetch(
-    `${getApiBase()}/${kind}/${encodeURIComponent(connId)}/${encodeURIComponent(id)}/receipt`,
-  );
-  if (!res.ok) return null;
   return res.json();
 }
 
@@ -5902,14 +5731,6 @@ export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
 export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
   const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-/** Set a capability's tri-state — "auto" clears the override so it follows the Auto-mode master. */
-export async function setCapabilityState(name: string, state: CapabilityState): Promise<SystemFlag | null> {
-  const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }),
   });
   if (!res.ok) return null;
   return res.json();
@@ -6984,22 +6805,6 @@ export async function getTrace(traceId: string): Promise<TraceDetail | null> {
 export type ActivityResponse =
   | { measured: true; recording: boolean; events: SessionEvent[]; kinds: Record<string, number> };
 
-export async function getActivity(params?: {
-  kind?: string; agent_id?: string; conn_id?: string; errors_only?: boolean;
-  since_seq?: number; limit?: number;
-}): Promise<ActivityResponse> {
-  const qs = new URLSearchParams();
-  if (params?.kind) qs.set("kind", params.kind);
-  if (params?.agent_id) qs.set("agent_id", params.agent_id);
-  if (params?.conn_id) qs.set("conn_id", params.conn_id);
-  if (params?.errors_only) qs.set("errors_only", "true");
-  if (params?.since_seq != null) qs.set("since_seq", String(params.since_seq));
-  if (params?.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${getApiBase()}/activity?${qs.toString()}`);
-  if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
-  return res.json();
-}
-
 export interface FleetTiles {
   active_jobs: number;
   window_minutes: number;
@@ -7211,12 +7016,6 @@ export async function listAgentAlertRules(enabledOnly = false): Promise<AgentAle
   return (await res.json()).rules;
 }
 
-export async function listAgentAlertEvents(limit = 100): Promise<AgentAlertEvent[]> {
-  const res = await fetch(`${getApiBase()}/obs/agent-alerts/events?limit=${limit}`);
-  if (!res.ok) throw new Error(`Failed to fetch agent alerts (${res.status})`);
-  return (await res.json()).events;
-}
-
 /** The metric vocabulary, from the server. Never hardcoded here: a picker that offers a
  *  metric the backend cannot measure is a control that silently does nothing. */
 export async function getAgentAlertVocabulary(): Promise<{ metrics: string[]; comparators: string[] }> {
@@ -7350,18 +7149,6 @@ export async function getActivityEvents(params?: {
   const res = await fetch(`${getApiBase()}/activity?${qs}`);
   if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
   return res.json();
-}
-
-export async function getAllAutomationRuns(params?: {
-  conn_id?: string; limit?: number;
-}): Promise<AutomationRun[]> {
-  const qs = new URLSearchParams();
-  if (params?.conn_id) qs.set("conn_id", params.conn_id);
-  if (params?.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${getApiBase()}/automations/runs?${qs.toString()}`);
-  if (res.status === 404) return []; // automations.engine off
-  if (!res.ok) throw new Error(`Failed to fetch automation runs (${res.status})`);
-  return (await res.json()).runs;
 }
 
 export interface InvestigationGraph {
@@ -7499,5 +7286,568 @@ export async function getTraceLogs(traceId: string, limit = 200): Promise<TraceL
   const res = await fetch(
     `${getApiBase()}/traces/${encodeURIComponent(traceId)}/logs?limit=${limit}`);
   if (!res.ok) throw new Error(`Failed to fetch trace logs (${res.status})`);
+  return res.json();
+}
+
+// ── PX-3 · the intake lane (KI-1…4) ────────────────────────────────────────
+// Upload declared knowledge → a per-object PLAN against the live stores → human
+// verdicts → each accept applies through the target store's own governance.
+// Nothing auto-applies; identical objects arrive as `noop` and need no decision.
+
+export interface IntakeBundle {
+  id: string;
+  content_hash: string;
+  connection_id: string;
+  source: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export type IntakeVerdict = "new" | "changed" | "identical" | "conflict";
+export type IntakeStatus = "pending" | "accepted" | "dismissed" | "noop";
+
+export interface IntakeCandidate {
+  id: string;
+  bundle_id: string;
+  kind: string; // metric | synonym | glossary | rule | join | definition | trusted_query | pack
+  verdict: IntakeVerdict;
+  detail: string;
+  payload: Record<string, unknown>;
+  status: IntakeStatus;
+  resolved_by: string;
+  resolved_at: string;
+  edited_payload: Record<string, unknown> | null;
+  target_ref: string;
+  apply_result: Record<string, unknown> | null;
+}
+
+export interface IntakeSummary {
+  new: number;
+  changed: number;
+  identical: number;
+  conflict: number;
+}
+
+export interface IntakePlan {
+  bundle: IntakeBundle;
+  summary: IntakeSummary;
+  candidates: IntakeCandidate[];
+}
+
+/** Result of any staging door (bundle / file / sheet / prose / suggest). */
+export interface IntakeStageResult extends IntakePlan {
+  duplicate: boolean;
+  refused: string[];
+  mapped?: { file?: string; sheet?: string; ignored_headers: string[] };
+}
+
+async function intakeError(res: Response): Promise<never> {
+  const text = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(text)?.detail;
+    if (detail) throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+  }
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+export async function listIntakeBundles(connectionId = ""): Promise<IntakeBundle[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/intake/bundles${q}`);
+  if (!res.ok) await intakeError(res);
+  return (await res.json()).bundles;
+}
+
+export async function getIntakePlan(bundleId: string): Promise<IntakePlan> {
+  const res = await fetch(`${getApiBase()}/intake/bundles/${encodeURIComponent(bundleId)}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeBundleYaml(args: {
+  yaml_text: string; connection_id: string; actor: string; source?: string;
+}): Promise<IntakeStageResult> {
+  const res = await fetch(`${getApiBase()}/intake/bundles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor: args.actor, source: args.source ?? "",
+      connection_id: args.connection_id, yaml_text: args.yaml_text }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeFile(
+  file: File, connectionId: string, actor: string, source = "",
+): Promise<IntakeStageResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("connection_id", connectionId);
+  form.append("actor", actor);
+  form.append("source", source);
+  const res = await fetch(`${getApiBase()}/intake/files`, { method: "POST", body: form });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeSheet(args: {
+  spreadsheet: string; sheet?: string; connection_id: string; actor: string; source?: string;
+}): Promise<IntakeStageResult> {
+  const res = await fetch(`${getApiBase()}/intake/sheets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ spreadsheet: args.spreadsheet, sheet: args.sheet ?? "",
+      connection_id: args.connection_id, actor: args.actor, source: args.source ?? "" }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeSuggestResult extends Partial<IntakeStageResult> {
+  staged: boolean;
+  mined_at: string;
+  populations: Record<string, number>;
+  unresolved: unknown[];
+  note?: string;
+}
+
+/** Deterministic usage mining — validated runs → trusted-query proposals,
+ *  recurring guard fires → rule proposals. No model call. */
+export async function mineIntakeUsage(
+  connectionId: string, actor: string,
+): Promise<IntakeSuggestResult> {
+  const res = await fetch(`${getApiBase()}/intake/suggest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, actor }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeMapperStats {
+  candidates: number;
+  pending: number;
+  dismissed: number;
+  accepted_clean: number;
+  accepted_edited: number;
+  noop: number;
+  edit_rate: number | null;
+  threshold: number;
+}
+
+export interface IntakeProseResult extends Partial<IntakeStageResult> {
+  staged?: boolean;
+  mined_at: string;
+  note?: string;
+  mapper_stats: IntakeMapperStats;
+}
+
+/** The LLM prose mapper — the lane's ONE explicit model-spending door. */
+export async function uploadIntakeProse(args: {
+  connection_id: string; actor: string; text: string; source?: string;
+}): Promise<IntakeProseResult> {
+  const res = await fetch(`${getApiBase()}/intake/prose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: args.connection_id, actor: args.actor,
+      text: args.text, source: args.source ?? "" }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function getIntakeMapperStats(bundleId = ""): Promise<IntakeMapperStats> {
+  const q = bundleId ? `?bundle_id=${encodeURIComponent(bundleId)}` : "";
+  const res = await fetch(`${getApiBase()}/intake/mapper-stats${q}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeResolveOutcome {
+  id: string;
+  outcome: "accepted" | "dismissed" | "skipped" | "error";
+  reason?: string;
+  target_ref?: string;
+  [k: string]: unknown;
+}
+
+export interface IntakeResolveResult {
+  bundle: string;
+  accepted: number;
+  dismissed: number;
+  errors: number;
+  results: IntakeResolveOutcome[];
+}
+
+/** The human verdicts. Accepted candidates apply immediately through each target
+ *  store's own governance; a failed apply STAYS PENDING with the error attached. */
+export async function resolveIntakeBundle(bundleId: string, args: {
+  actor: string; accept?: string[]; dismiss?: string[];
+  edits?: Record<string, Record<string, unknown>>;
+}): Promise<IntakeResolveResult> {
+  const res = await fetch(
+    `${getApiBase()}/intake/bundles/${encodeURIComponent(bundleId)}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: args.actor, accept: args.accept ?? [],
+        dismiss: args.dismiss ?? [], edits: args.edits ?? {} }),
+    });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeExport {
+  bundle: Record<string, unknown>;
+  yaml_text: string;
+}
+
+/** This deployment's declared knowledge as a re-importable bundle. */
+export async function exportIntakeBundle(connectionId: string): Promise<IntakeExport> {
+  const res = await fetch(
+    `${getApiBase()}/intake/export/${encodeURIComponent(connectionId)}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+// ── PX-2 · the governed-spend cockpit ──────────────────────────────────────
+// Caps (G4's store, formless until now), the usage rollup, per-model health,
+// the route mix, and the cross-cutting governance feed.
+
+export interface UsageCap {
+  scope: string;          // org | user
+  subject: string;        // "*" or a user id
+  metric: string;         // calls | total_tokens | cost_usd
+  limit: number;
+  window_hours: number;
+  action: string;         // alert | block
+  set_by?: string;
+  set_at?: string;
+  /** The metric's measured value over this cap's own window — served with the list. */
+  observed?: number | null;
+}
+
+export interface UsageCapsResponse {
+  caps: UsageCap[];
+  scopes: string[];
+  metrics: string[];
+  actions: string[];
+}
+
+export async function getUsageCaps(): Promise<UsageCapsResponse> {
+  const res = await fetch(`${getApiBase()}/governance/caps`);
+  if (!res.ok) throw new Error(`Failed to fetch caps (${res.status})`);
+  return res.json();
+}
+
+export async function putUsageCap(cap: {
+  scope: string; subject?: string; metric: string; limit: number;
+  window_hours?: number; action?: string;
+}): Promise<UsageCap> {
+  const res = await fetch(`${getApiBase()}/governance/caps`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(cap),
+  });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function deleteUsageCap(cap: {
+  scope: string; metric: string; subject?: string; window_hours?: number;
+}): Promise<void> {
+  const q = new URLSearchParams({ scope: cap.scope, metric: cap.metric,
+    subject: cap.subject ?? "*", window_hours: String(cap.window_hours ?? 24) });
+  const res = await fetch(`${getApiBase()}/governance/caps?${q}`, { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+}
+
+export interface UsageRow {
+  calls: number;
+  failures: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  calls_without_usage: number;
+  unpriced_calls: number;
+  cost_usd: number;
+  cost_is_complete: boolean;
+  mean_ms: number;
+  failure_rate: number;
+  [axis: string]: unknown;   // the grouping axes ride the row (provider, model, …)
+}
+
+export interface UsageReport {
+  axes: string[];
+  total_calls: number;
+  rows: UsageRow[];
+  unattributed: Record<string, number>;
+  [k: string]: unknown;
+}
+
+export async function getUsageReport(by = "provider,model"): Promise<UsageReport> {
+  const res = await fetch(`${getApiBase()}/usage?by=${encodeURIComponent(by)}`);
+  if (!res.ok) throw new Error(`Failed to fetch usage (${res.status})`);
+  return res.json();
+}
+
+export async function getCostSql(): Promise<{ sql: string; table: string; kind: string }> {
+  const res = await fetch(`${getApiBase()}/usage/cost-sql`);
+  if (!res.ok) throw new Error(`Failed to fetch the cost query (${res.status})`);
+  return res.json();
+}
+
+export interface AuditFeedEvent {
+  category: string;
+  kind: string;
+  at: string;
+  actor: string;
+  org_id: string;
+  conn_id: string;
+  summary: string;
+  detail: Record<string, unknown>;
+}
+
+export async function getAuditFeed(category = "", limit = 100): Promise<{
+  categories: string[]; category: string | null; count: number; events: AuditFeedEvent[];
+}> {
+  const q = new URLSearchParams();
+  if (category) q.set("category", category);
+  q.set("limit", String(limit));
+  const res = await fetch(`${getApiBase()}/audit/feed?${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch the governance feed (${res.status})`);
+  return res.json();
+}
+
+export interface ModelUsageRow {
+  provider: string;
+  model: string;
+  calls: number;
+  failures: number;
+  total_tokens: number;
+  calls_without_usage: number;
+  retried_calls: number;
+  [k: string]: unknown;
+}
+
+export async function getModelUsage(): Promise<{ models: ModelUsageRow[] }> {
+  const res = await fetch(`${getApiBase()}/obs/model-usage`);
+  if (!res.ok) throw new Error(`Failed to fetch model usage (${res.status})`);
+  return res.json();
+}
+
+export async function getRouteMix(): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getApiBase()}/obs/route-mix`);
+  if (!res.ok) throw new Error(`Failed to fetch route mix (${res.status})`);
+  return res.json();
+}
+
+// ── PX-4 · the learning write half + graduation evidence ───────────────────
+
+export interface TrustedQueryRow {
+  id: string;
+  connection_id: string;
+  question: string;
+  sql: string;
+  tables: string[];
+  note: string;
+  tags: string[];
+  status: string;        // draft | proposed | approved | deprecated
+  version: number;
+  proposed_by?: string;
+  verified_by?: string;
+  verified_at?: string;
+  verification?: Record<string, unknown> | null;
+  [k: string]: unknown;
+}
+
+export async function listTrustedQueries(connectionId = ""): Promise<TrustedQueryRow[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/learning/trusted${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch trusted queries (${res.status})`);
+  return (await res.json()).queries;
+}
+
+async function learningError(res: Response): Promise<never> {
+  const text = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(text)?.detail;
+    if (detail) {
+      throw new Error(typeof detail === "string" ? detail
+        : String(detail.message ?? JSON.stringify(detail)));
+    }
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+  }
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+/** Seed one trusted query — verified NOW (executed + guard battery). Passing lands
+ *  `proposed`; failing lands `draft` with the report. Approval is a separate act. */
+export async function createTrustedQuery(body: {
+  connection_id: string; question: string; sql: string; actor: string;
+  tables?: string[]; note?: string; tags?: string[];
+}): Promise<Record<string, unknown>> {
+  const res = await fetch(`${getApiBase()}/learning/trusted`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ tables: [], note: "", tags: [], source: "api", ...body }),
+  });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+/** Edit re-verifies and RESETS the lifecycle — an approval covers what it approved. */
+export async function editTrustedQuery(id: string, body: {
+  actor: string; question?: string; sql?: string; tables?: string[];
+  note?: string; tags?: string[];
+}): Promise<{ trusted_query: TrustedQueryRow; verification: Record<string, unknown> }> {
+  const res = await fetch(`${getApiBase()}/learning/trusted/${encodeURIComponent(id)}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+/** propose | approve | reject | deprecate. `propose` re-verifies first and refuses
+ *  (409, report attached) when verification fails. `approve` is what makes the entry
+ *  prompt-authoritative. */
+export async function transitionTrustedQuery(id: string, action: string, actor: string):
+  Promise<{ trusted_query: TrustedQueryRow; audit: Record<string, unknown> }> {
+  const res = await fetch(
+    `${getApiBase()}/learning/trusted/${encodeURIComponent(id)}/transition`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, actor }),
+    });
+  if (!res.ok) await learningError(res);
+  return res.json();
+}
+
+export async function deleteTrustedQuery(id: string, actor: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/learning/trusted/${encodeURIComponent(id)}?actor=${encodeURIComponent(actor)}`,
+    { method: "DELETE" });
+  if (!res.ok) await learningError(res);
+}
+
+export interface LearningDatasetDetail {
+  found: boolean;
+  name?: string;
+  dataset?: Record<string, unknown>;
+  lineage?: Record<string, unknown>[];
+}
+
+export async function getLearningDataset(name: string): Promise<LearningDatasetDetail> {
+  const res = await fetch(`${getApiBase()}/learning/datasets/${encodeURIComponent(name)}`);
+  if (!res.ok) throw new Error(`Failed to fetch dataset (${res.status})`);
+  return res.json();
+}
+
+export interface EvalGraduation {
+  flag: string;
+  can_graduate: boolean;
+  pass_rate: number | null;
+  baseline_pass_rate: number | null;
+  bar: number | null;
+  reasons: string[];
+  run_id: string;
+  suite_id: string;
+  current_default: boolean;
+  already_default_on: boolean;
+  id?: string;
+  decided_at?: string;
+  [k: string]: unknown;
+}
+
+export async function getEvalGraduations(flag = ""): Promise<EvalGraduation[]> {
+  const q = flag ? `?flag=${encodeURIComponent(flag)}` : "";
+  const res = await fetch(`${getApiBase()}/evals/graduations${q}`);
+  if (!res.ok) throw new Error(`Failed to fetch graduations (${res.status})`);
+  return (await res.json()).graduations;
+}
+
+// ── PX-6 · the ontology's human-edit doors ─────────────────────────────────
+// Overrides could be APPLIED but never listed or reverted; routing proposals had
+// a review queue with no inbox; export/import existed for version control with
+// no button. These are those endpoints' clients.
+
+export interface OntologyOverrideRow {
+  target_kind: string;
+  target_id: string;
+  fields: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+function ontoScope(connectionId: string, schemaName?: string): string {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  return q.toString();
+}
+
+export async function listOntologyOverrides(
+  connectionId: string, schemaName?: string,
+): Promise<OntologyOverrideRow[]> {
+  const res = await fetch(`${getApiBase()}/ontology/overrides?${ontoScope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(`Failed to list overrides (${res.status})`);
+  return (await res.json()).overrides;
+}
+
+/** Revert one human override; the auto-derived value returns on the next read. */
+export async function deleteOntologyOverride(
+  kind: string, targetId: string, connectionId: string, schemaName?: string,
+): Promise<{ removed: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/overrides/${encodeURIComponent(kind)}/${targetId}?${ontoScope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export interface RoutingProposal {
+  entity_id?: string;
+  target_id?: string;
+  [k: string]: unknown;
+}
+
+export async function listRoutingProposals(
+  connectionId: string, schemaName?: string,
+): Promise<RoutingProposal[]> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/routing-proposals?${ontoScope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(`Failed to list routing proposals (${res.status})`);
+  return (await res.json()).proposals;
+}
+
+/** The ONLY path from proposed to enforced — the human click. Refuses a proposal
+ *  whose table did not existence-bind. */
+export async function acceptRoutingProposal(
+  entityId: string, connectionId: string, schemaName?: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/routing-proposal/accept?${ontoScope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function exportOntologyTree(
+  connectionId: string, schemaName?: string,
+): Promise<{ root: string; files: number }> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/export?${ontoScope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function importOntologyTree(
+  connectionId: string, schemaName?: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/import?${ontoScope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
   return res.json();
 }

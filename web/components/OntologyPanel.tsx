@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
+import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import { Button }      from "@/components/ui/button";
 import {
   getOntology,
@@ -33,7 +34,7 @@ import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
-import { verbLabel, formatCount, formatTimestamp } from "@/lib/format";
+import { verbLabel, formatCount, formatTimestamp, countNoun } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
@@ -485,9 +486,23 @@ function EntityDetailDrawer({
             ) : (
               metrics.map(m => (
                 <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-[var(--r3)] p-3 space-y-2">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-xs font-semibold text-zinc-200">{m.display_name}</p>
                     {m.unit && <span className="aug-fs-xs text-zinc-500">{m.unit}</span>}
+                    {/* PX-5 — verification is the loudest fact on the card, not a line
+                        buried in the provenance drawer. A verified formula EXECUTED
+                        against this database; an unverified one is demoted and never
+                        injected as an exact expression. */}
+                    {m.verified ? (
+                      <span className="aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5 text-emerald-300 border-emerald-700/50">
+                        ✓ executed against your database
+                      </span>
+                    ) : (
+                      <span className="aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5 text-amber-300 border-amber-700/50"
+                        title="Never injected as an exact expression until a run verifies it.">
+                        unverified — demoted
+                      </span>
+                    )}
                     <Button variant="ghost" size="xs" className="ml-auto"
                       onClick={() => setProvFor(provFor === m.id ? null : m.id)}>
                       {provFor === m.id ? "Hide provenance" : "Whose definition?"}
@@ -918,7 +933,7 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
         {clusters?.map((c, i) => (
           <div key={i} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="aug-fs-xs text-violet-300">{c.entities.length} entities</span>
+              <span className="aug-fs-xs text-violet-300">{countNoun(c.entities.length, "entity", "entities")}</span>
               <span className="aug-fs-xs text-zinc-500">similarity {Math.round(c.similarity * 100)}%</span>
             </div>
             <ul className="space-y-0.5">
@@ -1168,6 +1183,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [showDuplicates,    setShowDuplicates]   = useState(false);
   const [showSkills,        setShowSkills]        = useState(false);
   const [showProposals,     setShowProposals]     = useState(false);
+  // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
+  const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
@@ -1237,8 +1254,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             </span>
           )}
           <span className="aug-fs-xs text-zinc-500">
-            {Object.keys(graph.entities).length} entities
-            · {Object.keys(graph.relationships).length} relationships
+            {countNoun(Object.keys(graph.entities).length, "entity", "entities")}
+            {" · "}{countNoun(Object.keys(graph.relationships).length, "relationship")}
           </span>
           <button
             onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
@@ -1254,7 +1271,21 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           </button>
           <Button
             variant="outline" size="xs"
-            onClick={() => { setShowProposals(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); }}
+            onClick={() => { setShowOverrides(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
+            className={cn(
+              "aug-fs-xs",
+              showOverrides
+                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+            )}
+            title="Human overrides on this scope — list them, revert them; routing proposals; export/import"
+            data-testid="ontology-overrides-toggle"
+          >
+            Human edits
+          </Button>
+          <Button
+            variant="outline" size="xs"
+            onClick={() => { setShowProposals(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowOverrides(false); }}
             className={cn(
               "aug-fs-xs",
               showProposals
@@ -1407,6 +1438,11 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         )}
         {showProposals && (
           <ProposalsDrawer connId={selectedConnId} onClose={() => setShowProposals(false)} />
+        )}
+        {showOverrides && (
+          <OverridesDrawer connId={selectedConnId} schema={schema}
+            onClose={() => setShowOverrides(false)}
+            onChanged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }} />
         )}
       </div>
     </div>
