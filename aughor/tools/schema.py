@@ -59,6 +59,10 @@ _NON_KEY_ROOTS = frozenset({
     "code", "description", "category", "country", "region", "city", "state",
     "amount", "price", "cost", "total", "count", "rate", "ratio", "percent",
     "flag", "label", "title", "note", "comment", "address", "phone",
+    # Geo/address roots: `postal_code`, `zip_code` and friends root to a key-shaped
+    # token but name no entity, so two tables carrying the same postcode column
+    # were being read as a foreign key.
+    "postal", "zip", "zipcode", "latitude", "longitude",
     "email", "url", "path", "size", "weight", "color", "colour",
     "gender", "age", "score", "rank", "level", "priority", "sequence",
     "value", "text", "number", "active", "enabled", "visible", "public",
@@ -94,15 +98,55 @@ def _table_base(t: str) -> str:
     return base.rstrip("s")
 
 
+def _names_root(table: str, rk: str) -> bool:
+    """True when this table's bare name IS the entity a key root refers to
+    (item→item, customer→customers, date→date_dim, cust→customer)."""
+    tb = _table_base(table)
+    return tb == rk or (len(rk) >= 4 and (tb.startswith(rk) or rk.startswith(tb)))
+
+
 def _find_dim_owner(root: str, entries: list[tuple[str, str]]) -> int | None:
-    """Index of the table that OWNS this key (the dimension), or None. The owner
-    is the table whose bare name matches the key root (item→item, customer→
-    customers, date→date_dim, cust→customer)."""
+    """Index of the table that OWNS this key (the dimension), or None.
+
+    Exact name match first. ``_names_root`` accepts a prefix so that ``cust``
+    finds ``customer``, but that also lets ``order_items`` answer to the root
+    ``order`` — and on theLook it did, ahead of ``orders``, which put the fact in
+    PK position and inverted the edge.
+    """
     rk = root.rstrip("s")
     for idx, (t, _c) in enumerate(entries):
-        tb = _table_base(t)
-        if tb == rk or (len(rk) >= 4 and (tb.startswith(rk) or rk.startswith(tb))):
+        if _table_base(t) == rk:
             return idx
+    for idx, (t, _c) in enumerate(entries):
+        if _names_root(t, rk):
+            return idx
+    return None
+
+
+#: Column names to try, in order, when locating a dimension's own primary key.
+def _dimension_pk(root: str, table_cols: dict[str, list[str]]) -> tuple[str, str] | None:
+    """The table a key root names, paired with that table's own primary key.
+
+    A dimension usually calls its key plain ``id`` — ``users.id``, ``products.id``
+    — and ``fk_root("id")`` is None, so the dimension never joined its own root's
+    candidate list. Every fact pointing AT it then had no owner to route to, and
+    the all-pairs fallback joined the facts to each other instead. Measured on
+    theLook: five inferred joins, all fact-to-fact, and nothing reaching
+    ``users.id`` or ``products.id``.
+
+    Resolving it by NAME rather than by column root is what closes that hole:
+    find the table the root refers to, then its most plausible key column.
+    """
+    rk = root.rstrip("s")
+    # Exact name match before prefix match, for the same reason `_find_dim_owner`
+    # does: `order_items` would otherwise answer to the root `order`.
+    ordered = ([t for t in table_cols if _table_base(t) == rk]
+               + [t for t in table_cols if _table_base(t) != rk and _names_root(t, rk)])
+    for table in ordered:
+        by_lower = {c.lower(): c for c in table_cols[table]}
+        for candidate in ("id", f"{root}_id", f"{rk}_id", f"{_table_base(table)}_id"):
+            if candidate in by_lower:
+                return table, by_lower[candidate]
     return None
 
 
@@ -154,6 +198,16 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
             if len(oroot) >= 3 and oroot not in _NON_KEY_ROOTS and oroot in entity_roots:
                 root_map.setdefault(oroot, []).append((table, col))
 
+    # Seat the dimension in its own root's candidate list. Appended LAST so that on
+    # the all-pairs fallback (fewer than three entries, no star routing) the fact
+    # still comes first and therefore still lands in FK position.
+    for root, entries in root_map.items():
+        if root not in key_roots or not entries:
+            continue
+        owner = _dimension_pk(root, table_cols)
+        if owner and owner[0] not in {t for t, _ in entries}:
+            entries.append(owner)
+
     joined_pairs: set[frozenset[str]] = set()
     joins: list[dict] = []
 
@@ -166,9 +220,27 @@ def _compute_join_map(table_cols: dict[str, list[str]]) -> dict:
         # Join each fact to the dimension (FK→PK), NOT fact-to-fact — otherwise
         # store_sales and catalog_sales get falsely joined just for both having
         # an item key. With no eponymous owner, fall back to all-pairs.
-        owner = _find_dim_owner(root, entries) if len(entries) >= 3 else None
+        # Route to the owner whenever one is identifiable, not only past three
+        # entries. With exactly two the edge is the same either way, but the
+        # direction is not: `orders.order_id` / `order_items.order_id` came out
+        # dimension-first purely because of dict order.
+        owner = _find_dim_owner(root, entries)
+        # A key root that names no table in this schema is a coincidence, not a
+        # foreign key — `postal_code` on two tables is the same postcode column
+        # twice. It matters beyond the bogus edge: the first join to claim a table
+        # PAIR blocks every later one, so `users`↔`events` on postal_code was
+        # suppressing the real `events.user_id → users.id`.
+        if is_key and owner is None and root in _NON_KEY_ROOTS:
+            continue
         if owner is not None:
-            pairs = [(owner, j) for j in range(len(entries)) if j != owner]
+            # Fact FIRST. Every consumer reads t1 as the FK side and t2 as the PK
+            # side — `build_rich_schema` marks is_fk on t1.c1 only, and the
+            # explorer's orphan probe asks which t1.c1 values are missing from
+            # t2.c2. Emitting the dimension as t1 inverted both: the dimension was
+            # badged FK, and verification asked which dimension rows were unused
+            # (a row nobody has ordered is not an orphan) so a healthy star schema
+            # failed its own join check.
+            pairs = [(j, owner) for j in range(len(entries)) if j != owner]
         else:
             pairs = [(i, j) for i in range(len(entries)) for j in range(i + 1, len(entries))]
         for a, b in pairs:
