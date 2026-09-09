@@ -11,6 +11,7 @@ figure by figure against the rendered pages: Berlin 98/104/70/65/73/79/66/61/65/
 Duesseldorf 59/59/27/39/27/20/39/41/27/20, Stuttgart 29/35/39/26/12/11/11/12/24/20.
 """
 import io
+import re
 
 import pytest
 
@@ -200,3 +201,90 @@ def test_a_document_with_no_charts_is_left_alone_and_never_raises():
     assert reconstruct(b"not a pdf at all") == []
     assert reconstruct(b"") == []
     assert as_markdown([]) == ""
+
+
+# ── Horizontal bars: the value shares a ROW with its label ────────────────────
+
+_RANKED_TOP = 120.0
+_RANKED_PITCH = 20.0
+
+
+def _ranked(at, entries, *, x_label=200.0, x_value=300.0, title="Pedestrians per year"):
+    """A ranked bar chart: labels right-aligned to the axis, values at the bar ends."""
+    at(x_label, _RANKED_TOP - 30, title)
+    for i, (label, value) in enumerate(entries):
+        top = _RANKED_TOP + i * _RANKED_PITCH
+        at(x_label, top, label, centred=False)          # right-aligned, as on an axis
+        at(x_value + i * 7, top, str(value))
+
+
+_STREETS = [("Munich | Kaufingerstrasse", "12,64"), ("Frankfurt | Zeil", "10,58"),
+            ("Hanover | Georgstrasse", "10,05"), ("Cologne | Schildergasse", "9,68"),
+            ("Stuttgart | Koenigstrasse", "9,21")]
+
+
+def test_a_ranked_list_is_read_from_its_rows():
+    """The transpose of a column chart. A horizontal bar's value sits at the END of its
+    bar, so it shares a row with its label and nothing lines up in x at all."""
+    chart = reconstruct(_page(lambda at: _ranked(at, _STREETS)))[0]
+
+    assert chart.categories[0] == "Munich | Kaufingerstrasse"
+    assert chart.values == ["12,64", "10,58", "10,05", "9,68", "9,21"]
+    assert chart.title == "Pedestrians per year"
+
+
+def test_a_pipe_inside_a_label_cannot_break_the_table():
+    """"Munich | Kaufingerstrasse" unescaped turns a two-column row into four. A table
+    that does not parse is worse than one not recovered — a table is the shape
+    everything downstream trusts."""
+    markdown = as_markdown(reconstruct(_page(lambda at: _ranked(at, _STREETS))))
+
+    for row in [ln for ln in markdown.splitlines()
+                if ln.startswith("|") and not ln.startswith("|---")]:
+        assert len(re.findall(r"(?<!\\)\|", row)) == 3, row
+
+
+def test_a_second_series_refuses_rather_than_returning_half_a_chart():
+    """A 2025 bar under a 2026 one leaves a figure with no words before it. Taking the
+    first and dropping the second yields a table that looks complete and is half."""
+    def draw(at):
+        _ranked(at, _STREETS)
+        at(305, _RANKED_TOP + 8, "11,90")        # a second bar, inside the chart
+
+    assert reconstruct(_page(draw)) == []
+
+
+def test_an_axis_that_repeats_its_unit_is_not_data():
+    """"0 Mio. 5 Mio. 10 Mio." pairs up perfectly and means nothing."""
+    def draw(at):
+        _ranked(at, _STREETS)
+        for i, v in enumerate(["0", "5", "10", "15"]):
+            at(240 + i * 60, _RANKED_TOP - 12, v)
+            at(255 + i * 60, _RANKED_TOP - 12, "Mio.")
+
+    assert reconstruct(_page(draw))[0].values == ["12,64", "10,58", "10,05", "9,68", "9,21"]
+
+
+def test_a_label_is_the_last_contiguous_run_of_words():
+    """The prime-rent bug. Another chart's list of streets runs across the same row; read
+    as one label it attaches "320 EUR/sqm" to a street that does not have it."""
+    def draw(at):
+        _ranked(at, [("Munich", "320"), ("Frankfurt", "295"), ("Duesseldorf", "285"),
+                     ("Hamburg", "235"), ("Cologne", "230")], x_label=600, x_value=700)
+        for i in range(5):                        # a different chart, same rows
+            at(120, _RANKED_TOP + i * _RANKED_PITCH, "Tauentzienstrasse", centred=False)
+
+    chart = reconstruct(_page(draw))[0]
+    assert chart.categories == ["Munich", "Frankfurt", "Duesseldorf", "Hamburg", "Cologne"]
+
+
+def test_a_gap_in_the_rows_refuses_the_ranking():
+    """A ranking with a row missing out of the middle reads as complete and is not."""
+    def draw(at):
+        at(200, _RANKED_TOP - 30, "Pedestrians per year")
+        for i, (label, value) in enumerate(_STREETS):
+            top = _RANKED_TOP + i * _RANKED_PITCH + (60 if i >= 3 else 0)   # a hole
+            at(200, top, label, centred=False)
+            at(300 + i * 7, top, str(value))
+
+    assert reconstruct(_page(draw)) == []
