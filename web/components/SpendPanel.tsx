@@ -66,7 +66,7 @@ function CapMeter({ cap }: { cap: UsageCap }) {
   );
 }
 
-function CapsSection() {
+function CapsSection({ onCount }: { onCount: (n: number) => void }) {
   const [caps, setCaps] = useState<UsageCap[]>([]);
   const [vocab, setVocab] = useState<{ scopes: string[]; metrics: string[]; actions: string[] }>({ scopes: [], metrics: [], actions: [] });
   const [loaded, setLoaded] = useState(false);
@@ -80,10 +80,11 @@ function CapsSection() {
       const r = await getUsageCaps();
       setCaps(r.caps);
       setVocab({ scopes: r.scopes, metrics: r.metrics, actions: r.actions });
+      onCount(r.caps.length);
       setErr("");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setLoaded(true); }
-  }, []);
+  }, [onCount]);
   useEffect(() => { load(); }, [load]);
 
   async function declare() {
@@ -114,16 +115,12 @@ function CapsSection() {
 
   return (
     <>
-      <SectionTitle sub="a cap without its measurement is just a wish — each row shows its metric, observed over its own window">
+      {/* The headline already says how many caps there are; this says what a row of
+          one means. The empty state moved into the form's own line below — a centred
+          block of prose above an empty list was two paragraphs to say "none". */}
+      <SectionTitle sub="each row shows its metric, observed over its own window">
         Usage caps
       </SectionTitle>
-      {loaded && caps.length === 0 && (
-        <EmptyState variant="inline"
-          title="No caps declared — every model call is currently uncapped.">
-          Declare one below: “alert” records a breach in the governance feed; “block”
-          refuses new work with a sentence that names the number.
-        </EmptyState>
-      )}
       {caps.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {caps.map((c, i) => (
@@ -181,6 +178,12 @@ function CapsSection() {
         <Button size="sm" disabled={busy || !form.limit.trim()} onClick={declare} data-testid="cap-declare">
           Declare the cap
         </Button>
+        {loaded && caps.length === 0 && (
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", flexBasis: "100%" }}>
+            “alert” records a breach in the governance feed; “block” refuses new work with
+            a sentence that names the number.
+          </span>
+        )}
       </div>
       {err && <p className="aug-fs-xs" style={{ color: "var(--red4)", margin: "6px 0 0" }}>{err}</p>}
     </>
@@ -189,36 +192,22 @@ function CapsSection() {
 
 // ── Usage & model health ─────────────────────────────────────────────────────
 
-function UsageSection() {
-  const [report, setReport] = useState<UsageReport | null>(null);
-  const [models, setModels] = useState<ModelUsageRow[]>([]);
+function UsageSection({ report, models }: { report: UsageReport | null; models: ModelUsageRow[] }) {
   const [share, setShare] = useState<number | null | undefined>(undefined);
-  const [err, setErr] = useState("");
 
   useEffect(() => {
-    getUsageReport("provider,model").then(setReport)
-      .catch(e => setErr(e instanceof Error ? e.message : String(e)));
-    getModelUsage().then(r => setModels(r.models)).catch(() => setModels([]));
     getRouteMix().then(r => setShare((r as { converse_share?: number | null }).converse_share))
       .catch(() => setShare(undefined));
   }, []);
 
-  const totals = useMemo(() => {
-    if (!report) return null;
-    let cost = 0, unpriced = 0, tokens = 0;
-    for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; tokens += r.total_tokens; }
-    return { cost, unpriced, tokens };
-  }, [report]);
-
-  if (err) return <p className="aug-fs-sm" style={{ color: "var(--red4)" }}>{err}</p>;
   if (!report) return <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Reading the usage rollup…</p>;
 
   const rows = [...report.rows].sort((a, b) => b.total_tokens - a.total_tokens).slice(0, 20);
   return (
     <>
-      <SectionTitle sub={totals && totals.unpriced > 0
-        ? `${money(totals.cost)} across ${countNoun(report.total_calls, "call")} — a floor, not a total: ${countNoun(totals.unpriced, "call")} carry no declared price`
-        : totals ? `${money(totals.cost)} across ${countNoun(report.total_calls, "call")}` : undefined}>
+      {/* The totals moved up into the headline — repeating them here was the same
+          sentence twice on one screen. */}
+      <SectionTitle sub="the twenty models that moved the most tokens">
         Usage by provider &amp; model
       </SectionTitle>
       {typeof share === "number" && (
@@ -497,7 +486,7 @@ function CostSqlSection() {
     <div style={{ marginTop: 18 }}>
       <Button size="xs" variant="ghost" onClick={() => setOpen(o => !o)}>
         <Icon name={open ? "chevd" : "chevr"} size={12} />
-        The cost query — the same SQL this page's numbers come from
+        The cost query — the same SQL this page&rsquo;s numbers come from
       </Button>
       {open && (
         <div style={{ marginTop: 6 }}>
@@ -513,17 +502,74 @@ function CostSqlSection() {
   );
 }
 
-export function SpendPanel() {
+/** One figure and what it means. The headline is numbers, not prose. */
+function Headline({ value, label, tone }: { value: string; label: string; tone?: string }) {
   return (
-    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "18px 24px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>Spend</span>
-        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-          what the models cost, who set the limits, and the ledger behind both
-        </span>
-      </div>
-      <CapsSection />
-      <UsageSection />
+    <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+      <span className="aug-fs-h1" style={{ fontWeight: 600, color: tone ?? "var(--t1)",
+        fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</span>
+      <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>{label}</span>
+    </div>
+  );
+}
+
+/** The top of the page: the four numbers the screen exists to report.
+ *
+ *  It used to be a repeated page title plus a sentence of description — roughly a
+ *  fifth of the viewport spent restating the tab name above a paragraph explaining
+ *  what the sections below would say. The workspace header already says "Spend"; this
+ *  says what the spend IS. Every figure keeps its own honesty caveat: cost is a FLOOR
+ *  whenever any call is unpriced, and it is written as such rather than rounded into a
+ *  total nobody can defend.
+ */
+function HeadlineStrip({ report, models, capCount }: {
+  report: UsageReport | null; models: ModelUsageRow[]; capCount: number | null;
+}) {
+  const totals = useMemo(() => {
+    if (!report) return null;
+    let cost = 0, unpriced = 0;
+    for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; }
+    return { cost, unpriced };
+  }, [report]);
+  const failures = models.reduce((n, m) => n + m.failures, 0);
+  const failRate = report && report.total_calls ? failures / report.total_calls : 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 34, flexWrap: "wrap",
+      padding: "2px 0 16px" }} data-testid="spend-headline">
+      <Headline
+        value={totals ? `${totals.unpriced > 0 ? "≥ " : ""}${money(totals.cost)}` : "—"}
+        label={totals && totals.unpriced > 0
+          ? `a floor — ${countNoun(totals.unpriced, "call")} carry no declared price`
+          : "spent on model calls"} />
+      <Headline value={report ? compactNumber(report.total_calls) : "—"} label="model calls" />
+      <Headline value={report ? pct(failRate) : "—"} label="failed"
+        tone={failRate > 0.05 ? "var(--amb4)" : undefined} />
+      <Headline
+        value={capCount === null ? "—" : capCount === 0 ? "None" : String(capCount)}
+        label={capCount === 0 ? "caps declared — spend is uncapped" : "caps in force"}
+        tone={capCount === 0 ? "var(--amb4)" : undefined} />
+    </div>
+  );
+}
+
+export function SpendPanel() {
+  // Hoisted so the headline and the sections below read ONE fetch each rather than
+  // two of the same — and so declaring a cap moves the headline, which it must.
+  const [report, setReport] = useState<UsageReport | null>(null);
+  const [models, setModels] = useState<ModelUsageRow[]>([]);
+  const [capCount, setCapCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    getUsageReport("provider,model").then(setReport).catch(() => setReport(null));
+    getModelUsage().then(r => setModels(r.models)).catch(() => setModels([]));
+  }, []);
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "14px 24px 18px" }}>
+      <HeadlineStrip report={report} models={models} capCount={capCount} />
+      <CapsSection onCount={setCapCount} />
+      <UsageSection report={report} models={models} />
       <FeedSection />
       <CostSqlSection />
     </div>

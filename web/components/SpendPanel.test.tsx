@@ -51,9 +51,14 @@ beforeEach(() => {
 });
 
 describe("SpendPanel", () => {
+  // These assert the CLAIM, not the sentence: the page moved its totals into a headline
+  // strip, and a test that pins prose fails on a layout change while a page that
+  // stopped saying "uncapped" would still pass. What must never change is that an
+  // uncapped org is told so, and that an incomplete cost is never shown as a total.
   it("an empty cap list says 'uncapped', never nothing", async () => {
     render(<SpendPanel />);
-    expect(await screen.findByText(/every model call is currently uncapped/)).toBeTruthy();
+    const headline = await screen.findByTestId("spend-headline");
+    expect(headline.textContent).toMatch(/uncapped/i);
   });
 
   it("declaring a cap hands the endpoint a typed body", async () => {
@@ -69,7 +74,10 @@ describe("SpendPanel", () => {
 
   it("cost with unpriced calls reads as a floor, not a total", async () => {
     render(<SpendPanel />);
-    expect(await screen.findByText(/a floor, not a total/)).toBeTruthy();
-    expect(screen.getByText(/≥ \$1\.50/)).toBeTruthy();
+    const headline = await screen.findByTestId("spend-headline");
+    // Both halves matter: the ≥ on the figure, and the sentence saying why.
+    expect(headline.textContent).toMatch(/≥ \$1\.50/);
+    expect(headline.textContent).toMatch(/floor/i);
+    expect(headline.textContent).toMatch(/no declared price/i);
   });
 });

@@ -119,69 +119,61 @@ def _resolve_schema(connection_id: str, schema_name: Optional[str]) -> str:
 resolve_effective_schema = _resolve_schema
 
 
-def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
-    """Open connection, build/load schema, and return its OntologyGraph.
+def cached_ontology_schemas(connection_id: str) -> list[str]:
+    """The schemas that actually HAVE a cached ontology for this connection."""
+    try:
+        from aughor.ontology.store import list_schemas
+        return list_schemas(connection_id)
+    except Exception:
+        return []
 
-    If schema_name is supplied and differs from the connection's configured schema,
-    the connection is opened against that specific schema.  Otherwise the connection's
-    registered schema is used.
+
+def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
+    """The cached OntologyGraph for this {connection, schema}, or None.
+
+    🔴🔴 **THIS READ NEVER BUILDS.** It used to fall through to
+    `db.build_intelligence()` when nothing was cached — a heavy path (render the
+    schema, profile every column, infer + enrich + validate the ontology) whose own
+    docstring says "call this from a background task, never on the hot path". Measured
+    on the live instance: `GET /ontology?connection_id=workspace&schema_name=main`
+    never returned. Not an error, not a slow answer — the request simply hung, and the
+    Ontology panel showed nothing at all for as long as anyone was willing to wait.
+    A read that can block for minutes is a broken read however correct its answer.
+    Building is now exclusively the job of `POST /ontology/rebuild`, which is gated,
+    audited, and clicked on purpose.
+
+    🔴 **An explicit `schema_name` is a SCOPE, not a hint.** Before, an unbuilt schema
+    fell back to `load_latest_ontology(connection_id, None)` — whatever was cached last
+    — so `?schema_name=no_such_schema_xyz` answered with the `ecommerce` graph, nine
+    entities and all, under the requested name. Every panel asking for schema X could
+    be handed schema Y's entities, relationships, metrics and actions, with nothing on
+    screen saying so.
+
+    The ONE substitution that is not a leak: a connection with exactly one cached
+    ontology has no other schema to confuse it with. That case is real and common,
+    because the schema NAME the UI asks with comes from the catalog tree while the
+    cache key comes from whoever built it — a gsheets connection is browsed as
+    `spotify` and cached as `default`. The graph carries its own `schema_name`, so the
+    answer still states which schema it is; the panel prints that, not the request.
     """
-    # Fast path: return the cached graph built by exploration / build_intelligence.
-    # get_schema() is the lightweight introspection path and (since the schema
-    # fast/slow split) does NOT build the ontology, so db.get_ontology() would be
-    # None here — we must read the ontology store directly.
-    #
-    # ⚠️ AN EXPLICIT `schema_name` IS A SCOPE, NOT A HINT. This used to fall back to
-    # `load_latest_ontology(connection_id, None)` — "whatever schema was cached last"
-    # — when the requested schema had no cached graph. Measured on the live instance:
-    # `GET /ontology?connection_id=baef6c3e&schema_name=no_such_schema` answered with
-    # the `ecommerce` graph, nine entities and all, under the requested schema's name.
-    # That is the defect behind "the ontology shows other schemas": every panel that
-    # asked for schema X could be handed schema Y's entities, relationships, metrics
-    # and actions, with nothing on screen saying so. An unbuilt schema must fall
-    # through to the BUILD path below (scoped to that schema) or 404 — never to a
-    # neighbour's graph.
     try:
         from aughor.ontology.store import load_latest_ontology
-        if schema_name:
-            graph = load_latest_ontology(connection_id, schema_name)
-        else:
-            # No scope was asked for: prefer the connection's OWN configured schema
-            # over the arbitrary last-written cache entry, and only then fall back to
-            # the any-schema search (legacy callers that genuinely don't know one).
-            graph = load_latest_ontology(connection_id, _resolve_schema(connection_id, None))
-            if graph is None:
-                graph = load_latest_ontology(connection_id, None)
+        if not schema_name:
+            # No scope asked for: the connection's OWN configured schema first, then
+            # the any-schema scan (legacy callers that genuinely do not know one).
+            return (load_latest_ontology(connection_id, _resolve_schema(connection_id, None))
+                    or load_latest_ontology(connection_id, None))
+
+        graph = load_latest_ontology(connection_id, schema_name)
         if graph is not None:
             # load_latest_ontology already overlays human overrides (the shared
             # authority seam), so the read APIs / UI reflect edits for free.
             return graph
-    except Exception:
-        pass
 
-    # Not cached yet — build it (heavier: profiles + enrichment + validation).
-    try:
-        if schema_name:
-            # Open against the requested schema explicitly so multi-schema
-            # databases (e.g. one DuckDB file with analytics/raw/events/…) build
-            # and cache a distinct ontology per schema rather than only the one
-            # named in the connection's stored metadata.
-            from aughor.db.connection import open_connection
-            from aughor.db.registry import get_dsn, get_meta
-            conn_type, dsn = get_dsn(connection_id)
-            meta = get_meta(connection_id)
-            db = open_connection(
-                conn_type, dsn,
-                schema_name=schema_name,
-                connection_id=connection_id,
-                meta=meta,
-            )
-        else:
-            db = open_connection_for(connection_id)
-        # build_intelligence() (not get_schema()) is what builds + caches + sets
-        # the OntologyGraph. Learned-skill overlay happens inside the store seam.
-        db.build_intelligence()
-        return db.get_ontology()
+        built = cached_ontology_schemas(connection_id)
+        if len(built) == 1:
+            return load_latest_ontology(connection_id, built[0])
+        return None
     except Exception:
         return None
 
@@ -224,7 +216,18 @@ def get_ontology(
 ):
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
-        raise HTTPException(status_code=404, detail="Ontology not available for this connection")
+        # The 404 names the way out. "Not available" is true and useless; the caller
+        # needs to know whether the ontology exists under a DIFFERENT schema (switch
+        # scope) or nowhere at all (build it) — and the read no longer builds, so the
+        # panel has to offer that door rather than wait for one.
+        built = cached_ontology_schemas(connection_id)
+        detail = (
+            f"No ontology built for schema '{schema_name}'. Built for: {', '.join(built)}."
+            if schema_name and built
+            else "No ontology has been built for this connection yet."
+        )
+        raise HTTPException(status_code=404, detail=detail,
+                            headers={"X-Ontology-Schemas": ",".join(built)})
     return graph.model_dump()
 
 

@@ -1196,12 +1196,27 @@ export interface OntologyGraph {
   interfaces: Record<string, OntologyInterface>;  // OE-6
 }
 
+/** Thrown when no ontology is built for the requested scope. Carries the schemas that
+ *  ARE built, so the panel can offer switching to one instead of only "not available"
+ *  — the read path no longer builds on demand, so this is the whole way out. */
+export class OntologyNotBuilt extends Error {
+  constructor(message: string, readonly builtSchemas: string[]) {
+    super(message);
+    this.name = "OntologyNotBuilt";
+  }
+}
+
 export async function getOntology(connectionId: string, schemaName?: string): Promise<OntologyGraph> {
   const q = schemaName
     ? `connection_id=${encodeURIComponent(connectionId)}&schema_name=${encodeURIComponent(schemaName)}`
     : `connection_id=${encodeURIComponent(connectionId)}`;
   const res = await fetch(`${getApiBase()}/ontology?${q}`);
-  if (!res.ok) throw new Error("Ontology not available for this connection");
+  if (!res.ok) {
+    const built = (res.headers.get("X-Ontology-Schemas") ?? "").split(",").filter(Boolean);
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* not JSON */ }
+    throw new OntologyNotBuilt(detail || "Ontology not available for this connection", built);
+  }
   return res.json();
 }
 

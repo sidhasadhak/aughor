@@ -50,6 +50,12 @@ export interface CatalogColumn {
 export interface CatalogTable {
   /** Qualified name as the warehouse spells it — what insertion uses. */
   name: string;
+  /** Which connection owns this table. Present only when the caller is showing MORE
+   *  THAN ONE — the SQL editor browses the whole workspace, the visual builder browses
+   *  the connection it is composing against. When set on any row the tree grows a
+   *  connection tier above the schema tier; when absent it renders exactly as before. */
+  connectionId?: string;
+  connectionLabel?: string;
   /** The schema this table groups under, when the caller already knows it.
    *
    *  Without it the schema is parsed back out of `name`, which is fine for a caller
@@ -110,6 +116,7 @@ export function CatalogTree({
   onColumnDragStart,
   isTableActive,
   actionLabel = name => `Insert ${name} at the cursor`,
+  onInsertTable,
   loading = false,
   emptyLabel = "No tables in this connection.",
 }: {
@@ -148,6 +155,11 @@ export function CatalogTree({
    *  what the SQL editor does; Visual mode adds the row to the query instead, and a
    *  tooltip promising to insert at a cursor there would describe a different product. */
   actionLabel?: (name: string, kind: "table" | "column") => string;
+  /** The `»` button on a table row. Separate from `onSelectTable` because they are
+   *  different promises: clicking the NAME may navigate or add, while this one always
+   *  writes `schema.table` where the caret is. A row that does both has to say which is
+   *  which, and a hover-revealed button beside the name is how an editor says it. */
+  onInsertTable?: (table: CatalogTable) => void;
   /** The catalog itself is still arriving. Distinct from an EMPTY catalog, which is a
    *  finished answer — showing "no tables" while they load reads as a broken connection. */
   loading?: boolean;
@@ -172,16 +184,34 @@ export function CatalogTree({
     return q ? fuse.search(q).map(r => r.item) : tables;
   }, [search, tables, fuse]);
 
-  /** schema → its tables, in catalog order. */
-  const grouped = useMemo(() => {
-    const map = new Map<string, CatalogTable[]>();
+  /** connection → schema → its tables, in catalog order.
+   *
+   *  The connection tier appears only when the rows carry one. Two schemas in
+   *  different warehouses can share a name — `main` is in four of them here — so
+   *  without the tier a workspace-wide tree would merge tables that have nothing to do
+   *  with each other under one heading. */
+  const multiConn = useMemo(() => new Set(visible.map(t => t.connectionId).filter(Boolean)).size > 1, [visible]);
+
+  const byConnection = useMemo(() => {
+    const conns = new Map<string, { label: string; schemas: Map<string, CatalogTable[]> }>();
     for (const t of visible) {
+      const cid = (multiConn ? t.connectionId : "") ?? "";
+      let entry = conns.get(cid);
+      if (!entry) { entry = { label: t.connectionLabel ?? "", schemas: new Map() }; conns.set(cid, entry); }
+      if (!entry.label && t.connectionLabel) entry.label = t.connectionLabel;
       const { schema } = placeOf(t);
-      const list = map.get(schema);
-      if (list) list.push(t); else map.set(schema, [t]);
+      const list = entry.schemas.get(schema);
+      if (list) list.push(t); else entry.schemas.set(schema, [t]);
     }
-    return [...map.entries()].sort(([a], [b]) => a.localeCompare(b));
-  }, [visible]);
+    return [...conns.entries()]
+      .map(([cid, e]) => ({
+        cid,
+        label: e.label,
+        count: [...e.schemas.values()].reduce((n, l) => n + l.length, 0),
+        schemas: [...e.schemas.entries()].sort(([a], [b]) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [visible, multiConn]);
 
   /** Schemas that own a table the caller is already querying. Such a table is drawn
    *  highlighted, and a highlight inside a collapsed parent is invisible. */
@@ -193,7 +223,12 @@ export function CatalogTree({
   // A lone schema tier is pure friction: it says nothing you cannot already see and
   // costs a click to get past. Two or more IS a summary worth showing collapsed, so
   // the rule is the degenerate case rather than a threshold picked out of the air.
-  const soleSchema = grouped.length === 1;
+  const soleSchema = byConnection.length === 1 && byConnection[0].schemas.length === 1;
+
+  // Which connections start open. Browsing a whole workspace means most of the tree is
+  // about warehouses you are not querying, so only the ACTIVE one unfolds — everything
+  // else is one click away, which is what the Catalog screen does too.
+  const [openConns, setOpenConns] = useState<Record<string, boolean>>({});
 
   // A search narrows to what matched, so everything it found should be visible without
   // a second click — expanding on search is the difference between a filter and a hunt.
@@ -246,7 +281,10 @@ export function CatalogTree({
           <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t4)" }}>No match.</p>
         )}
 
-        {catalogName && (
+        {/* The connection-name root is the ONE-connection form of the connection tier.
+            Rendering both put "Workspace 87" above a list that contained "Workspace 61"
+            — the same word at two levels meaning two different things. */}
+        {catalogName && !multiConn && (
           <Button
             variant="ghost"
             onClick={() => setCatalogOpen(o => !o)}
@@ -263,16 +301,40 @@ export function CatalogTree({
           </Button>
         )}
 
-        {(!catalogName || catalogOpen) && grouped.map(([schema, schemaTables]) => {
-          const sFallback = soleSchema || activeSchemas.has(schema) || schema === "";
-          const sOpen = searching || (openSchemas[schema] ?? sFallback);
+        {(!catalogName || multiConn || catalogOpen) && byConnection.map(conn => {
+          // A connection whose tables include an active one is open; so is the only
+          // connection there is. Everything else waits to be asked for.
+          const cHasActive = isTableActive
+            ? conn.schemas.some(([, ts]) => ts.some(isTableActive))
+            : false;
+          const cFallback = !multiConn || cHasActive;
+          const cOpen = searching || (openConns[conn.cid] ?? cFallback);
           return (
-            <div key={schema || "(root)"}>
+        <div key={conn.cid || "(one)"}>
+        {multiConn && (
+          <Button
+            variant="ghost"
+            onClick={() => toggle(openConns, conn.cid, cFallback, setOpenConns)}
+            className={`h-auto w-full justify-start gap-2 py-1.5 pr-2 font-normal hover:bg-[var(--bg-hover)] ${catalogName ? "pl-6" : "pl-3"}`}
+            title={`${conn.label} — ${conn.count} table${conn.count === 1 ? "" : "s"}`}
+          >
+            <Chevron open={cOpen} />
+            <IcoCatalog color={cHasActive ? "var(--blue4)" : "var(--t2)"} size={14} />
+            <span className="aug-fs-ui truncate font-medium"
+              style={{ color: cHasActive ? "var(--t1)" : "var(--t2)" }}>{conn.label}</span>
+            <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t4)" }}>{conn.count}</span>
+          </Button>
+        )}
+        {cOpen && conn.schemas.map(([schema, schemaTables]) => {
+          const sFallback = soleSchema || activeSchemas.has(schema) || schema === "";
+          const sOpen = searching || (openSchemas[`${conn.cid}\u0000${schema}`] ?? sFallback);
+          return (
+            <div key={`${conn.cid}:${schema || "(root)"}`}>
               {schema !== "" && (
                 <Button
                   variant="ghost"
-                  onClick={() => toggle(openSchemas, schema, sFallback, setOpenSchemas)}
-                  className={`h-auto w-full justify-start gap-2 py-1.5 pr-2 font-normal hover:bg-[var(--bg-hover)] ${catalogName ? "pl-6" : "pl-3"}`}
+                  onClick={() => toggle(openSchemas, `${conn.cid}\u0000${schema}`, sFallback, setOpenSchemas)}
+                  className={`h-auto w-full justify-start gap-2 py-1.5 pr-2 font-normal hover:bg-[var(--bg-hover)] ${multiConn ? "pl-9" : catalogName ? "pl-6" : "pl-3"}`}
                 >
                   <Chevron open={sOpen} />
                   <IcoSchema color="var(--blue3)" />
@@ -297,7 +359,7 @@ export function CatalogTree({
                 const rc = fmtRows(t.rowCount);
                 return (
                   <div key={t.name} style={active ? { background: "var(--bg-2)" } : undefined}>
-                    <div className={`group/tbl flex w-full items-center gap-2 py-1.5 pr-2 transition hover:bg-[var(--bg-hover)] ${catalogName ? "pl-11" : "pl-7"}`}>
+                    <div className={`group/tbl flex w-full items-center gap-2 py-1.5 pr-2 transition hover:bg-[var(--bg-hover)] ${multiConn ? "pl-14" : catalogName ? "pl-11" : "pl-7"}`}>
                       <Button
                         variant="ghost"
                         onClick={() => toggle(openTables, t.name, active, setOpenTables)}
@@ -321,6 +383,23 @@ export function CatalogTree({
                         </span>
                         {rc && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>{rc}</span>}
                       </Button>
+                      {/* The insert affordance. Hidden until the row is hovered or
+                          focused, because a button on every one of 60 rows is
+                          decoration; revealed, it is the fastest thing on the rail.
+                          `group-focus-within` keeps it reachable by keyboard, where
+                          "hover" means nothing. */}
+                      {onInsertTable && (
+                        <Button
+                          variant="ghost"
+                          onClick={() => onInsertTable(t)}
+                          title={`Insert ${t.name} at the cursor`}
+                          data-testid="rail-insert-table"
+                          className="h-auto shrink-0 p-0 px-1 font-mono font-normal opacity-0 transition group-hover/tbl:opacity-100 group-focus-within/tbl:opacity-100 focus:opacity-100"
+                          style={{ color: "var(--blue4)" }}
+                        >
+                          »
+                        </Button>
+                      )}
                       {(t.joinDegree ?? 0) > 0 && (
                         <span
                           title={`${t.joinDegree} related table${(t.joinDegree ?? 0) > 1 ? "s" : ""}`}
@@ -339,7 +418,7 @@ export function CatalogTree({
                     </div>
 
                     {tOpen && t.columns.length === 0 && (
-                      <div className={`py-1.5 ${catalogName ? "pl-14" : "pl-9"}`}>
+                      <div className={`py-1.5 ${multiConn ? "pl-16" : catalogName ? "pl-14" : "pl-9"}`}>
                         <span className="aug-fs-ui" style={{ color: "var(--t4)" }}>
                           No columns available — the schema may need a refresh.
                         </span>
@@ -349,7 +428,7 @@ export function CatalogTree({
                     {tOpen && t.columns.map(c => (
                       <div
                         key={c.name}
-                        className={`group/col flex items-center border-l pr-2 transition hover:bg-[var(--bg-hover)] ${catalogName ? "ml-12" : "ml-7"} ${onColumnDragStart ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
+                        className={`group/col flex items-center border-l pr-2 transition hover:bg-[var(--bg-hover)] ${multiConn ? "ml-14" : catalogName ? "ml-12" : "ml-7"} ${onColumnDragStart ? "cursor-grab select-none active:cursor-grabbing" : ""}`}
                         style={{ borderColor: "var(--b0)" }}
                         draggable={!!onColumnDragStart}
                         onDragStart={onColumnDragStart ? e => onColumnDragStart(e, c, t) : undefined}
@@ -379,6 +458,9 @@ export function CatalogTree({
                 );
               })}
             </div>
+          );
+        })}
+        </div>
           );
         })}
       </div>

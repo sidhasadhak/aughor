@@ -38,7 +38,7 @@ import {
 import { requestTab } from "@/lib/navigate";
 import { putMonitorDraft } from "@/lib/query/monitorDraft";
 import { ResizableSplit } from "@/components/ResizableSplit";
-import { listSavedQueries, type Canvas, type Connection, type SavedQuery } from "@/lib/api";
+import { getCatalogTree, listSavedQueries, type CatalogTree, type Canvas, type Connection, type SavedQuery } from "@/lib/api";
 import { toast } from "@/components/ui/toast";
 import { useRichSchema } from "@/lib/schema-context";
 import { Button } from "@/components/ui/button";
@@ -120,7 +120,7 @@ function useSchemaMap(connId: string) {
 }
 
 function WorkbenchInner({
-  initialConnId, onOpenCanvas, importRequest, connections, initialMode,
+  initialConnId, onOpenCanvas, importRequest, connections, initialMode, workspaceId,
 }: {
   initialConnId?: string;
   onOpenCanvas?: (canvas: Canvas) => void;
@@ -128,6 +128,7 @@ function WorkbenchInner({
   connections?: Connection[];
   /** Set by a legacy `?tab=builder` deep link, which meant the visual builder. */
   initialMode?: QueryMode;
+  workspaceId?: string;
 }) {
   // SQL is the default mode: the surface is called the SQL Editor, and landing in a
   // visual composer would contradict its own name. Two things still override it, in
@@ -283,17 +284,94 @@ function WorkbenchInner({
   // In Visual mode before the builder has published its binding, the rows are INERT —
   // never the SQL handlers. Falling through to those would send a click meant for the
   // visual query into the SQL editor's document, where the user cannot even see it land.
+  // ── The whole workspace in the rail (SQL mode) ─────────────────────────────
+  //
+  // The SQL editor used to browse ONE connection: whatever the picker was set to. That
+  // is not how anyone reads a warehouse — the Catalog tab shows every connection, every
+  // schema, every table, and the editor beside it showed a slice and no way to see the
+  // rest. `/catalog/tree` is the same source the Catalog screen reads, so the two
+  // cannot disagree about what exists.
+  //
+  // Columns still come from the rich schema of the ACTIVE connection: the tree knows
+  // table names and row counts, not columns, and fetching columns for every warehouse
+  // in the workspace to populate a tree nobody has expanded is the 10.9s mistake this
+  // codebase already made once. Expand a table on another connection and it says so.
+  const [tree, setTree] = useState<CatalogTree | null>(null);
+  useEffect(() => {
+    if (mode !== "sql") return;                       // Visual composes against one
+    getCatalogTree(workspaceId).then(setTree).catch(() => setTree(null));
+  }, [mode, workspaceId]);
+
+  const allTables = useMemo<RailTable[]>(() => {
+    if (mode !== "sql" || !tree) return railTables;
+    const active = new Map(railTables.map(t => [t.name, t]));
+    const out: RailTable[] = [];
+    for (const section of tree.sections) {
+      for (const entry of section.entries) {
+        for (const sc of entry.schemas) {
+          for (const tb of sc.tables) {
+            const qualified = sc.name ? `${sc.name}.${tb.name}` : tb.name;
+            const known = entry.conn_id === connId
+              ? (active.get(qualified) ?? active.get(tb.name))
+              : undefined;
+            out.push({
+              ...(known ?? { name: qualified, columns: [], rowCount: tb.row_count }),
+              name: qualified,
+              schema: sc.name,
+              connectionId: entry.conn_id,
+              connectionLabel: entry.name,
+            });
+          }
+        }
+      }
+    }
+    // A connection the tree has not caught up with yet still has to be browsable.
+    if (!out.some(t => t.connectionId === connId) && railTables.length) {
+      const label = (connections ?? []).find(c => c.id === connId)?.name ?? "This connection";
+      out.push(...railTables.map(t => ({ ...t, connectionId: connId, connectionLabel: label })));
+    }
+    return out;
+  }, [mode, tree, railTables, connId, connections]);
+
+  /** Insert a table reference, switching the workbench's connection first when the row
+   *  belongs to another one. Inserting `orders` while the editor is pointed at a
+   *  different warehouse produces SQL that cannot run, so the picker follows the click
+   *  — visibly, since the picker is on screen. */
+  const insertTable = useCallback((t: RailTable) => {
+    if (t.connectionId && t.connectionId !== connId) setConnId(t.connectionId);
+    insertAtCursor.current?.(t.name);
+  }, [connId]);
+
   const railProps = mode === "visual"
     ? (railBinding ?? {})
     : {
       onSelectTable: (name: string) => insertAtCursor.current?.(name),
       onSelectColumn: (col: string) => insertAtCursor.current?.(col),
+      onInsertTable: insertTable,
     };
 
   // ── The controls both modes share, built once ────────────────────────────────
   // Versions moved into the overflow: it is a property of a SAVED query and is
   // unreachable most of the time, so a permanent button for it was a permanently
   // disabled button. "Hide catalog" became the panel glyph every console uses.
+  /* Schema is SQL-ONLY: it sets what completes without qualifying, and Visual mode
+     qualifies every name it generates, so the control would do nothing there. It used
+     to sit inside `sharedControls`, which meant the shared group was one control wider
+     in SQL than in Visual and every button in it shifted on a mode switch. A control
+     that exists in one mode belongs with that mode's own controls. */
+  const schemaControl = schemas.length > 0 ? (
+    <select
+      className="aug-input"
+      style={controlStyle}
+      value={defaultSchema}
+      onChange={e => setDefaultSchema(e.target.value)}
+      title="Tables in this schema complete and resolve without qualifying them"
+    >
+      <option value="">(all schemas)</option>
+      {schemas.map(s => <option key={s} value={s}>{s}</option>)}
+    </select>
+  ) : null;
+
   const sharedControls = (
     <>
       {MODES.map(m => (
@@ -323,20 +401,6 @@ function WorkbenchInner({
         ))}
       </select>
 
-      {/* Schema stays SQL-only: it sets what completes without qualifying, and Visual
-          mode qualifies every name it generates, so the control would do nothing. */}
-      {mode === "sql" && schemas.length > 0 && (
-        <select
-          className="aug-input"
-          style={controlStyle}
-          value={defaultSchema}
-          onChange={e => setDefaultSchema(e.target.value)}
-          title="Tables in this schema complete and resolve without qualifying them"
-        >
-          <option value="">(all schemas)</option>
-          {schemas.map(s => <option key={s} value={s}>{s}</option>)}
-        </select>
-      )}
 
       <SavedQueryBar
         connId={connId}
@@ -389,18 +453,23 @@ function WorkbenchInner({
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
-      {/* The controls both modes share. In SQL mode they ride the TAB STRIP (see
-          SqlMode's `toolbar`) rather than standing in a bar of their own: the editor
-          had four stacked horizontal bars above the code and a reference console has
-          two, and three of ours each carried a handful of controls. Visual mode has no
-          tab strip to ride on, so it still gets the bar. */}
+      {/* The controls both modes share, in the SAME PLACE in both: the right-hand end
+          of the first row. SQL mode's first row is the tab strip and they ride it (see
+          SqlMode's `toolbar`); Visual has no tabs, so this is its first row — and the
+          spacer is what matters, because these controls used to sit top-LEFT here and
+          on the RUN BAR in SQL. Switching modes moved the connection picker, the mode
+          toggle and Save from one corner of the screen to another, which is not a
+          layout so much as a small relocation exercise. Same row, same edge, both
+          modes; only what sits to the LEFT of them changes. */}
       {mode === "visual" && (
         <div
           style={{
             display: "flex", alignItems: "center", gap: 6,
             padding: "4px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
+            minHeight: 33,
           }}
         >
+          <div style={{ flex: 1, minWidth: 8 }} />
           {sharedControls}
         </div>
       )}
@@ -432,7 +501,7 @@ function WorkbenchInner({
         style={{ flex: 1, minWidth: 0, minHeight: 0 }}
         left={
           <CatalogRail
-            tables={railTables}
+            tables={allTables}
             connectionName={(connections ?? []).find(c => c.id === connId)?.name}
             loading={schemaLoading}
             hint={mode === "visual"
@@ -462,6 +531,7 @@ function WorkbenchInner({
                           flexDirection: "column" }}>
               <SqlMode
                 toolbar={sharedControls}
+                schemaControl={schemaControl}
                 connId={connId}
                 engine={engine}
                 schema={schema}
@@ -506,6 +576,9 @@ export function QueryWorkbench(props: {
   importRequest?: { connId: string; sql: string; nonce: number };
   connections?: Connection[];
   initialMode?: QueryMode;
+  /** Scopes the workspace-wide catalog tree the SQL rail browses — the same argument
+   *  the Catalog screen passes, so the two show the same warehouses. */
+  workspaceId?: string;
 }) {
   // No provider of its own: the app mounts one QueryClient (app/providers.tsx), and a
   // second client here would mean a second cache — reintroducing exactly the duplicate

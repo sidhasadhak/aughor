@@ -706,7 +706,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
   };
 
   return (
-    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
+    <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-canvas)" }}>
 
       {/* ── Header ── */}
       <div ref={headerRef} style={{

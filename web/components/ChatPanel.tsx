@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
+import { getConnections, listUserAgents, recordOverviewDrill, cancelInvestigation, cancelActiveDeepRun, type UserAgent } from "@/lib/api";
 import { uploadAttachment, type AttachmentResult } from "@/lib/attachments";
 import { projectThread, newSessionId, type AughorUIMessage, type ChatTurn } from "@/lib/chatTurn";
 import { useAughorChat } from "@/lib/useAughorChat";
@@ -505,6 +505,77 @@ function EscalateBar({ turn, onEscalate }: { turn: ChatTurn; onEscalate: () => v
 // all afternoon. Module scope is exactly that lifetime.
 let _urlSessionUnclaimed = true;
 
+
+// ── Agent landing block ───────────────────────────────────────────────────────
+
+/**
+ * The Canvas workspace greets you with what that canvas IS — a mark, its name, its
+ * description, what it can do. Arriving from Agent Ops ▸ an agent ▸ Chat gave the
+ * generic "Ask your data anything" instead, so the one screen that knows exactly who
+ * you are about to talk to was the one screen that would not say. Same shape as
+ * `CapabilitiesBlock`, because it is the same promise about a different subject.
+ *
+ * Capabilities are DERIVED from the agent's own record — its scope, its documents, its
+ * grants — never written as flattering copy. A grant in particular is stated as what
+ * it is: this agent may PROPOSE those actions, and never executes one.
+ */
+function AgentLandingBlock({ agent, connectionName }: { agent: UserAgent; connectionName?: string }) {
+  // The agent's OWN connection, not the chat's. Naming the chat's connection beside the
+  // agent's schema produced "spotify · thelook" — two halves of two different scopes
+  // presented as one.
+  const scope = agent.schema_scope
+    ? `${connectionName ? `${connectionName} · ` : ""}${agent.schema_scope}`
+    : connectionName ?? "this connection";
+  const caps: string[] = [`Answers over ${scope}`];
+  if (agent.doc_ids.length) {
+    caps.push(`Reads ${agent.doc_ids.length} document${agent.doc_ids.length === 1 ? "" : "s"} you gave it`);
+  }
+  if (agent.pack_ids.length) {
+    caps.push(`Carries ${agent.pack_ids.length} knowledge pack${agent.pack_ids.length === 1 ? "" : "s"}`);
+  }
+  caps.push("Ask in Quick mode for fast SQL answers, or Agent for multi-step root-cause analysis");
+  if (agent.tool_grants.length) {
+    caps.push(`May PROPOSE ${agent.tool_grants.length} action${agent.tool_grants.length === 1 ? "" : "s"} — proposing is not doing; you approve each one`);
+  }
+
+  // The instructions are the closest thing an agent has to a description. Its first
+  // paragraph is the part written for a reader; the rest is prompt scaffolding.
+  const description = (agent.instructions || "").split(/\n\s*\n/)[0].trim();
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, textAlign: "left", marginBottom: 4 }}
+      data-testid="agent-landing">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: "var(--r2)", flexShrink: 0,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          background: "color-mix(in srgb, var(--grn3) 14%, transparent)",
+          border: "1px solid color-mix(in srgb, var(--grn3) 34%, transparent)",
+        }}>
+          <Icon name="spark" size={22} />
+        </div>
+        <div className="aug-fs-h1" style={{ fontWeight: 700, color: "var(--t1)" }}>{agent.name}</div>
+      </div>
+
+      {description && (
+        <p className="aug-fs-ui" style={{ color: "var(--t2)", lineHeight: 1.55, margin: 0 }}>{description}</p>
+      )}
+
+      <div>
+        <div className="aug-fs-xs" style={{ fontWeight: 600, color: "var(--t2)", marginBottom: 7 }}>Capabilities</div>
+        <ul style={{ margin: 0, padding: 0, listStyle: "none", display: "flex", flexDirection: "column", gap: 6 }}>
+          {caps.map(c => (
+            <li key={c} className="aug-fs-ui" style={{ display: "flex", alignItems: "flex-start", gap: 8, color: "var(--t2)", lineHeight: 1.5 }}>
+              <span style={{ width: 4, height: 4, borderRadius: "50%", background: "var(--t4)", marginTop: 7, flexShrink: 0 }} />
+              {c}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQuestion, initialMode, initialInsightId, capabilities, initialAgentId }: Props) {
   // Read during the first render, into a ref, because both this component and page.tsx's
   // URL-sync effect rewrite the query string — whichever ran first would erase the id
@@ -596,6 +667,20 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
   const [agents, setAgents]         = useState<UserAgent[]>([]);
   const [agentId, setAgentId]       = useState<string>(initialAgentId ?? "");
   useEffect(() => { listUserAgents().then(setAgents).catch(() => {}); }, []);
+  /** The agent this chat is aimed at, if any — drives the landing block. */
+  const activeAgent = useMemo(
+    () => agents.find(a => a.id === agentId) ?? null, [agents, agentId]);
+  // Named for the AGENT's connection when there is one — that is the warehouse it
+  // answers over, and it need not be the one this chat happens to be pointed at.
+  const [connNames, setConnNames] = useState<Record<string, string>>({});
+  useEffect(() => {
+    getConnections()
+      .then(cs => setConnNames(Object.fromEntries(cs.map(c => [c.id, c.name]))))
+      .catch(() => setConnNames({}));
+  }, []);
+  const agentConnectionName = activeAgent
+    ? connNames[activeAgent.connection_id] ?? connNames[connectionId]
+    : undefined;
   const [starters, setStarters]     = useState<Starter[]>(FALLBACK_STARTERS);
   const [loadingStarters, setLoadingStarters] = useState(false);
   const [showDebug, setShowDebug]   = useState(false);
@@ -1024,7 +1109,14 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
 
             {capabilities}
 
-            {!capabilities && (
+            {/* Order matters: a canvas's own landing block wins (you are IN that
+                canvas), then the agent you came here to talk to, and only then the
+                generic greeting. */}
+            {!capabilities && activeAgent && (
+              <AgentLandingBlock agent={activeAgent} connectionName={agentConnectionName} />
+            )}
+
+            {!capabilities && !activeAgent && (
               <div className="text-center">
                 <p className="aug-fs-sm font-bold text-zinc-200">Ask your data anything</p>
                 <p className="aug-fs-sm text-zinc-500 mt-1.5">

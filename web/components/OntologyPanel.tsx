@@ -28,6 +28,7 @@ import {
   type DuplicateCluster,
   type AutonomyLevel,
   getOntologyProposals, acceptOntologyProposal, dismissOntologyProposal,
+  OntologyNotBuilt,
   type OntologyProposal,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
@@ -1195,6 +1196,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
   const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
+  /** Which schemas DO have an ontology, per the 404. Drives the empty state's offer. */
+  const [builtSchemas,      setBuiltSchemas]      = useState<string[]>([]);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
 
@@ -1208,11 +1211,17 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
     setShowDuplicates(false);
     getOntology(selectedConnId, schema)
       .then(setGraph)
-      .catch(() =>
-        setError(
-          "Ontology not yet available for this connection. It builds automatically on the next query.",
-        ),
-      )
+      .catch((e: unknown) => {
+        // The server says WHICH schemas are built. It used to say "it builds
+        // automatically on the next query", which stopped being true when the read
+        // path stopped building — a sentence that tells the user to wait for
+        // something that will never happen is worse than no sentence.
+        const built = e instanceof OntologyNotBuilt ? e.builtSchemas : [];
+        setBuiltSchemas(built);
+        setError(e instanceof Error && e.message
+          ? e.message
+          : "No ontology has been built for this connection yet.");
+      })
       .finally(() => setLoading(false));
   }, [selectedConnId, schema]);
 
@@ -1404,14 +1413,23 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
               {error ?? "No ontology data available."}
             </p>
             {/* PX rule — the empty state names the door rather than describing the
-                absence. Scoped to THIS schema: an unbuilt schema is now an empty
-                screen (it used to silently show a neighbour's graph), so the way
-                out has to be one click from here. */}
+                absence. Two doors, because there are two reasons to be here: the
+                ontology exists under ANOTHER schema (switch the scope picker above),
+                or it exists nowhere (build it). The read path no longer builds on
+                demand, so without these the screen is a dead end. */}
+            {builtSchemas.length > 0 && (
+              <p className="aug-fs-xs text-zinc-500">
+                Built for{" "}
+                <span className="font-code text-zinc-300">{builtSchemas.join(", ")}</span>
+                {" — switch the schema scope above to see one of those."}
+              </p>
+            )}
             {selectedConnId && (
               <Button
                 variant="outline" size="xs"
                 onClick={() => { setShowSettings(true); setError(null); }}
                 className="aug-fs-xs border-zinc-700 text-zinc-300"
+                data-testid="ontology-build-door"
               >
                 {schema ? `Build the ontology for ${schema}` : "Build the ontology"}
               </Button>

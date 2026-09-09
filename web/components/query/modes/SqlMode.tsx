@@ -73,6 +73,7 @@ export function SqlMode({
   onSchedule,
   onShare,
   toolbar,
+  schemaControl,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -88,9 +89,15 @@ export function SqlMode({
   onSchedule?: (sql: string) => void;
   /** SE-4 I — copy a link that reopens this query. */
   onShare?: () => void;
-  /** Controls the WORKBENCH owns (connection, saved state, panel toggle) rendered
-   *  on the tab strip instead of in a bar of their own — see TabsBar's `trailing`. */
+  /** Controls the WORKBENCH owns (connection, saved state, panel toggle). They ride
+   *  the TAB STRIP, right-aligned — the same position Visual mode puts them in, which
+   *  is the point: they used to sit top-LEFT in Visual and on the RUN BAR in SQL, so
+   *  switching modes moved every shared control to a different corner. */
   toolbar?: React.ReactNode;
+  /** The default-schema picker. SQL-only, so it rides THIS mode's run bar rather than
+   *  the shared group — a control present in one mode and absent in the other made the
+   *  whole shared group change width on a mode switch. */
+  schemaControl?: React.ReactNode;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -387,6 +394,7 @@ export function SqlMode({
             return next;
           })}
           onRename={(id, name) => setTabs(prev => prev.map(t => t.id === id ? { ...t, name } : t))}
+          trailing={toolbar}
         />
 
         <ParamBar
@@ -448,13 +456,13 @@ export function SqlMode({
               of them says so anywhere on screen; a verb nobody can find is a verb that
               does not exist. */}
           <ShortcutSheet />
+          {schemaControl}
           {runAllSummary && !error && (
             <span className="aug-fs-ui" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>
               {runAllSummary}
             </span>
           )}
           <div style={{ flex: 1, minWidth: 0 }} />
-          {toolbar}
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
             <span

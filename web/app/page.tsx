@@ -2327,7 +2327,7 @@ export default function Home() {
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
                   if (id === "query") return (
-                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} initialMode={queryInitialMode} />
+                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} initialMode={queryInitialMode} workspaceId={selectedWorkspace} />
                   );
                   if (id === "semantic") return (
                     <SemanticLayerPanel

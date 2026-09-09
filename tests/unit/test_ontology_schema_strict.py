@@ -40,12 +40,13 @@ def cache(monkeypatch):
 
     monkeypatch.setattr("aughor.ontology.store.load_latest_ontology", _load_latest)
 
-    # No cache hit must ever reach a real database in these tests: the build path is
-    # heavy (profiles + enrichment) and is not what is under test here.
+    # The read path must never open a connection at all — see
+    # `test_a_read_never_builds` below.
     def _no_build(*a, **kw):
-        raise RuntimeError("build path — no connection in this test")
+        raise AssertionError("the ontology READ opened a connection — it must not")
 
     monkeypatch.setattr(router, "open_connection_for", _no_build)
+    monkeypatch.setattr("aughor.ontology.store.list_schemas", lambda cid: sorted(entries))
     return entries
 
 
@@ -58,14 +59,38 @@ def test_named_schema_never_answers_with_a_neighbour(cache, monkeypatch):
     assert router._get_ontology_graph("c1", "main").schema_name == "main"
 
 
-def test_uncached_named_schema_returns_nothing_rather_than_another(cache, monkeypatch):
-    """The headline defect. `sales` is not built; `ecommerce` is. Serving
-    `ecommerce` under the name `sales` is worse than a 404: it is a wrong answer
-    that looks like a right one."""
+def test_uncached_named_schema_never_answers_with_one_of_several(cache, monkeypatch):
+    """The headline defect. `sales` is not built; two others are. Serving one of them
+    under the name `sales` is worse than a 404: a wrong answer that looks right."""
     cache["ecommerce"] = _Graph("ecommerce")
+    cache["main"] = _Graph("main")
     monkeypatch.setattr(router, "get_meta", lambda cid: {"schema_name": "ecommerce"})
 
     assert router._get_ontology_graph("c1", "sales") is None
+
+
+def test_the_only_cached_ontology_answers_whatever_it_is_called(cache, monkeypatch):
+    """The vocabulary mismatch that broke the panel outright: the schema NAME the UI
+    asks with comes from the catalog tree, the cache key from whoever built it. A
+    gsheets connection is browsed as `spotify` and cached as `default`. With exactly
+    one cached ontology there is no other schema to confuse it with, so answering is
+    not a leak — and the graph reports its own `schema_name`, which is what the panel
+    prints."""
+    cache["default"] = _Graph("default")
+    monkeypatch.setattr(router, "get_meta", lambda cid: {})
+
+    assert router._get_ontology_graph("c1", "spotify").schema_name == "default"
+
+
+def test_a_read_never_builds(cache, monkeypatch):
+    """`GET /ontology?connection_id=workspace&schema_name=main` used to fall through to
+    `build_intelligence()` and never return — the panel showed nothing for as long as
+    anyone waited. Nothing cached must now mean an immediate None, not a build. The
+    fixture's `open_connection_for` asserts if this path opens a connection."""
+    monkeypatch.setattr(router, "get_meta", lambda cid: {"schema_name": "main"})
+
+    assert router._get_ontology_graph("c1", "main") is None
+    assert router._get_ontology_graph("c1", None) is None
 
 
 def test_unscoped_read_prefers_the_connections_own_schema(cache, monkeypatch):
