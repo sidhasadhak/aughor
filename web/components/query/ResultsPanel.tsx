@@ -29,7 +29,8 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
 import { QuickFixPanel } from "@/components/query/QuickFixPanel";
 import { Button } from "@/components/ui/button";
-import { toCsv, toTsv, csvFilename, downloadCsv } from "@/lib/query/csv";
+import { csvFilename, downloadText } from "@/lib/query/csv";
+import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractors";
 import { applyFilters } from "@/lib/query/resultFilter";
 import type { TypedQueryResult } from "@/lib/api";
 
@@ -73,6 +74,7 @@ export function ResultsPanel({
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
+  const [showExport, setShowExport] = useState(false);
   const [view, setView] = useState<"grid" | "chart">("grid");
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
   const [pinState, setPinState] = useState<"" | "busy" | "ok" | "fail">("");
@@ -148,6 +150,28 @@ export function ResultsPanel({
   // Filtered everything away is NOT the same as "the query returned nothing", and saying
   // "No rows returned" for it would blame the warehouse for the user's own chip.
   const filteredOut = !empty && rows.length === 0;
+
+  /** Render the CURRENT rows — filtered, if filters are on — through one extractor.
+   *  Filters narrow what is on screen, and exporting what is not on screen would be a
+   *  different result set wearing the same button. */
+  const renderAs = (id: string) =>
+    extractorById(id).render(columns, rows, guessTableName(result?.sql ?? ""));
+
+  const copyAs = (id: string) => {
+    const settle = (s: "ok" | "fail") => { setCopyState(s); setTimeout(() => setCopyState(""), 1600); };
+    // The clipboard API rejects on an insecure origin, without focus, or when
+    // permission is denied. Swallowing that leaves the user clicking a button that
+    // does nothing and says nothing — so the failure is SHOWN, and the download
+    // (which needs no permission) sits beside every format.
+    const write = navigator.clipboard?.writeText(renderAs(id));
+    if (write) write.then(() => settle("ok")).catch(() => settle("fail"));
+    else settle("fail");
+  };
+
+  const downloadAs = (id: string) => {
+    const x = extractorById(id);
+    downloadText(csvFilename("result").replace(/\.csv$/, `.${x.ext}`), renderAs(id), x.mime);
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
@@ -276,35 +300,41 @@ export function ResultsPanel({
             Share
           </Button>
         )}
-        <Button
-          variant="ghost" size="xs" className="aug-fs-ui"
-          title={filters.length
-            ? "Download the FILTERED rows as CSV"
-            : "Download these rows as CSV"}
-          onClick={() => downloadCsv(csvFilename(), toCsv(columns, rows))}
-        >
-          CSV
-        </Button>
-        <Button
-          variant="ghost" size="xs" className="aug-fs-ui"
-          title="Copy these rows to the clipboard, tab-separated (pastes into a spreadsheet)"
-          onClick={() => {
-            const tsv = toTsv(columns, rows);
-            const settle = (s: "ok" | "fail") => {
-              setCopyState(s);
-              setTimeout(() => setCopyState(""), 1600);
-            };
-            // The clipboard API rejects on an insecure origin, without focus, or when
-            // permission is denied. Swallowing that leaves the user clicking a button
-            // that does nothing and says nothing — so the failure is SHOWN, and CSV
-            // (which needs no permission) stays available beside it.
-            const write = navigator.clipboard?.writeText(tsv);
-            if (write) write.then(() => settle("ok")).catch(() => settle("fail"));
-            else settle("fail");
-          }}
-        >
-          {copyState === "ok" ? "Copied" : copyState === "fail" ? "Copy failed" : "Copy"}
-        </Button>
+        {/* SE-7 — the extractor menu. One CSV button served a spreadsheet and nothing
+            else; a ticket wants Markdown, a script wants JSON, a fixture wants INSERTs,
+            and each of those used to mean re-running the query somewhere that could
+            export it. Copy and Export share ONE format list, because "the shape I
+            want" is the same question whichever way the rows leave. */}
+        <div style={{ position: "relative" }}>
+          <Button
+            variant="ghost" size="xs" className="aug-fs-ui"
+            title={filters.length ? "Copy or download the FILTERED rows" : "Copy or download these rows"}
+            onClick={() => setShowExport(v => !v)}
+            data-testid="results-export"
+          >
+            {copyState === "ok" ? "Copied" : copyState === "fail" ? "Copy failed" : "Export"}
+          </Button>
+          {showExport && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 20 }} onClick={() => setShowExport(false)} />
+              <div className="aug-fs-sm" style={{
+                position: "absolute", bottom: "100%", right: 0, zIndex: 21, marginBottom: 4,
+                minWidth: 230, padding: 5, background: "var(--bg-2)",
+                border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+              }}>
+                {EXTRACTORS.map(x => (
+                  <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <span style={{ flex: 1, padding: "3px 7px", color: "var(--t2)" }}>{x.label}</span>
+                    <Button variant="ghost" size="xs" title={`Copy as ${x.label}`}
+                      onClick={() => { copyAs(x.id); setShowExport(false); }}>Copy</Button>
+                    <Button variant="ghost" size="xs" title={`Download as ${x.label}`}
+                      onClick={() => { downloadAs(x.id); setShowExport(false); }}>File</Button>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
         {result.receipt_id && (
           <a
             href={`/receipt/${encodeURIComponent(result.receipt_id)}`}

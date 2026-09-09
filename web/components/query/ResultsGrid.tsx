@@ -117,6 +117,14 @@ export function ResultsGrid({
   const [transposed, setTransposed] = useState(false);
   const [showValue, setShowValue] = useState(false);
   const [copied, setCopied] = useState(false);
+  // SE-7 — find-on-page and go-to-row, the grid's own ⌘F / ⌘G. The result filter bar
+  // above NARROWS the rows; this one MOVES you to a cell and leaves the result alone.
+  // They answer different questions ("which rows match" vs "where is that value") and
+  // conflating them means you cannot see a match in its context.
+  const [find, setFind] = useState<string | null>(null);
+  const [findIdx, setFindIdx] = useState(0);
+  const [goto, setGoto] = useState<string | null>(null);
+  const findRef = useRef<HTMLInputElement>(null);
 
   const numeric = useMemo(() => {
     const out = new Set<string>();
@@ -236,7 +244,14 @@ export function ResultsGrid({
 
   const onKeyDown = useCallback((e: React.KeyboardEvent) => {
     const k = e.key;
-    if (k === "Escape") { setSel(null); setShowValue(false); return; }
+    if (k === "Escape") { setSel(null); setShowValue(false); setFind(null); setGoto(null); return; }
+    if ((e.metaKey || e.ctrlKey) && (k === "f" || k === "F")) {
+      e.preventDefault();
+      setFind(f => f ?? "");
+      setTimeout(() => findRef.current?.focus(), 0);
+      return;
+    }
+    if ((e.metaKey || e.ctrlKey) && (k === "g" || k === "G")) { e.preventDefault(); setGoto(g => g ?? ""); return; }
     if ((e.metaKey || e.ctrlKey) && (k === "c" || k === "C")) { e.preventDefault(); copySelection(); return; }
     if ((e.metaKey || e.ctrlKey) && (k === "a" || k === "A")) {
       e.preventDefault();
@@ -265,6 +280,33 @@ export function ResultsGrid({
       el.scrollTop = top + ROW_HEIGHT - el.clientHeight + HEADER_H;
     }
   }, [sel]);
+
+  // Every cell matching the find query, in reading order. Computed over the MODEL, not
+  // the DOM: only ~30 rows are mounted at a time, so a DOM search would find matches
+  // only in what you can already see.
+  const matches = useMemo(() => {
+    const q = (find ?? "").trim().toLowerCase();
+    if (!q) return [] as { r: number; c: number }[];
+    const out: { r: number; c: number }[] = [];
+    for (let r = 0; r < modelRows.length; r++) {
+      for (let c = 0; c < visibleIdx.length; c++) {
+        const v = cellAt(r, c);
+        if (v !== null && v !== undefined && String(v).toLowerCase().includes(q)) out.push({ r, c });
+      }
+    }
+    return out;
+  }, [find, modelRows.length, visibleIdx.length, cellAt]);
+
+  const gotoMatch = useCallback((i: number) => {
+    if (!matches.length) return;
+    const n = ((i % matches.length) + matches.length) % matches.length;
+    setFindIdx(n);
+    const m = matches[n];
+    setSel({ r0: m.r, c0: m.c, r1: m.r, c1: m.c });
+  }, [matches]);
+
+  // A new query starts from the top rather than wherever the last one ended.
+  useEffect(() => { if (matches.length) gotoMatch(0); }, [matches, gotoMatch]);
 
   const focused = sel ? cellAt(sel.r1, sel.c1) : null;
   const focusedName = sel ? view.columns[visibleIdx[sel.c1]] : "";
@@ -327,6 +369,62 @@ export function ResultsGrid({
           title="Show this cell in full — ⇧↵" data-testid="grid-value-viewer">
           <Icon name="text" size={12} /> Value
         </Button>
+      )}
+      <Button size="xs" variant={find !== null ? "secondary" : "ghost"}
+        onClick={() => { setFind(f => (f === null ? "" : null)); setTimeout(() => findRef.current?.focus(), 0); }}
+        title="Find a value in these rows — ⌘F" data-testid="grid-find-toggle">
+        <Icon name="search" size={12} /> Find
+      </Button>
+      {find !== null && (
+        <>
+          <input
+            ref={findRef}
+            className="aug-fs-sm"
+            value={find}
+            onChange={e => setFind(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === "Enter") { e.preventDefault(); gotoMatch(findIdx + (e.shiftKey ? -1 : 1)); }
+              if (e.key === "Escape") { e.preventDefault(); setFind(null); scrollRef.current?.focus(); }
+            }}
+            placeholder="Find in these rows"
+            data-testid="grid-find"
+            style={{ width: 180, background: "var(--bg-0)", border: "1px solid var(--b1)",
+              borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 7px", outline: "none" }}
+          />
+          <span className="aug-fs-xs" style={{ color: find.trim() && !matches.length ? "var(--amb4)" : "var(--t4)",
+            whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }} data-testid="grid-find-count">
+            {!find.trim() ? "" : matches.length ? `${findIdx + 1} of ${formatCount(matches.length)}` : "no match"}
+          </span>
+          <Button size="xs" variant="ghost" onClick={() => gotoMatch(findIdx - 1)}
+            disabled={!matches.length} title="Previous match — ⇧↵"><Icon name="chevu" size={12} /></Button>
+          <Button size="xs" variant="ghost" onClick={() => gotoMatch(findIdx + 1)}
+            disabled={!matches.length} title="Next match — ↵"><Icon name="chevd" size={12} /></Button>
+        </>
+      )}
+      {goto !== null && (
+        <input
+          autoFocus
+          className="aug-fs-sm"
+          value={goto}
+          onChange={e => setGoto(e.target.value.replace(/[^0-9]/g, ""))}
+          onKeyDown={e => {
+            if (e.key === "Enter") {
+              const n = parseInt(goto, 10);
+              // 1-based, like the row numbers a person reads off the screen.
+              if (Number.isFinite(n) && n >= 1) {
+                const r = Math.min(modelRows.length, n) - 1;
+                setSel({ r0: r, c0: 0, r1: r, c1: 0 });
+              }
+              setGoto(null);
+              scrollRef.current?.focus();
+            }
+            if (e.key === "Escape") { setGoto(null); scrollRef.current?.focus(); }
+          }}
+          placeholder={`Row 1–${modelRows.length}`}
+          data-testid="grid-goto"
+          style={{ width: 120, background: "var(--bg-0)", border: "1px solid var(--b1)",
+            borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 7px", outline: "none" }}
+        />
       )}
       <span style={{ flex: 1 }} />
       {/* The aggregate readout — the thing that replaces writing a second query.

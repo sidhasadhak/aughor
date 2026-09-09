@@ -41,6 +41,10 @@ export interface Intention {
  *  Wildcard expansion needs exactly this and nothing more. */
 export type SchemaMap = Record<string, string[]>;
 
+/** One detected relationship, as the rich schema reports it. Both directions matter:
+ *  the query may already hold either side. */
+export interface JoinHint { t1: string; c1: string; t2: string; c2: string; match?: string }
+
 // ── Finding the columns of a written table name ──────────────────────────────
 
 /** Resolve a table as WRITTEN (`orders`, `main.orders`, `"Orders"`) against the
@@ -68,8 +72,14 @@ export function columnsFor(schema: SchemaMap, written: string): string[] | null 
  *  which is the only layer that knows the connection's dialect. */
 export type QuoteFn = (name: string) => string;
 
+/** The bare table name, unqualified and unquoted — the key both the schema map and the
+ *  join hints can be matched on without either having to re-encode the other's spelling. */
+function bareName(name: string): string {
+  return name.split(".").pop()!.replace(/["`[\]]/g, "").toLowerCase();
+}
+
 export function intentionsAt(
-  view: EditorView, schema: SchemaMap, quote: QuoteFn = n => n,
+  view: EditorView, schema: SchemaMap, quote: QuoteFn = n => n, joins: JoinHint[] = [],
 ): Intention[] {
   const doc = view.state.doc.toString();
   const pos = view.state.selection.main.head;
@@ -148,6 +158,53 @@ export function intentionsAt(
         detail: `${hits.length} occurrences in this statement — edits them together`,
         run: v => renameInPlace(v, ident.text, hits),
       });
+    }
+  }
+
+  // ── Join a related table ───────────────────────────────────────────────────
+  //
+  // DataGrip's most-used completion is the one that writes the ON clause for you from
+  // the foreign key. Ours reads the same relationships the catalog already detected, so
+  // the join it writes is the join the rail draws as `⋈`, not a guess made from column
+  // names at the moment you asked.
+  if (refs.length && /\bfrom\b/i.test(text)) {
+    const present = new Map(refs.map(r => [bareName(r.name), r]));
+    const seen = new Set<string>();
+    for (const j of joins) {
+      // Which side is already in the query, and which one would be new.
+      const pairs: [string, string, string, string][] = [
+        [j.t1, j.c1, j.t2, j.c2],
+        [j.t2, j.c2, j.t1, j.c1],
+      ];
+      for (const [have, haveCol, want, wantCol] of pairs) {
+        const anchor = present.get(bareName(have));
+        if (!anchor || present.has(bareName(want))) continue;
+        const key = `${bareName(want)}:${wantCol}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        const left = anchor.alias ?? anchor.name;
+        const alias = suggestAlias(want, new Set([
+          ...refs.map(r => r.alias).filter(Boolean) as string[],
+          ...[...present.keys()],
+        ]));
+        const clause = `\nJOIN ${want} ${alias} ON ${alias}.${quote(wantCol)} = ${left}.${quote(haveCol)}`;
+        out.push({
+          id: `join-${bareName(want)}`,
+          label: `Join ${want}`,
+          detail: `ON ${alias}.${wantCol} = ${left}.${haveCol}`,
+          run: v => {
+            // Inserted after the FROM clause, before WHERE/GROUP/ORDER — a JOIN placed
+            // after a WHERE is a syntax error, and appending at the end of the
+            // statement is how you get one.
+            const tail = /\b(where|group\s+by|having|qualify|window|order\s+by|limit|offset|fetch)\b/i.exec(text);
+            const at = stmt.from + (tail ? tail.index : text.length);
+            v.dispatch({
+              changes: { from: at, to: at, insert: tail ? `${clause}\n` : clause },
+              scrollIntoView: true,
+            });
+          },
+        });
+      }
     }
   }
 
@@ -316,7 +373,9 @@ const menuKeymap = Prec.highest(keymap.of([
  *  changes with the connection, while the extension is built once — reading it
  *  through a function is what keeps the editor from being rebuilt on every
  *  catalog refresh (which would discard undo history and the cursor). */
-export function sqlIntentions(getSchema: () => SchemaMap, getQuote: () => QuoteFn): Extension {
+export function sqlIntentions(
+  getSchema: () => SchemaMap, getQuote: () => QuoteFn, getJoins: () => JoinHint[] = () => [],
+): Extension {
   return [
     menuField,
     menuKeymap,
@@ -325,7 +384,7 @@ export function sqlIntentions(getSchema: () => SchemaMap, getQuote: () => QuoteF
       preventDefault: true,
       run: v => {
         if (v.state.field(menuField)) { v.dispatch({ effects: setMenu.of(null) }); return true; }
-        const items = intentionsAt(v, getSchema(), getQuote());
+        const items = intentionsAt(v, getSchema(), getQuote(), getJoins());
         if (!items.length) return true;        // swallow the key; nothing applies here
         v.dispatch({ effects: setMenu.of({ items, cursor: 0, pos: v.state.selection.main.head }) });
         return true;

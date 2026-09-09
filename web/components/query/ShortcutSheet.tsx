@@ -33,13 +33,15 @@ function groups(mod: string): Group[] {
       title: "Run",
       keys: [
         [`${mod}↵`, "Run the selection, else the statement under the cursor"],
-        [`${mod}⇧F`, "Format the selection, else the whole query"],
+        ["Explain", "The engine's own plan for exactly what Run would execute"],
+        [`${mod}⌥L`, "Reformat — the selection, else the whole query"],
+        [`${mod}⇧F`, "Reformat, the other key for it"],
       ],
     },
     {
       title: "Write",
       keys: [
-        ["⌥↵", "Actions for what is under the cursor — expand a wildcard, introduce an alias, rename, add a LIMIT"],
+        ["⌥↵", "Actions for what is under the cursor — expand a wildcard, join a related table, introduce an alias, rename, add a LIMIT"],
         [`${mod}J`, "Completion, live templates included — type sel, gb, cte, jn and press ↵"],
         ["Tab", "Move to the next hole in an expanded template"],
         [`${mod}/`, "Comment or uncomment the line"],
@@ -73,6 +75,9 @@ function groups(mod: string): Group[] {
         ["⇧↵", "Open the focused cell in full"],
         [`${mod}C`, "Copy the selection as TSV"],
         [`${mod}A`, "Select every cell"],
+        [`${mod}F`, "Find a value in the returned rows"],
+        [`${mod}G`, "Go to a row by number"],
+        ["Export", "Copy or download as CSV, TSV, JSON, Markdown, HTML, SQL INSERTs or a plain table"],
       ],
     },
   ];

@@ -39,7 +39,7 @@ import {
   selectSelectionMatches, openSearchPanel, gotoLine,
 } from "@codemirror/search";
 import { templateCompletions } from "@/components/query/editor/templates";
-import { sqlIntentions } from "@/components/query/editor/intentions";
+import { sqlIntentions, type JoinHint } from "@/components/query/editor/intentions";
 import {
   bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from "@codemirror/language";
@@ -62,6 +62,9 @@ export interface SqlEditorPaneProps {
   schema?: Record<string, string[]>;
   defaultSchema?: string;
   dialect: SQLDialect;
+  /** SE-7 — the relationships the catalog detected, so ⌥⏎ can offer a JOIN with its
+   *  ON clause already written. Same list the rail draws `⋈` from. */
+  joins?: JoinHint[];
   /** SE-6 — how this engine quotes an identifier that needs it. The editor does not
    *  know the connection; the workbench does, and passes `quoteIdentifier` bound to
    *  its engine hint. Wildcard expansion is the caller that cannot do without it. */
@@ -102,7 +105,7 @@ function sqlWithTemplates(
 
 export function SqlEditorPane({
   value, onChange, onRun, onFormat, onCursor, onReady,
-  schema, defaultSchema, dialect, diagnostics, quote,
+  schema, defaultSchema, dialect, diagnostics, quote, joins,
   placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
   readOnly = false,
 }: SqlEditorPaneProps) {
@@ -122,6 +125,7 @@ export function SqlEditorPane({
   // rebuilt view has no undo history and no cursor.
   const schemaRef = useRef<Record<string, string[]>>(schema ?? {});
   const quoteRef = useRef<(n: string) => string>(n => n);
+  const joinsRef = useRef<JoinHint[]>([]);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
   onFormatRef.current = onFormat;
@@ -132,6 +136,24 @@ export function SqlEditorPane({
   useEffect(() => {
     if (!host.current || view.current) return;
 
+    /** Reformat: the selection if there is one, else the whole document. One dispatch,
+     *  so ⌘Z puts it back in one step. */
+    const formatRun = (v: EditorView) => {
+      const fmt = onFormatRef.current;
+      if (!fmt) return false;
+      const sel = v.state.selection.main;
+      const whole = sel.empty;
+      const from = whole ? 0 : sel.from;
+      const to = whole ? v.state.doc.length : sel.to;
+      const next = fmt(v.state.sliceDoc(from, to));
+      if (next == null || next === v.state.sliceDoc(from, to)) return true;
+      v.dispatch({
+        changes: { from, to, insert: next },
+        selection: { anchor: from + next.length },
+      });
+      return true;
+    };
+
     const runKeymap = Prec.highest(keymap.of([
       {
         key: "Mod-Enter",
@@ -139,26 +161,19 @@ export function SqlEditorPane({
         run: () => { onRunRef.current?.(); return true; },
       },
       {
+        // ⌘⌥L — DataGrip's own Reformat Code. Same command as ⌘⇧F below; two keys
+        // because the muscle memory people bring to this editor comes from there.
+        key: "Mod-Alt-l",
+        preventDefault: true,
+        run: (v) => formatRun(v),
+      },
+      {
         // ⌘⇧F — formats the selection if there is one, else the whole document. The
         // caller decides the text; this only owns the edit, so the cursor lands
         // sensibly and the change is a single undo step.
         key: "Mod-Shift-f",
         preventDefault: true,
-        run: (v) => {
-          const fmt = onFormatRef.current;
-          if (!fmt) return false;
-          const sel = v.state.selection.main;
-          const whole = sel.empty;
-          const from = whole ? 0 : sel.from;
-          const to = whole ? v.state.doc.length : sel.to;
-          const next = fmt(v.state.sliceDoc(from, to));
-          if (next == null || next === v.state.sliceDoc(from, to)) return true;
-          v.dispatch({
-            changes: { from, to, insert: next },
-            selection: { anchor: Math.min(from + next.length, from + next.length) },
-          });
-          return true;
-        },
+        run: (v) => formatRun(v),
       },
     ]));
 
@@ -219,7 +234,7 @@ export function SqlEditorPane({
       // replacing them: `override` would drop schema completion, which is the one
       // thing here nobody would trade a template set for.
       languageCompartment.of(sqlWithTemplates(dialect, schema, defaultSchema)),
-      sqlIntentions(() => schemaRef.current, () => quoteRef.current),
+      sqlIntentions(() => schemaRef.current, () => quoteRef.current, () => joinsRef.current),
       cmPlaceholder(placeholder),
       runKeymap,
       editKeymap,
@@ -297,6 +312,7 @@ export function SqlEditorPane({
   useEffect(() => {
     schemaRef.current = schema ?? {};
     quoteRef.current = quote ?? (n => n);
+    joinsRef.current = joins ?? [];
     const v = view.current;
     if (!v) return;
     v.dispatch({
@@ -304,7 +320,7 @@ export function SqlEditorPane({
         sqlWithTemplates(dialect, schema, defaultSchema),
       ),
     });
-  }, [dialect, schema, defaultSchema, quote]);
+  }, [dialect, schema, defaultSchema, quote, joins]);
 
   return (
     <div

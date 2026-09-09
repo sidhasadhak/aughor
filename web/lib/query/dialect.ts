@@ -93,6 +93,27 @@ export function quoteIdentifier(name: string, hint: EngineHint | null | undefine
   return `"${name.replace(/"/g, '""')}"`;
 }
 
+/** How this engine spells "explain the plan" — or null when it has no such statement.
+ *
+ *  Measured live before this existed: an unconditional `EXPLAIN` button on a BigQuery
+ *  connection returned `400 Statement not supported: ExplainStatement`. BigQuery has no
+ *  EXPLAIN — its plan lives in the job statistics of a dry run — so the honest thing is
+ *  to not offer the button there. A control that always fails is worse than a missing
+ *  one: it teaches the user that the feature is broken rather than absent.
+ *
+ *  SQLite is the other special case: plain `EXPLAIN` there dumps VDBE bytecode, which
+ *  is not what anyone means; `EXPLAIN QUERY PLAN` is. */
+export function explainPrefix(hint: EngineHint | null | undefined): string | null {
+  switch (engineFamily(hint)) {
+    case "postgres":  return "EXPLAIN";
+    case "mysql":     return "EXPLAIN";
+    case "snowflake": return "EXPLAIN";
+    case "sqlite":    return "EXPLAIN QUERY PLAN";
+    case "bigquery":  return null;
+    default:          return null;
+  }
+}
+
 /** The sql-formatter language id for this connection (SE-2 uses it for Format;
  *  defined here so the two mappings cannot drift apart later). */
 export function formatterLanguage(hint: EngineHint | null | undefined): string {

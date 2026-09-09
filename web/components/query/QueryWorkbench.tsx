@@ -115,7 +115,8 @@ function useSchemaMap(connId: string) {
       joinDegree: degree.get(t.name)?.size ?? 0,
       isolated: isolatedSet.has(t.name),
     }));
-    return { map, railTables, schemas: [...schemas].sort(), tableCount: tables.length, loading };
+    return { map, railTables, joins: data?.joins ?? [], schemas: [...schemas].sort(),
+             tableCount: tables.length, loading };
   }, [data, loading]);
 }
 
@@ -193,7 +194,7 @@ function WorkbenchInner({
     if (importRequest?.sql) setMode("visual");
   }, [importRequest?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const { map: schema, railTables, schemas, loading: schemaLoading } = useSchemaMap(connId);
+  const { map: schema, railTables, joins, schemas, loading: schemaLoading } = useSchemaMap(connId);
 
   // A schema chosen for one warehouse means nothing in the next one.
   useEffect(() => { setDefaultSchema(""); }, [connId]);
@@ -535,6 +536,7 @@ function WorkbenchInner({
                 connId={connId}
                 engine={engine}
                 schema={schema}
+                joins={joins}
                 defaultSchema={defaultSchema || undefined}
                 onInsertReady={fn => { insertAtCursor.current = fn; }}
                 onSavedBinding={bindSql}

@@ -11,7 +11,7 @@ import {
   identifierAt, identifierOccurrences, selectStar, statementRangeAt,
   suggestAlias, tableRefs,
 } from "@/lib/query/sqlText";
-import { quoteIdentifier } from "@/lib/query/dialect";
+import { explainPrefix, quoteIdentifier } from "@/lib/query/dialect";
 
 describe("statementRangeAt", () => {
   const doc = "SELECT 1;\nSELECT 2;\nSELECT 3";
@@ -168,5 +168,27 @@ describe("quoteIdentifier", () => {
 
   it("escapes an embedded quote rather than producing broken SQL", () => {
     expect(quoteIdentifier('we"ird', { dialect: "duckdb" })).toBe('"we""ird"');
+  });
+});
+
+// ── Explain, where the engine has one ────────────────────────────────────────
+
+describe("explainPrefix", () => {
+  it("uses EXPLAIN where the engine has it", () => {
+    expect(explainPrefix({ dialect: "duckdb" })).toBe("EXPLAIN");
+    expect(explainPrefix({ dialect: "postgres" })).toBe("EXPLAIN");
+    expect(explainPrefix({ dialect: "mysql" })).toBe("EXPLAIN");
+    expect(explainPrefix({ dialect: "snowflake" })).toBe("EXPLAIN");
+  });
+
+  it("uses EXPLAIN QUERY PLAN on SQLite, where plain EXPLAIN dumps bytecode", () => {
+    expect(explainPrefix({ dialect: "sqlite" })).toBe("EXPLAIN QUERY PLAN");
+  });
+
+  it("offers nothing on BigQuery, which has no EXPLAIN statement", () => {
+    // Measured live: an unconditional EXPLAIN there returned
+    // `400 Statement not supported: ExplainStatement`.
+    expect(explainPrefix({ dialect: "bigquery" })).toBeNull();
+    expect(explainPrefix(null)).toBeNull();
   });
 });
