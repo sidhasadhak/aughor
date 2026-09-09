@@ -3139,7 +3139,18 @@ at a time under the one-branch law):**
   deployment's truth. Where cheap, a title-shape ratchet in the claim-language
   linter's spirit: no bracketed preamble, no snake_case-only string renders as a
   title. **Receipt:** the audit's screenshot walk re-taken clean.
-- **PX-2 · The governed-spend cockpit.** Doors for caps (`GET/PUT /governance/caps` —
+- ✅ **PX-2 · The governed-spend cockpit — SHIPPED 2026-09-09 (`180c0592`).**
+  Operations ▸ Spend (sidebar + palette + `?tab=spend` deep link): the caps form
+  vocabulary-driven from its endpoint with observed-value meters and a real delete;
+  usage by provider/model with the floor-not-a-total honesty; per-model health;
+  route mix; the governance feed with its category vocabulary. Live receipt: the
+  cap loop end to end (declare $100/24h alert → observed meter → remove, net zero),
+  and the cockpit's first real screen showed 2,369 unpriced calls and the `:free`
+  models failing at 89–100% — visible for the first time. Action authoring lost its
+  last two JSON textareas (typed rows are lossless). Deferred honestly: the in-chat
+  door-link on a cap refusal — the refusal sentence already names the number;
+  the link waits for the error class to reach one identifiable transcript surface.
+  Original spec: doors for caps (`GET/PUT /governance/caps` —
   the endpoint already serves the form's vocabulary), usage + cost
   (`/usage`, `/usage/cost-sql`, `/obs/route-mix`, `/obs/model-usage`), and the
   cross-cutting `/audit/feed`. MT runs THROUGH this wave: MT-1 births orgs capped,
@@ -3155,7 +3166,16 @@ at a time under the one-branch law):**
   Original spec: the KI lane's UI: upload → per-object PLAN
   (new/changed/identical/conflict) → accept/edit/dismiss → apply receipt + re-export.
   **Receipt:** the KI golden bundle driven end-to-end through the browser.
-- **PX-4 · Grading made possible.** The `/learning` write half (author, edit,
+- ✅ **PX-4 · Grading made possible — SHIPPED 2026-09-09 (`a547cec9`).** Memory
+  governs the full trusted-query lifecycle (seed-verifies-now, edit-resets-approval,
+  propose/approve/reject/deprecate, audited remove) plus a corpus inspector with
+  lineage; graduation evidence renders under each queued flag in the System panel.
+  Live receipt taken exactly as this wave's line demanded: seeded through the UI,
+  verification executed against DuckDB, approved (count 11 → 12, on the ledger),
+  removed (audited, back to 11) — the golden count moved through the UI, not curl.
+  The live graduation queue is empty because every recorded decision belongs to a
+  flag that already graduated — the system working, not a gap.
+  Original spec: the `/learning` write half (author, edit,
   transition, retire a trusted query; dataset detail), and eval-graduation evidence
   joined to the flag panel it currently cannot reach. This is MI-4's own bottleneck:
   the flywheel moves by grading, and grading has no door.
