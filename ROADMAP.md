@@ -3024,7 +3024,17 @@ the stored chunks — the material is now on disk, the code is not written); doc
 as canvas nodes on the ReactFlow surface rather than only as a canvas-level binding;
 `.potx`/`.pages`/`.html` are not anydoc formats and are refused.
 
-### 3.14 · Arc PX — the product-experience arc: doors, language, composition (drafted 2026-09-09; decision §6 item 13)
+### 3.14 · Arc PX — the product-experience arc: doors, language, composition (drafted 2026-09-09; decision §6 item 13) — ✅ **ALL SEVEN WAVES SHIPPED 2026-09-09**
+
+> **Completion note, same day.** Drafted, adopted, and built in one session, waves
+> ordered by the user's knob (most ambitious first: PX-3 → PX-0 → PX-1 → PX-2 →
+> PX-4 → PX-5 → PX-6), every wave live-driven with its receipt taken. Two premise
+> corrections earned along the way and recorded on their waves: PX-5's provenance
+> substrate already existed (the gap really was composition), and PX-6's "seven
+> activity surfaces" measured as views over FOUR data planes — one cross-link, not
+> a merge. Open leftovers, each recorded on its wave: the in-chat cap-refusal
+> door-link (PX-2), eval-suite name curation and a static title lint (PX-1), and
+> the consistency-plane UI (out of scope until its flag graduates).
 
 > **Origin.** The user's 2026-09-09 hypothesis, given after the USP discussion: *"there
 > are a lot of features that aughor has but are not surfaced or exposed as much as they
@@ -3180,14 +3190,39 @@ at a time under the one-branch law):**
   joined to the flag panel it currently cannot reach. This is MI-4's own bottleneck:
   the flywheel moves by grading, and grading has no door.
   **Receipt:** the golden count moves through the UI, not curl.
-- **PX-5 · Verification made visible.** The Genie study's PORT list is this wave:
+- ✅ **PX-5 · Verification made visible — SHIPPED 2026-09-09 (`0e23d4c2`).** The
+  premise measured BETTER than drafted: the provenance substrate (source_asset,
+  author, verification-outranks-authority, MetricProvenancePanel) already existed —
+  the wave was pure composition. An ontology metric's verified state is the loudest
+  fact on its card ("✓ executed against your database" / "unverified — demoted");
+  the provenance panel reaches the ANSWER (each governed metric on a Trust Receipt
+  opens "Whose definition?", live-resolved outside the signed body like the trace);
+  grounding is NAMED in the agent header in the reader's words; and the agent
+  surface completes Chat | Monitor | Benchmark — a Chat door that opens the
+  conversation with that persona preselected. Original spec: the Genie study's
+  PORT list is this wave:
   a provenance panel on an answer ("this used <author>'s definition from <asset> —
   executed against your database"); verified/demoted state loud on metrics —
   `OntologyMetric.verified` is the one thing we hold that Databricks does not claim,
   rendered today as a chip; grounding named in an agent's description; the
   `Chat | Monitor | Benchmark` agent surface (pure composition — every endpoint
   exists). **Receipt:** a screenshot of an answer that shows *why* it is trusted.
-- **PX-6 · Consolidation and the sweep.** Seven run/activity surfaces become one
+- ✅ **PX-6 · Consolidation and the sweep — SHIPPED 2026-09-09 (`256f56f4`).**
+  The sweep: 22 dead wrappers deleted (re-verified at zero callers; two had gained
+  callers and stay), SearchOverlay + three unimported components + SchemaCards
+  gone, both ratchets DOWN (fonts 1164 → 1120, buttons 69 → 64). Wired instead of
+  deleted: scheduled briefing delivery (the Briefing's Schedule card) and orphan-
+  chunk purge (beside the sentence that used to apologize for it). The ontology's
+  human-edit ledger shipped (overrides list/revert · routing-proposal inbox ·
+  export/import — 61 files exported live with the receipt on screen). **Premise
+  correction, recorded rather than built through:** the seven activity surfaces
+  measured as views over FOUR data planes (/investigations · session_events · the
+  SQL audit log · eval runs) — a merge would have fused planes, so the shared pair
+  got one cross-link ("Machine view: traces & spans →" from Agent runs into Agent
+  Ops ▸ Activity) and the rest keep their jobs. Doc drift fixed (FEATURES.md
+  filename, UI_BACKLOG overrides row, the federation curl-string replaced by an
+  honest sentence naming its experiment flag).
+  Original spec: seven run/activity surfaces become one
   Activity with lenses (each retired surface's distinct capability named and kept —
   the DS-1 P2 lesson: a premise can lapse mid-build); the ontology depth doors worth
   having (routing-proposal inbox, overrides list/revert, export/import); the
