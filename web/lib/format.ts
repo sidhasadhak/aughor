@@ -156,6 +156,13 @@ export function normalizeNumberPrecision(text: string | null | undefined): strin
   });
 }
 
+/** "1 entity" / "3 entities" — a count with its correctly-inflected noun (PX-1:
+ *  "1 entities" is machine text; a screen never shows it). One home, like the rest
+ *  of this file. */
+export function countNoun(n: number, singular: string, plural?: string): string {
+  return `${formatCount(n)} ${n === 1 ? singular : (plural ?? `${singular}s`)}`;
+}
+
 /** Signed variance percent for scorecards: +12.5% / -3.0%. Input is a ratio. */
 export function formatVariance(ratio: number | null | undefined, digits = 1): string {
   if (ratio === null || ratio === undefined || isNaN(ratio)) return "";

@@ -2662,7 +2662,11 @@ export function BriefingPanel({
       out.push({
         ident: signalIdentity(s.insight), insightId: s.insight.id,
         value: fig.value, secondary: fig.secondary, sublabel: fig.sublabel,
-        label: s.insight.finding, domain: s.domain, accent: domainColor(s.domain),
+        // PX-1 — the tile quotes the finding's prose, and stored prose can carry raw
+        // float64s ("0.315801 of total Gross Sales"). Precision policy at the render
+        // boundary, same as everywhere else; the stored finding is untouched.
+        label: normalizeNumberPrecision(s.insight.finding),
+        domain: s.domain, accent: domainColor(s.domain),
         insight: s.insight,
       });
       if (out.length >= 6) break;

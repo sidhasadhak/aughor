@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { InvestigationSummary } from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { localizeCurrency } from "@/lib/orgSettings";
+import { runDisplayTitle } from "@/lib/runTitle";
 import { askSpotlight } from "@/lib/commandRegistry";
 import { getApiBase } from "@/lib/config";
 import { subscribeKernelEvents } from "@/lib/events";
@@ -161,7 +162,7 @@ export function HistoryPanel({ selectedId, onSelect }: Props) {
                       "text-sm leading-snug line-clamp-2 flex-1",
                       isSelected ? "text-white" : "text-zinc-200 group-hover:text-white"
                     )}>
-                      {localizeCurrency(inv.question)}
+                      {localizeCurrency(runDisplayTitle(inv.question).title)}
                     </p>
                   </div>
                   <div className="flex items-center gap-1.5 shrink-0 mt-0.5">

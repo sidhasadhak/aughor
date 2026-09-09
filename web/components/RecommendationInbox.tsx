@@ -398,8 +398,11 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
             {filter === "pending" ? "No pending recommendations" : "No recommendations found"}
           </p>
           <p className="text-xs text-zinc-500">
+            {/* PX-1 — no false praise: on a fresh deployment nothing was ever
+                "actioned", and congratulating the reader for work not done is the
+                copy equivalent of an invented number. Say what fills this instead. */}
             {filter === "pending"
-              ? "All recommendations have been actioned — great work."
+              ? "Recommendations arrive from deep analyses; anything needing your decision lands here."
               : "Complete a deep analysis to see recommendations here."}
           </p>
         </div>

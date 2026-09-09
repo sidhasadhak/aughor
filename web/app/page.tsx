@@ -12,6 +12,7 @@ import { installAuthFetch } from "@/lib/auth";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
+import { runDisplayTitle } from "@/lib/runTitle";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
@@ -185,7 +186,10 @@ function AughorLogo() {
 /** A finding headline shown as a plain one-line list subtitle: strip markdown emphasis (no bold
  *  rendering here, so `**…**` would otherwise leak literal asterisks) and honour the currency. */
 function plainSubtitle(text: string): string {
-  return localizeCurrency(text).replace(/\*+/g, "");
+  // PX-1 — a scheduled run's stored question leads with a code-written grounding
+  // block; that text is for the model, and rendering it as a title put
+  // "[Scheduled-run context — …]" on five cards of one screen. Derive, display-side.
+  return localizeCurrency(runDisplayTitle(text).title).replace(/\*+/g, "");
 }
 
 function timeAgo(iso: string): string {

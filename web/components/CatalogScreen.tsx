@@ -1285,9 +1285,18 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
 
         {items.length === 0 ? (
           <p style={{ fontSize: 13, color: "var(--t3)", padding: "28px 12px", lineHeight: 1.6 }}>
+            {/* PX-1 — this pane once said "Add a connection to get started" while the
+                tree beside it was still LOADING seven live connections. Each state
+                tells its own truth: loading is loading, a filter miss is a filter
+                miss, and the add-a-connection door is offered only when there
+                genuinely is no connection. */}
             {view === "favorites" ? "No favorites yet. Hover a row and tap the star to pin it here."
               : view === "recents" ? "No recent items yet. Open a table to see it here."
-              : "No catalog items found. Add a connection to get started."}
+              : tree === null ? "Loading the catalog…"
+              : filter.trim() ? "Nothing in the catalog matches that filter."
+              : tree.sections.some(s => s.entries.length > 0)
+                ? "No tables have surfaced yet — open a connection in the tree to browse its schemas."
+                : "No connections yet. Add one to get started."}
           </p>
         ) : items.map(it => {
           const fav = favs.includes(it.key);

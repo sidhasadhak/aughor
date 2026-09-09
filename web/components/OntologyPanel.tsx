@@ -33,7 +33,7 @@ import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
-import { verbLabel, formatCount, formatTimestamp } from "@/lib/format";
+import { verbLabel, formatCount, formatTimestamp, countNoun } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
@@ -918,7 +918,7 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
         {clusters?.map((c, i) => (
           <div key={i} className="rounded border border-violet-500/25 bg-violet-500/[0.04] p-2.5 space-y-2">
             <div className="flex items-center justify-between">
-              <span className="aug-fs-xs text-violet-300">{c.entities.length} entities</span>
+              <span className="aug-fs-xs text-violet-300">{countNoun(c.entities.length, "entity", "entities")}</span>
               <span className="aug-fs-xs text-zinc-500">similarity {Math.round(c.similarity * 100)}%</span>
             </div>
             <ul className="space-y-0.5">
@@ -1237,8 +1237,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             </span>
           )}
           <span className="aug-fs-xs text-zinc-500">
-            {Object.keys(graph.entities).length} entities
-            · {Object.keys(graph.relationships).length} relationships
+            {countNoun(Object.keys(graph.entities).length, "entity", "entities")}
+            {" · "}{countNoun(Object.keys(graph.relationships).length, "relationship")}
           </span>
           <button
             onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
