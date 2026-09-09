@@ -62,6 +62,7 @@ import {
 import { subscribeKernelEvents } from "@/lib/events";
 import { Spinner } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { PinnedCards } from "@/components/brief/PinnedCards";
@@ -2706,6 +2707,9 @@ export function BriefingPanel({
   // up under another's. Pinned cards persist their own display in `card.render` instead.
   const { configFor: vizConfigFor, save: saveVizConfigFor } = useVizConfigs(narrativeScope);
 
+  // PX-6 — the scheduled-delivery card, toggled from the control bar.
+  const [showSchedule, setShowSchedule] = useState(false);
+
   if (loading)  return <BriefingLoading />;
 
   if (error) {
@@ -2837,8 +2841,13 @@ export function BriefingPanel({
               >{explorerPending === "Refreshing…" ? "Refreshing…" : "Restart"}</Button>
             </>
           )}
+          {/* PX-6 — the scheduled-delivery door (five wrappers, zero callers until now). */}
+          <Button variant={showSchedule ? "secondary" : "ghost"} size="xs"
+            onClick={() => setShowSchedule(s => !s)}>Schedule</Button>
         </div>
       </div>
+
+      {showSchedule && <BriefSchedule connId={connectionId} />}
 
       {isEmpty ? (
         <BriefingEmpty

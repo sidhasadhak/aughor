@@ -50,7 +50,11 @@ in **Settings → Models / System** so an operator can flip them without env var
 - **dbt manifest** — env/file (`HERMES_DBT_MANIFEST`); a manifest-upload UI is optional
 
 ## Not gaps (verified — do not build)
-- **Ontology overrides** — the *API* overrides already have inline edit UI (`lib/api.ts:942,955` → OntologyPanel); only the *YAML-file* override (#138) is file-only **by design**.
+- **Ontology overrides** — inline edit UI applies them (OntologyPanel), and since PX-6
+  (2026-09-09) the "Human edits" drawer also LISTS and REVERTS them (the earlier version
+  of this row claimed coverage while `GET`/`DELETE /ontology/overrides*` had no caller —
+  applying was covered; listing and reverting were not). The YAML-file round-trip
+  (export/import) has buttons in the same drawer.
 - **R8 semantic operators** (`runSemanticOp`) — already wired in the Query Builder (`QueryBuilder.tsx:827`).
 - Briefing / Verdict hero, Fleet, Agents enable/pause, Learned-skills drawer, Save-as-skill, Trust Receipt, Validate/feedback row, QB decompile, KPI scorecard, Org/Workspace settings, Pivot — all confirmed present.
 

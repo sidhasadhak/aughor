@@ -393,7 +393,7 @@ tree-reduce synthesis, embedding-based entity dedup, a Query Builder "semantic s
   the stream opens with an `agent` receipt event. Unlike a Gem/custom-GPT, the persona inherits the
   whole trust substrate — guards, receipts, RBAC — untouched. **Builder UI included**: the
   Intelligence-rail **Agents** panel (roster + create/edit with connection select + document
-  multi-attach + enable toggle, `web/components/AgentsAdminPanel.tsx`), an agent picker on the ask
+  multi-attach + enable toggle, `web/components/AgenticAgentsPanel.tsx`), an agent picker on the ask
   composer, and an "Answering as …" `AgentBadge` receipt per turn. **Deep path included**: the
   persona persists in the run's checkpointed state (`AgentState.agent_id`) so a plan/clarify-gate
   resume re-activates it (fail-open), the brief leads the ADA synthesis prompt, and deep document

@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
+import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import { Button }      from "@/components/ui/button";
 import {
   getOntology,
@@ -1182,6 +1183,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [showDuplicates,    setShowDuplicates]   = useState(false);
   const [showSkills,        setShowSkills]        = useState(false);
   const [showProposals,     setShowProposals]     = useState(false);
+  // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
+  const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
@@ -1268,7 +1271,21 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           </button>
           <Button
             variant="outline" size="xs"
-            onClick={() => { setShowProposals(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); }}
+            onClick={() => { setShowOverrides(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
+            className={cn(
+              "aug-fs-xs",
+              showOverrides
+                ? "border-violet-500/40 bg-violet-500/15 text-violet-300"
+                : "border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500",
+            )}
+            title="Human overrides on this scope — list them, revert them; routing proposals; export/import"
+            data-testid="ontology-overrides-toggle"
+          >
+            Human edits
+          </Button>
+          <Button
+            variant="outline" size="xs"
+            onClick={() => { setShowProposals(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowOverrides(false); }}
             className={cn(
               "aug-fs-xs",
               showProposals
@@ -1421,6 +1438,11 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         )}
         {showProposals && (
           <ProposalsDrawer connId={selectedConnId} onClose={() => setShowProposals(false)} />
+        )}
+        {showOverrides && (
+          <OverridesDrawer connId={selectedConnId} schema={schema}
+            onClose={() => setShowOverrides(false)}
+            onChanged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }} />
         )}
       </div>
     </div>

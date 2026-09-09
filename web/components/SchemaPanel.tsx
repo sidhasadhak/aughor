@@ -1,8 +1,6 @@
 "use client";
 
 import { useSchema } from "@/lib/schema-context";
-// SchemaCards kept for potential future use
-// import { SchemaCards } from "./SchemaCards";
 import { ERDiagram } from "./ERDiagram";
 
 interface Props {

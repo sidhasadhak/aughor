@@ -258,25 +258,6 @@ export async function rescopeContext(connectionId: string, keep: string[]): Prom
   return res.json();
 }
 
-/** Editable plan gate (P3): resume a paused investigation, keeping only the chosen
- * sub-questions. Returns the SSE Response so the caller can stream the resumed run. */
-export function resumeInvestigationPlan(invId: string, keepSubquestions: number[]): Promise<Response> {
-  return fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ feedback: "plan approved", keep_subquestions: keepSubquestions }),
-  });
-}
-
-/** Resume a clarify_pending pause with the metric reading the user chose (P4). */
-export function resumeInvestigationClarify(invId: string, clarifyChoice: string): Promise<Response> {
-  return fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/feedback`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ feedback: "clarify answered", clarify_choice: clarifyChoice }),
-  });
-}
-
 /** Reject a pending plan — cancel the paused investigation outright. */
 export async function cancelInvestigation(invId: string): Promise<void> {
   await fetch(`${getApiBase()}/investigations/${encodeURIComponent(invId)}/cancel`, { method: "POST" });
@@ -536,40 +517,6 @@ export async function getConnectorTypes(): Promise<ConnectorTypeInfo[]> {
   if (!res.ok) return [];
   const data = await res.json();
   return data.types ?? [];
-}
-
-export async function createFederatedConnection(
-  name: string,
-  connectionIds: string[],
-): Promise<{ id: string; message: string; test_result: string }> {
-  const res = await fetch(`${getApiBase()}/connections/federate`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, connection_ids: connectionIds }),
-  });
-  if (!res.ok) {
-    const err = await res.json();
-    throw new Error(err.detail ?? "Federation failed");
-  }
-  return res.json();
-}
-
-export async function triggerSync(
-  connId: string,
-  incremental = true,
-): Promise<{ message: string }> {
-  const res = await fetch(
-    `${getApiBase()}/connections/${encodeURIComponent(connId)}/sync?incremental=${incremental}`,
-    { method: "POST" },
-  );
-  if (!res.ok) throw new Error("Sync trigger failed");
-  return res.json();
-}
-
-export async function getSyncStatus(connId: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${getApiBase()}/connections/${encodeURIComponent(connId)}/sync-status`);
-  if (!res.ok) return {};
-  return res.json();
 }
 
 export interface ImportOptions {
@@ -898,23 +845,9 @@ export async function getCatalogTree(workspaceId?: string): Promise<CatalogTree>
   return res.json();
 }
 
-export async function getSchema(id: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/connections/${id}/schema`);
-  if (!res.ok) throw new Error("Failed to fetch schema");
-  const data = await res.json();
-  return data.schema as string;
-}
-
 export async function refreshSchemaCache(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/connections/${id}/schema/refresh`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to refresh schema cache");
-}
-
-export async function getSchemaDiagram(id: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/connections/${id}/schema/mermaid`);
-  if (!res.ok) throw new Error("Failed to fetch schema diagram");
-  const data = await res.json();
-  return data.diagram as string;
 }
 
 // ── Metrics Catalog ───────────────────────────────────────────────────────────
@@ -3025,13 +2958,6 @@ export async function deleteCanvas(id: string): Promise<void> {
   await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}`, { method: "DELETE" });
 }
 
-export async function getCanvasSchema(id: string): Promise<string> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/schema`);
-  if (!res.ok) throw new Error("Failed to fetch canvas schema");
-  const data = await res.json();
-  return (data as { schema: string }).schema;
-}
-
 /** A document pinned to a canvas. `missing` marks a binding whose document has since
  *  been deleted — reported rather than dropped, because a pin that silently vanishes
  *  is how a workspace loses its context without anyone noticing. */
@@ -3072,19 +2998,6 @@ export async function getCanvasArtifacts(canvasId: string): Promise<CanvasArtifa
   if (!res.ok) throw new Error("Failed to fetch artifacts");
   const data = await res.json();
   return data.artifacts ?? [];
-}
-
-export async function createCanvasArtifact(
-  canvasId: string,
-  payload: Omit<CanvasArtifact, "id" | "canvas_id" | "created_at">,
-): Promise<CanvasArtifact> {
-  const res = await fetch(getApiBase() + "/canvases/" + encodeURIComponent(canvasId) + "/artifacts", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  if (!res.ok) throw new Error("Failed to create artifact");
-  return res.json();
 }
 
 export async function deleteCanvasArtifact(canvasId: string, artifactId: string): Promise<void> {
@@ -3138,13 +3051,6 @@ export async function editPlaybookRecommendation(id: string, recommendation: str
 export async function deleteInvestigation(id: string): Promise<void> {
   const res = await fetch(`${getApiBase()}/investigations/${encodeURIComponent(id)}`, { method: "DELETE" });
   if (!res.ok && res.status !== 204) throw new Error("Failed to remove history item");
-}
-
-export async function getCanvasRecents(id: string, limit = 10): Promise<Array<{ question: string; status: string; created_at: string }>> {
-  const res = await fetch(`${getApiBase()}/canvases/${encodeURIComponent(id)}/recents?limit=${limit}`);
-  if (!res.ok) return [];
-  const data = await res.json();
-  return (data as { recents: Array<{ question: string; status: string; created_at: string }> }).recents ?? [];
 }
 
 // ── M3 / M11 — Direct Query Runner ───────────────────────────────────────────
@@ -3355,26 +3261,6 @@ export interface BuildSqlFilter {
   col: string;
   op: string;
   val: string;
-}
-
-export async function buildQuerySql(params: {
-  table: string;
-  dimensions: string[];
-  measures: BuildSqlMeasure[];
-  filters: BuildSqlFilter[];
-  order_by: string;
-  limit: number;
-}): Promise<{ sql: string }> {
-  const res = await fetch(`${getApiBase()}/query/build-sql`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(params),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({}));
-    throw new Error((err as { detail?: string }).detail ?? "SQL build failed");
-  }
-  return res.json();
 }
 
 // Query Builder Layer-3 — reverse-compile raw SQL into the builder's chips.
@@ -3613,12 +3499,6 @@ export async function triggerMonitor(id: string): Promise<MonitorAlert | { fired
   return res.json();
 }
 
-export async function getMonitorAlerts(monitorId: string, limit = 50): Promise<MonitorAlert[]> {
-  const res = await fetch(`${getApiBase()}/monitors/${monitorId}/alerts?limit=${limit}`);
-  if (!res.ok) throw new Error("Failed to fetch alerts");
-  return res.json();
-}
-
 export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: string): Promise<MonitorAlert[]> {
   const qs = new URLSearchParams();
   if (connId) qs.set("conn_id", connId);
@@ -3632,12 +3512,6 @@ export async function getAllAlerts(connId?: string, limit = 100, workspaceId?: s
 export async function acknowledgeAlert(alertId: string): Promise<MonitorAlert> {
   const res = await fetch(`${getApiBase()}/alerts/${alertId}/acknowledge`, { method: "POST" });
   if (!res.ok) throw new Error("Failed to acknowledge alert");
-  return res.json();
-}
-
-export async function getDigest(connId: string, period: "week" | "day" = "week"): Promise<DigestResult> {
-  const res = await fetch(`${getApiBase()}/monitors/digest?conn_id=${connId}&period=${period}`);
-  if (!res.ok) throw new Error("Failed to fetch digest");
   return res.json();
 }
 
@@ -3787,25 +3661,6 @@ export interface Component {
   exposable_as_tool: boolean;
   /** The module that governs using this component — the registry's law, on the wire. */
   governed_by: string;
-}
-
-/** The whole roster, or one family of it, or whatever matches a word. */
-export async function getComponents(
-  opts: { connId?: string; family?: ComponentFamily; q?: string } = {},
-): Promise<{ components: Component[]; total: number; byFamily: Record<string, number> }> {
-  const p = new URLSearchParams();
-  if (opts.connId) p.set("conn_id", opts.connId);
-  if (opts.family) p.set("family", opts.family);
-  if (opts.q) p.set("q", opts.q);
-  const qs = p.toString();
-  const res = await fetch(`${getApiBase()}/components${qs ? `?${qs}` : ""}`);
-  if (!res.ok) throw new Error(`components: ${res.status}`);
-  const body = await res.json();
-  return {
-    components: (body.components ?? []) as Component[],
-    total: (body.total ?? 0) as number,
-    byFamily: (body.by_family ?? {}) as Record<string, number>,
-  };
 }
 
 export interface AutomationPaletteEntry {
@@ -4653,14 +4508,6 @@ export async function dryRunAutomationDraft(
   return parsed;
 }
 
-/** Preview a STORED automation, exactly as it sits. */
-export async function dryRunAutomation(id: string): Promise<AutomationDryRun> {
-  const res = await fetch(`${getApiBase()}/automations/${id}/dry-run`, { method: "POST" });
-  const parsed = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(parsed?.detail || `Dry run failed (${res.status})`);
-  return parsed;
-}
-
 export async function getAutomationGraph(id: string, run = ""): Promise<AutomationGraphData> {
   const qs = run ? `?run=${encodeURIComponent(run)}` : "";
   const res = await fetch(`${getApiBase()}/automations/${id}/graph${qs}`);
@@ -5329,12 +5176,6 @@ export async function restartExplorer(connectionId: string): Promise<{ ok: boole
   return res.json();
 }
 
-export async function resetExplorer(connectionId: string): Promise<{ ok: boolean; reset: boolean }> {
-  const res = await fetch(`${getApiBase()}/exploration/${encodeURIComponent(connectionId)}/reset`, { method: "POST" });
-  if (!res.ok) throw new Error("Failed to reset explorer");
-  return res.json();
-}
-
 export async function triggerDomainIntelligence(connectionId: string): Promise<{
   ok: boolean;
   reason?: string;
@@ -5468,12 +5309,6 @@ export async function getJobs(params?: { state?: string; conn_id?: string; kind?
   return res.json();
 }
 
-export async function getJobLogs(jobId: string): Promise<{ seq: number; at: string; kind: string; payload: unknown }[]> {
-  const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/logs`);
-  if (!res.ok) return [];
-  return res.json();
-}
-
 export async function cancelJob(jobId: string): Promise<{ job_id: string; cancelled: boolean }> {
   const res = await fetch(`${getApiBase()}/jobs/${encodeURIComponent(jobId)}/cancel`, { method: "POST" });
   if (!res.ok) return { job_id: jobId, cancelled: false };
@@ -5588,16 +5423,6 @@ export async function groundBriefingNumber(
     const err = await res.json().catch(() => ({}));
     throw new Error((err as { detail?: string }).detail ?? "Grounding failed");
   }
-  return res.json();
-}
-
-/** K3-wide Trust Receipt for a chat or deep-analysis answer (404 if it predates receipts).
- *  `kind` is a ROUTE SEGMENT — the `/ada/` path is a wire name, frozen. */
-export async function getAnswerReceipt(kind: "chat" | "ada", connId: string, id: string): Promise<InsightReceipt | null> {
-  const res = await fetch(
-    `${getApiBase()}/${kind}/${encodeURIComponent(connId)}/${encodeURIComponent(id)}/receipt`,
-  );
-  if (!res.ok) return null;
   return res.json();
 }
 
@@ -5906,14 +5731,6 @@ export async function getSystemFlags(): Promise<Record<string, SystemFlag>> {
 export async function setSystemFlag(name: string, value: boolean): Promise<SystemFlag | null> {
   const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
     method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ value }),
-  });
-  if (!res.ok) return null;
-  return res.json();
-}
-/** Set a capability's tri-state — "auto" clears the override so it follows the Auto-mode master. */
-export async function setCapabilityState(name: string, state: CapabilityState): Promise<SystemFlag | null> {
-  const res = await fetch(`${getApiBase()}/system/flags/${encodeURIComponent(name)}`, {
-    method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ state }),
   });
   if (!res.ok) return null;
   return res.json();
@@ -6988,22 +6805,6 @@ export async function getTrace(traceId: string): Promise<TraceDetail | null> {
 export type ActivityResponse =
   | { measured: true; recording: boolean; events: SessionEvent[]; kinds: Record<string, number> };
 
-export async function getActivity(params?: {
-  kind?: string; agent_id?: string; conn_id?: string; errors_only?: boolean;
-  since_seq?: number; limit?: number;
-}): Promise<ActivityResponse> {
-  const qs = new URLSearchParams();
-  if (params?.kind) qs.set("kind", params.kind);
-  if (params?.agent_id) qs.set("agent_id", params.agent_id);
-  if (params?.conn_id) qs.set("conn_id", params.conn_id);
-  if (params?.errors_only) qs.set("errors_only", "true");
-  if (params?.since_seq != null) qs.set("since_seq", String(params.since_seq));
-  if (params?.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${getApiBase()}/activity?${qs.toString()}`);
-  if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
-  return res.json();
-}
-
 export interface FleetTiles {
   active_jobs: number;
   window_minutes: number;
@@ -7215,12 +7016,6 @@ export async function listAgentAlertRules(enabledOnly = false): Promise<AgentAle
   return (await res.json()).rules;
 }
 
-export async function listAgentAlertEvents(limit = 100): Promise<AgentAlertEvent[]> {
-  const res = await fetch(`${getApiBase()}/obs/agent-alerts/events?limit=${limit}`);
-  if (!res.ok) throw new Error(`Failed to fetch agent alerts (${res.status})`);
-  return (await res.json()).events;
-}
-
 /** The metric vocabulary, from the server. Never hardcoded here: a picker that offers a
  *  metric the backend cannot measure is a control that silently does nothing. */
 export async function getAgentAlertVocabulary(): Promise<{ metrics: string[]; comparators: string[] }> {
@@ -7354,18 +7149,6 @@ export async function getActivityEvents(params?: {
   const res = await fetch(`${getApiBase()}/activity?${qs}`);
   if (!res.ok) throw new Error(`Failed to fetch activity (${res.status})`);
   return res.json();
-}
-
-export async function getAllAutomationRuns(params?: {
-  conn_id?: string; limit?: number;
-}): Promise<AutomationRun[]> {
-  const qs = new URLSearchParams();
-  if (params?.conn_id) qs.set("conn_id", params.conn_id);
-  if (params?.limit) qs.set("limit", String(params.limit));
-  const res = await fetch(`${getApiBase()}/automations/runs?${qs.toString()}`);
-  if (res.status === 404) return []; // automations.engine off
-  if (!res.ok) throw new Error(`Failed to fetch automation runs (${res.status})`);
-  return (await res.json()).runs;
 }
 
 export interface InvestigationGraph {
@@ -7985,4 +7768,86 @@ export async function getEvalGraduations(flag = ""): Promise<EvalGraduation[]> {
   const res = await fetch(`${getApiBase()}/evals/graduations${q}`);
   if (!res.ok) throw new Error(`Failed to fetch graduations (${res.status})`);
   return (await res.json()).graduations;
+}
+
+// ── PX-6 · the ontology's human-edit doors ─────────────────────────────────
+// Overrides could be APPLIED but never listed or reverted; routing proposals had
+// a review queue with no inbox; export/import existed for version control with
+// no button. These are those endpoints' clients.
+
+export interface OntologyOverrideRow {
+  target_kind: string;
+  target_id: string;
+  fields: Record<string, unknown>;
+  [k: string]: unknown;
+}
+
+function ontoScope(connectionId: string, schemaName?: string): string {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
+  return q.toString();
+}
+
+export async function listOntologyOverrides(
+  connectionId: string, schemaName?: string,
+): Promise<OntologyOverrideRow[]> {
+  const res = await fetch(`${getApiBase()}/ontology/overrides?${ontoScope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(`Failed to list overrides (${res.status})`);
+  return (await res.json()).overrides;
+}
+
+/** Revert one human override; the auto-derived value returns on the next read. */
+export async function deleteOntologyOverride(
+  kind: string, targetId: string, connectionId: string, schemaName?: string,
+): Promise<{ removed: boolean }> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/overrides/${encodeURIComponent(kind)}/${targetId}?${ontoScope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export interface RoutingProposal {
+  entity_id?: string;
+  target_id?: string;
+  [k: string]: unknown;
+}
+
+export async function listRoutingProposals(
+  connectionId: string, schemaName?: string,
+): Promise<RoutingProposal[]> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/routing-proposals?${ontoScope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(`Failed to list routing proposals (${res.status})`);
+  return (await res.json()).proposals;
+}
+
+/** The ONLY path from proposed to enforced — the human click. Refuses a proposal
+ *  whose table did not existence-bind. */
+export async function acceptRoutingProposal(
+  entityId: string, connectionId: string, schemaName?: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/routing-proposal/accept?${ontoScope(connectionId, schemaName)}`,
+    { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function exportOntologyTree(
+  connectionId: string, schemaName?: string,
+): Promise<{ root: string; files: number }> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/export?${ontoScope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
+}
+
+export async function importOntologyTree(
+  connectionId: string, schemaName?: string,
+): Promise<Record<string, unknown>> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/import?${ontoScope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await res.text().catch(() => `HTTP ${res.status}`));
+  return res.json();
 }

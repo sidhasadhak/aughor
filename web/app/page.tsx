@@ -44,9 +44,8 @@ const loading = () => <LoadingPanel />;
 const ConfigurePanel    = dynamic(() => import("@/components/ConfigurePanel").then(m => ({ default: m.ConfigurePanel })),    { ssr: false, loading });
 const HistoryPanel      = dynamic(() => import("@/components/HistoryPanel").then(m => ({ default: m.HistoryPanel })),        { ssr: false, loading });
 const HistoryDetailPanel= dynamic(() => import("@/components/HistoryDetailPanel").then(m => ({ default: m.HistoryDetailPanel })), { ssr: false, loading });
-// The four Intelligence perspectives (Ontology / Hub / Domain Intel / Org Intel)
-// are now lazily loaded *inside* IntelligenceWorkspace, which fans them into
-// layers of one unified workspace.
+// The Intelligence perspectives are lazily loaded *inside* IntelligenceWorkspace,
+// which fans them into layers of one unified workspace.
 const IntelligenceWorkspace = dynamic(() => import("@/components/IntelligenceWorkspace").then(m => ({ default: m.IntelligenceWorkspace })), { ssr: false, loading });
 const OperationsWorkspace = dynamic(() => import("@/components/OperationsWorkspace").then(m => ({ default: m.OperationsWorkspace })), { ssr: false, loading });
 const EvalsWorkspace = dynamic(() => import("@/components/EvalsWorkspace").then(m => ({ default: m.EvalsWorkspace })), { ssr: false, loading });
@@ -299,12 +298,11 @@ function Topbar({
 
 // ── Sidebar ────────────────────────────────────────────────────────────────────
 
-// ── Two-tier nav (SOTA pattern: ≤5 primary rail + collapsible secondary) ────────
-// Primary rail: the five destinations a user touches every session. Everything
-// else is grouped into collapsible sections (collapsed by default), keeping the
-// default sidebar to 5 prominent items without losing any feature. Settings lives
-// in the topbar (gear). Each id maps 1:1 to an existing render block — no screen
-// is removed, only the navigation hierarchy is flattened.
+// ── Two-tier nav: a short primary rail, then labelled sections. The section
+// headers are static labels (an earlier draft planned collapsible ones — never
+// built, and this comment once claimed they were); Settings sits pinned in the
+// sidebar footer, not the topbar. Each id maps 1:1 to a render block. (PX-6:
+// this comment now describes the nav that exists, not the one once planned.)
 const NAV_PRIMARY = [
   { id: "home",         icon: "home",   label: "Home" },
   { id: "inbox",        icon: "inbox",  label: "Inbox" },
@@ -428,119 +426,6 @@ function Sidebar({
   );
 }
 
-// ── Search overlay ─────────────────────────────────────────────────────────────
-
-function SearchOverlay({
-  onClose,
-  onNavigate,
-  onGoToChat,
-}: {
-  onClose: () => void;
-  onNavigate: (t: NavTab) => void;
-  onGoToChat: (q?: string) => void;
-}) {
-  const [q, setQ] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => { inputRef.current?.focus(); }, []);
-  useEffect(() => {
-    const fn = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
-    window.addEventListener("keydown", fn);
-    return () => window.removeEventListener("keydown", fn);
-  }, [onClose]);
-
-  const suggestions = [
-    { label: "New Investigation", icon: "spark",    action: () => { onGoToChat(); onClose(); } },
-    { label: "Browse Schema",     icon: "catalog",  action: () => { onNavigate("catalog"); onClose(); } },
-    { label: "Ontology Graph",    icon: "node",     action: () => { onNavigate("ontology"); onClose(); } },
-    { label: "Domain Intelligence", icon: "process", action: () => { onNavigate("intel"); onClose(); } },
-    { label: "Activity Log",      icon: "activity", action: () => { onNavigate("activity"); onClose(); } },
-    { label: "Playbook",          icon: "playbook", action: () => { onNavigate("playbook"); onClose(); } },
-    { label: "Documents",         icon: "folder",   action: () => { onNavigate("documents"); onClose(); } },
-  ].filter(s => !q || s.label.toLowerCase().includes(q.toLowerCase()));
-
-  const questions = [
-    "Why did revenue drop 8% last month?",
-    "Which customers have the highest payment failure rate?",
-    "What is our MRR this month?",
-    "Show top 10 products by revenue",
-    "Is APAC churn a trend or one-time event?",
-  ].filter(s => !q || s.toLowerCase().includes(q.toLowerCase()));
-
-  return (
-    <>
-      <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }} />
-      <div style={{
-        position: "fixed", top: "16%", left: "50%", transform: "translateX(-50%)",
-        zIndex: 201, width: "100%", maxWidth: 560,
-        background: "var(--bg-3)", border: "1px solid var(--b2)",
-        borderRadius: "var(--r3)", overflow: "hidden",
-        boxShadow: "var(--shadow-xl)",
-      }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", borderBottom: "1px solid var(--b1)" }}>
-          <NavIcon name="search" size={14} color="var(--t3)" />
-          <input
-            ref={inputRef}
-            value={q}
-            onChange={e => setQ(e.target.value)}
-            placeholder="Search tables, analyses, metrics…"
-            style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "var(--t1)", fontFamily: "var(--font-ui)" }}
-          />
-          <kbd
-            onClick={onClose}
-            style={{ fontSize: 11, padding: "2px 6px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", cursor: "pointer", fontFamily: "var(--font-mono)" }}
-          >
-            ESC
-          </kbd>
-        </div>
-        <div style={{ maxHeight: 360, overflowY: "auto" }}>
-          {suggestions.length > 0 && (
-            <div style={{ padding: "6px 0" }}>
-              <div className="aug-label" style={{ padding: "4px 14px 2px" }}>Navigation</div>
-              {suggestions.map((s, i) => (
-                <button key={i} onClick={s.action} style={{
-                  width: "100%", display: "flex", alignItems: "center", gap: 10,
-                  padding: "8px 14px", background: "none", border: "none",
-                  color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "all .1s", textAlign: "left",
-                }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--t1)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--t2)"; }}
-                >
-                  <NavIcon name={s.icon} size={13} />{s.label}
-                </button>
-              ))}
-            </div>
-          )}
-          {questions.length > 0 && (
-            <div style={{ padding: "6px 0", borderTop: "1px solid var(--b0)" }}>
-              <div className="aug-label" style={{ padding: "4px 14px 2px" }}>Ask a question</div>
-              {questions.map((question, i) => (
-                <button key={i} onClick={() => { onGoToChat(question); onClose(); }} style={{
-                  width: "100%", display: "flex", alignItems: "center", gap: 10,
-                  padding: "8px 14px", background: "none", border: "none",
-                  color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "all .1s", textAlign: "left",
-                }}
-                  onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-hover)"; e.currentTarget.style.color = "var(--t1)"; }}
-                  onMouseLeave={e => { e.currentTarget.style.background = "none"; e.currentTarget.style.color = "var(--t2)"; }}
-                >
-                  <NavIcon name="spark" size={13} />{question}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-        <div style={{ padding: "6px 14px", borderTop: "1px solid var(--b0)", display: "flex", gap: 12 }}>
-          {[["↑↓", "Navigate"], ["↵", "Select"], ["ESC", "Close"]].map(([k, l]) => (
-            <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>{l}</span>
-            </span>
-          ))}
-        </div>
-      </div>
-    </>
-  );
-}
 
 // ── Stat card ──────────────────────────────────────────────────────────────────
 
@@ -802,7 +687,7 @@ function HomeScreen({
 
 // ── Recents screen ─────────────────────────────────────────────────────────────
 
-function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; workspaceId?: string }) {
+function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, workspaceId }: { onGoToChat: (q?: string) => void; onOpenInvestigation: (id: string, kind: "investigation" | "chat", connectionId?: string, canvasId?: string | null) => void; onOpenMachineView?: () => void; workspaceId?: string }) {
   const [activities, setActivities] = useState<Array<{ id: string; question: string; started_at: string; status: string; headline: string | null; kind?: string; connection_id?: string; canvas_id?: string | null }>>([]);
   const [filter, setFilter] = useState<"all" | "investigation" | "chat">("all");
 
@@ -844,6 +729,16 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, workspaceId }: { onGoT
             </button>
           ))}
         </div>
+        {/* PX-6 — the seven-surfaces audit measured these as views over DIFFERENT data
+            planes, not duplicates: this list is the person's run history
+            (/investigations); the machine view (event stream, traces, spans) lives in
+            Agent Ops ▸ Activity. One cross-link instead of a merge that would have
+            fused two planes. */}
+        {onOpenMachineView && (
+          <Button variant="ghost" size="xs" className="ml-auto" onClick={onOpenMachineView}>
+            Machine view: traces &amp; spans →
+          </Button>
+        )}
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "18px 20px" }}>
         {activities.length > 0 && (
@@ -1203,7 +1098,14 @@ function AddConnectionForm({
             <div style={{ padding: "12px", background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r2)", fontSize: 12, color: "var(--t3)", lineHeight: 1.5 }}>
               {type === "local_upload"
                 ? <>Local Files: create the connection, then upload CSV/Parquet/Excel files to it via the Files tab.</>
-                : <>Federated connections span multiple sources. Use <code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t2)" }}>POST /connections/federate</code> with a list of connection IDs.</>
+                // PX-6 (the PX-1 language law, applied late): this used to print a curl
+                // command at the person. A federated connection has no form yet because
+                // its planner is still an experiment flag — say that, name the flag,
+                // and stop pretending an API string is a UI.
+                : <>A federated connection joins two sources in one question. There is no
+                    form for it yet — its planner is still an experiment
+                    (<code style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t2)" }}>federation.planner</code>,
+                    Settings ▸ System ▸ Feature flags); when it graduates, the form lands here.</>
               }
             </div>
           ) : (
@@ -2241,7 +2143,9 @@ export default function Home() {
             {/* ── RECENTS ── */}
             {tab === "recents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
-                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation} workspaceId={selectedWorkspace} />
+                <RecentsScreen onGoToChat={goToChat} onOpenInvestigation={openInvestigation}
+                  onOpenMachineView={() => { setAgenticOpsLayer("activity"); setTab("agentic-ops"); }}
+                  workspaceId={selectedWorkspace} />
               </div>
             )}
 
