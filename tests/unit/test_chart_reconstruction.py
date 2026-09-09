@@ -485,3 +485,53 @@ def test_segments_with_a_hole_between_them_are_not_a_stack():
     holed = reconstruct(_measured_page(_STACKS, gap={"label": "2024", "points": 12.0}))
 
     assert holed == []
+
+
+# ── Findable, and not fooled by running text ──────────────────────────────────
+
+def test_a_chart_carries_what_its_page_calls_itself():
+    """Charts are appended in a block at the end, because the Markdown has no page
+    boundaries to splice them into — so the block has to carry the setting itself.
+
+    Measured live: ten cities' take-up tables reduced to "Retail take-up in city
+    locations — page 5/12/19…", near-identical text differing only in digits. An
+    investigation asked for Berlin's 2018 lettings and answered that the report did not
+    contain them. The table was indexed and unfindable, because the word Berlin appeared
+    nowhere near it.
+    """
+    def draw(at):
+        _chart(at, [98, 104, 70, 65, 37])
+        at(300, 392.0, "RETAIL MARKET BERLIN")      # the page's running footer
+
+    chart = reconstruct(_page(draw))[0]
+
+    assert chart.context == "RETAIL MARKET BERLIN"
+    assert "RETAIL MARKET BERLIN" in chart.as_markdown().splitlines()[0]
+    assert "page 1" in chart.as_markdown().splitlines()[0]
+
+
+def test_running_text_is_not_a_ranked_chart():
+    """A horizontal bar chart has a BAR between its label and its value; running text
+    does not. Measured on a retail deck, a "KEY FACTS" panel had its headings paired
+    with the years inside them — "KEY FACTS H1" against "2026" — and arrived as a table
+    of nonsense, which is the shape everything downstream trusts most.
+    """
+    def draw(at):
+        at(200, _RANKED_TOP - 30, "Key facts")
+        for i, (label, value) in enumerate(_STREETS):
+            top = _RANKED_TOP + i * _RANKED_PITCH
+            at(200, top, label, centred=False)
+            # 5pt apart — a word space, not a bar. Any closer and the two MERGE into
+            # one token, which would refuse the chart for the wrong reason and leave
+            # this test passing while the guard it names went unexercised.
+            at(215, top, str(value))
+
+    assert reconstruct(_page(draw)) == []
+
+
+def test_a_real_ranked_chart_still_reads_through_the_gap_check():
+    """The guard keys on the MEDIAN gap across the chart, so one tight row cannot
+    disqualify a genuine ranking."""
+    chart = reconstruct(_page(lambda at: _ranked(at, _STREETS)))[0]
+
+    assert chart.values == ["12,64", "10,58", "10,05", "9,68", "9,21"]

@@ -63,7 +63,7 @@ import logging
 import math
 import re
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +125,10 @@ class Chart:
     #: the chart printed no labels, so its heights were scaled against its own axis.
     #: Said out loud in the table, because the two are not equally certain.
     measured: bool = False
+    #: What the PAGE calls itself — its running footer, e.g. "RETAIL MARKET BERLIN".
+    #: Without it every city's table is near-identical text and semantic search cannot
+    #: tell one from another; see `_page_context`.
+    context: str = ""
 
     @property
     def values(self) -> list[str]:
@@ -146,7 +150,8 @@ class Chart:
             for i, category in enumerate(self.categories))
         note = ("\n\nMeasured from the bar heights against this chart's own axis — "
                 "these values are not printed on it." if self.measured else "")
-        return (f"#### {self.title or 'Chart'} — page {self.page}{note}\n\n"
+        where = f"{self.context}, page {self.page}" if self.context else f"page {self.page}"
+        return (f"#### {self.title or 'Chart'} — {where}{note}\n\n"
                 f"| Category | {heads} |\n{rule}\n{rows}\n")
 
 
@@ -168,6 +173,36 @@ def available() -> bool:
         return True
     except ImportError:
         return False
+
+
+def _page_context(page) -> str:
+    """What a page calls itself — its running footer.
+
+    Charts are appended in a block at the end of the document, because anydoc's
+    Markdown carries no page boundaries to splice them into. That block stripped every
+    chart of its setting: ten cities' take-up tables reduced to "Retail take-up in city
+    locations — page 5/12/19…", near-identical text differing only in digits. Measured
+    live, an investigation asked for Berlin's 2018 lettings and answered that the report
+    did not contain them — the table was indexed and unfindable, because the word Berlin
+    appeared nowhere near it.
+
+    Read with a TIGHTER word tolerance than the readers use. The deck sets its footer as
+    adjacent runs with no space, so the default joins them into "MARKETBERLIN" and the
+    city stops being a word anyone can match; 0.8 splits them. Only the context is read
+    this way — changing it globally would change how every label is seen.
+    """
+    try:
+        words = page.extract_words(x_tolerance=0.8)
+    except Exception:
+        return ""
+    if not words:
+        return ""
+    floor = max(w["top"] for w in words)
+    line = sorted((w for w in words if floor - w["top"] <= _ROW_TOLERANCE),
+                  key=lambda w: w["x0"])
+    text = " ".join(w["text"] for w in line if not _VALUE.match(w["text"])).strip()
+    # A footer, not a sentence and not a stray figure.
+    return text if 3 <= len(text) <= 60 and any(c.isalpha() for c in text) else ""
 
 
 def _centre(word: dict) -> float:
@@ -402,11 +437,15 @@ def reconstruct(data: bytes) -> list[Chart]:
             for number, page in enumerate(pdf.pages, 1):
                 try:
                     words = page.extract_words()
-                    charts.extend(_charts_on_page(words, number))
-                    charts.extend(_ranked_charts_on_page(words, number))
-                    charts.extend(_stacked_charts_on_page(words, number))
-                    charts.extend(_donut_charts_on_page(words, number))
-                    charts.extend(_measured_stacks_on_page(page, words, number))
+                    found: list[Chart] = []
+                    found.extend(_charts_on_page(words, number))
+                    found.extend(_ranked_charts_on_page(words, number))
+                    found.extend(_stacked_charts_on_page(words, number))
+                    found.extend(_donut_charts_on_page(words, number))
+                    found.extend(_measured_stacks_on_page(page, words, number))
+                    # Attached once per page rather than threaded through five readers.
+                    context = _page_context(page)
+                    charts.extend(replace(c, context=context) for c in found)
                 except Exception:
                     logger.debug("chart reconstruction skipped page %d", number,
                                  exc_info=True)
@@ -453,6 +492,13 @@ _LABEL_COLUMN_WIDTH = 25.0
 #: Words of one label sit a few points apart. A gap this wide is a different chart's
 #: content sharing the row, not a longer name.
 _LABEL_WORD_GAP = 30.0
+
+#: A horizontal bar chart has a BAR between its label and its value, so they sit far
+#: apart; running text does not. Measured on a retail deck: a "KEY FACTS" panel whose
+#: headings were being paired with the years inside them had a median gap of 2.8pt,
+#: while every real ranked chart on the deck ran 125-218pt. Judged on the MEDIAN across
+#: the chart, because one row of either kind proves nothing.
+_MIN_BAR_GAP = 20.0
 
 
 def _rows(words: list[dict]) -> list[list[dict]]:
@@ -540,6 +586,12 @@ def _ranked_charts_on_page(words: list[dict], page_number: int) -> list[Chart]:
         # reads as complete and it is not. Refused rather than quietly shortened.
         steps = [b[3] - a[3] for a, b in zip(entries, entries[1:])]
         if steps and max(steps) > statistics.median(steps) * 1.6:
+            continue
+        # The bar has to be there. Without this a panel of stat headings — "KEY FACTS
+        # H1 2026", "A-Cities Ø 5 years" — pairs each heading with the year inside it
+        # and arrives as a table of nonsense, which is the shape everything downstream
+        # trusts most.
+        if statistics.median([e[2]["x0"] - e[1][1] for e in entries]) < _MIN_BAR_GAP:
             continue
         left = min(e[1][0] for e in entries)
         right = max(e[2]["x1"] for e in entries)
