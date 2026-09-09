@@ -369,3 +369,119 @@ def test_a_ring_that_does_not_sum_to_a_whole_is_refused():
     totals stop being 100, which is exactly what a mis-paired chart looks like."""
     assert reconstruct(_page(lambda at: _donut(
         at, [27, 19, 9, 9, 8, 6, 6, 16], [23, 26, 7, 9, 9, 7, 3, 40], _SECTORS))) == []
+
+
+# ── Bars with no labels: measured, not read ───────────────────────────────────
+
+_M_ZERO = 350.0          # where the axis zero sits, in `top` coordinates
+_M_FULL = 150.0          # points from zero to the top tick
+_M_MAX = 100_000         # what the top tick says
+_PER_POINT = _M_MAX / _M_FULL          # 666.7 units per point
+_M_STEP = 1000           # what values round to at that resolution
+_QUARTERS = [("Q1", (0.1, 0.1, 0.1)), ("Q2", (0.3, 0.8, 0.8)), ("Q3", (0.3, 0.6, 0.7))]
+
+#: A tick label's glyph box sits a shade above its baseline; the reader calibrates on
+#: label CENTRES, so the fixture draws baselines two points below the gridline it means.
+_BASELINE_NUDGE = 2.0
+
+
+def _measured_page(stacks, *, feet=None, swatches=True, gap=None) -> bytes:
+    """A stacked bar chart with a value axis, a legend, and no data labels at all."""
+    from reportlab.pdfgen import canvas
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=(600, 400))
+    pdf.setFont("Helvetica", 8)
+
+    def text(x, top, s):
+        pdf.setFillColorRGB(0, 0, 0)
+        pdf.drawCentredString(x, 400 - top, s)
+
+    text(200, _M_ZERO - _M_FULL - 40, "Retail take-up in city locations")
+    for i in range(4):                                   # the value axis
+        value = _M_MAX * i // 3
+        top = _M_ZERO - _M_FULL * i / 3
+        text(90, top + _BASELINE_NUDGE, f"{value:,}".replace(",", "."))
+    for i, (name, colour) in enumerate(_QUARTERS):       # the legend
+        if swatches:
+            pdf.setFillColorRGB(*colour)
+            pdf.rect(120 + i * 60, 400 - _M_ZERO + _M_FULL + 22, 14, 5, stroke=0, fill=1)
+        text(147 + i * 60, _M_ZERO - _M_FULL - 20, name)
+
+    for column, (label, heights) in enumerate(stacks):
+        x = 140.0 + column * 70
+        text(x, _M_ZERO + 12, label)                     # the category
+        foot = (feet or {}).get(label, _M_ZERO)
+        for i, ((_, colour), height) in enumerate(zip(_QUARTERS, heights)):
+            if height <= 0:
+                continue
+            if i and label == (gap or {}).get("label"):
+                foot -= gap["points"]          # a hole between two segments
+            pdf.setFillColorRGB(*colour)
+            pdf.rect(x - 8, 400 - foot, 16, height, stroke=0, fill=1)
+            foot -= height
+    pdf.save()
+    return buffer.getvalue()
+
+
+_STACKS = [("2023", (30.0, 30.0, 60.0)), ("2024", (15.0, 45.0, 30.0)),
+           ("2025", (60.0, 15.0, 15.0)), ("2026", (30.0, 45.0, 0.0))]
+
+
+def _close(got: str, want: float) -> bool:
+    return abs(float(got.replace(",", "")) - want) <= _M_STEP
+
+
+def test_a_bar_with_no_labels_is_measured_against_its_own_axis():
+    """The tier every other reader refuses. Nothing on this chart says what its
+    segments are worth — but they are drawn as rectangles with exact coordinates, and
+    the axis gives a scale, so the heights can be measured."""
+    chart = reconstruct(_measured_page(_STACKS))[0]
+
+    assert chart.measured is True
+    assert chart.categories == ["2023", "2024", "2025", "2026"]
+    assert [s.name for s in chart.series] == ["Q1", "Q2", "Q3"]
+    assert _close(chart.series[0].values[0], 30.0 * _PER_POINT)
+    assert _close(chart.series[2].values[0], 60.0 * _PER_POINT)
+    assert _close(chart.series[0].values[2], 60.0 * _PER_POINT)
+
+
+def test_a_measured_table_says_that_it_was_measured():
+    """A reading and a measurement are not equally certain, and the table has to carry
+    the difference — otherwise the least reliable numbers in the corpus look exactly
+    like the most reliable ones."""
+    markdown = as_markdown(reconstruct(_measured_page(_STACKS)))
+
+    assert "Measured from the bar heights" in markdown
+    assert "not printed on it" in markdown
+
+
+def test_a_missing_segment_is_absence_not_zero():
+    """The deck's last bar is a HALF year: it has no Q3 rectangle at all. Writing a zero
+    would invent a quarter's worth of nothing where the chart simply stops."""
+    chart = reconstruct(_measured_page(_STACKS))[0]
+
+    assert chart.series[2].values[3] == "—"
+
+
+def test_a_stack_that_does_not_stand_on_the_axis_is_refused():
+    """Measuring a height means nothing without knowing where it starts. A bar floating
+    off its baseline is not a bar this can read."""
+    floating = reconstruct(_measured_page(_STACKS, feet={"2024": _M_ZERO - 40}))
+
+    assert floating == []
+
+
+def test_a_colour_with_no_legend_swatch_is_refused():
+    """The swatch is the ONLY thing tying a drawn segment to a series — the segments
+    carry no text whatsoever. A colour nobody named cannot be attributed by position."""
+    assert reconstruct(_measured_page(_STACKS, swatches=False)) == []
+
+
+def test_segments_with_a_hole_between_them_are_not_a_stack():
+    """Contiguity is what makes four rectangles in a column a STACK rather than four
+    rectangles in a column. Without it any set of shapes that happens to line up gets
+    measured, and their heights mean nothing together."""
+    holed = reconstruct(_measured_page(_STACKS, gap={"label": "2024", "points": 12.0}))
+
+    assert holed == []
