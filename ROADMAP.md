@@ -3024,6 +3024,153 @@ the stored chunks — the material is now on disk, the code is not written); doc
 as canvas nodes on the ReactFlow surface rather than only as a canvas-level binding;
 `.potx`/`.pages`/`.html` are not anydoc formats and are refused.
 
+### 3.14 · Arc PX — the product-experience arc: doors, language, composition (drafted 2026-09-09; decision §6 item 13)
+
+> **Origin.** The user's 2026-09-09 hypothesis, given after the USP discussion: *"there
+> are a lot of features that aughor has but are not surfaced or exposed as much as they
+> should be. Along with that, our UI is also like an AI slop … it lacks the UI judgement
+> of an experienced UI/UX researcher."* Audited the same day — two exhaustive code
+> audits (every backend path vs. every frontend caller; every surface vs. how a person
+> reaches it) plus sixteen screens of the live app — and **both halves confirmed**, with
+> a correction: the slop is not the visual layer (the token system and its seven
+> ratcheted gates are fine); it is content design, information architecture, and doors.
+>
+> **The thesis.** §0's rule — a capability ships when something consumes it — has a
+> second clause this audit forces: **a capability is not consumed until a person can
+> find it, and it is not trusted until it speaks the person's language.** The inert mass
+> has migrated one level up: the planes got built (the agent planes all have doors —
+> the old suspicion is measured FALSE), and now the DOORS are the inert layer —
+> ~89 live browser-relevant endpoints with no UI, 30 fully-written client wrappers no
+> component calls, 3 finished components never imported. The Genie study's verdict
+> ("~90% of the parts — the gap is composition") is this arc, itemized. And it
+> composes with Arc MT: **MT is the lock on the front door; PX is the room a stranger
+> walks into.** Arming self-serve before fixing the first five minutes ships the void
+> to strangers.
+
+**Laws that bind every PX wave (standing, not per-slice):**
+
+- **No machine text reaches an eye.** Anything rendered as a title, label or suggestion
+  must be authored for a person. Prompt preambles, snake_case rule keys, eval wave
+  names, raw connection-id prefixes and unformatted decimals are exhaust. The fix is
+  always display-side — **what the model receives never changes to make a screen
+  prettier** (the `observation_note` preamble stays byte-identical; the run gains a
+  display title).
+- **An empty state is a door, not an apology.** Every empty surface names the action
+  that fills it and offers the button — the standing card law ("a card must offer the
+  door THIS deployment can open") extended to blank screens. One shared `EmptyState`
+  primitive; the four independent local ones retire into it.
+- **A door ships with its deep link.** Any surface a wave adds or touches writes its
+  `?tab=`/`?layer=` state and restores from it. Unbookmarkable is unshipped.
+- **Wire it or delete it, in the same wave.** A dead `lib/api.ts` wrapper or
+  never-imported component in a wave's path either gains its consumer or is removed.
+  No third state — half-built doors are how this audit's 30-wrapper pile grew.
+- **The differentiator gets the design budget.** Verification, custody and provenance
+  are the pitch; today they are the *least* designed pixels (declared-action authoring
+  is raw JSON textareas; execution-verified metrics are a chip reading "approved v1").
+  Inverting that is the arc's point, not its polish.
+- **Doc drift is fixed by the wave that touches its subject** — `FEATURES.md:392`'s
+  nonexistent `AgentsAdminPanel.tsx`, `docs/UI_BACKLOG.md`'s wrong "overrides covered"
+  claim, federation presented as shipped while its only door is a printed curl string.
+- **The audit is a catalogue with a timestamp (2026-09-09).** Re-measure a row before
+  building on it; the full inventory lives in the session's two agent reports and the
+  memory file `ui-exposure-and-slop-audit-2026-09-09`.
+
+**What is true today (measured 2026-09-09; receipts in the audit):**
+
+- **461 backend path templates; 324 (70%) UI-reachable.** After discounting machine
+  doors (UC REST, webhooks, cron, MCP seams) and deprecated aliases: ~89 live
+  endpoints doorless. Fully inert planes: `/intake` (11 endpoints, zero consumers
+  anywhere — Arc KI shipped its API without a door, re-paying the inert-library trap
+  one level up), `/governance/caps`×3 + `/usage`×2 + `/audit/feed` (an operator cannot
+  see spend or set a cap), briefing subscriptions (all five typed wrappers exist,
+  zero callers), the `/learning` write half, 22 of 40 ontology paths (including the
+  routing-proposal review queue and export/import), `/obs` cost-routing
+  (route-mix · model-usage · prompt-weight · prompt-capture), eval graduations
+  (`SystemPanel` shows the queue from a *different store* than the evidence endpoint).
+- **The first five minutes are the worst five.** Default landing tab is
+  `intelligence`, not `home` (`web/app/page.tsx:1387`); on the default connection
+  that renders a *blank black pane* — no empty state, no skeleton (verified live:
+  the DOM holds the shell and nothing else). The 3-step first-run funnel exists — on
+  the Home tab a new user is never shown. Two palette destinations ("Connections",
+  "Add a data source") navigate to a tab with no render branch → blank screen.
+  `?layer=` is written only for Intelligence, so every other workspace's sub-layer is
+  lost on reload. ⌘K search on "guardrail" finds nothing but "Ask Spotlight".
+- **The slop, classed:** (1) machine exhaust as user text — run cards titled with the
+  scheduler's prompt preamble (`aughor/automations/temporal.py:81`), 392 Playbook
+  rules titled by snake_case keys, eval suites named "…(Wave H)", a Briefing tile
+  pairing a concentration sentence with the number "2014", raw `0.315801`,
+  "1 entities"; (2) lying states — Catalog says "Add a connection to get started"
+  beside 7 live connections, the Documents banner alarms while narrating agreement
+  (`DocumentUploader.tsx:435` narrates one metric, triggers on another), the empty
+  Inbox congratulates work never done; (3) inverted investment — Actions authoring is
+  JSON textareas, Health is a nav slot holding one sentence, document upload leads
+  with chunk-delimiter parameters.
+- **What is NOT broken:** the token/design system (Arc DS; ratcheted), Agent Ops
+  (honest footnotes, real control-room judgment), the SQL workbench, the
+  Integrations copy. The judgment exists in the codebase; it is unevenly applied.
+
+**Waves, in build order (each small; every wave touches `page.tsx`, so they land one
+at a time under the one-branch law):**
+
+- **PX-0 · The first five minutes.** Land on `home`; the landing void gets an empty
+  state that offers the door; shared `EmptyState` primitive (four locals retire); fix
+  the two broken palette targets; write `?layer=` for every workspace;
+  palette↔sidebar naming parity ("Agent runs" vs "Agent history").
+  **Receipt:** an incognito visit lands on Home with the funnel; every sidebar
+  destination survives reload; both palette entries land somewhere real.
+- **PX-1 · The language pass.** Display titles for scheduled runs (preamble stays
+  model-only); Playbook rules titled for people (key demoted to metadata); eval
+  suites named by purpose; number formatting (percentages, pluralization, the
+  stat-tile extraction mismatch); the three lying states corrected to tell this
+  deployment's truth. Where cheap, a title-shape ratchet in the claim-language
+  linter's spirit: no bracketed preamble, no snake_case-only string renders as a
+  title. **Receipt:** the audit's screenshot walk re-taken clean.
+- **PX-2 · The governed-spend cockpit.** Doors for caps (`GET/PUT /governance/caps` —
+  the endpoint already serves the form's vocabulary), usage + cost
+  (`/usage`, `/usage/cost-sql`, `/obs/route-mix`, `/obs/model-usage`), and the
+  cross-cutting `/audit/feed`. MT runs THROUGH this wave: MT-1 births orgs capped,
+  and a capped org's operator must SEE the cap and raise it in-product. Same wave:
+  declared-action authoring becomes a form (typed fields; JSON behind "advanced").
+  **Receipt:** set a cap in the UI, hit it, and the refusal names the cap and links
+  the door that raises it.
+- **PX-3 · The intake door.** The KI lane's UI: upload → per-object PLAN
+  (new/changed/identical/conflict) → accept/edit/dismiss → apply receipt + re-export.
+  **Receipt:** the KI golden bundle driven end-to-end through the browser.
+- **PX-4 · Grading made possible.** The `/learning` write half (author, edit,
+  transition, retire a trusted query; dataset detail), and eval-graduation evidence
+  joined to the flag panel it currently cannot reach. This is MI-4's own bottleneck:
+  the flywheel moves by grading, and grading has no door.
+  **Receipt:** the golden count moves through the UI, not curl.
+- **PX-5 · Verification made visible.** The Genie study's PORT list is this wave:
+  a provenance panel on an answer ("this used <author>'s definition from <asset> —
+  executed against your database"); verified/demoted state loud on metrics —
+  `OntologyMetric.verified` is the one thing we hold that Databricks does not claim,
+  rendered today as a chip; grounding named in an agent's description; the
+  `Chat | Monitor | Benchmark` agent surface (pure composition — every endpoint
+  exists). **Receipt:** a screenshot of an answer that shows *why* it is trusted.
+- **PX-6 · Consolidation and the sweep.** Seven run/activity surfaces become one
+  Activity with lenses (each retired surface's distinct capability named and kept —
+  the DS-1 P2 lesson: a premise can lapse mid-build); the ontology depth doors worth
+  having (routing-proposal inbox, overrides list/revert, export/import); the
+  wire-or-delete sweep over the 30 dead wrappers, 3 unimported components and the
+  never-rendered `SearchOverlay`; the doc-drift fixes.
+  **Receipt:** the reachability audit's orphan and dead-code tables re-run empty.
+
+**Deliberately out of scope (not refused — just not this arc):** a visual redesign or
+rebrand (the token layer is not the problem); rewriting `page.tsx` into App Router
+routes (the NavTab contract works — fix the contract, not the architecture); UI for
+machine doors (UC REST, webhooks, `/cron/tick`, the MCP seams — consumed elsewhere by
+design); the `/consistency` plane's UI while its flag is default-off (it graduates
+first, per the eval plane's own law); federation UI while `federation.planner` is an
+experiment (but the curl-string in Add Data goes, per the language law).
+
+**Risks, carried in rather than discovered:** (a) display-title derivation drifting
+into changing stored fields — the first law forbids it, tests pin emission; (b) IA
+consolidation is where regressions hide — PX-6 is LAST for a reason and each retired
+surface needs its capability inventory first; (c) an arc about "polish" invites scope
+creep — every wave has a receipt that is a *behavior*, not an adjective, and a wave
+with no receipt left to take is done.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -3231,6 +3378,12 @@ NEXT (order within a band is the user's knob)
   ✅ tool_grants column SHIPPED 2026-09-02  (migration 6 + store/create/patch + write-time
                                    roster validation + the editor's grants list; grants
                                    stay PROPOSE-only — §1 limit retired)
+
+  🆕 Arc PX (§3.14, drafted 2026-09-09) — doors · language · composition: the
+                                   exposure/slop audit's arc. The user turned this
+                                   band's knob the same day ("most ambitious or
+                                   complex item first") ⇒ PX-3 the intake door
+                                   begins ahead of PX-0/PX-1; §6 item 13.
 
 THEN    (§3.7 Phase 2 COMPLETE — DS-8 durable pause and DS-9 subchains SHIPPED)
 
@@ -3614,6 +3767,8 @@ the browser** · **measure the premise before building.**
 > reading as blocked once the call has been made. If you arrived here looking for what
 > the user still owes, the answer is *nothing*; what remains is in the ledger's "keyed
 > on the user" list — credentials and one manual gesture, not decisions.
+> **Amended 2026-09-09:** item 13 (Arc PX) arrived and was decided in the same
+> session by the user's own directive — the register stays at zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -3716,6 +3871,19 @@ the browser** · **measure the premise before building.**
     store and only an operator raises them. Not decided here because it isn't ripe:
     billing, team orgs (joining, not owning), and Google's app-verification paperwork.
     Full note: §3.12.
+13. ✅ **DECIDED 2026-09-09 — Arc PX is adopted, and the band's knob is turned: most
+    ambitious first.** The user's hypothesis, verbatim: *"there are a lot of features
+    that aughor has but are not surfaced or exposed as much as they should be. Along
+    with that, our UI is also like an AI slop … it lacks the UI judgement of an
+    experienced UI/UX researcher"* — confirmed by the same-day audit and specced as
+    §3.14. The build directive followed mid-session: *"take the most ambitious or
+    complex item first with precision"*, which inverts the arc's default
+    PX-0-first order. Chosen under that directive: **PX-3, the intake door** — the
+    single largest fully-inert plane (11 endpoints, zero consumers anywhere), a
+    complete propose→review→accept governance flow, and buildable to a hard live
+    receipt now because its backend is finished and tested. PX-5 is grander but
+    waits on provenance fields the ontology does not yet store; PX-2 is broad
+    rather than deep. PX-0/PX-1 follow.
 
 ---
 
