@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { getCatalogTree } from "@/lib/api";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -212,9 +213,18 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // request issued twice under two scope keys. One settled mount, one wave.
         if (id === "briefing") return (canvasId || schemaResolved)
           ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
-          // Never a blank page while the schema resolves (the catalog-tree path can
-          // take seconds on a cold API) — a quiet placeholder holds the space.
-          : <div style={{ minHeight: 360, borderRadius: "var(--r2)", background: "var(--bg-1)", opacity: 0.5 }} />;
+          // PX-0 (§3.14) — never a SILENT pane while the schema resolves. This gate was
+          // a bare grey div, and with no connection selected it held forever: the app's
+          // default landing was a black void with no words on it. An empty state says
+          // what is happening and, when nothing is coming, where the door is.
+          : (
+            <SharedEmptyState icon="brief"
+              title={connectionId ? "Reading this connection's schemas…" : "No connection selected"}>
+              {connectionId
+                ? "The briefing opens once its schema scope settles — a cold catalog can take a few seconds."
+                : "Briefings are per connection. Pick one above, or add a connection from the Catalog."}
+            </SharedEmptyState>
+          );
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
         if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;

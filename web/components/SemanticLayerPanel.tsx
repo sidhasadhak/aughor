@@ -20,6 +20,7 @@ import { type RichSchema } from "@/lib/api";
 import { useRichSchema } from "@/lib/schema-context";
 import { MetricsPanel } from "@/components/MetricsPanel";
 import { IntakePanel } from "@/components/intake/IntakePanel";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
@@ -141,11 +142,7 @@ function ErrorMsg({ msg }: { msg: string }) {
 }
 
 function EmptyState({ text }: { text: string }) {
-  return (
-    <div style={{ padding: "32px 0", textAlign: "center", color: "var(--t4, #555)", fontSize: 12 }}>
-      {text}
-    </div>
-  );
+  return <SharedEmptyState variant="inline" title={text} />;
 }
 
 function TabIntro({ text }: { text: string }) {

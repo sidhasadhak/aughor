@@ -29,6 +29,7 @@ import { ghostBtn, useIntegrationGrants } from "@/components/automations/Automat
 import { bindingRefs } from "@/lib/automationFlow";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
+import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 
 // ── Vocabulary (mirrors the backend Literals) ────────────────────────────────────
 
@@ -842,28 +843,27 @@ function EmptyState({ onAdd, elsewhere }: {
 }) {
   const hidden = elsewhere && elsewhere.count > 0;
   return (
-    <div style={{ textAlign: "center", paddingTop: 60, color: "var(--t3)" }}>
-      <div style={{ fontSize: 28, marginBottom: 12 }}>⚙️</div>
-      <div className="aug-fs-h2" style={{ fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>
-        {hidden ? "No automations on this connection" : "No automations yet"}
-      </div>
+    <SharedEmptyState icon="flow"
+      title={hidden ? "No automations on this connection" : "No automations yet"}
+      action={
+        <Button variant="ghost" className="h-auto" onClick={onAdd}>
+          {hidden ? "Create one here" : "Create first automation"}
+        </Button>
+      }>
       {hidden ? (
         /* The scope, named, and where the rest of them are. "Yet" would be a lie a
            reader has no way to check from this screen. */
-        <div className="aug-fs-sm" style={{ marginBottom: 20, lineHeight: 1.5 }}>
+        <>
           {elsewhere.count} automation{elsewhere.count === 1 ? "" : "s"} exist on{" "}
           {elsewhere.where.join(", ")}. This list shows only the connection you have
           selected — switch to it to see them.
-        </div>
+        </>
       ) : (
-        <div className="aug-fs-sm" style={{ marginBottom: 20, lineHeight: 1.5 }}>
+        <>
           Bind a condition (a schedule, a metric, a data change) to an effect —
           investigate, deliver a briefing, notify, or run a governed action.
-        </div>
+        </>
       )}
-      <Button variant="ghost" className="h-auto" onClick={onAdd}>
-        {hidden ? "Create one here" : "Create first automation"}
-      </Button>
-    </div>
+    </SharedEmptyState>
   );
 }

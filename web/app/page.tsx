@@ -1339,6 +1339,10 @@ const DATA_LAYER_FOR_TAB: Partial<Record<NavTab, DataLayer>> = {
   builder:  "query",   // SE-1 — the visual builder is now a MODE of the Query workbench
   query:    "query",
   semantic: "semantic",
+  // PX-0 (§3.14) — "connections" was a tab with no render branch: the palette's two
+  // entries and any old link navigated to a blank pane. Connections live in the
+  // Catalog, so the id resolves there on every path (navigate, cold load, popstate).
+  connections: "catalog",
 };
 
 /** The inverse, for the rail's active mark. Two ids collapse onto `query` above, so
@@ -1368,15 +1372,26 @@ const VALID_LAYERS = new Set<IntelLayer>([
   "briefing", "hub", "ontology", "graph", "evidence", "memory", "kinetic", "org",
 ]);
 
-function layerFromUrl(): IntelLayer | null {
+/** PX-0 (§3.14) — every workspace's layer is addressable, not only Intelligence's
+ *  (before this, Evals▸Experiments or Agent Ops▸Attention could not survive a
+ *  reload). One vocabulary per workspace; a `?layer=` value is honoured only on the
+ *  workspace it belongs to, so a stale or foreign value is ignored, not routed to. */
+const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "security"]);
+const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
+const AGENTIC_LAYERS = new Set<AgenticOpsLayer>([
+  "fleet", "agents", "attention", "activity", "automations",
+]);
+
+function layerFromUrl(): string | null {
   if (typeof window === "undefined") return null;
-  const l = new URLSearchParams(window.location.search).get("layer") as IntelLayer | null;
-  return l && VALID_LAYERS.has(l) ? l : null;
+  return new URLSearchParams(window.location.search).get("layer");
 }
 
 export default function Home() {
-  // v2 nav IA: land on the Briefing (the intelligence digest), not the Home
-  // overview — unless the URL names a screen (S1: deep links win).
+  // PX-0 (§3.14): land on Home — unless the URL names a screen (S1: deep links win).
+  // The previous default was `intelligence`, which for a connection without a briefing
+  // rendered a void, and which meant the first-run funnel (rendered only on Home) was
+  // on a screen a new user was never shown.
   //
   // This starts at the default rather than reading the URL in the initializer. `/` is
   // statically prerendered, so the server cannot see `?tab=` — a URL-seeded initial
@@ -1385,7 +1400,7 @@ export default function Home() {
   // server said Briefing was the active nav item while the client said Data Canvas).
   // The deep link is applied just below instead, after mount. Same for intelLayer and
   // the `?table=` entity link.
-  const [tab, setTab] = useState<NavTab>("intelligence");
+  const [tab, setTab] = useState<NavTab>("home");
   const [theme, setThemeState] = useState<Theme>("dark");
   const [rawSelectedConn, setSelectedConn] = useState("");
 
@@ -1405,19 +1420,37 @@ export default function Home() {
   // Drill into a known finding: routes the first chat turn to the Tier-0 Finding Dossier.
   const [chatInitialInsightId, setChatInitialInsightId] = useState<string | undefined>(undefined);
   const [intelLayer, setIntelLayer] = useState<IntelLayer>("briefing");
+  // PX-0 — the other workspaces' layers, declared here (not further down) because the
+  // deep-link reader and URL sync below now read and write all of them.
+  const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
+  const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
+  const [agenticOpsLayer, setAgenticOpsLayer] = useState<AgenticOpsLayer>("fleet");
+  const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
+  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   // S1 — the entity deep link (`?table=`), consumed once by the graph layer.
   const [initialGraphTable, setInitialGraphTable] = useState<string | undefined>(undefined);
+
+  /** Apply a `?layer=` value to the workspace `target` names; true when it was a real
+   *  layer of that workspace. Setters are stable, so mount/popstate closures may hold
+   *  the first instance safely. */
+  const applyLayerFor = (target: NavTab, l: string): boolean => {
+    if (target === "intelligence" && VALID_LAYERS.has(l as IntelLayer)) { setIntelLayer(l as IntelLayer); return true; }
+    if (target === "operations" && OPS_LAYERS.has(l as OpsLayer)) { setOpsLayer(l as OpsLayer); return true; }
+    if (target === "evals" && EVALS_LAYERS.has(l as EvalsLayer)) { setEvalsLayer(l as EvalsLayer); return true; }
+    if (target === "agentic-ops" && AGENTIC_LAYERS.has(l as AgenticOpsLayer)) { setAgenticOpsLayer(l as AgenticOpsLayer); return true; }
+    return false;
+  };
 
   // S1 — deep links win, applied after mount so the first client render still matches
   // the server's HTML. Whatever this sets is recorded as pending, because the URL-sync
   // effect below runs in the SAME commit as this one — still closed over the default
   // tab — and would otherwise rewrite `?tab=canvases` to `?tab=intelligence` before the
   // link ever reached state, silently destroying the deep link it was meant to honour.
-  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: IntelLayer | null; canvas: string | null } | null>(null);
+  const pendingDeepLink = useRef<{ tab: NavTab | null; layer: string | null; canvas: string | null } | null>(null);
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const t = tabFromUrl();
-    const l = layerFromUrl();
+    const rawLayer = layerFromUrl();
     const table = params.get("table");
     const canvasId = params.get("canvas");
     // A Data rail id in the URL is a LAYER alias, not a tab that renders — resolve it
@@ -1431,10 +1464,16 @@ export default function Home() {
       // string, so the workbench cannot read it back for itself.
       if (t === "builder") setQueryInitialMode("visual");
     }
-    if (l) setIntelLayer(l);
+    // PX-0 — the layer lands on whichever workspace the tab resolved to.
+    const layerApplied = rawLayer && resolved
+      ? applyLayerFor(resolved.tab, rawLayer) : false;
     if (table) setInitialGraphTable(table);
-    if (t || l || canvasId) {
-      pendingDeepLink.current = { tab: resolved?.tab ?? t, layer: l, canvas: canvasId };
+    if (t || rawLayer || canvasId) {
+      pendingDeepLink.current = {
+        tab: resolved?.tab ?? t,
+        layer: layerApplied ? rawLayer : null,
+        canvas: canvasId,
+      };
     }
 
     // The canvas is the one deep link that cannot resolve in this tick. `?tab=` and
@@ -1501,7 +1540,14 @@ export default function Home() {
       // `pending.canvas` is still set while the roster is in flight. Writing now would
       // delete the `?canvas=` that the fetch is on its way to resolve — the same
       // self-erasing race the tab had before, one async hop longer.
-      if ((pending.tab && tab !== pending.tab) || (pending.layer && intelLayer !== pending.layer)
+      const pendingLayerCurrent =
+        pending.tab === "intelligence" ? intelLayer
+        : pending.tab === "operations" ? opsLayer
+        : pending.tab === "evals" ? evalsLayer
+        : pending.tab === "agentic-ops" ? agenticOpsLayer
+        : null;
+      if ((pending.tab && tab !== pending.tab)
+          || (pending.layer && pendingLayerCurrent !== pending.layer)
           || pending.canvas) return;
       pendingDeepLink.current = null;
     }
@@ -1510,24 +1556,35 @@ export default function Home() {
     const urlConn = params.get("conn");
     const urlLayer = params.get("layer");
     const urlCanvas = params.get("canvas");
-    const wantLayer = tab === "intelligence" ? intelLayer : null;
+    // PX-0 — every workspace writes its layer, so what the screen shows survives a
+    // reload. The Data workspace writes its layer AS the tab (`catalog` / `query` /
+    // `semantic` are aliases the deep-link resolver already reads back) — `builder`
+    // is deliberately never written, so its forced visual mode stays a property of
+    // real legacy links only.
+    const writeTab: NavTab = tab === "data" ? (dataLayer as NavTab) : tab;
+    const wantLayer =
+      tab === "intelligence" ? intelLayer
+      : tab === "operations" ? opsLayer
+      : tab === "evals" ? evalsLayer
+      : tab === "agentic-ops" ? agenticOpsLayer
+      : null;
     // Only the workspace is addressed by a canvas; elsewhere the id is noise that would
     // survive into screens it means nothing on.
     const wantCanvas = tab === "canvas-workspace" ? (activeCanvas?.id ?? null) : null;
-    if (urlTab === tab && (urlConn ?? "") === rawSelectedConn
+    if (urlTab === writeTab && (urlConn ?? "") === rawSelectedConn
         && (urlLayer ?? null) === wantLayer && (urlCanvas ?? null) === wantCanvas) return;
-    params.set("tab", tab);
+    params.set("tab", writeTab);
     if (rawSelectedConn) params.set("conn", rawSelectedConn); else params.delete("conn");
     if (wantLayer) params.set("layer", wantLayer); else params.delete("layer");
     if (wantCanvas) params.set("canvas", wantCanvas); else params.delete("canvas");
     const next = `${window.location.pathname}?${params.toString()}`;
-    if (!urlSyncReady.current || urlTab === tab) {
+    if (!urlSyncReady.current || urlTab === writeTab) {
       window.history.replaceState(null, "", next);
       urlSyncReady.current = true;
     } else {
       window.history.pushState(null, "", next);
     }
-  }, [tab, rawSelectedConn, intelLayer, activeCanvas]);
+  }, [tab, rawSelectedConn, intelLayer, opsLayer, evalsLayer, agenticOpsLayer, dataLayer, activeCanvas]);
   useEffect(() => {
     const onPop = () => {
       const t = tabFromUrl();
@@ -1537,18 +1594,14 @@ export default function Home() {
         const r = resolveDeepLinkTab(t);
         setTab(r.tab);
         if (r.dataLayer) setDataLayer(r.dataLayer);
+        const l = layerFromUrl();
+        if (l) applyLayerFor(r.tab, l);
       }
-      const l = layerFromUrl();
-      if (l) setIntelLayer(l);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  const [opsLayer, setOpsLayer] = useState<OpsLayer>("monitors");
-  const [evalsLayer, setEvalsLayer] = useState<EvalsLayer>("suites");
-  const [agenticOpsLayer, setAgenticOpsLayer] = useState<AgenticOpsLayer>("fleet");
-  const [dataLayer, setDataLayer] = useState<DataLayer>("catalog");
-  const [secLens, setSecLens] = useState<"security" | "activity" | "approvals">("security");
   const [showHistory, setShowHistory] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);
@@ -2398,7 +2451,11 @@ export default function Home() {
       )}
 
       {/* ── Command palette (⌘K) ── */}
-      <GlobalCommands onNavigate={t => handleNavigate(t as NavTab)} onGoToChat={q => goToChat(q)} />
+      <GlobalCommands
+        onNavigate={t => handleNavigate(t as NavTab)}
+        onGoToChat={q => goToChat(q)}
+        onAddSource={() => { handleNavigate("catalog"); setShowAddConn(true); }}
+      />
       <CommandPalette
         open={showSearch}
         onClose={() => setShowSearch(false)}
