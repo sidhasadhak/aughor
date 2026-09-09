@@ -7501,3 +7501,225 @@ export async function getTraceLogs(traceId: string, limit = 200): Promise<TraceL
   if (!res.ok) throw new Error(`Failed to fetch trace logs (${res.status})`);
   return res.json();
 }
+
+// ── PX-3 · the intake lane (KI-1…4) ────────────────────────────────────────
+// Upload declared knowledge → a per-object PLAN against the live stores → human
+// verdicts → each accept applies through the target store's own governance.
+// Nothing auto-applies; identical objects arrive as `noop` and need no decision.
+
+export interface IntakeBundle {
+  id: string;
+  content_hash: string;
+  connection_id: string;
+  source: string;
+  uploaded_by: string;
+  uploaded_at: string;
+}
+
+export type IntakeVerdict = "new" | "changed" | "identical" | "conflict";
+export type IntakeStatus = "pending" | "accepted" | "dismissed" | "noop";
+
+export interface IntakeCandidate {
+  id: string;
+  bundle_id: string;
+  kind: string; // metric | synonym | glossary | rule | join | definition | trusted_query | pack
+  verdict: IntakeVerdict;
+  detail: string;
+  payload: Record<string, unknown>;
+  status: IntakeStatus;
+  resolved_by: string;
+  resolved_at: string;
+  edited_payload: Record<string, unknown> | null;
+  target_ref: string;
+  apply_result: Record<string, unknown> | null;
+}
+
+export interface IntakeSummary {
+  new: number;
+  changed: number;
+  identical: number;
+  conflict: number;
+}
+
+export interface IntakePlan {
+  bundle: IntakeBundle;
+  summary: IntakeSummary;
+  candidates: IntakeCandidate[];
+}
+
+/** Result of any staging door (bundle / file / sheet / prose / suggest). */
+export interface IntakeStageResult extends IntakePlan {
+  duplicate: boolean;
+  refused: string[];
+  mapped?: { file?: string; sheet?: string; ignored_headers: string[] };
+}
+
+async function intakeError(res: Response): Promise<never> {
+  const text = await res.text().catch(() => "");
+  try {
+    const detail = JSON.parse(text)?.detail;
+    if (detail) throw new Error(typeof detail === "string" ? detail : JSON.stringify(detail));
+  } catch (e) {
+    if (e instanceof Error && e.message && !e.message.startsWith("Unexpected")) throw e;
+  }
+  throw new Error(text || `HTTP ${res.status}`);
+}
+
+export async function listIntakeBundles(connectionId = ""): Promise<IntakeBundle[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/intake/bundles${q}`);
+  if (!res.ok) await intakeError(res);
+  return (await res.json()).bundles;
+}
+
+export async function getIntakePlan(bundleId: string): Promise<IntakePlan> {
+  const res = await fetch(`${getApiBase()}/intake/bundles/${encodeURIComponent(bundleId)}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeBundleYaml(args: {
+  yaml_text: string; connection_id: string; actor: string; source?: string;
+}): Promise<IntakeStageResult> {
+  const res = await fetch(`${getApiBase()}/intake/bundles`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor: args.actor, source: args.source ?? "",
+      connection_id: args.connection_id, yaml_text: args.yaml_text }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeFile(
+  file: File, connectionId: string, actor: string, source = "",
+): Promise<IntakeStageResult> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("connection_id", connectionId);
+  form.append("actor", actor);
+  form.append("source", source);
+  const res = await fetch(`${getApiBase()}/intake/files`, { method: "POST", body: form });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function uploadIntakeSheet(args: {
+  spreadsheet: string; sheet?: string; connection_id: string; actor: string; source?: string;
+}): Promise<IntakeStageResult> {
+  const res = await fetch(`${getApiBase()}/intake/sheets`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ spreadsheet: args.spreadsheet, sheet: args.sheet ?? "",
+      connection_id: args.connection_id, actor: args.actor, source: args.source ?? "" }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeSuggestResult extends Partial<IntakeStageResult> {
+  staged: boolean;
+  mined_at: string;
+  populations: Record<string, number>;
+  unresolved: unknown[];
+  note?: string;
+}
+
+/** Deterministic usage mining — validated runs → trusted-query proposals,
+ *  recurring guard fires → rule proposals. No model call. */
+export async function mineIntakeUsage(
+  connectionId: string, actor: string,
+): Promise<IntakeSuggestResult> {
+  const res = await fetch(`${getApiBase()}/intake/suggest`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: connectionId, actor }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeMapperStats {
+  candidates: number;
+  pending: number;
+  dismissed: number;
+  accepted_clean: number;
+  accepted_edited: number;
+  noop: number;
+  edit_rate: number | null;
+  threshold: number;
+}
+
+export interface IntakeProseResult extends Partial<IntakeStageResult> {
+  staged?: boolean;
+  mined_at: string;
+  note?: string;
+  mapper_stats: IntakeMapperStats;
+}
+
+/** The LLM prose mapper — the lane's ONE explicit model-spending door. */
+export async function uploadIntakeProse(args: {
+  connection_id: string; actor: string; text: string; source?: string;
+}): Promise<IntakeProseResult> {
+  const res = await fetch(`${getApiBase()}/intake/prose`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ connection_id: args.connection_id, actor: args.actor,
+      text: args.text, source: args.source ?? "" }),
+  });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export async function getIntakeMapperStats(bundleId = ""): Promise<IntakeMapperStats> {
+  const q = bundleId ? `?bundle_id=${encodeURIComponent(bundleId)}` : "";
+  const res = await fetch(`${getApiBase()}/intake/mapper-stats${q}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeResolveOutcome {
+  id: string;
+  outcome: "accepted" | "dismissed" | "skipped" | "error";
+  reason?: string;
+  target_ref?: string;
+  [k: string]: unknown;
+}
+
+export interface IntakeResolveResult {
+  bundle: string;
+  accepted: number;
+  dismissed: number;
+  errors: number;
+  results: IntakeResolveOutcome[];
+}
+
+/** The human verdicts. Accepted candidates apply immediately through each target
+ *  store's own governance; a failed apply STAYS PENDING with the error attached. */
+export async function resolveIntakeBundle(bundleId: string, args: {
+  actor: string; accept?: string[]; dismiss?: string[];
+  edits?: Record<string, Record<string, unknown>>;
+}): Promise<IntakeResolveResult> {
+  const res = await fetch(
+    `${getApiBase()}/intake/bundles/${encodeURIComponent(bundleId)}/resolve`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ actor: args.actor, accept: args.accept ?? [],
+        dismiss: args.dismiss ?? [], edits: args.edits ?? {} }),
+    });
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}
+
+export interface IntakeExport {
+  bundle: Record<string, unknown>;
+  yaml_text: string;
+}
+
+/** This deployment's declared knowledge as a re-importable bundle. */
+export async function exportIntakeBundle(connectionId: string): Promise<IntakeExport> {
+  const res = await fetch(
+    `${getApiBase()}/intake/export/${encodeURIComponent(connectionId)}`);
+  if (!res.ok) await intakeError(res);
+  return res.json();
+}

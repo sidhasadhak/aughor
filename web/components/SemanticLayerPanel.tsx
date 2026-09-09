@@ -1,10 +1,17 @@
 "use client";
 
 /**
- * SemanticLayerPanel — three-tab management interface for:
- *  1. Schema Annotations — table + column business descriptions injected into schema
- *  2. Knowledge Store    — metric definitions, synonyms, join rules (per connection)
- *  3. Benchmarks         — gold questions for SQL quality regression testing
+ * SemanticLayerPanel — the connection's declared meaning, in five tabs:
+ *  1. Annotations — table + column business descriptions injected into schema
+ *  2. Knowledge   — metric definitions, synonyms, join rules (per connection)
+ *  3. Metrics     — governed KPI definitions
+ *  4. Benchmarks  — gold questions for SQL quality regression testing
+ *  5. Import      — the intake lane (PX-3): bring knowledge in from files, sheets,
+ *                   wikis or usage, review the plan, accept per object, export back
+ *
+ * The active tab deep-links as `?semtab=` — the shell's URL sync preserves params
+ * it does not own, so this survives its rewrites (§3.14's "a door ships with its
+ * deep link").
  */
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -12,6 +19,7 @@ import { getApiBase } from "@/lib/config";
 import { type RichSchema } from "@/lib/api";
 import { useRichSchema } from "@/lib/schema-context";
 import { MetricsPanel } from "@/components/MetricsPanel";
+import { IntakePanel } from "@/components/intake/IntakePanel";
 import { Icon } from "@/components/ui/icon";
 
 // ── Fetch helpers ──────────────────────────────────────────────────────────────
@@ -731,7 +739,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
 // Main Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const TABS = ["Annotations", "Knowledge", "Metrics", "Benchmarks"];
+const TABS = ["Annotations", "Knowledge", "Metrics", "Benchmarks", "Import"];
 
 // ── Scope selector (connection → schema → table) ───────────────────────────────
 
@@ -773,7 +781,22 @@ function ScopeBar({
 export function SemanticLayerPanel({ connectionId, connName, connections = [] }: {
   connectionId: string; connName?: string; connections?: ConnOption[];
 }) {
-  const [activeTab, setActiveTab] = useState<string>("Annotations");
+  // The tab deep-links as ?semtab= (lowercased). Read once at mount; written on
+  // change via replaceState — the shell's URL sync starts from location.search and
+  // only touches its own params, so semtab survives its rewrites.
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    if (typeof window === "undefined") return "Annotations";
+    const want = new URLSearchParams(window.location.search).get("semtab") ?? "";
+    return TABS.find(t => t.toLowerCase() === want.toLowerCase()) ?? "Annotations";
+  });
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    if (activeTab === "Annotations") params.delete("semtab");
+    else params.set("semtab", activeTab.toLowerCase());
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
+  }, [activeTab]);
   const [scopeSchema, setScopeSchema] = useState("");
   const [scopeTable, setScopeTable]   = useState("");
 
@@ -867,6 +890,7 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
             </div>
           )}
           {activeTab === "Benchmarks"  && <BenchmarksTab  connId={activeConn} />}
+          {activeTab === "Import"      && <IntakePanel    connId={activeConn} />}
         </div>
       </div>
     </div>

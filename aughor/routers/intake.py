@@ -77,6 +77,14 @@ def upload_bundle(body: BundleUpload, request: Request):
     if not conn_id:
         raise HTTPException(status_code=400, detail="connection_id is required "
                             "(on the request or inside the bundle)")
+    if not bundle.get("connection_id"):
+        # A bundle staged FOR a connection must be findable UNDER it: the row copies
+        # the bundle's own connection_id key, so a pasted bundle that omits it staged
+        # fine and then never appeared in the per-connection listing (found live by
+        # PX-3's door, 2026-09-09). Writing it into the content also scopes the dedupe
+        # hash — the same file staged for two connections is two bundles, each planned
+        # against its own stores rather than answered with the other's plan.
+        bundle = {**bundle, "connection_id": conn_id}
     _check_conn_org(request, conn_id)
     return _stage(bundle, conn_id, source=body.source, actor=body.actor)
 
