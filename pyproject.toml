@@ -100,8 +100,15 @@ export = [
 # unknown binaries as mojibake — see aughor/knowledge/convert.py.
 # pypdf and python-docx REMAIN: they are the outbound renderers' dependencies and
 # the fallback reader on installs that predate the converter.
+# `pdfplumber` reads a PDF's text WITH its coordinates, which anydoc necessarily
+# discards: Markdown is a linear stream and a chart's data labels are positioned
+# graphics. Measured on an 83-page retail deck, 32 pages carried a chart whose values
+# were present as exact text and unreadable as data, because the only thing tying
+# `104` to `2018` was that they shared an x position. See aughor/knowledge/charts.py.
+# It is NOT a second document reader — anydoc remains the pivot for prose.
 docs = [
     "firecrawl-anydoc>=0.2.4",
+    "pdfplumber>=0.11.10",
     "pypdf>=6.4.0",
     "python-docx>=1.0.0",
 ]

@@ -782,6 +782,17 @@ export function DocumentUploader() {
                   )}
                 </p>
               )}
+              {review && (review.charts_recovered ?? 0) > 0 && (
+                <p className="aug-fs-xs text-emerald-300/90 px-3 pt-2">
+                  {review.charts_recovered} chart
+                  {review.charts_recovered !== 1 ? "s" : ""} read back from page
+                  {(review.chart_pages?.length ?? 0) !== 1 ? "s" : ""}{" "}
+                  {review.chart_pages?.slice(0, 8).join(", ")}
+                  {(review.chart_pages?.length ?? 0) > 8 ? "…" : ""} and appended as
+                  tables. A chart&rsquo;s values are exact text the Markdown could not
+                  carry; only their positions said what they measured.
+                </p>
+              )}
               {review && review.suppressed_numeric_runs > 0 && (
                 <p className="aug-fs-xs text-zinc-500 px-3 pt-2">
                   {review.suppressed_numeric_runs} line

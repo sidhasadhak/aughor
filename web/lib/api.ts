@@ -2400,6 +2400,10 @@ export interface DocumentConversion {
   pages_failed: number[];
   suppressed_numeric_runs: number;
   suppressed_sample: string[];
+  /** Charts read back from the PDF's geometry and appended as tables. Content the
+   *  document GAINED — the counterpart of the pages it lost. */
+  charts_recovered?: number;
+  chart_pages?: number[];
   settings: ChunkSettings;
 }
 

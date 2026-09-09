@@ -188,6 +188,32 @@ def sniff(data: bytes, filename: str = "") -> str | None:
     return None
 
 
+def _with_charts(conversion: Conversion, data: bytes, detected: str) -> Conversion:
+    """Append every chart this PDF can PROVE, as Markdown tables.
+
+    Markdown cannot carry a chart: its data labels are positioned graphics, and `104`
+    means `2018` only because they share an x coordinate. Conversion is where that
+    coordinate is lost, so this is where it has to be read — from the same bytes,
+    before they are let go.
+
+    Deliberately additive and deliberately silent about failure. The document has
+    already converted; a chart that cannot be proved is not an import error, so
+    `reconstruct` returns nothing rather than raising and this leaves the Markdown
+    exactly as anydoc made it. See `aughor.knowledge.charts` for what "proved" means.
+    """
+    if detected != "pdf":
+        return conversion
+    from aughor.knowledge.charts import as_markdown, reconstruct
+
+    found = reconstruct(data)
+    if not found:
+        return conversion
+    conversion.markdown += as_markdown(found)
+    conversion.charts_recovered = len(found)
+    conversion.chart_pages = sorted({chart.page for chart in found})
+    return conversion
+
+
 @dataclass
 class Conversion:
     """A document's Markdown plus what could NOT be read.
@@ -208,6 +234,11 @@ class Conversion:
     #: "scan this" and "this page is broken" are different problems with different
     #: remedies, and merging them would tell a person to buy OCR they do not need.
     pages_failed: list[int] = field(default_factory=list)
+    #: Charts read back from the PDF's own geometry and appended as tables. Reported
+    #: because a document that gained content deserves to say so at the door, the same
+    #: way one that lost pages does.
+    charts_recovered: int = 0
+    chart_pages: list[int] = field(default_factory=list)
 
     @property
     def missing_pages(self) -> list[int]:
@@ -321,8 +352,9 @@ def convert_document(data: bytes, filename: str = "") -> Conversion:
     anydoc = _anydoc()
     mode, api_key = _ocr_mode()
     try:
-        return Conversion(
-            markdown=anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key))
+        return _with_charts(Conversion(
+            markdown=anydoc.to_markdown_bytes(data, detected, ocr=mode, api_key=api_key)),
+            data, detected)
     except anydoc.NeedsOcrError as exc:
         # SOME pages are images. Refusing the document because of them throws away
         # every page that reads perfectly — see `_recover_readable_pages`. Recovery
@@ -333,7 +365,7 @@ def convert_document(data: bytes, filename: str = "") -> Conversion:
             logger.info("Recovered %d of %d pages from a part-scanned PDF; %d need OCR",
                         len(recovered.pages_read), recovered.page_count,
                         len(recovered.pages_needing_ocr))
-            return recovered
+            return _with_charts(recovered, data, detected)
         pages = getattr(exc, "pages", None) or []
         count = getattr(exc, "page_count", None)
         where = (f"page{'s' if len(pages) != 1 else ''} "

@@ -238,6 +238,12 @@ async def convert_document_only(file: UploadFile = File(...),
         "pages_failed": converted.pages_failed,
         "suppressed_numeric_runs": len(suppressed),
         "suppressed_sample": [line.strip()[:160] for line in suppressed[:3]],
+        # Content the document GAINED. A chart's values are in the file as exact text
+        # that Markdown cannot carry, so they are read back from their positions and
+        # appended as tables — said out loud at the door, because a person approving a
+        # document should know it now contains more than the converter alone produced.
+        "charts_recovered": converted.charts_recovered,
+        "chart_pages": converted.chart_pages,
         "settings": effective.as_dict(),
     }
 
@@ -340,6 +346,9 @@ async def upload_document(file: UploadFile = File(...),
         # A sample, not the lot: enough for a person to recognise what was held back
         # and object if it was wrong, without shipping the document back to them.
         entry["suppressed_sample"] = [line.strip()[:160] for line in suppressed[:3]]
+    if converted.charts_recovered:
+        entry["charts_recovered"] = converted.charts_recovered
+        entry["chart_pages"] = converted.chart_pages
     entry.update(blobs.info(doc_id))
     return entry
 
