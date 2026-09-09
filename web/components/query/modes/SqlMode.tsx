@@ -37,7 +37,7 @@ import {
 } from "@/components/query/TabsBar";
 import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
 import { splitStatements, statementAt, findParams } from "@/lib/query/parserClient";
-import { cmDialect, engineFamily, type EngineHint } from "@/lib/query/dialect";
+import { cmDialect, engineFamily, quoteIdentifier, type EngineHint } from "@/lib/query/dialect";
 import { formatSql } from "@/lib/query/format";
 import {
   runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
@@ -108,6 +108,10 @@ export function SqlMode({
   // hand the model a different query from the one that failed.
   const [failedSql, setFailedSql] = useState("");
   const [statementCount, setStatementCount] = useState(1);
+  // Bound to THIS connection's engine. Memoised because it is a prop on the editor:
+  // a new function each render would re-run the editor's reconfigure effect on every
+  // keystroke of the parent.
+  const quoteForEngine = useCallback((name: string) => quoteIdentifier(name, engine), [engine]);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
   const editorApi = useRef<EditorApi | null>(null);
@@ -492,6 +496,7 @@ export function SqlMode({
               schema={schema}
               defaultSchema={defaultSchema}
               dialect={cmDialect(engine)}
+              quote={quoteForEngine}
               diagnostics={diagnostics}
             />
           }

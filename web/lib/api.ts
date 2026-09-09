@@ -1464,13 +1464,19 @@ export async function mergeOntologyEntities(
   return res.json();
 }
 
+/** ⚠️ `schemaName` is not optional in spirit — omitting it lets the server resolve a
+ *  schema of its own choosing, so an edit made while looking at schema B can land in
+ *  schema A's cached graph. Every caller that knows its scope must pass it. */
 export async function patchOntologyEntity(
   connectionId: string,
   entityId: string,
   overrides: Partial<Pick<OntologyEntity, "description" | "active_filter" | "default_filters" | "exclude_when" | "lifecycle_states" | "terminal_states">>,
+  schemaName?: string,
 ): Promise<OntologyEntity> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(
-    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?connection_id=${encodeURIComponent(connectionId)}`,
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${q}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
   );
   if (!res.ok) throw new Error("Failed to update entity");
@@ -1481,9 +1487,12 @@ export async function patchQueryTemplate(
   connectionId: string,
   actionId: string,
   overrides: Partial<Pick<QueryTemplate, "description" | "sql_template" | "business_rules_enforced" | "returns">>,
+  schemaName?: string,
 ): Promise<QueryTemplate> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(
-    `${getApiBase()}/ontology/actions/${encodeURIComponent(actionId)}?connection_id=${encodeURIComponent(connectionId)}`,
+    `${getApiBase()}/ontology/actions/${encodeURIComponent(actionId)}?${q}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(overrides) },
   );
   if (!res.ok) throw new Error("Failed to update action");
@@ -2239,9 +2248,12 @@ export interface LifecycleCount {
 export async function getEntityLifecycleCounts(
   connectionId: string,
   entityId: string,
+  schemaName?: string,
 ): Promise<LifecycleCount[]> {
+  const q = new URLSearchParams({ connection_id: connectionId });
+  if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(
-    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/lifecycle-counts?connection_id=${encodeURIComponent(connectionId)}`,
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/lifecycle-counts?${q}`,
   );
   if (!res.ok) return [];
   return res.json();
@@ -2619,9 +2631,11 @@ export interface ProcessMap {
   has_transitions: boolean;
 }
 
-export async function getProcessMap(connId: string, entityId: string): Promise<ProcessMap | null> {
+export async function getProcessMap(connId: string, entityId: string, schemaName?: string): Promise<ProcessMap | null> {
+  const q = new URLSearchParams();
+  if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(
-    `${getApiBase()}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}`,
+    `${getApiBase()}/connections/${encodeURIComponent(connId)}/process-map/${encodeURIComponent(entityId)}${q.size ? `?${q}` : ""}`,
   );
   if (!res.ok) return null;
   return res.json();

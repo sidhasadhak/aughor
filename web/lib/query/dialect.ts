@@ -73,6 +73,26 @@ export function cmDialect(hint: EngineHint | null | undefined): SQLDialect {
   }
 }
 
+/** Quote an identifier for this engine, but ONLY when it needs it.
+ *
+ *  Written for SE-6's wildcard expansion, which found the real hazard immediately: the
+ *  Superstore table's columns are `Row ID`, `Sub-Category`, `Postal Code`. Pasting
+ *  those bare into a SELECT list produces SQL that does not parse, so an intention that
+ *  did not quote would hand the user a broken query and call it help. Quoting
+ *  everything is the other failure — `"orders"` is case-sensitive in Postgres and
+ *  DuckDB, so blanket quoting can turn a working reference into a missing one.
+ *
+ *  The rule is therefore: quote only a name that is not a plain lower-case identifier.
+ *  MySQL uses backticks; BigQuery's backtick quoting applies to whole paths, so a bare
+ *  column there takes the same double quotes ANSI gives it. */
+export function quoteIdentifier(name: string, hint: EngineHint | null | undefined): string {
+  if (/^[a-z_][a-z0-9_$]*$/.test(name)) return name;
+  // Already quoted by whoever wrote it — leave it exactly as it is.
+  if (/^(".*"|`.*`|\[[^]*])$/.test(name)) return name;
+  if (engineFamily(hint) === "mysql") return `\`${name.replace(/`/g, "``")}\``;
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
 /** The sql-formatter language id for this connection (SE-2 uses it for Format;
  *  defined here so the two mappings cannot drift apart later). */
 export function formatterLanguage(hint: EngineHint | null | undefined): string {

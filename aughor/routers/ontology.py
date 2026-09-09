@@ -130,11 +130,28 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
     # get_schema() is the lightweight introspection path and (since the schema
     # fast/slow split) does NOT build the ontology, so db.get_ontology() would be
     # None here — we must read the ontology store directly.
+    #
+    # ⚠️ AN EXPLICIT `schema_name` IS A SCOPE, NOT A HINT. This used to fall back to
+    # `load_latest_ontology(connection_id, None)` — "whatever schema was cached last"
+    # — when the requested schema had no cached graph. Measured on the live instance:
+    # `GET /ontology?connection_id=baef6c3e&schema_name=no_such_schema` answered with
+    # the `ecommerce` graph, nine entities and all, under the requested schema's name.
+    # That is the defect behind "the ontology shows other schemas": every panel that
+    # asked for schema X could be handed schema Y's entities, relationships, metrics
+    # and actions, with nothing on screen saying so. An unbuilt schema must fall
+    # through to the BUILD path below (scoped to that schema) or 404 — never to a
+    # neighbour's graph.
     try:
         from aughor.ontology.store import load_latest_ontology
-        graph = load_latest_ontology(connection_id, schema_name or None)
-        if graph is None and schema_name:
-            graph = load_latest_ontology(connection_id, None)
+        if schema_name:
+            graph = load_latest_ontology(connection_id, schema_name)
+        else:
+            # No scope was asked for: prefer the connection's OWN configured schema
+            # over the arbitrary last-written cache entry, and only then fall back to
+            # the any-schema search (legacy callers that genuinely don't know one).
+            graph = load_latest_ontology(connection_id, _resolve_schema(connection_id, None))
+            if graph is None:
+                graph = load_latest_ontology(connection_id, None)
         if graph is not None:
             # load_latest_ontology already overlays human overrides (the shared
             # authority seam), so the read APIs / UI reflect edits for free.

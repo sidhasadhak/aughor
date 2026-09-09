@@ -89,11 +89,13 @@ interface Tooltip { x: number; y: number; content: string }
 
 interface Props {
   connId: string;
+  /** Schema scope — the state counts must come from the schema on screen. */
+  schema?: string;
   entityId: string;
   onInvestigate?: (question: string) => void;
 }
 
-export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
+export function ProcessMapper({ connId, entityId, schema, onInvestigate }: Props) {
   const [map, setMap] = useState<ProcessMap | null>(null);
   const [loading, setLoading] = useState(true);
   const [tooltip, setTooltip] = useState<Tooltip | null>(null);
@@ -101,11 +103,11 @@ export function ProcessMapper({ connId, entityId, onInvestigate }: Props) {
   useEffect(() => {
     setLoading(true);
     setMap(null);
-    getProcessMap(connId, entityId)
+    getProcessMap(connId, entityId, schema)
       .then(setMap)
       .catch(() => setMap(null))
       .finally(() => setLoading(false));
-  }, [connId, entityId]);
+  }, [connId, schema, entityId]);
 
   if (loading) {
     return (

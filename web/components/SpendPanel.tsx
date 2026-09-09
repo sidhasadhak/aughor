@@ -26,9 +26,13 @@ import { compactNumber, countNoun, formatTimestamp, pct } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
 
 const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
 const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
+/** The form-control look, shared by the caps form and the feed's filter bar. */
+const feedSel: React.CSSProperties = { background: "var(--bg-1)", border: "1px solid var(--b1)",
+  borderRadius: "var(--r2)", color: "var(--t1)", padding: "5px 8px" };
 
 function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: string }) {
   return (
@@ -106,8 +110,7 @@ function CapsSection() {
     finally { setBusy(false); }
   }
 
-  const sel: React.CSSProperties = { background: "var(--bg-1)", border: "1px solid var(--b1)",
-    borderRadius: "var(--r2)", color: "var(--t1)", padding: "5px 8px" };
+  const sel = feedSel;
 
   return (
     <>
@@ -267,52 +270,217 @@ function UsageSection() {
 
 // ── The governance feed ──────────────────────────────────────────────────────
 
+/** How many events one fetch pulls. The server filters by CATEGORY only, so every
+ *  other control here narrows this window in memory. The header says so: a filter
+ *  that silently searches a slice is a filter that lies. */
+const FEED_WINDOW = 500;
+
+type FeedSort = { key: "at" | "category" | "kind" | "actor"; desc: boolean };
+
+const FEED_COLUMNS: { key: FeedSort["key"] | "summary"; label: string; width?: number }[] = [
+  { key: "at",       label: "When",    width: 150 },
+  { key: "category", label: "Category", width: 150 },
+  { key: "kind",     label: "Event",   width: 190 },
+  { key: "actor",    label: "Actor",   width: 150 },
+  { key: "summary",  label: "What happened" },
+];
+
+function SortHeader({ label, active, desc, onClick, width }: {
+  label: string; active: boolean; desc: boolean; onClick?: () => void; width?: number;
+}) {
+  return (
+    <th style={{ ...cell, width, position: "sticky", top: 0, zIndex: 1,
+      background: "var(--bg-2)", borderBottom: "1px solid var(--b1)" }}>
+      {onClick ? (
+        <Button variant="ghost" size="xs" onClick={onClick}
+          className="aug-fs-xs h-auto p-0 font-normal"
+          style={{ color: active ? "var(--t1)" : "var(--t3)" }}>
+          {label}
+          {active && <Icon name={desc ? "chevd" : "chevu"} size={10} />}
+        </Button>
+      ) : <span style={{ color: "var(--t3)" }}>{label}</span>}
+    </th>
+  );
+}
+
+function FeedRow({ ev }: { ev: AuditFeedEvent }) {
+  const [open, setOpen] = useState(false);
+  // Only offer the disclosure when there is something under it. A chevron that
+  // expands to an empty box is worse than no chevron.
+  const hasDetail = ev.detail && Object.keys(ev.detail).length > 0;
+  return (
+    <>
+      <tr style={{ borderBottom: "1px solid var(--b0)", cursor: hasDetail ? "pointer" : "default" }}
+        onClick={() => hasDetail && setOpen(o => !o)}
+        data-testid="governance-feed-row">
+        <td style={{ ...cell, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+          {formatTimestamp(ev.at, "short")}
+        </td>
+        <td style={cell}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", border: "1px solid var(--b1)",
+            borderRadius: "var(--r-chip)", padding: "1px 7px", whiteSpace: "nowrap" }}>
+            {ev.category.replace(/_/g, " ")}
+          </span>
+        </td>
+        <td style={{ ...cell, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{ev.kind}</td>
+        <td style={{ ...cell, color: "var(--t3)" }}>{ev.actor || "—"}</td>
+        <td style={{ ...cell, color: "var(--t2)", whiteSpace: "normal" }}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+            <span style={{ color: "var(--t4)", width: 11, flexShrink: 0 }}>
+              {hasDetail && <Icon name={open ? "chevd" : "chevr"} size={11} />}
+            </span>
+            {ev.summary || ev.kind}
+          </span>
+        </td>
+      </tr>
+      {open && hasDetail && (
+        <tr style={{ borderBottom: "1px solid var(--b0)", background: "var(--bg-1)" }}>
+          <td colSpan={FEED_COLUMNS.length} style={{ padding: "8px 12px 10px" }}>
+            <pre className="aug-fs-xs" style={{ margin: 0, maxHeight: 200, overflow: "auto",
+              fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(ev.detail, null, 2)}
+            </pre>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function FeedSection() {
   const [events, setEvents] = useState<AuditFeedEvent[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState("");
+  const [actor, setActor] = useState("");
+  const [kind, setKind] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<FeedSort>({ key: "at", desc: true });
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAuditFeed(category, 50)
+    setLoading(true);
+    getAuditFeed(category, FEED_WINDOW)
       .then(r => { setEvents(r.events); setCategories(r.categories); setErr(""); })
-      .catch(e => setErr(e instanceof Error ? e.message : String(e)));
+      .catch(e => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
   }, [category]);
+
+  // The vocabularies come from the rows themselves, never a hand-written list: a
+  // hard-coded kind list goes stale the moment a sink emits a new one, and the
+  // filter would then hide events it has no name for.
+  const actors = useMemo(
+    () => [...new Set(events.map(e => e.actor).filter(Boolean))].sort(),
+    [events]);
+  const kinds = useMemo(
+    () => [...new Set(events.map(e => e.kind).filter(Boolean))].sort(),
+    [events]);
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const out = events.filter(e =>
+      (!actor || e.actor === actor)
+      && (!kind || e.kind === kind)
+      && (!needle
+        || e.summary?.toLowerCase().includes(needle)
+        || e.kind?.toLowerCase().includes(needle)
+        || e.actor?.toLowerCase().includes(needle)
+        || e.conn_id?.toLowerCase().includes(needle)));
+    const dir = sort.desc ? -1 : 1;
+    return out.sort((a, b) => {
+      const av = String(a[sort.key] ?? ""), bv = String(b[sort.key] ?? "");
+      return av === bv ? 0 : (av < bv ? -1 : 1) * dir;
+    });
+  }, [events, actor, kind, q, sort]);
+
+  const filtered = rows.length !== events.length;
+
+  function toggleSort(key: FeedSort["key"]) {
+    setSort(s => s.key === key ? { key, desc: !s.desc } : { key, desc: true });
+  }
+
+  function exportCsv() {
+    downloadCsv(
+      csvFilename("governance-feed"),
+      toCsv(["at", "category", "kind", "actor", "org_id", "conn_id", "summary"],
+        rows.map(e => [e.at, e.category, e.kind, e.actor, e.org_id, e.conn_id, e.summary])),
+    );
+  }
 
   return (
     <>
-      <SectionTitle sub="every governance-relevant event, across all five audit sinks, newest first">
+      <SectionTitle sub={`every governance-relevant event, across all five audit sinks, newest first — the ${FEED_WINDOW} most recent`}>
         Governance feed
       </SectionTitle>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-        <Button size="xs" variant={category === "" ? "secondary" : "ghost"} onClick={() => setCategory("")}>All</Button>
-        {categories.map(c => (
-          <Button key={c} size="xs" variant={category === c ? "secondary" : "ghost"} onClick={() => setCategory(c)}>
-            {c.replace(/_/g, " ")}
+
+      {/* ── Filters ──────────────────────────────────────────────────────────
+          Category is a SERVER filter (the endpoint takes it, and rejects an unknown
+          one rather than answering empty). Actor, event and search narrow the
+          fetched window in memory — which is why the count line below says how many
+          of how many, rather than presenting a slice as the whole. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <select style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
+          aria-label="Category" data-testid="feed-category">
+          <option value="">All categories</option>
+          {categories.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
+        </select>
+        <select style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
+          aria-label="Event" data-testid="feed-kind">
+          <option value="">All events</option>
+          {kinds.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <select style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
+          aria-label="Actor" data-testid="feed-actor">
+          <option value="">All actors</option>
+          {actors.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
+          placeholder="Search summary, event, actor…" aria-label="Search the feed"
+          data-testid="feed-search" />
+        {(category || kind || actor || q) && (
+          <Button size="xs" variant="ghost"
+            onClick={() => { setCategory(""); setKind(""); setActor(""); setQ(""); }}>
+            Clear filters
           </Button>
-        ))}
+        )}
+        <span style={{ flex: 1 }} />
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }} data-testid="feed-count">
+          {filtered
+            ? `${compactNumber(rows.length)} of ${compactNumber(events.length)} events`
+            : countNoun(rows.length, "event")}
+        </span>
+        <Button size="xs" variant="ghost" onClick={exportCsv} disabled={rows.length === 0}>
+          <Icon name="download" size={12} /> CSV
+        </Button>
       </div>
+
       {err && <p className="aug-fs-sm" style={{ color: "var(--red4)" }}>{err}</p>}
-      {!err && events.length === 0 && (
-        <EmptyState variant="inline" title="Nothing recorded in this category yet." />
+      {!err && loading && <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Reading the audit sinks…</p>}
+      {!err && !loading && rows.length === 0 && (
+        <EmptyState variant="inline"
+          title={events.length === 0
+            ? "Nothing recorded in this category yet."
+            : "No event in the window matches these filters."} />
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {events.map((e, i) => (
-          <div key={i} className="aug-fs-sm" style={{ display: "flex", gap: 10, alignItems: "baseline",
-            padding: "6px 10px", borderLeft: "2px solid var(--b1)" }}>
-            <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
-              {formatTimestamp(e.at, "short")}
-            </span>
-            <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
-              {e.category.replace(/_/g, " ")}
-            </span>
-            <span style={{ color: "var(--t2)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {e.summary || e.kind}
-            </span>
-            {e.actor && <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>· {e.actor}</span>}
-          </div>
-        ))}
-      </div>
+      {!err && rows.length > 0 && (
+        <div style={{ overflow: "auto", maxHeight: "58vh",
+          border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
+          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", color: "var(--t2)" }}>
+            <thead>
+              <tr className="aug-fs-xs" style={{ textAlign: "left" }}>
+                {FEED_COLUMNS.map(c => (
+                  <SortHeader key={c.key} label={c.label} width={c.width}
+                    active={sort.key === c.key} desc={sort.desc}
+                    onClick={c.key === "summary" ? undefined : () => toggleSort(c.key as FeedSort["key"])} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((e, i) => <FeedRow key={`${e.at}-${e.kind}-${i}`} ev={e} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -347,7 +515,7 @@ function CostSqlSection() {
 
 export function SpendPanel() {
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "18px 24px", maxWidth: 980 }}>
+    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "18px 24px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
         <span className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>Spend</span>
         <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
