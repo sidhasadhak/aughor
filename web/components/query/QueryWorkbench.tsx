@@ -334,12 +334,23 @@ function WorkbenchInner({
     return out;
   }, [mode, tree, railTables, connId, connections]);
 
-  /** Insert a table reference, switching the workbench's connection first when the row
-   *  belongs to another one. Inserting `orders` while the editor is pointed at a
-   *  different warehouse produces SQL that cannot run, so the picker follows the click
-   *  — visibly, since the picker is on screen. */
+  /** SE-7 — the rail's `»`: put `schema.table` in the editor.
+   *
+   *  Same connection: at the cursor, which is what makes it feel like typing.
+   *
+   *  Another connection: the picker has to follow the click first — inserting `orders`
+   *  while the editor points at a different warehouse produces SQL that cannot run —
+   *  and switching swaps the whole TAB SET, so a cursor insert in the same tick writes
+   *  into the document that is about to be replaced. Measured: the click switched to
+   *  theLook and the table name was simply gone. It goes through `pendingInsert`
+   *  instead, which lands in the restored tab's state. */
+  const [pendingInsert, setPendingInsert] = useState<{ text: string; nonce: number }>();
   const insertTable = useCallback((t: RailTable) => {
-    if (t.connectionId && t.connectionId !== connId) setConnId(t.connectionId);
+    if (t.connectionId && t.connectionId !== connId) {
+      setConnId(t.connectionId);
+      setPendingInsert({ text: t.name, nonce: Date.now() });
+      return;
+    }
     insertAtCursor.current?.(t.name);
   }, [connId]);
 
@@ -533,6 +544,7 @@ function WorkbenchInner({
               <SqlMode
                 toolbar={sharedControls}
                 schemaControl={schemaControl}
+                pendingInsert={pendingInsert}
                 connId={connId}
                 engine={engine}
                 schema={schema}
