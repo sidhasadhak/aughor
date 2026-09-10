@@ -17,7 +17,7 @@ Three arms run on the SAME question against the SAME warehouse:
                     This isolates the durable moat — pure, reproducible, no LLM drift.
   * **ontology**  — raw schema + ONLY the verified ontology blocks (ENTITY MODEL, ENTITY
                     RELATIONSHIPS, VERIFIED SEMANTIC LAYER — `ontology_context` below), no
-                    exploration insights, no KB, no metrics catalog. Arc ON's own arm (ROADMAP
+                    exploration findings, no KB, no metrics catalog. Arc ON's own arm (ROADMAP
                     §3.15 ON-0): the 2026-06-21 run could only say "injected context regressed",
                     never whether the ONTOLOGY was the part that did. This arm can.
   * **ontology_guarded** — the ontology arm's SQL through the same guard battery. If the

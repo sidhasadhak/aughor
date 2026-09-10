@@ -44,6 +44,11 @@ _SKIP_FILES = {
     # +41 from finding payloads, `investigation_in_web` +41 from route names, and
     # `tableau` +2 from the dataset's actual title, "Tableau Sample Superstore".)
     "web/public/demo-api.json",
+    # ON-0's ablation fixture: the JSON of GET /ontology?connection_id=samples&schema_name=ecommerce,
+    # captured verbatim so the `ontology` arm reproduces without an instance. Same ground as
+    # demo-api.json — the backend's wire format, not authored prose; every hit is a model field
+    # name (`exploration_insights`, `kinetic_actions`) that OntologyGraph.model_validate requires.
+    "evals/ablation_samples_ecommerce_ontology.json",
 }
 _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 
@@ -86,7 +91,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # S1's embedded-seam test drives org intelligence end-to-end, whose frozen
          # payload key is `insight_id` and whose API is `delete_org_insight` — the
          # same verbatim-identifier ground as the rows above.
-         "tests/unit/test_vector_store_embedded.py"),
+         "tests/unit/test_vector_store_embedded.py",
+         # ON-0's prompt-reach audit builds a fixture graph with every renderer gate open;
+         # its one hit is the model field `exploration_insights`, filled so the walk can
+         # measure whether that field reaches a block. Its own output says 'findings'.
+         "aughor/ontology/prompt_reach.py"),
         "covered seven different concepts; a discovered fact is a 'finding', answer prose "
         "is a 'narrative', a sub-question summary is a 'takeaway'",
     ),
@@ -119,6 +128,14 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          "aughor/routers/agents.py",
          "tests/unit/test_user_agents.py",
          "web/lib/api.ts",
+         # ON-0's prompt-reach audit and its test, same ground: every hit is a name the
+         # ontology model uses — the `KineticAction` class the fixture builds, the
+         # `kinetic_actions` attribute the graph carries and the test's field paths walk,
+         # and `build_kinetic_actions_section`, the product's own renderer the audit calls.
+         # Its block is `actions_declared`, its census `action_census`, its prose says
+         # 'declared actions'.
+         "aughor/ontology/prompt_reach.py",
+         "tests/unit/test_ontology_prompt_reach.py",
          # B1, same ground again: the effect KIND is the wire literal "kinetic_action",
          # and these files spell the wire — the vocabulary tables (PUBLISHED_KEYS /
          # BINDABLE_FIELDS keys), the canvas's per-kind maps, and the fixtures that

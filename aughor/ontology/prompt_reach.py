@@ -31,7 +31,7 @@ a change that silently shrinks it).
 
     python -m aughor.ontology.prompt_reach            # the table
     python -m aughor.ontology.prompt_reach --json     # machine-readable
-    python -m aughor.ontology.prompt_reach --census   # declared kinetic actions on disk
+    python -m aughor.ontology.prompt_reach --census   # declared actions on disk
 """
 from __future__ import annotations
 
@@ -169,7 +169,7 @@ def fixture_graph() -> OntologyGraph:
         business_rules_enforced=["exclude terminal states"],
         returns="one row, one integer", source_table="orders", origin="structural", usage_count=3,
     )
-    kinetic = KineticAction(
+    action = KineticAction(
         id="flag_order_for_review", display_name="Flag order for review",
         description="Mark an order for a human look", entity="Order", kind="side_effect",
         params=[ActionParameter(name="order_id", display_name="Order", data_type="INTEGER",
@@ -195,7 +195,7 @@ def fixture_graph() -> OntologyGraph:
         relationships={rel.id: rel},
         metrics={metric.id: metric},
         actions={template.id: template},
-        kinetic_actions={kinetic.id: kinetic},
+        kinetic_actions={action.id: action},
         interfaces={iface.id: iface},
         entity_to_tables={"Order": ["orders"], "Customer": ["customers"]},
         table_to_entity={"orders": "Order", "customers": "Customer"},
@@ -249,7 +249,7 @@ def _metric_contract(g: OntologyGraph) -> str:
         sort_keys=True, default=str)
 
 
-def _kinetic_declared(g: OntologyGraph) -> str:
+def _actions_declared(g: OntologyGraph) -> str:
     from aughor.actions.propose import build_kinetic_actions_section
     return build_kinetic_actions_section(g)
 
@@ -270,8 +270,8 @@ BLOCKS: tuple[Block, ...] = (
           "aughor/agent/nodes.py:662", _query_templates),
     Block("metric_contract", "resolution → the planner's APPROVED METRIC FORMULAS",
           "aughor/semantic/canonical.py:137 → aughor/agent/nodes.py:683", _metric_contract),
-    Block("kinetic_declared", "proposer · after every deep synthesis (data-gated)",
-          "aughor/agent/investigate.py:3787 → aughor/actions/propose.py:62", _kinetic_declared),
+    Block("actions_declared", "proposer · after every deep synthesis (data-gated)",
+          "aughor/agent/investigate.py:3787 → aughor/actions/propose.py:62", _actions_declared),
     Block("intake_entity_context", "deep analysis · baseline plan",
           "aughor/agent/investigate.py (intake → baseline plan)", _intake_entity_context),
 )
@@ -460,9 +460,9 @@ def audit(graph: Optional[OntologyGraph] = None) -> Audit:
     return Audit(rows=tuple(rows), rendered={k: len(v) for k, v in base_text.items()})
 
 
-# ── The kinetic census: declared actions on disk, per connection and schema ──────────
+# ── The declared-action census: actions on disk, per connection and schema ──────────
 
-def kinetic_census(root: Optional[Path] = None) -> dict[str, list[str]]:
+def action_census(root: Optional[Path] = None) -> dict[str, list[str]]:
     """``"{conn}/{schema}" → [action ids]`` from the overrides tree — the number Arc ON's
     verb-layer claim rests on. Counts FILES, which is what a declaration is here."""
     from aughor.ontology.overrides import _ROOT
@@ -479,7 +479,7 @@ def kinetic_census(root: Optional[Path] = None) -> dict[str, list[str]]:
 def main(argv: Optional[list[str]] = None) -> int:
     args = list(sys.argv[1:] if argv is None else argv)
     if "--census" in args:
-        census = kinetic_census()
+        census = action_census()
         total = sum(len(v) for v in census.values())
         print(json.dumps({"declared_actions": census, "total": total}, indent=2))
         return 0

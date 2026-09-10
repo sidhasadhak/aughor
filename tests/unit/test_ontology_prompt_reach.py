@@ -73,14 +73,14 @@ REACH_BASELINE: dict[str, set[str]] = {
     "actions.*.entity": {'query_templates'},
     "actions.*.business_rules_enforced": {'query_templates'},
     "actions.*.returns": {'query_templates'},
-    "kinetic_actions.*.id": {'kinetic_declared'},
-    "kinetic_actions.*.description": {'kinetic_declared'},
-    "kinetic_actions.*.kind": {'kinetic_declared'},
-    "kinetic_actions.*.params[].name": {'kinetic_declared'},
-    "kinetic_actions.*.params[].data_type": {'kinetic_declared'},
-    "kinetic_actions.*.params[].required": {'kinetic_declared'},
-    "kinetic_actions.*.params[].default_value": {'kinetic_declared'},
-    "kinetic_actions.*.submission_criteria[].expr": {'kinetic_declared'},
+    "kinetic_actions.*.id": {'actions_declared'},
+    "kinetic_actions.*.description": {'actions_declared'},
+    "kinetic_actions.*.kind": {'actions_declared'},
+    "kinetic_actions.*.params[].name": {'actions_declared'},
+    "kinetic_actions.*.params[].data_type": {'actions_declared'},
+    "kinetic_actions.*.params[].required": {'actions_declared'},
+    "kinetic_actions.*.params[].default_value": {'actions_declared'},
+    "kinetic_actions.*.submission_criteria[].expr": {'actions_declared'},
 }
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
@@ -131,14 +131,14 @@ def test_reach_growth_is_recorded(measured):
         f"so the baseline stays the measurement: {grew}")
 
 
-def test_kinetic_census_counts_files(tmp_path):
+def test_action_census_counts_files(tmp_path):
     (tmp_path / "c1" / "s1" / "action").mkdir(parents=True)
     (tmp_path / "c1" / "s1" / "action" / "a.yaml").write_text("target_kind: action\n")
     (tmp_path / "c1" / "s1" / "action" / "b.yaml").write_text("target_kind: action\n")
     (tmp_path / "c2" / "default" / "entity").mkdir(parents=True)
     (tmp_path / "c2" / "default" / "entity" / "Order.yaml").write_text("target_kind: entity\n")
-    assert pr.kinetic_census(tmp_path) == {"c1/s1": ["a", "b"]}
-    assert pr.kinetic_census(tmp_path / "missing") == {}
+    assert pr.action_census(tmp_path) == {"c1/s1": ["a", "b"]}
+    assert pr.action_census(tmp_path / "missing") == {}
 
 
 def test_intake_context_is_byte_identical_to_the_inline_block():
