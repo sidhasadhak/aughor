@@ -203,6 +203,12 @@ class OntologyRelationship(BaseModel):
     # SHARE, probed at build time. None = unprobed; ~1.0 = a real FK; a value-DISJOINT name
     # coincidence (≈0) is dropped from the graph entirely, never persisted as a relationship.
     value_overlap: Optional[float] = None
+    #: The cardinality MEASURED against the data (ON-0a): a side is "1" when its key is unique
+    #: over its non-null rows. None until measured. When it contradicts the authored label,
+    #: `cardinality` is replaced by it and the authored value survives in `cardinality_note` —
+    #: the block renders what the data says, never a verified-looking guess.
+    measured_cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
+    cardinality_note: str = ""
 
 
 class DefinitionSource(BaseModel):

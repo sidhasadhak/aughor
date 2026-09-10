@@ -83,7 +83,7 @@ been un-runnable since June and is rebuilt with an ontology arm; the LLM arms ra
 evening on the one set that still exists (`samples/ecommerce`: 12/12 on every arm — a ceiling,
 not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance; the hard
 set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/14, guards 100%
-safe, NO LIFT; the falsifier fires as written, but the block carried five wrong N:N labels —
+safe, NO LIFT; the falsifier fires as written, but the block carried four wrong N:N labels —
 the user decides, §3.15). **ON-0a drafted the same night:** the core the business extends —
 an industry map as claims to measure, never facts to render (§3.15).
 
@@ -3473,9 +3473,10 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     percentage form of a fraction) are alternative correct answers, not tolerances — the
     scorer rounds to four places and matches sets exactly. 🔴 **What the block will teach
     there, rendered by the product's own functions (5,901 chars beside a 13,925-char
-    schema): five joins labelled N:N that the data shows are N:1 or 1:1** —
+    schema): four joins labelled N:N that the data shows are N:1 or 1:1** —
     `order_items → orders`, `order_items → payments`, `order_items → shipments`,
-    `customer_service → orders`, `return_logistics → returns` — under a CARDINALITY
+    `return_logistics → returns` (first counted as five: `customer_service → orders` joins
+    on customer_id and is genuinely N:N — corrected by ON-0a's measurement) — under a CARDINALITY
     sentence that tells the model an N-side join multiplies rows. The validator verified
     that the KEYS overlap (100%); the cardinality was never measured against the row
     counts. `l14_captured_by_method` is written to that claim, and the run will say
@@ -3522,12 +3523,12 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     cardinality, the block's defect seen from the other side.
     **The falsifier, read honestly.** As written it FIRES — "no lift or a regression ⇒
     prompt injection retired for the ontology, ON-6 cancelled". Two things weigh against
-    acting on it tonight. (1) The block under test carried five wrong verified labels, and
+    acting on it tonight. (1) The block under test carried four wrong verified labels, and
     the one question the ontology could have won is the one those labels blanked: this
     measured a corrupted block, not the verified layer the arc proposes. (2) n = 14 on one
     model with raw already at 13/14: the set discriminates the GUARDS (one save, zero
     regressions, in both runs) far better than it discriminates prose. What it does
-    establish: on this model, verified blocks that are RIGHT (five N:1 joins, two
+    establish: on this model, verified blocks that are RIGHT (the seven joins the data confirms, two
     lifecycles, the segments) changed no answer on 13 questions the raw arm already had.
     **The decision is the user's (§6):** retire ON-6 on the falsifier as written, or
     measure relationship cardinality first (chip filed — the validator verifies key
@@ -3566,7 +3567,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   prompt-injection strategy is retired for the ontology (blocks stay only where a
   guard cites them) and ON-6 is cancelled; ON-1/ON-2 proceed regardless, because the
   compiled path does not depend on the model reading prose.
-- **ON-0a · The core the business extends — DRAFTED 2026-09-10** (the user: *"standardize
+- **ON-0a · The core the business extends — DRAFTED 2026-09-10, first commit BUILT the same
+  night** (the user: *"standardize
   the semantic core; allow businesses to extend it"*; sits between ON-0 and ON-1 in build
   order, and gives ON-0's open decision its build shape). A pack gains an approximate map
   of its industry, and the builder treats every entry in it as a **claim to measure,
@@ -3606,8 +3608,9 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   transitions) — those chips ARE this wave's first two commits and stand on their own
   without a pack; one bundled `core-ecommerce` pack and one `fashion` extension; the
   ablation harness gains a builder arm (`--builder with-core|without-core`).
-  **Receipt:** the LuxExperience ontology rebuilt with the core — the five N:N labels
-  become N:1 / 1:1 by measurement, or the wave has failed at its first step; the samples
+  **Receipt:** the LuxExperience ontology rebuilt with the core — the four N:N labels
+  become N:1 / 1:1 by measurement (✅ done, first commit below), or the wave has failed at
+  its first step; the samples
   ontology's terminal states gain `refunded`; a dated count of claims by tier (expected
   · measured-true · measured-false · human) per connection; and ON-0's hard set re-run on
   the block the core-built ontology produces — that re-run IS the user's open decision
@@ -3622,6 +3625,32 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   Forum SID are quarries, not adoptions); an alias table shipped in the core; a runtime
   (RDF/OWL, property graph — three studies, one verdict: port the levers, refuse the
   runtime).
+  ✅ **First commit, 2026-09-10 — relationship cardinality is measured at build time.**
+  `aughor/ontology/cardinality.py`: a side is "1" iff its key is unique over its non-null
+  rows (`COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)` — exact, one scan per side); the
+  label reads from:to like the prompt's own sentence; a contradicted label is REPLACED and
+  the authored one survives in `cardinality_note`; an unmeasurable edge (empty or missing
+  table) keeps its label and says why. Hooked into the build right after the join-value
+  pass, in the same connection, so every rebuild measures; `python -m
+  aughor.ontology.cardinality --graph-json … --duckdb … --out …` measures a served graph
+  offline. Ratcheted in `tests/unit/test_relationship_cardinality.py`: the committed
+  LuxExperience fixture must still carry the four wrong labels; a hermetic warehouse with
+  the demo file's key uniqueness must flip exactly those four and leave the three genuine
+  N:N edges alone; the rendered block must then say `[N:1, verified` where it said N:N.
+  **Measured on the real files:** LuxExperience 11 relationships → 7 confirmed, 4
+  relabelled (`order_items → orders/payments/shipments` N:N→N:1, `return_logistics →
+  returns` N:N→1:1), 0 unmeasurable. **The samples "control" was not a control:** 5
+  relationships → 3 relabelled. `customers → orders` and `customers → reviews` were stored
+  PK-side-first, so their N:1 read left→right as "many customers per order"; the data says
+  1:N. `order_items → reviews` is N:N (an order can carry several reviews), not N:1. The
+  builder's `_infer_cardinality` assumes the from side holds the FK and orients the label
+  on that assumption; the measurement is orientation-aware by construction. Both measured
+  graphs are committed beside their served ones (`evals/ablation_*_ontology_measured.json`).
+  Prompt-reach walk 142 → 144; the two new fields reach no block by design — the renderer
+  reads the corrected `cardinality`. **Open, this wave:** the terminal-states measurement
+  (second commit); the ON-0 hard set re-run with `--graph-json
+  914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json` — the block
+  that says true things, 28 model calls, awaiting the go.
 - **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
   tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
@@ -4039,7 +4068,7 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         June · two harder sets · the ratchet test · LLM arms run on samples/ecommerce:
         12/12 on every arm, a ceiling; missimi is GONE — the hard set re-authored on
         LuxExperience and RUN: raw 13/14 = ontology 13/14, NO LIFT; the falsifier fires
-        as written, contested by five wrong N:N labels — the user decides) →
+        as written, contested by four wrong N:N labels — the user decides) →
         ON-0a the core the business extends (drafted 2026-09-10: an industry map as
         claims to measure, never facts to render — cardinality and terminal states
         measured, the map layered by pack `extends`, the hard set re-run on a block

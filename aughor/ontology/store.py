@@ -329,9 +329,14 @@ def get_or_build_ontology(
                 _vdb = open_connection_for(connection_id)
                 try:
                     _verified, _rejected = verify_join_edges(_vdb, edges)
+                    apply_join_verifications(graph, _verified, _rejected)
+                    # ON-0a: the overlap proves the KEYS match; the cardinality label was an
+                    # inference that fell to N:N whenever a profile was missing. Measure it on
+                    # the surviving edges, in the same connection, before the graph is saved.
+                    from aughor.ontology.cardinality import apply_cardinality_measurements
+                    apply_cardinality_measurements(graph, _vdb)
                 finally:
                     _vdb.close()
-                apply_join_verifications(graph, _verified, _rejected)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ontology join value-verification is best-effort; catalog probe still covers it",

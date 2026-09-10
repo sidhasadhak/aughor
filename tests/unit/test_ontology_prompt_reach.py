@@ -11,7 +11,8 @@ pins that measurement so it moves only DELIBERATELY:
 * the walk must still see the whole model — a collapsed field count means the walker
   broke, and an empty audit passes every baseline (the vocabulary ratchet's own lesson).
 
-Measured 2026-09-10 on the fixture graph: 59 of 142 fields reach at least one block.
+Measured 2026-09-10 on the fixture graph: 59 of 142 fields reach at least one block;
+144 walked since ON-0a added `measured_cardinality` and `cardinality_note` (unreached by design).
 """
 from __future__ import annotations
 
@@ -85,7 +86,7 @@ REACH_BASELINE: dict[str, set[str]] = {
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 142
+FIELDS_WALKED = 144   # 142 on 2026-09-10 morning; +2 relationship fields (ON-0a cardinality) that evening
 
 
 @pytest.fixture(scope="module")

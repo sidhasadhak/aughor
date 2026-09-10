@@ -51,6 +51,9 @@ _SKIP_FILES = {
     # requires. A new `evals/ablation_*_ontology.json` goes here in the same commit.
     "evals/ablation_samples_ecommerce_ontology.json",
     "evals/ablation_luxexperience_ontology.json",
+    # …and the same graphs after `aughor.ontology.cardinality` measured their joins (ON-0a).
+    "evals/ablation_samples_ecommerce_ontology_measured.json",
+    "evals/ablation_luxexperience_ontology_measured.json",
 }
 _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 

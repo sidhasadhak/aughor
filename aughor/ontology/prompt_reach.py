@@ -346,6 +346,8 @@ def _mutated(value: Any, ann: Any) -> Any:
 def _fresh(t: Any) -> Any:
     """A set value for a field that is None in the fixture."""
     origin = get_origin(t)
+    if origin is Literal:                      # Optional[Literal[...]] left None in the fixture
+        return get_args(t)[0]
     if t is str:
         return MUT
     if t is int:
