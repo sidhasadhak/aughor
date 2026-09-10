@@ -3647,7 +3647,12 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   on that assumption; the measurement is orientation-aware by construction. Both measured
   graphs are committed beside their served ones (`evals/ablation_*_ontology_measured.json`).
   Prompt-reach walk 142 → 144; the two new fields reach no block by design — the renderer
-  reads the corrected `cardinality`. **Open, this wave:** the terminal-states measurement
+  reads the corrected `cardinality`. **A no-model door for graphs already built:**
+  `POST /ontology/relationships/measure?connection_id=…&schema_name=…` (gated like every
+  ontology edit) measures the cached graph against the live connection, saves the
+  corrected labels under the graph's own key, invalidates the enriched-schema cache that
+  embeds the block, and journals `ontology.cardinality` — so an instance sees true labels
+  without spending a rebuild. **Open, this wave:** the terminal-states measurement
   (second commit); the ON-0 hard set re-run with `--graph-json
   914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json` — the block
   that says true things, 28 model calls, awaiting the go.

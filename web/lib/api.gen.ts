@@ -8235,6 +8235,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/relationships/measure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Measure Relationship Cardinality
+         * @description Measure the cached ontology's relationship cardinalities against the live data and
+         *     save the corrected labels — no model call, no rebuild (ON-0a).
+         *
+         *     The builder inferred each join's cardinality from profiles and fell to N:N whenever a
+         *     profile was missing; the join-value pass then marked the edge *verified* because the
+         *     KEYS overlap. A rebuild measures now, but spends a model call per entity; this door
+         *     measures the graph that is already there. Returns the report — confirmed, contradicted
+         *     (authored → measured), unmeasurable — and invalidates the enriched-schema cache, which
+         *     embeds the relationship block.
+         */
+        post: operations["measure_relationship_cardinality_ontology_relationships_measure_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/routing-proposals": {
         parameters: {
             query?: never;
@@ -27931,6 +27959,38 @@ export interface operations {
         parameters: {
             query?: {
                 connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    measure_relationship_cardinality_ontology_relationships_measure_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
                 schema_name?: string | null;
             };
             header?: never;

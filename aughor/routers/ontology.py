@@ -548,6 +548,45 @@ def get_ontology_relationships(
     return {rid: r.model_dump() for rid, r in graph.relationships.items()}
 
 
+@router.post("/ontology/relationships/measure", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def measure_relationship_cardinality(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Measure the cached ontology's relationship cardinalities against the live data and
+    save the corrected labels — no model call, no rebuild (ON-0a).
+
+    The builder inferred each join's cardinality from profiles and fell to N:N whenever a
+    profile was missing; the join-value pass then marked the edge *verified* because the
+    KEYS overlap. A rebuild measures now, but spends a model call per entity; this door
+    measures the graph that is already there. Returns the report — confirmed, contradicted
+    (authored → measured), unmeasurable — and invalidates the enriched-schema cache, which
+    embeds the relationship block.
+    """
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.store import measure_latest_relationships
+    effective = _resolve_schema(connection_id, schema_name)
+    db = open_connection_for_with_schema(connection_id, effective)
+    try:
+        report = measure_latest_relationships(connection_id, effective, db)
+    finally:
+        db.close()
+    if report is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No ontology built for schema '{effective}' on this connection — nothing to measure.")
+    _invalidate_schema_cache(connection_id)
+    summary = report.summary()
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("ontology.cardinality", {"ok": True, "schema": effective, **summary},
+                              conn_id=connection_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("ontology.cardinality emit skipped", exc_info=True)
+    return {"connection_id": connection_id, "schema_name": effective, **summary}
+
+
 @router.get("/ontology/metrics/{metric_id}/provenance")
 def get_metric_provenance(
     metric_id: str,

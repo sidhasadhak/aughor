@@ -17,10 +17,13 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from aughor.ontology.models import OntologyGraph
 from aughor.util.json_store import KeyedJsonStore
+
+if TYPE_CHECKING:  # the report type only; the module is imported lazily where it is used
+    from aughor.ontology.cardinality import CardinalityReport
 
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "ontology_cache.json"
 _MAX_ENTRIES = 20
@@ -201,6 +204,30 @@ def load_latest_ontology(
     # the semantic layer through load_latest_ontology. Overlaying human overrides
     # here makes override-wins reach every semantic-layer consumer at once.
     return overlay_human_overrides(graph, connection_id, graph.schema_name)
+
+
+def measure_latest_relationships(connection_id: str, schema_name: str, db) -> Optional["CardinalityReport"]:
+    """ON-0a: measure the cached graph's relationship cardinalities against ``db`` and save
+    the corrected labels back under the graph's own key — no model call, no rebuild.
+
+    The RAW cached entry is measured and saved (human overrides are overlaid at read time by
+    `load_latest_ontology`, never baked into the cache). None when nothing is cached for the
+    scope, so the caller can say "nothing to measure" rather than measuring a neighbour.
+    """
+    from aughor.ontology.cardinality import apply_cardinality_measurements
+    cache = _load()
+    prefix = _schema_prefix(connection_id, schema_name)
+    matches = {k: v for k, v in cache.items() if k.startswith(prefix)}
+    if not matches:
+        return None
+    key, entry = list(matches.items())[-1]
+    try:
+        graph = OntologyGraph.model_validate(entry["graph"])
+    except Exception:
+        return None
+    report = apply_cardinality_measurements(graph, db)
+    _store.put(key, {"graph": graph.model_dump()})
+    return report
 
 
 def patch_action(

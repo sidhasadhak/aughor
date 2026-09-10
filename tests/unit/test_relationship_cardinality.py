@@ -206,3 +206,31 @@ def test_the_prompt_block_renders_the_measured_label(tmp_path, lux_graph):
         assert "N:N" not in after
     finally:
         db.close()
+
+
+def test_the_measure_door_relabels_the_cached_graph_without_a_rebuild(tmp_path, monkeypatch, lux_graph, client):
+    """`POST /ontology/relationships/measure` measures the graph that is already cached and
+    saves it back — the UI shows the corrected labels with no model call spent."""
+    from aughor.ontology import store as ST
+    from aughor.util.json_store import KeyedJsonStore
+    import aughor.db.connection as C
+    monkeypatch.setattr(ST, "_store", KeyedJsonStore(tmp_path / "onto_cache.json", max_entries=20))
+    ST.save_ontology("914df862", "luxexperience", "fp", lux_graph.model_copy(deep=True))
+    path = tmp_path / "wh.duckdb"
+    con = duckdb.connect(str(path)); con.execute(_LUX_SHAPE); con.close()
+    monkeypatch.setattr(C, "open_connection_for_with_schema",
+                        lambda *_a, **_k: open_connection("duckdb", str(path), connection_id="t"))
+    r = client.post("/ontology/relationships/measure",
+                    params={"connection_id": "914df862", "schema_name": "luxexperience"})
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["schema_name"] == "luxexperience" and body["relationships"] == 11
+    assert body["confirmed"] == 7 and body["unmeasurable"] == []
+    assert sorted((c["authored"], c["measured"]) for c in body["contradicted"]) == [
+        ("N:N", "1:1"), ("N:N", "N:1"), ("N:N", "N:1"), ("N:N", "N:1")]
+    saved = ST.load_ontology("914df862", "luxexperience", "fp")
+    assert _by_tables(saved)[("luxexperience.order_items", "luxexperience.orders")].cardinality == "N:1"
+    assert _by_tables(saved)[("luxexperience.order_items", "luxexperience.orders")].cardinality_note.startswith("authored N:N")
+    # nothing cached for the scope → nothing is measured, and no neighbour is
+    r2 = client.post("/ontology/relationships/measure", params={"connection_id": "914df862", "schema_name": "other"})
+    assert r2.status_code == 404
