@@ -203,3 +203,45 @@ def render_semantic_layer(
         sections.extend(computed_lines)
 
     return "\n".join(sections)
+
+
+# ── Deep-analysis intake: the entity's lifecycle context (extracted for ON-0) ─────────
+#
+# These two functions used to be inline in ``agent/investigate.py`` — the pick in the
+# intake node, the render in the baseline plan. Inline prompt text cannot be measured by
+# the prompt-reach audit (``ontology.prompt_reach``), and an unmeasurable site reads as
+# unreached forever. Extracted byte-for-byte; ``investigate.py`` calls these.
+
+def entity_intake_fields(entity) -> dict:
+    """The entity fields the deep-analysis intake carries into its baseline plan."""
+    return {
+        "ontology_entity_id": entity.id,
+        "active_filter": entity.active_filter,
+        "lifecycle_column": entity.lifecycle_column,
+        "terminal_states": entity.terminal_states,
+        "lifecycle_states": entity.lifecycle_states,
+    }
+
+
+def render_entity_context(intake: dict) -> str:
+    """The ONTOLOGY ENTITY CONTEXT block appended to the baseline plan prompt, or ""."""
+    active_filter = intake.get("active_filter")
+    lifecycle_col = intake.get("lifecycle_column")
+    terminal_states = intake.get("terminal_states") or []
+    if not (active_filter or lifecycle_col):
+        return ""
+    lines = ["\nONTOLOGY ENTITY CONTEXT (auto-derived — treat as authoritative):"]
+    if active_filter:
+        lines.append(
+            f"  active_filter: {active_filter}\n"
+            "  ↳ ALWAYS apply this filter to every query on the metric table "
+            "unless you are explicitly counting terminal/inactive rows."
+        )
+    if lifecycle_col and terminal_states:
+        lines.append(
+            f"  lifecycle_column: {lifecycle_col}"
+            f"  terminal_states: {terminal_states}\n"
+            "  ↳ When computing active counts, exclude rows whose "
+            f"{lifecycle_col} is in {terminal_states}."
+        )
+    return "\n".join(lines)

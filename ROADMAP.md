@@ -77,6 +77,10 @@ instance layer; its semantic fields reach the UI and not the prompt; the only ab
 of injected context (R4, 2026-06-21) was a regression; the kinetic plane holds one
 declared action. The layer §0 calls the moat is, today, a description the agent reads
 rather than a mechanism it runs on — Arc ON is the re-think, §6 item 14 the decision.
+**Decided 2026-09-10 (all four clauses YES); ON-0 started:** 59 of 142 ontology fields can
+change any prompt block, 83 cannot (`ontology.prompt_reach`, ratcheted); the R4 harness had
+been un-runnable since June and is rebuilt with an ontology arm; the LLM arms wait for a keyed
+instance.
 
 ---
 
@@ -3250,7 +3254,7 @@ surface needs its capability inventory first; (c) an arc about "polish" invites 
 creep — every wave has a receipt that is a *behavior*, not an adjective, and a wave
 with no receipt left to take is done.
 
-### 3.15 · Arc ON — the ontology the agent runs ON (drafted 2026-09-10; decision §6 item 14 — **OPEN**)
+### 3.15 · Arc ON — the ontology the agent runs ON (drafted AND adopted 2026-09-10 — §6 item 14, all four clauses YES; **ON-0 STARTED** the same day)
 
 > **Origin.** The user's 2026-09-10 challenge, verbatim: *"I feel the ontology that we have
 > is just a Fancy representation of the ERD of the schema. I don't know how our ontology
@@ -3313,11 +3317,7 @@ is one YAML file with an empty description. **The arc turns the ontology from a 
 the agent reads ABOUT into a thing the agent runs ON.** Three moves, each a wave:
 the noun decouples from the table (ON-1); the agent's primary door becomes a compiled
 object query in which the guards hold *by construction* (ON-2); the verb layer acts on
-objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's frame
-sits underneath as layering, not competition: the **semantic layer** (metrics,
-dimensions — we have it) · the **context layer** (definitions, quirks, caveats, owners,
-freshness — we store most of it and render almost none; ON-6) · the **ontology**
-(objects, links, operations — ON-1…ON-5).
+objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's frame is NESTING, not competition — each layer contains the one before (re-verified 2026-09-10 against the published summary; the page itself stays egress-blocked here): the **semantic layer** (metrics, dimensions — we have it) ⊂ the **ontology** (objects, links, operations — ON-1…ON-5) ⊂ the **context layer** (definitions, quirks, caveats, owners, freshness, what an agent may surface — we store most of it and render almost none; ON-6). Their sentence for agents: *a semantic layer grounds queries in correct data; an ontology grounds reasoning in correct relationships; the context layer serves agents executing multi-step workflows.*
 
 **Laws that bind every ON wave (standing, not per-slice):**
 
@@ -3349,7 +3349,72 @@ freshness — we store most of it and render almost none; ON-6) · the **ontolog
 
 **Waves, in build order** (ON-0 is not optional; the order after it is the user's knob):
 
-- **ON-0 · Measure what the ontology is worth (substrate-sized; ~a week).** Re-run the
+- ✅ **ON-0 · Measure what the ontology is worth — STARTED 2026-09-10** (the user's
+  *"start ON-0 now"*; the deterministic half landed the same day, the LLM half waits for
+  a keyed instance). **Receipts, 2026-09-10:**
+  - **Prompt reach, measured** (`aughor/ontology/prompt_reach.py` — a field reaches a
+    block iff changing it changes the block's text; one fixture graph with every
+    renderer gate open; the seven pure renderers on the answer path). **59 of 142
+    fields reach at least one prompt block; 83 reach none.** By model: OntologyGraph
+    0/11 · OntologyEntity 13/19 · Segment 3/8 · **EntityProperty 0/19** · ComputedProperty
+    4/6 · OntologyRelationship 11/13 · OntologyMetric 15/16 · **DefinitionSource 0/9** ·
+    QueryTemplate 5/11 · ActionParameter 4/12 · KineticAction 3/9 · SubmissionCriterion
+    1/2 · SideEffect 0/2 · **OntologyInterface 0/5**. Named unreached: `entity.description`,
+    `domain`, `use_instead`, `implements`, `exploration_insights`; every `EntityProperty`
+    field (`null_meaning`, `measure_grain`, `value_interpretation`, the percentiles…);
+    every `DefinitionSource` field (the provenance the metric card shows and no model
+    sees); `Segment.description`; `QueryTemplate.sql_template` and its parameters (by
+    design — the planner sees the NAME and the runtime expands it); `SubmissionCriterion
+    .message` (by design — the authored sentence reaches the model only after a failed
+    proposal); `KineticAction.risk`, `entity`, `side_effects`. Two corrections to this
+    section's own prose, earned by measuring: (1) `entity.description` IS rendered on
+    one path — the explorer's Phase-8 hypothesis prose (`explorer/agent.py:2605`), an
+    exploration prompt, not an answer prompt; (2) `lifecycle_column` reaches exactly one
+    block, the deep-analysis baseline plan. **Ratcheted:**
+    `tests/unit/test_ontology_prompt_reach.py` pins the 59 (reach may grow — that is
+    ON-6's job — never silently shrink) and refuses a collapsed walk. To make it
+    measurable, the deep-analysis intake block was extracted from `agent/investigate.py`
+    into `ontology.semantic_block.render_entity_context`, byte-identically (tested); the
+    planner's APPROVED METRIC FORMULAS and the explorer's Phase-8 prose remain inline
+    and are named as such in the audit's output.
+  - **Kinetic census:** `python -m aughor.ontology.prompt_reach --census` → **1**
+    declared action in the tracked tree (`workspace/default/refund_orders`, description
+    empty). The live per-connection number is the user's instance's to take.
+  - **The harness, rebuilt** (`evals/ablation_eval.py`): five arms — `raw` · `guarded` ·
+    **`ontology`** (raw schema + ONLY the verified ontology blocks, rendered by the same
+    three functions the product uses) · **`ontology_guarded`** (do the blocks make the
+    guards fire LESS — by-construction beating by-guard, counted) · `injected`;
+    `--arms` to spend fewer tokens, `--dataset` repeatable for ≥2 connections, and every
+    reference SQL (and `accept_sql`) is EXECUTED before any model call — a failed
+    reference is skipped and named, never scored, never spent on. 🔴 **Found by running
+    it: the R4 harness had not been runnable since June** — its `_parse_schema_tables`
+    import died in a rename nobody re-ran the eval to notice. Fixed; a harness nobody
+    re-runs is the ledger's lesson, in code.
+  - **Two harder sets.** `evals/ablation_missimi_hard.jsonl` — 11 questions: cross-grain
+    joins, ratios, ratio-of-sums, lifecycle, a named segment, a nullable-FK anti-join,
+    and a CORRECT N:1 join the model must not refuse (references execute only on the
+    user's warehouse; h08 and h11 state the assumption each carries).
+    `evals/ablation_samples_ecommerce.jsonl` — 12 questions on the deterministic bundled
+    sample warehouse every install has; **all 12 references executed here**; its
+    value-domain trap is the mirror image of missimi's (`cancelled`, two Ls) and its
+    lifecycle has THREE terminal states.
+  - **Re-verification of the references** (pages egress-blocked; published summaries via
+    search): Foundry — object type · property · link type · action type; *semantic* =
+    object + link types, *kinetic* = action types + functions; a function is typed logic
+    (TypeScript/Python) for validation rules, derived values and action side effects;
+    live model inference rides a function-wrapped model deployment. MotherDuck — the
+    three layers are NESTED (semantic ⊂ ontology ⊂ context), which corrected the
+    thesis paragraph above. Nothing in either summary contradicts the waves as drafted;
+    the full pages still deserve one read by someone with access before ON-1.
+  - **Waits for a keyed instance — the LLM half, one command:**
+    `uv run python evals/ablation_eval.py --dataset evals/ablation_missimi.jsonl --dataset
+    evals/ablation_missimi_hard.jsonl --dataset evals/ablation_samples_ecommerce.jsonl
+    --arms raw,guarded,ontology,ontology_guarded --output evals/ablation_on0_results.json`
+    (add `injected` for the R4 comparison; `raw` and `ontology` are one model call per
+    question, `injected` is the full pipeline). Its dated table goes here and decides
+    ON-6 by the falsifier below. Build intelligence on each connection first, or the
+    `ontology` arm reports itself as equal to raw — it says so rather than pretending.
+  Original spec: Re-run the
   R4 harness on TODAY's stack with the ontology as its own arm — `raw` · `+guards` ·
   `+verified ontology blocks` · `+full injection` — on a harder set (forced cross-grain
   joins, ratio metrics, lifecycle questions, "active" semantics) across ≥2 connections;
@@ -3768,13 +3833,16 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              accepted-proposal receipt (waits for a natural evidence-backed
              occasion), periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
-ARC ON  🆕 DRAFTED 2026-09-10 (§3.15) — decision §6 item 14 OPEN. The user's challenge
+ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
         layer; the semantic fields reach the UI, not the prompt; the only ablation
         (R4, 2026-06-21) was a regression for injected context; the kinetic plane is
-        Foundry-shaped and holds ONE declared action. Waves: ON-0 measure (a week,
-        may start now beside MT-0/MT-1) → ON-1 object types decoupled from tables →
+        Foundry-shaped and holds ONE declared action. Waves: ON-0 measure — ✅ STARTED 2026-09-10
+        (prompt reach measured: 59/142 fields reach a prompt · census: 1 declared
+        action · harness rebuilt with an ontology arm and found un-runnable since
+        June · two harder sets · the ratchet test; the LLM arms wait for a keyed
+        instance) → ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with
         the overlay merged into the next answer → ON-5 functions and model bindings
@@ -4060,8 +4128,9 @@ the browser** · **measure the premise before building.**
 > on the user" list — credentials and one manual gesture, not decisions.
 > **Amended 2026-09-09:** item 13 (Arc PX) arrived and was decided in the same
 > session by the user's own directive — the register stays at zero open.
-> **Amended 2026-09-10: item 14 (Arc ON) is OPEN** — the first open decision since
-> 09-07, and deliberately so: it re-architects the layer §0 calls the moat.
+> **Amended 2026-09-10:** item 14 (Arc ON) arrived, was open for one turn, and was
+> DECIDED the same day — all four clauses YES, every recommendation adopted as written;
+> the register is back at zero open and ON-0 started within the hour.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -4177,12 +4246,14 @@ the browser** · **measure the premise before building.**
     receipt now because its backend is finished and tested. PX-5 is grander but
     waits on provenance fields the ontology does not yet store; PX-2 is broad
     rather than deep. PX-0/PX-1 follow.
-14. ⏳ **OPEN 2026-09-10 — Arc ON: does the ontology become the thing the agent runs
-    on?** Drafted as §3.15 from the user's own challenge, measured the same day (the
+14. ✅ **DECIDED 2026-09-10 — Arc ON is adopted: the ontology becomes the thing the agent
+    runs on.** The user's words, verbatim: *"Yes to all four, start ON-0 now."* Every
+    recommendation below was adopted as written; ON-0's receipts are in §3.15.
+    Drafted as §3.15 from the user's own challenge, measured the same day (the
     noun layer is the schema by construction; no instances; semantic fields reach the
     UI and not the prompt; the last ablation of injected context was a regression;
     the kinetic plane is Foundry-shaped and holds one declared action). Four clauses,
-    each with the builder's recommendation marked — the call is the user's:
+    each with the builder's recommendation marked — the call was the user's, and was YES on all four:
     **(a) Adoption.** Is §3.15 active, with ON-0 (the measurement) starting now?
     *Recommended: yes — ON-0 is a week and decides the rest by number.*
     **(b) The agent's primary door.** Does `query_objects` (ON-2) become the tool
