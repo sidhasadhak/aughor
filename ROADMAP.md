@@ -79,8 +79,10 @@ declared action. The layer §0 calls the moat is, today, a description the agent
 rather than a mechanism it runs on — Arc ON is the re-think, §6 item 14 the decision.
 **Decided 2026-09-10 (all four clauses YES); ON-0 started:** 59 of 142 ontology fields can
 change any prompt block, 83 cannot (`ontology.prompt_reach`, ratcheted); the R4 harness had
-been un-runnable since June and is rebuilt with an ontology arm; the LLM arms wait for a keyed
-instance.
+been un-runnable since June and is rebuilt with an ontology arm; the LLM arms ran the same
+evening on the one set that still exists (`samples/ecommerce`: 12/12 on every arm — a ceiling,
+not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance — a
+decision is needed, §3.15).
 
 ---
 
@@ -3350,8 +3352,10 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
 **Waves, in build order** (ON-0 is not optional; the order after it is the user's knob):
 
 - ✅ **ON-0 · Measure what the ontology is worth — STARTED 2026-09-10** (the user's
-  *"start ON-0 now"*; the deterministic half landed the same day, the LLM half waits for
-  a keyed instance). **Receipts, 2026-09-10:**
+  *"start ON-0 now"*; the deterministic half landed the same day, the LLM half ran the
+  same evening on `samples/ecommerce` — the only one of its three sets that still exists
+  on this instance; the falsifier is NOT yet decided, see the LLM-half receipt).
+  **Receipts, 2026-09-10:**
   - **Prompt reach, measured** (`aughor/ontology/prompt_reach.py` — a field reaches a
     block iff changing it changes the block's text; one fixture graph with every
     renderer gate open; the seven pure renderers on the answer path). **59 of 142
@@ -3406,14 +3410,61 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     three layers are NESTED (semantic ⊂ ontology ⊂ context), which corrected the
     thesis paragraph above. Nothing in either summary contradicts the waves as drafted;
     the full pages still deserve one read by someone with access before ON-1.
-  - **Waits for a keyed instance — the LLM half, one command:**
-    `uv run python evals/ablation_eval.py --dataset evals/ablation_missimi.jsonl --dataset
-    evals/ablation_missimi_hard.jsonl --dataset evals/ablation_samples_ecommerce.jsonl
-    --arms raw,guarded,ontology,ontology_guarded --output evals/ablation_on0_results.json`
-    (add `injected` for the R4 comparison; `raw` and `ontology` are one model call per
-    question, `injected` is the full pipeline). Its dated table goes here and decides
-    ON-6 by the falsifier below. Build intelligence on each connection first, or the
-    `ontology` arm reports itself as equal to raw — it says so rather than pretending.
+  - **The LLM half — RUN 2026-09-10 on `samples/ecommerce`** (12 questions · arms `raw`,
+    `guarded`, `ontology`, `ontology_guarded` · `gemini` / `gemini-3.1-flash-lite` ·
+    fallback chain pinned to none · every store redirected to a scratch dir · the arm fed
+    the graph `GET /ontology` serves). Receipt: `evals/ablation_on0_ecommerce_results.json`;
+    the served graph is committed beside its dataset as
+    `evals/ablation_samples_ecommerce_ontology.json` (built 2026-07-02, enrichment v5) so
+    the arm reproduces without an instance:
+    `AUGHOR_SYSTEM_DB=/tmp/scratch/system.db AUGHOR_FALLBACK_BACKENDS=none uv run python
+    evals/ablation_eval.py --dataset evals/ablation_samples_ecommerce.jsonl --arms
+    raw,guarded,ontology,ontology_guarded --graph-json
+    samples/ecommerce=evals/ablation_samples_ecommerce_ontology.json` (redirect EVERY
+    `AUGHOR_*_DB` beside a serving API — the list is `tests/conftest.py`'s).
+
+    | arm | correct | silent-wrong | error | guards fired |
+    |---|---|---|---|---|
+    | raw | 12/12 | 0 | 0 | — |
+    | guarded | 12/12 | 0 | 0 | 0 |
+    | ontology | 12/12 | 0 | 0 | — |
+    | ontology_guarded | 12/12 | 0 | 0 | 0 |
+
+    **A ceiling, not a lift — the falsifier is NOT decided by this run.** The block
+    (3,756 chars beside a 3,831-char schema: 5 verified N:1 joins, 3 segments, 6 computed
+    properties, 14 ACTION templates; grain unverified on all 5 entities) changed the SQL
+    text on 5 of 12 questions and the answer on none; no guard fired on either side
+    because nothing in this set made this model fan out. "No lift" at 100% raw says
+    nothing about the ontology and everything about the set. 🔴 **The set that could
+    discriminate is gone: `workspace/missimi` no longer exists on this instance** — the
+    live workspace lists 11 schemas and no `missimi`, there is no upload directory for
+    it, no ontology was ever built for it (built: amazon, default, scm); only June
+    backups of its exploration prose survive. `ablation_missimi.jsonl` and
+    `ablation_missimi_hard.jsonl` — 23 of the 35 questions, every cross-grain,
+    ratio-of-sums and anti-join trap — skip at the reference check. **Decision needed
+    before ON-6 can be judged:** restore the missimi upload, or re-author the hard set
+    against a workspace schema that exists AND has a built ontology (`amazon` or `scm`).
+    ON-1/ON-2 proceed regardless, as the falsifier already says.
+    **The premise was wrong, too:** the run never waited on a key. The instance was keyed
+    all along (Gemini, via `data/llm_config.json`, which outranks the `.env` OpenRouter
+    lines — those are dead letters). What actually blocked it: the ontology store IS
+    `system.db`, so a bare run beside the serving API either opens the served store (the
+    corruption precondition) or, redirected, finds no ontology and silently runs raw twice.
+    **One thing the run did measure:** the served ecommerce ontology says Order has TWO
+    terminal states (`delivered`, `cancelled`) and its "Active Orders" segment encodes
+    that; the data has THREE (`refunded`, 500 rows — 1,400 open orders by the data, 1,900
+    by the ontology). The model answered s05 correctly on BOTH arms: it read the status
+    values off the schema and did not trust the block. A verified block that is wrong and
+    ignored is the worst case — it is on the prompt (`terminal_states` reaches ENTITY
+    MODEL, per the reach audit) and it is not load-bearing. The validator proves a segment
+    EXECUTES, not that it is TRUE; ON-1's measured cardinality needs a sibling for lifecycle.
+    **Harness, three fixes found by preparing the run** (ratcheted in
+    `tests/unit/test_ablation_guards.py`): (1) the results never recorded which model
+    answered — `summary.llm` now carries backend, model and the fallback chain, and the
+    header prints them; (2) an `ontology` arm with an empty block was still spent on — the
+    ontology arms are now DROPPED, not run, and the summary says so; (3) `--graph-json
+    conn/schema=file` feeds the arm the graph the API serves, the door a redirected store
+    needs. Run log: one transient Gemini retry (s09), 94.5s of model time across 24 calls.
   Original spec: Re-run the
   R4 harness on TODAY's stack with the ontology as its own arm — `raw` · `+guards` ·
   `+verified ontology blocks` · `+full injection` — on a harder set (forced cross-grain
@@ -3841,8 +3892,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         Foundry-shaped and holds ONE declared action. Waves: ON-0 measure — ✅ STARTED 2026-09-10
         (prompt reach measured: 59/142 fields reach a prompt · census: 1 declared
         action · harness rebuilt with an ontology arm and found un-runnable since
-        June · two harder sets · the ratchet test; the LLM arms wait for a keyed
-        instance) → ON-1 object types decoupled from tables →
+        June · two harder sets · the ratchet test · LLM arms run on samples/ecommerce:
+        12/12 on every arm, a ceiling; missimi is GONE from the instance — the falsifier
+        waits on a restored or re-authored hard set) → ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with
         the overlay merged into the next answer → ON-5 functions and model bindings

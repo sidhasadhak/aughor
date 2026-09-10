@@ -1,0 +1,391 @@
+{
+  "results": [
+    {
+      "id": "s01_order_count",
+      "trap": "control",
+      "question": "How many orders are in the dataset?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.8
+    },
+    {
+      "id": "s02_total_revenue",
+      "trap": "fanout",
+      "question": "What is the total revenue across all orders?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(total_amount), 2) FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(total_amount), 2) FROM ecommerce.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue FROM ecommerce.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.8
+    },
+    {
+      "id": "s03_cancelled_count",
+      "trap": "value_domain",
+      "question": "How many orders were canceled?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status = 'cancelled'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status = 'cancelled'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status = 'cancelled'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status = 'cancelled'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 6.1
+    },
+    {
+      "id": "s04_cancellation_rate",
+      "trap": "ratio",
+      "question": "What percentage of orders were cancelled?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancelled_order_percentage FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancelled_order_percentage FROM ecommerce.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancelled_order_percentage FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancelled_order_percentage FROM ecommerce.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.8
+    },
+    {
+      "id": "s05_active_orders",
+      "trap": "lifecycle",
+      "question": "How many orders are still open, meaning not yet delivered, cancelled or refunded?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status NOT IN ('delivered', 'cancelled', 'refunded') AND status IS NOT NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status NOT IN ('delivered', 'cancelled', 'refunded') AND status IS NOT NULL",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status NOT IN ('delivered', 'cancelled', 'refunded')",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status NOT IN ('delivered', 'cancelled', 'refunded')",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.6
+    },
+    {
+      "id": "s06_revenue_by_category",
+      "trap": "cardinality",
+      "question": "What is the total line revenue by product category?",
+      "raw": {
+        "sql": "SELECT p.category, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT p.category, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT p.category, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT p.category, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 6.3
+    },
+    {
+      "id": "s07_orders_per_category",
+      "trap": "grain",
+      "question": "For each product category, how many distinct orders included at least one of its products?",
+      "raw": {
+        "sql": "SELECT p.category, COUNT(DISTINCT oi.order_id) AS order_count FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT p.category, COUNT(DISTINCT oi.order_id) AS order_count FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT p.category, COUNT(DISTINCT oi.order_id) AS order_count FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT p.category, COUNT(DISTINCT oi.order_id) AS order_count FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 6.3
+    },
+    {
+      "id": "s08_aov_delivered",
+      "trap": "segment",
+      "question": "What is the average order value of delivered orders?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(total_amount) / NULLIF(COUNT(order_id), 0), 2) FROM ecommerce.orders WHERE status = 'delivered'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(total_amount) / NULLIF(COUNT(order_id), 0), 2) FROM ecommerce.orders WHERE status = 'delivered'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(SUM(total_amount) / NULLIF(COUNT(order_id), 0), 2) FROM ecommerce.orders WHERE status = 'delivered'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(SUM(total_amount) / NULLIF(COUNT(order_id), 0), 2) FROM ecommerce.orders WHERE status = 'delivered'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 6.4
+    },
+    {
+      "id": "s09_spend_by_country",
+      "trap": "cardinality",
+      "question": "What is the total order revenue by customer country?",
+      "raw": {
+        "sql": "SELECT c.country, ROUND(SUM(o.total_amount), 2) AS total_revenue FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY c.country",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT c.country, ROUND(SUM(o.total_amount), 2) AS total_revenue FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY c.country",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT\n  c.country,\n  ROUND(SUM(o.total_amount), 2) AS total_revenue\nFROM ecommerce.customers AS c\nJOIN ecommerce.orders AS o\n  ON c.customer_id = o.customer_id\nGROUP BY\n  c.country\nORDER BY\n  total_revenue DESC",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT\n  c.country,\n  ROUND(SUM(o.total_amount), 2) AS total_revenue\nFROM ecommerce.customers AS c\nJOIN ecommerce.orders AS o\n  ON c.customer_id = o.customer_id\nGROUP BY\n  c.country\nORDER BY\n  total_revenue DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 27.4
+    },
+    {
+      "id": "s10_avg_rating_by_category",
+      "trap": "fanout",
+      "question": "What is the average review rating for each product category?",
+      "raw": {
+        "sql": "SELECT p.category, ROUND(AVG(r.rating), 2) AS average_rating FROM ecommerce.reviews r JOIN ecommerce.order_items oi ON r.order_id = oi.order_id JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT p.category, ROUND(AVG(r.rating), 2) AS average_rating FROM ecommerce.reviews r JOIN ecommerce.order_items oi ON r.order_id = oi.order_id JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT\n  p.category,\n  ROUND(AVG(r.rating), 2) AS average_rating\nFROM ecommerce.products AS p\nJOIN ecommerce.order_items AS oi\n  ON p.product_id = oi.product_id\nJOIN ecommerce.reviews AS r\n  ON oi.order_id = r.order_id\nGROUP BY\n  p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT\n  p.category,\n  ROUND(AVG(r.rating), 2) AS average_rating\nFROM ecommerce.products AS p\nJOIN ecommerce.order_items AS oi\n  ON p.product_id = oi.product_id\nJOIN ecommerce.reviews AS r\n  ON oi.order_id = r.order_id\nGROUP BY\n  p.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.3
+    },
+    {
+      "id": "s11_items_per_order",
+      "trap": "ratio",
+      "question": "On average, how many line items does an order have?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT order_id), 0), 2) FROM ecommerce.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT order_id), 0), 2) FROM ecommerce.order_items",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS avg_line_items_per_order FROM ecommerce.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS avg_line_items_per_order FROM ecommerce.order_items",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 6.6
+    },
+    {
+      "id": "s12_review_coverage",
+      "trap": "ratio",
+      "question": "What fraction of orders received a review?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) FROM ecommerce.orders o LEFT JOIN ecommerce.reviews r ON o.order_id = r.order_id",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) FROM ecommerce.orders o LEFT JOIN ecommerce.reviews r ON o.order_id = r.order_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) FROM ecommerce.orders o LEFT JOIN ecommerce.reviews r ON o.order_id = r.order_id",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) FROM ecommerce.orders o LEFT JOIN ecommerce.reviews r ON o.order_id = r.order_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 7.1
+    }
+  ],
+  "summary": {
+    "n": 12,
+    "arms": [
+      "raw",
+      "guarded",
+      "ontology",
+      "ontology_guarded"
+    ],
+    "raw": {
+      "correct": 12
+    },
+    "guarded": {
+      "correct": 12
+    },
+    "ontology": {
+      "correct": 12
+    },
+    "ontology_guarded": {
+      "correct": 12
+    },
+    "raw_accuracy": 1.0,
+    "raw_silent_wrong": 0,
+    "guarded_safe_rate": 1.0,
+    "guarded_silent_wrong": 0,
+    "saves": [],
+    "regressions": [],
+    "ontology_accuracy": 1.0,
+    "ontology_silent_wrong": 0,
+    "ontology_gains": [],
+    "ontology_losses": [],
+    "ontology_guarded_safe_rate": 1.0,
+    "ontology_guarded_silent_wrong": 0,
+    "guards_fired": {
+      "on_raw": 0,
+      "on_ontology": 0
+    },
+    "dataset": "evals/ablation_samples_ecommerce.jsonl",
+    "connection": "samples/ecommerce",
+    "reference_failed": [],
+    "llm": {
+      "backend": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "role": "coder",
+      "fallback_chain": []
+    },
+    "ontology_available": true,
+    "ontology_source": "file:evals/ablation_samples_ecommerce_ontology.json",
+    "ontology_context_chars": 3756,
+    "arms_dropped": [],
+    "ontology_source_note": "the run read a scratch copy of GET /ontology?connection_id=samples&schema_name=ecommerce; the committed file is byte-identical (cmp) and the path was rewritten to it"
+  }
+}

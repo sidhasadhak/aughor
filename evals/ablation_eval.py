@@ -43,6 +43,11 @@ Usage:
     uv run python evals/ablation_eval.py --dataset evals/ablation_missimi.jsonl \
         --dataset evals/ablation_missimi_hard.jsonl --arms raw,guarded,ontology,ontology_guarded
     uv run python evals/ablation_eval.py --check-references --dataset evals/ablation_samples_ecommerce.jsonl
+    # Beside a SERVING API: redirect the stores (one writer per data/) and hand the arm the
+    # graph the API serves — the store is system.db, and a redirected store holds no ontology.
+    AUGHOR_SYSTEM_DB=/tmp/scratch/system.db uv run python evals/ablation_eval.py \
+        --dataset evals/ablation_samples_ecommerce.jsonl \
+        --graph-json samples/ecommerce=/tmp/samples_ecommerce.json   # GET /ontology?connection_id=samples&schema_name=ecommerce
 """
 from __future__ import annotations
 
@@ -186,13 +191,63 @@ def check_references(db, records: list[dict]) -> tuple[list[dict], list[dict]]:
     return ok_rows, bad_rows
 
 
-def _load_graph(conn_id: str, schema_name: str | None):
+def _load_graph(conn_id: str, schema_name: str | None,
+                graph_json: dict[str, str] | None = None) -> tuple[object | None, str]:
+    """The ontology graph for this dataset, and where it came from.
+
+    `--graph-json` maps a dataset label (`conn` or `conn/schema`) to a file holding the
+    JSON of `GET /ontology?connection_id=…&schema_name=…` — the graph WITH the human
+    overrides overlaid, exactly what the product's chat path reads. That door exists
+    because the ontology store IS `system.db`: a bare run beside the serving API has to
+    redirect `AUGHOR_SYSTEM_DB` (one writer per data/), and a redirected store holds no
+    ontology, so the arm would quietly equal raw. Without a mapping, the store is read.
+    """
+    label = f"{conn_id}/{schema_name}" if schema_name else conn_id
+    path = (graph_json or {}).get(label) or (graph_json or {}).get(conn_id)
+    if path:
+        from aughor.ontology.models import OntologyGraph
+        graph = OntologyGraph.model_validate(json.loads(Path(path).read_text()))
+        return graph, f"file:{path}"
     from aughor.ontology.store import load_latest_ontology
-    return _quiet(lambda: load_latest_ontology(conn_id, schema_name), None)
+    return _quiet(lambda: load_latest_ontology(conn_id, schema_name), None), "store"
+
+
+def _arms_after_ontology_check(arms: tuple[str, ...], onto_ctx: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Drop the ontology arms when there is nothing to inject.
+
+    An `ontology` arm with an empty block is the raw arm under another name: running it
+    spends a model call per question to measure a difference that cannot exist, and the
+    table then shows two equal columns that LOOK like a finding. Returns (arms, dropped).
+    """
+    if "ontology" not in arms or onto_ctx:
+        return arms, ()
+    dropped = tuple(a for a in ("ontology", "ontology_guarded") if a in arms)
+    return tuple(a for a in arms if a not in dropped), dropped
+
+
+def _llm_identity() -> dict:
+    """Which model answers — written into every summary.
+
+    A dated table that does not name its model is a catalogue without a timestamp: the
+    2026-06-21 run's `raw 92%` cannot be compared with anything because nobody wrote down
+    what produced it. Resolved from config with no network call, through the same seam
+    `/health` reads. `fallback_chain` is what a throttled primary would fall over to —
+    empty means a throttled call becomes an `error` row, never another model's answer
+    counted as this arm's (pin it with AUGHOR_FALLBACK_BACKENDS=none for a clean run).
+    """
+    try:
+        from aughor.llm import provider
+        backend, model, _base_url = provider.resolve_binding("coder")
+        return {"backend": backend, "model": model, "role": "coder",
+                "fallback_chain": list(provider._fallback_backends())}
+    except Exception as exc:  # noqa: BLE001 — identity is a receipt, never a reason to abort
+        return {"backend": None, "model": None, "role": "coder", "fallback_chain": None,
+                "error": f"{type(exc).__name__}: {exc}"[:200]}
 
 
 def run(dataset: str, limit: int | None, output: str | None,
-        arms: tuple[str, ...] = ARMS, check_only: bool = False) -> dict:
+        arms: tuple[str, ...] = ARMS, check_only: bool = False,
+        graph_json: dict[str, str] | None = None) -> dict:
     records = [json.loads(line) for line in open(dataset) if line.strip()]
     if limit:
         records = records[:limit]
@@ -211,8 +266,11 @@ def run(dataset: str, limit: int | None, output: str | None,
     tcols = _quiet(lambda: parse_schema_tables(schema_text), {})
 
     label = f"{conn_id}{('/' + schema_name) if schema_name else ''}"
+    llm = _llm_identity()
     print(f"\n{'='*76}\n R4/ON-0 · Semantic-layer ablation  |  {label}  ({len(records)} questions)"
-          f"\n arms: {', '.join(arms)}\n{'='*76}", flush=True)
+          f"\n arms: {', '.join(arms)}"
+          f"\n model: {llm.get('backend')} · {llm.get('model')} · fallback chain: "
+          f"{llm.get('fallback_chain') or 'none'}\n{'='*76}", flush=True)
 
     scorable, failed = check_references(db, records)
     if failed:
@@ -228,11 +286,14 @@ def run(dataset: str, limit: int | None, output: str | None,
         return {"dataset": dataset, "connection": label, "reference_failed": failed,
                 "reference_ok": [r["id"] for r in scorable]}
 
-    graph = _load_graph(conn_id, schema_name) if ("ontology" in arms) else None
-    onto_ctx = ontology_context(graph, schema_text, tcols) if "ontology" in arms else ""
-    if "ontology" in arms and not onto_ctx:
-        print("  ⚠ no built ontology for this connection — the `ontology` arm IS the raw arm here. "
-              "Build intelligence first (POST /ontology/rebuild) for a real measurement.")
+    wanted_ontology = "ontology" in arms
+    graph, graph_source = _load_graph(conn_id, schema_name, graph_json) if wanted_ontology else (None, None)
+    onto_ctx = ontology_context(graph, schema_text, tcols) if wanted_ontology else ""
+    arms, dropped = _arms_after_ontology_check(arms, onto_ctx)
+    if dropped:
+        print(f"  ⚠ no built ontology for {label} (source: {graph_source}) — the `ontology` arm would "
+              f"equal raw, so {list(dropped)} are DROPPED, not spent on. Build intelligence first "
+              f"(POST /ontology/rebuild), or pass --graph-json {label}=<the JSON of GET /ontology>.")
     onto_schema = (schema_text + "\n\n" + onto_ctx) if onto_ctx else schema_text
 
     rows = []
@@ -281,8 +342,11 @@ def run(dataset: str, limit: int | None, output: str | None,
     summary["dataset"] = dataset
     summary["connection"] = label
     summary["reference_failed"] = failed
-    summary["ontology_available"] = bool(onto_ctx) if "ontology" in arms else None
+    summary["llm"] = llm
+    summary["ontology_available"] = bool(onto_ctx) if wanted_ontology else None
+    summary["ontology_source"] = graph_source
     summary["ontology_context_chars"] = len(onto_ctx)
+    summary["arms_dropped"] = list(dropped)
     _print_report(rows, summary, arms)
     result = {"results": rows, "summary": summary}
     if output:
@@ -366,6 +430,11 @@ def _print_report(rows: list[dict], s: dict, arms: tuple[str, ...] = ARMS) -> No
         print(f"  Regressions (raw correct → guarded not-safe)     : {len(s['regressions'])}  {s['regressions']}")
     if s.get("reference_failed"):
         print(f"  Skipped (reference SQL failed): {[f['id'] for f in s['reference_failed']]}")
+    if s.get("arms_dropped"):
+        print(f"  Dropped arms (no ontology to inject — not spent on): {s['arms_dropped']}")
+    llm = s.get("llm") or {}
+    print(f"  Model: {llm.get('backend')} · {llm.get('model')}   fallback chain: "
+          f"{llm.get('fallback_chain') or 'none'}   ontology source: {s.get('ontology_source')}")
     print("=" * len(head))
 
 
@@ -439,14 +508,25 @@ def main():
                     help=f"comma-separated subset of {','.join(ARMS)} (LLM cost scales with arms)")
     ap.add_argument("--check-references", action="store_true",
                     help="Execute every reference/accept SQL and stop — no model, no scoring")
+    ap.add_argument("--graph-json", action="append", default=None, metavar="LABEL=PATH",
+                    help="Ontology graph for a dataset's connection: LABEL is `conn` or `conn/schema`, "
+                         "PATH holds the JSON of GET /ontology?connection_id=…&schema_name=…; repeatable. "
+                         "Use it when the store is redirected (AUGHOR_SYSTEM_DB) beside a serving API.")
     ap.add_argument("--traps", action="store_true", help="Run only the deterministic guard-efficacy demo (no LLM)")
     args = ap.parse_args()
+    graph_json: dict[str, str] = {}
+    for item in args.graph_json or []:
+        label, sep, path = item.partition("=")
+        if not sep or not label or not Path(path).is_file():
+            ap.error(f"--graph-json expects LABEL=PATH with an existing file, got {item!r}")
+        graph_json[label] = path
     if args.traps:
         demo_traps()
         return
     datasets = args.dataset or ["evals/ablation_missimi.jsonl"]
     arms = tuple(a.strip() for a in args.arms.split(",") if a.strip())
-    results = [run(d, args.limit, None, arms=arms, check_only=args.check_references) for d in datasets]
+    results = [run(d, args.limit, None, arms=arms, check_only=args.check_references,
+                   graph_json=graph_json) for d in datasets]
     if args.output and not args.check_references:
         payload = results[0] if len(results) == 1 else {"datasets": results}
         Path(args.output).write_text(json.dumps(payload, indent=2, default=str))
