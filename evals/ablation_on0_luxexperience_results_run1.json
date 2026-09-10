@@ -1,0 +1,458 @@
+{
+  "results": [
+    {
+      "id": "l01_orders_per_category",
+      "trap": "grain",
+      "question": "For each product category, how many distinct orders contained it and what was the total item revenue in EUR?",
+      "raw": {
+        "sql": "SELECT category, COUNT(DISTINCT order_id) AS distinct_order_count, ROUND(SUM(unit_price_eur), 2) AS total_revenue_eur FROM luxexperience.order_items GROUP BY category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT category, COUNT(DISTINCT order_id) AS distinct_order_count, ROUND(SUM(unit_price_eur), 2) AS total_revenue_eur FROM luxexperience.order_items GROUP BY category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT\n  T1.category,\n  COUNT(DISTINCT T1.order_id) AS order_count,\n  ROUND(SUM(T1.unit_price_eur), 2) AS total_revenue_eur\nFROM luxexperience.order_items AS T1\nJOIN luxexperience.orders AS T2\n  ON T1.order_id = T2.order_id\nGROUP BY\n  T1.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT\n  T1.category,\n  COUNT(DISTINCT T1.order_id) AS order_count,\n  ROUND(SUM(T1.unit_price_eur), 2) AS total_revenue_eur\nFROM luxexperience.order_items AS T1\nJOIN luxexperience.orders AS T2\n  ON T1.order_id = T2.order_id\nGROUP BY\n  T1.category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 7.3
+    },
+    {
+      "id": "l02_returned_line_share",
+      "trap": "grain",
+      "question": "What percentage of individual order lines were returned?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN returned = TRUE THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct FROM luxexperience.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN returned = TRUE THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct FROM luxexperience.order_items",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN returned = TRUE THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct FROM luxexperience.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN returned = TRUE THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS return_rate_pct FROM luxexperience.order_items",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 8.9
+    },
+    {
+      "id": "l03_cancelled_pct",
+      "trap": "value_domain",
+      "question": "What percentage of orders were canceled?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_percentage FROM luxexperience.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_percentage FROM luxexperience.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_percentage FROM luxexperience.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancellation_percentage FROM luxexperience.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 7.4
+    },
+    {
+      "id": "l04_returned_gmv_share",
+      "trap": "fanout",
+      "question": "What share of total GMV came from orders that were returned?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN status = 'returned' THEN gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS returned_gmv_share FROM luxexperience.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN status = 'returned' THEN gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS returned_gmv_share FROM luxexperience.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN status = 'returned' THEN gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS returned_gmv_share FROM luxexperience.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN status = 'returned' THEN gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS returned_gmv_share FROM luxexperience.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 8.4
+    },
+    {
+      "id": "l05_shipping_cost_share",
+      "trap": "ratio_of_sums",
+      "question": "For orders that were shipped, what percentage of GMV was spent on shipping cost?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(shipping_fee_eur) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS shipping_cost_percentage_of_gmv FROM luxexperience.orders WHERE status = 'shipped'",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(shipping_fee_eur) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS shipping_cost_percentage_of_gmv FROM luxexperience.orders WHERE status = 'shipped'",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(SUM(shipping_fee_eur) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS shipping_cost_percentage_of_gmv FROM luxexperience.orders WHERE status = 'shipped'",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(SUM(shipping_fee_eur) * 100.0 / NULLIF(SUM(gmv_eur), 0), 2) AS shipping_cost_percentage_of_gmv FROM luxexperience.orders WHERE status = 'shipped'",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "latency_s": 10.1
+    },
+    {
+      "id": "l06_gmv_with_returns",
+      "trap": "fanout",
+      "question": "What is the total GMV in EUR of orders that had at least one returned item?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) FROM luxexperience.orders WHERE order_id IN (SELECT order_id FROM luxexperience.order_items WHERE returned = True)",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) FROM luxexperience.orders WHERE order_id IN (SELECT order_id FROM luxexperience.order_items WHERE returned = True)",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders WHERE order_id IN (SELECT DISTINCT order_id FROM luxexperience.returns)",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders WHERE order_id IN (SELECT DISTINCT order_id FROM luxexperience.returns)",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.6
+    },
+    {
+      "id": "l07_rejected_returns",
+      "trap": "lifecycle",
+      "question": "How many returns were rejected at inspection?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM luxexperience.return_logistics WHERE condition = 'reject'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) FROM luxexperience.return_logistics WHERE condition = 'reject'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT COUNT(*) FROM luxexperience.return_logistics WHERE condition = 'reject'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT COUNT(*) FROM luxexperience.return_logistics WHERE condition = 'reject'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.8
+    },
+    {
+      "id": "l08_item_revenue_by_channel",
+      "trap": "cardinality",
+      "question": "What is the total item revenue in EUR by sales channel?",
+      "raw": {
+        "sql": "SELECT\n  T1.channel,\n  ROUND(SUM(T2.quantity * T2.unit_price_eur), 2) AS total_revenue\nFROM luxexperience.orders AS T1\nJOIN luxexperience.order_items AS T2\n  ON T1.order_id = T2.order_id\nGROUP BY\n  T1.channel",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT\n  T1.channel,\n  ROUND(SUM(T2.quantity * T2.unit_price_eur), 2) AS total_revenue\nFROM luxexperience.orders AS T1\nJOIN luxexperience.order_items AS T2\n  ON T1.order_id = T2.order_id\nGROUP BY\n  T1.channel",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT\n  T2.channel,\n  ROUND(SUM(T1.quantity * T1.unit_price_eur), 2) AS total_revenue\nFROM luxexperience.order_items AS T1\nJOIN luxexperience.orders AS T2\n  ON T1.order_id = T2.order_id\nGROUP BY\n  T2.channel",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT\n  T2.channel,\n  ROUND(SUM(T1.quantity * T1.unit_price_eur), 2) AS total_revenue\nFROM luxexperience.order_items AS T1\nJOIN luxexperience.orders AS T2\n  ON T1.order_id = T2.order_id\nGROUP BY\n  T2.channel",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 39.5
+    },
+    {
+      "id": "l09_never_shipped",
+      "trap": "nullable_fk",
+      "question": "How many orders were never shipped?",
+      "raw": {
+        "sql": "SELECT COUNT(o.order_id) FROM luxexperience.orders o LEFT JOIN luxexperience.shipments s ON o.order_id = s.order_id WHERE s.order_id IS NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(o.order_id) FROM luxexperience.orders o LEFT JOIN luxexperience.shipments s ON o.order_id = s.order_id WHERE s.order_id IS NULL",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT COUNT(*) - COUNT(s.order_id) FROM luxexperience.orders o LEFT JOIN luxexperience.shipments s ON o.order_id = s.order_id",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT COUNT(*) - COUNT(s.order_id) FROM luxexperience.orders o LEFT JOIN luxexperience.shipments s ON o.order_id = s.order_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 8.9
+    },
+    {
+      "id": "l10_cs_coverage",
+      "trap": "ratio",
+      "question": "What fraction of orders raised a customer-service ticket?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT cs.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS order_ticket_fraction FROM luxexperience.orders o LEFT JOIN luxexperience.customer_service cs ON o.order_id = cs.order_id",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT cs.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS order_ticket_fraction FROM luxexperience.orders o LEFT JOIN luxexperience.customer_service cs ON o.order_id = cs.order_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN cs.order_id IS NOT NULL THEN o.order_id END) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS order_ticket_ratio FROM luxexperience.orders o LEFT JOIN luxexperience.customer_service cs ON o.order_id = cs.order_id",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN cs.order_id IS NOT NULL THEN o.order_id END) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS order_ticket_ratio FROM luxexperience.orders o LEFT JOIN luxexperience.customer_service cs ON o.order_id = cs.order_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 7.2
+    },
+    {
+      "id": "l11_customers_with_orders",
+      "trap": "grain",
+      "question": "How many distinct customers have placed at least one order?",
+      "raw": {
+        "sql": "SELECT COUNT(DISTINCT customer_id) FROM luxexperience.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(DISTINCT customer_id) FROM luxexperience.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT COUNT(DISTINCT customer_id) FROM luxexperience.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT COUNT(DISTINCT customer_id) FROM luxexperience.orders",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 6.3
+    },
+    {
+      "id": "l12_avg_retail_price_by_category",
+      "trap": "cardinality",
+      "question": "What is the average retail price in EUR of products in each category?",
+      "raw": {
+        "sql": "SELECT category, ROUND(AVG(retail_price_eur), 2) AS average_retail_price FROM luxexperience.products GROUP BY category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT category, ROUND(AVG(retail_price_eur), 2) AS average_retail_price FROM luxexperience.products GROUP BY category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT category, ROUND(AVG(retail_price_eur), 2) AS average_retail_price_eur FROM luxexperience.products GROUP BY category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT category, ROUND(AVG(retail_price_eur), 2) AS average_retail_price_eur FROM luxexperience.products GROUP BY category",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 5.8
+    },
+    {
+      "id": "l13_aov_and_items_by_platform",
+      "trap": "fanout",
+      "question": "For each platform, what is the average order value in EUR and the average number of items per order?",
+      "raw": {
+        "sql": "SELECT\n  o.platform,\n  ROUND(SUM(o.gmv_eur) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_order_value_eur,\n  ROUND(COUNT(oi.order_item_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_items_per_order\nFROM luxexperience.orders AS o\nJOIN luxexperience.order_items AS oi\n  ON o.order_id = oi.order_id\nGROUP BY\n  o.platform",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT\n  o.platform,\n  ROUND(SUM(o.gmv_eur) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_order_value_eur,\n  ROUND(COUNT(oi.order_item_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_items_per_order\nFROM luxexperience.orders AS o\nJOIN luxexperience.order_items AS oi\n  ON o.order_id = oi.order_id\nGROUP BY\n  o.platform",
+        "class": "caught",
+        "guards_fired": [
+          "fanout"
+        ],
+        "match": 0.0
+      },
+      "ontology": {
+        "sql": "SELECT\n  o.platform,\n  ROUND(SUM(o.gmv_eur) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_order_value_eur,\n  ROUND(COUNT(oi.order_item_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_items_per_order\nFROM luxexperience.orders AS o\nLEFT JOIN luxexperience.order_items AS oi\n  ON o.order_id = oi.order_id\nGROUP BY\n  o.platform",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT\n  o.platform,\n  ROUND(SUM(o.gmv_eur) / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_order_value_eur,\n  ROUND(COUNT(oi.order_item_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS avg_items_per_order\nFROM luxexperience.orders AS o\nLEFT JOIN luxexperience.order_items AS oi\n  ON o.order_id = oi.order_id\nGROUP BY\n  o.platform",
+        "class": "caught",
+        "guards_fired": [
+          "fanout"
+        ],
+        "match": 0.0
+      },
+      "latency_s": 6.9
+    },
+    {
+      "id": "l14_captured_by_method",
+      "trap": "cardinality",
+      "question": "What is the total captured payment amount in EUR by payment method?",
+      "raw": {
+        "sql": "SELECT payment_method, ROUND(SUM(amount_eur), 2) AS total_captured_amount FROM luxexperience.payments WHERE status = 'captured' GROUP BY payment_method",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT payment_method, ROUND(SUM(amount_eur), 2) AS total_captured_amount FROM luxexperience.payments WHERE status = 'captured' GROUP BY payment_method",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "ontology": {
+        "sql": "SELECT payment_method, ROUND(SUM(amount_eur), 2) AS total_captured_amount FROM luxexperience.payments WHERE status = 'captured' GROUP BY payment_method",
+        "class": "correct",
+        "match": 1.0
+      },
+      "ontology_guarded": {
+        "sql": "SELECT payment_method, ROUND(SUM(amount_eur), 2) AS total_captured_amount FROM luxexperience.payments WHERE status = 'captured' GROUP BY payment_method",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "latency_s": 4.2
+    }
+  ],
+  "summary": {
+    "n": 14,
+    "arms": [
+      "raw",
+      "guarded",
+      "ontology",
+      "ontology_guarded"
+    ],
+    "raw": {
+      "correct": 12,
+      "silent-wrong": 2
+    },
+    "guarded": {
+      "correct": 12,
+      "silent-wrong": 1,
+      "caught": 1
+    },
+    "ontology": {
+      "correct": 12,
+      "silent-wrong": 2
+    },
+    "ontology_guarded": {
+      "correct": 12,
+      "silent-wrong": 1,
+      "caught": 1
+    },
+    "raw_accuracy": 0.857,
+    "raw_silent_wrong": 2,
+    "guarded_safe_rate": 0.929,
+    "guarded_silent_wrong": 1,
+    "saves": [
+      "l13_aov_and_items_by_platform"
+    ],
+    "regressions": [],
+    "ontology_accuracy": 0.857,
+    "ontology_silent_wrong": 2,
+    "ontology_gains": [],
+    "ontology_losses": [],
+    "ontology_guarded_safe_rate": 0.929,
+    "ontology_guarded_silent_wrong": 1,
+    "guards_fired": {
+      "on_raw": 1,
+      "on_ontology": 1
+    },
+    "dataset": "evals/ablation_luxexperience_hard.jsonl",
+    "connection": "914df862/luxexperience",
+    "reference_failed": [],
+    "llm": {
+      "backend": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "role": "coder",
+      "fallback_chain": []
+    },
+    "ontology_available": true,
+    "ontology_source": "file:evals/ablation_luxexperience_ontology.json",
+    "ontology_context_chars": 5901,
+    "arms_dropped": []
+  }
+}

@@ -5873,11 +5873,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 None,
             )
             if entity:
-                intake_dict["ontology_entity_id"] = entity.id
-                intake_dict["active_filter"]      = entity.active_filter
-                intake_dict["lifecycle_column"]   = entity.lifecycle_column
-                intake_dict["terminal_states"]    = entity.terminal_states
-                intake_dict["lifecycle_states"]   = entity.lifecycle_states
+                from aughor.ontology.semantic_block import entity_intake_fields
+                intake_dict.update(entity_intake_fields(entity))
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "ontology entity enrichment is best-effort; intake proceeds without "
@@ -6450,26 +6447,10 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
             "  - One query may break the window into its earlier and later halves to show whether "
             "the level moved within it.\n"
         )
-    # Append ontology entity context if available
-    active_filter   = intake_data.get("active_filter")
-    lifecycle_col   = intake_data.get("lifecycle_column")
-    terminal_states = intake_data.get("terminal_states") or []
-    if active_filter or lifecycle_col:
-        lines = ["\nONTOLOGY ENTITY CONTEXT (auto-derived — treat as authoritative):"]
-        if active_filter:
-            lines.append(
-                f"  active_filter: {active_filter}\n"
-                "  ↳ ALWAYS apply this filter to every query on the metric table "
-                "unless you are explicitly counting terminal/inactive rows."
-            )
-        if lifecycle_col and terminal_states:
-            lines.append(
-                f"  lifecycle_column: {lifecycle_col}"
-                f"  terminal_states: {terminal_states}\n"
-                "  ↳ When computing active counts, exclude rows whose "
-                f"{lifecycle_col} is in {terminal_states}."
-            )
-        plan_prompt += "\n".join(lines)
+    # Append ontology entity context if available (rendered by the extracted, measurable
+    # function — see ontology.semantic_block.render_entity_context / ontology.prompt_reach)
+    from aughor.ontology.semantic_block import render_entity_context
+    plan_prompt += render_entity_context(intake_data)
     _run = run_analysis_phase(
         conn, phase_id="baseline", title="Baseline & Anomaly Assessment", emoji="📊", schema=schema,
         plan_system="Write SQL queries for baseline anomaly detection. Return a JSON object with a 'queries' list." + _ADA_SQL_GROUNDING,
