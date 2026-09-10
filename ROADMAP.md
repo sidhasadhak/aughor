@@ -84,7 +84,8 @@ evening on the one set that still exists (`samples/ecommerce`: 12/12 on every ar
 not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance; the hard
 set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/14, guards 100%
 safe, NO LIFT; the falsifier fires as written, but the block carried five wrong N:N labels —
-the user decides, §3.15).
+the user decides, §3.15). **ON-0a drafted the same night:** the core the business extends —
+an industry map as claims to measure, never facts to render (§3.15).
 
 ---
 
@@ -3565,6 +3566,62 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   prompt-injection strategy is retired for the ontology (blocks stay only where a
   guard cites them) and ON-6 is cancelled; ON-1/ON-2 proceed regardless, because the
   compiled path does not depend on the model reading prose.
+- **ON-0a · The core the business extends — DRAFTED 2026-09-10** (the user: *"standardize
+  the semantic core; allow businesses to extend it"*; sits between ON-0 and ON-1 in build
+  order, and gives ON-0's open decision its build shape). A pack gains an approximate map
+  of its industry, and the builder treats every entry in it as a **claim to measure,
+  never a fact to render**. Four parts, all approximate by design and none of them prose:
+  (1) **expected object types** with the roles they play — `Order`, `OrderItem`,
+  `Payment`, `Shipment`, `Return` … — matched to this schema's tables by the builder
+  (the alignment is proposed by the model, shown, and overridable like every other
+  override; `Pack.entities` / `RoleSpec` is the seed of this and already exists);
+  (2) **expected links** with an expected cardinality and nullability — `OrderItem →
+  Order` N:1 · `Order → Shipment` 0..1 · `Order → Payment` 0..1 before capture — each
+  one an obligation to count `COUNT(*)` against `COUNT(DISTINCT key)` on both sides and
+  to count the orphans: the measurement the validator never made, which is how five N:1
+  joins reached the prompt labelled N:N (the ON-0 receipt above); (3) **expected
+  lifecycles** with terminal states and ordering rules — `Order.status` has terminal
+  states, a refund or return state is expected, `shipped_at` precedes `delivered_at` —
+  each an obligation to read the column's observed domain, flag unclassified values, and
+  test "no later transition" where a `<state>_at` column exists: the measurement that
+  would have caught `refunded` (500 rows) missing from the samples ontology; (4)
+  **value-domain aliases**, marked business-specific and EMPTY in the core — the core
+  declares that `country` has aliases, never what they are (`DACH` is not Germany).
+  **Layering** rides the pack `extends` chain that already exists: `core-ecommerce` ←
+  `fashion` (season, collection, size, brand tier) ← the company. LuxExperience is the
+  fashion case sitting on this instance; the samples warehouse is the core case.
+  **Laws.** Every entry is `expected` until measured and carries its provenance (core ·
+  pack · measured · human); a measured fact beats a core claim and a human override
+  beats both (§6: verification trumps authority); an entry that measures FALSE is
+  rendered nowhere and shown in the panel as a contradiction, never silently dropped;
+  the reach ratchet is the gate — nothing from the map reaches a prompt block except
+  through the same verified tier the semantic layer uses today; the core stays small
+  (ten to twenty object types per industry) and versioned, because pack playbooks bind
+  to its names. Standardize the grammar and the obligations; the business supplies the
+  facts.
+  **Build.** The pack model gains `PackOntology` (object types · links · lifecycles ·
+  aliases) beside `metrics` and `playbooks`; the builder consumes it as a prior — match,
+  then measure; the validator gains the two measurements the open chips name
+  (relationship cardinality against row counts · terminal states against observed
+  transitions) — those chips ARE this wave's first two commits and stand on their own
+  without a pack; one bundled `core-ecommerce` pack and one `fashion` extension; the
+  ablation harness gains a builder arm (`--builder with-core|without-core`).
+  **Receipt:** the LuxExperience ontology rebuilt with the core — the five N:N labels
+  become N:1 / 1:1 by measurement, or the wave has failed at its first step; the samples
+  ontology's terminal states gain `refunded`; a dated count of claims by tier (expected
+  · measured-true · measured-false · human) per connection; and ON-0's hard set re-run on
+  the block the core-built ontology produces — that re-run IS the user's open decision
+  on ON-6, made on a block that says true things.
+  **Falsifier:** if a core-built ontology carries no more measured-true claims and no
+  fewer wrong labels than a bare build on the same schema, the map is documentation and
+  the wave stops at the validator measurements (which stand on their own); if the re-run
+  still shows no lift or a regression on the ontology arm, ON-6 is retired on that
+  evidence and the map's value is confined to ON-2's compiled path — where a measured
+  cardinality is a compile-time law, not a sentence.
+  **Not this:** a prose block per industry; a reference model (FIBO, FHIR and the TM
+  Forum SID are quarries, not adoptions); an alias table shipped in the core; a runtime
+  (RDF/OWL, property graph — three studies, one verdict: port the levers, refuse the
+  runtime).
 - **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
   tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
@@ -3983,6 +4040,10 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         12/12 on every arm, a ceiling; missimi is GONE — the hard set re-authored on
         LuxExperience and RUN: raw 13/14 = ontology 13/14, NO LIFT; the falsifier fires
         as written, contested by five wrong N:N labels — the user decides) →
+        ON-0a the core the business extends (drafted 2026-09-10: an industry map as
+        claims to measure, never facts to render — cardinality and terminal states
+        measured, the map layered by pack `extends`, the hard set re-run on a block
+        that says true things) →
         ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with
