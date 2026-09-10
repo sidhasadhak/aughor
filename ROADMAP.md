@@ -82,8 +82,9 @@ change any prompt block, 83 cannot (`ontology.prompt_reach`, ratcheted); the R4 
 been un-runnable since June and is rebuilt with an ontology arm; the LLM arms ran the same
 evening on the one set that still exists (`samples/ecommerce`: 12/12 on every arm — a ceiling,
 not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance; the hard
-set is re-authored on LuxExperience — 14 questions, every trap measured to bite — and awaits
-its run, §3.15).
+set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/14, guards 100%
+safe, NO LIFT; the falsifier fires as written, but the block carried five wrong N:N labels —
+the user decides, §3.15).
 
 ---
 
@@ -3354,8 +3355,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
 
 - ✅ **ON-0 · Measure what the ontology is worth — STARTED 2026-09-10** (the user's
   *"start ON-0 now"*; the deterministic half landed the same day, the LLM half ran the
-  same evening on `samples/ecommerce` — the only one of its three sets that still exists
-  on this instance; the falsifier is NOT yet decided, see the LLM-half receipt).
+  same evening on `samples/ecommerce` (a ceiling) and on the re-authored LuxExperience hard
+  set (no lift); the falsifier's honest reading is in that receipt — the user decides).
   **Receipts, 2026-09-10:**
   - **Prompt reach, measured** (`aughor/ontology/prompt_reach.py` — a field reaches a
     block iff changing it changes the block's text; one fixture graph with every
@@ -3456,7 +3457,7 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     named segments; the API holds the file read-only, so a second read-only open beside it
     is safe. ON-1/ON-2 proceed regardless, as the falsifier already says.
   - **The hard set, re-authored on LuxExperience — `evals/ablation_luxexperience_hard.jsonl`,
-    14 questions, references verified, NOT YET RUN.** Every trap was measured to bite
+    14 questions, references verified, RUN the same night (twice; the receipt follows).** Every trap was measured to bite
     before it was written — the reference and the plausible-wrong answer differ on the
     data: `grain` womenswear 84,024 lines vs 63,831 orders · `value_domain` 'cancelled'
     4.03% vs 'canceled' 0 · `fanout` returned-GMV share 39.98% vs 46.47% joined, GMV of
@@ -3482,12 +3483,55 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     read-only instead of the registry — a served store a hermetic run redirects, where a
     REGISTERED id resolves to nothing (found by running it: `KeyError: '914df862'`; the
     builtins never hit this). The served graph is committed beside the set as
-    `evals/ablation_luxexperience_ontology.json`. **The run, awaiting the go (28 model
-    calls):** `AUGHOR_FALLBACK_BACKENDS=none` + every `AUGHOR_*_DB` redirected +
-    `uv run python evals/ablation_eval.py --dataset evals/ablation_luxexperience_hard.jsonl
-    --arms raw,guarded,ontology,ontology_guarded --graph-json
-    914df862/luxexperience=evals/ablation_luxexperience_ontology.json --output
+    `evals/ablation_luxexperience_ontology.json`. The command: `AUGHOR_FALLBACK_BACKENDS=none`
+    + every `AUGHOR_*_DB` redirected + `uv run python evals/ablation_eval.py --dataset
+    evals/ablation_luxexperience_hard.jsonl --arms raw,guarded,ontology,ontology_guarded
+    --graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology.json --output
     evals/ablation_on0_luxexperience_results.json`.
+  - **The run — 2026-09-10 22:57, `gemini` / `gemini-3.1-flash-lite`, fallback none, every
+    store redirected, `--graph-json` + `duckdb_path`, 28 calls, 113 s of model time.** Run 1
+    (22:53) is kept as `evals/ablation_on0_luxexperience_results_run1.json`; run 2 is the
+    receipt, `evals/ablation_on0_luxexperience_results.json`.
+
+    | arm | correct | caught | silent-wrong | guards fired |
+    |---|---|---|---|---|
+    | raw | 13/14 | — | 1 | — |
+    | guarded | 13/14 | 1 | 0 | 2 |
+    | ontology | 13/14 | — | 1 | — |
+    | ontology_guarded | 13/14 | 1 | 0 | 2 |
+
+    **Ontology vs raw: gains [], losses [] — NO LIFT, on the set built to show one.** The
+    block changed the SQL text on 9 of 14 questions and the class on none. The one miss is
+    the same on both arms: `l13` (AOV and items per order by platform) — both joined
+    order_items and summed `gmv_eur` once per LINE (MR PORTER's AOV comes out at
+    803.41 EUR against 468.56); the fan-out guard caught it on both sides and its rewrite
+    did not bind, so the product would have shown a flagged answer, never a silent one.
+    That is the join the block labels `order_items → orders [N:N]` — so its own CARDINALITY
+    sentence ("pulling the N side into a query grained on the 1 side multiplies rows —
+    pre-aggregate") said nothing on the exact question where it could have. `l14`, written
+    to the wrong N:N claim on payments, was answered from `payments` alone by both arms:
+    the model did not follow the block into a fan-out either. Run 1 (raw 12/14, ontology
+    12/14) differed by one question, `l05`, which failed on an ambiguity in the question as
+    I wrote it (carrier cost vs customer fee; `status = 'shipped'` vs has-a-shipment) —
+    every legitimate reading was executed and added to `accept_sql` before run 2, the
+    question's fault, not the model's, and its pitfall says so (`l13` likewise now accepts
+    a 2-place rounding of items per order; its AOV is wrong regardless). The fan-out guard
+    also flagged two 1:1 joins whose answers were RIGHT (`shipments → orders` on `l05` raw
+    and `l09` ontology) — a false positive it cannot see through without measured
+    cardinality, the block's defect seen from the other side.
+    **The falsifier, read honestly.** As written it FIRES — "no lift or a regression ⇒
+    prompt injection retired for the ontology, ON-6 cancelled". Two things weigh against
+    acting on it tonight. (1) The block under test carried five wrong verified labels, and
+    the one question the ontology could have won is the one those labels blanked: this
+    measured a corrupted block, not the verified layer the arc proposes. (2) n = 14 on one
+    model with raw already at 13/14: the set discriminates the GUARDS (one save, zero
+    regressions, in both runs) far better than it discriminates prose. What it does
+    establish: on this model, verified blocks that are RIGHT (five N:1 joins, two
+    lifecycles, the segments) changed no answer on 13 questions the raw arm already had.
+    **The decision is the user's (§6):** retire ON-6 on the falsifier as written, or
+    measure relationship cardinality first (chip filed — the validator verifies key
+    OVERLAP, never cardinality against row counts), rebuild the LuxExperience ontology,
+    re-run, and decide on a block that says true things. ON-1/ON-2 proceed either way.
     **The premise was wrong, too:** the run never waited on a key. The instance was keyed
     all along (Gemini, via `data/llm_config.json`, which outranks the `.env` OpenRouter
     lines — those are dead letters). What actually blocked it: the ontology store IS
@@ -3936,8 +3980,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         (prompt reach measured: 59/142 fields reach a prompt · census: 1 declared
         action · harness rebuilt with an ontology arm and found un-runnable since
         June · two harder sets · the ratchet test · LLM arms run on samples/ecommerce:
-        12/12 on every arm, a ceiling; missimi is GONE — the hard set is re-authored on
-        LuxExperience, 14 questions, every trap measured to bite, awaiting its run) →
+        12/12 on every arm, a ceiling; missimi is GONE — the hard set re-authored on
+        LuxExperience and RUN: raw 13/14 = ontology 13/14, NO LIFT; the falsifier fires
+        as written, contested by five wrong N:N labels — the user decides) →
         ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with

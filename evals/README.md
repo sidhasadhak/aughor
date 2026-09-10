@@ -83,7 +83,7 @@ One connection per file; every reference (and `accept_sql`) is executed before a
 | file | connection | status (2026-09-10) |
 |---|---|---|
 | `ablation_samples_ecommerce.jsonl` | `samples` (bundled) | 12 questions; run: 12/12 on every arm — a ceiling |
-| `ablation_luxexperience_hard.jsonl` | `914df862/luxexperience` via `duckdb_path` | 14 questions, every trap's bite measured; references verified; NOT yet run |
+| `ablation_luxexperience_hard.jsonl` | `914df862/luxexperience` via `duckdb_path` | 14 questions, every trap's bite measured; run 2: raw 13/14 · ontology 13/14 · guards 100% safe — no lift, no loss (`ablation_on0_luxexperience_results.json`; run 1 kept as `…_run1.json`) |
 | `ablation_missimi.jsonl`, `ablation_missimi_hard.jsonl` | `workspace/missimi` | the schema no longer exists on the instance — every reference fails, the harness skips them |
 
 A record may carry `duckdb_path` (the LuxExperience demo pack, `data/luxexperience_demo.duckdb`,
