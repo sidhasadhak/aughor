@@ -56,8 +56,15 @@ export function csvFilename(prefix = "query"): string {
 
 /** Hand the browser a file. A blocked download must never take the panel down. */
 export function downloadCsv(name: string, body: string): void {
+  downloadText(name, body, "text/csv;charset=utf-8;");
+}
+
+/** The same download, for any of SE-7's extractors. The MIME type is what decides
+ *  whether the browser saves the file or tries to display it, so it is the caller's to
+ *  state rather than a CSV default every other format would inherit. */
+export function downloadText(name: string, body: string, mime: string): void {
   try {
-    const url = URL.createObjectURL(new Blob([body], { type: "text/csv;charset=utf-8;" }));
+    const url = URL.createObjectURL(new Blob([body], { type: mime }));
     const a = document.createElement("a");
     a.href = url;
     a.download = name;

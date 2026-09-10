@@ -1137,10 +1137,10 @@ async def restore_connection_samples(conn_id: str, schema: str | None = None):
 # ── Process map + causal graph ────────────────────────────────────────────────
 
 @router.get("/connections/{conn_id}/process-map/{entity_id}")
-def get_process_map(conn_id: str, entity_id: str):
+def get_process_map(conn_id: str, entity_id: str, schema_name: str | None = None):
     try:
         from aughor.lifecycle.mapper import build_process_map
-        return build_process_map(entity_id, conn_id).model_dump()
+        return build_process_map(entity_id, conn_id, schema_name).model_dump()
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:

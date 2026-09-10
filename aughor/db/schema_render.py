@@ -31,10 +31,38 @@ _ROOT_SUFFIXES = sorted(
 _TABLE_PREFIX = re.compile(r"^[a-z]{1,3}_")
 
 # Section headers that terminate a TABLE: block when parsing a schema string.
+#: A column block ends here.
+#:
+#: 🔴🔴 THE LIST WAS THE BUG. This used to be only the named headers below, so any
+#: section header nobody had thought to add ended up parsed as COLUMNS OF THE LAST
+#: TABLE. Measured on the live instance: `GET /connections/baef6c3e/schema/rich`
+#: reported 26 columns for `main.superstore`, of which five were prose —
+#: ``order_reviews.review_comment_title: NULL = data quality issue — value should
+#: exist``, ``  active:``, ``order_items.order_id → order_payments.order_id`` — because
+#: `EXPLORATION INTELLIGENCE`, `NULL SEMANTICS`, `ENTITY LIFECYCLE` and `JOIN INTEGRITY`
+#: were not in the list. Every consumer of the rich schema inherited them: the SQL
+#: editor offered them as column completions, the catalog rail listed them, and the
+#: query builder would have put one in a SELECT list.
+#:
+#: So the rule is now STRUCTURAL, and cannot go stale: a column line is indented, and
+#: therefore ANY non-blank line starting in column 0 that is not a `TABLE:` header ends
+#: the block. The named headers stay as a second trigger — some of them (`--`,
+#: `Date range`) are indented or inline and would not be caught by the structural rule.
 _SECTION_STOP = re.compile(
     r"^(DETECTED JOIN|NO DIRECT JOIN|METRICS CATALOG|Date range|GLOSSARY|JOIN HINTS"
     r"|RELEVANT|ENTITY RELATIONSHIPS|--)"
 )
+
+
+def ends_column_block(line: str) -> bool:
+    """True when `line` ends the TABLE: block being parsed.
+
+    Callers still handle `TABLE:` themselves — a new table header both ends the
+    previous block and opens the next, and only the caller knows what to do with the
+    name it carries."""
+    if _SECTION_STOP.match(line):
+        return True
+    return bool(line.strip()) and not line[0].isspace() and not line.startswith("TABLE:")
 
 
 def render_raw_schema(
@@ -285,7 +313,7 @@ def _parse_schema_tables(schema_str: str) -> dict[str, list[str]]:
     table_cols: dict[str, list[str]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
-        if _SECTION_STOP.match(line):
+        if ends_column_block(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)", line)

@@ -11,11 +11,14 @@ from __future__ import annotations
 from aughor.lifecycle.models import ProcessEdge, ProcessMap, ProcessNode
 
 
-def build_process_map(entity_id: str, connection_id: str) -> ProcessMap:
-    from aughor.db.connection import open_connection_for
+def build_process_map(entity_id: str, connection_id: str, schema_name: str | None = None) -> ProcessMap:
+    from aughor.db.connection import open_connection_for_with_schema
     from aughor.ontology.store import load_latest_ontology
 
-    graph = load_latest_ontology(connection_id)
+    # The scope is part of the question. Without it this read the arbitrary
+    # last-cached schema and then counted states against the connection's REGISTERED
+    # schema — two different scopes in one answer, on a multi-schema connection.
+    graph = load_latest_ontology(connection_id, schema_name or None)
     if graph is None:
         raise ValueError("Ontology not available for this connection")
 
@@ -32,7 +35,7 @@ def build_process_map(entity_id: str, connection_id: str) -> ProcessMap:
     pk    = entity.identity_key
     ts    = entity.created_at_col   # may be None
 
-    db = open_connection_for(connection_id)
+    db = open_connection_for_with_schema(connection_id, schema_name)
     try:
         # ── Node counts ───────────────────────────────────────────────────────
         node_sql = f"SELECT {col} AS state, COUNT(*) AS cnt FROM {table} GROUP BY {col} ORDER BY cnt DESC LIMIT 100"

@@ -1514,9 +1514,16 @@ interface Props {
    *  href: this app keeps its tab in a query param, so an anchor would reload the whole
    *  client shell to move one pane. */
   onOpenDocuments?: () => void;
+  /** PX — ⌘K's "Add a data source" lands HERE, on the full Add data page, rather than
+   *  on the one-connector modal it used to raise over the catalog. A NONCE, not a
+   *  boolean: the shell keeps this screen mounted behind the other tabs, so a boolean
+   *  the shell then has to reset would either latch open or need a second callback to
+   *  clear it. Every bump means "open it again", which is exactly what pressing the
+   *  command twice means. */
+  openAddDataNonce?: number;
 }
 
-export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, workspaceId, onOpenDocuments }: Props) {
+export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteConn, onChatWithTable, workspaceId, onOpenDocuments, openAddDataNonce = 0 }: Props) {
   const { refresh: refreshSchema } = useSchema();
   const [tree, setTree]         = useState<CatalogTree | null>(null);
   const [treeLoading, setTreeL] = useState(true);
@@ -1556,6 +1563,10 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
   // never appeared until a full page reload.
   const connKey = connections.map(c => c.id).join(",");
   useEffect(() => { loadTree(); }, [workspaceId, connKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The shell asked for the Add data page (⌘K ▸ "Add a data source"). Guarded on > 0 so
+  // the initial mount does not open it.
+  useEffect(() => { if (openAddDataNonce > 0) setShowAddData(true); }, [openAddDataNonce]);
 
   const toggle = (key: string) => setExpanded(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n; });
   const isOpen = (key: string) => expanded.has(key);

@@ -37,14 +37,33 @@ def _key(connection_id: str, schema_name: str) -> str:
 
 
 def resolve_active_schema(connection_id: str) -> str:
-    """The schema key skills are stored under — the schema of this connection's most-recently
-    built ontology, so a saved skill keys to the SAME schema the planner overlays from. Falls
-    back to 'default' when no ontology exists yet."""
+    """The schema key skills are stored under — the schema whose ontology the planner
+    actually overlays from, so a saved skill keys to the SAME schema it will be read
+    back under. Falls back to 'default' when no ontology exists yet.
+
+    ⚠️ The connection's CONFIGURED schema is asked for first. `load_latest_ontology(id,
+    None)` scans by connection prefix and returns whichever entry was written last —
+    which on a multi-schema connection is an arbitrary neighbour. Measured live:
+    `/ontology/skills?connection_id=baef6c3e` reported `schema_name: ecommerce` while
+    that connection's registered schema is `main`, so a skill saved from the UI keyed to
+    one schema and the planner read from another."""
     try:
         from aughor.ontology.store import load_latest_ontology
+        from aughor.db.registry import get_meta
+        configured = ""
+        try:
+            configured = (get_meta(connection_id) or {}).get("schema_name") or ""
+        except Exception:
+            configured = ""
+        if configured:
+            g = load_latest_ontology(connection_id, configured)
+            if g is not None and getattr(g, "schema_name", ""):
+                return g.schema_name
         g = load_latest_ontology(connection_id, None)
         if g is not None and getattr(g, "schema_name", ""):
             return g.schema_name
+        if configured:
+            return configured
     except Exception as exc:
         logger.debug("resolve_active_schema(%s) fell back to default: %s", connection_id, exc)
     return "default"

@@ -28,6 +28,7 @@ import {
   type DuplicateCluster,
   type AutonomyLevel,
   getOntologyProposals, acceptOntologyProposal, dismissOntologyProposal,
+  OntologyNotBuilt,
   type OntologyProposal,
 } from "@/lib/api";
 import { OntologyCanvas } from "./OntologyCanvas";
@@ -143,6 +144,7 @@ function EntityDetailDrawer({
   entity,
   graph,
   connectionId,
+  schema,
   onClose,
   onEntityUpdated,
   onActionUpdated,
@@ -151,6 +153,10 @@ function EntityDetailDrawer({
   entity: OntologyEntity;
   graph: OntologyGraph;
   connectionId: string;
+  /** The schema this drawer is looking at. Reads AND writes carry it: a description
+   *  saved here must land in the graph on screen, not in whichever schema the server
+   *  would have resolved on its own. */
+  schema?: string;
   onClose: () => void;
   onEntityUpdated: (e: OntologyEntity) => void;
   onActionUpdated: (a: QueryTemplate) => void;
@@ -168,10 +174,10 @@ function EntityDetailDrawer({
 
   useEffect(() => {
     if (!entity.has_lifecycle || !entity.lifecycle_column) return;
-    getEntityLifecycleCounts(connectionId, entity.id)
+    getEntityLifecycleCounts(connectionId, entity.id, schema)
       .then(setLifecycleCounts)
       .catch(() => {});
-  }, [connectionId, entity.id, entity.has_lifecycle, entity.lifecycle_column]);
+  }, [connectionId, schema, entity.id, entity.has_lifecycle, entity.lifecycle_column]);
 
   const countMap = Object.fromEntries(
     (lifecycleCounts ?? []).map(c => [c.state, c.count]),
@@ -199,7 +205,7 @@ function EntityDetailDrawer({
     try {
       const updated = await patchOntologyEntity(connectionId, entity.id, {
         description: draft,
-      });
+      }, schema);
       onEntityUpdated(updated);
       setEditingDesc(false);
     } finally { setSaving(false); }
@@ -471,6 +477,7 @@ function EntityDetailDrawer({
                   key={a.id}
                   action={a}
                   connectionId={connectionId}
+                  schema={schema}
                   onUpdated={onActionUpdated}
                 />
               ))
@@ -513,7 +520,7 @@ function EntityDetailDrawer({
                     {m.formula_sql}
                   </code>
                   {provFor === m.id && (
-                    <MetricProvenancePanel metricId={m.id} connectionId={connectionId} />
+                    <MetricProvenancePanel metricId={m.id} connectionId={connectionId} schemaName={schema} />
                   )}
                 </div>
               ))
@@ -524,6 +531,7 @@ function EntityDetailDrawer({
         {tab === "map" && (
           <ProcessMapper
             connId={connectionId}
+            schema={schema}
             entityId={entity.id}
             onInvestigate={onInvestigate}
           />
@@ -571,10 +579,12 @@ function RelationshipRow({
 function ActionRow({
   action,
   connectionId,
+  schema,
   onUpdated,
 }: {
   action: QueryTemplate;
   connectionId: string;
+  schema?: string;
   onUpdated: (a: QueryTemplate) => void;
 }) {
   const [editDesc, setEditDesc] = useState(false);
@@ -585,7 +595,7 @@ function ActionRow({
     if (draft === action.description) { setEditDesc(false); return; }
     setSaving(true);
     try {
-      const updated = await patchQueryTemplate(connectionId, action.id, { description: draft });
+      const updated = await patchQueryTemplate(connectionId, action.id, { description: draft }, schema);
       onUpdated(updated);
       setEditDesc(false);
     } finally { setSaving(false); }
@@ -884,8 +894,8 @@ function OntologySettings({
 // ── Duplicate-entity suggestions drawer (Borrow 5) ────────────────────────────
 // Shows embedding-detected near-duplicate entity clusters; the user picks which entity each cluster
 // merges INTO (the survivor). The merge is the explicit, gated POST — never automatic.
-function DuplicatesDrawer({ connId, onClose, onMerged }: {
-  connId: string; onClose: () => void; onMerged: () => void;
+function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
+  connId: string; schema?: string; onClose: () => void; onMerged: () => void;
 }) {
   const [clusters, setClusters] = useState<DuplicateCluster[] | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -894,17 +904,17 @@ function DuplicatesDrawer({ connId, onClose, onMerged }: {
 
   const load = useCallback(() => {
     setLoading(true); setError(null);
-    getDuplicateEntities(connId)
+    getDuplicateEntities(connId, schema)
       .then(setClusters)
       .catch(() => setError("Couldn't load duplicate suggestions."))
       .finally(() => setLoading(false));
-  }, [connId]);
+  }, [connId, schema]);
   useEffect(() => { load(); }, [load]);
 
   const doMerge = async (cluster: DuplicateCluster, canonicalId: string) => {
     setMerging(canonicalId); setError(null);
     try {
-      await mergeOntologyEntities(connId, cluster.entities.map(e => e.id), canonicalId);
+      await mergeOntologyEntities(connId, cluster.entities.map(e => e.id), canonicalId, schema);
       onMerged();   // parent re-fetches the graph
       load();       // refresh suggestions
     } catch (e) {
@@ -980,7 +990,7 @@ const _PROPOSAL_KIND: Record<string, { label: string; tone: string }> = {
  *  staged with evidence (blast-radius rule: a table-level claim always waits here; a column
  *  note waits when confidence was not high or a human note already exists). Nothing changes
  *  the ontology until a person accepts it here. */
-function ProposalsDrawer({ connId, onClose }: { connId: string; onClose: () => void }) {
+function ProposalsDrawer({ connId, schema, onClose }: { connId: string; schema?: string; onClose: () => void }) {
   const [items,   setItems]   = useState<OntologyProposal[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy,    setBusy]    = useState<string | null>(null);
@@ -988,22 +998,22 @@ function ProposalsDrawer({ connId, onClose }: { connId: string; onClose: () => v
 
   const load = useCallback(() => {
     setLoading(true); setError(null);
-    getOntologyProposals(connId)
+    getOntologyProposals(connId, schema)
       .then(setItems)
       .catch(() => setError("Couldn't load proposals."))
       .finally(() => setLoading(false));
-  }, [connId]);
+  }, [connId, schema]);
   useEffect(() => { load(); }, [load]);
 
   const doAccept = async (id: string) => {
     setBusy(id); setError(null);
-    try { await acceptOntologyProposal(id, connId); }
+    try { await acceptOntologyProposal(id, connId, schema); }
     catch (e) { setError((e as Error).message || "Accept failed"); }
     finally { setBusy(null); load(); }
   };
   const doDismiss = async (id: string) => {
     setBusy(id); setError(null);
-    try { await dismissOntologyProposal(id, connId); }
+    try { await dismissOntologyProposal(id, connId, schema); }
     catch (e) { setError((e as Error).message || "Dismiss failed"); }
     finally { setBusy(null); load(); }
   };
@@ -1084,7 +1094,7 @@ function ProposalsDrawer({ connId, onClose }: { connId: string; onClose: () => v
 }
 
 
-function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void }) {
+function SkillsDrawer({ connId, schema, onClose }: { connId: string; schema?: string; onClose: () => void }) {
   const [skills,   setSkills]   = useState<QueryTemplate[] | null>(null);
   const [autonomy, setAutonomy] = useState<AutonomyLevel | null>(null);
   const [loading,  setLoading]  = useState(true);
@@ -1093,22 +1103,22 @@ function SkillsDrawer({ connId, onClose }: { connId: string; onClose: () => void
 
   const load = useCallback(() => {
     setLoading(true); setError(null);
-    Promise.all([getLearnedSkills(connId), getAutonomy(connId)])
+    Promise.all([getLearnedSkills(connId, schema), getAutonomy(connId)])
       .then(([s, a]) => { setSkills(s); setAutonomy(a); })
       .catch(() => setError("Couldn't load learned skills."))
       .finally(() => setLoading(false));
-  }, [connId]);
+  }, [connId, schema]);
   useEffect(() => { load(); }, [load]);
 
   const doUse = async (id: string) => {
     setBusy(id); setError(null);
-    try { await activateLearnedSkill(id, connId); }
+    try { await activateLearnedSkill(id, connId, schema); }
     catch (e) { setError((e as Error).message || "Use failed"); }
     finally { setBusy(null); load(); }   // always clear busy (else later actions stay disabled)
   };
   const doDelete = async (id: string) => {
     setBusy(id); setError(null);
-    try { await deleteLearnedSkill(id, connId); }
+    try { await deleteLearnedSkill(id, connId, schema); }
     catch (e) { setError((e as Error).message || "Delete failed"); }
     finally { setBusy(null); load(); }
   };
@@ -1186,6 +1196,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
   const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
+  /** Which schemas DO have an ontology, per the 404. Drives the empty state's offer. */
+  const [builtSchemas,      setBuiltSchemas]      = useState<string[]>([]);
 
   useEffect(() => { setSelectedConnId(connectionId); }, [connectionId]);
 
@@ -1199,11 +1211,17 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
     setShowDuplicates(false);
     getOntology(selectedConnId, schema)
       .then(setGraph)
-      .catch(() =>
-        setError(
-          "Ontology not yet available for this connection. It builds automatically on the next query.",
-        ),
-      )
+      .catch((e: unknown) => {
+        // The server says WHICH schemas are built. It used to say "it builds
+        // automatically on the next query", which stopped being true when the read
+        // path stopped building — a sentence that tells the user to wait for
+        // something that will never happen is worse than no sentence.
+        const built = e instanceof OntologyNotBuilt ? e.builtSchemas : [];
+        setBuiltSchemas(built);
+        setError(e instanceof Error && e.message
+          ? e.message
+          : "No ontology has been built for this connection yet.");
+      })
       .finally(() => setLoading(false));
   }, [selectedConnId, schema]);
 
@@ -1223,6 +1241,20 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const headerBar = (
     <div className="flex items-center gap-3 px-4 py-3 border-b border-zinc-700/70 shrink-0 bg-zinc-900/40">
       <p className="text-xs font-semibold text-zinc-300">Business Ontology</p>
+
+      {/* The scope, stated. Everything on this screen — entities, relationships,
+          duplicates, proposals, skills, and every edit made here — belongs to this
+          schema and no other. It used to be possible to be looking at a neighbour's
+          graph with nothing on screen saying so. */}
+      {!orgMode && schema && (
+        <span
+          className="aug-fs-xs text-zinc-400 border border-zinc-700 rounded-[var(--r-chip)] px-2 py-0.5 font-code"
+          title="This ontology is scoped to one schema. Switch schemas with the workspace scope picker above."
+          data-testid="ontology-schema-scope"
+        >
+          {schema}
+        </span>
+      )}
 
       {/* Org ⟷ Connection view toggle */}
       <div className="flex items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
@@ -1357,7 +1389,22 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         {headerBar}
-        <div className="flex-1 flex items-center justify-center p-8">
+        {/* The settings drawer lives here too, not only on the populated screen: the
+            build door this state offers is IN it, and a door that opens nothing is
+            the failure mode this codebase keeps re-learning. */}
+        {showSettings && (
+          <div className="flex-1 flex overflow-hidden">
+            <div className="flex-1" />
+            <OntologySettings
+              connectionId={selectedConnId}
+              schema={schema}
+              graph={null}
+              onClose={() => setShowSettings(false)}
+              onRebuilt={(g) => { setGraph(g); setError(null); setShowSettings(false); }}
+            />
+          </div>
+        )}
+        <div className={showSettings ? "hidden" : "flex-1 flex items-center justify-center p-8"}>
           <div className="text-center space-y-3 max-w-sm">
             <div className="w-10 h-10 rounded-[var(--r-pill)] bg-zinc-800 text-zinc-400 flex items-center justify-center mx-auto">
               <Icon name="node" size={24} />
@@ -1365,6 +1412,28 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             <p className="text-sm text-zinc-400">
               {error ?? "No ontology data available."}
             </p>
+            {/* PX rule — the empty state names the door rather than describing the
+                absence. Two doors, because there are two reasons to be here: the
+                ontology exists under ANOTHER schema (switch the scope picker above),
+                or it exists nowhere (build it). The read path no longer builds on
+                demand, so without these the screen is a dead end. */}
+            {builtSchemas.length > 0 && (
+              <p className="aug-fs-xs text-zinc-500">
+                Built for{" "}
+                <span className="font-code text-zinc-300">{builtSchemas.join(", ")}</span>
+                {" — switch the schema scope above to see one of those."}
+              </p>
+            )}
+            {selectedConnId && (
+              <Button
+                variant="outline" size="xs"
+                onClick={() => { setShowSettings(true); setError(null); }}
+                className="aug-fs-xs border-zinc-700 text-zinc-300"
+                data-testid="ontology-build-door"
+              >
+                {schema ? `Build the ontology for ${schema}` : "Build the ontology"}
+              </Button>
+            )}
           </div>
         </div>
       </div>
@@ -1405,6 +1474,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             entity={selectedEntity}
             graph={graph}
             connectionId={selectedConnId}
+            schema={schema}
             onClose={() => setSelectedEntityId(null)}
             onEntityUpdated={handleEntityUpdated}
             onActionUpdated={handleActionUpdated}
@@ -1427,6 +1497,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         {showDuplicates && (
           <DuplicatesDrawer
             connId={selectedConnId}
+            schema={schema}
             onClose={() => setShowDuplicates(false)}
             onMerged={() => { getOntology(selectedConnId, schema).then(setGraph).catch(() => {}); }}
           />
@@ -1434,10 +1505,10 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
 
         {/* Learned skills (agent procedural memory) */}
         {showSkills && (
-          <SkillsDrawer connId={selectedConnId} onClose={() => setShowSkills(false)} />
+          <SkillsDrawer connId={selectedConnId} schema={schema} onClose={() => setShowSkills(false)} />
         )}
         {showProposals && (
-          <ProposalsDrawer connId={selectedConnId} onClose={() => setShowProposals(false)} />
+          <ProposalsDrawer connId={selectedConnId} schema={schema} onClose={() => setShowProposals(false)} />
         )}
         {showOverrides && (
           <OverridesDrawer connId={selectedConnId} schema={schema}

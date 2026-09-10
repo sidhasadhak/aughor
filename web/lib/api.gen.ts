@@ -18579,7 +18579,9 @@ export interface operations {
     };
     get_process_map_connections__conn_id__process_map__entity_id__get: {
         parameters: {
-            query?: never;
+            query?: {
+                schema_name?: string | null;
+            };
             header?: never;
             path: {
                 conn_id: string;

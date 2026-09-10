@@ -361,13 +361,16 @@ def exploratory_scan(state: AgentState, conn: "DatabaseConnection") -> dict[str,
         pass  # fall through to ad-hoc SQL
 
     # ── Fallback: ad-hoc SQL recon ────────────────────────────────────────────
-    from aughor.tools.schema import SECTION_STOP
+    # `ends_column_block`, not the old named-header list: the exploration sections
+    # this same context carries are indented, so a stale list let their prose be read
+    # as columns — and this loop then decided which of them were "numeric" or "date".
+    from aughor.db.schema_render import ends_column_block
 
     schema_str = state["schema_context"]
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
-        if SECTION_STOP.match(line):
+        if ends_column_block(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)", line)

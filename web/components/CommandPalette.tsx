@@ -435,8 +435,19 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
     return SECTION_ORDER.filter(t => map.has(t)).map(t => ({ type: t, items: map.get(t)! }));
   }, [shownResults]);
 
-  // Flat list of all rendered items (for keyboard nav)
-  const flatResults = useMemo(() => shownResults.map(r => r.item), [shownResults]);
+  // Flat list of all rendered items (for keyboard nav).
+  //
+  // 🔴 It must be built from `grouped`, NOT from `shownResults`. The list is RENDERED
+  // grouped by section (SECTION_ORDER) while `shownResults` is in Fuse's relevance
+  // order, and the highlight is `globalIdx`, counted down the rendered rows. Reading
+  // the cursor into the un-grouped array therefore selected a different row from the
+  // one under the highlight whenever the two orders disagreed — which is most of the
+  // time, since commands rank below navigation in Fuse but render above it. Measured:
+  // typing "add connection" highlighted "Add a data source" and Enter ran "Connections"
+  // (navigate to the catalog), so the keyboard path silently did something else than
+  // the mouse path on the same visible row.
+  const flatResults = useMemo(
+    () => grouped.flatMap(g => g.items.map(r => r.item)), [grouped]);
 
   // ── Keyboard navigation ───────────────────────────────────────────────────
 
@@ -607,6 +618,11 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
                     <button
                       key={item.id}
                       data-idx={idx}
+                      // The highlight, as an attribute. `isFocused` was only ever a
+                      // background colour, so nothing could assert that the keyboard
+                      // cursor and the visible highlight agree — and for a long time
+                      // they did not (see CommandPalette.keynav.test.tsx).
+                      data-active={isFocused ? "true" : undefined}
                       onClick={() => activate(item)}
                       onMouseEnter={() => setCursor(idx)}
                       style={{

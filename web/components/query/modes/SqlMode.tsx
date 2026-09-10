@@ -37,12 +37,14 @@ import {
 } from "@/components/query/TabsBar";
 import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
 import { splitStatements, statementAt, findParams } from "@/lib/query/parserClient";
-import { cmDialect, engineFamily, type EngineHint } from "@/lib/query/dialect";
+import { cmDialect, engineFamily, explainPrefix, quoteIdentifier, type EngineHint } from "@/lib/query/dialect";
 import { formatSql } from "@/lib/query/format";
 import {
   runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ShortcutSheet } from "@/components/query/ShortcutSheet";
+import { type JoinHint } from "@/components/query/editor/intentions";
 
 type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
 
@@ -65,6 +67,7 @@ export function SqlMode({
   connId,
   engine,
   schema,
+  joins,
   defaultSchema,
   onInsertReady,
   onSavedBinding,
@@ -72,11 +75,14 @@ export function SqlMode({
   onSchedule,
   onShare,
   toolbar,
+  schemaControl,
 }: {
   connId: string;
   engine: EngineHint | null;
   /** `{ "table": ["col", …] }` for completion — owned by the workbench. */
   schema?: Record<string, string[]>;
+  /** Detected relationships, for the ⌥⏎ "Join …" intention. */
+  joins?: JoinHint[];
   defaultSchema?: string;
   /** Hands the workbench's catalog rail a way to insert at this editor's cursor. */
   onInsertReady?: (insert: (text: string) => void) => void;
@@ -87,9 +93,15 @@ export function SqlMode({
   onSchedule?: (sql: string) => void;
   /** SE-4 I — copy a link that reopens this query. */
   onShare?: () => void;
-  /** Controls the WORKBENCH owns (connection, saved state, panel toggle) rendered
-   *  on the tab strip instead of in a bar of their own — see TabsBar's `trailing`. */
+  /** Controls the WORKBENCH owns (connection, saved state, panel toggle). They ride
+   *  the TAB STRIP, right-aligned — the same position Visual mode puts them in, which
+   *  is the point: they used to sit top-LEFT in Visual and on the RUN BAR in SQL, so
+   *  switching modes moved every shared control to a different corner. */
   toolbar?: React.ReactNode;
+  /** The default-schema picker. SQL-only, so it rides THIS mode's run bar rather than
+   *  the shared group — a control present in one mode and absent in the other made the
+   *  whole shared group change width on a mode switch. */
+  schemaControl?: React.ReactNode;
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
@@ -108,6 +120,10 @@ export function SqlMode({
   // hand the model a different query from the one that failed.
   const [failedSql, setFailedSql] = useState("");
   const [statementCount, setStatementCount] = useState(1);
+  // Bound to THIS connection's engine. Memoised because it is a prop on the editor:
+  // a new function each render would re-run the editor's reconfigure effect on every
+  // keystroke of the parent.
+  const quoteForEngine = useCallback((name: string) => quoteIdentifier(name, engine), [engine]);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
   const editorApi = useRef<EditorApi | null>(null);
@@ -201,18 +217,21 @@ export function SqlMode({
     setActiveId(t.id);
   }, []);
 
-  const run = useCallback(async () => {
-    if (!connId || running) return;
-    // Selection wins — an explicit highlight is the user saying "this, exactly".
-    let toRun = "";
+  /** What ⌘↵ would run: the selection if there is one, else the statement under the
+   *  caret, else the buffer. Extracted because Explain needs exactly the same answer —
+   *  explaining a different statement from the one Run would execute is worse than no
+   *  explain at all. */
+  const statementToRun = useCallback(async (): Promise<string> => {
     const sel = selection.current;
-    if (sel && sel.to > sel.from) {
-      toRun = sqlText.slice(sel.from, sel.to);
-    } else {
-      const ranges = await splitStatements(sqlText);
-      toRun = statementAt(ranges, cursor.current)?.text ?? sqlText;
-    }
-    toRun = toRun.trim().replace(/;\s*$/, "");
+    const text = (sel && sel.to > sel.from)
+      ? sqlText.slice(sel.from, sel.to)
+      : statementAt(await splitStatements(sqlText), cursor.current)?.text ?? sqlText;
+    return text.trim().replace(/;\s*$/, "");
+  }, [sqlText]);
+
+  const run = useCallback(async (override?: string) => {
+    if (!connId || running) return;
+    const toRun = override ?? await statementToRun();
     if (!toRun) return;
 
     const ac = new AbortController();
@@ -249,7 +268,23 @@ export function SqlMode({
       // The rail reads the audit log this run just wrote to.
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, sqlText, patchActive, boundParams]);
+  }, [connId, running, statementToRun, patchActive, boundParams]);
+
+  /** SE-7 — Explain plan. DataGrip puts this beside Run because the two questions —
+   *  "what does it return" and "what will it cost" — are asked of the same statement a
+   *  minute apart. It goes through the SAME run path, so the plan lands in the same
+   *  grid with the same cancel button, and it explains exactly what Run would execute.
+   *
+   *  `EXPLAIN` is a metadata statement: the workbench label is what lets it past the
+   *  SELECT-only rule (`_METADATA_LABELS`), and the result wrap is skipped for it —
+   *  a plan cannot be a subquery source. Both were fixed in SE-3 G. */
+  const explainWith = explainPrefix(engine);
+  const explain = useCallback(async () => {
+    const stmt = await statementToRun();
+    if (!stmt || !explainWith) return;
+    if (/^\s*explain\b/i.test(stmt)) { void run(stmt); return; }
+    void run(`${explainWith} ${stmt}`);
+  }, [statementToRun, run, explainWith]);
 
   /** SE-4 H — run every statement in the buffer, in order, keeping the LAST result.
    *
@@ -382,6 +417,7 @@ export function SqlMode({
             return next;
           })}
           onRename={(id, name) => setTabs(prev => prev.map(t => t.id === id ? { ...t, name } : t))}
+          trailing={toolbar}
         />
 
         <ParamBar
@@ -414,6 +450,16 @@ export function SqlMode({
           )}
           {/* Only offered when there IS more than one statement — a "Run all" beside a
               single statement is a second button for the thing the first one does. */}
+          {/* Offered only where the engine HAS a plan statement — see `explainPrefix`.
+              BigQuery does not, and an unconditional button returned a 400 there. */}
+          {!running && explainWith && (
+            <Button variant="ghost" size="xs" className="aug-fs-ui"
+              title={`Explain the plan for what Run would execute — the engine's own ${explainWith}`}
+              onClick={() => void explain()} disabled={!connId}
+              data-testid="sql-explain">
+              Explain
+            </Button>
+          )}
           {!running && statementCount > 1 && (
             <Button variant="ghost" size="xs" className="aug-fs-ui"
               title={`Run all ${statementCount} statements in order, stopping at the first error`}
@@ -439,13 +485,17 @@ export function SqlMode({
           >
             <Icon name="clock" size={14} />
           </Button>
+          {/* SE-6 — the keys, listed. Ten commands were added to this editor and none
+              of them says so anywhere on screen; a verb nobody can find is a verb that
+              does not exist. */}
+          <ShortcutSheet />
+          {schemaControl}
           {runAllSummary && !error && (
             <span className="aug-fs-ui" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>
               {runAllSummary}
             </span>
           )}
           <div style={{ flex: 1, minWidth: 0 }} />
-          {toolbar}
           {/* The guard battery's own verdict, stated plainly. */}
           {verdict && (
             <span
@@ -492,6 +542,8 @@ export function SqlMode({
               schema={schema}
               defaultSchema={defaultSchema}
               dialect={cmDialect(engine)}
+              quote={quoteForEngine}
+              joins={joins}
               diagnostics={diagnostics}
             />
           }

@@ -88,6 +88,13 @@
      undefined, and every scrim and primary button loses its colour. */
   --scrim: rgba(0, 0, 0, .65);
   --bg-nav: var(--bg-1);   /* the left navigation rail — see the theme layer */
+
+  /* The Data Canvas surface. A canvas is a WORKSPACE, not another list screen, and it
+     now says so before you read a word of it: a deeper, bluer ground than --bg-0, so
+     switching into one reads as entering somewhere rather than as another tab. Sits
+     between --bg-0 and --blue1 on the same hue, so every existing chip, card and
+     border on that screen keeps its contrast. */
+  --bg-canvas: #0A1626;
   --blue-solid: var(--blue3);
   --blue-solid-hover: var(--blue4);
   --vio-solid: var(--vio3);
@@ -200,6 +207,8 @@
   --bg-1: #FFFFFF;
   --bg-2: #FAFAFA;
   --bg-3: #F0F0F0;
+  /* Same job in light: a cool tint that names the surface without darkening it. */
+  --bg-canvas: #EEF3FA;
   --bg-4: #E8E8E8;
   --bg-hover: rgba(0, 0, 0, 0.04);
   --bg-sel:   rgba(31, 119, 180, 0.10);

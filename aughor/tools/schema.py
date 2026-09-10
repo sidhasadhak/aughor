@@ -20,7 +20,7 @@ from aughor.tools.table_names import bare
 # keep resolving them.
 from aughor.db.schema_render import (  # noqa: F401
     ROOT_SUFFIXES,
-    SECTION_STOP,
+    ends_column_block,
     fk_root,
     parse_inline_columns,
     parse_schema_tables,
@@ -386,7 +386,7 @@ def build_mermaid_er(schema_str: str) -> str:
     table_col_types: dict[str, list[tuple[str, str]]] = {}
     current: str | None = None
     for line in schema_str.splitlines():
-        if SECTION_STOP.match(line):
+        if ends_column_block(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)", line)
@@ -452,7 +452,7 @@ def build_rich_schema(schema_str: str) -> dict:
     current: str | None = None
 
     for line in schema_str.splitlines():
-        if SECTION_STOP.match(line):
+        if ends_column_block(line):
             current = None
             continue
         m = re.match(r"^TABLE:\s+([\w.]+)\s*\(([\d,?]+|\?)?\s*rows?\)?", line)
@@ -638,7 +638,7 @@ def inject_value_annotations(
             result.append(line)
             continue
 
-        if SECTION_STOP.match(line):
+        if ends_column_block(line):
             current_table = None
             result.append(line)
             continue

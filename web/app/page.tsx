@@ -1513,8 +1513,20 @@ export default function Home() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [showHistory, setShowHistory] = useState(false);
+  // The conversations rail is OPT-IN. It used to be pinned open beside the chat, which
+  // was the one thing that made this screen not read as the Canvas workspace — Canvas
+  // reaches its past work through a header control, not a permanent rail, and having
+  // two different chat chromes for the same ChatPanel is the split this closes. The
+  // capability (resume · rename · delete a thread) is unchanged, one click away.
+  const [showThreads, setShowThreads] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [showAddConn, setShowAddConn] = useState(false);
+  // ⌘K ▸ "Add a data source" opens the CATALOG'S Add data page — the full-page
+  // connector catalogue with brand logos, categories and file upload — not the
+  // single-connector modal. Two doors to the same job, one of them a strictly smaller
+  // version of the other, is the split this closes. A nonce, because the catalog screen
+  // stays mounted behind the other tabs (see CatalogScreen's prop comment).
+  const [addDataNonce, setAddDataNonce] = useState(0);
   const [pendingDeleteConn, setPendingDeleteConn] = useState<Connection | null>(null);
   const [connections, setConnections] = useState<Connection[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -1733,6 +1745,22 @@ export default function Home() {
     if (mode) setChatInitialMode(mode);
     setChatKey(k => k + 1);
     setTab("chat");
+  };
+
+  /** Agent Ops ▸ an agent ▸ Chat.
+   *
+   *  Same screen as `goToChat`, minus the canvas. `activeCanvas` is app-level state
+   *  that SURVIVES navigation, so opening a Data Canvas and then talking to an agent
+   *  from Agent Ops filed that conversation under the canvas: `ChatPanel` gets
+   *  `canvasId={activeCanvas?.id}`, and `GET /canvases/{id}/history` keeps every
+   *  investigation whose `canvas_id` matches — `kind == "chat"` included. So a
+   *  question about an AGENT turned up in the history of an unrelated CANVAS.
+   *  Talking to an agent is not canvas work; this door says so by clearing it. */
+  const goToAgentChat = (agentId: string) => {
+    setActiveCanvas(null);
+    setInitialCanvasInvId(null);
+    setInitialCanvasChatId(null);
+    goToChat(undefined, undefined, undefined, agentId);
   };
 
   /** Open an existing investigation (or chat session) by ID — goes straight to the report.
@@ -2081,6 +2109,11 @@ export default function Home() {
                     <Button onClick={() => { setSelectedChatSessionId(null); setSelectedHistoryInvId(null); setChatInitialQuestion(undefined); setChatInitialInsightId(undefined); setChatInitialMode("investigate"); setChatKey(k => k + 1); }} variant="ghost" size="xs">
                       <NavIcon name="plus" size={11} /> New
                     </Button>
+                    <Button onClick={() => setShowThreads(v => !v)} variant={showThreads ? "default" : "ghost"} size="xs"
+                      title="This connection's recent conversations — resume, rename or delete one"
+                      data-testid="chat-threads-toggle">
+                      <NavIcon name="chat" size={11} /> Conversations
+                    </Button>
                     <Button onClick={() => setShowHistory(v => !v)} variant={showHistory ? "default" : "ghost"} size="xs">
                       <NavIcon name="clock" size={11} /> History
                     </Button>
@@ -2104,7 +2137,7 @@ export default function Home() {
                        session memory CI-1 built. Selection rides the SAME remount
                        mechanism the history restore uses. */
                     <div style={{ flex: 1, display: "flex", overflow: "hidden", minHeight: 0 }}>
-                      {selectedConn && (
+                      {selectedConn && showThreads && (
                         <ThreadsRail
                           connectionId={selectedConn}
                           activeSessionId={selectedChatSessionId}
@@ -2220,7 +2253,7 @@ export default function Home() {
                     handleNavigate("catalog");
                   }}
                   // PX-5 — the agent surface's Chat door: arrive already talking to it.
-                  onChatWithAgent={agentId => goToChat(undefined, undefined, undefined, agentId)}
+                  onChatWithAgent={goToAgentChat}
                 />
               </ErrorBoundary>
             )}
@@ -2294,7 +2327,7 @@ export default function Home() {
                 renderIcon={(name, size, color) => <NavIcon name={name} size={size} color={color} />}
                 renderLayer={id => {
                   if (id === "query") return (
-                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} initialMode={queryInitialMode} />
+                    <QueryWorkbench initialConnId={selectedConn} onOpenCanvas={handleCanvasSelect} importRequest={builderImport} connections={wsConnections} initialMode={queryInitialMode} workspaceId={selectedWorkspace} />
                   );
                   if (id === "semantic") return (
                     <SemanticLayerPanel
@@ -2307,6 +2340,7 @@ export default function Home() {
                     <CatalogScreen
                       connections={wsConnections}
                       workspaceId={selectedWorkspace}
+                      openAddDataNonce={addDataNonce}
                       onOpenDocuments={() => handleNavigate("documents")}
                       selectedConn={selectedConn}
                       onSelect={setSelectedConn}
@@ -2374,7 +2408,7 @@ export default function Home() {
       <GlobalCommands
         onNavigate={t => handleNavigate(t as NavTab)}
         onGoToChat={q => goToChat(q)}
-        onAddSource={() => { handleNavigate("catalog"); setShowAddConn(true); }}
+        onAddSource={() => { handleNavigate("catalog"); setAddDataNonce(n => n + 1); }}
       />
       <CommandPalette
         open={showSearch}

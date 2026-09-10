@@ -26,9 +26,13 @@ import { compactNumber, countNoun, formatTimestamp, pct } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { EmptyState } from "@/components/ui/empty-state";
+import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
 
 const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
 const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
+/** The form-control look, shared by the caps form and the feed's filter bar. */
+const feedSel: React.CSSProperties = { background: "var(--bg-1)", border: "1px solid var(--b1)",
+  borderRadius: "var(--r2)", color: "var(--t1)", padding: "5px 8px" };
 
 function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: string }) {
   return (
@@ -62,7 +66,7 @@ function CapMeter({ cap }: { cap: UsageCap }) {
   );
 }
 
-function CapsSection() {
+function CapsSection({ onCount }: { onCount: (n: number) => void }) {
   const [caps, setCaps] = useState<UsageCap[]>([]);
   const [vocab, setVocab] = useState<{ scopes: string[]; metrics: string[]; actions: string[] }>({ scopes: [], metrics: [], actions: [] });
   const [loaded, setLoaded] = useState(false);
@@ -76,10 +80,11 @@ function CapsSection() {
       const r = await getUsageCaps();
       setCaps(r.caps);
       setVocab({ scopes: r.scopes, metrics: r.metrics, actions: r.actions });
+      onCount(r.caps.length);
       setErr("");
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
     finally { setLoaded(true); }
-  }, []);
+  }, [onCount]);
   useEffect(() => { load(); }, [load]);
 
   async function declare() {
@@ -106,21 +111,16 @@ function CapsSection() {
     finally { setBusy(false); }
   }
 
-  const sel: React.CSSProperties = { background: "var(--bg-1)", border: "1px solid var(--b1)",
-    borderRadius: "var(--r2)", color: "var(--t1)", padding: "5px 8px" };
+  const sel = feedSel;
 
   return (
     <>
-      <SectionTitle sub="a cap without its measurement is just a wish — each row shows its metric, observed over its own window">
+      {/* The headline already says how many caps there are; this says what a row of
+          one means. The empty state moved into the form's own line below — a centred
+          block of prose above an empty list was two paragraphs to say "none". */}
+      <SectionTitle sub="each row shows its metric, observed over its own window">
         Usage caps
       </SectionTitle>
-      {loaded && caps.length === 0 && (
-        <EmptyState variant="inline"
-          title="No caps declared — every model call is currently uncapped.">
-          Declare one below: “alert” records a breach in the governance feed; “block”
-          refuses new work with a sentence that names the number.
-        </EmptyState>
-      )}
       {caps.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {caps.map((c, i) => (
@@ -178,6 +178,12 @@ function CapsSection() {
         <Button size="sm" disabled={busy || !form.limit.trim()} onClick={declare} data-testid="cap-declare">
           Declare the cap
         </Button>
+        {loaded && caps.length === 0 && (
+          <span className="aug-fs-xs" style={{ color: "var(--t4)", flexBasis: "100%" }}>
+            “alert” records a breach in the governance feed; “block” refuses new work with
+            a sentence that names the number.
+          </span>
+        )}
       </div>
       {err && <p className="aug-fs-xs" style={{ color: "var(--red4)", margin: "6px 0 0" }}>{err}</p>}
     </>
@@ -186,36 +192,22 @@ function CapsSection() {
 
 // ── Usage & model health ─────────────────────────────────────────────────────
 
-function UsageSection() {
-  const [report, setReport] = useState<UsageReport | null>(null);
-  const [models, setModels] = useState<ModelUsageRow[]>([]);
+function UsageSection({ report, models }: { report: UsageReport | null; models: ModelUsageRow[] }) {
   const [share, setShare] = useState<number | null | undefined>(undefined);
-  const [err, setErr] = useState("");
 
   useEffect(() => {
-    getUsageReport("provider,model").then(setReport)
-      .catch(e => setErr(e instanceof Error ? e.message : String(e)));
-    getModelUsage().then(r => setModels(r.models)).catch(() => setModels([]));
     getRouteMix().then(r => setShare((r as { converse_share?: number | null }).converse_share))
       .catch(() => setShare(undefined));
   }, []);
 
-  const totals = useMemo(() => {
-    if (!report) return null;
-    let cost = 0, unpriced = 0, tokens = 0;
-    for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; tokens += r.total_tokens; }
-    return { cost, unpriced, tokens };
-  }, [report]);
-
-  if (err) return <p className="aug-fs-sm" style={{ color: "var(--red4)" }}>{err}</p>;
   if (!report) return <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Reading the usage rollup…</p>;
 
   const rows = [...report.rows].sort((a, b) => b.total_tokens - a.total_tokens).slice(0, 20);
   return (
     <>
-      <SectionTitle sub={totals && totals.unpriced > 0
-        ? `${money(totals.cost)} across ${countNoun(report.total_calls, "call")} — a floor, not a total: ${countNoun(totals.unpriced, "call")} carry no declared price`
-        : totals ? `${money(totals.cost)} across ${countNoun(report.total_calls, "call")}` : undefined}>
+      {/* The totals moved up into the headline — repeating them here was the same
+          sentence twice on one screen. */}
+      <SectionTitle sub="the twenty models that moved the most tokens">
         Usage by provider &amp; model
       </SectionTitle>
       {typeof share === "number" && (
@@ -267,52 +259,217 @@ function UsageSection() {
 
 // ── The governance feed ──────────────────────────────────────────────────────
 
+/** How many events one fetch pulls. The server filters by CATEGORY only, so every
+ *  other control here narrows this window in memory. The header says so: a filter
+ *  that silently searches a slice is a filter that lies. */
+const FEED_WINDOW = 500;
+
+type FeedSort = { key: "at" | "category" | "kind" | "actor"; desc: boolean };
+
+const FEED_COLUMNS: { key: FeedSort["key"] | "summary"; label: string; width?: number }[] = [
+  { key: "at",       label: "When",    width: 150 },
+  { key: "category", label: "Category", width: 150 },
+  { key: "kind",     label: "Event",   width: 190 },
+  { key: "actor",    label: "Actor",   width: 150 },
+  { key: "summary",  label: "What happened" },
+];
+
+function SortHeader({ label, active, desc, onClick, width }: {
+  label: string; active: boolean; desc: boolean; onClick?: () => void; width?: number;
+}) {
+  return (
+    <th style={{ ...cell, width, position: "sticky", top: 0, zIndex: 1,
+      background: "var(--bg-2)", borderBottom: "1px solid var(--b1)" }}>
+      {onClick ? (
+        <Button variant="ghost" size="xs" onClick={onClick}
+          className="aug-fs-xs h-auto p-0 font-normal"
+          style={{ color: active ? "var(--t1)" : "var(--t3)" }}>
+          {label}
+          {active && <Icon name={desc ? "chevd" : "chevu"} size={10} />}
+        </Button>
+      ) : <span style={{ color: "var(--t3)" }}>{label}</span>}
+    </th>
+  );
+}
+
+function FeedRow({ ev }: { ev: AuditFeedEvent }) {
+  const [open, setOpen] = useState(false);
+  // Only offer the disclosure when there is something under it. A chevron that
+  // expands to an empty box is worse than no chevron.
+  const hasDetail = ev.detail && Object.keys(ev.detail).length > 0;
+  return (
+    <>
+      <tr style={{ borderBottom: "1px solid var(--b0)", cursor: hasDetail ? "pointer" : "default" }}
+        onClick={() => hasDetail && setOpen(o => !o)}
+        data-testid="governance-feed-row">
+        <td style={{ ...cell, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+          {formatTimestamp(ev.at, "short")}
+        </td>
+        <td style={cell}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", border: "1px solid var(--b1)",
+            borderRadius: "var(--r-chip)", padding: "1px 7px", whiteSpace: "nowrap" }}>
+            {ev.category.replace(/_/g, " ")}
+          </span>
+        </td>
+        <td style={{ ...cell, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{ev.kind}</td>
+        <td style={{ ...cell, color: "var(--t3)" }}>{ev.actor || "—"}</td>
+        <td style={{ ...cell, color: "var(--t2)", whiteSpace: "normal" }}>
+          <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+            <span style={{ color: "var(--t4)", width: 11, flexShrink: 0 }}>
+              {hasDetail && <Icon name={open ? "chevd" : "chevr"} size={11} />}
+            </span>
+            {ev.summary || ev.kind}
+          </span>
+        </td>
+      </tr>
+      {open && hasDetail && (
+        <tr style={{ borderBottom: "1px solid var(--b0)", background: "var(--bg-1)" }}>
+          <td colSpan={FEED_COLUMNS.length} style={{ padding: "8px 12px 10px" }}>
+            <pre className="aug-fs-xs" style={{ margin: 0, maxHeight: 200, overflow: "auto",
+              fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "pre-wrap" }}>
+              {JSON.stringify(ev.detail, null, 2)}
+            </pre>
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
 function FeedSection() {
   const [events, setEvents] = useState<AuditFeedEvent[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
   const [category, setCategory] = useState("");
+  const [actor, setActor] = useState("");
+  const [kind, setKind] = useState("");
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<FeedSort>({ key: "at", desc: true });
   const [err, setErr] = useState("");
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    getAuditFeed(category, 50)
+    setLoading(true);
+    getAuditFeed(category, FEED_WINDOW)
       .then(r => { setEvents(r.events); setCategories(r.categories); setErr(""); })
-      .catch(e => setErr(e instanceof Error ? e.message : String(e)));
+      .catch(e => setErr(e instanceof Error ? e.message : String(e)))
+      .finally(() => setLoading(false));
   }, [category]);
+
+  // The vocabularies come from the rows themselves, never a hand-written list: a
+  // hard-coded kind list goes stale the moment a sink emits a new one, and the
+  // filter would then hide events it has no name for.
+  const actors = useMemo(
+    () => [...new Set(events.map(e => e.actor).filter(Boolean))].sort(),
+    [events]);
+  const kinds = useMemo(
+    () => [...new Set(events.map(e => e.kind).filter(Boolean))].sort(),
+    [events]);
+
+  const rows = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const out = events.filter(e =>
+      (!actor || e.actor === actor)
+      && (!kind || e.kind === kind)
+      && (!needle
+        || e.summary?.toLowerCase().includes(needle)
+        || e.kind?.toLowerCase().includes(needle)
+        || e.actor?.toLowerCase().includes(needle)
+        || e.conn_id?.toLowerCase().includes(needle)));
+    const dir = sort.desc ? -1 : 1;
+    return out.sort((a, b) => {
+      const av = String(a[sort.key] ?? ""), bv = String(b[sort.key] ?? "");
+      return av === bv ? 0 : (av < bv ? -1 : 1) * dir;
+    });
+  }, [events, actor, kind, q, sort]);
+
+  const filtered = rows.length !== events.length;
+
+  function toggleSort(key: FeedSort["key"]) {
+    setSort(s => s.key === key ? { key, desc: !s.desc } : { key, desc: true });
+  }
+
+  function exportCsv() {
+    downloadCsv(
+      csvFilename("governance-feed"),
+      toCsv(["at", "category", "kind", "actor", "org_id", "conn_id", "summary"],
+        rows.map(e => [e.at, e.category, e.kind, e.actor, e.org_id, e.conn_id, e.summary])),
+    );
+  }
 
   return (
     <>
-      <SectionTitle sub="every governance-relevant event, across all five audit sinks, newest first">
+      <SectionTitle sub={`every governance-relevant event, across all five audit sinks, newest first — the ${FEED_WINDOW} most recent`}>
         Governance feed
       </SectionTitle>
-      <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginBottom: 8 }}>
-        <Button size="xs" variant={category === "" ? "secondary" : "ghost"} onClick={() => setCategory("")}>All</Button>
-        {categories.map(c => (
-          <Button key={c} size="xs" variant={category === c ? "secondary" : "ghost"} onClick={() => setCategory(c)}>
-            {c.replace(/_/g, " ")}
+
+      {/* ── Filters ──────────────────────────────────────────────────────────
+          Category is a SERVER filter (the endpoint takes it, and rejects an unknown
+          one rather than answering empty). Actor, event and search narrow the
+          fetched window in memory — which is why the count line below says how many
+          of how many, rather than presenting a slice as the whole. */}
+      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+        <select style={feedSel} value={category} onChange={e => setCategory(e.target.value)}
+          aria-label="Category" data-testid="feed-category">
+          <option value="">All categories</option>
+          {categories.map(c => <option key={c} value={c}>{c.replace(/_/g, " ")}</option>)}
+        </select>
+        <select style={feedSel} value={kind} onChange={e => setKind(e.target.value)}
+          aria-label="Event" data-testid="feed-kind">
+          <option value="">All events</option>
+          {kinds.map(k => <option key={k} value={k}>{k}</option>)}
+        </select>
+        <select style={feedSel} value={actor} onChange={e => setActor(e.target.value)}
+          aria-label="Actor" data-testid="feed-actor">
+          <option value="">All actors</option>
+          {actors.map(a => <option key={a} value={a}>{a}</option>)}
+        </select>
+        <input style={{ ...feedSel, width: 220 }} value={q} onChange={e => setQ(e.target.value)}
+          placeholder="Search summary, event, actor…" aria-label="Search the feed"
+          data-testid="feed-search" />
+        {(category || kind || actor || q) && (
+          <Button size="xs" variant="ghost"
+            onClick={() => { setCategory(""); setKind(""); setActor(""); setQ(""); }}>
+            Clear filters
           </Button>
-        ))}
+        )}
+        <span style={{ flex: 1 }} />
+        <span className="aug-fs-xs" style={{ color: "var(--t4)" }} data-testid="feed-count">
+          {filtered
+            ? `${compactNumber(rows.length)} of ${compactNumber(events.length)} events`
+            : countNoun(rows.length, "event")}
+        </span>
+        <Button size="xs" variant="ghost" onClick={exportCsv} disabled={rows.length === 0}>
+          <Icon name="download" size={12} /> CSV
+        </Button>
       </div>
+
       {err && <p className="aug-fs-sm" style={{ color: "var(--red4)" }}>{err}</p>}
-      {!err && events.length === 0 && (
-        <EmptyState variant="inline" title="Nothing recorded in this category yet." />
+      {!err && loading && <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Reading the audit sinks…</p>}
+      {!err && !loading && rows.length === 0 && (
+        <EmptyState variant="inline"
+          title={events.length === 0
+            ? "Nothing recorded in this category yet."
+            : "No event in the window matches these filters."} />
       )}
-      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-        {events.map((e, i) => (
-          <div key={i} className="aug-fs-sm" style={{ display: "flex", gap: 10, alignItems: "baseline",
-            padding: "6px 10px", borderLeft: "2px solid var(--b1)" }}>
-            <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
-              {formatTimestamp(e.at, "short")}
-            </span>
-            <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
-              {e.category.replace(/_/g, " ")}
-            </span>
-            <span style={{ color: "var(--t2)", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis" }}>
-              {e.summary || e.kind}
-            </span>
-            {e.actor && <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>· {e.actor}</span>}
-          </div>
-        ))}
-      </div>
+      {!err && rows.length > 0 && (
+        <div style={{ overflow: "auto", maxHeight: "58vh",
+          border: "1px solid var(--b0)", borderRadius: "var(--r3)" }}>
+          <table className="aug-fs-sm" style={{ width: "100%", borderCollapse: "collapse", color: "var(--t2)" }}>
+            <thead>
+              <tr className="aug-fs-xs" style={{ textAlign: "left" }}>
+                {FEED_COLUMNS.map(c => (
+                  <SortHeader key={c.key} label={c.label} width={c.width}
+                    active={sort.key === c.key} desc={sort.desc}
+                    onClick={c.key === "summary" ? undefined : () => toggleSort(c.key as FeedSort["key"])} />
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((e, i) => <FeedRow key={`${e.at}-${e.kind}-${i}`} ev={e} />)}
+            </tbody>
+          </table>
+        </div>
+      )}
     </>
   );
 }
@@ -329,7 +486,7 @@ function CostSqlSection() {
     <div style={{ marginTop: 18 }}>
       <Button size="xs" variant="ghost" onClick={() => setOpen(o => !o)}>
         <Icon name={open ? "chevd" : "chevr"} size={12} />
-        The cost query — the same SQL this page's numbers come from
+        The cost query — the same SQL this page&rsquo;s numbers come from
       </Button>
       {open && (
         <div style={{ marginTop: 6 }}>
@@ -345,17 +502,74 @@ function CostSqlSection() {
   );
 }
 
-export function SpendPanel() {
+/** One figure and what it means. The headline is numbers, not prose. */
+function Headline({ value, label, tone }: { value: string; label: string; tone?: string }) {
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "18px 24px", maxWidth: 980 }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
-        <span className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>Spend</span>
-        <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>
-          what the models cost, who set the limits, and the ledger behind both
-        </span>
-      </div>
-      <CapsSection />
-      <UsageSection />
+    <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+      <span className="aug-fs-h1" style={{ fontWeight: 600, color: tone ?? "var(--t1)",
+        fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</span>
+      <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>{label}</span>
+    </div>
+  );
+}
+
+/** The top of the page: the four numbers the screen exists to report.
+ *
+ *  It used to be a repeated page title plus a sentence of description — roughly a
+ *  fifth of the viewport spent restating the tab name above a paragraph explaining
+ *  what the sections below would say. The workspace header already says "Spend"; this
+ *  says what the spend IS. Every figure keeps its own honesty caveat: cost is a FLOOR
+ *  whenever any call is unpriced, and it is written as such rather than rounded into a
+ *  total nobody can defend.
+ */
+function HeadlineStrip({ report, models, capCount }: {
+  report: UsageReport | null; models: ModelUsageRow[]; capCount: number | null;
+}) {
+  const totals = useMemo(() => {
+    if (!report) return null;
+    let cost = 0, unpriced = 0;
+    for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; }
+    return { cost, unpriced };
+  }, [report]);
+  const failures = models.reduce((n, m) => n + m.failures, 0);
+  const failRate = report && report.total_calls ? failures / report.total_calls : 0;
+
+  return (
+    <div style={{ display: "flex", alignItems: "flex-end", gap: 34, flexWrap: "wrap",
+      padding: "2px 0 16px" }} data-testid="spend-headline">
+      <Headline
+        value={totals ? `${totals.unpriced > 0 ? "≥ " : ""}${money(totals.cost)}` : "—"}
+        label={totals && totals.unpriced > 0
+          ? `a floor — ${countNoun(totals.unpriced, "call")} carry no declared price`
+          : "spent on model calls"} />
+      <Headline value={report ? compactNumber(report.total_calls) : "—"} label="model calls" />
+      <Headline value={report ? pct(failRate) : "—"} label="failed"
+        tone={failRate > 0.05 ? "var(--amb4)" : undefined} />
+      <Headline
+        value={capCount === null ? "—" : capCount === 0 ? "None" : String(capCount)}
+        label={capCount === 0 ? "caps declared — spend is uncapped" : "caps in force"}
+        tone={capCount === 0 ? "var(--amb4)" : undefined} />
+    </div>
+  );
+}
+
+export function SpendPanel() {
+  // Hoisted so the headline and the sections below read ONE fetch each rather than
+  // two of the same — and so declaring a cap moves the headline, which it must.
+  const [report, setReport] = useState<UsageReport | null>(null);
+  const [models, setModels] = useState<ModelUsageRow[]>([]);
+  const [capCount, setCapCount] = useState<number | null>(null);
+
+  useEffect(() => {
+    getUsageReport("provider,model").then(setReport).catch(() => setReport(null));
+    getModelUsage().then(r => setModels(r.models)).catch(() => setModels([]));
+  }, []);
+
+  return (
+    <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "14px 24px 18px" }}>
+      <HeadlineStrip report={report} models={models} capCount={capCount} />
+      <CapsSection onCount={setCapCount} />
+      <UsageSection report={report} models={models} />
       <FeedSection />
       <CostSqlSection />
     </div>

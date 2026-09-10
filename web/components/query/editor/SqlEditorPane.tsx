@@ -28,11 +28,18 @@ import {
 } from "@codemirror/view";
 import {
   defaultKeymap, history, historyKeymap, indentWithTab,
+  addCursorAbove, addCursorBelow, toggleComment, toggleBlockComment,
 } from "@codemirror/commands";
 import {
   autocompletion, closeBrackets, closeBracketsKeymap, completionKeymap,
+  completeFromList, startCompletion, type CompletionSource,
 } from "@codemirror/autocomplete";
-import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
+import {
+  search, searchKeymap, highlightSelectionMatches, selectNextOccurrence,
+  selectSelectionMatches, openSearchPanel, gotoLine,
+} from "@codemirror/search";
+import { templateCompletions } from "@/components/query/editor/templates";
+import { sqlIntentions, type JoinHint } from "@/components/query/editor/intentions";
 import {
   bracketMatching, indentOnInput, foldGutter, foldKeymap,
 } from "@codemirror/language";
@@ -55,6 +62,13 @@ export interface SqlEditorPaneProps {
   schema?: Record<string, string[]>;
   defaultSchema?: string;
   dialect: SQLDialect;
+  /** SE-7 — the relationships the catalog detected, so ⌥⏎ can offer a JOIN with its
+   *  ON clause already written. Same list the rail draws `⋈` from. */
+  joins?: JoinHint[];
+  /** SE-6 — how this engine quotes an identifier that needs it. The editor does not
+   *  know the connection; the workbench does, and passes `quoteIdentifier` bound to
+   *  its engine hint. Wildcard expansion is the caller that cannot do without it. */
+  quote?: (name: string) => string;
   /** SE-2 — the two-tier linter. Built by the caller (it needs the connection). */
   diagnostics?: Extension;
   /** SE-2 — receives an imperative `insert(text)` for the schema sidebar. Text lands
@@ -69,9 +83,29 @@ export interface SqlEditorPaneProps {
   readOnly?: boolean;
 }
 
+/** The live templates as a completion source. Built once at module scope — the set is
+ *  static, and rebuilding it per editor would allocate 21 snippet closures per mount. */
+const TEMPLATE_OPTIONS = templateCompletions();
+const templateSource: CompletionSource = completeFromList(TEMPLATE_OPTIONS);
+
+/** SQL support with the templates added.
+ *
+ *  ⚠️ The templates go on the LANGUAGE's own data facet, not on a top-level
+ *  `EditorState.languageData.of(…)`. Measured: the top-level registration produced a
+ *  popup with the dialect's keywords and no templates at all — `autocompletion()`
+ *  reads its sources through `languageDataAt` at the cursor, and inside a language the
+ *  language's own data is what answers there. `LanguageSupport` takes exactly this
+ *  kind of extension as its second argument, which is the documented seam. */
+function sqlWithTemplates(
+  dialect: SQLDialect, schema?: Record<string, string[]>, defaultSchema?: string,
+): Extension {
+  const support = sql({ dialect, schema, defaultSchema, upperCaseKeywords: false });
+  return [support, support.language.data.of({ autocomplete: templateSource })];
+}
+
 export function SqlEditorPane({
   value, onChange, onRun, onFormat, onCursor, onReady,
-  schema, defaultSchema, dialect, diagnostics,
+  schema, defaultSchema, dialect, diagnostics, quote, joins,
   placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
   readOnly = false,
 }: SqlEditorPaneProps) {
@@ -86,6 +120,12 @@ export function SqlEditorPane({
   const onRunRef = useRef(onRun);
   const onFormatRef = useRef(onFormat);
   const onCursorRef = useRef(onCursor);
+  // SE-6 — the intentions read the CURRENT schema through this ref. Rebuilding the
+  // extension when the catalog refreshes would mean rebuilding the view, and a
+  // rebuilt view has no undo history and no cursor.
+  const schemaRef = useRef<Record<string, string[]>>(schema ?? {});
+  const quoteRef = useRef<(n: string) => string>(n => n);
+  const joinsRef = useRef<JoinHint[]>([]);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
   onFormatRef.current = onFormat;
@@ -96,6 +136,24 @@ export function SqlEditorPane({
   useEffect(() => {
     if (!host.current || view.current) return;
 
+    /** Reformat: the selection if there is one, else the whole document. One dispatch,
+     *  so ⌘Z puts it back in one step. */
+    const formatRun = (v: EditorView) => {
+      const fmt = onFormatRef.current;
+      if (!fmt) return false;
+      const sel = v.state.selection.main;
+      const whole = sel.empty;
+      const from = whole ? 0 : sel.from;
+      const to = whole ? v.state.doc.length : sel.to;
+      const next = fmt(v.state.sliceDoc(from, to));
+      if (next == null || next === v.state.sliceDoc(from, to)) return true;
+      v.dispatch({
+        changes: { from, to, insert: next },
+        selection: { anchor: from + next.length },
+      });
+      return true;
+    };
+
     const runKeymap = Prec.highest(keymap.of([
       {
         key: "Mod-Enter",
@@ -103,27 +161,51 @@ export function SqlEditorPane({
         run: () => { onRunRef.current?.(); return true; },
       },
       {
+        // ⌘⌥L — DataGrip's own Reformat Code. Same command as ⌘⇧F below; two keys
+        // because the muscle memory people bring to this editor comes from there.
+        key: "Mod-Alt-l",
+        preventDefault: true,
+        run: (v) => formatRun(v),
+      },
+      {
         // ⌘⇧F — formats the selection if there is one, else the whole document. The
         // caller decides the text; this only owns the edit, so the cursor lands
         // sensibly and the change is a single undo step.
         key: "Mod-Shift-f",
         preventDefault: true,
-        run: (v) => {
-          const fmt = onFormatRef.current;
-          if (!fmt) return false;
-          const sel = v.state.selection.main;
-          const whole = sel.empty;
-          const from = whole ? 0 : sel.from;
-          const to = whole ? v.state.doc.length : sel.to;
-          const next = fmt(v.state.sliceDoc(from, to));
-          if (next == null || next === v.state.sliceDoc(from, to)) return true;
-          v.dispatch({
-            changes: { from, to, insert: next },
-            selection: { anchor: Math.min(from + next.length, from + next.length) },
-          });
-          return true;
-        },
+        run: (v) => formatRun(v),
       },
+    ]));
+
+    // SE-6 — the DataGrip keys, at `Prec.highest` so a default binding cannot shadow
+    // one of them. Each is a verb the editor did not have:
+    //   ⌘D      select the next occurrence of the selection → a real multiple-caret
+    //           edit, the feature DataGrip lists as "multiple carets"
+    //   ⌘⇧L     select ALL occurrences at once
+    //   ⌥⌘↑/↓   add a caret on the line above/below
+    //   ⌥⏎      the intentions menu (see intentions.ts)
+    //   ⌘J      the live-template list (see templates.ts) — explicit completion with
+    //           the templates already in it
+    //   ⌘/ ⌥⌘/  toggle a line / block comment, DataGrip's own pair
+    //   ⌘L      go to line (DataGrip's key; ⌘G is the browser's Find Next)
+    //   ⌘F ⌥⌘F  find / find-and-replace: `searchKeymap` was ALREADY registered here
+    //           and did nothing, because the panel it opens is provided by the
+    //           `search()` extension, which was not. ⌘F was a dead key.
+    const editKeymap = Prec.highest(keymap.of([
+      { key: "Mod-d", preventDefault: true, run: selectNextOccurrence },
+      { key: "Mod-Shift-l", preventDefault: true, run: selectSelectionMatches },
+      { key: "Mod-Alt-ArrowUp", preventDefault: true, run: addCursorAbove },
+      { key: "Mod-Alt-ArrowDown", preventDefault: true, run: addCursorBelow },
+      { key: "Mod-j", preventDefault: true, run: startCompletion },
+      { key: "Mod-/", preventDefault: true, run: toggleComment },
+      { key: "Mod-Alt-/", preventDefault: true, run: toggleBlockComment },
+      // ⌘L, DataGrip's own go-to-line. NOT ⌘G: measured in the browser, ⌘G never
+      // reaches the editor — it is Find Next at the browser level and is not
+      // preventable from the page. A key we advertise and the OS eats is worse than
+      // no key. `searchKeymap`'s own ⌥⌘G stays bound as well.
+      { key: "Mod-l", preventDefault: true, run: gotoLine },
+      { key: "Mod-f", preventDefault: true, run: openSearchPanel },
+      { key: "Mod-Alt-f", preventDefault: true, run: openSearchPanel },
     ]));
 
     const extensions: Extension[] = [
@@ -139,14 +221,23 @@ export function SqlEditorPane({
       highlightSelectionMatches(),
       rectangularSelection(),
       crosshairCursor(),
+      // Without this a second caret cannot exist, so ⌘D and ⌥-click would extend the
+      // one selection instead of adding to it. It is the switch that makes every
+      // multiple-caret command above real rather than decorative.
+      EditorState.allowMultipleSelections.of(true),
+      EditorView.clickAddsSelectionRange.of(e => e.altKey),
+      search({ top: true }),
       autocompletion({ activateOnTyping: true, defaultKeymap: true }),
       // Wrapped in the compartment so the connection's dialect/schema can be swapped
       // later without touching the document (see the reconfigure effect below).
-      languageCompartment.of(
-        sql({ dialect, schema, defaultSchema, upperCaseKeywords: false }),
-      ),
+      // Live templates ride alongside the language's own completions rather than
+      // replacing them: `override` would drop schema completion, which is the one
+      // thing here nobody would trade a template set for.
+      languageCompartment.of(sqlWithTemplates(dialect, schema, defaultSchema)),
+      sqlIntentions(() => schemaRef.current, () => quoteRef.current, () => joinsRef.current),
       cmPlaceholder(placeholder),
       runKeymap,
+      editKeymap,
       keymap.of([
         ...closeBracketsKeymap, ...defaultKeymap, ...historyKeymap,
         ...completionKeymap, ...searchKeymap, ...foldKeymap, indentWithTab,
@@ -219,14 +310,17 @@ export function SqlEditorPane({
   // reconfigured rather than re-mounted, so the language extension is swapped through
   // the view's own effect channel and the document survives the switch.
   useEffect(() => {
+    schemaRef.current = schema ?? {};
+    quoteRef.current = quote ?? (n => n);
+    joinsRef.current = joins ?? [];
     const v = view.current;
     if (!v) return;
     v.dispatch({
       effects: languageCompartment.reconfigure(
-        sql({ dialect, schema, defaultSchema, upperCaseKeywords: false }),
+        sqlWithTemplates(dialect, schema, defaultSchema),
       ),
     });
-  }, [dialect, schema, defaultSchema]);
+  }, [dialect, schema, defaultSchema, quote, joins]);
 
   return (
     <div

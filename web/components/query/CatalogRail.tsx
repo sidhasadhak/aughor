@@ -39,6 +39,7 @@ export function CatalogRail({
   onColumnDragStart,
   isTableActive,
   actionLabel,
+  onInsertTable,
 }: {
   tables: RailTable[];
   /** The connection this catalog belongs to — the tree's root node. */
@@ -54,6 +55,8 @@ export function CatalogRail({
   onColumnDragStart?: (e: React.DragEvent, column: RailColumn, table: RailTable) => void;
   isTableActive?: (table: RailTable) => boolean;
   actionLabel?: (name: string, kind: "table" | "column") => string;
+  /** SQL mode's `»` — insert `schema.table` at the cursor. */
+  onInsertTable?: (table: RailTable) => void;
 }) {
   return (
     <div
@@ -81,6 +84,7 @@ export function CatalogRail({
         onColumnDragStart={onColumnDragStart}
         isTableActive={isTableActive}
         actionLabel={actionLabel}
+        onInsertTable={onInsertTable}
         emptyLabel="No schema loaded."
       />
     </div>
