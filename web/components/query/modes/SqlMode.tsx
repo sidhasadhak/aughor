@@ -76,6 +76,7 @@ export function SqlMode({
   onShare,
   toolbar,
   schemaControl,
+  pendingInsert,
 }: {
   connId: string;
   engine: EngineHint | null;
@@ -93,6 +94,16 @@ export function SqlMode({
   onSchedule?: (sql: string) => void;
   /** SE-4 I — copy a link that reopens this query. */
   onShare?: () => void;
+  /** SE-7 — text to drop into the active tab AFTER a connection switch.
+   *
+   *  The rail's `»` on a table belonging to another connection has to switch the
+   *  workbench first, and switching swaps the whole tab set. Inserting at the cursor
+   *  in the same tick therefore wrote into the document that was about to be replaced
+   *  — measured: the click switched to theLook and the table name was simply gone.
+   *  Routing it through STATE instead of the editor's cursor makes the ordering
+   *  React's rather than the DOM's: this effect is declared after the tab-restore
+   *  effect, so its `setTabs` updater sees the restored tabs. */
+  pendingInsert?: { text: string; nonce: number };
   /** Controls the WORKBENCH owns (connection, saved state, panel toggle). They ride
    *  the TAB STRIP, right-aligned — the same position Visual mode puts them in, which
    *  is the point: they used to sit top-LEFT in Visual and on the RUN BAR in SQL, so
@@ -105,6 +116,8 @@ export function SqlMode({
 }) {
   const [tabs, setTabs] = useState<EditorTab[]>([]);
   const [activeId, setActiveId] = useState("");
+  const activeIdRef = useRef("");
+  activeIdRef.current = activeId;
   const [result, setResult] = useState<TypedQueryResult | null>(null);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
@@ -196,6 +209,28 @@ export function SqlMode({
     setResult(null);
     setError("");
   }, [connId]);
+
+  // Declared AFTER the tab restore above, deliberately: when a connection switch and an
+  // insert arrive together, both updaters queue in this order and the second one is
+  // handed the tabs the first restored.
+  useEffect(() => {
+    const text = pendingInsert?.text;
+    if (!text) return;
+    setTabs(prev => {
+      if (!prev.length) return prev;
+      // ⚠️ `activeIdRef` still holds the PREVIOUS connection's active tab at this
+      // point — the restore effect above has queued `setActiveId` but the re-render
+      // has not happened, so the ref is one connection behind. Matching on it found
+      // nothing and the insert vanished silently, which is the same symptom the
+      // cursor insert had. Fall back to the first restored tab when the remembered id
+      // is not in this set.
+      const id = prev.some(t => t.id === activeIdRef.current) ? activeIdRef.current : prev[0].id;
+      return prev.map(t => t.id === id
+        ? { ...t, sql: t.sql.trim() ? `${t.sql.replace(/\s+$/, "")}\n${text}` : text }
+        : t);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingInsert?.nonce]);
 
   // Debounced persist — the editor fires onChange per keystroke.
   useEffect(() => {
