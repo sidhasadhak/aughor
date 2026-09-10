@@ -76,6 +76,23 @@ seeded `samples` connection and live LLM credentials.
 
 All use `connection_id: "fixture"` (the built-in DuckDB sample warehouse).
 
+## Ablation sets (`ablation_eval.py`, ROADMAP §3.15 ON-0)
+
+One connection per file; every reference (and `accept_sql`) is executed before any model call.
+
+| file | connection | status (2026-09-10) |
+|---|---|---|
+| `ablation_samples_ecommerce.jsonl` | `samples` (bundled) | 12 questions; run: 12/12 on every arm — a ceiling |
+| `ablation_luxexperience_hard.jsonl` | `914df862/luxexperience` via `duckdb_path` | 14 questions, every trap's bite measured; references verified; NOT yet run |
+| `ablation_missimi.jsonl`, `ablation_missimi_hard.jsonl` | `workspace/missimi` | the schema no longer exists on the instance — every reference fails, the harness skips them |
+
+A record may carry `duckdb_path` (the LuxExperience demo pack, `data/luxexperience_demo.duckdb`,
+see `docs/DEMO_PACK_DESIGN.md`) so the set opens the file read-only instead of the registry —
+the registry is a served store, and a hermetic run beside the API redirects it. `connection_id`
+stays the label and the `--graph-json` key; the served graphs are committed beside their sets
+(`ablation_*_ontology.json`). Run beside a serving API with every `AUGHOR_*_DB` redirected
+(the list is `tests/conftest.py`'s) and `AUGHOR_FALLBACK_BACKENDS=none`.
+
 ## Adding questions
 
 Append a line to `golden.jsonl`:

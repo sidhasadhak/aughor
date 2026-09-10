@@ -465,8 +465,8 @@ def audit(graph: Optional[OntologyGraph] = None) -> Audit:
 def action_census(root: Optional[Path] = None) -> dict[str, list[str]]:
     """``"{conn}/{schema}" → [action ids]`` from the overrides tree — the number Arc ON's
     verb-layer claim rests on. Counts FILES, which is what a declaration is here."""
-    from aughor.ontology.overrides import _ROOT
-    base = root or _ROOT
+    from aughor.ontology.overrides import overrides_root
+    base = root or overrides_root()
     out: dict[str, list[str]] = {}
     if not base.exists():
         return out

@@ -48,6 +48,12 @@ from aughor.ontology.models import (
 
 _ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_overrides"
 
+
+def overrides_root() -> Path:
+    """The overrides tree's root (`data/ontology_overrides`) — the public door for a caller
+    that walks it (the declared-action census) rather than importing the private constant."""
+    return _ROOT
+
 # FROZEN VALUES. A target kind is BOTH a field written into every override YAML and the
 # directory it lives in (`{conn}/{schema}/{kind}/{id}.yaml`), so `"object_set"` stays even
 # though the type it targets is now a `Segment`. Renaming it would orphan every override a

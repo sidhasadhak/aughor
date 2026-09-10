@@ -118,3 +118,25 @@ def test_summary_and_report_carry_the_model_and_the_dropped_arms(capsys):
     assert "Model: gemini · m-1" in out and "fallback chain: none" in out
     assert "Dropped arms" in out and "ontology_guarded" in out
     assert s["saves"] == ["q2"] and s["guarded_safe_rate"] == 1.0
+
+
+def test_dataset_can_name_its_duckdb_file_and_bypass_the_registry(tmp_path):
+    """A registered connection id resolves to nothing under the hermetic registry; a record
+    that names its DuckDB file opens it directly — read-only — and the label is untouched."""
+    import duckdb
+    from evals.ablation_eval import _open_dataset_db
+    path = tmp_path / "wh.duckdb"
+    con = duckdb.connect(str(path)); con.execute("CREATE SCHEMA lux; CREATE TABLE lux.orders (order_id INT, gmv DOUBLE)")
+    con.execute("INSERT INTO lux.orders VALUES (1, 10.0), (2, 20.0)"); con.close()
+    db = _open_dataset_db({"connection_id": "deadbeef", "schema": "lux", "duckdb_path": str(path)})
+    try:
+        assert "orders" in db.get_schema()
+        r = db.execute("__t__", "SELECT COUNT(*) FROM lux.orders")
+        assert not r.error and int(r.rows[0][0]) == 2
+        assert getattr(db, "engine_read_only", None) is True
+    finally:
+        db.close()
+    # no file → the registry, which the hermetic conftest leaves empty for a registered id
+    import pytest
+    with pytest.raises(KeyError, match="deadbeef"):
+        _open_dataset_db({"connection_id": "deadbeef", "schema": "lux"})

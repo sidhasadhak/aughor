@@ -191,6 +191,22 @@ def check_references(db, records: list[dict]) -> tuple[list[dict], list[dict]]:
     return ok_rows, bad_rows
 
 
+def _open_dataset_db(record: dict):
+    """The connection a dataset runs on: its `duckdb_path` file when it names one, else the
+    registry. The registry is a served store, so a hermetic run beside the API redirects it
+    and a REGISTERED id (unlike the builtins `samples`/`workspace`) resolves to nothing —
+    naming the file lets the set run read-only without the registry, and on any machine that
+    has the file. `connection_id` stays the label and the `--graph-json` key."""
+    conn_id = record.get("connection_id", "samples")
+    schema_name = record.get("schema")
+    duckdb_path = record.get("duckdb_path")
+    if duckdb_path:
+        from aughor.db.connection import open_connection
+        return open_connection("duckdb", str(Path(duckdb_path)), schema_name=schema_name, connection_id=conn_id)
+    return (open_connection_for_with_schema(conn_id, schema_name) if schema_name
+            else open_connection_for(conn_id))
+
+
 def _load_graph(conn_id: str, schema_name: str | None,
                 graph_json: dict[str, str] | None = None) -> tuple[object | None, str]:
     """The ontology graph for this dataset, and where it came from.
@@ -259,13 +275,15 @@ def run(dataset: str, limit: int | None, output: str | None,
 
     conn_id = records[0].get("connection_id", "samples")
     schema_name = records[0].get("schema")
-    db = (open_connection_for_with_schema(conn_id, schema_name) if schema_name
-          else open_connection_for(conn_id))
+    duckdb_path = records[0].get("duckdb_path")
+    db = _open_dataset_db(records[0])
     schema_text = _quiet(db.get_schema, "")
     from aughor.db.schema_render import parse_schema_tables
     tcols = _quiet(lambda: parse_schema_tables(schema_text), {})
 
     label = f"{conn_id}{('/' + schema_name) if schema_name else ''}"
+    if duckdb_path:
+        print(f" source: duckdb file {duckdb_path} (registry bypassed)", flush=True)
     llm = _llm_identity()
     print(f"\n{'='*76}\n R4/ON-0 · Semantic-layer ablation  |  {label}  ({len(records)} questions)"
           f"\n arms: {', '.join(arms)}"
@@ -501,7 +519,8 @@ def demo_traps(conn_id: str = "workspace", schema: str = "missimi") -> list[dict
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", action="append", default=None,
-                    help="JSONL of questions; repeatable — one connection per file")
+                    help="JSONL of questions; repeatable — one connection per file. A record may carry "
+                         "`duckdb_path` to open its DuckDB file directly instead of the registry")
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument("--output", default=None)
     ap.add_argument("--arms", default=",".join(ARMS),

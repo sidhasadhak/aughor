@@ -44,11 +44,13 @@ _SKIP_FILES = {
     # +41 from finding payloads, `investigation_in_web` +41 from route names, and
     # `tableau` +2 from the dataset's actual title, "Tableau Sample Superstore".)
     "web/public/demo-api.json",
-    # ON-0's ablation fixture: the JSON of GET /ontology?connection_id=samples&schema_name=ecommerce,
-    # captured verbatim so the `ontology` arm reproduces without an instance. Same ground as
-    # demo-api.json — the backend's wire format, not authored prose; every hit is a model field
-    # name (`exploration_insights`, `kinetic_actions`) that OntologyGraph.model_validate requires.
+    # ON-0's ablation fixtures: the JSON of GET /ontology?connection_id=…&schema_name=… for each
+    # set's connection, captured verbatim so the `ontology` arm reproduces without an instance.
+    # Same ground as demo-api.json — the backend's wire format, not authored prose; every hit is
+    # a model field name (`exploration_insights`, `kinetic_actions`) OntologyGraph.model_validate
+    # requires. A new `evals/ablation_*_ontology.json` goes here in the same commit.
     "evals/ablation_samples_ecommerce_ontology.json",
+    "evals/ablation_luxexperience_ontology.json",
 }
 _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 

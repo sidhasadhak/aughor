@@ -81,8 +81,9 @@ rather than a mechanism it runs on — Arc ON is the re-think, §6 item 14 the d
 change any prompt block, 83 cannot (`ontology.prompt_reach`, ratcheted); the R4 harness had
 been un-runnable since June and is rebuilt with an ontology arm; the LLM arms ran the same
 evening on the one set that still exists (`samples/ecommerce`: 12/12 on every arm — a ceiling,
-not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance — a
-decision is needed, §3.15).
+not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance; the hard
+set is re-authored on LuxExperience — 14 questions, every trap measured to bite — and awaits
+its run, §3.15).
 
 ---
 
@@ -3441,10 +3442,52 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     it, no ontology was ever built for it (built: amazon, default, scm); only June
     backups of its exploration prose survive. `ablation_missimi.jsonl` and
     `ablation_missimi_hard.jsonl` — 23 of the 35 questions, every cross-grain,
-    ratio-of-sums and anti-join trap — skip at the reference check. **Decision needed
-    before ON-6 can be judged:** restore the missimi upload, or re-author the hard set
-    against a workspace schema that exists AND has a built ontology (`amazon` or `scm`).
-    ON-1/ON-2 proceed regardless, as the falsifier already says.
+    ratio-of-sums and anti-join trap — skip at the reference check. **Decided the same
+    night (the user: "re-author the hard set against amazon") — and the offer of `amazon`
+    or `scm` was wrong, measured before a line was written:** `workspace/amazon` is ONE
+    table (1,465 product-review rows; `discounted_price` and `actual_price` imported as
+    INTEGER and ALL NULL — the ₹-prefixed strings never survived the cast; `product_id`
+    is the ontology's "verified" grain and repeats on 114 rows) and `workspace/scm` is ONE
+    table (100 rows, grain "Product type"). Neither has a join, a lifecycle or a nullable
+    key, so neither can host a cross-grain trap; both were offered on the strength of
+    having an ontology, not a shape. The host that can: **LuxExperience
+    (`914df862/luxexperience`, the demo pack — `docs/DEMO_PACK_DESIGN.md`)** — 14 tables,
+    706,894 rows, an ontology built 2026-09-05 with 11 verified joins, two lifecycles and
+    named segments; the API holds the file read-only, so a second read-only open beside it
+    is safe. ON-1/ON-2 proceed regardless, as the falsifier already says.
+  - **The hard set, re-authored on LuxExperience — `evals/ablation_luxexperience_hard.jsonl`,
+    14 questions, references verified, NOT YET RUN.** Every trap was measured to bite
+    before it was written — the reference and the plausible-wrong answer differ on the
+    data: `grain` womenswear 84,024 lines vs 63,831 orders · `value_domain` 'cancelled'
+    4.03% vs 'canceled' 0 · `fanout` returned-GMV share 39.98% vs 46.47% joined, GMV of
+    orders with a return 18.17M vs 21.36M joined · `ratio_of_sums` shipping cost 7.76% of
+    GMV vs 15.75% as an average of row ratios · `lifecycle` 3,069 'reject' vs 0 'rejected'
+    · `nullable_fk` 4,536 never shipped vs 0 through an inner join · `ratio` ticket
+    coverage 0.10 vs 1.0 over joined rows · `cardinality` captured payments by method
+    inflated ~50% through order_items. Two candidates were DROPPED for not biting: "which
+    category appears in the most orders" (the same winner by lines and by orders) and a
+    refund-to-price ratio (every refund is full). Every `accept_sql` was executed and
+    compared with its reference; the two that differ by design (GMV by channel; the
+    percentage form of a fraction) are alternative correct answers, not tolerances — the
+    scorer rounds to four places and matches sets exactly. 🔴 **What the block will teach
+    there, rendered by the product's own functions (5,901 chars beside a 13,925-char
+    schema): five joins labelled N:N that the data shows are N:1 or 1:1** —
+    `order_items → orders`, `order_items → payments`, `order_items → shipments`,
+    `customer_service → orders`, `return_logistics → returns` — under a CARDINALITY
+    sentence that tells the model an N-side join multiplies rows. The validator verified
+    that the KEYS overlap (100%); the cardinality was never measured against the row
+    counts. `l14_captured_by_method` is written to that claim, and the run will say
+    whether a wrong verified claim hurts — the falsifier's own question, sharpened.
+    Harness door, ratcheted: a record may carry `duckdb_path`, so the set opens its file
+    read-only instead of the registry — a served store a hermetic run redirects, where a
+    REGISTERED id resolves to nothing (found by running it: `KeyError: '914df862'`; the
+    builtins never hit this). The served graph is committed beside the set as
+    `evals/ablation_luxexperience_ontology.json`. **The run, awaiting the go (28 model
+    calls):** `AUGHOR_FALLBACK_BACKENDS=none` + every `AUGHOR_*_DB` redirected +
+    `uv run python evals/ablation_eval.py --dataset evals/ablation_luxexperience_hard.jsonl
+    --arms raw,guarded,ontology,ontology_guarded --graph-json
+    914df862/luxexperience=evals/ablation_luxexperience_ontology.json --output
+    evals/ablation_on0_luxexperience_results.json`.
     **The premise was wrong, too:** the run never waited on a key. The instance was keyed
     all along (Gemini, via `data/llm_config.json`, which outranks the `.env` OpenRouter
     lines — those are dead letters). What actually blocked it: the ontology store IS
@@ -3893,8 +3936,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         (prompt reach measured: 59/142 fields reach a prompt · census: 1 declared
         action · harness rebuilt with an ontology arm and found un-runnable since
         June · two harder sets · the ratchet test · LLM arms run on samples/ecommerce:
-        12/12 on every arm, a ceiling; missimi is GONE from the instance — the falsifier
-        waits on a restored or re-authored hard set) → ON-1 object types decoupled from tables →
+        12/12 on every arm, a ceiling; missimi is GONE — the hard set is re-authored on
+        LuxExperience, 14 questions, every trap measured to bite, awaiting its run) →
+        ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with
         the overlay merged into the next answer → ON-5 functions and model bindings
