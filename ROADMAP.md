@@ -72,6 +72,11 @@ reachable end to end while staying PROPOSE-only; no user-scoped credential store
 warehouse connections have **no
 owner**; no RBAC on `/agents/custom*`. (`telemetry.py`'s Langfuse backend, dead here on
 2026-08-30, has since been repaired to ride the OTel exporter — OA·LF-1.)
+**The ontology, measured 2026-09-10 (§3.15):** table = entity by construction; no
+instance layer; its semantic fields reach the UI and not the prompt; the only ablation
+of injected context (R4, 2026-06-21) was a regression; the kinetic plane holds one
+declared action. The layer §0 calls the moat is, today, a description the agent reads
+rather than a mechanism it runs on — Arc ON is the re-think, §6 item 14 the decision.
 
 ---
 
@@ -3245,6 +3250,207 @@ surface needs its capability inventory first; (c) an arc about "polish" invites 
 creep — every wave has a receipt that is a *behavior*, not an adjective, and a wave
 with no receipt left to take is done.
 
+### 3.15 · Arc ON — the ontology the agent runs ON (drafted 2026-09-10; decision §6 item 14 — **OPEN**)
+
+> **Origin.** The user's 2026-09-10 challenge, verbatim: *"I feel the ontology that we have
+> is just a Fancy representation of the ERD of the schema. I don't know how our ontology
+> structure makes sense in an agentic data intelligence platform, do we use it to improve
+> the context of the agents that explore the Data and synthesise it? Is our ontology as a
+> module actionable or interpretable for the Agents in their runtime? I strongly feel we
+> need to rethink what we have built, why we have built it and are we even integrating it
+> the way it's meant to be integrated."* With five references: Foundry's ontology
+> core-concepts, applications, models and why-ontology pages, and MotherDuck's
+> context-layer-vs-semantic-layer-vs-ontology essay.
+>
+> **How this was measured.** Code first, prose second (§7). Every claim below carries a
+> `file:line` re-read on 2026-09-10 against `main` at `1f71f47`. The two external hosts
+> were unreachable from the drafting environment (egress-blocked); Foundry's vocabulary
+> is taken from this repo's own full study (`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md`
+> §1.3, §2) and from memory of the same pages, and MotherDuck's from
+> `docs/MOTHERDUCK_LEARNINGS.md` + memory. **ON-0 re-verifies both against the live pages
+> before ON-1 starts** — a wave must not be built on a recollection.
+>
+> **The verdict, in one line.** The critique is right about the NOUN layer, right about
+> RUNTIME REACH, and wrong about the VERB layer — and the one measurement that exists
+> says the prompt-injection strategy the ontology currently rides was a regression.
+
+**What is true today (measured 2026-09-10):**
+
+| The claim | Measured | Where |
+|---|---|---|
+| "It is the ERD, dressed up" | **True, by construction.** The builder's own comment: *"table = entity: every profiled table becomes an entity"*; `source_tables=[table]`; `table_to_entity` is 1:1; `entity_to_tables` is always a singleton. A business object cannot be born spanning two tables — only a gated, manual `entities/merge` can fuse two after the fact. Properties are copied `ColumnProfile`s (*"Sourced from ColumnProfile at build time"*). Relationships are the join map with a verb. Interfaces are name-pattern detection. | `aughor/ontology/builder.py:849-914` · `aughor/ontology/models.py:60-67` · `aughor/ontology/dedup.py:66-106` |
+| "Is it interpretable by the agent at runtime?" | **As TEXT, partially.** What reaches a prompt: the ENTITY MODEL block (name · table · grain · event-time · type · lifecycle · active filter · ≤2 default filters · ≤2 exclusions · `ACTION:` template names); ENTITY RELATIONSHIPS (verified/exact joins with cardinality); the VERIFIED SEMANTIC LAYER (segments + computed properties, verified-gated, question-scoped); the metrics catalog; synonyms; routing rules; `ACTION:` expansion in the planner. **What never reaches a prompt on the answer path:** the entity `description` — the one sentence that says what the business object IS, LLM-enriched, human-editable, rendered in the UI, grep-zero in every renderer; `domain`; `implements`; `exploration_insights` (deliberately, after R4); the `EntityProperty` semantics (`null_meaning`, `value_interpretation`, `measure_grain` reach prompts from the PROFILER directly — the ontology's copy is UI-only); `DefinitionSource` provenance. And the block rides the **heavy** phase, so a fresh connection answers with none of it until `build_intelligence()` has run. | `aughor/ontology/builder.py:1052-1121` · `aughor/agent/schema_annotators.py:262,472` · `aughor/ontology/semantic_block.py` · `aughor/routers/investigations.py:1838-1868,2063` · `aughor/agent/nodes.py:658-784` |
+| "Does it improve the agents' context?" | **Unmeasured since 2026-06-21, and the last measurement was NEGATIVE.** R4 (n=12, one warehouse, one model): raw 92% · guarded 92% safe · **injected 58% with 5 silent-wrong**. The doc's own conclusion: *"governed ≠ 'inject more LLM context'; governed = deterministic guards + registered metrics."* That eval predates verified-gating (M24c) and the relationship block, and measured the whole injection stack rather than the ontology alone — so today's effect is UNKNOWN, not merely small. No ontology-only arm has ever been run. | `docs/R4_ABLATION_EVAL_2026-06-21.md:40-60` · `evals/ablation_missimi_results.json` |
+| "Is it actionable?" | **The verb layer is real and Foundry-shaped — and nearly empty.** `KineticAction`: typed params, submission criteria with authored messages shown verbatim to human AND model, side effects (notify · webhook · trigger_investigation · declarative `http`), risk tiers with fail-safe HIGH, graduated approval, K4b proposals attached to every deep-analysis report, the VA-9c `propose_action` tool bounded by grants, one inbox. This IS an Action Type in miniature. Population: **one** tracked declaration (`refund_orders`, description empty) + one untracked receipt on theLook. §7's complete-and-inert shape, on the arc's best idea. | `aughor/ontology/models.py` (`KineticAction`) · `aughor/actions/propose.py` · `aughor/agent/action_tools.py` · `data/ontology_overrides/workspace/default/action/refund_orders.yaml` |
+| "Do agents navigate it?" | **No — humans and the UI do.** The graph's own helpers (`entity_for_table`, `relationship_index`, `actions_for_entity`) have ZERO callers under `agent/`; outside `ontology/` they are used by the router, the explorer's Phase-8 hypothesis prose, and `semantic/compiler.py`. The agent's runtime graph tools (`search_graph`, `describe_entity`) read the **context graph** (Wave C) — node kinds `table · metric · glossary_term · domain · finding · brief` — whose tracked instances are 255/262 glossary terms and 100 findings per connection with 5–15 `joins_on` edges. That is a provenance graph of findings and definitions (the citation substrate, valuable) — not a graph of business objects. | `aughor/mcp/knowledge_tools.py:87-130` · `aughor/ontology/context_graph.py:41-42` · `data/context_graph/**/*.json` |
+| "Does it have instances?" | **No.** Type-level only. There is no object, no link between two objects, no "Customer 42 and her orders" anywhere in `aughor/ontology/`. Segments are WHERE fragments, not collections. Foundry's loop runs on instances; ours runs on a description of types followed by LLM-written SQL. | `grep -rn "instance\|object_id" aughor/ontology/` → 0 semantic hits |
+
+**What is NOT an ERD, and must survive the re-think untouched** (the four things the
+critique undercounts — each is something Foundry does not have, per the study's §2):
+
+1. **Verification as a TIER, not a tiebreak.** `verified` on segments, computed
+   properties and metrics is *execution against the live database*; `DefinitionSource`
+   ranks an executed formula above a popular or certified one no matter who wrote it
+   (`aughor/ontology/authority.py`). Genie ranks meaning; we check the arithmetic.
+2. **The deterministic guard battery and the operations vocabulary.** Fan-out, additivity,
+   value-domain, id-arithmetic, and `operations.yaml` — *what a concept admits and what
+   it must never be used for* ("SUM of a latitude is not a quantity"). This is the "logic
+   as a foundation" the user is asking for, already here — but applied AFTER generation,
+   as a check, not DURING, as a constraint.
+3. **The kinetic plane** (above) — built on the right law: a grant is permission to
+   PROPOSE, never to EXECUTE; nothing mutates source data.
+4. **The semantic compiler** — the one place the ontology is *executed* rather than
+   *described*: a typed intent IR (`scalar · timeseries · breakdown · ranking`) assembled
+   deterministically from verified entities, coverage-gated, single-table, falling back
+   to LLM SQL when it cannot vouch. *"The LLM augments a declarative layer rather than
+   regenerating SQL."* This is the seed of the whole arc. (`aughor/semantic/compiler.py`)
+
+**The thesis.** Foundry's sentence, from our own study: *the ontology is simultaneously
+the context store, the guardrail, and the write API for AI — agents get three tools:
+query objects, execute actions, call functions.* Ours today: the context store is a
+text block (partial, heavy-phase, unmeasured); the guardrail is post-hoc; the write API
+is one YAML file with an empty description. **The arc turns the ontology from a thing
+the agent reads ABOUT into a thing the agent runs ON.** Three moves, each a wave:
+the noun decouples from the table (ON-1); the agent's primary door becomes a compiled
+object query in which the guards hold *by construction* (ON-2); the verb layer acts on
+objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's frame
+sits underneath as layering, not competition: the **semantic layer** (metrics,
+dimensions — we have it) · the **context layer** (definitions, quirks, caveats, owners,
+freshness — we store most of it and render almost none; ON-6) · the **ontology**
+(objects, links, operations — ON-1…ON-5).
+
+**Laws that bind every ON wave (standing, not per-slice):**
+
+- **Measure before, ratchet after.** ON-0's harness runs before any wave and after every
+  wave; a wave whose arm regresses the ratchet does not ship, whatever its receipt. The
+  R4 lesson is the arc's founding lesson: more context is not more correctness.
+- **Live resolution, never a copy of the warehouse.** An object is a backing query
+  resolved at read time; no object store, no sync, no Phonograph. DuckDB + pushdown is
+  the bet (§4, §8). Reopen only on a measured latency that a cache cannot cover.
+- **By construction beats by guard — and the guard stays for the escape hatch.** A link
+  traversal in the compiled path pre-aggregates the N side because the *link* carries
+  measured cardinality; a semiadditive measure cannot be summed across periods because
+  the *declaration* forbids it. `run_sql` remains (this is not Foundry — the human plane
+  is SQL, §0) and the battery guards it exactly as today.
+- **The read-only law is untouched.** An action edits an OVERLAY keyed to an object;
+  source data is never written (`security/safety.py`, `sql/readonly.py` stay
+  fail-closed). Foundry materialises edits back into datasets; we deliberately do not.
+- **Nothing the model says becomes a fact.** J4 holds: an object type, link, property
+  binding or derived value exists only with provenance — schema, probe, human, function,
+  or `model:<id>@<version>`. There is still no `llm_inferred` provenance.
+- **API names are stable; display names are free.** A rename never breaks a consumer
+  (Foundry's one rule worth copying verbatim). Today's entity ids ARE table names — ON-1
+  gives every type an `api_name` and keeps the id as its default.
+- **Supersede, do not delete.** The one-table entity becomes the default backing of its
+  type; every cached graph, override file and `GET /ontology/*` payload deserialises
+  unchanged. The ERD is a VIEW of the ontology, never its definition again.
+- **The catalogue rots** — every "true today" cell above carries its date; each wave's
+  pre-check re-measures its own row.
+
+**Waves, in build order** (ON-0 is not optional; the order after it is the user's knob):
+
+- **ON-0 · Measure what the ontology is worth (substrate-sized; ~a week).** Re-run the
+  R4 harness on TODAY's stack with the ontology as its own arm — `raw` · `+guards` ·
+  `+verified ontology blocks` · `+full injection` — on a harder set (forced cross-grain
+  joins, ratio metrics, lifecycle questions, "active" semantics) across ≥2 connections;
+  add a per-field **prompt-reach audit** (which `OntologyEntity`/`EntityProperty` fields
+  reach any prompt on the answer path, counted, not recalled) and a **kinetic census**
+  (declared actions per live connection). Re-verify the Foundry and MotherDuck pages
+  against the drafting recollection above and correct this section in place.
+  **Receipt:** a dated table in this section; the harness wired as the arc's ratchet.
+  **Falsifier:** if the verified-ontology arm shows no lift or a regression, the
+  prompt-injection strategy is retired for the ontology (blocks stay only where a
+  guard cites them) and ON-6 is cancelled; ON-1/ON-2 proceed regardless, because the
+  compiled path does not depend on the model reading prose.
+- **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable
+  `api_name`, a **backing** (one table today; a SELECT with a declared primary key
+  tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
+  expressions, and `LinkType` as a first-class record with an API name on EACH side and
+  a cardinality that is *measured* (`value_overlap` already exists — promote it).
+  Interfaces stay. The builder proposes types from tables exactly as today; a human
+  edits the backing through the overrides tree; `dedup.merge_entities` becomes a
+  special case of "two tables, one backing". Every existing consumer reads the default
+  backing byte-identically.
+  **Receipt:** a `Customer` type backed by two tables with `lifetime_value` as a derived
+  property, the ERD unchanged underneath, `GET /ontology/entities` unchanged for every
+  single-table type.
+- **ON-2 · Objects at runtime — the compiled door.** Widen `semantic/compiler.py`'s
+  intent IR from single-table to an **object-set algebra**:
+  `objects(T).filter(segment | predicate).link(L).measure(metric | agg(property))
+  .by(dimension).over(grain)` — compiled deterministically to SQL over the backings,
+  with the join guard's law applied *by construction* (an N-side link is pre-aggregated
+  before the join; a semiadditive measure refuses a period SUM at compile time), dialect
+  via sqlglot, coverage-gated exactly as v1 ("it never guesses"). The agent gets
+  `query_objects` as a tool, described in its roster ABOVE `run_sql`; `run_sql` stays as
+  the escape hatch under the battery. The Trust Receipt names the path taken.
+  **Receipt:** "revenue per customer segment last quarter" answered through
+  `query_objects` with no model-written SQL, the receipt naming the compiled path; the
+  same question forced through `run_sql` hitting the fan-out guard. **Falsifier:**
+  compilable share of the last 30 days of real questions (`session_events`) below 30%
+  ⇒ the IR is too narrow; widen before exposing the tool.
+- **ON-3 · Instances — the object page and the object link.** `GET /objects/{type}/{pk}`
+  resolved live through the backing; links resolved on demand; the zero-config
+  **Standard Object View** the 07-22 study's Wave S named and nobody built — properties,
+  links, the findings that cite this object (the context graph's `grounded_in`, finally
+  pointed at an instance), the metrics touching its type, and the declared actions that
+  take it as a parameter, pre-filled. `describe_entity` gains a sibling `get_object` on
+  the agent roster and the MCP roster (SP-5's parity ratchet holds the diff empty).
+  **Receipt:** a customer id in an answer is a link → its object page → "Orders" →
+  `flag_order_for_review` offered with the id filled.
+- **ON-4 · The kinetic plane closes the loop on objects.** `KineticAction` gains an
+  `object_type` and an `object` parameter kind typed to ON-1's types; submission
+  criteria may reference object properties (`object.status != 'refunded'`), evaluated
+  deterministically as today; the `annotate` kind writes the K3 overlay keyed
+  `(object_type, pk, property)` — Foundry's edits-as-overlay, on instances — and ON-2's
+  compiler **merges the overlay at read time**, so an accepted annotation is visible to
+  the very next answer with provenance. Source data is never written.
+  **Receipt:** the agent proposes `flag_order_for_review(order=Order:123)` from a
+  finding; a human accepts; `query_objects` over Orders now shows `review_flag=true` for
+  123 with "annotated by <user>, <date>"; the receipt says so.
+- **ON-5 · Functions and models on objects (the "intelligence mapping").** A
+  **function** is a declared, deterministic computation over an object set — derived
+  properties across ≤N link hops, and O5's window/semiadditive measures move here as
+  the first citizens. A **model binding** attaches a callable to an object type — a
+  scoring model, a prompt template, or an MI-4 adapter — with outputs landing as overlay
+  properties carrying `model:<id>@<version>` provenance, refreshed on the object's
+  freshness clock (Wave V vocabulary). The MI arc's adapters become ontology-bound
+  instead of route-bound.
+  **Receipt:** a churn-risk binding on `Customer`, its score on the object page and
+  queryable through `query_objects`, the model version on the receipt.
+- **ON-6 · The context layer reaches the model — measured (rides after ON-0, gated by
+  it).** Entity `description`, `domain`, exclusions, `null_meaning`, `measure_grain`,
+  definition provenance and owners rendered question-scoped and verified-gated like the
+  semantic layer today, each field's inclusion decided by ON-0's harness, not by
+  taste. The fast phase gains a cheap, cached ENTITY MODEL so a fresh connection is not
+  ontology-blind until a heavy build. **Receipt:** the ratchet up, per field, dated.
+
+**Deliberately not ported (re-read §4.2's law: the grammar, never the codebase):** an
+object store or sync layer · materialising edits back into source datasets · Spark-scale
+indexing · CBAC · a "no raw SQL tool" posture (the human plane is SQL; §0) · a new agent
+runtime (the roster gains two tools) · any second ontology store (ON-1 EXTENDS
+`OntologyGraph`; the context graph stays the citation substrate and gains instance
+targets in ON-3).
+
+**Risks, carried in rather than discovered:** (a) ON-2's algebra is where a wrong
+cardinality would corrupt a number silently — the compiler must REFUSE an unmeasured
+link (`join_confidence` inferred) rather than traverse it, and O6's declaration probes
+re-validate measured ones; (b) ON-1's multi-table backing is a view the warehouse never
+declared — every backing EXPLAIN-binds before it is offered (the overrides' own gate)
+and grain is re-verified (`COUNT(*) == COUNT(DISTINCT pk)`) on the backing, not the
+table; (c) the kinetic census is ~1 today, so ON-4's receipt needs declared actions to
+exist — PX-3's intake door and KI's suggestions loop are where declarations arrive,
+and ON-4's pre-check counts them first; (d) "ontology" invites the very slop PX just
+fixed — every wave's receipt is a behaviour a person can drive, and the ERD keeps its
+job as a view.
+
+**Sequencing note.** ON-0 is a measurement and may start now, beside MT-0/MT-1 (small,
+unblocking strangers). ON-1 → ON-2 is the arc's substance and is where the roadmap's
+thesis (§0: *"the moat is the ontology→agent loop"*) either becomes mechanically true
+or is measured false. ON-4 wants ON-2's merge point; ON-3 is composition over ON-1/ON-2;
+ON-5 wants MI-3's ledger for provenance and nothing from MI-4's gates; ON-6 rides ON-0's
+ratchet and can interleave anywhere after it.
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -3562,6 +3768,17 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              accepted-proposal receipt (waits for a natural evidence-backed
              occasion), periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
+ARC ON  🆕 DRAFTED 2026-09-10 (§3.15) — decision §6 item 14 OPEN. The user's challenge
+        ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
+        measured and largely confirmed: table = entity by construction; no instance
+        layer; the semantic fields reach the UI, not the prompt; the only ablation
+        (R4, 2026-06-21) was a regression for injected context; the kinetic plane is
+        Foundry-shaped and holds ONE declared action. Waves: ON-0 measure (a week,
+        may start now beside MT-0/MT-1) → ON-1 object types decoupled from tables →
+        ON-2 the compiled object-query door (guards by construction, run_sql stays)
+        → ON-3 instances + the standard object view → ON-4 actions on objects with
+        the overlay merged into the next answer → ON-5 functions and model bindings
+        → ON-6 the context layer reaches the model, ratcheted by ON-0.
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -3843,6 +4060,8 @@ the browser** · **measure the premise before building.**
 > on the user" list — credentials and one manual gesture, not decisions.
 > **Amended 2026-09-09:** item 13 (Arc PX) arrived and was decided in the same
 > session by the user's own directive — the register stays at zero open.
+> **Amended 2026-09-10: item 14 (Arc ON) is OPEN** — the first open decision since
+> 09-07, and deliberately so: it re-architects the layer §0 calls the moat.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -3958,6 +4177,29 @@ the browser** · **measure the premise before building.**
     receipt now because its backend is finished and tested. PX-5 is grander but
     waits on provenance fields the ontology does not yet store; PX-2 is broad
     rather than deep. PX-0/PX-1 follow.
+14. ⏳ **OPEN 2026-09-10 — Arc ON: does the ontology become the thing the agent runs
+    on?** Drafted as §3.15 from the user's own challenge, measured the same day (the
+    noun layer is the schema by construction; no instances; semantic fields reach the
+    UI and not the prompt; the last ablation of injected context was a regression;
+    the kinetic plane is Foundry-shaped and holds one declared action). Four clauses,
+    each with the builder's recommendation marked — the call is the user's:
+    **(a) Adoption.** Is §3.15 active, with ON-0 (the measurement) starting now?
+    *Recommended: yes — ON-0 is a week and decides the rest by number.*
+    **(b) The agent's primary door.** Does `query_objects` (ON-2) become the tool
+    described FIRST in the roster with `run_sql` as the escape hatch, or a peer?
+    Foundry gives agents no raw SQL at all; this platform's human plane is SQL (§0).
+    *Recommended: primary-with-fallback, and ON-0's ratchet may overturn it.*
+    **(c) Resolution posture.** Objects resolved LIVE through backing queries (no
+    object store, no copy of the warehouse) versus a materialised object layer.
+    *Recommended: live — §4/§8's lean-compute law; reopen only on measured latency.*
+    **(d) The band's knob.** ON-0 beside MT-0/MT-1 now, ON-1/ON-2 after — or ON ahead
+    of MT outright. *Recommended: ON-0 ∥ MT-0/MT-1; ON-1 → ON-2 next, because §0's
+    thesis ("the moat is the ontology→agent loop") is today a sentence, not a
+    mechanism, and this is the arc that makes it one or measures it false.*
+    Not decided here because it isn't ripe: whether `run_sql` is ever demoted below a
+    guard-cited allowlist (needs ON-2's coverage number); whether edits are ever
+    materialised back to source (the read-only law stands until someone asks with
+    a case).
 
 ---
 
