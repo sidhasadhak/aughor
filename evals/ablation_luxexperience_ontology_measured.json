@@ -24,6 +24,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_brands": {
@@ -204,6 +206,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_countries": {
@@ -345,6 +349,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_customerservices": {
@@ -619,6 +625,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_customers": {
@@ -834,6 +842,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_dates": {
@@ -1102,6 +1112,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_orderitems": {
@@ -1383,6 +1395,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_orders": {
@@ -1882,6 +1896,8 @@
         "failed"
       ],
       "active_filter": null,
+      "lifecycle_verified": true,
+      "lifecycle_note": "unconfirmed: 'refunded' (42941 rows) reads as an end state and is not in terminal_states \u2014 confirm or override",
       "use_instead": null,
       "segments": {
         "all_payments": {
@@ -2181,6 +2197,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_prices": {
@@ -2357,6 +2375,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_products": {
@@ -2613,6 +2633,8 @@
         "reject"
       ],
       "active_filter": null,
+      "lifecycle_verified": true,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_returnlogistics": {
@@ -2933,6 +2955,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_returns": {
@@ -3174,6 +3198,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_shipments": {
@@ -3507,6 +3533,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_warehouses": {

@@ -3648,12 +3648,36 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   graphs are committed beside their served ones (`evals/ablation_*_ontology_measured.json`).
   Prompt-reach walk 142 → 144; the two new fields reach no block by design — the renderer
   reads the corrected `cardinality`. **A no-model door for graphs already built:**
-  `POST /ontology/relationships/measure?connection_id=…&schema_name=…` (gated like every
-  ontology edit) measures the cached graph against the live connection, saves the
-  corrected labels under the graph's own key, invalidates the enriched-schema cache that
-  embeds the block, and journals `ontology.cardinality` — so an instance sees true labels
-  without spending a rebuild. **Open, this wave:** the terminal-states measurement
-  (second commit); the ON-0 hard set re-run with `--graph-json
+  `POST /ontology/measure?connection_id=…&schema_name=…` (gated like every ontology edit)
+  measures the cached graph against the live connection — both measurements below — saves
+  it under the graph's own key, invalidates the enriched-schema cache that embeds the
+  blocks, and journals `ontology.measure`; an instance sees true labels without spending a
+  rebuild. Applied on this instance 2026-09-11 to LuxExperience, samples, and the DWH
+  connection's `ecommerce` graph (6 joins → 3 relabelled: `customer → orders` N:1→1:1,
+  Olist's one-customer_id-per-order; `order_items → order_payments` and `→ order_reviews`
+  N:1→N:N).
+  ✅ **Second commit, 2026-09-11 — lifecycle terminal states are measured at build time.**
+  `aughor/ontology/lifecycle.py`. What a snapshot can prove: an observed state the lists
+  never named, and a claimed terminal state whose `<state>_at`-style timestamp is set on
+  rows now in another state (they left it) — either sets `lifecycle_verified=False`, and
+  the segment derived from the terminal set (the active filter) is downgraded, so the
+  VERIFIED SEMANTIC LAYER stops offering a filter the data refutes. What it cannot prove:
+  that a state is final — so an observed state whose NAME is an end state in the core map
+  (`refunded`, `returned`, `rejected` …) and is missing from `terminal_states` is reported
+  as UNCONFIRMED, rendered beside the claim in ENTITY MODEL as `lifecycle check: …`, never
+  as a verdict; the pack will own that list (part 3 of this wave). Hooked beside the
+  cardinality pass; the same CLI shape. Ratcheted in
+  `tests/unit/test_lifecycle_measurement.py` (the verdicts, the downgrade, the rendered
+  check, the samples fixture's omitted `refunded`, the Lux lifecycles). **Measured on the
+  real files:** samples `Order` — six observed states all listed, nothing refutable,
+  `refunded` (500 rows) unconfirmed; LuxExperience `Payment` — `refunded` (42,941 rows)
+  unconfirmed against a terminal set of `failed` alone; `ReturnLogistic` clean.
+  Prompt-reach walk 144 → 146; `lifecycle_note` and `lifecycle_verified` now reach ENTITY
+  MODEL (recorded). 🔑 The samples case this wave was drafted on is NOT a contradiction the
+  data can prove — no order ever leaves `refunded`, but no column says so either. The
+  honest verdict is "unconfirmed, 500 rows", and that is what the block now says.
+  **Open, this wave:** the pack section (parts 1–4 as expected claims; the end-state list
+  moves out of code); the ON-0 hard set re-run with `--graph-json
   914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json` — the block
   that says true things, 28 model calls, awaiting the go.
 - **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable

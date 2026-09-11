@@ -98,6 +98,8 @@ def fixture_graph() -> OntologyGraph:
         lifecycle_states=["placed", "shipped", "delivered", "canceled"],
         terminal_states=["delivered", "canceled"],
         active_filter="order_status NOT IN ('delivered', 'canceled')",
+        lifecycle_verified=False,
+        lifecycle_note="contradicted: observed but unlisted 'on_hold' (3 rows)",
         use_instead={"table": "customers", "scope": "customer counts",
                      "reason": "orders repeats a customer per purchase"},
         segments={

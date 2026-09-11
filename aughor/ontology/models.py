@@ -109,6 +109,13 @@ class OntologyEntity(BaseModel):
     lifecycle_states: list[str] = Field(default_factory=list)
     terminal_states: list[str] = Field(default_factory=list)
     active_filter: Optional[str] = None       # SQL fragment: "order_status NOT IN ('canceled')"
+    #: ON-0a: the lifecycle MEASURED against the data. None until measured; False when the
+    #: data contradicts it (an observed state the lists never named, or a claimed terminal
+    #: state whose timestamp is set on rows now in another state); True otherwise. The note
+    #: carries the evidence, and the end-state names the core expects but the terminal set
+    #: omits are reported there as UNCONFIRMED — a snapshot cannot prove a state is final.
+    lifecycle_verified: Optional[bool] = None
+    lifecycle_note: str = ""
 
     # Routing guidance (Wave 2 / Layer 1.1) — "for questions of this shape, query
     # {table} rather than this entity's own table". Human-authored only: it arrives

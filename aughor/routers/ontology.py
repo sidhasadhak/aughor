@@ -548,43 +548,50 @@ def get_ontology_relationships(
     return {rid: r.model_dump() for rid, r in graph.relationships.items()}
 
 
-@router.post("/ontology/relationships/measure", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
-def measure_relationship_cardinality(
+@router.post("/ontology/measure", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def measure_ontology(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Measure the cached ontology's relationship cardinalities against the live data and
-    save the corrected labels — no model call, no rebuild (ON-0a).
+    """Measure the cached ontology against the live data and save what it says — no model
+    call, no rebuild (ON-0a).
 
-    The builder inferred each join's cardinality from profiles and fell to N:N whenever a
-    profile was missing; the join-value pass then marked the edge *verified* because the
-    KEYS overlap. A rebuild measures now, but spends a model call per entity; this door
-    measures the graph that is already there. Returns the report — confirmed, contradicted
-    (authored → measured), unmeasurable — and invalidates the enriched-schema cache, which
-    embeds the relationship block.
+    Two measurements: relationship cardinality (a side is "1" when its key is unique over
+    its non-null rows; a contradicted label is replaced, the authored one kept in a note)
+    and lifecycle terminal states (an observed state the lists never named, or a claimed
+    terminal state whose timestamp is set on rows now in another state, contradicts the
+    lifecycle; end-state names the terminal set omits are reported as unconfirmed). The
+    builder inferred both and marked them verified on key overlap and execution alone. A
+    rebuild measures now but spends a model call per entity; this door measures the graph
+    that is already there, invalidates the enriched-schema cache that embeds the blocks,
+    and journals `ontology.measure`.
     """
     from aughor.db.connection import open_connection_for_with_schema
-    from aughor.ontology.store import measure_latest_relationships
+    from aughor.ontology.store import measure_latest
     effective = _resolve_schema(connection_id, schema_name)
     db = open_connection_for_with_schema(connection_id, effective)
     try:
-        report = measure_latest_relationships(connection_id, effective, db)
+        reports = measure_latest(connection_id, effective, db)
     finally:
         db.close()
-    if report is None:
+    if reports is None:
         raise HTTPException(
             status_code=404,
             detail=f"No ontology built for schema '{effective}' on this connection — nothing to measure.")
     _invalidate_schema_cache(connection_id)
-    summary = report.summary()
+    out = {"connection_id": connection_id, "schema_name": effective,
+           "relationships": reports["relationships"].summary(),
+           "lifecycles": reports["lifecycles"].summary()}
     try:
         from aughor.kernel.ledger import Ledger
-        Ledger.default().emit("ontology.cardinality", {"ok": True, "schema": effective, **summary},
+        Ledger.default().emit("ontology.measure", {"ok": True, "schema": effective,
+                                                   "relationships": out["relationships"],
+                                                   "lifecycles": out["lifecycles"]},
                               conn_id=connection_id)
     except Exception:
         import logging
-        logging.getLogger(__name__).debug("ontology.cardinality emit skipped", exc_info=True)
-    return {"connection_id": connection_id, "schema_name": effective, **summary}
+        logging.getLogger(__name__).debug("ontology.measure emit skipped", exc_info=True)
+    return out
 
 
 @router.get("/ontology/metrics/{metric_id}/provenance")

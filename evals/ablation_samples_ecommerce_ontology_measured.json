@@ -24,6 +24,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_customers": {
@@ -292,6 +294,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_orderitems": {
@@ -480,6 +484,8 @@
         "cancelled"
       ],
       "active_filter": null,
+      "lifecycle_verified": true,
+      "lifecycle_note": "unconfirmed: 'refunded' (500 rows) reads as an end state and is not in terminal_states \u2014 confirm or override",
       "use_instead": null,
       "segments": {
         "all_orders": {
@@ -813,6 +819,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_products": {
@@ -1016,6 +1024,8 @@
       "lifecycle_states": [],
       "terminal_states": [],
       "active_filter": null,
+      "lifecycle_verified": null,
+      "lifecycle_note": "",
       "use_instead": null,
       "segments": {
         "all_reviews": {

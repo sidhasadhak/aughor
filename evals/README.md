@@ -92,8 +92,8 @@ the registry is a served store, and a hermetic run beside the API redirects it. 
 stays the label and the `--graph-json` key; the served graphs are committed beside their sets
 (`ablation_*_ontology.json`), and beside each the same graph after its relationship cardinalities
 were measured against the data (`ablation_*_ontology_measured.json`, written by
-`python -m aughor.ontology.cardinality --graph-json <served> --duckdb <file> --out <measured>`;
-ON-0a). Run the `ontology` arm on the measured file to test a block that says true things. Run beside a serving API with every `AUGHOR_*_DB` redirected
+`python -m aughor.ontology.cardinality` and then `python -m aughor.ontology.lifecycle`, each
+`--graph-json <served> --duckdb <file> --out <measured>`; ON-0a). Run the `ontology` arm on the measured file to test a block that says true things. Run beside a serving API with every `AUGHOR_*_DB` redirected
 (the list is `tests/conftest.py`'s) and `AUGHOR_FALLBACK_BACKENDS=none`.
 
 ## Adding questions

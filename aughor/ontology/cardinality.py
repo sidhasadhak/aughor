@@ -36,13 +36,13 @@ logger = logging.getLogger(__name__)
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
-def _qi(name: str) -> str:
+def quote_ident(name: str) -> str:
     """Quote an identifier only when it needs it (`Product type` does; `order_id` does not)."""
     return name if _IDENT.match(name) else '"' + name.replace('"', '""') + '"'
 
 
-def _qt(table: str) -> str:
-    return ".".join(_qi(part) for part in table.split("."))
+def quote_table(table: str) -> str:
+    return ".".join(quote_ident(part) for part in table.split("."))
 
 
 @dataclass
@@ -65,8 +65,8 @@ class SideCount:
 
 def measure_side(db: Any, table: str, column: str) -> Optional[SideCount]:
     """Count one side; None when the probe fails (missing table/column, dialect refusal)."""
-    col = _qi(column)
-    sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {_qt(table)}"
+    col = quote_ident(column)
+    sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {quote_table(table)}"
     try:
         result = db.execute("__cardinality_probe__", sql)
     except Exception as exc:  # noqa: BLE001 — a probe that raises is an unmeasurable side, not a build failure
