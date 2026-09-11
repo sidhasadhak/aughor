@@ -37,6 +37,8 @@ export interface MapEdge {
   bowed: boolean;
   labelX: number;
   labelY: number;
+  /** How much of the label the line has room for: its verb and cardinality, or the cardinality alone. */
+  label: "full" | "compact";
 }
 
 export interface MapLayout {
@@ -56,10 +58,13 @@ export const RING = { rx: 270, ry: 186 };
 export const RING_STEP = { rx: 170, ry: 124 };
 /** The arc one card needs on a ring — a neighbour card's width plus air. */
 export const CARD_ARC = 210;
-/** Half a link label's own chip. A label is a BOX, so the stretch of line it may sit in is the stretch clear of
- *  both cards by this much — reserving only the cards' own size is what let a label cover a card's first row. */
+/** Half a link label's own chip, named and compact. A label is a BOX, so the stretch of line it may sit in is the
+ *  stretch clear of both cards by this much — reserving only the cards' own size is what let a label cover a card's
+ *  first row. A busy ring leaves short spokes, and there the label drops to its cardinality alone (its verb moves
+ *  to the title) rather than being laid over a card: a narrower true thing beats a wider one nobody can read. */
 export const LABEL_HALF = { w: 62, h: 11 };
-/** How far a label steps off its line when the line has no room for it at all. */
+export const LABEL_COMPACT_HALF = { w: 27, h: 11 };
+/** How far a label steps off its line when even the compact chip has no room. */
 export const LABEL_ASIDE = 36;
 /** Room beyond the outermost ring for a card, and the smallest map that still holds the centred card. */
 export const MAP_PAD = { x: NEIGHBOUR_HALF.w + 24, y: NEIGHBOUR_HALF.h + 56 };
@@ -214,7 +219,7 @@ export function layoutMap(map: TypeMap, focus: string): MapLayout {
         const bulge = Math.min(180, length * 0.3);
         const control = { x: mid.x + perp.x * sign * bulge, y: mid.y + perp.y * sign * bulge };
         return {
-          link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bowed: true,
+          link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bowed: true, label: "full" as const,
           path: `M ${a.x} ${a.y} Q ${control.x} ${control.y} ${b.x} ${b.y}`,
           labelX: (a.x + 2 * control.x + b.x) / 4,   // the curve at its halfway point
           labelY: (a.y + 2 * control.y + b.y) / 4,
@@ -224,19 +229,20 @@ export function layoutMap(map: TypeMap, focus: string): MapLayout {
       // cards — the label is a box, and reserving only the cards' own size is what let one cover a card's first
       // row. Where the rings leave no such stretch (a short diagonal spoke), fall back to the stretch its CENTRE
       // clears and step the chip off the line, so what it grazes is a card's margin rather than its text.
-      const chip = (h: { w: number; h: number }) => ({ w: h.w + LABEL_HALF.w, h: h.h + LABEL_HALF.h });
-      const room = (grow: boolean) => {
-        const box = (type: string) => (grow ? chip(half(type)) : half(type));
+      const room = (chip: { w: number; h: number }) => {
+        const box = (type: string) => ({ w: half(type).w + chip.w, h: half(type).h + chip.h });
         const [ca, cb] = [reach(box(link.from), dx, dy), reach(box(link.to), dx, dy)];
         return { ca, clear: length - ca - cb };
       };
-      const whole = room(true);
-      const fits = whole.clear > 0;
-      const { ca, clear } = fits ? whole : room(false);
+      const named = room(LABEL_HALF);
+      const short = named.clear > 0 ? named : room(LABEL_COMPACT_HALF);
+      const fits = short.clear > 0;
+      const { ca, clear } = fits ? short : room({ w: 0, h: 0 });
       const t = clear > 0 ? (ca + clear / 2) / length : 0.5;
       const aside = fits ? 0 : LABEL_ASIDE;
       return {
         link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bowed: false,
+        label: (named.clear > 0 ? "full" : "compact") as "full" | "compact",
         path: `M ${a.x} ${a.y} L ${b.x} ${b.y}`,
         labelX: a.x + dx * t - (dy / length) * aside,
         labelY: a.y + dy * t + (dx / length) * aside,

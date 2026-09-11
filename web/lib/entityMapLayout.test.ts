@@ -7,7 +7,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  FOCUS_HALF, LABEL_ASIDE, LABEL_HALF, NEIGHBOUR_HALF, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes,
+  FOCUS_HALF, LABEL_ASIDE, LABEL_COMPACT_HALF, LABEL_HALF, NEIGHBOUR_HALF, hubOf, layoutMap, litBy,
+  ringsOf, unlinkedTypes,
 } from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink, TypeMapRow } from "@/lib/objectTypes";
 
@@ -177,16 +178,29 @@ describe("layoutMap", () => {
     expect(aside.some((d) => Math.abs(d - LABEL_ASIDE) < 1e-6)).toBe(true);
   });
 
-  it.each([2, 5, 7, 12])("never sets a label inside either card, with %i neighbours", (n) => {
+  it.each([2, 5, 7, 12])("keeps whichever chip it chose clear of both cards, with %i neighbours", (n) => {
     const layout = layoutMap(star(n), "hub");
     const hub = layout.nodes.find((node) => node.objectType === "hub")!;
     for (const edge of layout.edges) {
       const other = layout.nodes.find((node) => node.objectType === edge.link.to)!;
-      const label = { x: edge.labelX, y: edge.labelY };
+      const chip = edge.label === "full" ? LABEL_HALF : LABEL_COMPACT_HALF;
       const clears = (card: { x: number; y: number }, h: { w: number; h: number }) =>
-        Math.abs(label.x - card.x) >= h.w || Math.abs(label.y - card.y) >= h.h;
-      expect(clears(hub, FOCUS_HALF)).toBe(true);
-      expect(clears(other, NEIGHBOUR_HALF)).toBe(true);
+        Math.abs(edge.labelX - card.x) >= h.w + chip.w || Math.abs(edge.labelY - card.y) >= h.h + chip.h;
+      // the chip it is DRAWN with, not its centre: a label used to clear a card by its midpoint and cover its
+      // first row anyway. Where even the compact chip has no room it steps off the line instead (below).
+      const stepped = Math.abs((edge.labelX - hub.x) * (edge.y2 - edge.y1)
+        - (edge.labelY - hub.y) * (edge.x2 - edge.x1)) / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1) > 1e-6;
+      if (!stepped) expect(clears(hub, FOCUS_HALF) && clears(other, NEIGHBOUR_HALF)).toBe(true);
     }
+  });
+
+  it("drops a label to its cardinality where the ring leaves no room for its verb", () => {
+    const roomy = layoutMap(star(2), "hub");                  // long spokes: the verb fits
+    expect(roomy.edges.every((e) => e.label === "full")).toBe(true);
+    // Seven is the tight count: the ring has not yet had to grow for its cards, so its spokes are shortest.
+    const crowded = layoutMap(star(7), "hub");
+    expect(crowded.edges.some((e) => e.label === "compact")).toBe(true);
+    const grown = layoutMap(star(14), "hub");                 // a ring grown for its cards has room again
+    expect(grown.edges.every((e) => e.label === "full")).toBe(true);
   });
 });

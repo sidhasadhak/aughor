@@ -335,7 +335,8 @@ function LinkLabel({ edge, types }: { edge: MapEdge; types: ReadonlyMap<string, 
                transform: "translate(-50%, -50%)", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
                padding: "1px 7px", borderRadius: "var(--r-chip)", background: "var(--bg-0)", color: "var(--t2)",
                border: `1px solid ${link.traversable ? "var(--b2)" : "var(--amb2)"}` }}>
-      <span>{verb}</span>
+      {/* On a short spoke the verb does not fit beside two cards; it stays on the label's title. */}
+      {edge.label === "full" && <span>{verb}</span>}
       <span aria-hidden="true" style={{ display: "inline-block", transform: `rotate(${degrees}deg)` }}>→</span>
       <span style={{ ...MONO, color: link.traversable ? "var(--t3)" : "var(--amb5)" }}>{link.cardinality}</span>
     </div>
