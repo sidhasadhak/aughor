@@ -1045,7 +1045,7 @@ def author_kinetic_action(
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields.get("kind"):
         raise HTTPException(status_code=400,
-                            detail="a kinetic action requires a 'kind' (annotate|side_effect|query)")
+                            detail="a declared action requires a 'kind' (annotate|side_effect|query)")
     # DS-13 — a declared component's credential is encrypted BEFORE it is validated and
     # persisted, and an unchanged (masked) one is carried forward from what is stored. The
     # override is a file: a plaintext key here would be a plaintext key in the repo.

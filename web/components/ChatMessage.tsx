@@ -3,6 +3,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { SqlResultTable } from "@/components/AugTable";
+import { objectLinkRender, useObjectColumnLinks, useObjectKeyColumns } from "@/components/objects/objectColumnLinks";
 import { ExportButton } from "@/components/ExportButton";
 import {
   Brief,
@@ -340,13 +341,17 @@ function FigureSkeleton() {
 }
 
 function ResultFigure({
-  turn, onShowSource, streaming = false,
+  turn, onShowSource, streaming = false, connectionId,
 }: {
   turn: ChatTurn;
   onShowSource?: (data: SourcePanelData) => void;
   streaming?: boolean;
+  /** ON-3 — the connection whose object catalog turns key columns into object links. */
+  connectionId?: string;
 }) {
   const { columns, rows, chartType } = turn;
+  // Before any early return: a hook cannot be skipped while the rows are still arriving.
+  const objectLinks = useObjectColumnLinks(columns, connectionId);
   if (!columns.length) return streaming ? <FigureSkeleton /> : null;
   // Columns usually land a beat before rows — never flash an empty, headers-only
   // table mid-stream; hold a shimmer until at least one row arrives. (A genuine
@@ -405,7 +410,7 @@ function ResultFigure({
 
   return (
     <BriefFigure caption={sourceTitle} source={source}>
-      <SqlResultTable columns={columns} rows={rows} maxHeight={320} />
+      <SqlResultTable columns={columns} rows={rows} maxHeight={320} columnOverrides={objectLinks} />
     </BriefFigure>
   );
 }
@@ -505,11 +510,14 @@ function SqlBlock({ sql }: { sql: string }) {
 // ── Source panel (Databricks-style: table + expandable SQL) — exported so ────
 // ChatPanel can render it as a top-level right-side drawer.             ────────
 export function SourcePanel({
-  columns, rows, sql, title, onClose,
+  columns, rows, sql, title, onClose, connectionId,
 }: {
   columns: string[]; rows: unknown[][]; sql: string | null; title: string; onClose: () => void;
+  /** ON-3 — a column that names an object links to its page, as in the answer's own table. */
+  connectionId?: string;
 }) {
   const [copied,   setCopied]   = useState(false);
+  const objectColumns = useObjectKeyColumns(connectionId);
   const openInQuery = useOpenInQuery();
 
   // Detect each date column's true grain once (from the full column), so weekly
@@ -583,11 +591,17 @@ export function SourcePanel({
           <tbody>
             {rows.map((row, ri) => (
               <tr key={ri} className="border-b border-zinc-700/20 last:border-0 hover:bg-white/[0.02]">
-                {columns.map((col, ci) => (
-                  <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
-                    {fmt(col, (row as unknown[])[ci], granByCol[ci])}
-                  </td>
-                ))}
+                {columns.map((col, ci) => {
+                  const value = (row as unknown[])[ci];
+                  const objectType = objectColumns.get(col.toLowerCase());
+                  return (
+                    <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
+                      {objectType && value != null && value !== ""
+                        ? objectLinkRender(objectType, { connectionId })(value)
+                        : fmt(col, value, granByCol[ci])}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
           </tbody>
@@ -740,7 +754,7 @@ export const TURN_RENDERERS: TurnRenderer[] = [
       return (
         <>
           {headline && <p className="aug-fs-sm text-zinc-300 leading-relaxed mb-2">{headline}</p>}
-          <ResultFigure turn={t} onShowSource={p.onShowSource} />
+          <ResultFigure turn={t} onShowSource={p.onShowSource} connectionId={p.connectionId} />
         </>
       );
     },
@@ -1086,7 +1100,7 @@ function NarrativeBrief({
         </p>
       )}
 
-      <ResultFigure turn={turn} onShowSource={onShowSource} streaming={streaming} />
+      <ResultFigure turn={turn} onShowSource={onShowSource} streaming={streaming} connectionId={connectionId} />
 
       {/* Explain the data — on-demand interpretation, so a direct lookup leads with
           the chart + numbers instead of unrequested narration. */}
