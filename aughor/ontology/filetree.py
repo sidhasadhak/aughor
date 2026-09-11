@@ -34,6 +34,20 @@ def export_root(conn: str, schema: str) -> Path:
 
 # ── export: ontology -> readable YAML tree ──────────────────────────────────
 
+#: The part of a backing a human edits — never its measured verdict.
+_BACKING_EDITABLE = ("kind", "table", "sql", "primary_key")
+
+
+def _editable_value(obj, field: str):
+    """The on-disk form of an editable field. ON-1's `backing` is a model, so it is written
+    as its editable spec (kind/table/sql/primary_key) and compared the same way on import —
+    an unedited file must round-trip as a no-op, and the measured verdict is not an edit."""
+    value = getattr(obj, field, None)
+    if field == "backing" and value is not None:
+        return {k: getattr(value, k) for k in _BACKING_EDITABLE}
+    return value
+
+
 def export_tree(root: Path, graph: OntologyGraph) -> list[str]:
     """Write the ontology to ``root`` as per-entity and per-metric YAML. Returns paths.
 
@@ -48,7 +62,7 @@ def export_tree(root: Path, graph: OntologyGraph) -> list[str]:
         doc = {
             "_kind": "entity",
             "id": e.id,
-            "editable": {f: getattr(e, f, None) for f in sorted(_EDITABLE["entity"])},
+            "editable": {f: _editable_value(e, f) for f in sorted(_EDITABLE["entity"])},
             "segments": {
                 sid: {"display_name": seg.display_name, "description": seg.description,
                       "filter_sql": seg.filter_sql, "is_default": seg.is_default,
@@ -131,7 +145,7 @@ def _entity_overrides(eid: str, doc: dict, base) -> list[OntologyOverride]:
     out: list[OntologyOverride] = []
     # entity scalar/list fields
     changed = {k: v for k, v in (doc.get("editable") or {}).items()
-               if k in _EDITABLE["entity"] and v != getattr(base, k, None)}
+               if k in _EDITABLE["entity"] and v != _editable_value(base, k)}
     if changed:
         out.append(OntologyOverride(target_kind="entity", target_id=eid, fields=changed))
 
