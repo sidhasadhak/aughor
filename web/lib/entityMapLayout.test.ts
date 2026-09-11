@@ -1,11 +1,11 @@
 /**
  * ON-3b — the entity-type map's layout. The map is a claim about distance: a card on ring N is N links from the
- * centre by the shortest route, a type beyond an unopened neighbour is not drawn, and no two cards on a ring
- * overlap however many neighbours the centre has.
+ * centre by the shortest route, a type beyond an unopened neighbour is not drawn, no two cards on a ring overlap
+ * however many neighbours the centre has, and a link's label sits where no card hides it.
  */
 import { describe, expect, it } from "vitest";
 
-import { CARD_ARC, hasHiddenNeighbours, layoutMap, visibleRings } from "@/lib/entityMapLayout";
+import { FOCUS_HALF, NEIGHBOUR_HALF, hasHiddenNeighbours, layoutMap, visibleRings } from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink } from "@/lib/objectTypes";
 
 const link = (from: string, to: string): TypeMapLink => ({
@@ -28,6 +28,12 @@ const typeMap = (...links: TypeMapLink[]): TypeMap => {
 // customer — order — order_item — product, and order_item — shipment
 const commerce = typeMap(link("customer", "order"), link("order", "order_item"), link("order_item", "product"),
   link("order_item", "shipment"));
+
+const star = (n: number) => typeMap(...Array.from({ length: n }, (_, i) => link("hub", `t${String(i).padStart(2, "0")}`)));
+
+/** Two boxes overlap unless they are a full width apart sideways or a full height apart upright. */
+const overlap = (a: { x: number; y: number }, b: { x: number; y: number }, half: { w: number; h: number }) =>
+  Math.abs(a.x - b.x) < 2 * half.w && Math.abs(a.y - b.y) < 2 * half.h;
 
 describe("visibleRings", () => {
   it("puts the focus at the centre and its neighbours on the first ring, and nothing further", () => {
@@ -56,29 +62,38 @@ describe("layoutMap", () => {
     expect(layout.edges.map((e) => e.link.relationship).sort()).toEqual(["a_b", "a_c", "b_c"]);
   });
 
-  it("centres the focus and keeps every ring's cards at least a card apart", () => {
-    const star = typeMap(...Array.from({ length: 12 }, (_, i) => link("hub", `t${String(i).padStart(2, "0")}`)));
-    const layout = layoutMap(star, "hub", new Set());
-    const hub = layout.nodes.find((n) => n.objectType === "hub")!;
+  it.each([2, 7, 12, 40])("centres the focus and never overlaps two of %i neighbour cards", (n) => {
+    const layout = layoutMap(star(n), "hub", new Set());
+    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
     expect([hub.x, hub.y]).toEqual([layout.width / 2, layout.height / 2]);
-    const ring = layout.nodes.filter((n) => n.ring === 1);
-    expect(ring).toHaveLength(12);
+    const ring = layout.nodes.filter((node) => node.ring === 1);
+    expect(ring).toHaveLength(n);
     for (let i = 0; i < ring.length; i += 1) {
-      for (let j = i + 1; j < ring.length; j += 1) {
-        const gap = Math.hypot(ring[i].x - ring[j].x, ring[i].y - ring[j].y);
-        expect(gap).toBeGreaterThanOrEqual((CARD_ARC * 0.9) - 1);   // a chord, a little shorter than its arc
-      }
+      expect(overlap(ring[i], hub, { w: (FOCUS_HALF.w + NEIGHBOUR_HALF.w) / 2, h: (FOCUS_HALF.h + NEIGHBOUR_HALF.h) / 2 }))
+        .toBe(false);
+      for (let j = i + 1; j < ring.length; j += 1) expect(overlap(ring[i], ring[j], NEIGHBOUR_HALF)).toBe(false);
     }
   });
 
   it("puts the second ring outside the first", () => {
     const layout = layoutMap(commerce, "order", new Set(["order_item"]));
     const distance = (t: string) => {
-      const n = layout.nodes.find((node) => node.objectType === t)!;
-      return Math.hypot(n.x - layout.width / 2, n.y - layout.height / 2);
+      const node = layout.nodes.find((n) => n.objectType === t)!;
+      return Math.hypot(node.x - layout.width / 2, node.y - layout.height / 2);
     };
-    expect(distance("product")).toBeGreaterThan(distance("order_item"));
-    expect(distance("shipment")).toBeGreaterThan(distance("customer"));
+    const inner = Math.max(distance("customer"), distance("order_item"));
+    expect(Math.min(distance("product"), distance("shipment"))).toBeGreaterThan(inner);
+  });
+
+  it("sets every label where neither card on its line hides it", () => {
+    const layout = layoutMap(star(7), "hub", new Set());
+    const hub = layout.nodes.find((n) => n.objectType === "hub")!;
+    for (const edge of layout.edges) {
+      const other = layout.nodes.find((n) => n.objectType === edge.link.to)!;
+      const label = { x: edge.labelX, y: edge.labelY };
+      expect(Math.abs(label.x - hub.x) >= FOCUS_HALF.w || Math.abs(label.y - hub.y) >= FOCUS_HALF.h).toBe(true);
+      expect(Math.abs(label.x - other.x) >= NEIGHBOUR_HALF.w || Math.abs(label.y - other.y) >= NEIGHBOUR_HALF.h).toBe(true);
+    }
   });
 
   it("says which cards still hide links", () => {

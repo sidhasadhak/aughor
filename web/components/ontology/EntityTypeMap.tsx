@@ -12,7 +12,7 @@
  * the binding, the links the compiler follows, the declared actions, the verified metrics. A link the compiler
  * refuses is drawn dashed and says why on hover.
  */
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
 import { Button } from "@/components/ui/button";
@@ -111,7 +111,7 @@ function TypeRail({ types, focus, query, onQuery, onPick }: {
     : types;
   return (
     <nav aria-label="Entity types"
-      style={{ width: 232, flexShrink: 0, borderRight: RULE, display: "flex", flexDirection: "column", minHeight: 0,
+      style={{ width: 212, flexShrink: 0, borderRight: RULE, display: "flex", flexDirection: "column", minHeight: 0,
                background: "var(--bg-0)" }}>
       <div style={{ padding: "10px 10px 6px" }}>
         <Input value={query} onChange={(e) => onQuery(e.target.value)} placeholder="Find an entity type"
@@ -155,13 +155,31 @@ function FocusCanvas({ map, focus, expanded, onFocus, onToggle }: {
   const types = useMemo(() => new Map(map.object_types.map((t) => [t.object_type, t])), [map]);
   const scroller = useRef<HTMLDivElement>(null);
 
-  // Bring the centre into view whenever the map re-centres or grows a ring.
-  useLayoutEffect(() => {
+  const centre = useCallback(() => {
     const el = scroller.current;
-    if (!el) return;
+    if (!el || el.clientWidth === 0) return;
     el.scrollLeft = Math.max(0, (layout.width - el.clientWidth) / 2);
     el.scrollTop = Math.max(0, (layout.height - el.clientHeight) / 2);
-  }, [focus, layout.width, layout.height]);
+  }, [layout.width, layout.height]);
+
+  // Bring the centre into view when the map re-centres or grows a ring…
+  useLayoutEffect(() => { centre(); }, [focus, centre]);
+  // …and when the pane itself gets its size: the layer can mount hidden (zero wide), and a centre computed then
+  // pushes the centred card off the left edge once it shows.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el || typeof ResizeObserver === "undefined") return;
+    let last = "";
+    const observer = new ResizeObserver(() => {
+      const size = `${el.clientWidth}x${el.clientHeight}`;
+      if (size !== last) {
+        last = size;
+        centre();
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [centre]);
 
   return (
     <div ref={scroller} data-testid="entity-map-canvas"
@@ -176,7 +194,6 @@ function FocusCanvas({ map, focus, expanded, onFocus, onToggle }: {
               strokeDasharray={edge.link.traversable ? undefined : "5 4"} opacity={0.7} />
           ))}
         </svg>
-        {layout.edges.map((edge) => <LinkLabel key={`label:${edge.link.relationship}`} edge={edge} types={types} />)}
         {layout.nodes.map((node) => {
           const type = types.get(node.objectType);
           if (!type) return null;
@@ -187,13 +204,14 @@ function FocusCanvas({ map, focus, expanded, onFocus, onToggle }: {
               canOpen={open || hasHiddenNeighbours(map, node.objectType, rings)} onFocus={onFocus} onToggle={onToggle} />
           );
         })}
+        {layout.edges.map((edge) => <LinkLabel key={`label:${edge.link.relationship}`} edge={edge} types={types} />)}
       </div>
     </div>
   );
 }
 
-/** A link's verb and measured cardinality at the middle of its line; the arrow points from → to, the direction
- *  both the verb and the cardinality read in. */
+/** A link's verb and measured cardinality where its line is clear of both cards; the arrow points from → to, the
+ *  direction both the verb and the cardinality read in. */
 function LinkLabel({ edge, types }: { edge: MapEdge; types: ReadonlyMap<string, TypeMapRow> }) {
   const { link } = edge;
   const from = types.get(link.from)?.display_name ?? link.from;
@@ -208,14 +226,13 @@ function LinkLabel({ edge, types }: { edge: MapEdge; types: ReadonlyMap<string, 
   ].filter(Boolean).join("\n");
   return (
     <div className="aug-fs-xs" title={title} data-testid="entity-map-link"
-      style={{ position: "absolute", left: (edge.x1 + edge.x2) / 2, top: (edge.y1 + edge.y2) / 2, zIndex: 1,
+      style={{ position: "absolute", left: edge.labelX, top: edge.labelY, zIndex: 3,
                transform: "translate(-50%, -50%)", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap",
                padding: "1px 7px", borderRadius: "var(--r-chip)", background: "var(--bg-0)", color: "var(--t2)",
                border: `1px solid ${link.traversable ? "var(--b2)" : "var(--amb2)"}` }}>
       <span>{verb}</span>
       <span aria-hidden="true" style={{ display: "inline-block", transform: `rotate(${degrees}deg)` }}>→</span>
-      <span style={{ ...MONO, color: "var(--t3)" }}>{link.cardinality}</span>
-      {!link.traversable && <span style={{ color: "var(--amb5)" }}>refused</span>}
+      <span style={{ ...MONO, color: link.traversable ? "var(--t3)" : "var(--amb5)" }}>{link.cardinality}</span>
     </div>
   );
 }
@@ -235,7 +252,7 @@ function FocusCard({ type, x, y }: { type: TypeMapRow; x: number; y: number }) {
   ];
   return (
     <div className="aug-panel" data-testid="entity-map-focus"
-      style={{ position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)", width: 268, zIndex: 2,
+      style={{ position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)", width: 236, zIndex: 2,
                padding: "12px 14px", borderColor: "var(--blue3)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{ color: "var(--blue3)", display: "inline-flex" }}><Icon name="node" size={16} /></span>
@@ -268,7 +285,7 @@ function NeighbourCard({ type, x, y, open, canOpen, onFocus, onToggle }: {
 }) {
   return (
     <div className="aug-panel" data-testid="entity-map-neighbour"
-      style={{ position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)", width: 196, zIndex: 2,
+      style={{ position: "absolute", left: x, top: y, transform: "translate(-50%, -50%)", width: 180, zIndex: 2,
                padding: "4px 6px 6px" }}>
       <Button variant="ghost" size="xs" className="w-full justify-start" onClick={() => onFocus(type.object_type)}
         title={`Centre the map on ${type.display_name}`}>

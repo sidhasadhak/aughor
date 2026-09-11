@@ -98,7 +98,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
-      style={{ width: 400, flexShrink: 0, borderLeft: RULE, display: "flex", flexDirection: "column", minHeight: 0,
+      style={{ width: 360, flexShrink: 0, borderLeft: RULE, display: "flex", flexDirection: "column", minHeight: 0,
                background: "var(--bg-0)" }}>
       <div style={{ flex: 1, overflowY: "auto" }}>{body}</div>
     </aside>
@@ -210,41 +210,53 @@ function DisplaySection({ detail, connectionId, schema, onChanged }: {
   );
 }
 
-function sourceText(source: PropertySource): string {
-  if (source.binding === "overlay") return `overlay · ${countNoun(source.edits ?? 0, "accepted edit")}`;
-  return source.table ? `${source.table}.${source.column ?? ""}` : `${source.binding}.${source.column ?? ""}`;
+/** Where a property is read from: `table.column` (the binding's full name on hover), or the overlay of edits. */
+function sourceText(source: PropertySource): { short: string; full: string } {
+  if (source.binding === "overlay") {
+    const text = `overlay · ${countNoun(source.edits ?? 0, "accepted edit")}`;
+    return { short: text, full: text };
+  }
+  const table = source.table ?? source.binding;
+  const bare = table.split(".").pop() ?? table;
+  return { short: `${bare}.${source.column ?? ""}`, full: `${table}.${source.column ?? ""}` };
 }
 
 function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
   const cell: React.CSSProperties = { padding: "4px 8px 4px 0", verticalAlign: "top" };
+  const clip: React.CSSProperties = { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" };
   return (
     <Section title="Properties"
       aside={`${formatCount(detail.counts.properties)}${detail.properties_truncated ? `, the first ${detail.properties.length} shown` : ""}`}>
-      <div style={{ overflowX: "auto" }}>
-        <table className="aug-fs-xs" style={{ width: "100%", borderCollapse: "collapse" }} data-testid="entity-properties">
-          <thead>
-            <tr style={{ color: "var(--t3)", textAlign: "left" }}>
-              <th style={{ ...cell, fontWeight: 500 }}>Property</th>
-              <th style={{ ...cell, fontWeight: 500 }}>Role</th>
-              <th style={{ ...cell, fontWeight: 500 }}>Type</th>
-              <th style={{ ...cell, fontWeight: 500 }}>Source</th>
-            </tr>
-          </thead>
-          <tbody>
-            {detail.properties.map((p) => (
-              <tr key={p.name} style={{ borderTop: RULE }} title={p.description || undefined}>
-                <td style={{ ...cell, ...MONO, color: "var(--t1)", whiteSpace: "nowrap" }}>
+      <table className="aug-fs-xs" style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}
+        data-testid="entity-properties">
+        <colgroup>
+          <col style={{ width: "36%" }} />
+          <col style={{ width: "24%" }} />
+          <col />
+        </colgroup>
+        <thead>
+          <tr style={{ color: "var(--t3)", textAlign: "left" }}>
+            <th style={{ ...cell, fontWeight: 500 }}>Property</th>
+            <th style={{ ...cell, fontWeight: 500 }}>Role</th>
+            <th style={{ ...cell, fontWeight: 500 }}>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {detail.properties.map((p) => {
+            const source = sourceText(p.source);
+            return (
+              <tr key={p.name} style={{ borderTop: RULE }}>
+                <td style={{ ...cell, ...MONO, ...clip, color: "var(--t1)" }} title={p.description || p.name}>
                   {p.is_key && <span style={{ color: "var(--t3)", marginRight: 3, display: "inline-flex" }}><Icon name="key" size={11} label="Key" /></span>}
                   {p.name}
                 </td>
-                <td style={{ ...cell, color: "var(--t2)" }}>{p.role || "—"}</td>
-                <td style={{ ...cell, ...MONO, color: "var(--t3)" }}>{p.data_type || "—"}</td>
-                <td style={{ ...cell, ...MONO, color: "var(--t2)", overflowWrap: "anywhere" }}>{sourceText(p.source)}</td>
+                <td style={{ ...cell, ...clip, color: "var(--t2)" }} title={p.data_type || undefined}>{p.role || "—"}</td>
+                <td style={{ ...cell, ...MONO, ...clip, color: "var(--t2)" }} title={source.full}>{source.short}</td>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            );
+          })}
+        </tbody>
+      </table>
     </Section>
   );
 }

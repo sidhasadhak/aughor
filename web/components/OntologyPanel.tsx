@@ -1271,7 +1271,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       )}
 
       {/* Org ⟷ Connection view toggle */}
-      <div className="flex items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
+      <div className="flex shrink-0 items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
         <button
           onClick={() => setOrgMode(true)}
           className={cn(
@@ -1290,11 +1290,12 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
 
       {/* ON-3b — the entity-type map, or the whole graph as the overview. */}
       {!orgMode && graph && (
-        <div className="flex items-center gap-1" role="group" aria-label="Ontology view">
+        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Ontology view">
           {(["map", "overview"] as const).map(v => (
             <Button key={v} variant={view === v ? "secondary" : "ghost"} size="xs" aria-pressed={view === v}
-              onClick={() => chooseView(v)} data-testid={`ontology-view-${v}`}>
-              {v === "map" ? "Entity map" : "Overview"}
+              onClick={() => chooseView(v)} data-testid={`ontology-view-${v}`}
+              title={v === "map" ? "One entity type at the centre, its links around it" : "Every entity type and link at once"}>
+              {v === "map" ? "Map" : "Overview"}
             </Button>
           ))}
         </div>
