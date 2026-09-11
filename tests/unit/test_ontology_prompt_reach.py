@@ -86,11 +86,17 @@ REACH_BASELINE: dict[str, set[str]] = {
     "kinetic_actions.*.params[].required": {'actions_declared'},
     "kinetic_actions.*.params[].default_value": {'actions_declared'},
     "kinetic_actions.*.submission_criteria[].expr": {'actions_declared'},
+    # ON-4 (2026-09-11): the proposer is told how to pass an object and what an accept will set.
+    "kinetic_actions.*.params[].kind": {'actions_declared'},
+    "kinetic_actions.*.params[].object_type": {'actions_declared'},
+    "kinetic_actions.*.edits[].object": {'actions_declared'},
+    "kinetic_actions.*.edits[].property": {'actions_declared'},
+    "kinetic_actions.*.edits[].value": {'actions_declared'},
 }
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 156   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design
+FIELDS_WALKED = 165   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design; +9 ON-4 (object params, the action's object type, declared edits)
 
 
 @pytest.fixture(scope="module")
