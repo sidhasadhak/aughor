@@ -20,7 +20,7 @@ const typeMap = (...links: TypeMapLink[]): TypeMap => {
     object_types: types.map((t) => ({
       object_type: t, id: t, display_name: t, role: "business_object", domain: "", key: `${t}_id`,
       key_verified: true, rows: 1, table: t, display_property: `${t}_id`, display_is_key: true, properties: 1,
-      bindings: 1, links: 0, traversable_links: 0, actions: 0, metrics: 0,
+      bindings: 1, proposed_bindings: 0, links: 0, traversable_links: 0, actions: 0, metrics: 0,
     })),
   };
 };

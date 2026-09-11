@@ -54,9 +54,10 @@ def test_a_type_states_its_key_its_rows_and_every_property_with_its_source(db, g
     (rows,) = _one(db, "SELECT COUNT(*) FROM customers")
     assert (customer["key"]["property"], customer["key"]["verified"], customer["key"]["rows"]) == ("customer_id", True, rows)
     table = graph.entities["Customer"].backing.table
-    [binding] = customer["bindings"]
-    assert (binding["kind"], binding["table"], binding["key"], binding["rows"], binding["supplies"]) == (
-        "table", table, "customer_id", rows, len(graph.entities["Customer"].properties))
+    [binding] = customer["bindings"]                                # no further binding: the backing is the one
+    assert (binding["primary"], binding["kind"], binding["reads"], binding["table"], binding["key"], binding["rows"],
+            binding["supplies"]) == (True, "static", "table", table, "customer_id", rows,
+                                     len(graph.entities["Customer"].properties))
     props = {p["name"]: p for p in customer["properties"]}
     assert set(props) == set(graph.entities["Customer"].properties)
     assert all(p["source"] == {"binding": binding["name"], "table": table, "column": name} for name, p in props.items())

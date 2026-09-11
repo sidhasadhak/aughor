@@ -239,6 +239,11 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
     lifecycles = apply_lifecycle_measurements(graph, db, frozenset(n.lower() for n in names) if names else None)
     backings = apply_backing_measurements(graph, db)
     measure_override_backings(connection_id, schema_name, db, report=backings)
+    # ON-1b — every binding a person set, counted against its objects; and the bindings the data proposes where
+    # another type's table carries a type's key (after the keys above: only a key measured unique is proposed for).
+    from aughor.ontology.bindings import BindingReport, measure_override_bindings, propose_bindings
+    bindings = BindingReport(proposals=propose_bindings(graph, db))
+    measure_override_bindings(connection_id, schema_name, db, graph, report=bindings)
     # ON-3b — whether each type's display property names its objects (the proposal here; a person's
     # declaration on its override binding).
     displays = apply_display_measurements(graph, db)
@@ -250,7 +255,7 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
             claims = apply_core_claims(graph, po, pack_id, db)
     _store.put(key, {"graph": graph.model_dump()})
     return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims,
-            "display_properties": displays}
+            "display_properties": displays, "bindings": bindings}
 
 
 def patch_action(
@@ -391,6 +396,10 @@ def get_or_build_ontology(
                     apply_lifecycle_measurements(graph, _vdb, bound_end_state_names(connection_id, graph.schema_name))
                     apply_backing_measurements(graph, _vdb)
                     measure_override_backings(connection_id, graph.schema_name, _vdb)
+                    # ON-1b — bindings counted, and proposed where another table carries a type's key.
+                    from aughor.ontology.bindings import measure_override_bindings, propose_bindings
+                    propose_bindings(graph, _vdb)
+                    measure_override_bindings(connection_id, graph.schema_name, _vdb, graph)
                     # ON-0a: the packs DEPLOYED on this connection are the core it extends —
                     # every claim in their maps is evaluated here, never rendered.
                     apply_bound_pack_claims(graph, connection_id, graph.schema_name, _vdb)

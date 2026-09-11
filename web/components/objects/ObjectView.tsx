@@ -204,11 +204,14 @@ function Section({ title, description, children }: {
   );
 }
 
-/** What the card reads from the backing, and what accepted actions set on top of it — never one count. */
+/** What the card reads from the backing, from further bindings, and what accepted actions set on top — never one count. */
 function propertiesSummary(page: ObjectPage): string {
   const set = page.properties.filter((p) => p.overlay).length;
-  const read = page.properties.length - set;
+  const bound = page.properties.filter((p) => p.binding);
+  const through = [...new Set(bound.map((p) => p.binding?.name ?? ""))];
+  const read = page.properties.length - set - bound.length;
   return `Read live through the ${page.type_name} backing — ${formatCount(read)} columns`
+    + (bound.length ? `, ${formatCount(bound.length)} through the ${through.length === 1 ? "binding" : "bindings"} ${through.join(", ")}` : "")
     + (set ? `, and ${formatCount(set)} set by accepted actions.` : ".");
 }
 
@@ -243,6 +246,12 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                 {p.overlay && (
                   <span className="aug-fs-xs" style={{ display: "block", color: "var(--t4)" }}>
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
+                  </span>
+                )}
+                {p.binding && (
+                  <span className="aug-fs-xs" style={{ ...MONO, display: "block", color: "var(--t4)" }}
+                    title={`Read through the ${p.binding.kind} binding ${p.binding.name}, on the ${page.type_name} key`}>
+                    {p.binding.source}.{p.binding.column}
                   </span>
                 )}
               </dd>

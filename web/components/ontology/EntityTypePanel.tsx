@@ -6,7 +6,8 @@
  * Everything here is `GET /object-types/{type}` — the dict the agent also reads through `describe_entity` — so a
  * person and an agent asking what a Shipment is read one answer: the key and whether the data proved it unique;
  * the property that names one object, with its measurement and the door to declare another; every property with
- * its SOURCE; the binding it is read from; its links, each followed by the compiler or refused with the reason;
+ * its SOURCE; the bindings it is read from — its backing, the further sources a person bound and the ones the data
+ * proposes (ON-1b); its links, each followed by the compiler or refused with the reason;
  * the declared actions that take it; its verified metrics; and a path finder that answers "how does this reach
  * that?" hop by hop. Nothing is inferred on the way to the screen — an unmeasured fact says so.
  */
@@ -20,12 +21,16 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { countNoun, formatCount } from "@/lib/format";
 import { declaredActionsHref } from "@/lib/objectLinks";
 import {
+  addBinding,
   declareDisplayProperty,
   getObjectType,
   getTypePaths,
   measureOntology,
+  removeBinding,
   type ObjectTypeDetail,
   type PropertySource,
+  type ProposedBinding,
+  type TypeBinding,
   type TypeLink,
   type TypeMapRow,
   type TypePath,
@@ -129,7 +134,7 @@ function TypeDetail({ detail, connectionId, schema, types, onFocus, onChanged }:
       <KeySection detail={detail} />
       <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       <PropertiesSection detail={detail} />
-      <BindingsSection detail={detail} />
+      <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       <LinksSection detail={detail} onFocus={onFocus} />
       <ActionsSection detail={detail} connectionId={connectionId} />
       <MetricsSection detail={detail} />
@@ -163,7 +168,8 @@ function DisplaySection({ detail, connectionId, schema, onChanged }: {
   const shown = detail.display_property;
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
-  const choices = detail.properties.filter((p) => p.source.binding !== "overlay"
+  // A display property is measured over the backing, so only a property the backing supplies can be declared.
+  const choices = detail.properties.filter((p) => p.source.binding !== "overlay" && !p.source.kind
     && (p.is_key || p.role === "dimension" || p.role === "text"));
   const act = async (write: () => Promise<void>) => {
     setBusy(true);
@@ -218,7 +224,11 @@ function sourceText(source: PropertySource): { short: string; full: string } {
   }
   const table = source.table ?? source.binding;
   const bare = table.split(".").pop() ?? table;
-  return { short: `${bare}.${source.column ?? ""}`, full: `${table}.${source.column ?? ""}` };
+  const column = source.column ?? "";
+  const how = source.kind
+    ? ` · the ${source.kind} binding ${source.binding}${source.read === false ? ", not read yet" : ""}`
+    : "";
+  return { short: `${bare}.${column}`, full: `${table}.${column}${how}` };
 }
 
 function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
@@ -261,22 +271,137 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
   );
 }
 
-function BindingsSection({ detail }: { detail: ObjectTypeDetail }) {
+/** A further binding's verdict: read by the compiler, or the reason it is not. The backing carries none. */
+function bindingVerdict(b: TypeBinding): [string, string] | null {
+  if (b.primary) return null;
+  if (b.usable) return ["aug-tag-green", "read"];
+  if (b.kind === "timeseries") return ["aug-tag-gray", "timeseries — not read yet"];
+  return b.verified === false ? ["aug-tag-red", "refuted"] : ["aug-tag-gray", "not yet measured"];
+}
+
+function BindingRow({ binding: b, first, busy, onRemove }: {
+  binding: TypeBinding;
+  first: boolean;
+  busy: boolean;
+  onRemove?: () => void;
+}) {
+  const verdict = bindingVerdict(b);
+  const term: React.CSSProperties = { color: "var(--t3)" };
+  const value: React.CSSProperties = { margin: 0, color: "var(--t1)" };
+  const skipped = Object.entries(b.skipped ?? {});
+  return (
+    <div style={{ padding: "8px 0", borderTop: first ? undefined : RULE }} data-testid="entity-binding">
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span className="aug-fs-sm" style={{ ...MONO, color: "var(--t1)" }}>{b.name}</span>
+        <span className="aug-tag aug-tag-gray">{b.primary ? "backing" : b.kind}</span>
+        {verdict && <span className={`aug-tag ${verdict[0]}`}>{verdict[1]}</span>}
+        {onRemove && (
+          <Button variant="minimal" size="xs" disabled={busy} onClick={onRemove} style={{ marginLeft: "auto" }}
+            title="Remove this binding — the properties it supplies stop resolving">
+            {busy ? "Removing…" : "Remove"}
+          </Button>
+        )}
+      </div>
+      <dl className="aug-fs-xs"
+        style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 12, rowGap: 3, margin: "6px 0 0" }}>
+        <dt style={term}>{b.reads === "table" ? "Table" : "Query"}</dt>
+        <dd style={{ ...value, ...MONO, overflowWrap: "anywhere" }}>{b.reads === "table" ? b.table : b.sql}</dd>
+        <dt style={term}>Key</dt>
+        <dd style={{ ...value, ...MONO }}>{b.primary ? b.key : `${b.key} → ${b.object_key}`}</dd>
+        {b.time_column && (
+          <>
+            <dt style={term}>Time</dt>
+            <dd style={{ ...value, ...MONO }}>{b.time_column}</dd>
+          </>
+        )}
+        <dt style={term}>Rows</dt>
+        <dd style={value}>{b.rows == null ? "not yet measured" : formatCount(b.rows)}</dd>
+        {!b.primary && b.covered != null && b.objects != null && (
+          <>
+            <dt style={term}>Covers</dt>
+            <dd style={value}>
+              {formatCount(b.covered)} of {formatCount(b.objects)} objects
+              {b.orphans ? ` · ${countNoun(b.orphans, "key")} reach no object` : ""}
+            </dd>
+          </>
+        )}
+        <dt style={term}>Supplies</dt>
+        <dd style={value}>{countNoun(b.supplies, "property", "properties")}</dd>
+      </dl>
+      {!b.primary && (b.why_not || b.note) && (
+        <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{b.why_not || b.note}</p>
+      )}
+      {skipped.length > 0 && (
+        <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>
+          Not supplied: {skipped.map(([column, why]) => `${column} (${why})`).join("; ")}
+        </p>
+      )}
+    </div>
+  );
+}
+
+function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding; busy: boolean; onBind: () => void }) {
+  return (
+    <div style={{ padding: "7px 0", borderTop: RULE }} data-testid="entity-binding-proposal">
+      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+        <span className="aug-fs-sm" style={{ ...MONO, color: "var(--t1)" }}>{p.table}</span>
+        <span className="aug-tag aug-tag-violet">proposed · {p.kind}</span>
+        <Button variant="outline" size="xs" disabled={busy} onClick={onBind} style={{ marginLeft: "auto" }}
+          title={`Bind ${p.table} on ${p.key} — its columns are checked and it is counted against the objects first`}>
+          {busy ? "Binding…" : "Bind"}
+        </Button>
+      </div>
+      <p className="aug-fs-xs" style={{ margin: "3px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>
+        <span style={MONO}>{p.key} → {p.object_key}</span> · {p.note}
+      </p>
+      <p className="aug-fs-xs" style={{ ...MONO, margin: "3px 0 0", color: "var(--t2)", overflowWrap: "anywhere" }}>
+        would supply {p.supplies.join(", ")}
+      </p>
+    </div>
+  );
+}
+
+function BindingsSection({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState("");
+  // An API older than ON-1b sends no proposals; the panel must not fall over while the two deploy apart.
+  const proposals = detail.proposed_bindings ?? [];
+  const act = async (name: string, write: () => Promise<void>) => {
+    setBusy(name);
+    setProblem("");
+    try {
+      await write();
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy("");
+    }
+  };
   return (
     <Section title="Bindings" aside="where its properties are read from">
-      {detail.bindings.map((b) => (
-        <dl key={b.name} className="aug-fs-xs"
-          style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 12, rowGap: 3, margin: 0 }}>
-          <dt style={{ color: "var(--t3)" }}>{b.kind === "table" ? "Table" : "Query"}</dt>
-          <dd style={{ ...MONO, margin: 0, color: "var(--t1)", overflowWrap: "anywhere" }}>{b.kind === "table" ? b.table : b.sql}</dd>
-          <dt style={{ color: "var(--t3)" }}>Key</dt>
-          <dd style={{ ...MONO, margin: 0, color: "var(--t1)" }}>{b.key}</dd>
-          <dt style={{ color: "var(--t3)" }}>Rows</dt>
-          <dd style={{ margin: 0, color: "var(--t1)" }}>{b.rows == null ? "not yet measured" : formatCount(b.rows)}</dd>
-          <dt style={{ color: "var(--t3)" }}>Supplies</dt>
-          <dd style={{ margin: 0, color: "var(--t1)" }}>{countNoun(b.supplies, "property", "properties")}</dd>
-        </dl>
+      {detail.bindings.map((b, i) => (
+        <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name}
+          onRemove={b.source === "human" ? () => act(b.name, () => removeBinding(connectionId, detail.id, b.name, schema)) : undefined} />
       ))}
+      {proposals.length > 0 && (
+        <div style={{ marginTop: 10 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            Proposed from the data — another table carries the {detail.key.property} key, one row per object. Nothing
+            reads a proposal until it is bound.
+          </div>
+          {proposals.map((p) => (
+            <ProposalRow key={p.name} proposal={p} busy={busy === p.name}
+              onBind={() => act(p.name, () => addBinding(connectionId, detail.id, p.name, p.spec, schema))} />
+          ))}
+        </div>
+      )}
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
   );
 }

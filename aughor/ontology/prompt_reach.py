@@ -46,6 +46,7 @@ from pydantic import BaseModel
 
 from aughor.ontology.models import (
     ActionParameter,
+    Binding,
     ComputedProperty,
     DefinitionSource,
     DisplayProperty,
@@ -118,6 +119,22 @@ def fixture_graph() -> OntologyGraph:
         # ON-3b — a declared, measured display property, populated so the walk reaches every one of its fields.
         display_property=DisplayProperty(name="order_value", source="human", rows=100, non_null=98, distinct=90,
                                          verified=True, note="98 of 100 objects carry a value, 90 distinct"),
+        # ON-1b — a further binding and a proposal, populated so the walk reaches every one of their fields.
+        bindings=[Binding(
+            name="payment_events", kind="timeseries", table="payment_events",
+            sql="SELECT order_id, method, paid_at FROM payment_events", key="order_id", time_column="paid_at",
+            properties={"payment_method": EntityProperty(
+                name="payment_method", display_name="Payment Method", data_type="VARCHAR",
+                semantic_type="dimension", description="How the order was paid")},
+            columns={"payment_method": "method"},
+            skipped={"status": "Order already has the property status"}, source="human",
+            rows=120, non_null=118, distinct=100, objects=100, covered=97, orphans=3, verified=True,
+            note="order_id: 118 keyed rows over 100 keys; covers 97 of 100 Order objects")],
+        proposed_bindings=[Binding(
+            name="shipments", table="shipments", key="order_id", source="proposed",
+            properties={"carrier": EntityProperty(name="carrier", data_type="VARCHAR", semantic_type="dimension")},
+            columns={"carrier": "carrier_name"}, rows=95, non_null=95, distinct=95, objects=100, covered=95, orphans=0, verified=True,
+            note="order_id: 95 distinct over 95 keyed rows; covers 95 of 100 Order objects")],
         created_at_col="created_at",
         default_filters=["exclude test orders"],
         exclude_when=["the order is a warranty replacement"],

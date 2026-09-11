@@ -7871,6 +7871,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/bindings/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Bind Ontology Entity
+         * @description Bind a further source to an object type (ON-1b): a table or keyed SELECT joined to the object on its key,
+         *     supplying properties its backing does not carry. The source is read for its columns first — its key, its time
+         *     column and every property it supplies must exist and be free on the type, or nothing is written (400) — then it is
+         *     counted against the objects: a static binding must hold one row per object, a timeseries binding must reach them.
+         *     Merged into the type's other human edits; the response carries the binding as the entity-type panel shows it.
+         *     No model call.
+         */
+        put: operations["bind_ontology_entity_ontology_entities__entity_id__bindings__name__put"];
+        post?: never;
+        /**
+         * Unbind Ontology Entity
+         * @description Remove one binding a person set (ON-1b). The type's other human edits stay; the properties that binding
+         *     supplied stop resolving on the next read. 404 when the type has no such binding.
+         */
+        delete: operations["unbind_ontology_entity_ontology_entities__entity_id__bindings__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/computed-properties/{prop_id}": {
         parameters: {
             query?: never;
@@ -13521,6 +13551,30 @@ export interface components {
             sql?: string | null;
             /** Table */
             table?: string | null;
+        };
+        /**
+         * _BindingSpec
+         * @description ON-1b — a further binding: a table or keyed SELECT joined to the object on its key.
+         */
+        _BindingSpec: {
+            /** Key */
+            key: string;
+            /**
+             * Kind
+             * @default static
+             * @enum {string}
+             */
+            kind: "static" | "timeseries";
+            /** Properties */
+            properties?: {
+                [key: string]: string;
+            } | null;
+            /** Sql */
+            sql?: string | null;
+            /** Table */
+            table?: string | null;
+            /** Time Column */
+            time_column?: string | null;
         };
         /** _BudgetUpdate */
         _BudgetUpdate: {
@@ -27741,6 +27795,80 @@ export interface operations {
                 "application/json": components["schemas"]["_EntityOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    bind_ontology_entity_ontology_entities__entity_id__bindings__name__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_BindingSpec"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    unbind_ontology_entity_ontology_entities__entity_id__bindings__name__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

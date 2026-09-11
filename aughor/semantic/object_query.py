@@ -25,6 +25,9 @@ applied BY CONSTRUCTION instead of checked afterwards:
   one matching linked row (EXISTS) — the set is filtered, never multiplied.
 * **N:N is refused both ways** — no join or pre-aggregation over it is safe.
 * **A ratio is a ratio of aggregates** (`divide_by`), never an average of row ratios.
+* **A property from a further binding (ON-1b) is read through a LEFT JOIN on the object's key** — and only when the
+  binding was measured one row per object; an unmeasured or refuted binding is refused, and a timeseries binding
+  waits for ON-5's latest-value and history semantics.
 
 Coverage-gated as v1 is: every name resolves against the served graph or the compiler REFUSES
 with the reason and the names that do exist. It never guesses, and a refusal is an answer —
@@ -41,8 +44,17 @@ from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
-from aughor.ontology.cardinality import quote_ident, quote_table
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph, OntologyMetric, OntologyRelationship
+from aughor.ontology.backing import object_from
+from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from aughor.ontology.cardinality import quote_ident
+from aughor.ontology.models import (
+    Binding,
+    EntityProperty,
+    OntologyEntity,
+    OntologyGraph,
+    OntologyMetric,
+    OntologyRelationship,
+)
 
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
@@ -139,13 +151,15 @@ class CompiledObjectQuery:
     measures: list[str] = field(default_factory=list)       # the output columns that aggregate
     #: ON-4 — every accepted edit an overlay property merged into this read, with its provenance.
     overlay: list[dict] = field(default_factory=list)
+    #: ON-1b — every further binding the query joined, with what it was measured to hold.
+    bindings: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"path": "compiled", "sql": self.sql, "dialect": self.dialect,
                 "object_type": self.object_type, "columns": list(self.columns),
                 "dimensions": list(self.dimensions), "measures": list(self.measures),
                 "plan": list(self.plan), "links": list(self.links), "caveats": list(self.caveats),
-                "overlay": list(self.overlay)}
+                "overlay": list(self.overlay), "bindings": list(self.bindings)}
 
 
 # ── links, read from where the query stands ─────────────────────────────────────────────
@@ -245,11 +259,17 @@ def _is_temporal(p: EntityProperty) -> bool:
 
 
 def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
+    """A property of the type by name: one its backing supplies, else one a further binding supplies (ON-1b)."""
     props = entity.properties or {}
     if name in props:
         return props[name]
     low = name.lower()
-    return next((p for k, p in props.items() if k.lower() == low), None)
+    found = next((p for k, p in props.items() if k.lower() == low), None)
+    for binding in entity.bindings or []:
+        if found is not None:
+            break
+        found = next((p for k, p in binding.properties.items() if k.lower() == low), None)
+    return found
 
 
 def _type_word(name: str) -> str:
@@ -386,13 +406,10 @@ def _qualify(fragment: str, alias: str, read: str, *, what: str, expression: boo
 
 
 def backing_from(entity: OntologyEntity, alias: str) -> str:
-    b = entity.backing
-    if b is not None and b.kind == "query" and b.sql:
-        return f"({b.sql.strip().rstrip(';')}) AS {alias}"
-    table = (b.table if b is not None else None) or (entity.source_tables[0] if entity.source_tables else "")
-    if not table:
+    source = object_from(entity, alias)
+    if not source:
         raise ObjectQueryRefused(f"object type {entity.id} has no backing to read from")
-    return f"{quote_table(table)} AS {alias}"
+    return source
 
 
 def _output_name(taken: list[str], *candidates: str) -> str:
@@ -458,6 +475,9 @@ class _Compiler:
         self.overlay_edits = list(overlay or [])
         self.overlay: list[dict] = []
         self._overlay_noted: set = set()
+        #: ON-1b — the further bindings joined, one row each, and the (type, binding) pairs already planned.
+        self.bindings: list[dict] = []
+        self._bindings_noted: set = set()
         self.q = query
         self.dialect = dialect
         self.fiscal = fiscal_start_month
@@ -483,7 +503,8 @@ class _Compiler:
         p = find_property(entity, name) or self.virtual_prop(entity, name)
         if p is not None:
             return p
-        names = sorted(entity.properties or {}) + sorted(overlay_properties(entity, self.overlay_edits))
+        bound = sorted(name for binding in entity.bindings or [] for name in binding.properties)
+        names = sorted(entity.properties or {}) + bound + sorted(overlay_properties(entity, self.overlay_edits))
         links = sorted(h.name for h in object_links(self.g, entity))
         raise ObjectQueryRefused(f"{entity.id} has no property '{name}' (in '{path}'){_did_you_mean(name, names + links)}",
                                  names + links)
@@ -500,8 +521,12 @@ class _Compiler:
                               description="an overlay property — set by accepted edits, merged at read time")
 
     def colref(self, scope: _Scope, alias: str, entity: OntologyEntity, p: EntityProperty) -> str:
-        """The SQL for a property of ``entity`` under ``alias``: its column or — for an overlay property —
-        the accepted values joined on the object's key. The source is read, never written."""
+        """The SQL for a property of ``entity`` under ``alias``: its column, a further binding's column joined on
+        the object's key (ON-1b), or — for an overlay property — the accepted values joined on the object's key.
+        The source is read, never written."""
+        binding = property_binding(entity, p.name)
+        if binding is not None:
+            return self.binding_column(scope, alias, entity, binding, p)
         edits = None if find_property(entity, p.name) is not None else (
             overlay_properties(entity, self.overlay_edits).get(p.name.lower()))
         if not edits:
@@ -525,6 +550,38 @@ class _Compiler:
             scope.join_alias[slot] = ov
             self.note_overlay(entity, p.name, edits)
         return f"CAST({ov}.v AS BOOLEAN)" if _is_bool(p) else f"{ov}.v"
+
+    def binding_column(self, scope: _Scope, alias: str, entity: OntologyEntity, binding: Binding,
+                       p: EntityProperty) -> str:
+        """ON-1b — a property a further binding supplies: the binding LEFT JOINed once per object alias on the
+        object's key. The join is taken only for a binding measured one row per object, so it can neither multiply
+        nor drop an object; any other binding is a refusal naming why."""
+        problem = binding_problem(entity, binding)
+        if problem:
+            raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which the compiler "
+                                     f"does not join: {problem}")
+        slot = ("binding", alias, binding.name)
+        joined = scope.join_alias.get(slot)
+        if joined is None:
+            b = entity.backing
+            key = (b.primary_key if b is not None else "") or entity.identity_key
+            joined = self._alias("b")
+            scope.joins.append(f"LEFT JOIN {binding_from(binding, joined)} "
+                               f"ON {alias}.{quote_ident(key)} = {joined}.{quote_ident(binding.key)}")
+            scope.join_alias[slot] = joined
+            self.note_binding(entity, binding, key)
+        return f"{joined}.{quote_ident(column_of(binding, p.name))}"
+
+    def note_binding(self, entity: OntologyEntity, binding: Binding, key: str) -> None:
+        if (entity.id, binding.name) in self._bindings_noted:
+            return
+        self._bindings_noted.add((entity.id, binding.name))
+        source = binding.table or "a keyed SELECT"
+        self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key} — one row per "
+                         f"{entity.id} by measurement ({binding.note}), so it cannot multiply {entity.id} rows")
+        self.bindings.append({"binding": binding.name, "object_type": entity.api_name, "kind": binding.kind,
+                              "source": source, "on": f"{key} = {binding.key}", "rows": binding.rows,
+                              "objects": binding.objects, "covered": binding.covered, "treatment": "joined"})
 
     def note_overlay(self, entity: OntologyEntity, name: str, edits: list) -> None:
         if (entity.id, name.lower()) in self._overlay_noted:
@@ -897,7 +954,8 @@ class _Compiler:
             sql += f" LIMIT {int(q.limit)}"
         return CompiledObjectQuery(sql=self.render(sql), dialect=self.dialect, object_type=anchor.api_name,
                                    columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
-                                   dimensions=dims, measures=measure_names, overlay=self.overlay)
+                                   dimensions=dims, measures=measure_names, overlay=self.overlay,
+                                   bindings=self.bindings)
 
     def render(self, sql: str) -> str:
         import sqlglot
@@ -946,6 +1004,15 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
         roles: dict[str, list[str]] = {}
         for name, p in (e.properties or {}).items():
             roles.setdefault(p.semantic_type or "other", []).append(name)
+        bindings = []
+        for binding in e.bindings or []:
+            problem = binding_problem(e, binding)
+            if not problem:          # a property the compiler would refuse is not a name it accepts
+                for name, p in binding.properties.items():
+                    roles.setdefault(p.semantic_type or "other", []).append(name)
+            bindings.append({"name": binding.name, "kind": binding.kind, "source": binding.table or "a keyed SELECT",
+                             "key": binding.key, "properties": sorted(binding.properties), "usable": not problem,
+                             **({"why_not": problem} if problem else {})})
         links = []
         for h in object_links(graph, e):
             problem = link_problem(h)
@@ -960,6 +1027,7 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
             "key_unique": b.verified if b is not None else None,
             "time": e.created_at_col or "",
             "properties": roles,
+            "bindings": bindings,
             "links": links,
             "segments": sorted(k for k, s in (e.segments or {}).items() if s.verified and (s.filter_sql or "").strip()),
             "metrics": sorted(mid for mid, m in graph.metrics.items() if m.verified and metric_on(m, e)),
@@ -983,6 +1051,9 @@ def render_object_catalog(catalog: dict, *, max_chars: int = 8000) -> str:
         unusable = [f"{link['name']} [{link['cardinality']}]" for link in t["links"] if not link["usable"]]
         if unusable:
             lines.append(f"  not traversable: {'; '.join(unusable)}")
+        unread = [f"{b['name']} ({b['kind']})" for b in t.get("bindings", []) if not b["usable"]]
+        if unread:
+            lines.append(f"  bindings not read: {'; '.join(unread)}")
         if t.get("segments"):
             lines.append(f"  segments: {', '.join(t['segments'])}")
         if t.get("metrics"):

@@ -15,7 +15,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from aughor.ontology.cardinality import quote_ident
+from aughor.ontology.cardinality import quote_ident, quote_table
 from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph
 
 logger = logging.getLogger(__name__)
@@ -144,3 +144,13 @@ def entity_from_clause(entity: OntologyEntity) -> str:
     if entity.backing is not None and entity.backing.from_clause():
         return entity.backing.from_clause()
     return entity.source_tables[0] if entity.source_tables else ""
+
+
+def object_from(entity: OntologyEntity, alias: str) -> str:
+    """The aliased FROM fragment an object type's rows are read through — its keyed SELECT as a subquery, else its
+    table — or "" when it has neither. One spelling for the compiler, the object pages and the binding probe."""
+    b = entity.backing
+    if b is not None and b.kind == "query" and b.sql:
+        return f"({b.sql.strip().rstrip(';')}) AS {alias}"
+    table = (b.table if b is not None else None) or (entity.source_tables[0] if entity.source_tables else "")
+    return f"{quote_table(table)} AS {alias}" if table else ""

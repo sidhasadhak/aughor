@@ -129,8 +129,18 @@ def describe_entity(connection_id: str, entity: str, *, schema_name: str = "",
             if not kept:
                 # Withheld, and said so — an agent told "not found" reports it confidently, and wrongly.
                 return {"available": False, "reason": "withheld by data governance", "notice": notice}
+            # ON-1b — a binding or a proposal read from a table this caller may not see is left out with its
+            # properties; the type itself stays, because its own table cleared.
+            tables = sorted({b.table for b in [*found.bindings, *found.proposed_bindings] if b.table})
+            withheld: set[str] = set()
+            if tables:
+                nodes = [{"kind": "table", "data": {"source_tables": [t]}} for t in tables]
+                cleared, bound_notice = _trim_nodes(nodes, connection_id, graph.schema_name or schema_name)
+                withheld = set(tables) - {n["data"]["source_tables"][0] for n in cleared}
+                if withheld:
+                    notice = " ".join(x for x in (notice, bound_notice) if x)
             from aughor.semantic.object_types import describe_object_type
-            body = describe_object_type(graph, found, overlay=_accepted_edits(connection_id))
+            body = describe_object_type(graph, found, overlay=_accepted_edits(connection_id), withheld=withheld)
             return {"available": True, "kind": "object_type", "summary": body.pop("summary"),
                     "object_type": body, "notice": notice}
 

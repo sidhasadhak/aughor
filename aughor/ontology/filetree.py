@@ -47,6 +47,9 @@ def _editable_value(obj, field: str):
         return {k: getattr(value, k) for k in _BACKING_EDITABLE}
     if field == "display_property" and value is not None:
         return value.name          # ON-3b: the property's NAME is the edit; its measurement is not
+    if field == "bindings":
+        from aughor.ontology.bindings import binding_spec
+        return {b.name: binding_spec(b) for b in value or []}   # ON-1b: each binding's spec is the edit; its count is not
     return value
 
 
