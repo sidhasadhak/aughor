@@ -140,3 +140,69 @@ def test_dataset_can_name_its_duckdb_file_and_bypass_the_registry(tmp_path):
     import pytest
     with pytest.raises(KeyError, match="deadbeef"):
         _open_dataset_db({"connection_id": "deadbeef", "schema": "lux"})
+
+
+# ── ON-2 · the objects arm (§6 item 15): a model fills the IR, the compiler writes the SQL ──
+
+def _samples_objects_fixture(tmp_path):
+    import json
+    from pathlib import Path
+
+    import duckdb
+
+    from aughor.db.connection import open_connection
+    from aughor.demo.setup import _seed_ecommerce
+    from aughor.ontology.models import OntologyGraph
+
+    path = tmp_path / "samples.duckdb"
+    con = duckdb.connect(str(path))
+    _seed_ecommerce(con)
+    con.close()
+    graph = OntologyGraph.model_validate(json.loads(
+        (Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json").read_text()))
+    return open_connection("duckdb", str(path), schema_name="ecommerce", connection_id="objects-arm-t"), graph
+
+
+def test_the_objects_arm_classes_each_fill_by_what_the_compiler_and_the_scorer_say(tmp_path):
+    from evals.ablation_eval import ObjectQueryFill, _FillFilter, _FillMeasure, objects_arm
+    db, graph = _samples_objects_fixture(tmp_path)
+    share = {"id": "s04", "reference_sql": "SELECT ROUND(100.0 * SUM(CASE WHEN status = 'cancelled' THEN 1 "
+                                           "ELSE 0 END) / COUNT(*), 2) FROM orders"}
+
+    def arm(fill):
+        return objects_arm("q", share, db, graph, "", "", fill=lambda *_a: fill)
+
+    right = ObjectQueryFill(object_type="order", measures=[_FillMeasure(
+        name="pct", where=[_FillFilter(path="status", value="cancelled")], divide_by_agg="count",
+        scale=100, decimals=2)])
+    assert arm(right)["class"] == "correct"
+    misspelt = right.model_copy(deep=True)
+    misspelt.measures[0].where[0].value = "canceled"
+    assert arm(misspelt)["class"] == "silent-wrong"                  # compiled, ran, wrong: dangerous
+    fanout = ObjectQueryFill(object_type="order_item", measures=[_FillMeasure(agg="sum", path="order.total_amount")])
+    refused = arm(fanout)
+    assert refused["class"] == "refused" and refused["refusal_kind"] == "law"
+    assert arm(ObjectQueryFill())["class"] == "declined"
+
+    def boom(*_a):
+        raise RuntimeError("provider down")
+    assert objects_arm("q", share, db, graph, "", "", fill=boom)["class"] == "error"
+    db.close()
+
+
+def test_the_objects_summary_reports_the_fallback_posture_and_what_it_gained_or_lost():
+    from evals.ablation_eval import _summarize
+    rows = [
+        {"id": "a", "trap": None, "raw": {"class": "correct"},
+         "objects": {"class": "refused", "refusal_kind": "graph", "refused": "no link"},
+         "objects_fallback": {"class": "correct", "via": "raw"}},
+        {"id": "b", "trap": None, "raw": {"class": "silent-wrong"}, "objects": {"class": "correct"},
+         "objects_fallback": {"class": "correct", "via": "objects"}},
+        {"id": "c", "trap": None, "raw": {"class": "correct"}, "objects": {"class": "silent-wrong"},
+         "objects_fallback": {"class": "silent-wrong", "via": "objects"}},
+    ]
+    s = _summarize(rows, ("raw", "objects"))
+    assert s["objects_compiled_share"] == round(2 / 3, 3) and s["objects_accuracy"] == round(1 / 3, 3)
+    assert s["objects_gains"] == ["b"] and s["objects_losses"] == ["c"]
+    assert s["objects_fallback_accuracy"] == round(2 / 3, 3) and s["objects_fallback_losses"] == ["c"]
+    assert [r["id"] for r in s["objects_refused"]] == ["a"]
