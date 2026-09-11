@@ -43,7 +43,7 @@ dependencies = [
     "apscheduler>=3.10.0",
     "pytz>=2024.1",
     "mcp>=1.28.0",
-    "ag-ui-protocol==0.1.19",
+    "ag-ui-protocol==0.1.22",
     # VA-10: OIDC bearer verification (security/oidc.py). Already in the tree as a
     # transitive dep — declared directly because we import it; [crypto] pins the
     # RS256/ES256 signature backend (cryptography, also already a direct dep).
