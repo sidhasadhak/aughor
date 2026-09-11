@@ -209,7 +209,7 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                          ...(isKey ? MONO : {}) }}>
                 {named ? (
                   <Link href={objectHref(named, String(p.value), scope.connectionId, scope.schemaName)}
-                    style={{ ...MONO, color: "var(--blue5)" }} title={`Open ${named} ${String(p.value)}`}>
+                    style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${named} ${String(p.value)}`}>
                     {String(p.value)}
                   </Link>
                 ) : cellText(p.value)}
@@ -258,7 +258,7 @@ function LinkRow({ link, scope, open, onToggle }: {
   } else if (link.kind === "to-one") {
     value = link.pk ? (
       <Link href={objectHref(link.to, link.pk, scope.connectionId, scope.schemaName)} className="aug-fs-sm"
-        style={{ ...MONO, color: "var(--blue5)" }} title={`Open ${link.to_type} ${link.pk}`}>
+        style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${link.to_type} ${link.pk}`}>
         {link.pk}
       </Link>
     ) : <span className="aug-fs-sm" style={{ color: "var(--t4)" }}>none</span>;

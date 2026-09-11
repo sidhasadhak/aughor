@@ -201,8 +201,8 @@ def link_problem(h: ObjectLink) -> str:
             return (f"link {h.describe()} was measured on tables, and {e.id} is read through a query "
                     "backing — its cardinality over that SELECT is unmeasured")
     if h.label == "N:N":
-        return (f"link {h.describe()} is N:N by measurement — neither {h.local_col} nor {h.remote_col} "
-                "is unique, so no join or pre-aggregation over it is safe")
+        return (f"link {h.describe()} is N:N by measurement — neither {h.source.id}.{h.local_col} nor "
+                f"{h.target.id}.{h.remote_col} is unique, so no join or pre-aggregation over it is safe")
     return ""
 
 

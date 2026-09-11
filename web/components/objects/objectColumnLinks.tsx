@@ -35,7 +35,7 @@ export function useObjectKeyColumns(connectionId?: string): Map<string, string> 
 
 const LINK_STYLE: React.CSSProperties = {
   display: "block", maxWidth: 320, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-  fontFamily: "var(--font-mono)", color: "var(--blue5)",
+  fontFamily: "var(--font-mono)", color: "var(--blue3)",
 };
 
 /** A table cell that opens the object its value names. An answer opens it in a new tab so the
