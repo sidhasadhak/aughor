@@ -552,6 +552,7 @@ def get_ontology_relationships(
 def measure_ontology(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    pack: Optional[str] = Query(default=None, description="A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless"),
 ):
     """Measure the cached ontology against the live data and save what it says — no model
     call, no rebuild (ON-0a).
@@ -571,7 +572,7 @@ def measure_ontology(
     effective = _resolve_schema(connection_id, schema_name)
     db = open_connection_for_with_schema(connection_id, effective)
     try:
-        reports = measure_latest(connection_id, effective, db)
+        reports = measure_latest(connection_id, effective, db, pack_id=pack)
     finally:
         db.close()
     if reports is None:
@@ -579,9 +580,11 @@ def measure_ontology(
             status_code=404,
             detail=f"No ontology built for schema '{effective}' on this connection — nothing to measure.")
     _invalidate_schema_cache(connection_id)
+    claims = reports.get("claims")
     out = {"connection_id": connection_id, "schema_name": effective,
            "relationships": reports["relationships"].summary(),
-           "lifecycles": reports["lifecycles"].summary()}
+           "lifecycles": reports["lifecycles"].summary(),
+           "claims": claims.summary() if claims is not None else None}
     try:
         from aughor.kernel.ledger import Ledger
         Ledger.default().emit("ontology.measure", {"ok": True, "schema": effective,

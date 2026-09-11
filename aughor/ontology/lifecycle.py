@@ -38,10 +38,9 @@ logger = logging.getLogger(__name__)
 
 _IDENT = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
-#: End-state NAMES the core e-commerce/operations map expects to be terminal. Reported as
-#: unconfirmed when observed and not in `terminal_states`; never a contradiction on their own.
-#: Deliberately excludes states a later transition commonly leaves (`captured` → refunded,
-#: `shipped` → delivered, `paid` → refunded).
+#: The SEED of the end-state names — the pack owns the list (`default_end_state_names`);
+#: this set is read only when no pack can be. Deliberately excludes states a later transition
+#: commonly leaves (`captured` → refunded, `shipped` → delivered, `paid` → refunded).
 CORE_END_STATE_NAMES = frozenset({
     "delivered", "completed", "complete", "closed", "cancelled", "canceled", "refunded",
     "returned", "rejected", "reject", "failed", "expired", "void", "voided", "fulfilled",
@@ -135,7 +134,22 @@ def _note(m: LifecycleMeasurement) -> str:
     return "; ".join(parts)
 
 
-def measure_entity(db: Any, entity: OntologyEntity) -> Optional[LifecycleMeasurement]:
+def default_end_state_names() -> frozenset[str]:
+    """The end-state names the core pack declares (`packs/core-ecommerce/ontology.yaml`),
+    resolved lazily; the in-code seed only when no pack can be read. The list lives in
+    the pack so a business can extend or replace it without touching code."""
+    try:
+        from aughor.packs.ontology_map import end_state_names_for_pack
+        names = end_state_names_for_pack("core-ecommerce")
+        if names:
+            return frozenset(n.lower() for n in names)
+    except Exception:  # noqa: BLE001 — a missing pack must never break a build
+        pass
+    return CORE_END_STATE_NAMES
+
+
+def measure_entity(db: Any, entity: OntologyEntity,
+                   end_state_names: Optional[frozenset[str]] = None) -> Optional[LifecycleMeasurement]:
     """None when the entity claims no lifecycle; otherwise a measurement (verdict None when
     the column could not be read)."""
     if not entity.lifecycle_column or not entity.source_tables:
@@ -154,8 +168,9 @@ def measure_entity(db: Any, entity: OntologyEntity) -> Optional[LifecycleMeasure
         left = rows_that_left(db, table, column, t)
         if left:
             m.refuted[t] = left
+    names = end_state_names if end_state_names is not None else default_end_state_names()
     m.unconfirmed = {s: n for s, n in obs.items()
-                     if s.lower() in CORE_END_STATE_NAMES and s not in entity.terminal_states}
+                     if s.lower() in names and s not in entity.terminal_states}
     m.verdict = not (m.unclassified or m.refuted)
     m.note = _note(m)
     return m
@@ -187,7 +202,8 @@ class LifecycleReport:
         }
 
 
-def apply_lifecycle_measurements(graph: OntologyGraph, db: Any) -> LifecycleReport:
+def apply_lifecycle_measurements(graph: OntologyGraph, db: Any,
+                                 end_state_names: Optional[frozenset[str]] = None) -> LifecycleReport:
     """Measure every entity that claims a lifecycle and stamp the verdict and its note.
 
     A contradicted lifecycle also downgrades the segment derived from it (the default
@@ -196,8 +212,9 @@ def apply_lifecycle_measurements(graph: OntologyGraph, db: Any) -> LifecycleRepo
     rendered beside the claim for a human to settle.
     """
     report = LifecycleReport()
+    names = end_state_names if end_state_names is not None else default_end_state_names()
     for entity in graph.entities.values():
-        m = measure_entity(db, entity)
+        m = measure_entity(db, entity, names)
         if m is None:
             continue
         entity.lifecycle_verified = m.verdict

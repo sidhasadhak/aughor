@@ -477,6 +477,21 @@ class KineticAction(BaseModel):
     origin: Literal["manual", "learned", "structural"] = "manual"
 
 
+class CoreClaim(BaseModel):
+    """One claim from an industry map (a pack's `ontology.yaml`), evaluated against THIS
+    graph and data (§3.15 ON-0a). Tiers: `expected` (declared, not yet measurable here),
+    `measured-true`, `measured-false` (the data contradicts the core — the data wins),
+    `human` (an override settled it). Never rendered into a prompt: what reaches the model
+    is the measured label on the relationship or entity itself."""
+    kind: Literal["object", "link", "lifecycle", "alias"]
+    subject: str
+    expected: str
+    measured: Optional[str] = None
+    tier: Literal["expected", "measured-true", "measured-false", "human"] = "expected"
+    provenance: str = ""                       # "pack:<id>"
+    note: str = ""
+
+
 class OntologyGraph(BaseModel):
     connection_id: str
     schema_name: str = ""          # DB schema this ontology covers (e.g. "analytics", "public")
@@ -491,6 +506,9 @@ class OntologyGraph(BaseModel):
 
     entities: dict[str, OntologyEntity] = Field(default_factory=dict)
     relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
+    #: ON-0a: the industry map's claims, evaluated here (see CoreClaim). Kept beside the
+    #: graph so a UI can show what the core expected and what the data said, per tier.
+    core_claims: list[CoreClaim] = Field(default_factory=list)
     metrics: dict[str, OntologyMetric] = Field(default_factory=dict)
     # Key frozen as `actions`: it is a persisted JSON key in data/ontology_cache.json and
     # the shape of GET /ontology/actions. The TYPE is a QueryTemplate (see above).

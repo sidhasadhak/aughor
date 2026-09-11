@@ -3894,6 +3894,359 @@
       "cardinality_note": "authored N:N, measured 1:1: luxexperience.return_logistics.return_id 50048 distinct over 50048 non-null rows (1); luxexperience.returns.return_id 50048 distinct over 50048 non-null rows (1)"
     }
   },
+  "core_claims": [
+    {
+      "kind": "object",
+      "subject": "Customer",
+      "expected": "present",
+      "measured": "Customer (luxexperience.customers)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Customer backed by luxexperience.customers"
+    },
+    {
+      "kind": "object",
+      "subject": "Order",
+      "expected": "present",
+      "measured": "Order (luxexperience.orders)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Order backed by luxexperience.orders"
+    },
+    {
+      "kind": "object",
+      "subject": "OrderItem",
+      "expected": "present",
+      "measured": "OrderItem (luxexperience.order_items)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched OrderItem backed by luxexperience.order_items"
+    },
+    {
+      "kind": "object",
+      "subject": "Product",
+      "expected": "present",
+      "measured": "Product (luxexperience.products)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Product backed by luxexperience.products"
+    },
+    {
+      "kind": "object",
+      "subject": "Payment",
+      "expected": "present",
+      "measured": "Payment (luxexperience.payments)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Payment backed by luxexperience.payments"
+    },
+    {
+      "kind": "object",
+      "subject": "Shipment",
+      "expected": "present",
+      "measured": "Shipment (luxexperience.shipments)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Shipment backed by luxexperience.shipments"
+    },
+    {
+      "kind": "object",
+      "subject": "Return",
+      "expected": "present",
+      "measured": "Return (luxexperience.returns)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Return backed by luxexperience.returns"
+    },
+    {
+      "kind": "object",
+      "subject": "Review",
+      "expected": "present",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no table matched \u2014 tried Review, reviews, review, order_reviews, ratings"
+    },
+    {
+      "kind": "object",
+      "subject": "Category",
+      "expected": "present",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no table matched \u2014 tried Category, categories, category, product_categories"
+    },
+    {
+      "kind": "object",
+      "subject": "Seller",
+      "expected": "present",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no table matched \u2014 tried Seller, sellers, seller, suppliers, supplier, vendors"
+    },
+    {
+      "kind": "object",
+      "subject": "Warehouse",
+      "expected": "present",
+      "measured": "Warehouse (luxexperience.warehouses)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Warehouse backed by luxexperience.warehouses"
+    },
+    {
+      "kind": "object",
+      "subject": "Brand",
+      "expected": "present",
+      "measured": "Brand (luxexperience.brands)",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "matched Brand backed by luxexperience.brands"
+    },
+    {
+      "kind": "object",
+      "subject": "Season",
+      "expected": "present",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no table matched \u2014 tried Season, seasons, season, collections_seasons"
+    },
+    {
+      "kind": "object",
+      "subject": "Collection",
+      "expected": "present",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no table matched \u2014 tried Collection, collections, collection, drops"
+    },
+    {
+      "kind": "object",
+      "subject": "Variant",
+      "expected": "present",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no table matched \u2014 tried Variant, variants, product_variants, sizes, skus_by_size"
+    },
+    {
+      "kind": "link",
+      "subject": "OrderItem \u2192 Order",
+      "expected": "N:1",
+      "measured": "N:1",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "OrderItem_RELATES_TO_Order: authored N:N, measured N:1: luxexperience.order_items.order_id 112439 distinct over 191093 non-null rows (N); luxexperience.orders.order_id 112439 distinct over 112439 non-null rows (1)"
+    },
+    {
+      "kind": "link",
+      "subject": "Order \u2192 Customer",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no join found between Order and Customer"
+    },
+    {
+      "kind": "link",
+      "subject": "OrderItem \u2192 Product",
+      "expected": "N:1",
+      "measured": "N:1",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "Product_RELATES_TO_OrderItem: measured 1:N: luxexperience.products.product_id 8600 distinct over 8600 non-null rows (1); luxexperience.order_items.product_id 8600 distinct over 191093 non-null rows (N)"
+    },
+    {
+      "kind": "link",
+      "subject": "Payment \u2192 Order",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no join found between Payment and Order"
+    },
+    {
+      "kind": "link",
+      "subject": "Shipment \u2192 Order",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no join found between Shipment and Order"
+    },
+    {
+      "kind": "link",
+      "subject": "Return \u2192 Order",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no join found between Return and Order"
+    },
+    {
+      "kind": "link",
+      "subject": "Return \u2192 OrderItem",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "the built graph joins Return \u2194 OrderItem on order_id; the core expects order_item_id"
+    },
+    {
+      "kind": "link",
+      "subject": "Review \u2192 Order",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "Product \u2192 Category",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "OrderItem \u2192 Seller",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "Product \u2192 Brand",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no join found between Product and Brand"
+    },
+    {
+      "kind": "link",
+      "subject": "Product \u2192 Season",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "OrderItem \u2192 Brand",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no join found between OrderItem and Brand"
+    },
+    {
+      "kind": "link",
+      "subject": "Variant \u2192 Product",
+      "expected": "N:1",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Order",
+      "expected": "delivered, cancelled, returned, refunded",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no lifecycle detected on Order (the core looks for `status`)"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Payment.status terminal 'refunded'",
+      "expected": "terminal",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "observed (42941 rows) and NOT in the built terminal set \u2014 unconfirmed"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Payment.status terminal 'failed'",
+      "expected": "terminal",
+      "measured": "terminal",
+      "tier": "measured-true",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "observed (4536 rows) and in the built terminal set"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Shipment",
+      "expected": "delivered, returned, lost",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no lifecycle detected on Shipment (the core looks for `status`)"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Return",
+      "expected": "refunded, rejected",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "no lifecycle detected on Return (the core looks for `status`)"
+    },
+    {
+      "kind": "alias",
+      "subject": "country",
+      "expected": "business-specific aliases",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "the core declares the field has aliases and none of their values"
+    },
+    {
+      "kind": "alias",
+      "subject": "currency",
+      "expected": "business-specific aliases",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "the core declares the field has aliases and none of their values"
+    },
+    {
+      "kind": "alias",
+      "subject": "status",
+      "expected": "business-specific aliases",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "the core declares the field has aliases and none of their values"
+    },
+    {
+      "kind": "alias",
+      "subject": "brand_tier",
+      "expected": "business-specific aliases",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "the core declares the field has aliases and none of their values"
+    },
+    {
+      "kind": "alias",
+      "subject": "size",
+      "expected": "business-specific aliases",
+      "measured": null,
+      "tier": "expected",
+      "provenance": "pack:fashion-ecommerce",
+      "note": "the core declares the field has aliases and none of their values"
+    }
+  ],
   "metrics": {
     "revenue": {
       "id": "revenue",

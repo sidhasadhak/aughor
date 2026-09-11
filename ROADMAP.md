@@ -84,8 +84,9 @@ evening on the one set that still exists (`samples/ecommerce`: 12/12 on every ar
 not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance; the hard
 set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/14, guards 100%
 safe, NO LIFT; the falsifier fires as written, but the block carried four wrong N:N labels —
-the user decides, §3.15). **ON-0a drafted the same night:** the core the business extends —
-an industry map as claims to measure, never facts to render (§3.15).
+the user decides, §3.15). **ON-0a built 2026-09-11 (three commits):** cardinality and lifecycle
+terminal states measured at build time, the map as claims — `packs/core-ecommerce` and
+`packs/fashion-ecommerce` — evaluated by tier; the re-run awaits the go (§3.15).
 
 ---
 
@@ -3676,10 +3677,39 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   MODEL (recorded). 🔑 The samples case this wave was drafted on is NOT a contradiction the
   data can prove — no order ever leaves `refunded`, but no column says so either. The
   honest verdict is "unconfirmed, 500 rows", and that is what the block now says.
-  **Open, this wave:** the pack section (parts 1–4 as expected claims; the end-state list
-  moves out of code); the ON-0 hard set re-run with `--graph-json
-  914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json` — the block
-  that says true things, 28 model calls, awaiting the go.
+  ✅ **Third commit, 2026-09-11 — the pack section: the map as claims, measured.**
+  `PackOntology` (`ontology.yaml`: objects with roles and aliases · links with the
+  cardinality the data must confirm and the key they are expected on · lifecycles with
+  terminal states and the END-STATE NAMES · aliases the core declares and leaves EMPTY)
+  loads beside metrics and playbooks; `packs/core-ecommerce` (11 objects, 10 links, 4
+  lifecycles, 3 empty alias fields) and `packs/fashion-ecommerce` (`extends:
+  [core-ecommerce]`; adds Brand, Season, Collection, Variant, 4 links, 2 alias fields)
+  ship as authored packs. `aughor/packs/ontology_map.py` resolves the `extends` chain
+  (parents first, a child replaces by name), matches objects to entities deterministically
+  (ids, display names, table stems, aliases — never a model call, never double-booked),
+  and evaluates every entry into a `CoreClaim` on the graph with a tier — `expected` ·
+  `measured-true` · `measured-false` · `human` — and its provenance (`pack:<id>`); a link
+  is compared on the expected KEY (a built join on another key is a different link) and
+  oriented before it is compared. The end-state names moved out of code:
+  `lifecycle.default_end_state_names()` reads the core pack; the in-code set is the seed
+  of last resort. Packs DEPLOYED on a connection apply at build time; the door takes
+  `pack=<id>` to evaluate one explicitly. Nothing from a claim reaches a prompt — the walk
+  grew 146 → 147 and `core_claims` reaches no block, by design. Ratcheted in
+  `tests/unit/test_pack_ontology_claims.py`. **Measured on the real files — the dated
+  count of claims by tier this wave asked for:** LuxExperience × fashion-ecommerce: 12
+  measured-true · 27 expected · 0 measured-false, 9 objects matched. samples ×
+  core-ecommerce: 10 measured-true · 21 expected · 0 measured-false, 5 matched. What the
+  expected tier says, honestly: on LuxExperience the builder never found `orders →
+  customers`, `payments → orders`, `shipments → orders` or `returns → orders` — it linked
+  everything through order_items — and never marked `orders.status` as a lifecycle though
+  the column is there (shipped / returned / cancelled); Product → Brand is a string, not
+  a key. The map's value on this instance is exactly that list: the joins and lifecycles a
+  rebuild should look for. The claims are recorded on both measured fixtures. Trimmed from
+  the draft: the harness `--builder` flag (two `--graph-json` inputs already are the two
+  arms) and the `human` tier, declared but not yet written (the overrides tree does not
+  say which claims it settled). **Open, this wave:** the ON-0 hard set re-run with
+  `--graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json`
+  — the block that says true things, 28 model calls, awaiting the go.
 - **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
   tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
@@ -4098,10 +4128,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         12/12 on every arm, a ceiling; missimi is GONE — the hard set re-authored on
         LuxExperience and RUN: raw 13/14 = ontology 13/14, NO LIFT; the falsifier fires
         as written, contested by four wrong N:N labels — the user decides) →
-        ON-0a the core the business extends (drafted 2026-09-10: an industry map as
-        claims to measure, never facts to render — cardinality and terminal states
-        measured, the map layered by pack `extends`, the hard set re-run on a block
-        that says true things) →
+        ON-0a the core the business extends (built 2026-09-11: cardinality and terminal
+        states measured at build time; the map as claims by tier — core-ecommerce ←
+        fashion-ecommerce ← the company; the hard-set re-run awaits the go) →
         ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with

@@ -27659,6 +27659,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless */
+                pack?: string | null;
             };
             header?: never;
             path?: never;
