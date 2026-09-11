@@ -12,8 +12,9 @@ pins that measurement so it moves only DELIBERATELY:
   broke, and an empty audit passes every baseline (the vocabulary ratchet's own lesson).
 
 Measured 2026-09-10 on the fixture graph: 59 of 142 fields reach at least one block;
-147 walked since ON-0a added `measured_cardinality`, `cardinality_note`, `core_claims` (unreached by
-design — claims are never rendered), `lifecycle_verified` (a gate) and `lifecycle_note` (reaches ENTITY MODEL).
+156 walked since ON-0a added `measured_cardinality`, `cardinality_note`, `core_claims` (unreached by
+design — claims are never rendered), `lifecycle_verified` (a gate), `lifecycle_note` (reaches ENTITY MODEL),
+and ON-1 added `api_name`, `backing.*` and the link names (unreached: the prompt still names tables).
 """
 from __future__ import annotations
 
@@ -89,7 +90,7 @@ REACH_BASELINE: dict[str, set[str]] = {
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 147   # 142 on 2026-09-10 morning; +2 relationship, +2 lifecycle, +1 graph (core_claims) fields (ON-0a) since
+FIELDS_WALKED = 156   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design
 
 
 @pytest.fixture(scope="module")

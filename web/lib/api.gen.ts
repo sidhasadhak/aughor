@@ -13182,6 +13182,24 @@ export interface components {
             /** Reconcile */
             reconcile?: boolean | null;
         };
+        /**
+         * _BackingSpec
+         * @description ON-1: what an object is read from — a keyed SELECT whose rows are its instances.
+         */
+        _BackingSpec: {
+            /**
+             * Kind
+             * @default query
+             * @enum {string}
+             */
+            kind: "table" | "query";
+            /** Primary Key */
+            primary_key: string;
+            /** Sql */
+            sql?: string | null;
+            /** Table */
+            table?: string | null;
+        };
         /** _BudgetUpdate */
         _BudgetUpdate: {
             /** Max Rows */
@@ -13331,6 +13349,7 @@ export interface components {
         _EntityOverride: {
             /** Active Filter */
             active_filter?: string | null;
+            backing?: components["schemas"]["_BackingSpec"] | null;
             /** Default Filters */
             default_filters?: string[] | null;
             /** Description */

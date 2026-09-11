@@ -3710,7 +3710,34 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   say which claims it settled). **Open, this wave:** the ON-0 hard set re-run with
   `--graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json`
   — the block that says true things, 28 model calls, awaiting the go.
-- **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable
+- ✅ **ON-1 · The noun decouples from the table — FIRST SLICE BUILT 2026-09-11.** What
+  shipped: every entity carries a stable `api_name` (`OrderItem` → `order_item`, never
+  the table's spelling; a set name is never overwritten) and a `backing` — its table by
+  default, filled from `source_tables[0]` + `identity_key` so every graph built before
+  today loads with every pre-existing field byte-identical and the ERD underneath
+  untouched — or a keyed SELECT a human sets through the overrides tree (`PUT
+  /ontology/entities/{id}` with `backing: {kind: query, sql, primary_key}`). Every link
+  has a name on each side (`order_item_to_order` / `order_to_order_item`). **The backing's
+  key is measured**, the way every claim is since ON-0a: `COUNT(DISTINCT key)` over the
+  backing's rows at build time and through the measure door (`backings` in its report);
+  a table backing that fails the check corrects the entity's `grain_verified` — the
+  builder's flag was a profile inference, and on `workspace/amazon` it read "verified"
+  over a `product_id` that repeats on 114 rows. A human backing binds by dry-running its
+  SELECT and earns `verified` only when a measure pass proves the key unique; the verdict
+  rides the override's binding, so the overlay carries it at read time without a database
+  in hand. The validator probes every computed property, metric and segment through the
+  backing (`_entity_table` → the SELECT as a subquery for a query-backed object; the table,
+  byte-identically, otherwise), which is what makes the receipt hold: a `Customer` backed
+  by `customers ⋈ customer_profiles` with `lifetime_value` verified against the join, the
+  ERD unchanged, `GET /ontology/entities` unchanged for every single-table type. Ratcheted
+  in `tests/unit/test_object_backing.py`; `aughor/ontology/backing.py` holds the
+  measurement and `entity_from_clause`, the seam ON-2's compiler reads. Prompt-reach walk
+  147 → 156; none of the nine new fields reach a block — the prompt still names tables,
+  which is ON-6's question, not this wave's. **Deferred from the draft, honestly:**
+  `dedup.merge_entities` is not yet rewritten as "two tables, one backing" (it still
+  concatenates `source_tables`); a query backing has no UI and no diff view; properties
+  are still copied ColumnProfiles, not typed properties mapped to expressions.
+  **The draft:** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
   tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
   expressions, and `LinkType` as a first-class record with an API name on EACH side and

@@ -233,15 +233,18 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
     names = set(bound_end_state_names(connection_id, schema_name) or ())
     if pack_id:
         names |= set(end_state_names_for_pack(pack_id))
+    from aughor.ontology.backing import apply_backing_measurements, measure_override_backings
     relationships = apply_cardinality_measurements(graph, db)
     lifecycles = apply_lifecycle_measurements(graph, db, frozenset(n.lower() for n in names) if names else None)
+    backings = apply_backing_measurements(graph, db)
+    measure_override_backings(connection_id, schema_name, db, report=backings)
     claims = apply_bound_pack_claims(graph, connection_id, schema_name, db)
     if pack_id:
         po = resolve_ontology(pack_id)
         if po is not None:
             claims = apply_core_claims(graph, po, pack_id, db)
     _store.put(key, {"graph": graph.model_dump()})
-    return {"relationships": relationships, "lifecycles": lifecycles, "claims": claims}
+    return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims}
 
 
 def patch_action(
@@ -377,8 +380,11 @@ def get_or_build_ontology(
                     from aughor.ontology.cardinality import apply_cardinality_measurements
                     from aughor.ontology.lifecycle import apply_lifecycle_measurements
                     from aughor.packs.ontology_map import apply_bound_pack_claims, bound_end_state_names
+                    from aughor.ontology.backing import apply_backing_measurements, measure_override_backings
                     apply_cardinality_measurements(graph, _vdb)
                     apply_lifecycle_measurements(graph, _vdb, bound_end_state_names(connection_id, graph.schema_name))
+                    apply_backing_measurements(graph, _vdb)
+                    measure_override_backings(connection_id, graph.schema_name, _vdb)
                     # ON-0a: the packs DEPLOYED on this connection are the core it extends —
                     # every claim in their maps is evaluated here, never rendered.
                     apply_bound_pack_claims(graph, connection_id, graph.schema_name, _vdb)

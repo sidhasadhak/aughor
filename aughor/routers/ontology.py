@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -29,8 +29,17 @@ class _UseInstead(BaseModel):
     reason: str = ""
 
 
+class _BackingSpec(BaseModel):
+    """ON-1: what an object is read from — a keyed SELECT whose rows are its instances."""
+    kind: Literal["table", "query"] = "query"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    primary_key: str
+
+
 class _EntityOverride(BaseModel):
     description: Optional[str] = None
+    backing: Optional[_BackingSpec] = None
     active_filter: Optional[str] = None
     default_filters: Optional[list[str]] = None
     exclude_when: Optional[list[str]] = None
@@ -584,6 +593,7 @@ def measure_ontology(
     out = {"connection_id": connection_id, "schema_name": effective,
            "relationships": reports["relationships"].summary(),
            "lifecycles": reports["lifecycles"].summary(),
+           "backings": reports["backings"].summary(),
            "claims": claims.summary() if claims is not None else None}
     try:
         from aughor.kernel.ledger import Ledger

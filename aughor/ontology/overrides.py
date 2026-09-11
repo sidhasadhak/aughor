@@ -82,6 +82,10 @@ _EDITABLE: dict[str, set[str]] = {
         # status check somebody has to remember. Accepting MOVES it across; that is
         # the only way a rule becomes live (C4: never auto-apply).
         "use_instead_proposed",
+        # ON-1: the backing a human sets — {"kind": "query", "sql": ..., "primary_key": ...}.
+        # Bound by dry-running the SELECT; VERIFIED only when a measure pass proves the key
+        # unique over its rows (`measure_override_backings`), recorded on the binding.
+        "backing",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -270,6 +274,18 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
     for field, value in ov.fields.items():
         if field not in _EDITABLE["entity"]:
             continue
+        if field == "backing":
+            from aughor.ontology.models import Backing
+            spec = dict(value) if isinstance(value, dict) else {}
+            b = ov.binding.get("backing") or {}
+            unique = b.get("unique")
+            spec["verified"] = (True if (b.get("bound") and unique is True)
+                                else (False if (b.get("bound") is False or unique is False) else None))
+            spec["verification_note"] = (b.get("note") or b.get("unique_note")
+                                         or ("bound; key uniqueness not yet measured" if spec["verified"] is None else ""))
+            ent.backing = Backing(**{k: v for k, v in spec.items() if k in Backing.model_fields})
+            touched.append(field)
+            continue
         setattr(ent, field, value)
         touched.append(field)
         # active_filter is the fast-path WHERE used directly by the investigation
@@ -436,6 +452,9 @@ def bind_overrides(
         if field in _EXISTENCE_FIELDS:
             _bind_existence(ov, field, value, explain)
             continue
+        if field == "backing":
+            _bind_backing(ov, value, explain)
+            continue
         if field not in _SQL_FIELDS or not str(value or "").strip():
             continue
         probe = _probe_sql(field, str(value), table)
@@ -446,6 +465,35 @@ def bind_overrides(
             err = f"{type(exc).__name__}: {exc}"
         ov.binding[field] = {"bound": err is None, "note": "" if err is None else err}
     return ov
+
+
+def _bind_backing(ov: OntologyOverride, value: Any, explain: Callable[[str], Optional[str]]) -> None:
+    """Bind a query backing by dry-running its SELECT (a table backing binds trivially).
+    ALWAYS writes a binding entry, like an existence field: a backing nobody validated
+    must not read as verified. Uniqueness of the key is a measurement, not a bind —
+    `measure_override_backings` adds `unique` to this entry later."""
+    prev = ov.binding.get("backing") or {}
+    spec = value if isinstance(value, dict) else {}
+    kind = spec.get("kind") or "table"
+    sql, pk = str(spec.get("sql") or "").strip(), str(spec.get("primary_key") or "").strip()
+    if kind == "query":
+        if not sql or not pk:
+            ov.binding["backing"] = {"bound": False, "note": "a query backing needs `sql` and `primary_key`"}
+            return
+        err = None
+        try:
+            err = explain(f"SELECT 1 FROM ({sql.rstrip(';')}) AS b LIMIT 0")
+        except Exception as exc:
+            err = f"{type(exc).__name__}: {exc}"
+        entry = {"bound": err is None, "note": "" if err is None else err}
+    else:
+        entry = {"bound": True, "note": ""}
+    # a measurement taken for the SAME backing survives a re-bind
+    if prev.get("unique") is not None and prev.get("sql") == sql and prev.get("primary_key") == pk:
+        entry["unique"] = prev["unique"]
+        entry["unique_note"] = prev.get("unique_note", "")
+    entry["sql"], entry["primary_key"] = sql, pk
+    ov.binding["backing"] = entry
 
 
 def _bind_existence(ov: OntologyOverride, field: str, value: Any,

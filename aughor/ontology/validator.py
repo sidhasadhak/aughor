@@ -110,7 +110,7 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
 
     # ── Computed properties (per entity) ──────────────────────────────────────
     for entity in graph.entities.values():
-        table = entity.source_tables[0] if entity.source_tables else ""
+        table = _entity_table(graph, entity.id) if entity.source_tables else ""
         for cp in entity.computed_properties:
             try:
                 if not table:
@@ -145,5 +145,11 @@ def validate_semantics(graph: OntologyGraph, db: Any) -> OntologyGraph:
 
 
 def _entity_table(graph: OntologyGraph, entity_id: str) -> str:
+    """The FROM fragment the entity's SQL is probed against: its table (byte-identical to
+    before ON-1) or, for a query-backed object, the keyed SELECT as a subquery."""
     ent = graph.entities.get(entity_id)
-    return ent.source_tables[0] if ent and ent.source_tables else ""
+    if ent is None:
+        return ""
+    if ent.backing is not None and ent.backing.kind == "query" and ent.backing.sql:
+        return ent.backing.from_clause()
+    return ent.source_tables[0] if ent.source_tables else ""

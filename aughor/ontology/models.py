@@ -14,10 +14,12 @@ via model_dump() and deserialises via model_validate().
 """
 from __future__ import annotations
 
+import re
+
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, Field, computed_field
+from pydantic import AliasChoices, BaseModel, Field, computed_field, model_validator
 
 
 class ComputedProperty(BaseModel):
@@ -83,6 +85,36 @@ class EntityProperty(BaseModel):
     p75: Optional[float] = None       # 75th percentile
 
 
+def snake_name(name: str) -> str:
+    """`OrderItem` → `order_item`: the stable spelling an api_name defaults to."""
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name or "")
+    s = re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_").lower()
+    return s or "object"
+
+
+class Backing(BaseModel):
+    """What an object type is read FROM (ON-1: the noun decouples from the table).
+
+    `table` today — the default every existing consumer reads, byte-identically — or a
+    keyed SELECT (`kind="query"`) a human sets through the overrides tree, whose rows are
+    the object's instances. `primary_key` is the column unique per instance; `verified`
+    says the data agreed (COUNT(DISTINCT key) == COUNT(key) over the backing's rows) —
+    measured, never assumed, like every other claim since ON-0a.
+    """
+    kind: Literal["table", "query"] = "table"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    primary_key: str = ""
+    verified: Optional[bool] = None
+    verification_note: str = ""
+
+    def from_clause(self, alias: str = "b") -> str:
+        """The FROM fragment a consumer queries this object through."""
+        if self.kind == "query" and self.sql:
+            return f"({self.sql.strip().rstrip(';')}) AS {alias}"
+        return self.table or ""
+
+
 class OntologyEntity(BaseModel):
     id: str                                    # PascalCase: "Order", "Customer"
     display_name: str                          # human-readable business name, set/corrected by enricher
@@ -90,6 +122,13 @@ class OntologyEntity(BaseModel):
     source_tables: list[str]                  # tables that materialise this entity
     identity_key: str                          # canonical PK column, e.g. "order_id"
     grain_verified: bool                       # COUNT(*) == COUNT(DISTINCT identity_key)
+    #: ON-1: the stable name the API, packs and playbooks bind to — never the table's name.
+    #: Filled from the id (`OrderItem` → `order_item`) when the builder leaves it empty.
+    api_name: str = ""
+    #: ON-1: what this object is read FROM — one table by default (`source_tables[0]` +
+    #: `identity_key`), a keyed SELECT when a human sets one. Consumers that read the
+    #: table directly are unchanged; the validator and ON-2's compiler read the backing.
+    backing: Optional[Backing] = None
 
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
@@ -175,6 +214,15 @@ class OntologyEntity(BaseModel):
     exploration_insights: list[str] = Field(default_factory=list)
 
 
+    @model_validator(mode="after")
+    def _fill_object_defaults(self) -> "OntologyEntity":
+        if not self.api_name:
+            self.api_name = snake_name(self.id)
+        if self.backing is None:
+            self.backing = Backing(kind="table", table=self.source_tables[0] if self.source_tables else None,
+                                   primary_key=self.identity_key)
+        return self
+
 class OntologyInterface(BaseModel):
     """A shared structural shape implemented by multiple entity types.
 
@@ -216,6 +264,18 @@ class OntologyRelationship(BaseModel):
     #: the block renders what the data says, never a verified-looking guess.
     measured_cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
     cardinality_note: str = ""
+    #: ON-1: a link has a stable name on EACH side (`order_item_to_order` / `order_to_order_item`),
+    #: filled from the entity ids when the builder leaves them empty.
+    api_name: str = ""
+    reverse_api_name: str = ""
+
+    @model_validator(mode="after")
+    def _fill_link_names(self) -> "OntologyRelationship":
+        if not self.api_name:
+            self.api_name = f"{snake_name(self.from_entity)}_to_{snake_name(self.to_entity)}"
+        if not self.reverse_api_name:
+            self.reverse_api_name = f"{snake_name(self.to_entity)}_to_{snake_name(self.from_entity)}"
+        return self
 
 
 class DefinitionSource(BaseModel):
