@@ -95,7 +95,9 @@ person writes the object query, `POST /objects/query` answered "revenue per segm
 live equal to the reference with no model call, and `run_sql`'s fan-out detector turned out never to
 have run on the conversation's door (found, flagged). A MODEL filling the same queries regressed
 (1/14 and 3/12 against raw 14/14 and 12/12), so the conversation's door is PARKED behind its flag
-and ON-6 is RETIRED (§6 item 15, decided 2026-09-11); ON-3, the object pages, started.
+and ON-6 is RETIRED (§6 item 15, decided 2026-09-11). ON-3's first slice shipped the same day: one
+object opened live by type and key, its links followed in place, the metrics, findings, notes and
+declared actions around it measured rather than inferred, and a key in an answer's table opens it.
 
 ---
 
@@ -3936,6 +3938,27 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   the agent roster and the MCP roster (SP-5's parity ratchet holds the diff empty).
   **Receipt:** a customer id in an answer is a link → its object page → "Orders" →
   `flag_order_for_review` offered with the id filled.
+  **Receipts — first slice, 2026-09-11 (unpushed, on `claude/on-2-object-query`).** `GET
+  /objects/{type}/{pk}` reads ONE row through the backing and resolves each link to a key (to-one)
+  or a count (to-many), listed a page at a time by `/links/{link}`; a refused link says why and is
+  never followed. `related` carries four panels, each measured (`aughor/semantic/object_context.py`):
+  verified metrics compiled by ON-2 with this object as the filter (a customer's revenue across its
+  orders equals the hand-written SUM in the test); findings and answer receipts cited ONLY when their
+  WHERE filters the key, or a column a link from the key joins to, by this exact value (a finding about
+  orders in aggregate is not listed); the overlay's notes on the row; and declared actions owned by the
+  type or taking a key-named parameter, pre-filled, offered and never run. `get_object` rides converse,
+  spotlight and MCP. The page is `/objects/<type>/<key>`. A column names an object only when the
+  catalog says its name is a type's key, or the column a usable link from that key joins to, and
+  exactly one type claims it; the answer table, the Source data drawer and the page's own lists share
+  that rule. **Live, no model call on the path:** LuxExperience customer MYT-C0001364 → its 73
+  CustomerService tickets → ticket CS0000653 (to-one Customer, 4 OrderItems, the N:N link to Order
+  refused by measurement) → order MYT-O00003141, whose customer_id links back; a restored Superstore
+  answer's Source data links each `manager` to its Regional Manager page. Suite 9659 passed.
+  **Not yet met:** the receipt's last step. No live connection declares an action (the declared-
+  actions read is empty on all six), so `flag_order_for_review` is offered pre-filled only in the unit
+  test until a human declares it; Lux measures no Customer→Order link (the pack's expected edge), so
+  a customer reaches its orders through a ticket; and the metrics and findings panels are empty live —
+  Lux has no verified metric, and no stored finding filters these keys.
 - **ON-4 · The kinetic plane closes the loop on objects.** `KineticAction` gains an
   `object_type` and an `object` parameter kind typed to ON-1's types; submission
   criteria may reference object properties (`object.status != 'refunded'`), evaluated
@@ -4332,7 +4355,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         fills the query; POST /objects/query driven live; run_sql's silent fan-out found and
         flagged; a MODEL filling it regressed, 1/14 and 3/12 against raw at ceiling, so
         query_objects PARKED behind its flag — §6 item 15)
-        → ON-3 instances + the standard object view (STARTED 2026-09-11) → ON-4 actions on
+        → ON-3 instances + the standard object view (FIRST SLICE 2026-09-11: object pages live and
+        key links in answers; its receipt's action step waits on a declared action) → ON-4 actions on
         objects with the overlay merged into the next answer → ON-5 functions and model
         bindings. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
