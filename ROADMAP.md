@@ -3954,11 +3954,18 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   CustomerService tickets → ticket CS0000653 (to-one Customer, 4 OrderItems, the N:N link to Order
   refused by measurement) → order MYT-O00003141, whose customer_id links back; a restored Superstore
   answer's Source data links each `manager` to its Regional Manager page. Suite 9659 passed.
-  **Not yet met:** the receipt's last step. No live connection declares an action (the declared-
-  actions read is empty on all six), so `flag_order_for_review` is offered pre-filled only in the unit
-  test until a human declares it; Lux measures no Customer→Order link (the pack's expected edge), so
-  a customer reaches its orders through a ticket; and the metrics and findings panels are empty live —
-  Lux has no verified metric, and no stored finding filters these keys.
+  **The receipt's last step, met the same day:** the user declared `flag_order_for_review` on
+  LuxExperience (*"yes, declare flag_order_for_review on LuxExperience"*) through the authoring route
+  (`PUT /ontology/kinetic-actions/{id}`, verified, no warnings): kind annotate, risk low, `order_id` and
+  `body` with `table`/`key_column`/`column` defaults. Order MYT-O00003141's page offers it with
+  `order_id` filled, and "Open in Actions" lands on Intelligence's Actions layer for that connection.
+  Driving it found two defects, both fixed: the annotate dispatcher read the row only from a parameter
+  named `row_key`, so accepting the offer would have annotated the whole `status` column (it now falls
+  back to the parameter its `key_column` names); and the workbench erased a `?conn=` deep link before
+  the connection list read it, so a shared link opened on the reader's last connection. **Still
+  open:** Lux measures no Customer→Order link (the pack's expected edge), so a customer reaches its
+  orders through a ticket; the metrics and findings panels are empty live (no verified metric on Lux,
+  no stored finding filters these keys); and acting on the offer is ON-4's.
 - **ON-4 · The kinetic plane closes the loop on objects.** `KineticAction` gains an
   `object_type` and an `object` parameter kind typed to ON-1's types; submission
   criteria may reference object properties (`object.status != 'refunded'`), evaluated
@@ -4355,8 +4362,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         fills the query; POST /objects/query driven live; run_sql's silent fan-out found and
         flagged; a MODEL filling it regressed, 1/14 and 3/12 against raw at ceiling, so
         query_objects PARKED behind its flag — §6 item 15)
-        → ON-3 instances + the standard object view (FIRST SLICE 2026-09-11: object pages live and
-        key links in answers; its receipt's action step waits on a declared action) → ON-4 actions on
+        → ON-3 instances + the standard object view (FIRST SLICE 2026-09-11: object pages live, key
+        links in answers, the receipt met end to end on a declared action) → ON-4 actions on
         objects with the overlay merged into the next answer → ON-5 functions and model
         bindings. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
