@@ -550,7 +550,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
                              message="declared action no longer exists"), ""
 
     result = execute_kinetic_action(action, p.params, actor=actor, scope=p.connection_id,
-                                    approved=True)
+                                    approved=True, schema_name=p.schema_name)
     _record_outcome(proposal_id, result.status if result.ok else result.status,
                     result.message, result.outcome)
 

@@ -50,6 +50,7 @@ from aughor.ontology.models import (
     DefinitionSource,
     EntityProperty,
     KineticAction,
+    ObjectEdit,
     OntologyEntity,
     OntologyGraph,
     OntologyInterface,
@@ -173,15 +174,22 @@ def fixture_graph() -> OntologyGraph:
     )
     action = KineticAction(
         id="flag_order_for_review", display_name="Flag order for review",
-        description="Mark an order for a human look", entity="Order", kind="side_effect",
+        description="Mark an order for a human look", entity="Order", kind="annotate",
         params=[ActionParameter(name="order_id", display_name="Order", data_type="INTEGER",
                                 required=True, description="The order to flag",
-                                default_value=None)],
+                                default_value=None),
+                # ON-4 — an object parameter, so `kind` and `object_type` are walked populated.
+                ActionParameter(name="order", display_name="Order object", kind="object", object_type="Order",
+                                required=False, description="The order itself", default_value=None)],
         rule="",
         submission_criteria=[SubmissionCriterion(expr="order_id > 0",
                                                  message="An order id is positive.")],
         side_effects=[SideEffect(kind="notify", config={"channel": "ops"})],
         risk="high", parallel_safe=False, origin="manual",
+        # ON-4 — a declared edit, populated so the walk reaches its fields instead of appending a probe
+        # string to an empty list of edits (which no renderer could read).
+        object_type="Order",
+        edits=[ObjectEdit(object="order", property="review_flag", value="true", note="{order_id}")],
     )
     iface = OntologyInterface(
         id="HasLifecycle", display_name="Has Lifecycle",

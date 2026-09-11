@@ -25,10 +25,12 @@ from aughor.agent.tool_loop import ToolSpec
 
 def spotlight_roster(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
     """Know + Act + Guide — the whole operator roster, in declaration order."""
+    from aughor.agent.object_tools import object_tools
     from aughor.agent.spotlight_act import spotlight_act_tools
     from aughor.agent.spotlight_guide import spotlight_guide_tools
     from aughor.agent.spotlight_tools import spotlight_tools
 
     return (spotlight_tools(connection_id, session_id=session_id)
+            + object_tools(connection_id, session_id=session_id)       # ON-3: one object, by type and key
             + spotlight_act_tools(connection_id, session_id=session_id)
             + spotlight_guide_tools(connection_id, session_id=session_id))

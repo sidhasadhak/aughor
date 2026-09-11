@@ -23,7 +23,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
-from aughor.db.migrations import run_migrations
+from aughor.db.migrations import Migration, add_column_if_missing, run_migrations
 from aughor.db.sqlite_util import resolve_db_path
 from aughor.db.backend import connect_store
 from aughor.db.store_pool import ensure_once
@@ -39,7 +39,16 @@ _DB_PATH = resolve_db_path(
 # target only lands when it arrives with >= authority, so machinery never clobbers a human edit.
 _SOURCE_RANK = {"machine": 1, "user": 2, "verified": 3}
 
-_MIGRATIONS: list = []  # forward-only; append Migration(2, ...) when the schema evolves
+
+def _object_edits(c: sqlite3.Connection) -> None:
+    """ON-4 — an edit can land on an object: its type, the human note beside a value, who ran it,
+    and which declared action wrote it."""
+    for column in ("object_type", "note", "actor", "origin"):
+        add_column_if_missing(c, "overlay_edits", column, "TEXT NOT NULL DEFAULT ''")
+
+
+#: Forward-only; append the next Migration when the schema evolves.
+_MIGRATIONS: list = [Migration(2, "object edits: object_type, note, actor, origin", _object_edits)]
 
 
 class OverlayEdit(BaseModel):
@@ -50,9 +59,13 @@ class OverlayEdit(BaseModel):
     column: str = ""                        # annotated column ('' ⇒ whole-table edit)
     row_key: str = ""                       # value identifying the row ('' ⇒ whole-column edit)
     key_column: str = ""                    # column whose value equals row_key (defaults to `column`)
-    kind: str = "annotation"                # annotation | correction
+    kind: str = "annotation"                # annotation | correction | property (ON-4: on an object)
     body: str = ""                          # the human text (annotation) or corrected value (correction)
     source: str = "user"                    # machine | user | verified
+    object_type: str = ""                   # ON-4 — the object type a `property` edit lands on
+    note: str = ""                          # ON-4 — the human text beside a property's value
+    actor: str = ""                         # ON-4 — who ran the action that wrote it
+    origin: str = ""                        # ON-4 — "action:<id>" when a declared action wrote it
     id: str = ""                            # deterministic natural-key hash (auto)
     created_at: str = ""
     last_used_at: Optional[str] = None
@@ -70,6 +83,11 @@ class OverlayEdit(BaseModel):
     def natural_key(self) -> str:
         raw = f"{self.org_id}|{self.connection_id}|{self.target()}"
         return hashlib.sha1(raw.encode()).hexdigest()[:20]
+
+    def provenance(self) -> str:
+        """``annotated by <who>, <date>`` — who ran it, or its source when nobody is recorded."""
+        via = f" via {self.origin.split(':', 1)[1]}" if self.origin.startswith("action:") else ""
+        return f"annotated by {self.actor or self.source}{via}, {(self.created_at or '')[:10]}"
 
 
 def _now() -> str:
@@ -136,16 +154,21 @@ def save_edit(edit: OverlayEdit) -> OverlayEdit:
                 if _SOURCE_RANK.get(edit.source, 0) < _SOURCE_RANK.get(existing["source"], 0):
                     return _row_to_edit(c.execute(
                         "SELECT * FROM overlay_edits WHERE id=?", (edit.id,)).fetchone())
-                edit.created_at = existing["created_at"]
+                if edit.kind != "property":
+                    # A property edit is stamped with when its CURRENT value was set, which is what its
+                    # provenance states; an annotation keeps the day it was first written.
+                    edit.created_at = existing["created_at"]
                 edit.use_count = existing["use_count"]
             c.execute("""
                 INSERT OR REPLACE INTO overlay_edits
                     (id, org_id, connection_id, "table", column, row_key, key_column,
-                     kind, body, source, created_at, last_used_at, use_count)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     kind, body, source, created_at, last_used_at, use_count,
+                     object_type, note, actor, origin)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """, (edit.id, edit.org_id, edit.connection_id, edit.table, edit.column,
                   edit.row_key, edit.key_column, edit.kind, edit.body, edit.source,
-                  edit.created_at, edit.last_used_at, edit.use_count))
+                  edit.created_at, edit.last_used_at, edit.use_count,
+                  edit.object_type, edit.note, edit.actor, edit.origin))
             c.commit()
             return edit
         finally:
@@ -167,6 +190,28 @@ def edits_for_connection(connection_id: str, org_id: str = "") -> list[OverlayEd
             return [_row_to_edit(r) for r in c.execute(q, args).fetchall()]
         finally:
             c.close()
+
+
+def object_edits(connection_id: str, org_id: str = "", object_type: str = "") -> list[OverlayEdit]:
+    """ON-4 — the property edits on objects for a connection, optionally for one object type: what the
+    object query and the object page merge at read time."""
+    def word(name: str) -> str:
+        return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+    want = word(object_type)
+    return [e for e in edits_for_connection(connection_id, org_id)
+            if e.kind == "property" and e.object_type and (not want or word(e.object_type) == want)]
+
+
+def accepted_object_edits(connection_id: str) -> list[OverlayEdit]:
+    """ON-4 — this org's accepted property edits on a connection's objects, for a read to merge. An
+    unreadable ledger reads as none: the source rows still answer."""
+    try:
+        from aughor.org.context import current_org_id
+        return object_edits(connection_id, current_org_id() or "")
+    except Exception as exc:  # noqa: BLE001
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the edits overlay is best-effort on a read", counter="objects.overlay_read")
+        return []
 
 
 def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -> int:

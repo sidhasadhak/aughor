@@ -73,6 +73,8 @@ if not os.environ.get("AUGHOR_SKIP_DOTENV"):
     except ImportError:
         pass
 
+from pydantic import BaseModel, Field
+
 from evals.run_golden import generate_sql_chat, generate_sql_full_pipeline
 from evals.sql_accuracy import score_single
 from aughor.db.connection import open_connection_for, open_connection_for_with_schema
@@ -141,8 +143,147 @@ def _classify_guarded(score: dict, sql: str | None, fired: list[str]) -> str:
     return "caught" if fired else "silent-wrong"    # flagged (safe) vs slipped past every guard (dangerous)
 
 
-ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "injected")
+ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "injected", "objects")
 _NO_SQL = {"error": "Generation failed", "execution_success": 0.0}
+
+
+# ── ON-2 · the objects arm: a model fills the object query, the compiler writes the SQL ──
+# §6 item 15's measurement. The model sees what the raw arm sees (the schema) plus the object
+# catalog, and returns a typed object query — never SQL. The compiler then writes SQL, scored
+# like every other arm, or REFUSES; a refusal is its own class, neither an answer nor a wrong
+# answer. `objects_fallback` is the product posture — the tool first, model-written SQL when it
+# refuses — scored with the raw arm's SQL, so it costs no extra call (the product would spend one
+# more, with the refusal in hand).
+
+#: Classes that are not an answer: the compiler refused, the model declined, or the fill failed.
+_OBJECTS_NOT_ANSWERED = ("refused", "declined", "error")
+
+
+class _FillFilter(BaseModel):
+    path: str = ""
+    op: str = "="
+    value: str = ""
+    values: list[str] = Field(default_factory=list)
+
+
+class _FillMeasure(BaseModel):
+    name: str = ""
+    agg: str = "count"
+    path: str = ""
+    metric: str = ""
+    where: list[_FillFilter] = Field(default_factory=list)
+    divide_by_agg: str = ""
+    divide_by_path: str = ""
+    divide_by_metric: str = ""
+    divide_by_where: list[_FillFilter] = Field(default_factory=list)
+    scale: float = 1.0
+    decimals: int = -1
+
+
+class ObjectQueryFill(BaseModel):
+    """What the model returns. Every field is typed text, a number or a list — no free-typed
+    value and no optional sub-object — so the structured-output schema survives any provider;
+    `to_query` rebuilds the compiler's IR, which types each value by the column it meets."""
+    object_type: str = ""
+    segment: str = ""
+    filters: list[_FillFilter] = Field(default_factory=list)
+    measures: list[_FillMeasure] = Field(default_factory=list)
+    by: list[str] = Field(default_factory=list)
+    time: str = ""
+    grain: str = ""
+    start: str = ""
+    end: str = ""
+    order_by: str = ""
+    descending: bool = True
+    limit: int = 0
+
+    def to_query(self) -> dict:
+        def conditions(items: list[_FillFilter]) -> list[dict]:
+            out = []
+            for f in items:
+                cond: dict = {"path": f.path, "op": f.op or "="}
+                if f.values:
+                    cond["values"] = list(f.values)
+                elif cond["op"] not in ("is_null", "not_null", "exists", "not_exists"):
+                    cond["value"] = f.value
+                out.append(cond)
+            return out
+
+        measures = []
+        for m in self.measures:
+            measure: dict = {"name": m.name, "agg": m.agg or "count", "path": m.path, "metric": m.metric,
+                             "where": conditions(m.where), "scale": m.scale or 1.0}
+            if m.decimals >= 0:
+                measure["decimals"] = m.decimals
+            if m.divide_by_agg or m.divide_by_path or m.divide_by_metric:
+                measure["divide_by"] = {"agg": m.divide_by_agg or "count", "path": m.divide_by_path,
+                                        "metric": m.divide_by_metric, "where": conditions(m.divide_by_where)}
+            measures.append(measure)
+        query = {"object_type": self.object_type, "segment": self.segment, "filters": conditions(self.filters),
+                 "measures": measures, "by": list(self.by), "time": self.time, "grain": self.grain,
+                 "start": self.start, "end": self.end, "order_by": self.order_by, "descending": self.descending}
+        if self.limit > 0:
+            query["limit"] = self.limit
+        return query
+
+
+_OBJECTS_SYSTEM = (
+    "You translate a business question into a TYPED OBJECT QUERY over the object types in the CATALOG. "
+    "You never write SQL: a compiler writes it from your query, and refuses anything it cannot vouch for.\n\n"
+    "An object query: object_type (the api name of the thing the question counts or measures), segment "
+    "(a listed segment), filters (which objects count), measures (what to compute), by (dimensions to "
+    "group by), time + grain (a time series), start (ISO date, inclusive) and end (ISO date, EXCLUSIVE).\n"
+    "- A path is a property (`status`), a property through links (`customer.country`), or — for op exists "
+    "/ not_exists — a link (`shipment`). A condition through a to-many link keeps the objects that have a "
+    "matching linked row.\n"
+    "- A measure is agg (count, count_distinct, sum, avg, min, max) over a path, or a listed metric. count "
+    "with an empty path counts the objects; count over a link counts the linked objects. A to-many link "
+    "inside a measure path is pre-aggregated for you, so measure across it freely.\n"
+    "- A measure's `where` restricts the rows THAT measure aggregates (a share is count where status = "
+    "'x', divided by count); `filters` restrict the objects for every measure.\n"
+    "- A ratio: fill divide_by_agg with divide_by_path (or divide_by_metric) and divide_by_where; scale "
+    "100 for a percentage; decimals to round (-1 for none).\n"
+    "- Values are text, spelled exactly as the data stores them — the SCHEMA shows sample values.\n"
+    "- Use ONLY names that appear in the CATALOG. If the question cannot be expressed, return an empty "
+    "object_type."
+)
+
+
+def fill_object_query(question: str, schema_text: str, catalog_text: str) -> ObjectQueryFill:
+    """The objects arm's one model call: the question in, a typed object query out."""
+    from aughor.llm.provider import get_provider
+    user = (f"SCHEMA:\n{schema_text}\n\nCATALOG (object types, properties by role, links, segments, "
+            f"metrics):\n{catalog_text}\n\nQUESTION: {question}\n\nReturn the object query.")
+    return get_provider("coder").complete(system=_OBJECTS_SYSTEM, user=user, response_model=ObjectQueryFill,
+                                          temperature=0.0)
+
+
+def objects_arm(question: str, record: dict, db, graph, schema_text: str, catalog_text: str,
+                fill=fill_object_query) -> dict:
+    """One question through the objects arm. Classes: correct · silent-wrong · error (the fill or
+    the execution failed) · refused (the compiler would not vouch) · declined (the model said the
+    question is not an object query)."""
+    from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+    from evals.object_query_coverage import refusal_kind
+    try:
+        filled = fill(question, schema_text, catalog_text)
+    except Exception as exc:  # noqa: BLE001 — a failed fill is a scored error, never an abort
+        return {"class": "error", "error": f"fill failed: {exc}"[:300]}
+    if not filled.object_type.strip():
+        return {"class": "declined", "query": filled.model_dump()}
+    query = filled.to_query()
+    try:
+        compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
+                                        fiscal_start_month=1)
+    except ObjectQueryRefused as exc:
+        return {"class": "refused", "refused": exc.reason, "refusal_kind": refusal_kind(exc.reason),
+                "query": query}
+    score = score_single(db, record, compiled.sql)
+    out = {"sql": compiled.sql, "class": _classify_plain(score, compiled.sql),
+           "match": round(score.get("result_set_match", 0.0), 3), "query": query, "plan": compiled.plan}
+    if score.get("error"):
+        out["error"] = str(score["error"])[:300]
+    return out
 
 
 def ontology_context(graph, schema_text: str, tcols: dict) -> str:
@@ -305,13 +446,24 @@ def run(dataset: str, limit: int | None, output: str | None,
                 "reference_ok": [r["id"] for r in scorable]}
 
     wanted_ontology = "ontology" in arms
-    graph, graph_source = _load_graph(conn_id, schema_name, graph_json) if wanted_ontology else (None, None)
+    wanted_graph = wanted_ontology or "objects" in arms
+    graph, graph_source = _load_graph(conn_id, schema_name, graph_json) if wanted_graph else (None, None)
     onto_ctx = ontology_context(graph, schema_text, tcols) if wanted_ontology else ""
     arms, dropped = _arms_after_ontology_check(arms, onto_ctx)
     if dropped:
         print(f"  ⚠ no built ontology for {label} (source: {graph_source}) — the `ontology` arm would "
               f"equal raw, so {list(dropped)} are DROPPED, not spent on. Build intelligence first "
               f"(POST /ontology/rebuild), or pass --graph-json {label}=<the JSON of GET /ontology>.")
+    if "objects" in arms and (graph is None or not getattr(graph, "entities", None)):
+        # No object types to fill: the arm would spend a model call per question to be refused.
+        print(f"  ⚠ no ontology for {label} (source: {graph_source}) — the `objects` arm has no object "
+              f"types to fill, so it is DROPPED, not spent on.")
+        arms = tuple(a for a in arms if a != "objects")
+        dropped = tuple(dropped) + ("objects",)
+    catalog_text = ""
+    if "objects" in arms:
+        from aughor.semantic.object_query import object_catalog, render_object_catalog
+        catalog_text = render_object_catalog(object_catalog(graph), max_chars=12000)
     onto_schema = (schema_text + "\n\n" + onto_ctx) if onto_ctx else schema_text
 
     rows = []
@@ -351,6 +503,13 @@ def run(dataset: str, limit: int | None, output: str | None,
             inj_score = score_single(db, rec, inj_sql) if inj_sql else dict(_NO_SQL)
             row["injected"] = {"sql": inj_sql, "class": _classify_plain(inj_score, inj_sql),
                                "match": round(inj_score.get("result_set_match", 0.0), 3)}
+
+        if "objects" in arms:
+            row["objects"] = objects_arm(q, rec, db, graph, schema_text, catalog_text)
+            if "raw" in arms:
+                # The product posture: query_objects first, model-written SQL when it does not answer.
+                via = "raw" if row["objects"]["class"] in _OBJECTS_NOT_ANSWERED else "objects"
+                row["objects_fallback"] = {"class": row[via]["class"], "via": via}
 
         row["latency_s"] = round(time.time() - t0, 1)
         rows.append(row)
@@ -411,6 +570,30 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
         ic = counts["injected"]
         out["injected_accuracy"] = round(ic["correct"] / n, 3)
         out["injected_silent_wrong"] = ic["silent-wrong"]
+    if "objects" in arms:
+        oc = counts["objects"]
+        objects_rows = [r for r in rows if "objects" in r]
+        answered = [r for r in objects_rows if r["objects"]["class"] not in _OBJECTS_NOT_ANSWERED]
+        out["objects_accuracy"] = round(oc["correct"] / n, 3)
+        out["objects_silent_wrong"] = oc["silent-wrong"]
+        # ON-2's falsifier with a MODEL filling the IR: the share of questions the compiler wrote SQL for
+        out["objects_compiled_share"] = round(len(answered) / n, 3)
+        out["objects_refused"] = [{"id": r["id"], "kind": r["objects"].get("refusal_kind"),
+                                   "reason": str(r["objects"].get("refused", ""))[:200]}
+                                  for r in objects_rows if r["objects"]["class"] == "refused"]
+        out["objects_declined"] = [r["id"] for r in objects_rows if r["objects"]["class"] == "declined"]
+        if "raw" in arms:
+            fallback = Counter(r["objects_fallback"]["class"] for r in rows if "objects_fallback" in r)
+            out["objects_fallback"] = dict(fallback)
+            out["objects_fallback_accuracy"] = round(fallback["correct"] / n, 3)
+            out["objects_fallback_silent_wrong"] = fallback["silent-wrong"]
+            out["objects_gains"] = [r["id"] for r in objects_rows if r["raw"]["class"] != "correct"
+                                    and r["objects"]["class"] == "correct"]
+            out["objects_losses"] = [r["id"] for r in objects_rows if r["raw"]["class"] == "correct"
+                                     and r["objects"]["class"] not in ("correct",) + _OBJECTS_NOT_ANSWERED]
+            out["objects_fallback_losses"] = [r["id"] for r in rows if "objects_fallback" in r
+                                              and r["raw"]["class"] == "correct"
+                                              and r["objects_fallback"]["class"] != "correct"]
     return out
 
 
@@ -441,6 +624,17 @@ def _print_report(rows: list[dict], s: dict, arms: tuple[str, ...] = ARMS) -> No
               f"   guards fired: {s['guards_fired']}")
     if "injected" in arms:
         print(f"  Injected         : {s['injected_accuracy']:.0%} correct   {s['injected']}")
+    if "objects" in arms:
+        print(f"  Objects (IR)     : {s['objects_accuracy']:.0%} correct · {s['objects_compiled_share']:.0%} "
+              f"compiled   {s['objects']}")
+        if "raw" in arms:
+            print(f"    + run_sql fallback: {s['objects_fallback_accuracy']:.0%} correct   {s['objects_fallback']}")
+            print(f"    vs raw         : gains {s['objects_gains']}  losses {s['objects_losses']}  "
+                  f"fallback losses {s['objects_fallback_losses']}")
+        for refusal in s["objects_refused"]:
+            print(f"    refused {refusal['id']} ({refusal['kind']}): {refusal['reason'][:140]}")
+        if s["objects_declined"]:
+            print(f"    declined: {s['objects_declined']}")
     sw = {a: s.get(f"{a}_silent_wrong") for a in arms if f"{a}_silent_wrong" in s}
     print(f"\n  SILENT-WRONG per arm: {sw}   (a plausible, un-flagged wrong answer)")
     if "guarded" in arms:

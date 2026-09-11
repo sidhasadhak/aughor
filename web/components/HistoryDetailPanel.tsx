@@ -450,6 +450,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
             rows={sourcePanel.rows}
             sql={sourcePanel.sql}
             title={sourcePanel.title}
+            connectionId={inv?.connection_id}
             onClose={() => setSourcePanel(null)}
           />
         </div>

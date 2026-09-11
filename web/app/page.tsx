@@ -1620,14 +1620,19 @@ export default function Home() {
     putMyPreference("theme", t).catch(() => {});
   };
 
+  // S1 — the `?conn=` a deep link arrived with, read at the first client render. The URL-sync
+  // effect rewrites `conn` from state in the first commit and the connection list lands a beat
+  // later, so reading the URL when the list arrived found the param already erased: the
+  // remembered connection won, and a shared link opened on the reader's last data, not its own.
+  const deepLinkConn = useRef<string | null>(
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("conn") : null);
   useEffect(() => {
     getConnections()
       .then(conns => {
         setConnections(conns);
         // S1 — a `?conn=` deep link outranks the remembered connection: a shared
         // URL must open on the data it was looking at, not the reader's last tab.
-        const fromUrl = typeof window !== "undefined"
-          ? new URLSearchParams(window.location.search).get("conn") : null;
+        const fromUrl = deepLinkConn.current;
         const saved = typeof window !== "undefined" ? localStorage.getItem(LAST_CONN_KEY) : null;
         const pick = [fromUrl, saved].find(id => id && conns.find(c => c.id === id));
         setSelectedConn(pick || (conns[0]?.id ?? ""));

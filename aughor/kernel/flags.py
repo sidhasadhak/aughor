@@ -85,6 +85,7 @@ FLAG_ENV = {
     # graduated — mirror + endpoint hardwired, flag and off-path deleted.
     # Receipt on the GRADUATION_QUEUE tombstone below.
     "ask.converse": "AUGHOR_ASK_CONVERSE",
+    "ask.query_objects": "AUGHOR_ASK_QUERY_OBJECTS",
     "explore.route_wide": "AUGHOR_EXPLORE_ROUTE_WIDE",
     "grounding.full_schema_first": "AUGHOR_GROUNDING_FULL_SCHEMA_FIRST",
     # "ada.adversarial_verify" (AUGHOR_ADA_ADVERSARIAL) was DELETED 2026-07-31 (flag
@@ -270,6 +271,10 @@ FLAG_META = {
         "label": "Answer through a conversation, not a single compiled query",
         "description": "Add agent bodies behind /ask: a quick turn becomes a real conversation whose tools wrap the existing guarded pipelines, and a deep turn becomes the ANALYST loop (CA-3) — the phase library as tools, the model choosing each next slice after seeing the last, the narrator writing the report from the evidence. Guards are unchanged and stay INSIDE the tools; the deterministic quick body and the deep phase script survive as the fallback whenever this is off. Off by default → /ask behaves exactly as today.",
     },
+    "ask.query_objects": {
+        "label": "Offer the compiled object query to the conversation",
+        "description": "Put ON-2's query_objects tool at the head of the conversation's roster (it rides ask.converse): the model fills a typed object query — the object type, which objects, what to compute across which links, grouped how — and the SQL is COMPILED from the measured ontology, so a to-many link is pre-aggregated before the join and a sum across a to-one link is refused by construction. run_sql stays as the escape hatch under the guard battery. Offered only on a connection whose ontology is built. Off by default → the roster is exactly today's. PARKED 2026-09-11 after a measured regression (ROADMAP §6 item 15): leave it off.",
+    },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
         "description": "Send a genuinely BROAD 'landscape' question — characterize / profile / map how X varies across the business — to the multi-cut explore subgraph instead of a single deep analysis. A deterministic detector decides (no model in the routing path); it yields to causal/driver 'why' questions, which stay deep analyses. Consulted by /ask's auto route AND the chat door (/investigate — the Agent chip's path, which otherwise pins a single investigation; added 2026-08-29 when a live soak found the wave unreachable from the UI). Off by default.",
@@ -365,6 +370,14 @@ EXPERIMENT: dict = {
                     "and the direct fast path agree for the same question), plus route-receipt "
                     "data on the converse/fast-path ratio. Graduation makes converse a "
                     "permanent third body and the flag dies",
+    "ask.query_objects": "PARKED 2026-09-11 by the user on a measured regression (ROADMAP §6 item 15): "
+                         "a model filling the object query scored 1/14 and 3/12 against raw 14/14 and "
+                         "12/12. The question stands — does the compiled door answer warehouse "
+                         "questions at least as well as model-written SQL? — but reopen it only with a "
+                         "set where raw FAILS and a fill that fixes the malformed shapes (object_type "
+                         "required, op an enum, metric exclusive of path); a re-run where raw is at "
+                         "ceiling can at best tie. Graduation would make query_objects the roster's "
+                         "primary door; deleting the flag and the tool is the other exit",
     "explore.route_wide": "do landscape questions answer better through the explore wave? "
                           "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
                           "is_wide_question fires on 0/102 of the reference suite "

@@ -69,7 +69,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     days" answer scored wrong because the observation was empty.)
     """
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
-    from aughor.sql.executor import execute_guarded
+    from aughor.sql.executor import execute_guarded, flag_fanout
 
     sql = str(args.get("sql") or "").strip()
     if not sql:
@@ -78,6 +78,12 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     conn = _connection(connection_id)
     with collect_guard_receipts() as receipts:
         result = execute_guarded(conn, sql, query_id="converse")
+        # The battery's fan-out detector rides `preflight_harden`, which needs a rendered
+        # schema this door never passed — so a join that over-counts ran here with no
+        # receipt and no caveat (measured 2026-09-11: 2.4× totals, silently). Flagged, not
+        # rewritten: the model framed this exact SQL, and `caveats` is where a query that
+        # succeeded and still misleads is said.
+        fanout = None if result.error else flag_fanout(conn, sql)
 
     rows = list(result.rows or [])
     out = {
@@ -88,7 +94,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         "row_count": result.row_count,
         "truncated": len(rows) > _MAX_PREVIEW_ROWS,
         "error": result.error,
-        "caveats": list(result.caveats or []),
+        "caveats": list(result.caveats or []) + ([fanout] if fanout else []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
     }
     if result.error:
@@ -99,13 +105,87 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     return out
 
 
+def query_objects(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
+                  user_question: str = "", canvas_id: Optional[str] = None) -> dict:
+    """ON-2's compiled door: the model fills a typed object query and the SQL is COMPILED from the
+    measured ontology — never written by the model — then runs through the same battery as run_sql.
+
+    With an object type and no measures it answers with that type's catalog entry (properties by
+    role, links with their measured cardinality, verified segments and metrics); with nothing, the
+    whole catalog — the disclosure ladder inside one tool rather than a second one. A refusal names
+    why and what exists, and says where to fall back: the compiler never guesses.
+    """
+    from aughor.actions.overlay import accepted_object_edits
+    from aughor.kernel.registries.execution_hooks import collect_guard_receipts
+    from aughor.routers.ontology import served_ontology_graph
+    from aughor.semantic.object_query import (
+        ObjectQueryRefused,
+        compile_object_query,
+        object_catalog,
+        render_object_catalog,
+    )
+    from aughor.sql.executor import execute_guarded
+
+    graph = served_ontology_graph(connection_id, None)
+    if graph is None:
+        return {"path": "refused", "available": [],
+                "refused": "no ontology is built for this connection, so it has no object types — use run_sql"}
+    if not args.get("measures"):
+        catalog = object_catalog(graph, overlay=accepted_object_edits(connection_id))
+        want = str(args.get("object_type") or "").strip().lower()
+        entry = next((t for t in catalog["object_types"] if want and want in (t["object_type"], t["id"].lower())), None)
+        if entry is not None:
+            return {"path": "catalog", "object_type": entry}
+        return {"path": "catalog", "catalog": render_object_catalog(catalog),
+                "note": "Name an object_type and at least one measure to query it."}
+
+    conn = _connection(connection_id)
+    try:
+        compiled = compile_object_query(args, graph, dialect=getattr(conn, "dialect", "") or "duckdb",
+                                        overlay=accepted_object_edits(connection_id))
+    except ObjectQueryRefused as exc:
+        return {"path": "refused", "refused": exc.reason, "available": exc.available[:40],
+                "instruction": ("Repair the names from `available` and call query_objects again — or, when the "
+                                "question needs what the object model cannot express, frame the SQL yourself "
+                                "and call run_sql, whose battery still guards it.")}
+    with collect_guard_receipts() as receipts:
+        result = execute_guarded(conn, compiled.sql, query_id="objects")
+    rows = list(result.rows or [])
+    out = {
+        "path": "compiled",
+        "object_type": compiled.object_type,
+        "sql": compiled.sql,
+        "plan": list(compiled.plan),
+        "links": list(compiled.links),
+        "columns": list(result.columns or []) or list(compiled.columns),
+        "rows": rows[:_MAX_PREVIEW_ROWS],
+        "row_count": result.row_count,
+        "truncated": len(rows) > _MAX_PREVIEW_ROWS,
+        "error": result.error,
+        "caveats": list(compiled.caveats) + list(result.caveats or []),
+        "guard_receipts": [_receipt_dict(r) for r in receipts],
+    }
+    if result.error:
+        out["instruction"] = ("The compiled query failed to execute — a defect in the object model or the "
+                              "warehouse, not in your query. Say so, and fall back to run_sql.")
+    elif emit is not None:
+        _surface_primitive_answer(emit, connection_id, compiled.sql, result, out["guard_receipts"],
+                                  user_question=user_question, canvas_id=canvas_id, compiled=compiled)
+    return out
+
+
 def _surface_primitive_answer(emit: Emit, connection_id: str, sql: str, result: Any,
                               guard_receipts: list, *, user_question: str = "",
-                              canvas_id: Optional[str] = None) -> None:
+                              canvas_id: Optional[str] = None, compiled: Any = None) -> None:
     """The core's own frame shapes (`emit("sql"|"columns"|"rows"|"receipt_id"|"done")`),
     re-issued for a primitive `run_sql` answer, plus its Trust Receipt. Best-effort:
-    a receipt failure never fails the query the model already has."""
+    a receipt failure never fails the query the model already has. A compiled object query
+    (ON-2) also says so: the `compiled` frame `answer_core` emits for its own compiled SQL, and a
+    `validated_by guard:object_compiler` edge carrying the plan on the receipt."""
     emit("sql", {"sql": sql})
+    if compiled is not None:
+        emit("compiled", {"intent_type": "object_query", "entity": compiled.object_type,
+                          "measure": ", ".join(compiled.measures), "dimension": ", ".join(compiled.dimensions)})
     emit("columns", {"columns": list(result.columns or [])})
     emit("rows", {"rows": list(result.rows or [])[:10000]})
     try:
@@ -116,12 +196,19 @@ def _surface_primitive_answer(emit: Emit, connection_id: str, sql: str, result: 
         guards = [("flagged" if r.get("action") not in ("passed", "ok", None) else "passed",
                    f"guard:{r.get('guard', '?')}", str(r.get("detail") or ""))
                   for r in guard_receipts if isinstance(r, dict) and r.get("guard")]
+        extra: dict = {"row_count": int(result.row_count or 0), "body": "converse.run_sql"}
+        if compiled is not None:
+            guards.insert(0, ("validated_by", "guard:object_compiler",
+                              "SQL compiled from an object query over the measured ontology — "
+                              + "; ".join(compiled.plan)[:600]))
+            extra.update({"body": "converse.query_objects", "path": "compiled",
+                          "plan": list(compiled.plan), "links": list(compiled.links)})
         written = write_answer_receipt(
             kind="chat_answer", natural_key=f"chat:{connection_id}:{inv_id}",
             question=user_question or "", sqls=[sql], headline=user_question or sql,
             schema="", connection_id=connection_id, canvas_id=canvas_id or "",
             guard_edges=guards,
-            payload_extra={"row_count": int(result.row_count or 0), "body": "converse.run_sql"},
+            payload_extra=extra,
         )
         if written.get("receipt_id"):
             emit("receipt_id", {"receipt_id": written["receipt_id"]})
@@ -374,6 +461,96 @@ _QUESTION_PARAMS = {
     "required": ["question"],
 }
 
+# The object query's schema, inline and $ref-free (a function declaration is not a JSON-Schema
+# document everywhere). Values travel as text; the compiler types them by the column they meet.
+_OBJECT_FILTER = {
+    "type": "object",
+    "properties": {
+        "path": {"type": "string", "description": (
+            "A property of the object type (`status`), a property through links (`customer.country`), "
+            "or a link for exists / not_exists (`shipment`). A condition through a to-many link keeps "
+            "the objects with at least one matching linked row.")},
+        "op": {"type": "string", "enum": ["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
+                                          "is_null", "not_null", "exists", "not_exists"]},
+        "value": {"type": "string", "description": "One value, as text — numbers and true/false are typed by the column."},
+        "values": {"type": "array", "items": {"type": "string"},
+                   "description": "The list for in / not_in, or [low, high] for between."},
+    },
+    "required": ["path"],
+}
+_MEASURE_TERM = {
+    "agg": {"type": "string", "enum": ["count", "count_distinct", "sum", "avg", "min", "max"]},
+    "path": {"type": "string", "description": (
+        "The property to aggregate (`total_amount`), through links (`order_item.unit_price` — a to-many "
+        "link is pre-aggregated for you), or a link to count its objects. Empty with count counts the objects.")},
+    "metric": {"type": "string", "description": "A verified named metric of the object type, instead of agg + path."},
+    "where": {"type": "array", "items": _OBJECT_FILTER, "description": (
+        "Restricts the rows THIS measure aggregates, read from the object it aggregates — never the object set.")},
+}
+_OBJECT_QUERY_PARAMS = {
+    "type": "object",
+    "properties": {
+        "object_type": {"type": "string", "description": "The object type to query, by its api name (e.g. `order`)."},
+        "segment": {"type": "string", "description": "A verified segment of the object type."},
+        "filters": {"type": "array", "items": _OBJECT_FILTER, "description": "Which objects count."},
+        "measures": {"type": "array", "description": "What to compute. Omit to get the object type's catalog entry.",
+                     "items": {"type": "object", "properties": {
+                         **_MEASURE_TERM,
+                         "name": {"type": "string", "description": "The output column's name."},
+                         "divide_by": {"type": "object", "properties": _MEASURE_TERM, "description": (
+                             "A ratio of aggregates: this measure ÷ that one, each aggregated first.")},
+                         "scale": {"type": "number", "description": "Multiply the result — 100 for a percentage."},
+                         "decimals": {"type": "integer"}}}},
+        "by": {"type": "array", "items": {"type": "string"}, "description": (
+            "Dimensions to group by: properties of the object type, or through to-one links (`customer.country`).")},
+        "time": {"type": "string", "description": "The time property a grain or window reads; defaults to the type's own."},
+        "grain": {"type": "string", "enum": ["hour", "day", "week", "month", "quarter", "year"]},
+        "start": {"type": "string", "description": "ISO date, inclusive."},
+        "end": {"type": "string", "description": "ISO date, EXCLUSIVE. Resolve a relative period ('last quarter') to ISO dates yourself."},
+        "order_by": {"type": "string", "description": "An output column."},
+        "descending": {"type": "boolean"},
+        "limit": {"type": "integer"},
+    },
+    "required": ["object_type"],
+}
+
+
+def _query_objects_tools(connection_id: str, *, emit: Optional[Emit] = None, user_question: str = "",
+                         canvas_id: Optional[str] = None) -> list[ToolSpec]:
+    """ON-2's door, described FIRST (§6 item 14(b): primary, with run_sql the escape hatch) — but
+    only behind `ask.query_objects`, whose exit is ON-2's falsifier, and only on a connection whose
+    ontology is built: a tool the model can see is a tool it will spend a turn trying."""
+    from aughor.kernel.flags import flag_enabled
+    if not flag_enabled("ask.query_objects"):
+        return []
+    try:
+        from aughor.routers.ontology import served_ontology_graph
+        graph = served_ontology_graph(connection_id, None)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "query_objects is offered only over a served ontology; the roster stands without it",
+                 counter="converse.query_objects_graph")
+        graph = None
+    if graph is None or not graph.entities:
+        return []
+    names = ", ".join(sorted(e.api_name for e in graph.entities.values())[:30])
+    return [ToolSpec(
+        name="query_objects",
+        description=(
+            "Answer a question about this warehouse's business objects WITHOUT writing SQL: fill a typed "
+            "object query — the object type, which objects (segment, filters), what to compute (measures, "
+            "across links too), grouped how (by, grain) — and the SQL is compiled from the measured "
+            "ontology. Joins are safe by construction: a to-many link is pre-aggregated before the join, "
+            f"and anything that would over-count is refused with the reason. Object types here: {names}. "
+            "Call with only object_type to see its properties, links, segments and metrics. Prefer this "
+            "first for any question those names can express; when it refuses, repair the names or fall "
+            "back to answer_question or run_sql."
+        ),
+        parameters=_OBJECT_QUERY_PARAMS,
+        run=lambda a: query_objects(connection_id, a, emit=emit, user_question=user_question,
+                                    canvas_id=canvas_id),
+    )]
+
 
 def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                    session_id: str = "", canvas_id: Optional[str] = None,
@@ -406,7 +583,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
     from aughor.agent.platform_tools import platform_tools
     from aughor.agent.spotlight_roster import spotlight_roster
 
-    return [
+    return _query_objects_tools(connection_id, emit=emit, user_question=user_question, canvas_id=canvas_id) + [
         ToolSpec(
             name="answer_question",
             description=(

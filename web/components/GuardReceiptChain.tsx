@@ -33,6 +33,7 @@ const GUARD_LABEL: Record<string, string> = {
   e1_trust_checks: "Trust checks added a caution",
   concentration_pareto: "Chart switched to Pareto for a concentration question",
   fanout_replan: "Queries re-planned around a join fan-out",
+  fanout_detected: "Join over-count flagged",
 };
 
 /** Compact verb for the action — reads as the step's sub-line with the detail. */
@@ -45,6 +46,7 @@ const ACTION_VERB: Record<string, string> = {
   replanned_queries: "sent the plan back for correction",
   hinted: "returned a repair hint to the model",
   caveated: "carried a caveat instead of asserting",
+  flagged: "flagged it — no provable rewrite exists",
 };
 
 function truncate(s: string, n = 90): string {

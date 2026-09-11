@@ -1379,6 +1379,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                 rows={sourcePanel.rows}
                 sql={sourcePanel.sql}
                 title={sourcePanel.title}
+                connectionId={connectionId}
                 onClose={() => setSourcePanel(null)}
               />
             </div>
