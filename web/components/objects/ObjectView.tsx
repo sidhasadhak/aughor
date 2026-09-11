@@ -187,12 +187,20 @@ function Section({ title, description, children }: {
   );
 }
 
+/** What the card reads from the backing, and what accepted actions set on top of it — never one count. */
+function propertiesSummary(page: ObjectPage): string {
+  const set = page.properties.filter((p) => p.overlay).length;
+  const read = page.properties.length - set;
+  return `Read live through the ${page.type_name} backing — ${formatCount(read)} columns`
+    + (set ? `, and ${formatCount(set)} set by accepted actions.` : ".");
+}
+
 function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
   // A property that names another object — an order's customer_id — opens that object.
   const objectColumns = useObjectKeyColumns(scope.connectionId);
   return (
     <Section title="Properties"
-      description={`Read live through the ${page.type_name} backing — ${formatCount(page.properties.length)} columns.`}>
+      description={propertiesSummary(page)}>
       <dl style={{ display: "grid", gridTemplateColumns: "minmax(120px, max-content) minmax(0, 1fr)", columnGap: 16, rowGap: 6, margin: 0 }}>
         {page.properties.map((p) => {
           const isKey = p.name.toLowerCase() === page.key.toLowerCase();
