@@ -4115,8 +4115,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   print the key; no web door names a link yet (the API does); LuxExperience's verbs are the builder's generic
   ones, so its proposed link names are too (`order_item_associated_with_shipment`) until a person names them; a
   label can still clip a card on a sideways link in a narrow pane.
-- **ON-3c · The agent reads the type — AMENDED 2026-09-11; BUILT the same day, its live receipt awaiting one
-  agent turn.** `describe_entity` (the agent's
+- **ON-3c · The agent reads the type — AMENDED 2026-09-11; BUILT and its RECEIPT MET the same day.**
+  `describe_entity` (the agent's
   roster and MCP, one body) returns the ON-1 object type instead of the context graph's table node: api
   name, the key and its verification, the display property, properties with role, type and SOURCE,
   bindings, links by name with measured cardinality and traversability (and the refusal reason), declared
@@ -4137,8 +4137,20 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   its own, so both transports return the identical dict, pinned by a test that calls both on one graph; both
   routing descriptions now name the sources, the measured links and the sibling tools. `describe_entity` is not
   in the Spotlight roster, so SP-5's ratchet passes unchanged and the identity test holds its two transports. No
-  prompt text was added. **Still open:** the receipt's agent turn — one conversation's model calls, waiting on
-  the user's go.
+  prompt text was added. **Receipt met live the same day** (the user: *"yes, run the Shipment question.. i need
+  screenshots"*). On LuxExperience the chat's Edit → Send re-sent "What is a Shipment and where does its data come
+  from?" through `/ask`; the router called it a direct lookup without a model, the conversation served it, and its
+  tool trail reads "1 step taken — Read what's known about an entity" (the route receipt counts one
+  `describe_entity` call; trace 8dbaf5d4, two model calls). The answer: a Shipment is an order dispatched from a
+  warehouse — carrier, service level, dates, shipping fees and duties — read from `luxexperience.shipments`, each
+  one unique by `shipment_id`, linked to an order through `order_id`. It named the source table and the key's
+  uniqueness rather than every property's source, and compressed the measured link (Shipment ↔ Order Line on
+  `order_id`) to "an order". The same call over MCP returns the identical body: on a read-only snapshot of the
+  live ledger and overrides, every other store isolated, the conversation's body equalled the MCP server's and
+  both equalled the live `GET /object-types/shipment`. **Found on the way:** the chat's Quick chip posts the
+  forced-Quick `/chat` door, so it never reaches the conversation even with `ask.converse` on — asked there first,
+  the question was answered by a SELECT of string literals shown as "1 source · executed SQL", a separate defect
+  filed on its own.
 - **ON-1b · Bindings — each property knows its source — AMENDED 2026-09-11, not started.** An object
   type's single `backing` becomes a list of **bindings**. Each binding is a table or keyed SELECT joined
   to the object on its key, with the properties it supplies and a kind — **static** (one row per object)
@@ -4537,7 +4549,7 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         an agent-proposed, human-accepted flag read back with its provenance) → AMENDED 2026-09-11 from
         the Fabric IQ study (§3.15): ON-3b the entity-type map · ON-3c the agent reads the type (BOTH FIRST
         SLICES 2026-09-11: the map, the measured display property and the path finder live on
-        LuxExperience; describe_entity returns the type, its agent-turn receipt awaiting the go) · ON-1b
+        LuxExperience; describe_entity returns the type and the agent called it live through /ask) · ON-1b
         bindings, each property knowing its source → ON-5 functions and model bindings, timeseries
         properties first. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
