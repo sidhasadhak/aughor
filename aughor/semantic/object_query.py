@@ -626,11 +626,14 @@ class _Compiler:
     def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[_Hop],
                      t: MeasureTerm, label: str) -> str:
         _check_aggregate(t.agg, p, t.path, self.caveats)
-        if hops and t.agg in ("sum", "avg", "count"):
+        # A 1:1 hop cannot repeat a value (both keys are unique); an N:1 hop repeats the one
+        # side once per matching row, and that is what a SUM, AVG or COUNT would count.
+        repeating = next((h for h in hops if h.label != "1:1"), None)
+        if repeating is not None and t.agg in ("sum", "avg", "count"):
             one = hops[-1].target
             raise ObjectQueryRefused(
                 f"{label}: {t.agg} over '{t.path}' would count each {one.id}'s value once per "
-                f"{scope.entity.id} row ({hops[-1].describe()} is to-one from here) — that is the fan-out. "
+                f"{scope.entity.id} row ({repeating.describe()} is to-one from here) — that is the fan-out. "
                 f"Anchor the query on {one.id} (object_type '{one.api_name}') and reach {scope.entity.id} "
                 "through its link, or use count_distinct / min / max, which repetition cannot change.")
         cond = self.where(scope, t.where)
@@ -666,7 +669,7 @@ class _Compiler:
             return f"COALESCE(SUM({ml.alias}.{v}), 0)"
         col, p, inner_hops = self.column(ml.inner, rest, "measure")
         _check_aggregate(agg, p, f"{h.name}.{rest}", self.caveats)
-        if inner_hops and agg in ("sum", "avg", "count"):
+        if agg in ("sum", "avg", "count") and any(h.label != "1:1" for h in inner_hops):
             raise ObjectQueryRefused(
                 f"{label}: {agg} over '{t.path}' would repeat {inner_hops[-1].target.id}'s value once per "
                 f"{h.target.id} row — anchor the query on {inner_hops[-1].target.id} instead")

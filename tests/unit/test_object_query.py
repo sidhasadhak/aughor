@@ -141,6 +141,29 @@ def test_a_sum_across_a_to_one_link_is_refused_as_the_fan_out():
     assert "Anchor the query on Order (object_type 'order')" in refused.reason
 
 
+def test_a_sum_across_a_one_to_one_link_is_allowed_because_nothing_can_repeat():
+    from aughor.ontology.models import OntologyEntity, OntologyRelationship
+    con = duckdb.connect()
+    con.execute("CREATE TABLE accounts (account_id INT, region VARCHAR); "
+                "INSERT INTO accounts VALUES (1, 'EU'), (2, 'EU'), (3, 'US'); "
+                "CREATE TABLE balances (account_id INT, balance DOUBLE); "
+                "INSERT INTO balances VALUES (1, 10.0), (2, 5.0), (3, 7.0)")
+
+    def entity(eid, table, props):
+        return OntologyEntity(id=eid, display_name=eid, source_tables=[table], identity_key="account_id",
+                              grain_verified=True, properties={n: {"name": n, "semantic_type": st, "data_type": dt}
+                                                               for n, st, dt in props})
+    graph = OntologyGraph(connection_id="c", schema_fingerprint="f", entities={
+        "Account": entity("Account", "accounts", [("account_id", "key", "INTEGER"), ("region", "dimension", "VARCHAR")]),
+        "Balance": entity("Balance", "balances", [("account_id", "key", "INTEGER"), ("balance", "measure", "DOUBLE")])},
+        relationships={"B_A": OntologyRelationship(
+            id="B_A", from_entity="Balance", to_entity="Account", cardinality="1:1", measured_cardinality="1:1",
+            join_sql="", from_table="balances", from_col="account_id", to_table="accounts", to_col="account_id")})
+    compiled = _compile({"object_type": "account", "by": ["region"],
+                         "measures": [{"agg": "sum", "path": "balance.balance"}]}, graph)
+    assert _rows(con, compiled.sql) == [("EU", 15.0), ("US", 7.0)]
+
+
 def test_what_repetition_cannot_change_may_cross_a_to_one_link(warehouse):
     compiled = _compile({"object_type": "order_item", "measures": [
         {"name": "orders", "agg": "count_distinct", "path": "order"},
