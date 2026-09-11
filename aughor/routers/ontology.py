@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Optional
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
@@ -29,8 +29,17 @@ class _UseInstead(BaseModel):
     reason: str = ""
 
 
+class _BackingSpec(BaseModel):
+    """ON-1: what an object is read from — a keyed SELECT whose rows are its instances."""
+    kind: Literal["table", "query"] = "query"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    primary_key: str
+
+
 class _EntityOverride(BaseModel):
     description: Optional[str] = None
+    backing: Optional[_BackingSpec] = None
     active_filter: Optional[str] = None
     default_filters: Optional[list[str]] = None
     exclude_when: Optional[list[str]] = None
@@ -546,6 +555,56 @@ def get_ontology_relationships(
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
     return {rid: r.model_dump() for rid, r in graph.relationships.items()}
+
+
+@router.post("/ontology/measure", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def measure_ontology(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    pack: Optional[str] = Query(default=None, description="A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless"),
+):
+    """Measure the cached ontology against the live data and save what it says — no model
+    call, no rebuild (ON-0a).
+
+    Two measurements: relationship cardinality (a side is "1" when its key is unique over
+    its non-null rows; a contradicted label is replaced, the authored one kept in a note)
+    and lifecycle terminal states (an observed state the lists never named, or a claimed
+    terminal state whose timestamp is set on rows now in another state, contradicts the
+    lifecycle; end-state names the terminal set omits are reported as unconfirmed). The
+    builder inferred both and marked them verified on key overlap and execution alone. A
+    rebuild measures now but spends a model call per entity; this door measures the graph
+    that is already there, invalidates the enriched-schema cache that embeds the blocks,
+    and journals `ontology.measure`.
+    """
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.store import measure_latest
+    effective = _resolve_schema(connection_id, schema_name)
+    db = open_connection_for_with_schema(connection_id, effective)
+    try:
+        reports = measure_latest(connection_id, effective, db, pack_id=pack)
+    finally:
+        db.close()
+    if reports is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No ontology built for schema '{effective}' on this connection — nothing to measure.")
+    _invalidate_schema_cache(connection_id)
+    claims = reports.get("claims")
+    out = {"connection_id": connection_id, "schema_name": effective,
+           "relationships": reports["relationships"].summary(),
+           "lifecycles": reports["lifecycles"].summary(),
+           "backings": reports["backings"].summary(),
+           "claims": claims.summary() if claims is not None else None}
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("ontology.measure", {"ok": True, "schema": effective,
+                                                   "relationships": out["relationships"],
+                                                   "lifecycles": out["lifecycles"]},
+                              conn_id=connection_id)
+    except Exception:
+        import logging
+        logging.getLogger(__name__).debug("ontology.measure emit skipped", exc_info=True)
+    return out
 
 
 @router.get("/ontology/metrics/{metric_id}/provenance")

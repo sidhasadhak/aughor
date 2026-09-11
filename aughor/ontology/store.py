@@ -22,6 +22,7 @@ from typing import Optional
 from aughor.ontology.models import OntologyGraph
 from aughor.util.json_store import KeyedJsonStore
 
+
 _CACHE_PATH = Path(__file__).parent.parent.parent / "data" / "ontology_cache.json"
 _MAX_ENTRIES = 20
 _store = KeyedJsonStore(_CACHE_PATH, max_entries=_MAX_ENTRIES)
@@ -203,6 +204,49 @@ def load_latest_ontology(
     return overlay_human_overrides(graph, connection_id, graph.schema_name)
 
 
+def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[str] = None) -> Optional[dict]:
+    """ON-0a: measure the cached graph against ``db`` — relationship cardinalities and
+    lifecycle terminal states — and save the corrected graph back under its own key. No
+    model call, no rebuild.
+
+    The RAW cached entry is measured and saved (human overrides are overlaid at read time by
+    `load_latest_ontology`, never baked into the cache). None when nothing is cached for the
+    scope, so the caller can say "nothing to measure" rather than measuring a neighbour.
+    Returns ``{"relationships": CardinalityReport, "lifecycles": LifecycleReport}``.
+    """
+    from aughor.ontology.cardinality import apply_cardinality_measurements
+    from aughor.ontology.lifecycle import apply_lifecycle_measurements
+    cache = _load()
+    prefix = _schema_prefix(connection_id, schema_name)
+    matches = {k: v for k, v in cache.items() if k.startswith(prefix)}
+    if not matches:
+        return None
+    key, entry = list(matches.items())[-1]
+    try:
+        graph = OntologyGraph.model_validate(entry["graph"])
+    except Exception:
+        return None
+    from aughor.packs.ontology_map import (
+        apply_bound_pack_claims, apply_core_claims, bound_end_state_names, end_state_names_for_pack,
+        resolve_ontology,
+    )
+    names = set(bound_end_state_names(connection_id, schema_name) or ())
+    if pack_id:
+        names |= set(end_state_names_for_pack(pack_id))
+    from aughor.ontology.backing import apply_backing_measurements, measure_override_backings
+    relationships = apply_cardinality_measurements(graph, db)
+    lifecycles = apply_lifecycle_measurements(graph, db, frozenset(n.lower() for n in names) if names else None)
+    backings = apply_backing_measurements(graph, db)
+    measure_override_backings(connection_id, schema_name, db, report=backings)
+    claims = apply_bound_pack_claims(graph, connection_id, schema_name, db)
+    if pack_id:
+        po = resolve_ontology(pack_id)
+        if po is not None:
+            claims = apply_core_claims(graph, po, pack_id, db)
+    _store.put(key, {"graph": graph.model_dump()})
+    return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims}
+
+
 def patch_action(
     connection_id: str,
     schema_name: str,
@@ -329,9 +373,23 @@ def get_or_build_ontology(
                 _vdb = open_connection_for(connection_id)
                 try:
                     _verified, _rejected = verify_join_edges(_vdb, edges)
+                    apply_join_verifications(graph, _verified, _rejected)
+                    # ON-0a: the overlap proves the KEYS match; the cardinality label was an
+                    # inference that fell to N:N whenever a profile was missing. Measure it on
+                    # the surviving edges, in the same connection, before the graph is saved.
+                    from aughor.ontology.cardinality import apply_cardinality_measurements
+                    from aughor.ontology.lifecycle import apply_lifecycle_measurements
+                    from aughor.packs.ontology_map import apply_bound_pack_claims, bound_end_state_names
+                    from aughor.ontology.backing import apply_backing_measurements, measure_override_backings
+                    apply_cardinality_measurements(graph, _vdb)
+                    apply_lifecycle_measurements(graph, _vdb, bound_end_state_names(connection_id, graph.schema_name))
+                    apply_backing_measurements(graph, _vdb)
+                    measure_override_backings(connection_id, graph.schema_name, _vdb)
+                    # ON-0a: the packs DEPLOYED on this connection are the core it extends —
+                    # every claim in their maps is evaluated here, never rendered.
+                    apply_bound_pack_claims(graph, connection_id, graph.schema_name, _vdb)
                 finally:
                     _vdb.close()
-                apply_join_verifications(graph, _verified, _rejected)
         except Exception as exc:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "ontology join value-verification is best-effort; catalog probe still covers it",

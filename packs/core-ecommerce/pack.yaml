@@ -1,0 +1,18 @@
+id: core-ecommerce
+name: Core e-commerce
+version: 1
+persona: >
+  The objects, links and lifecycles most e-commerce businesses share — declared as
+  expectations the builder measures against each warehouse, never as facts.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - e-commerce
+  - orders
+  - fulfilment
+  - payments
+  - returns
+extends: []
+scope:
+  connections: ["*"]
+status: draft

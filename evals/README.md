@@ -90,7 +90,11 @@ A record may carry `duckdb_path` (the LuxExperience demo pack, `data/luxexperien
 see `docs/DEMO_PACK_DESIGN.md`) so the set opens the file read-only instead of the registry —
 the registry is a served store, and a hermetic run beside the API redirects it. `connection_id`
 stays the label and the `--graph-json` key; the served graphs are committed beside their sets
-(`ablation_*_ontology.json`). Run beside a serving API with every `AUGHOR_*_DB` redirected
+(`ablation_*_ontology.json`), and beside each the same graph after its relationship cardinalities
+were measured against the data (`ablation_*_ontology_measured.json`, written by
+`python -m aughor.ontology.cardinality` and then `python -m aughor.ontology.lifecycle`, each
+`--graph-json <served> --duckdb <file> --out <measured>`; ON-0a). The measured files also carry the
+core pack's claims by tier (`core_claims`), the receipt `POST /ontology/measure?pack=<id>` returns live. Run the `ontology` arm on the measured file to test a block that says true things. Run beside a serving API with every `AUGHOR_*_DB` redirected
 (the list is `tests/conftest.py`'s) and `AUGHOR_FALLBACK_BACKENDS=none`.
 
 ## Adding questions

@@ -86,6 +86,9 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     "investigation.dispatched", "investigations.swept", "job.foreign", "job.orphaned",
     "job.state", "monitor.alert", "node.span", "pack.status_changed", "phase_complete",
     "playbook.use", "store.wal_drift", "eval.graduation", "ontology.build",
+    # ON-0a: a measurement pass over a built ontology (cardinality, lifecycles, pack
+    # claims) — operational, like the build it follows; the gated edit is journaled by RBAC.
+    "ontology.measure",
 })
 
 #: MI-1 — reviewed and judged governance-shaped, deliberately NOT yet in the feed.

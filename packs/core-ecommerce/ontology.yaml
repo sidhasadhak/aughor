@@ -1,0 +1,87 @@
+# The core the business extends (ROADMAP §3.15 ON-0a). Every entry is a CLAIM the builder
+# measures against the warehouse; nothing here is rendered into a prompt. Ten to twenty
+# objects, not a reference model. A child pack (`extends: [core-ecommerce]`) replaces an
+# entry by name; the company's own pack overrides and rejects the same way.
+objects:
+  - name: Customer
+    roles: [party]
+    aliases: [customers, customer, users, clients, accounts, buyers]
+  - name: Order
+    roles: [transaction]
+    aliases: [orders, sales_orders, purchases]
+  - name: OrderItem
+    roles: [event]
+    aliases: [order_items, order_lines, line_items, order_line, orderline, items_sold]
+  - name: Product
+    roles: [catalog]
+    aliases: [products, product, skus, catalog, articles]
+  - name: Payment
+    roles: [transaction]
+    aliases: [payments, payment, order_payments, transactions]
+  - name: Shipment
+    roles: [event]
+    aliases: [shipments, shipment, deliveries, fulfillments, fulfilments]
+  - name: Return
+    roles: [event]
+    aliases: [returns, return, order_returns, refunds]
+  - name: Review
+    roles: [event]
+    aliases: [reviews, review, order_reviews, ratings]
+  - name: Category
+    roles: [catalog]
+    aliases: [categories, category, product_categories]
+  - name: Seller
+    roles: [party]
+    aliases: [sellers, seller, suppliers, supplier, vendors, merchants]
+  - name: Warehouse
+    roles: [location]
+    aliases: [warehouses, warehouse, fulfilment_centers, fulfillment_centers]
+
+# from:to — many from-rows per to-row is N:1. `via` is the key both sides are expected to
+# carry; a built join on a different key is a different link, reported as such.
+links:
+  - {from_object: OrderItem, to_object: Order,    cardinality: "N:1", via: order_id,      description: many lines per order}
+  - {from_object: Order,     to_object: Customer, cardinality: "N:1", via: customer_id,   description: many orders per customer}
+  - {from_object: OrderItem, to_object: Product,  cardinality: "N:1", via: product_id}
+  - {from_object: Payment,   to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true, description: one or more payments per order; none before capture}
+  - {from_object: Shipment,  to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true, description: an order may have no shipment (cancelled, digital)}
+  - {from_object: Return,    to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true}
+  - {from_object: Return,    to_object: OrderItem, cardinality: "N:1", via: order_item_id, to_side_optional: true}
+  - {from_object: Review,    to_object: Order,    cardinality: "N:1", via: order_id,      to_side_optional: true}
+  - {from_object: Product,   to_object: Category, cardinality: "N:1", via: category_id}
+  - {from_object: OrderItem, to_object: Seller,   cardinality: "N:1", via: seller_id}
+
+# Terminal states are EXPECTATIONS: the data can refute one (rows left it) and confirm one
+# the builder also found; it cannot prove finality. `end_state_names` are the words that
+# read as final — the lifecycle measurement reports them as unconfirmed when a built
+# terminal set omits them.
+lifecycles:
+  - object: Order
+    column_hint: status
+    states: [pending, processing, paid, shipped, delivered, cancelled, returned, refunded]
+    terminal_states: [delivered, cancelled, returned, refunded]
+    end_state_names: [delivered, completed, complete, closed, cancelled, canceled, refunded, returned,
+                      rejected, reject, failed, expired, void, voided, fulfilled, done, finished,
+                      terminated, resolved, archived, lost, won, churned]
+  - object: Payment
+    column_hint: status
+    states: [pending, authorized, captured, refunded, failed]
+    terminal_states: [refunded, failed]
+    end_state_names: [refunded, failed, voided, void, expired, chargeback, charged_back]
+  - object: Shipment
+    column_hint: status
+    states: [pending, in_transit, delivered, returned, lost]
+    terminal_states: [delivered, returned, lost]
+    end_state_names: [delivered, returned, lost, cancelled, canceled]
+  - object: Return
+    column_hint: status
+    states: [requested, received, inspected, refunded, rejected]
+    terminal_states: [refunded, rejected]
+    end_state_names: [refunded, rejected, reject, closed]
+
+# Fields the core KNOWS have business-specific spellings — and leaves empty. 'DE' and
+# 'Deutschland' are Germany; a market like 'DACH' is not. Only the business fills these.
+aliases:
+  - {field: country,  values: {}}
+  - {field: currency, values: {}}
+  - {field: status,   values: {}}

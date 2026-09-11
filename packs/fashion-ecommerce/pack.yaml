@@ -1,0 +1,16 @@
+id: fashion-ecommerce
+name: Fashion e-commerce
+version: 1
+persona: >
+  Core e-commerce with what fashion adds: brands and their tiers, seasons and
+  collections, sizes and variants — still expectations, still measured.
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - fashion
+  - luxury
+  - apparel
+extends: [core-ecommerce]
+scope:
+  connections: ["*"]
+status: draft

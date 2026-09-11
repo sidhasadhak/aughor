@@ -1086,6 +1086,11 @@ def render_ontology_annotations(graph: OntologyGraph) -> str:
             if entity.terminal_states:
                 t_str = ", ".join(f"'{s}'" for s in entity.terminal_states)
                 lines.append(f"    terminal states: {t_str}")
+            # ON-0a: a lifecycle the data contradicts, or whose terminal set omits an
+            # end-state name, is not rendered as bare fact — the check travels with it.
+            if entity.lifecycle_note and (entity.lifecycle_verified is False
+                                          or entity.lifecycle_note.startswith("unconfirmed")):
+                lines.append(f"    lifecycle check: {entity.lifecycle_note}")
 
         if entity.active_filter:
             lines.append(

@@ -14,10 +14,12 @@ via model_dump() and deserialises via model_validate().
 """
 from __future__ import annotations
 
+import re
+
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from pydantic import AliasChoices, BaseModel, Field, computed_field
+from pydantic import AliasChoices, BaseModel, Field, computed_field, model_validator
 
 
 class ComputedProperty(BaseModel):
@@ -83,6 +85,36 @@ class EntityProperty(BaseModel):
     p75: Optional[float] = None       # 75th percentile
 
 
+def snake_name(name: str) -> str:
+    """`OrderItem` → `order_item`: the stable spelling an api_name defaults to."""
+    s = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", name or "")
+    s = re.sub(r"[^A-Za-z0-9]+", "_", s).strip("_").lower()
+    return s or "object"
+
+
+class Backing(BaseModel):
+    """What an object type is read FROM (ON-1: the noun decouples from the table).
+
+    `table` today — the default every existing consumer reads, byte-identically — or a
+    keyed SELECT (`kind="query"`) a human sets through the overrides tree, whose rows are
+    the object's instances. `primary_key` is the column unique per instance; `verified`
+    says the data agreed (COUNT(DISTINCT key) == COUNT(key) over the backing's rows) —
+    measured, never assumed, like every other claim since ON-0a.
+    """
+    kind: Literal["table", "query"] = "table"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    primary_key: str = ""
+    verified: Optional[bool] = None
+    verification_note: str = ""
+
+    def from_clause(self, alias: str = "b") -> str:
+        """The FROM fragment a consumer queries this object through."""
+        if self.kind == "query" and self.sql:
+            return f"({self.sql.strip().rstrip(';')}) AS {alias}"
+        return self.table or ""
+
+
 class OntologyEntity(BaseModel):
     id: str                                    # PascalCase: "Order", "Customer"
     display_name: str                          # human-readable business name, set/corrected by enricher
@@ -90,6 +122,13 @@ class OntologyEntity(BaseModel):
     source_tables: list[str]                  # tables that materialise this entity
     identity_key: str                          # canonical PK column, e.g. "order_id"
     grain_verified: bool                       # COUNT(*) == COUNT(DISTINCT identity_key)
+    #: ON-1: the stable name the API, packs and playbooks bind to — never the table's name.
+    #: Filled from the id (`OrderItem` → `order_item`) when the builder leaves it empty.
+    api_name: str = ""
+    #: ON-1: what this object is read FROM — one table by default (`source_tables[0]` +
+    #: `identity_key`), a keyed SELECT when a human sets one. Consumers that read the
+    #: table directly are unchanged; the validator and ON-2's compiler read the backing.
+    backing: Optional[Backing] = None
 
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
@@ -109,6 +148,13 @@ class OntologyEntity(BaseModel):
     lifecycle_states: list[str] = Field(default_factory=list)
     terminal_states: list[str] = Field(default_factory=list)
     active_filter: Optional[str] = None       # SQL fragment: "order_status NOT IN ('canceled')"
+    #: ON-0a: the lifecycle MEASURED against the data. None until measured; False when the
+    #: data contradicts it (an observed state the lists never named, or a claimed terminal
+    #: state whose timestamp is set on rows now in another state); True otherwise. The note
+    #: carries the evidence, and the end-state names the core expects but the terminal set
+    #: omits are reported there as UNCONFIRMED — a snapshot cannot prove a state is final.
+    lifecycle_verified: Optional[bool] = None
+    lifecycle_note: str = ""
 
     # Routing guidance (Wave 2 / Layer 1.1) — "for questions of this shape, query
     # {table} rather than this entity's own table". Human-authored only: it arrives
@@ -168,6 +214,15 @@ class OntologyEntity(BaseModel):
     exploration_insights: list[str] = Field(default_factory=list)
 
 
+    @model_validator(mode="after")
+    def _fill_object_defaults(self) -> "OntologyEntity":
+        if not self.api_name:
+            self.api_name = snake_name(self.id)
+        if self.backing is None:
+            self.backing = Backing(kind="table", table=self.source_tables[0] if self.source_tables else None,
+                                   primary_key=self.identity_key)
+        return self
+
 class OntologyInterface(BaseModel):
     """A shared structural shape implemented by multiple entity types.
 
@@ -203,6 +258,24 @@ class OntologyRelationship(BaseModel):
     # SHARE, probed at build time. None = unprobed; ~1.0 = a real FK; a value-DISJOINT name
     # coincidence (≈0) is dropped from the graph entirely, never persisted as a relationship.
     value_overlap: Optional[float] = None
+    #: The cardinality MEASURED against the data (ON-0a): a side is "1" when its key is unique
+    #: over its non-null rows. None until measured. When it contradicts the authored label,
+    #: `cardinality` is replaced by it and the authored value survives in `cardinality_note` —
+    #: the block renders what the data says, never a verified-looking guess.
+    measured_cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
+    cardinality_note: str = ""
+    #: ON-1: a link has a stable name on EACH side (`order_item_to_order` / `order_to_order_item`),
+    #: filled from the entity ids when the builder leaves them empty.
+    api_name: str = ""
+    reverse_api_name: str = ""
+
+    @model_validator(mode="after")
+    def _fill_link_names(self) -> "OntologyRelationship":
+        if not self.api_name:
+            self.api_name = f"{snake_name(self.from_entity)}_to_{snake_name(self.to_entity)}"
+        if not self.reverse_api_name:
+            self.reverse_api_name = f"{snake_name(self.to_entity)}_to_{snake_name(self.from_entity)}"
+        return self
 
 
 class DefinitionSource(BaseModel):
@@ -464,6 +537,21 @@ class KineticAction(BaseModel):
     origin: Literal["manual", "learned", "structural"] = "manual"
 
 
+class CoreClaim(BaseModel):
+    """One claim from an industry map (a pack's `ontology.yaml`), evaluated against THIS
+    graph and data (§3.15 ON-0a). Tiers: `expected` (declared, not yet measurable here),
+    `measured-true`, `measured-false` (the data contradicts the core — the data wins),
+    `human` (an override settled it). Never rendered into a prompt: what reaches the model
+    is the measured label on the relationship or entity itself."""
+    kind: Literal["object", "link", "lifecycle", "alias"]
+    subject: str
+    expected: str
+    measured: Optional[str] = None
+    tier: Literal["expected", "measured-true", "measured-false", "human"] = "expected"
+    provenance: str = ""                       # "pack:<id>"
+    note: str = ""
+
+
 class OntologyGraph(BaseModel):
     connection_id: str
     schema_name: str = ""          # DB schema this ontology covers (e.g. "analytics", "public")
@@ -478,6 +566,9 @@ class OntologyGraph(BaseModel):
 
     entities: dict[str, OntologyEntity] = Field(default_factory=dict)
     relationships: dict[str, OntologyRelationship] = Field(default_factory=dict)
+    #: ON-0a: the industry map's claims, evaluated here (see CoreClaim). Kept beside the
+    #: graph so a UI can show what the core expected and what the data said, per tier.
+    core_claims: list[CoreClaim] = Field(default_factory=list)
     metrics: dict[str, OntologyMetric] = Field(default_factory=dict)
     # Key frozen as `actions`: it is a persisted JSON key in data/ontology_cache.json and
     # the shape of GET /ontology/actions. The TYPE is a QueryTemplate (see above).

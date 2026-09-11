@@ -83,8 +83,10 @@ been un-runnable since June and is rebuilt with an ontology arm; the LLM arms ra
 evening on the one set that still exists (`samples/ecommerce`: 12/12 on every arm — a ceiling,
 not a lift; `workspace/missimi`, the discriminating set, is GONE from this instance; the hard
 set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/14, guards 100%
-safe, NO LIFT; the falsifier fires as written, but the block carried five wrong N:N labels —
-the user decides, §3.15).
+safe, NO LIFT; the falsifier fires as written, but the block carried four wrong N:N labels —
+the user decides, §3.15). **ON-0a built 2026-09-11 (three commits):** cardinality and lifecycle
+terminal states measured at build time, the map as claims — `packs/core-ecommerce` and
+`packs/fashion-ecommerce` — evaluated by tier; the re-run awaits the go (§3.15).
 
 ---
 
@@ -3472,9 +3474,10 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     percentage form of a fraction) are alternative correct answers, not tolerances — the
     scorer rounds to four places and matches sets exactly. 🔴 **What the block will teach
     there, rendered by the product's own functions (5,901 chars beside a 13,925-char
-    schema): five joins labelled N:N that the data shows are N:1 or 1:1** —
+    schema): four joins labelled N:N that the data shows are N:1 or 1:1** —
     `order_items → orders`, `order_items → payments`, `order_items → shipments`,
-    `customer_service → orders`, `return_logistics → returns` — under a CARDINALITY
+    `return_logistics → returns` (first counted as five: `customer_service → orders` joins
+    on customer_id and is genuinely N:N — corrected by ON-0a's measurement) — under a CARDINALITY
     sentence that tells the model an N-side join multiplies rows. The validator verified
     that the KEYS overlap (100%); the cardinality was never measured against the row
     counts. `l14_captured_by_method` is written to that claim, and the run will say
@@ -3521,12 +3524,12 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     cardinality, the block's defect seen from the other side.
     **The falsifier, read honestly.** As written it FIRES — "no lift or a regression ⇒
     prompt injection retired for the ontology, ON-6 cancelled". Two things weigh against
-    acting on it tonight. (1) The block under test carried five wrong verified labels, and
+    acting on it tonight. (1) The block under test carried four wrong verified labels, and
     the one question the ontology could have won is the one those labels blanked: this
     measured a corrupted block, not the verified layer the arc proposes. (2) n = 14 on one
     model with raw already at 13/14: the set discriminates the GUARDS (one save, zero
     regressions, in both runs) far better than it discriminates prose. What it does
-    establish: on this model, verified blocks that are RIGHT (five N:1 joins, two
+    establish: on this model, verified blocks that are RIGHT (the seven joins the data confirms, two
     lifecycles, the segments) changed no answer on 13 questions the raw arm already had.
     **The decision is the user's (§6):** retire ON-6 on the falsifier as written, or
     measure relationship cardinality first (chip filed — the validator verifies key
@@ -3565,7 +3568,192 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   prompt-injection strategy is retired for the ontology (blocks stay only where a
   guard cites them) and ON-6 is cancelled; ON-1/ON-2 proceed regardless, because the
   compiled path does not depend on the model reading prose.
-- **ON-1 · The noun decouples from the table.** An `ObjectType` with a stable
+- **ON-0a · The core the business extends — DRAFTED 2026-09-10, first commit BUILT the same
+  night** (the user: *"standardize
+  the semantic core; allow businesses to extend it"*; sits between ON-0 and ON-1 in build
+  order, and gives ON-0's open decision its build shape). A pack gains an approximate map
+  of its industry, and the builder treats every entry in it as a **claim to measure,
+  never a fact to render**. Four parts, all approximate by design and none of them prose:
+  (1) **expected object types** with the roles they play — `Order`, `OrderItem`,
+  `Payment`, `Shipment`, `Return` … — matched to this schema's tables by the builder
+  (the alignment is proposed by the model, shown, and overridable like every other
+  override; `Pack.entities` / `RoleSpec` is the seed of this and already exists);
+  (2) **expected links** with an expected cardinality and nullability — `OrderItem →
+  Order` N:1 · `Order → Shipment` 0..1 · `Order → Payment` 0..1 before capture — each
+  one an obligation to count `COUNT(*)` against `COUNT(DISTINCT key)` on both sides and
+  to count the orphans: the measurement the validator never made, which is how five N:1
+  joins reached the prompt labelled N:N (the ON-0 receipt above); (3) **expected
+  lifecycles** with terminal states and ordering rules — `Order.status` has terminal
+  states, a refund or return state is expected, `shipped_at` precedes `delivered_at` —
+  each an obligation to read the column's observed domain, flag unclassified values, and
+  test "no later transition" where a `<state>_at` column exists: the measurement that
+  would have caught `refunded` (500 rows) missing from the samples ontology; (4)
+  **value-domain aliases**, marked business-specific and EMPTY in the core — the core
+  declares that `country` has aliases, never what they are (`DACH` is not Germany).
+  **Layering** rides the pack `extends` chain that already exists: `core-ecommerce` ←
+  `fashion` (season, collection, size, brand tier) ← the company. LuxExperience is the
+  fashion case sitting on this instance; the samples warehouse is the core case.
+  **Laws.** Every entry is `expected` until measured and carries its provenance (core ·
+  pack · measured · human); a measured fact beats a core claim and a human override
+  beats both (§6: verification trumps authority); an entry that measures FALSE is
+  rendered nowhere and shown in the panel as a contradiction, never silently dropped;
+  the reach ratchet is the gate — nothing from the map reaches a prompt block except
+  through the same verified tier the semantic layer uses today; the core stays small
+  (ten to twenty object types per industry) and versioned, because pack playbooks bind
+  to its names. Standardize the grammar and the obligations; the business supplies the
+  facts.
+  **Build.** The pack model gains `PackOntology` (object types · links · lifecycles ·
+  aliases) beside `metrics` and `playbooks`; the builder consumes it as a prior — match,
+  then measure; the validator gains the two measurements the open chips name
+  (relationship cardinality against row counts · terminal states against observed
+  transitions) — those chips ARE this wave's first two commits and stand on their own
+  without a pack; one bundled `core-ecommerce` pack and one `fashion` extension; the
+  ablation harness gains a builder arm (`--builder with-core|without-core`).
+  **Receipt:** the LuxExperience ontology rebuilt with the core — the four N:N labels
+  become N:1 / 1:1 by measurement (✅ done, first commit below), or the wave has failed at
+  its first step; the samples
+  ontology's terminal states gain `refunded`; a dated count of claims by tier (expected
+  · measured-true · measured-false · human) per connection; and ON-0's hard set re-run on
+  the block the core-built ontology produces — that re-run IS the user's open decision
+  on ON-6, made on a block that says true things.
+  **Falsifier:** if a core-built ontology carries no more measured-true claims and no
+  fewer wrong labels than a bare build on the same schema, the map is documentation and
+  the wave stops at the validator measurements (which stand on their own); if the re-run
+  still shows no lift or a regression on the ontology arm, ON-6 is retired on that
+  evidence and the map's value is confined to ON-2's compiled path — where a measured
+  cardinality is a compile-time law, not a sentence.
+  **Not this:** a prose block per industry; a reference model (FIBO, FHIR and the TM
+  Forum SID are quarries, not adoptions); an alias table shipped in the core; a runtime
+  (RDF/OWL, property graph — three studies, one verdict: port the levers, refuse the
+  runtime).
+  ✅ **First commit, 2026-09-10 — relationship cardinality is measured at build time.**
+  `aughor/ontology/cardinality.py`: a side is "1" iff its key is unique over its non-null
+  rows (`COUNT(*)`, `COUNT(col)`, `COUNT(DISTINCT col)` — exact, one scan per side); the
+  label reads from:to like the prompt's own sentence; a contradicted label is REPLACED and
+  the authored one survives in `cardinality_note`; an unmeasurable edge (empty or missing
+  table) keeps its label and says why. Hooked into the build right after the join-value
+  pass, in the same connection, so every rebuild measures; `python -m
+  aughor.ontology.cardinality --graph-json … --duckdb … --out …` measures a served graph
+  offline. Ratcheted in `tests/unit/test_relationship_cardinality.py`: the committed
+  LuxExperience fixture must still carry the four wrong labels; a hermetic warehouse with
+  the demo file's key uniqueness must flip exactly those four and leave the three genuine
+  N:N edges alone; the rendered block must then say `[N:1, verified` where it said N:N.
+  **Measured on the real files:** LuxExperience 11 relationships → 7 confirmed, 4
+  relabelled (`order_items → orders/payments/shipments` N:N→N:1, `return_logistics →
+  returns` N:N→1:1), 0 unmeasurable. **The samples "control" was not a control:** 5
+  relationships → 3 relabelled. `customers → orders` and `customers → reviews` were stored
+  PK-side-first, so their N:1 read left→right as "many customers per order"; the data says
+  1:N. `order_items → reviews` is N:N (an order can carry several reviews), not N:1. The
+  builder's `_infer_cardinality` assumes the from side holds the FK and orients the label
+  on that assumption; the measurement is orientation-aware by construction. Both measured
+  graphs are committed beside their served ones (`evals/ablation_*_ontology_measured.json`).
+  Prompt-reach walk 142 → 144; the two new fields reach no block by design — the renderer
+  reads the corrected `cardinality`. **A no-model door for graphs already built:**
+  `POST /ontology/measure?connection_id=…&schema_name=…` (gated like every ontology edit)
+  measures the cached graph against the live connection — both measurements below — saves
+  it under the graph's own key, invalidates the enriched-schema cache that embeds the
+  blocks, and journals `ontology.measure`; an instance sees true labels without spending a
+  rebuild. Applied on this instance 2026-09-11 to LuxExperience, samples, and the DWH
+  connection's `ecommerce` graph (6 joins → 3 relabelled: `customer → orders` N:1→1:1,
+  Olist's one-customer_id-per-order; `order_items → order_payments` and `→ order_reviews`
+  N:1→N:N).
+  ✅ **Second commit, 2026-09-11 — lifecycle terminal states are measured at build time.**
+  `aughor/ontology/lifecycle.py`. What a snapshot can prove: an observed state the lists
+  never named, and a claimed terminal state whose `<state>_at`-style timestamp is set on
+  rows now in another state (they left it) — either sets `lifecycle_verified=False`, and
+  the segment derived from the terminal set (the active filter) is downgraded, so the
+  VERIFIED SEMANTIC LAYER stops offering a filter the data refutes. What it cannot prove:
+  that a state is final — so an observed state whose NAME is an end state in the core map
+  (`refunded`, `returned`, `rejected` …) and is missing from `terminal_states` is reported
+  as UNCONFIRMED, rendered beside the claim in ENTITY MODEL as `lifecycle check: …`, never
+  as a verdict; the pack will own that list (part 3 of this wave). Hooked beside the
+  cardinality pass; the same CLI shape. Ratcheted in
+  `tests/unit/test_lifecycle_measurement.py` (the verdicts, the downgrade, the rendered
+  check, the samples fixture's omitted `refunded`, the Lux lifecycles). **Measured on the
+  real files:** samples `Order` — six observed states all listed, nothing refutable,
+  `refunded` (500 rows) unconfirmed; LuxExperience `Payment` — `refunded` (42,941 rows)
+  unconfirmed against a terminal set of `failed` alone; `ReturnLogistic` clean.
+  Prompt-reach walk 144 → 146; `lifecycle_note` and `lifecycle_verified` now reach ENTITY
+  MODEL (recorded). 🔑 The samples case this wave was drafted on is NOT a contradiction the
+  data can prove — no order ever leaves `refunded`, but no column says so either. The
+  honest verdict is "unconfirmed, 500 rows", and that is what the block now says.
+  ✅ **Third commit, 2026-09-11 — the pack section: the map as claims, measured.**
+  `PackOntology` (`ontology.yaml`: objects with roles and aliases · links with the
+  cardinality the data must confirm and the key they are expected on · lifecycles with
+  terminal states and the END-STATE NAMES · aliases the core declares and leaves EMPTY)
+  loads beside metrics and playbooks; `packs/core-ecommerce` (11 objects, 10 links, 4
+  lifecycles, 3 empty alias fields) and `packs/fashion-ecommerce` (`extends:
+  [core-ecommerce]`; adds Brand, Season, Collection, Variant, 4 links, 2 alias fields)
+  ship as authored packs. `aughor/packs/ontology_map.py` resolves the `extends` chain
+  (parents first, a child replaces by name), matches objects to entities deterministically
+  (ids, display names, table stems, aliases — never a model call, never double-booked),
+  and evaluates every entry into a `CoreClaim` on the graph with a tier — `expected` ·
+  `measured-true` · `measured-false` · `human` — and its provenance (`pack:<id>`); a link
+  is compared on the expected KEY (a built join on another key is a different link) and
+  oriented before it is compared. The end-state names moved out of code:
+  `lifecycle.default_end_state_names()` reads the core pack; the in-code set is the seed
+  of last resort. Packs DEPLOYED on a connection apply at build time; the door takes
+  `pack=<id>` to evaluate one explicitly. Nothing from a claim reaches a prompt — the walk
+  grew 146 → 147 and `core_claims` reaches no block, by design. Ratcheted in
+  `tests/unit/test_pack_ontology_claims.py`. **Measured on the real files — the dated
+  count of claims by tier this wave asked for:** LuxExperience × fashion-ecommerce: 12
+  measured-true · 27 expected · 0 measured-false, 9 objects matched. samples ×
+  core-ecommerce: 10 measured-true · 21 expected · 0 measured-false, 5 matched. The DWH
+  connection's Olist-shaped `ecommerce` × core-ecommerce (live, through the door): 11
+  measured-true · 19 expected · **1 measured-false** — `Order → Customer` expected N:1,
+  measured 1:1 (Olist mints a `customer_id` per order; the person is `customer_unique_id`).
+  The core's expectation is wrong for that warehouse and the data wins, recorded as such —
+  the first claim the tier system was built for. What the
+  expected tier says, honestly: on LuxExperience the builder never found `orders →
+  customers`, `payments → orders`, `shipments → orders` or `returns → orders` — it linked
+  everything through order_items — and never marked `orders.status` as a lifecycle though
+  the column is there (shipped / returned / cancelled); Product → Brand is a string, not
+  a key. The map's value on this instance is exactly that list: the joins and lifecycles a
+  rebuild should look for. The claims are recorded on both measured fixtures. Trimmed from
+  the draft: the harness `--builder` flag (two `--graph-json` inputs already are the two
+  arms) and the `human` tier, declared but not yet written (the overrides tree does not
+  say which claims it settled). **Open, this wave:** the ON-0 hard set re-run with
+  `--graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json`
+  — the block that says true things, 28 model calls, awaiting the go.
+- ✅ **ON-1 · The noun decouples from the table — FIRST SLICE BUILT 2026-09-11.** What
+  shipped: every entity carries a stable `api_name` (`OrderItem` → `order_item`, never
+  the table's spelling; a set name is never overwritten) and a `backing` — its table by
+  default, filled from `source_tables[0]` + `identity_key` so every graph built before
+  today loads with every pre-existing field byte-identical and the ERD underneath
+  untouched — or a keyed SELECT a human sets through the overrides tree (`PUT
+  /ontology/entities/{id}` with `backing: {kind: query, sql, primary_key}`). Every link
+  has a name on each side (`order_item_to_order` / `order_to_order_item`). **The backing's
+  key is measured**, the way every claim is since ON-0a: `COUNT(DISTINCT key)` over the
+  backing's rows at build time and through the measure door (`backings` in its report);
+  a table backing that fails the check corrects the entity's `grain_verified` — the
+  builder's flag was a profile inference, and on `workspace/amazon` it read "verified"
+  over a `product_id` that repeats on 114 rows. A human backing binds by dry-running its
+  SELECT and earns `verified` only when a measure pass proves the key unique; the verdict
+  rides the override's binding, so the overlay carries it at read time without a database
+  in hand. The validator probes every computed property, metric and segment through the
+  backing (`_entity_table` → the SELECT as a subquery for a query-backed object; the table,
+  byte-identically, otherwise), which is what makes the receipt hold: a `Customer` backed
+  by `customers ⋈ customer_profiles` with `lifetime_value` verified against the join, the
+  ERD unchanged, `GET /ontology/entities` unchanged for every single-table type. Ratcheted
+  in `tests/unit/test_object_backing.py`; `aughor/ontology/backing.py` holds the
+  measurement and `entity_from_clause`, the seam ON-2's compiler reads. Prompt-reach walk
+  147 → 156; none of the nine new fields reach a block — the prompt still names tables,
+  which is ON-6's question, not this wave's. **Measured live through the door, 2026-09-11,
+  four connections:** LuxExperience 14 backings unique, 13 grains CONFIRMED (the flag said
+  unverified; the key is unique); samples 5 unique, 5 confirmed; `workspace/amazon` —
+  `product_id` 1,351 distinct over 1,465 rows, grain REFUTED (the flag said verified); the
+  DWH connection's Olist-shaped `ecommerce` — 5 confirmed and FOUR keys that are not keys:
+  `OrderItem.order_item_id` is a per-order sequence, 21 distinct over 112,650 rows (the true
+  grain is `order_id + order_item_id`), `OrderPayment.order_id` 99,440 over 103,886 (several
+  payments per order), `OrderReview.review_id` 98,410 over 99,224 (Olist's duplicated review
+  ids), `Geolocation.geolocation_zip_code_prefix` 19,015 over 1,000,163. Every one of those
+  four was rendered "grain: ✓" or offered as an identity to the model before today; every one
+  now reads `backing.verified = False` with the counts in its note. **Deferred from the
+  draft, honestly:**
+  `dedup.merge_entities` is not yet rewritten as "two tables, one backing" (it still
+  concatenates `source_tables`); a query backing has no UI and no diff view; properties
+  are still copied ColumnProfiles, not typed properties mapped to expressions.
+  **The draft:** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
   tomorrow — `users ⋈ customer_profiles`), typed properties mapped to columns or
   expressions, and `LinkType` as a first-class record with an API name on EACH side and
@@ -3982,7 +4170,10 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         June · two harder sets · the ratchet test · LLM arms run on samples/ecommerce:
         12/12 on every arm, a ceiling; missimi is GONE — the hard set re-authored on
         LuxExperience and RUN: raw 13/14 = ontology 13/14, NO LIFT; the falsifier fires
-        as written, contested by five wrong N:N labels — the user decides) →
+        as written, contested by four wrong N:N labels — the user decides) →
+        ON-0a the core the business extends (built 2026-09-11: cardinality and terminal
+        states measured at build time; the map as claims by tier — core-ecommerce ←
+        fashion-ecommerce ← the company; the hard-set re-run awaits the go) →
         ON-1 object types decoupled from tables →
         ON-2 the compiled object-query door (guards by construction, run_sql stays)
         → ON-3 instances + the standard object view → ON-4 actions on objects with

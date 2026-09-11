@@ -11,7 +11,10 @@ pins that measurement so it moves only DELIBERATELY:
 * the walk must still see the whole model — a collapsed field count means the walker
   broke, and an empty audit passes every baseline (the vocabulary ratchet's own lesson).
 
-Measured 2026-09-10 on the fixture graph: 59 of 142 fields reach at least one block.
+Measured 2026-09-10 on the fixture graph: 59 of 142 fields reach at least one block;
+156 walked since ON-0a added `measured_cardinality`, `cardinality_note`, `core_claims` (unreached by
+design — claims are never rendered), `lifecycle_verified` (a gate), `lifecycle_note` (reaches ENTITY MODEL),
+and ON-1 added `api_name`, `backing.*` and the link names (unreached: the prompt still names tables).
 """
 from __future__ import annotations
 
@@ -32,6 +35,8 @@ REACH_BASELINE: dict[str, set[str]] = {
     "entities.*.lifecycle_states": {'entity_model'},
     "entities.*.terminal_states": {'entity_model', 'intake_entity_context'},
     "entities.*.active_filter": {'entity_model', 'intake_entity_context'},
+    "entities.*.lifecycle_verified": {'entity_model'},   # ON-0a: the gate on the lifecycle-check line
+    "entities.*.lifecycle_note": {'entity_model'},       # ON-0a: the lifecycle check travels with the claim
     "entities.*.segments.*.display_name": {'semantic_layer'},
     "entities.*.segments.*.filter_sql": {'semantic_layer'},
     "entities.*.segments.*.verified": {'semantic_layer'},
@@ -85,7 +90,7 @@ REACH_BASELINE: dict[str, set[str]] = {
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 142
+FIELDS_WALKED = 156   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design
 
 
 @pytest.fixture(scope="module")

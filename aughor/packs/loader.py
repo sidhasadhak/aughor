@@ -13,7 +13,7 @@ import yaml
 from pydantic import ValidationError
 
 from aughor.packs.models import (
-    Pack, PackManifest, PackMetric, PackQuestions, PackPlaybook, PackSurface, PackEval, RoleSpec,
+    Pack, PackManifest, PackMetric, PackOntology, PackQuestions, PackPlaybook, PackSurface, PackEval, RoleSpec,
 )
 
 
@@ -106,10 +106,15 @@ def load_pack(path: Union[str, Path]) -> Pack:
                 if isinstance(item, dict) and item.get("question"):
                     evals.append(PackEval(**item))
 
+    ontology = None
+    o_file = root / "ontology.yaml"
+    if o_file.is_file():
+        ontology = PackOntology(**(_read_yaml(o_file) or {}))
+
     return Pack(
         manifest=manifest, expertise=expertise, metrics=metrics, entities=entities,
         questions=questions, playbooks=playbooks, surface=surface, evals=evals,
-        path=str(root),
+        ontology=ontology, path=str(root),
     )
 
 

@@ -6,7 +6,7 @@ pack author can add forward-looking keys without breaking the loader.
 """
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -94,6 +94,54 @@ class PackSurface(_Base):
     panels: list[dict] = Field(default_factory=list)
 
 
+class ExpectedObject(_Base):
+    """An object type the industry map EXPECTS — matched to this schema's tables by name and
+    alias, never invented. `roles` name what the object does (party, transaction, event…)."""
+    name: str
+    roles: list[str] = Field(default_factory=list)
+    aliases: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
+class ExpectedLink(_Base):
+    """A link the map expects between two objects, with the cardinality the data must
+    CONFIRM (from:to — many from-rows per to-row is N:1) and the key it is expected on."""
+    from_object: str
+    to_object: str
+    cardinality: Literal["1:1", "1:N", "N:1", "N:N"] = "N:1"
+    via: str = ""                       # the key column both sides are expected to carry
+    to_side_optional: bool = False      # a from-row may have NO to-row (an order without a shipment)
+    description: str = ""
+
+
+class ExpectedLifecycle(_Base):
+    """A lifecycle the map expects on an object: the column it usually lives in, the states
+    a business usually has, the ones it expects to be terminal, and the END-STATE NAMES —
+    words that read as final — which the lifecycle measurement reports as unconfirmed when
+    a built terminal set omits them. Every entry is a claim; none is rendered as fact."""
+    object: str
+    column_hint: str = ""
+    states: list[str] = Field(default_factory=list)
+    terminal_states: list[str] = Field(default_factory=list)
+    end_state_names: list[str] = Field(default_factory=list)
+
+
+class ExpectedAliases(_Base):
+    """A field the core declares HAS business-specific aliases — and leaves them EMPTY. The
+    core knows that `country` is spelled many ways; only the business knows which spellings
+    are its own (a market like DACH is not a country)."""
+    field: str
+    values: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class PackOntology(_Base):
+    """`ontology.yaml` — the approximate map of an industry, as claims to measure (§3.15 ON-0a)."""
+    objects: list[ExpectedObject] = Field(default_factory=list)
+    links: list[ExpectedLink] = Field(default_factory=list)
+    lifecycles: list[ExpectedLifecycle] = Field(default_factory=list)
+    aliases: list[ExpectedAliases] = Field(default_factory=list)
+
+
 class PackEval(_Base):
     """`evals/*.yaml` — a golden question + expected behaviour (per-pack scored suite)."""
     question: str
@@ -110,6 +158,7 @@ class Pack(_Base):
     playbooks: list[PackPlaybook] = Field(default_factory=list)
     surface: Optional[PackSurface] = None
     evals: list[PackEval] = Field(default_factory=list)
+    ontology: Optional[PackOntology] = None          # ontology.yaml — the core the business extends
     path: str = ""                                   # source folder
 
     @property
