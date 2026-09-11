@@ -110,6 +110,18 @@ def test_schema_fingerprint_cache_is_isolated():
     assert "aughor-test-stores" in str(schema_cache._CACHE_PATH)
 
 
+def test_ontology_overrides_and_export_trees_are_isolated():
+    """ON-1b — the overrides tree had no override, so a measure-door test that cached a graph under a real
+    connection id wrote that connection's live override file: LuxExperience's Order bindings came back counted
+    over a three-row fixture. The tree and its export sibling now resolve AUGHOR_* dirs the conftest points at
+    the temp dir, and `resolve_db_path` puts both in front of the generic guard below."""
+    from aughor.ontology import filetree, overrides, recommendations
+    assert "aughor-test-stores" in str(overrides.overrides_root())
+    assert str(overrides.overrides_root()).endswith("ontology_overrides")
+    assert "aughor-test-stores" in str(filetree._EXPORT_ROOT)
+    assert "aughor-test-stores" in str(recommendations._ROOT)      # the family's third writer, same fix
+
+
 def test_embedded_qdrant_path_is_isolated():
     """S1 — the embedded semantic index is a lock-holding DIRECTORY, so a leak here
     is worse than dirty data: local mode's exclusive lock would also contend with a

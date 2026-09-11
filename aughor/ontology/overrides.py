@@ -37,6 +37,7 @@ from typing import Any, Callable, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.ontology.models import (
     ComputedProperty,
     KineticAction,
@@ -46,7 +47,13 @@ from aughor.ontology.models import (
     OntologyMetric,
 )
 
-_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_overrides"
+#: `data/ontology_overrides`, or `AUGHOR_ONTOLOGY_OVERRIDES_DIR` when set — the test conftest points it at a throwaway
+#: dir. It had no override until ON-1b: every measure door and build that counts what a person declared (a backing, a
+#: display property, a binding) reads this tree for the connection it measures and WRITES the verdict back, so a door
+#: test that cached a graph under LuxExperience's real connection id rewrote that connection's live Order override
+#: with counts from a three-row fixture.
+_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_OVERRIDES_DIR",
+                        Path(__file__).parent.parent.parent / "data" / "ontology_overrides")
 
 
 def overrides_root() -> Path:

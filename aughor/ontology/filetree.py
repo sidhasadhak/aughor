@@ -22,10 +22,13 @@ from typing import Optional
 
 import yaml
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.ontology.models import OntologyGraph
 from aughor.ontology.overrides import OntologyOverride, _EDITABLE, _safe
 
-_EXPORT_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_export"
+#: `data/ontology_export`, or `AUGHOR_ONTOLOGY_EXPORT_DIR` — the overrides tree's sibling, isolated with it.
+_EXPORT_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_EXPORT_DIR",
+                               Path(__file__).parent.parent.parent / "data" / "ontology_export")
 
 
 def export_root(conn: str, schema: str) -> Path:
