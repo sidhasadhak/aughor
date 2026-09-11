@@ -15,6 +15,7 @@ from aughor.actions.executor import (
     CriterionError,
     ParamError,
     coerce_params,
+    default_dispatch,
     evaluate_predicate,
     execute_kinetic_action,
 )
@@ -201,6 +202,22 @@ def test_annotate_without_target_params_errors_clearly():
     a = _action(kind="annotate", side_effects=[], submission_criteria=[])
     r = execute_kinetic_action(a, {"amount": 1})   # no table/body params
     assert r.status == "dispatch_error" and "table" in r.message
+
+
+def test_annotate_names_the_row_by_the_param_its_key_column_names(monkeypatch):
+    # An object page pre-fills the object's key under its own name (`order_id`, with key_column
+    # "order_id"): the note lands on that order's row, not on the whole column — and an explicit
+    # row_key still wins.
+    saved = []
+    monkeypatch.setattr("aughor.actions.overlay.save_edit", lambda edit: saved.append(edit) or edit)
+    a = _action(id="flag_order_for_review", kind="annotate", side_effects=[], submission_criteria=[])
+    default_dispatch(a, {"order_id": "O000123", "key_column": "order_id", "table": "orders",
+                         "column": "status", "body": "check the refund"}, "c1")
+    assert (saved[0].row_key, saved[0].key_column, saved[0].column) == ("O000123", "order_id", "status")
+    saved.clear()
+    default_dispatch(a, {"row_key": "O000999", "order_id": "O000123", "key_column": "order_id",
+                         "table": "orders", "body": "an explicit row_key"}, "c1")
+    assert saved[0].row_key == "O000999"
 
 
 def test_trigger_investigation_without_a_question_is_a_dispatch_error():

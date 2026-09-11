@@ -389,14 +389,21 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
 
 def _dispatch_annotate(action: KineticAction, params: dict, scope: str) -> dict:
     """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
-    never a source mutation. The action's parameters carry the target + body."""
+    never a source mutation. The action's parameters carry the target + body. The row is named by
+    ``row_key`` or, when that is absent, by the parameter its ``key_column`` names — an action taking
+    ``order_id`` with ``key_column="order_id"`` annotates that order's row, which is how an object
+    page pre-fills the object's key."""
     from aughor.actions.overlay import OverlayEdit, save_edit
     if not params.get("table") or not params.get("body"):
         raise KineticDispatchError("annotate requires 'table' and 'body' parameters")
+    key_column = str(params.get("key_column", ""))
+    row_key = params.get("row_key")
+    if row_key in (None, "") and key_column:
+        row_key = params.get(key_column)
     edit = save_edit(OverlayEdit(
         connection_id=scope, table=str(params["table"]),
-        column=str(params.get("column", "")), row_key=str(params.get("row_key", "")),
-        key_column=str(params.get("key_column", "")),
+        column=str(params.get("column", "")), row_key="" if row_key is None else str(row_key),
+        key_column=key_column,
         kind=str(params.get("kind", "annotation")), body=str(params["body"]), source="user"))
     return {"annotation": edit.target(), "id": edit.id}
 
