@@ -58,8 +58,9 @@ def overrides_root() -> Path:
 # directory it lives in (`{conn}/{schema}/{kind}/{id}.yaml`), so `"object_set"` stays even
 # though the type it targets is now a `Segment`. Renaming it would orphan every override a
 # human has already authored and every one committed to a repo. The display word is mapped
-# at the HTTP boundary (routers/ontology.py), not here.
-TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action"]
+# at the HTTP boundary (routers/ontology.py), not here. `link` (ON-3b) is a NEW kind — a relationship's
+# business-verb name — so it adds a directory and renames none.
+TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action", "link"]
 
 # Whitelist of fields a human may override, per target kind. Anything outside
 # these sets is ignored on write *and* on apply, so an override file can never
@@ -86,6 +87,9 @@ _EDITABLE: dict[str, set[str]] = {
         # Bound by dry-running the SELECT; VERIFIED only when a measure pass proves the key
         # unique over its rows (`measure_override_backings`), recorded on the binding.
         "backing",
+        # ON-3b: the property whose value names one object of this type. Bound against the graph (the
+        # type must HAVE it); whether it names objects is measured on the measure door, on the binding.
+        "display_property",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -99,6 +103,8 @@ _EDITABLE: dict[str, set[str]] = {
         # ON-4 — the object type the action is about, and the overlay properties it sets.
         "object_type", "edits",
     },
+    # ON-3b: a relationship's business-verb name (`shipment_ships_order`), beside its stable mechanical names.
+    "link": {"name"},
 }
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
@@ -271,6 +277,25 @@ class OverlayReport(BaseModel):
         return len(self.applied)
 
 
+def _declared_display(ov: OntologyOverride, value: Any):
+    """ON-3b — a person's display property, carrying the measurement kept on its binding when that measurement is
+    of this very property. None when it never bound (the type has no such property): an unbound name would title
+    every object with nothing."""
+    from aughor.ontology.models import DisplayProperty
+    name = str(value or "").strip()
+    b = ov.binding.get("display_property") or {}
+    if not name or b.get("bound") is False:
+        return None
+    same = b.get("property") == name
+    return DisplayProperty(
+        name=name, source="human",
+        rows=b.get("rows") if same else None, non_null=b.get("non_null") if same else None,
+        distinct=b.get("distinct") if same else None, verified=b.get("verified") if same else None,
+        note=(b.get("measured_note") if same and b.get("measured_note")
+              else "declared by a person; not yet measured"),
+    )
+
+
 def _apply_entity(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
     touched: list[str] = []
     for field, value in ov.fields.items():
@@ -285,8 +310,15 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
                                 else (False if (b.get("bound") is False or unique is False) else None))
             spec["verification_note"] = (b.get("note") or b.get("unique_note")
                                          or ("bound; key uniqueness not yet measured" if spec["verified"] is None else ""))
+            spec["rows"] = b.get("rows")
             ent.backing = Backing(**{k: v for k, v in spec.items() if k in Backing.model_fields})
             touched.append(field)
+            continue
+        if field == "display_property":
+            shown = _declared_display(ov, value)
+            if shown is not None:
+                ent.display_property = shown
+                touched.append(field)
             continue
         setattr(ent, field, value)
         touched.append(field)
@@ -392,6 +424,19 @@ def _apply_action(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     return ["<declared>"]   # non-empty so the OverlayReport records it as applied
 
 
+def _apply_link(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """ON-3b — a person's business-verb name for one relationship, beside its mechanical names. A name that is not
+    snake_case never applies (the authoring route refuses it first), and a relationship the graph no longer has
+    is reported as skipped."""
+    from aughor.ontology.models import LINK_NAME_PATTERN
+    rel = graph.relationships.get(ov.target_id)
+    name = str(ov.fields.get("name") or "").strip()
+    if rel is None or not LINK_NAME_PATTERN.match(name):
+        return []
+    rel.name = name
+    return ["name"]
+
+
 def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> tuple[Optional[OntologyGraph], OverlayReport]:
     """Overlay all human overrides for {conn}/{schema} onto ``graph`` in place.
 
@@ -416,6 +461,8 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
                            else _apply_computed_property)(ent, ov)
             elif ov.target_kind == "metric":
                 touched = _apply_metric(graph, ov)
+            elif ov.target_kind == "link":
+                touched = _apply_link(graph, ov)
             elif ov.target_kind == "action":
                 # Wave K substrate — only human-DECLARED actions exist to overlay.
                 touched = _apply_action(graph, ov)
@@ -457,6 +504,9 @@ def bind_overrides(
         if field == "backing":
             _bind_backing(ov, value, explain)
             continue
+        if field == "display_property":
+            _bind_display_property(ov, value, graph)
+            continue
         if field not in _SQL_FIELDS or not str(value or "").strip():
             continue
         probe = _probe_sql(field, str(value), table)
@@ -467,6 +517,28 @@ def bind_overrides(
             err = f"{type(exc).__name__}: {exc}"
         ov.binding[field] = {"bound": err is None, "note": "" if err is None else err}
     return ov
+
+
+def _bind_display_property(ov: OntologyOverride, value: Any, graph: Optional[OntologyGraph]) -> None:
+    """ON-3b — a display property binds when the type HAS that property: a check against the graph, no database.
+    Whether it names objects is a measurement (`display.measure_override_display_properties`) kept on the same
+    entry and carried across a re-bind of the same name. ALWAYS writes an entry, like an existence field: a
+    declaration nobody checked must not read as bound."""
+    prev = ov.binding.get("display_property") or {}
+    name = str(value or "").strip()
+    entity = graph.entities.get(ov.target_id) if graph is not None else None
+    if not name:
+        entry: dict[str, Any] = {"bound": False, "note": "no property named"}
+    elif entity is None:
+        entry = {"bound": False, "note": f"no object type {ov.target_id!r} in the graph to check {name!r} against"}
+    elif not any(k.lower() == name.lower() for k in (entity.properties or {})):
+        entry = {"bound": False, "note": f"{entity.id} has no property {name!r}"}
+    else:
+        entry = {"bound": True, "note": ""}
+    if prev.get("property") == name:
+        entry.update({k: prev[k] for k in ("rows", "non_null", "distinct", "verified", "measured_note") if k in prev})
+    entry["property"] = name
+    ov.binding["display_property"] = entry
 
 
 def _bind_backing(ov: OntologyOverride, value: Any, explain: Callable[[str], Optional[str]]) -> None:

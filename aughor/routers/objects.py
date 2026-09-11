@@ -106,6 +106,49 @@ def get_object_catalog(connection_id: str = BUILTIN_ID, schema_name: Optional[st
     return object_catalog(_served_graph(connection_id, schema_name), overlay=_accepted_edits(connection_id))
 
 
+@router.get("/object-types")
+def get_object_type_map(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
+    """ON-3b — the entity-type map: every object type with the measured facts its card shows (key verified, rows,
+    bindings, links the compiler follows, declared actions, verified metrics), and every link between two types
+    with its verb and measured cardinality. A cache read: no warehouse query, no model call."""
+    from aughor.semantic.object_types import object_type_map
+    return object_type_map(_served_graph(connection_id, schema_name), overlay=_accepted_edits(connection_id))
+
+
+@router.get("/object-types/{object_type}")
+def get_object_type(object_type: str, connection_id: str = BUILTIN_ID,
+                    schema_name: Optional[str] = Query(default=None)):
+    """ON-3b — one object type as the entity-type panel shows it and `describe_entity` returns it: the key and
+    whether it is unique, the display property, every property with its source, the bindings, the links (followed,
+    or refused and why), the declared actions and the verified metrics. An unknown type is `path: refused`."""
+    from aughor.semantic.object_query import ObjectQueryRefused
+    from aughor.semantic.object_types import describe_object_type
+    graph = _served_graph(connection_id, schema_name)
+    try:
+        body = describe_object_type(graph, object_type, overlay=_accepted_edits(connection_id))
+    except ObjectQueryRefused as exc:
+        return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                "connection_id": connection_id, "schema_name": graph.schema_name}
+    return {"path": "object_type", "connection_id": connection_id, "schema_name": graph.schema_name, **body}
+
+
+@router.get("/object-paths")
+def get_object_paths(source: str, target: str, connection_id: str = BUILTIN_ID,
+                     schema_name: Optional[str] = Query(default=None),
+                     max_hops: int = Query(default=4, ge=1, le=5)):
+    """ON-3b — how one object type reaches another: every chain of links within `max_hops`, each hop marked
+    followed or refused with the compiler's reason, followed paths first. An unknown type is `path: refused`."""
+    from aughor.semantic.object_query import ObjectQueryRefused
+    from aughor.semantic.object_types import find_paths
+    graph = _served_graph(connection_id, schema_name)
+    try:
+        found = find_paths(graph, source, target, max_hops=max_hops)
+    except ObjectQueryRefused as exc:
+        return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                "connection_id": connection_id, "schema_name": graph.schema_name}
+    return {"path": "paths", "connection_id": connection_id, "schema_name": graph.schema_name, **found}
+
+
 @router.post("/objects/query")
 def post_object_query(
     query: ObjectQuery,

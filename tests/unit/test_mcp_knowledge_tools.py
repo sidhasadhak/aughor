@@ -30,6 +30,15 @@ def quality_db(tmp_path, monkeypatch):
     monkeypatch.setattr(R, "_DB_PATH", tmp_path / "quality.db")
 
 
+@pytest.fixture(autouse=True)
+def no_ontology(monkeypatch):
+    """These tests pin the knowledge graph's fallback: no ontology is served, so `describe_entity` reads the
+    table node. The object-type path is `test_describe_entity_object_type.py`'s."""
+    import aughor.mcp.knowledge_tools as KT
+
+    monkeypatch.setattr(KT, "_served_ontology", lambda *a, **k: None)
+
+
 def _node(nid, kind="table", label="", sources=None):
     return SimpleNamespace(id=nid, kind=kind, label=label or nid.split(":")[-1],
                            summary="", data={"source_tables": sources

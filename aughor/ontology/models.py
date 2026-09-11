@@ -92,6 +92,48 @@ def snake_name(name: str) -> str:
     return s or "object"
 
 
+class DisplayProperty(BaseModel):
+    """ON-3b — the property whose value names one object of a type: a customer's `full_name`, a
+    warehouse's `name`, an order's own key when nothing else names it.
+
+    DECLARED on the type, never guessed per read: proposed from the profile when the builder leaves it
+    empty (`propose_display_property`), or set by a person through the overrides tree — and MEASURED
+    like every other claim since ON-0a: `rows`, `non_null` and `distinct` counted over the backing, the
+    verdict and its evidence in `verified` and `note` (`aughor.ontology.display`). A refuted proposal
+    gives way to the key; a person's declaration stands, its measurement shown beside it.
+    """
+    name: str = ""
+    source: Literal["proposed", "human"] = "proposed"
+    rows: Optional[int] = None
+    non_null: Optional[int] = None
+    distinct: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+
+
+#: Property-name fragments that say a column names an instance, in preference order.
+_NAME_HINTS = ("full_name", "display_name", "name", "title", "label")
+
+
+def propose_display_property(entity: "OntologyEntity") -> DisplayProperty:
+    """The display property the profile proposes: a text or dimension property named after the type itself
+    (`brand` on Brand), else one whose name says it is a name (`full_name`, `product_name`, `title`), else
+    the key. Deterministic and from the profile alone; whether it names objects is measured afterwards."""
+    key = (entity.backing.primary_key if entity.backing is not None else "") or entity.identity_key
+    candidates = [p for p in (entity.properties or {}).values()
+                  if (p.semantic_type or "") in ("dimension", "text") and not p.is_primary_key
+                  and (p.null_rate or 0.0) <= 0.5]
+    type_words = {snake_name(entity.id), entity.api_name}
+    for p in candidates:
+        if p.name.lower() in type_words:
+            return DisplayProperty(name=p.name, note=f"proposed: {p.name} is named after the type")
+    for hint in _NAME_HINTS:
+        for p in candidates:
+            if hint in p.name.lower():
+                return DisplayProperty(name=p.name, note=f"proposed: its name says {p.name} names an instance")
+    return DisplayProperty(name=key, note="proposed: no property names an instance, so the key does")
+
+
 class Backing(BaseModel):
     """What an object type is read FROM (ON-1: the noun decouples from the table).
 
@@ -107,6 +149,9 @@ class Backing(BaseModel):
     primary_key: str = ""
     verified: Optional[bool] = None
     verification_note: str = ""
+    #: ON-3b: the rows the backing held when its key was measured — the "rows" fact the entity-type map
+    #: shows. None until measured (POST /ontology/measure), never estimated from a profile.
+    rows: Optional[int] = None
 
     def from_clause(self, alias: str = "b") -> str:
         """The FROM fragment a consumer queries this object through."""
@@ -129,6 +174,9 @@ class OntologyEntity(BaseModel):
     #: `identity_key`), a keyed SELECT when a human sets one. Consumers that read the
     #: table directly are unchanged; the validator and ON-2's compiler read the backing.
     backing: Optional[Backing] = None
+    #: ON-3b: the property that names one instance (see DisplayProperty) — proposed from the profile when
+    #: the builder leaves it empty, so every graph built before carries one; measured on the measure door.
+    display_property: Optional[DisplayProperty] = None
 
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
@@ -221,6 +269,8 @@ class OntologyEntity(BaseModel):
         if self.backing is None:
             self.backing = Backing(kind="table", table=self.source_tables[0] if self.source_tables else None,
                                    primary_key=self.identity_key)
+        if self.display_property is None:
+            self.display_property = propose_display_property(self)
         return self
 
 class OntologyInterface(BaseModel):
@@ -268,6 +318,11 @@ class OntologyRelationship(BaseModel):
     #: filled from the entity ids when the builder leaves them empty.
     api_name: str = ""
     reverse_api_name: str = ""
+    #: ON-3b: the business-verb link name a PERSON set through the overrides tree (`shipment_ships_order`).
+    #: Empty means the name is proposed from the verb at read time (`business_name`), so an enriched verb
+    #: renames the link without leaving a stale copy; the mechanical pair above stays the stable fallback
+    #: every query and page still accepts.
+    name: str = ""
 
     @model_validator(mode="after")
     def _fill_link_names(self) -> "OntologyRelationship":
@@ -276,6 +331,26 @@ class OntologyRelationship(BaseModel):
         if not self.reverse_api_name:
             self.reverse_api_name = f"{snake_name(self.to_entity)}_to_{snake_name(self.from_entity)}"
         return self
+
+    def business_name(self) -> str:
+        """The link's business-verb name, read from→to: the person's when set, else `<from>_<verb>_<to>` from
+        the verb on record — or "" while the verb is still the placeholder that names nothing."""
+        if self.name:
+            return self.name
+        verb = snake_name(self.verb or "")
+        if not (self.verb or "").strip() or verb in _PLACEHOLDER_VERBS:
+            return ""
+        return f"{snake_name(self.from_entity)}_{verb}_{snake_name(self.to_entity)}"
+
+    def business_name_source(self) -> str:
+        """``human`` when a person named the link, ``proposed`` when its verb did, "" when nothing names it."""
+        return "human" if self.name else ("proposed" if self.business_name() else "")
+
+
+#: ON-3b — the verb the builder writes before enrichment names nothing, so no link name is proposed from it.
+_PLACEHOLDER_VERBS = frozenset({"relates_to"})
+#: A business-verb link name is a path segment: snake_case, bounded.
+LINK_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 
 
 class DefinitionSource(BaseModel):

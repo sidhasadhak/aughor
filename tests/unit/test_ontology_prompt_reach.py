@@ -96,7 +96,7 @@ REACH_BASELINE: dict[str, set[str]] = {
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 165   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design; +9 ON-4 (object params, the action's object type, declared edits)
+FIELDS_WALKED = 174   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design; +9 ON-4 (object params, the action's object type, declared edits); +9 ON-3b (the display property's name, source and measurement, the backing's rows, a link's business-verb name) — unreached by design: the map and describe_entity read them as tools, never as prompt text
 
 
 @pytest.fixture(scope="module")

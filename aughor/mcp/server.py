@@ -228,13 +228,16 @@ async def search_graph(
 @mcp.tool()
 async def describe_entity(
     connection: Annotated[str, Field(description="A connection id from list_connections.")],
-    entity: Annotated[str, Field(description="A table or entity name, e.g. 'orders'.")],
+    entity: Annotated[str, Field(description="An object type or table name, e.g. 'shipment' or 'orders'.")],
 ) -> dict:
-    """Everything Aughor knows about one entity — its columns, domain, verified joins with
-    their MEASURED value-domain overlap, glossary terms and past findings. The same slice
-    Aughor's own entity page renders, so an agent and a human asking about `orders` get one
-    answer. `available=false` with a `notice` means the entity exists but is withheld by
-    data governance."""
+    """What one business object TYPE is — an order, a customer, a shipment — as Aughor's ontology
+    measured it: its key and whether the data proves it unique, the property that names one, every
+    property with its role, type and SOURCE (the table and column it is read from), its links to other
+    types by name with measured cardinality and whether each can be followed (or why not), the declared
+    actions that take it, and its verified metrics. The slice Aughor's entity-type map renders, so an
+    agent and a person asking what a Shipment is get one answer. `kind` says where it came from: the
+    ontology (`object_type`), or — where none is built — the knowledge graph's table node (`table`).
+    `available=false` with a `notice` means it exists but is withheld by data governance."""
     from aughor.mcp.knowledge_tools import describe_entity as _describe
 
     return _describe(connection, entity)

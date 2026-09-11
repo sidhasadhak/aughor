@@ -50,6 +50,8 @@ class _EntityOverride(BaseModel):
     # endpoint. Anything absent here is dropped by the `model_dump()` filter below, so
     # a new editable field must be added in BOTH places or it silently does nothing.
     use_instead: Optional[_UseInstead] = None
+    #: ON-3b — the property whose value names one object of this type; it must be a property the type has.
+    display_property: Optional[str] = None
 
 
 class _ActionOverride(BaseModel):
@@ -602,6 +604,7 @@ def measure_ontology(
            "relationships": reports["relationships"].summary(),
            "lifecycles": reports["lifecycles"].summary(),
            "backings": reports["backings"].summary(),
+           "display_properties": reports["display_properties"].summary(),
            "claims": claims.summary() if claims is not None else None}
     try:
         from aughor.kernel.ledger import Ledger
@@ -875,6 +878,21 @@ def _override_result(ov) -> dict:
     }
 
 
+def _display_property_or_error(connection_id: str, schema: str, entity_id: str, name: str) -> str:
+    """ON-3b — the property a display-property edit names, spelled as the type spells it: 404 when the type is not
+    in the served graph, 400 naming its properties when it has no such property."""
+    graph = _get_ontology_graph(connection_id, schema)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    wanted = str(name or "").strip()
+    match = next((k for k in (entity.properties or {}) if k.lower() == wanted.lower()), None)
+    if match is None:
+        raise HTTPException(status_code=400, detail=(f"{entity_id} has no property '{wanted}' — its properties: "
+                                                     f"{', '.join(sorted(entity.properties or {})) or 'none'}"))
+    return match
+
+
 @router.put("/ontology/entities/{entity_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def override_ontology_entity(
     entity_id: str,
@@ -884,15 +902,60 @@ def override_ontology_entity(
 ):
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
-    from aughor.ontology.overrides import OntologyOverride
+    from aughor.ontology.overrides import OntologyOverride, find_override
     effective = _resolve_schema(connection_id, schema_name)
     fields = {k: v for k, v in body.model_dump().items() if v is not None}
     if not fields:
         raise HTTPException(status_code=400, detail="no override fields provided")
-    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields)
+    served = _get_ontology_graph(connection_id, effective)
+    if served is not None and entity_id not in served.entities:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    if "display_property" in fields:
+        fields["display_property"] = _display_property_or_error(connection_id, effective, entity_id,
+                                                                fields["display_property"])
+    # MERGE into the entity's existing override rather than replacing its file: a PUT of one field used to
+    # wipe a description, a backing or a routing rule already there (the routing-proposal door below merges
+    # for the same reason). The kept binding lets a re-bind carry a measurement of an unchanged value.
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id,
+                          fields={**(existing.fields if existing else {}), **fields},
+                          source=(existing.source if existing else "human"),
+                          binding=dict(existing.binding) if existing else {})
     ov, graph = _bind_and_persist(connection_id, effective, ov)
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    return _override_result(ov)
+
+
+class _LinkName(BaseModel):
+    """ON-3b — a link's business-verb name (`shipment_ships_order`)."""
+    name: str
+
+
+@router.put("/ontology/links/{relationship_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def name_ontology_link(
+    relationship_id: str,
+    body: _LinkName,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Name a link by its business verb (ON-3b). Its mechanical names stay — every query and page still accepts
+    them — and this one is accepted beside them. Refused when it is not snake_case, or already names another
+    link or a property on either type the link joins: a path segment must name exactly one thing."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.semantic.object_types import link_name_problem
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None or relationship_id not in graph.relationships:
+        raise HTTPException(status_code=404, detail=f"Link '{relationship_id}' not found")
+    name = body.name.strip()
+    problem = link_name_problem(graph, relationship_id, name)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields={"name": name})
+    save_override(connection_id, effective, ov)
     return _override_result(ov)
 
 

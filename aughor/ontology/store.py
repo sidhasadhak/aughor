@@ -234,17 +234,23 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
     if pack_id:
         names |= set(end_state_names_for_pack(pack_id))
     from aughor.ontology.backing import apply_backing_measurements, measure_override_backings
+    from aughor.ontology.display import apply_display_measurements, measure_override_display_properties
     relationships = apply_cardinality_measurements(graph, db)
     lifecycles = apply_lifecycle_measurements(graph, db, frozenset(n.lower() for n in names) if names else None)
     backings = apply_backing_measurements(graph, db)
     measure_override_backings(connection_id, schema_name, db, report=backings)
+    # ON-3b — whether each type's display property names its objects (the proposal here; a person's
+    # declaration on its override binding).
+    displays = apply_display_measurements(graph, db)
+    measure_override_display_properties(connection_id, schema_name, db, graph, report=displays)
     claims = apply_bound_pack_claims(graph, connection_id, schema_name, db)
     if pack_id:
         po = resolve_ontology(pack_id)
         if po is not None:
             claims = apply_core_claims(graph, po, pack_id, db)
     _store.put(key, {"graph": graph.model_dump()})
-    return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims}
+    return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims,
+            "display_properties": displays}
 
 
 def patch_action(
