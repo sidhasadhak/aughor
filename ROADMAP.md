@@ -4151,7 +4151,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   forced-Quick `/chat` door, so it never reaches the conversation even with `ask.converse` on — asked there first,
   the question was answered by a SELECT of string literals shown as "1 source · executed SQL", a separate defect
   filed on its own.
-- **ON-1b · Bindings — each property knows its source — AMENDED 2026-09-11, not started.** An object
+- **ON-1b · Bindings — each property knows its source — AMENDED 2026-09-11; FIRST SLICE BUILT and its RECEIPT
+  MET the same day (on `claude/on-1b-bindings`, unpushed).** An object
   type's single `backing` becomes a list of **bindings**. Each binding is a table or keyed SELECT joined
   to the object on its key, with the properties it supplies and a kind — **static** (one row per object)
   or **timeseries** (many rows per object over a time column) — and a verdict **measured** the ON-0a way:
@@ -4164,6 +4165,51 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   type gains a second static binding from a table keyed on its key (measured unique); its panel shows each
   property's source; an object query filtering on a property from that binding compiles through the key
   join and equals its hand-written reference.
+  **Receipts — first slice, 2026-09-11.** `aughor/ontology/bindings.py`: a further binding (`Binding` — a table or
+  keyed SELECT, the column holding the object's key, `static` or `timeseries`, the properties it supplies with any
+  renames, the columns it skips and why) is counted in one probe against the objects it binds to — rows, keyed rows,
+  distinct keys, the objects, how many it covers, the keys that reach no object — and holds only when the data says
+  so: a static binding when its key is unique over its rows AND reaches objects that exist, a timeseries binding
+  when its key reaches objects, its coverage kept. The first binding is still `backing`, so every graph built before
+  loads byte-identically (`bindings` and `proposed_bindings` default empty; a renamed column lives on the binding,
+  never on the property). A person binds one through `PUT /ontology/entities/{id}/bindings/{name}`: its source is
+  read for its columns first — the key, the time column and every property must exist and be free on the type (a name
+  the backing, another binding or a link already holds is skipped by default, and refused when asked for by name) —
+  and a 400 writes nothing; the binding is then counted in the same request, and rebuilt at read time from what the
+  bind and the count recorded, without a database (a spec edited since its bind reaches no reader). `DELETE` removes
+  one. The measure door and the build count every binding and PROPOSE a static one wherever another type's table
+  carries a type's measured-unique key one row per object — kept on `proposed_bindings`, read by no query, page or
+  answer until a person binds it. ON-2's compiler reads a bound property through a LEFT JOIN on the key, taken once
+  per object alias — at the anchor, behind a to-one hop, inside EXISTS and inside a pre-aggregation alike — and
+  refuses an unmeasured or refuted binding, and every timeseries binding (ON-5's), with the reason; the compiled
+  result lists the bindings it joined. The object page reads static bindings by the key under the same law. The
+  entity-type panel and `describe_entity` list every binding with its verdict and coverage and every property with
+  its source, the panel with Bind on a proposal and Remove on a person's binding; `describe_entity` leaves out a
+  binding read from a table G5 withholds. In `tests/unit/test_object_bindings.py` eight compiled queries through a
+  binding — a filter, a renamed column, a dimension that keeps the uncovered objects, a SUM, a flag's share, behind a
+  to-one link, through a to-many EXISTS and through a pre-aggregation — equal their hand-written references on the
+  samples warehouse; 18 of 18 guard mutations fail a test; the prompt-reach walk grew 174 → 246 fields and none of
+  the new ones reaches a block. The full suite ran all 9,726 tests with none failing (3 skipped); its process could not
+  exit because background workspace builds sat in a pre-existing single-flight wait on themselves (#305: two
+  `build_intelligence` layers share one key), filed on its own. **Live on LuxExperience, no model call on any path:** the measure door proposed five
+  bindings, each one row per object — Order ← payments (covering 112,439 of 112,439 orders), shipments (107,903),
+  customer_service (11,244); Order Line ← returns; Return ← return_logistics — and counted ten more candidates the
+  data refused. Payments was bound through the API with `status` renamed `payment_status` (a property named `status`
+  was refused, 400: Order already has it); shipments with the panel's Bind button. Order's summary reads "20
+  properties read from luxexperience.orders, 7 from luxexperience.payments (a static binding), 9 from
+  luxexperience.shipments (a static binding)". Five object queries through the bindings equal references computed on
+  the warehouse directly — **l09 (orders never shipped: 4,536) and l05 (carrier shipping cost as a share of GMV over
+  shipped orders: 7.76%), the two hard-set questions ON-2 refused for want of an orders↔shipments link**, refunded
+  payments by method, risky payments by processor, and order lines by their order's carrier through a link — and
+  order MYT-O00003141's page reads 16 properties through the two bindings, each naming its column. **Found on the
+  way:** the overrides tree had no test isolation. A measure-door test that cached a graph under LuxExperience's real
+  connection id rewrote the live Order override with counts from its three-row fixture while the full suite ran beside
+  the receipt — the panel suddenly read "3 of 3 objects". The counts were restored by re-measuring through the API;
+  the overrides, export and recommendations trees now resolve `AUGHOR_ONTOLOGY_*_DIR`, pointed at the suite's temp dir
+  and held by the store-hermeticity guard. `/objects/query` hands a NULL back as the text "NULL" (the legacy
+  stringified execute path), filed on its own. **Still open:** a keyed SELECT's properties carry no profile, so the
+  compiler will not add them up; a display property must come from the backing; the builder proposes static bindings
+  only; `dedup.merge_entities` is not yet "two tables, one binding"; nothing reads a timeseries binding before ON-5.
 - **ON-5, amended · Timeseries properties first — AMENDED 2026-09-11.** The "processes" half of the
   definition. A timeseries property — a shipment's latest location, a sensor reading, a status over time —
   is read from a timeseries binding (ON-1b) and becomes ON-5's first declared function: its latest value
@@ -4550,7 +4596,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         the Fabric IQ study (§3.15): ON-3b the entity-type map · ON-3c the agent reads the type (BOTH FIRST
         SLICES 2026-09-11: the map, the measured display property and the path finder live on
         LuxExperience; describe_entity returns the type and the agent called it live through /ask) · ON-1b
-        bindings, each property knowing its source → ON-5 functions and model bindings, timeseries
+        bindings, each property knowing its source (FIRST SLICE 2026-09-11: payments and shipments bound on
+        LuxExperience's Order, each measured one row per order; l09 and l05, refused by ON-2, compile through
+        them and equal their references) → ON-5 functions and model bindings, timeseries
         properties first. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
 ```
