@@ -35,6 +35,7 @@ import {
   type ObjectNote,
   type ObjectPage,
   type ObjectRefusal,
+  type ObjectTimeseries,
 } from "@/lib/objects";
 
 interface Scope {
@@ -175,6 +176,7 @@ function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(300px,2fr)]">
         <div className="flex min-w-0 flex-col gap-4">
           <PropertiesCard page={page} scope={scope} />
+          {(page.timeseries ?? []).map((series) => <HistoryCard key={series.binding} page={page} series={series} />)}
           <LinksCard page={page} scope={scope} />
           <CitationsCard page={page} citations={related.findings} />
         </div>
@@ -248,9 +250,15 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
                   </span>
                 )}
+                {/* ON-5 — a timeseries property is a value AT A TIME. The time is not a footnote to it. */}
+                {p.binding?.kind === "timeseries" && p.value != null && (
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}> as of {cellText(p.binding.at)}</span>
+                )}
                 {p.binding && (
                   <span className="aug-fs-xs" style={{ ...MONO, display: "block", color: "var(--t4)" }}
-                    title={`Read through the ${p.binding.kind} binding ${p.binding.name}, on the ${page.type_name} key`}>
+                    title={p.binding.kind === "timeseries"
+                      ? `${p.binding.note ?? ""} — through the binding ${p.binding.name}, on the ${page.type_name} key`
+                      : `Read through the ${p.binding.kind} binding ${p.binding.name}, on the ${page.type_name} key`}>
                     {p.binding.source}.{p.binding.column}
                   </span>
                 )}
@@ -259,6 +267,50 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
           );
         })}
       </dl>
+    </Section>
+  );
+}
+
+/** ON-5 — the readings behind a timeseries property's latest value, newest first. The value above is the first
+ *  row of this table, which is the whole claim: what it is now, and what it was before. */
+function HistoryCard({ page, series }: { page: ObjectPage; series: ObjectTimeseries }) {
+  const when = series.columns.indexOf(series.time_column);
+  return (
+    <Section title={`History · ${series.binding}`}
+      description={`${series.source}, ${series.note}. The ${series.limit} most recent readings for this `
+        + `${page.type_name.toLowerCase()}.`}>
+      {series.error && <EmptyState variant="inline" title={series.error} />}
+      {!series.error && series.rows.length === 0 && (
+        <EmptyState variant="inline" title={`No reading in ${series.source} reaches this ${page.type_name.toLowerCase()}.`} />
+      )}
+      {series.rows.length > 0 && (
+        <div style={{ overflowX: "auto" }}>
+          <table className="aug-fs-xs" style={{ borderCollapse: "collapse", width: "100%" }}>
+            <thead>
+              <tr>
+                {series.columns.map((c) => (
+                  <th key={c} style={{ ...MONO, textAlign: "left", padding: "3px 10px 3px 0", color: "var(--t3)",
+                                       fontWeight: 500, whiteSpace: "nowrap", borderBottom: ROW_RULE }}>{c}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {series.rows.map((row, i) => (
+                <tr key={i}>
+                  {row.map((cell, j) => (
+                    <td key={series.columns[j] ?? j}
+                      style={{ padding: "3px 10px 3px 0", whiteSpace: "nowrap", borderTop: i ? ROW_RULE : undefined,
+                               color: j === when || i === 0 ? "var(--t1)" : "var(--t2)",
+                               ...(j === when ? MONO : {}) }}>
+                      {cellText(cell)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </Section>
   );
 }

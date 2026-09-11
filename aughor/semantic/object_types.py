@@ -175,7 +175,11 @@ def _summary(d: dict) -> str:
     overlay = counts["properties"] - sum(b["supplies"] for b in d["bindings"])
     read = f"{_count(primary['supplies'], 'property', 'properties')} read from {primary.get('table') or 'a keyed SELECT'}"
     for b in further:
-        read += (f", {b['supplies']:,} from {b.get('table') or 'a keyed SELECT'} (a {b['kind']} binding"
+        # ON-5 — a timeseries binding's properties are a value AT A TIME, and an agent quoting this line has to
+        # know that before it compares one to another.
+        how = (f"a timeseries binding, read as each object's latest value by {b['time_column']}"
+               if b["kind"] == "timeseries" else "a static binding")
+        read += (f", {b['supplies']:,} from {b.get('table') or 'a keyed SELECT'} ({how}"
                  + ("" if b["usable"] else " the compiler does not read yet") + ")")
     return (f"{d['display_name']} ({d['object_type']}): key {key['property']} — {verdict}{rows}; named by {named}; "
             f"{read}"

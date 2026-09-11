@@ -226,7 +226,8 @@ function sourceText(source: PropertySource): { short: string; full: string } {
   const bare = table.split(".").pop() ?? table;
   const column = source.column ?? "";
   const how = source.kind
-    ? ` · the ${source.kind} binding ${source.binding}${source.read === false ? ", not read yet" : ""}`
+    ? ` · the ${source.kind} binding ${source.binding}`
+      + (source.read === false ? ", not read yet" : source.kind === "timeseries" ? ", its latest value" : "")
     : "";
   return { short: `${bare}.${column}`, full: `${table}.${column}${how}` };
 }
@@ -271,11 +272,15 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
   );
 }
 
-/** A further binding's verdict: read by the compiler, or the reason it is not. The backing carries none. */
+/** A further binding's verdict: read by the compiler, and HOW — a timeseries binding is read as each object's
+ *  latest value (ON-5), which is a different claim from a static one — or the reason it is not read. The backing
+ *  carries none. */
 function bindingVerdict(b: TypeBinding): [string, string] | null {
   if (b.primary) return null;
-  if (b.usable) return ["aug-tag-green", "read"];
-  if (b.kind === "timeseries") return ["aug-tag-gray", "timeseries — not read yet"];
+  if (b.usable) {
+    return ["aug-tag-green", b.kind === "timeseries" ? `read · latest by ${b.time_column}` : "read"];
+  }
+  if (b.kind === "timeseries" && !b.time_column) return ["aug-tag-gray", "no time column"];
   return b.verified === false ? ["aug-tag-red", "refuted"] : ["aug-tag-gray", "not yet measured"];
 }
 

@@ -18,9 +18,10 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from aughor.ontology.bindings import binding_from, binding_problem, column_of
+from aughor.ontology.timeseries import HISTORY_ROWS, history_sql, latest_columns, latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.display import display_of
-from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
+from aughor.ontology.models import Binding, EntityProperty, OntologyEntity, OntologyGraph
 from aughor.semantic.object_query import (
     ObjectLink,
     ObjectQueryRefused,
@@ -53,11 +54,14 @@ class ObjectInstance:
     caveats: list[str] = field(default_factory=list)
     #: ON-3b — what titles this object and on what warrant (`display_of`), with the value it shows.
     display: dict = field(default_factory=dict)
+    #: ON-5 — one entry per timeseries binding: the readings behind its latest value, newest first.
+    timeseries: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"object_type": self.object_type, "type_id": self.type_id, "type_name": self.type_name,
                 "key": self.key, "pk": self.pk, "title": self.title, "display": dict(self.display),
-                "properties": list(self.properties), "links": list(self.links), "caveats": list(self.caveats)}
+                "properties": list(self.properties), "links": list(self.links), "caveats": list(self.caveats),
+                "timeseries": list(self.timeseries)}
 
 
 def _key_of(entity: OntologyEntity) -> str:
@@ -106,36 +110,74 @@ def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str
     return dict(zip(columns, rows[0])), columns, len(rows) > 1
 
 
-def _bound_properties(db: Any, entity: OntologyEntity, key: str, pk: str) -> tuple[list[dict], list[str]]:
-    """ON-1b — the properties each further binding supplies for one object, read by its key under the compiler's
-    law: a binding measured one row per object is read; a static one that is not is named in a caveat and never
-    read; a timeseries binding is ON-5's. An object a binding does not cover reads those properties as empty."""
+def _bound_properties(db: Any, entity: OntologyEntity, key: str,
+                     pk: str) -> tuple[list[dict], list[dict], list[str]]:
+    """ON-1b/ON-5 — the properties each further binding supplies for one object, read by its key under the
+    compiler's law: a binding measured one row per object is read; one that is not is named in a caveat and never
+    read. A TIMESERIES binding is read through its latest-row reduction (ON-5) — the same SQL the compiler joins,
+    narrowed to this object — and the readings behind that value come back beside it as its history. An object a
+    binding does not cover reads those properties as empty.
+
+    Returns ``(properties, timeseries, caveats)``."""
     properties: list[dict] = []
+    series: list[dict] = []
     caveats: list[str] = []
     literal = typed_literal(str(pk), _key_property(entity, key), key)
     for binding in entity.bindings or []:
         problem = binding_problem(entity, binding)
         supplied = list(binding.properties.items())
         if problem or not supplied:
-            if problem and binding.kind == "static":
+            if problem:
                 caveats.append(f"not read from {binding.name}: {problem}")
             continue
-        columns = ", ".join(f"b.{quote_ident(column_of(binding, name))}" for name, _ in supplied)
-        result = _read(db, f"SELECT {columns} FROM {binding_from(binding, 'b')} "
-                           f"WHERE b.{quote_ident(binding.key)} = {literal} LIMIT 2",
-                       f"{entity.id} {pk!r} through {binding.name}")
+        latest = binding.kind == "timeseries"
+        source_sql = latest_from(binding, "b", key_equals=literal) if latest else binding_from(binding, "b")
+        if not source_sql:
+            caveats.append(f"not read from {binding.name}: it names no source to read")
+            continue
+        # A timeseries binding reads its whole reduced row, so the time column is on it even when no property is
+        # supplied from that column — the value is only half the fact, and WHEN is the other half.
+        read = latest_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
+        where = "" if latest else f"WHERE b.{quote_ident(binding.key)} = {literal} "
+        result = _read(db, f"SELECT {', '.join(f'b.{quote_ident(c)}' for c in read)} FROM {source_sql} "
+                           f"{where}LIMIT 2", f"{entity.id} {pk!r} through {binding.name}")
         rows = list(result.rows or [])
-        if len(rows) > 1:
+        if len(rows) > 1 and not latest:
             caveats.append(f"{binding.name} holds more than one row for {key} = {pk!r} — showing the first")
-        values = list(rows[0]) if rows else [None] * len(supplied)
+        by_column = dict(zip(read, list(rows[0]) if rows else [None] * len(read)))
+        at = by_column.get(binding.time_column) if latest else None
         source = binding.table or "a keyed SELECT"
-        for (name, p), value in zip(supplied, values):
-            properties.append({"name": name, "value": value, "display_name": p.display_name or name,
+        for name, p in supplied:
+            column = column_of(binding, name)
+            properties.append({"name": name, "value": by_column.get(column),
+                               "display_name": p.display_name or name,
                                "semantic_type": p.semantic_type, "data_type": p.data_type, "unit": p.unit,
                                "description": p.description,
                                "binding": {"name": binding.name, "kind": binding.kind, "source": source,
-                                           "column": column_of(binding, name)}})
-    return properties, caveats
+                                           "column": column,
+                                           **({"time_column": binding.time_column, "at": at,
+                                               "note": latest_note(binding)} if latest else {})}})
+        if latest:
+            series.append({**_history(db, entity, binding, literal, pk), "latest_at": at})
+    return properties, series, caveats
+
+
+def _history(db: Any, entity: OntologyEntity, binding: Binding, literal: str, pk: str) -> dict:
+    """ON-5 — the readings behind one object's latest value, newest first: the binding's own source, unreduced.
+    The time column leads, because what a person reads first is WHEN."""
+    columns = latest_columns(binding)
+    view = {"binding": binding.name, "source": binding.table or "a keyed SELECT", "key": binding.key,
+            "time_column": binding.time_column, "note": latest_note(binding), "limit": HISTORY_ROWS,
+            "columns": columns, "rows": []}
+    sql = history_sql(binding, literal)
+    if not sql:
+        return {**view, "error": "the binding names no source, key or time column to read a history from"}
+    try:
+        result = _read(db, sql, f"{entity.id} {pk!r} through {binding.name}")
+    except ObjectQueryRefused as refused:
+        return {**view, "error": str(refused)}
+    read = list(result.columns or columns)
+    return {**view, "columns": read, "rows": [list(r) for r in (result.rows or [])]}
 
 
 def _link_view(db: Any, link: ObjectLink, row: dict) -> dict:
@@ -185,7 +227,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "data_type": prop.data_type if prop else "",
                            "unit": prop.unit if prop else "",
                            "description": prop.description if prop else ""})
-    bound, bound_caveats = _bound_properties(db, entity, key, pk)
+    bound, series, bound_caveats = _bound_properties(db, entity, key, pk)
     properties += bound
     caveats += bound_caveats
     for edits in overlay_properties(entity, overlay).values():
@@ -205,7 +247,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
     return ObjectInstance(object_type=entity.api_name, type_id=entity.id,
                           type_name=entity.display_name or entity.id, key=key, pk=str(pk),
                           title=str(title) if title is not None else None,
-                          properties=properties, links=links, caveats=caveats,
+                          properties=properties, links=links, caveats=caveats, timeseries=series,
                           display={**shown, "value": str(title) if title is not None else None})
 
 

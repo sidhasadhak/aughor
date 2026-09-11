@@ -4,8 +4,8 @@ An object type's first binding is its backing; a further binding is a table or k
 its key. Every claim here is held to a hand-written count or query over the seeded samples warehouse, plus three
 tables this file adds: `payments` (one row for 4,500 of the 5,000 orders, and 7 payments for orders that do not
 exist), `refunds` (several rows for some orders) and `order_events` (many rows per order over time). A static binding
-is joined only when the data proves it one row per object; a refuted, unmeasured or timeseries binding is refused
-with the reason; a proposal changes nothing until a person binds it; and a compiled query that reads a bound
+is joined only when the data proves it one row per object; a refuted or unmeasured one is refused with the reason
+(a timeseries binding is reduced to each object's latest row instead — ON-5, `test_object_timeseries`); a proposal changes nothing until a person binds it; and a compiled query that reads a bound
 property equals its hand-written reference.
 """
 from __future__ import annotations
@@ -212,17 +212,20 @@ def test_an_unmeasured_binding_is_refused_until_it_is_counted(db, graph):
     assert compile_(query, graph).bindings[0]["binding"] == "payments"
 
 
-def test_a_timeseries_binding_keeps_its_coverage_and_is_not_read_before_on5(db, graph):
+def test_a_timeseries_binding_is_counted_on_reach_not_on_uniqueness(db, graph):
+    """Its key repeats by definition, so the static verdict would refute every one of them. What is counted is
+    whether it REACHES objects; what is then read is each object's latest row (ON-5, test_object_timeseries)."""
     spec = {"table": "order_events", "key": "order_id", "kind": "timeseries", "time_column": "event_at"}
     [binding] = bind(graph, db, "Order", "events", spec).bindings
     non_null, distinct = ints(db, "SELECT COUNT(order_id), COUNT(DISTINCT order_id) FROM order_events")
+    assert distinct < non_null                      # many rows per object — a static binding would be refuted here
     assert (binding.verified, binding.non_null, binding.distinct, binding.covered, binding.orphans) == (
         True, non_null, distinct, distinct, 0)
-    why = refusal({"object_type": "order", "filters": [{"path": "event", "value": "packed"}],
-                   "measures": [{"agg": "count"}]}, graph).reason
-    assert "timeseries binding" in why and "ON-5" in why
+    compiled = compile_({"object_type": "order", "filters": [{"path": "event", "value": "packed"}],
+                         "measures": [{"agg": "count"}]}, graph)
+    assert compiled.bindings[0]["treatment"] == "latest"
     page = get_object(graph, db, "order", "O000001")
-    assert not any(p.get("binding") for p in page.properties) and not page.caveats
+    assert {p["name"] for p in page.properties if p.get("binding")} == {"event_at", "event"} and not page.caveats
 
 
 # ── names: a binding adds properties and never shadows one ──────────────────────────────────

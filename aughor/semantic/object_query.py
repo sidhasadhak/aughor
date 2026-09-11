@@ -26,8 +26,10 @@ applied BY CONSTRUCTION instead of checked afterwards:
 * **N:N is refused both ways** — no join or pre-aggregation over it is safe.
 * **A ratio is a ratio of aggregates** (`divide_by`), never an average of row ratios.
 * **A property from a further binding (ON-1b) is read through a LEFT JOIN on the object's key** — and only when the
-  binding was measured one row per object; an unmeasured or refuted binding is refused, and a timeseries binding
-  waits for ON-5's latest-value and history semantics.
+  binding was measured one row per object; an unmeasured or refuted binding is refused. A TIMESERIES binding is
+  joined as each object's LATEST row (ON-5, `aughor.ontology.timeseries`): the reduction is one row per object by
+  construction, so the same law holds, and the filter and the measure then read a value whose time semantics are
+  declared rather than improvised.
 
 Coverage-gated as v1 is: every name resolves against the served graph or the compiler REFUSES
 with the reason and the names that do exist. It never guesses, and a refusal is an answer —
@@ -46,6 +48,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from aughor.ontology.timeseries import latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.models import (
     Binding,
@@ -555,7 +558,8 @@ class _Compiler:
                        p: EntityProperty) -> str:
         """ON-1b — a property a further binding supplies: the binding LEFT JOINed once per object alias on the
         object's key. The join is taken only for a binding measured one row per object, so it can neither multiply
-        nor drop an object; any other binding is a refusal naming why."""
+        nor drop an object; any other binding is a refusal naming why. ON-5 — a TIMESERIES binding is joined
+        through its latest-row reduction, which is one row per object again."""
         problem = binding_problem(entity, binding)
         if problem:
             raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which the compiler "
@@ -566,7 +570,11 @@ class _Compiler:
             b = entity.backing
             key = (b.primary_key if b is not None else "") or entity.identity_key
             joined = self._alias("b")
-            scope.joins.append(f"LEFT JOIN {binding_from(binding, joined)} "
+            source = latest_from(binding, joined) if binding.kind == "timeseries" else binding_from(binding, joined)
+            if not source:
+                raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which names "
+                                         "no source to read it from")
+            scope.joins.append(f"LEFT JOIN {source} "
                                f"ON {alias}.{quote_ident(key)} = {joined}.{quote_ident(binding.key)}")
             scope.join_alias[slot] = joined
             self.note_binding(entity, binding, key)
@@ -577,11 +585,19 @@ class _Compiler:
             return
         self._bindings_noted.add((entity.id, binding.name))
         source = binding.table or "a keyed SELECT"
-        self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key} — one row per "
-                         f"{entity.id} by measurement ({binding.note}), so it cannot multiply {entity.id} rows")
+        if binding.kind == "timeseries":
+            self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key}, "
+                             f"{latest_note(binding)} — one row per {entity.id} by construction, so it cannot "
+                             f"multiply {entity.id} rows ({binding.note})")
+        else:
+            self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key} — one "
+                             f"row per {entity.id} by measurement ({binding.note}), so it cannot multiply "
+                             f"{entity.id} rows")
         self.bindings.append({"binding": binding.name, "object_type": entity.api_name, "kind": binding.kind,
                               "source": source, "on": f"{key} = {binding.key}", "rows": binding.rows,
-                              "objects": binding.objects, "covered": binding.covered, "treatment": "joined"})
+                              "objects": binding.objects, "covered": binding.covered,
+                              "treatment": "latest" if binding.kind == "timeseries" else "joined",
+                              "time_column": binding.time_column or None})
 
     def note_overlay(self, entity: OntologyEntity, name: str, edits: list) -> None:
         if (entity.id, name.lower()) in self._overlay_noted:
