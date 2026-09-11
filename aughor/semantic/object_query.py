@@ -132,10 +132,13 @@ class CompiledObjectQuery:
     #: Every link the query relied on, with the measured cardinality and how it was treated.
     links: list[dict]
     caveats: list[str] = field(default_factory=list)
+    dimensions: list[str] = field(default_factory=list)     # the output columns that group
+    measures: list[str] = field(default_factory=list)       # the output columns that aggregate
 
     def to_dict(self) -> dict:
         return {"path": "compiled", "sql": self.sql, "dialect": self.dialect,
                 "object_type": self.object_type, "columns": list(self.columns),
+                "dimensions": list(self.dimensions), "measures": list(self.measures),
                 "plan": list(self.plan), "links": list(self.links), "caveats": list(self.caveats)}
 
 
@@ -741,6 +744,8 @@ class _Compiler:
 
         select: list[str] = []
         names: list[str] = []
+        dims: list[str] = []
+        measure_names: list[str] = []
         time_col = ""
         if q.grain or q.start or q.end:
             time_col, time_path = self.time_column(scope)
@@ -755,6 +760,7 @@ class _Compiler:
             name = _output_name(names, path.rsplit(".", 1)[-1], path.replace(".", "_"))
             select.append(f"{col} AS {quote_ident(name)}")
             names.append(name)
+            dims.append(name)
             self.plan.append(f"by {path}")
         grouped = len(select)
         for bound, op, text in (("start", ">=", q.start), ("end", "<", q.end)):
@@ -782,6 +788,7 @@ class _Compiler:
             name = _output_name(names, m.name, base + ("_ratio" if m.divide_by is not None else ""))
             select.append(f"{expr} AS {quote_ident(name)}")
             names.append(name)
+            measure_names.append(name)
 
         sql = f"SELECT {', '.join(select)} FROM {_from(anchor, 't0')}"
         sql += "".join(f" {j}" for j in scope.joins)
@@ -796,7 +803,8 @@ class _Compiler:
         if q.limit is not None:
             sql += f" LIMIT {int(q.limit)}"
         return CompiledObjectQuery(sql=self.render(sql), dialect=self.dialect, object_type=anchor.api_name,
-                                   columns=names, plan=self.plan, links=self.links, caveats=self.caveats)
+                                   columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
+                                   dimensions=dims, measures=measure_names)
 
     def render(self, sql: str) -> str:
         import sqlglot

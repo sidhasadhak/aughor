@@ -187,6 +187,12 @@ def _get_ontology_graph(connection_id: str, schema_name: Optional[str] = None):
         return None
 
 
+#: Public name for the served-graph read, for callers outside this router: the object plane
+#: (routers/objects.py) and the converse `query_objects` tool compile against exactly the graph
+#: `GET /ontology` returns, under the same scope rule — one read, never a second opinion.
+served_ontology_graph = _get_ontology_graph
+
+
 def _latest_fingerprint(connection_id: str, schema_name: Optional[str] = None) -> Optional[str]:
     from aughor.ontology.store import _load, _schema_prefix
     cache = _load()
