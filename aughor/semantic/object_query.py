@@ -178,9 +178,9 @@ def _hops_from(graph: OntologyGraph, entity: OntologyEntity) -> list[_Hop]:
 def _link_problem(h: _Hop) -> str:
     """Why this link may not be traversed, or "" when it may."""
     if h.rel.measured_cardinality is None:
-        return (f"link {h.describe()} has never been measured — its label is a {h.rel.join_confidence} "
-                "guess, and the compiler does not traverse a guess (POST /ontology/measure measures it "
-                "without a model call)")
+        return (f"link {h.describe()} has never been measured — its label was inferred "
+                f"({h.rel.join_confidence} join evidence), never counted against the rows, and the compiler "
+                "does not traverse an uncounted label (POST /ontology/measure measures it without a model call)")
     for e in (h.source, h.target):
         if e.backing is not None and e.backing.kind == "query":
             return (f"link {h.describe()} was measured on tables, and {e.id} is read through a query "

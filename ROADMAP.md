@@ -86,7 +86,14 @@ set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/
 safe, NO LIFT; the falsifier fires as written, but the block carried four wrong N:N labels —
 the user decides, §3.15). **ON-0a built 2026-09-11 (three commits):** cardinality and lifecycle
 terminal states measured at build time, the map as claims — `packs/core-ecommerce` and
-`packs/fashion-ecommerce` — evaluated by tier; the re-run awaits the go (§3.15).
+`packs/fashion-ecommerce` — evaluated by tier; the re-run awaits the go (§3.15). **ON-1's first
+slice and ON-2's first slice built 2026-09-11:** objects have stable api names and a measured
+backing; the object-set algebra compiles over measured links with the join law by construction —
+22 of 26 hard reference questions compile and all 22 answers are right (the four refusals are
+missing links), `POST /objects/query` answered "revenue per segment last quarter" live equal to the
+reference with no model call, and `run_sql`'s fan-out detector turned out never to have run on
+the conversation's door (found, flagged). Whether `query_objects` reaches the conversation is the
+user's call (§6 item 15).
 
 ---
 
@@ -3765,7 +3772,86 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   **Receipt:** a `Customer` type backed by two tables with `lifetime_value` as a derived
   property, the ERD unchanged underneath, `GET /ontology/entities` unchanged for every
   single-table type.
-- **ON-2 · Objects at runtime — the compiled door.** Widen `semantic/compiler.py`'s
+- ✅ **ON-2 · Objects at runtime — the compiled door — FIRST SLICE BUILT 2026-09-11** (the
+  user: *"Lets proceed with the roadmap!"*; branch `claude/on-2-object-query`, five commits).
+  **What shipped.** `aughor/semantic/object_query.py`: the algebra below as a typed IR
+  (`ObjectQuery`: object type · segment · filters · measures with `where` and `divide_by` ·
+  `by` · `time`/`grain`/window · order/limit), compiled over the backings with no model call;
+  v1's `compiler.py` stays byte-identical beside it. The laws hold by construction: a link is
+  traversed only when ON-0a MEASURED its cardinality — an inferred label is refused and the
+  refusal names the measure door (risk (a) below, closed); a to-one link is a LEFT JOIN that
+  carries dimensions, filters and the aggregates repetition cannot change (COUNT DISTINCT, MIN,
+  MAX), and a SUM/AVG/COUNT across an N:1 hop is REFUSED as the fan-out it is (a 1:1 hop is
+  allowed — nothing can repeat); a to-many link is pre-aggregated per key before the join, an
+  average across it rolls up as a ratio of sums, a COUNT DISTINCT across it is refused; a
+  condition through a to-many link is an EXISTS; N:N is refused both ways; a ratio is a ratio of
+  aggregates; segment and metric fragments are re-anchored on the object's alias (sqlglot) so a
+  join cannot rebind a bare column; literals are typed by the column they meet and never
+  spliced; a DATE time column renders `DATE_TRUNC` for BigQuery. Every unresolved name is a
+  refusal that carries the names which exist. Doors: `GET /objects/catalog` (exactly the names
+  the compiler accepts — usable links, and why the others are not) and `POST /objects/query`
+  (`path: compiled` with the SQL, one plan line per decision, the links relied on and the rows —
+  or `path: refused` with why), both over the graph `GET /ontology` serves and through
+  `execute_guarded`. The conversation's `query_objects` tool — the model fills the IR, never SQL;
+  given only an object type it returns that type's catalog entry; a streamed answer emits the
+  `compiled` frame and leads its Trust Receipt with `validated_by guard:object_compiler` — is
+  described FIRST in the roster, behind **`ask.query_objects`** (EXPERIMENT, default off, its
+  exit this wave's falsifier) and only where an ontology is built.
+  **Live receipt, 2026-09-11 — the API restarted on the branch, no model call:** "revenue per
+  customer segment last quarter" on LuxExperience (orders span 2020-07-01 → 2025-06-29, so the
+  data's last full quarter is Q2 2025) through `POST /objects/query` —
+  `objects(order).by(segment).window[2025-04-01, 2025-07-01).measure(sum gmv_eur · count ·
+  count order_to_order_item)`, the item link pre-aggregated per order_id: luxury 1,247,920.00 EUR
+  over 1,989 orders and 3,460 items, off_price 470,855.00 over 1,943 and 3,332 — **equal to the
+  unjoined reference row for row**; the join a model writes returns 2,207,654 and 798,274 (1.77×
+  and 1.70×). That join, forced through the conversation's `run_sql` body on the same file
+  (all quarters; stores redirected): luxury 52,210,160 against a true 30,698,533 — flagged, a
+  `fanout_detected` receipt plus a caveat. The fan-out-shaped object query
+  (`objects(order_item).measure(sum order.gmv_eur)`) is refused over HTTP with the l13 reason.
+  🔴 **Found building that receipt — its `run_sql` half did not hold before this wave.** The
+  battery's fan-out detector lives in `preflight_harden`, which runs only for callers that pass
+  a rendered schema, and the converse `run_sql` tool (the analyst loop's too) never did; and
+  `preflight_harden` executed a detected fan-out it could not rewrite with no receipt at all.
+  Measured on the samples warehouse: a SUM of `orders.total_amount` across `order_items` came
+  back 2.4× through `execute_guarded`, silently, with and without a schema — while both detectors
+  fire when called directly. Fixed: `flag_fanout()` flags without rewriting on the door that runs
+  the caller's exact SQL, and the unrewritable branch leaves a receipt ("Join over-count flagged").
+  **The falsifier, measured two ways.** (1) *As written, on the ledger:* `session_events` holds 59
+  user requests since it began recording (2026-08-29), 35 distinct: 7 platform questions (runs,
+  tokens, models, tables queried), 5 about an uploaded document, 4 guide turns, 3 actions (stage
+  an agent), 3 follow-ups that ask no new query, 1 test string, 10 multi-step warehouse turns
+  (the daily change report — 7 scheduled runs and 1 asked by hand — a "why", an "interesting
+  facts"), and **2** single-query warehouse questions. The compilable share of real questions is
+  therefore at most 2/35 = 6% and the falsifier fires as written — on a population that is
+  two-thirds questions no SQL answers, 13 days of an instance exercising its own platform. Of the
+  two: theLook's "total sales yesterday against the prior 7-day average" compiles (single table;
+  compiled for BigQuery, not executed — the scan bills), and the served read returns no ontology
+  for workspace/default, where "last 6 months sales" was asked. (2) *On the sets built to be
+  hard* (`evals/object_query_coverage.py`: a person writes the object query, the compiler and the
+  ablation scorer do the rest, every store redirected): **22/26 compile (85%), 22/22 equal their
+  references**; 4 refusals, all graph — LuxExperience has no orders↔shipments link (l05, l09: the
+  edge ON-0a's pack lists as expected and unbuilt), samples has no orders↔reviews link (s12), and
+  review↔order_item is N:N (s10). Zero refusals the algebra caused. Two answers took a path the
+  reference did not and still agree (l06 reads the lines' returned flag, the reference the
+  returns table; l10 reaches tickets through the order's lines). Receipt
+  `evals/object_query_coverage_results.json`, ratcheted in `tests/unit/test_object_query_coverage.py`.
+  **Reading it honestly:** the IR is not too narrow for warehouse questions — the refusals point at
+  the ontology, not the algebra — but this is an UPPER bound: a person filled the IR. The share a
+  MODEL reaches, and whether the tool in the roster lifts or regresses the ON-0 hard set, is a
+  model run: `ask.query_objects`'s exit, and the user's call (§6 item 15).
+  **Also measured:** theLook's served graph has five links and all are unmeasured (the ON-0a door
+  never ran there — on BigQuery its COUNT DISTINCT scans bill), so every linked object query on it
+  is refused today; and its `revenue` metric, marked verified, is `SUM(num_of_item)` — an item
+  count. The compiler inherits what "verified" means (the formula EXECUTES), so a metric that runs
+  and is not true compiles as faithfully as one that is: ON-0a's lesson a third time, now for
+  metric formulas.
+  **Not built, honestly:** the semiadditive law has nothing to bind to — O5's
+  `window_measures.from_declaration` has zero callers and no store holds a declaration, so "a
+  semiadditive measure refuses a period SUM at compile time" waits on a declaration surface;
+  computed properties are not measures yet; a link touching a query-backed type is refused until
+  its cardinality is measured over the backing; the `compiled` frame has no renderer in `web/`
+  (the receipt carries the path, the chat shows no badge); ON-1's deferred items stand.
+  **The draft:** Widen `semantic/compiler.py`'s
   intent IR from single-table to an **object-set algebra**:
   `objects(T).filter(segment | predicate).link(L).measure(metric | agg(property))
   .by(dimension).over(grain)` — compiled deterministically to SQL over the backings,
@@ -4174,8 +4260,11 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         ON-0a the core the business extends (built 2026-09-11: cardinality and terminal
         states measured at build time; the map as claims by tier — core-ecommerce ←
         fashion-ecommerce ← the company; the hard-set re-run awaits the go) →
-        ON-1 object types decoupled from tables →
-        ON-2 the compiled object-query door (guards by construction, run_sql stays)
+        ON-1 object types decoupled from tables (first slice built 2026-09-11) →
+        ON-2 the compiled object-query door (FIRST SLICE BUILT 2026-09-11: the algebra
+        compiles over measured links — 22/26 hard questions, every answer right, the four
+        refusals missing links; POST /objects/query driven live; run_sql's silent fan-out
+        found and flagged; query_objects behind ask.query_objects — §6 item 15)
         → ON-3 instances + the standard object view → ON-4 actions on objects with
         the overlay merged into the next answer → ON-5 functions and model bindings
         → ON-6 the context layer reaches the model, ratcheted by ON-0.
@@ -4463,6 +4552,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-10:** item 14 (Arc ON) arrived, was open for one turn, and was
 > DECIDED the same day — all four clauses YES, every recommendation adopted as written;
 > the register is back at zero open and ON-0 started within the hour.
+> **Amended 2026-09-11:** item 15 (ON-2's exposure) arrived with ON-2's first slice —
+> OPEN; the register is at one.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -4603,6 +4694,22 @@ the browser** · **measure the premise before building.**
     guard-cited allowlist (needs ON-2's coverage number); whether edits are ever
     materialised back to source (the read-only law stands until someone asks with
     a case).
+15. ⏳ **OPEN 2026-09-11 — does ON-2's `query_objects` reach the conversation?** The
+    falsifier was measured two ways (§3.15 ON-2): as written, on the ledger, it fires
+    (at most 2 of 35 real questions compile — but two-thirds of those turns ask nothing SQL
+    answers); on the hard reference sets the algebra compiles 22 of 26 with every answer
+    right and no refusal the algebra caused. What nothing has measured is a MODEL filling
+    the IR. Two clauses:
+    **(a) Measure it first?** Build the harness arm — the model fills the IR from the
+    question and the catalog, the compiler and scorer do the rest — and run it against raw
+    on the ON-0 hard set (14) and the samples set (12): about 52 calls on the configured
+    coder, every store redirected. *Recommended: yes — it is `ask.query_objects`'s stated
+    exit, and ON-0's founding lesson is that more context is not more correctness.*
+    **(b) Then flip `ask.query_objects` on for this instance** if (a) shows no regression
+    against raw. *Recommended: yes on no regression; otherwise the tool stays behind the
+    flag and its refusals say what to widen.*
+    Carried beside it, unchanged: ON-0a's open run (the hard set on the measured block, 28
+    calls) — both can share one session.
 
 ---
 
