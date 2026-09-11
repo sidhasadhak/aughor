@@ -20,7 +20,14 @@ from typing import Optional
 from pydantic import BaseModel, Field
 
 from aughor.ontology.models import KineticAction, OntologyGraph
-from aughor.actions.executor import CriterionError, ParamError, coerce_params, evaluate_predicate
+from aughor.actions.executor import (
+    CriterionError,
+    ParamError,
+    coerce_params,
+    default_object_resolver,
+    evaluate_predicate,
+    resolve_objects,
+)
 
 
 class ProposedAction(BaseModel):
@@ -72,25 +79,34 @@ def build_kinetic_actions_section(graph: Optional[OntologyGraph]) -> str:
         for p in a.params:
             req = "required" if p.required else "optional"
             dv = f", default {p.default_value}" if p.default_value is not None else ""
-            lines.append(f"    param {p.name}: {p.data_type} ({req}{dv})")
+            if p.kind == "object":
+                lines.append(f"    param {p.name}: one {p.object_type} object, passed as "
+                             f"'{p.object_type}:<key>' ({req}{dv})")
+            else:
+                lines.append(f"    param {p.name}: {p.data_type} ({req}{dv})")
         for c in a.submission_criteria:
             lines.append(f"    must satisfy: {c.expr}")
+        for e in a.edits:
+            lines.append(f"    sets {e.property} = {e.value!r} on {e.object} (merged onto that object; "
+                         "the source is never written)")
     lines.append("")
     return "\n".join(lines)
 
 
-def evaluate_proposal(action: KineticAction, params: dict, *, scope: str = "") -> tuple[str, str, dict]:
+def evaluate_proposal(action: KineticAction, params: dict, *, scope: str = "", schema_name: str = "",
+                      resolver=None) -> tuple[str, str, dict]:
     """Dry-run validate a proposal — coerce params, then evaluate submission criteria. Returns
     ``(status, message, coerced_params)``. NEVER dispatches, approves, or executes: this is the
     staging gate, so a proposal that would fail its criteria is caught before a human ever sees it
     as executable, and the authored message goes back to the model to revise."""
     try:
         coerced = coerce_params(action, params)
+        objects = resolve_objects(action, coerced, resolver or default_object_resolver(action, scope, schema_name))
     except ParamError as e:
         return "invalid_params", str(e), {}
     for crit in action.submission_criteria:
         try:
-            passed = evaluate_predicate(crit.expr, coerced)
+            passed = evaluate_predicate(crit.expr, coerced, objects)
         except CriterionError:
             return "criterion_failed", crit.message, coerced
         if not passed:
@@ -98,7 +114,8 @@ def evaluate_proposal(action: KineticAction, params: dict, *, scope: str = "") -
     return "proposed", "", coerced
 
 
-def validate_proposals(graph: OntologyGraph, raw: list[ProposedAction], *, scope: str = "") -> list[Proposal]:
+def validate_proposals(graph: OntologyGraph, raw: list[ProposedAction], *, scope: str = "",
+                       schema_name: str = "", resolver=None) -> list[Proposal]:
     """Turn raw model proposals into staged, validated :class:`Proposal`s (no execution)."""
     actions = getattr(graph, "kinetic_actions", None) or {}
     out: list[Proposal] = []
@@ -108,7 +125,8 @@ def validate_proposals(graph: OntologyGraph, raw: list[ProposedAction], *, scope
             out.append(Proposal(p.action_id, "unknown_action", p.params, p.reasoning,
                                 message=f"'{p.action_id}' is not a declared action"))
             continue
-        status, msg, coerced = evaluate_proposal(action, p.params, scope=scope)
+        status, msg, coerced = evaluate_proposal(action, p.params, scope=scope, schema_name=schema_name,
+                                                 resolver=resolver)
         # carry the coerced params on a valid proposal so accept-time re-uses the exact values
         out.append(Proposal(p.action_id, status, coerced if status == "proposed" else p.params,
                             p.reasoning, message=msg))
@@ -116,7 +134,7 @@ def validate_proposals(graph: OntologyGraph, raw: list[ProposedAction], *, scope
 
 
 def propose_actions(graph: Optional[OntologyGraph], context: str, *, scope: str = "",
-                    provider=None) -> list[Proposal]:
+                    provider=None, schema_name: str = "", resolver=None) -> list[Proposal]:
     """Ask the model to propose actions for ``context`` (a finding / question), then dry-run
     validate each. Returns staged proposals — NOTHING is executed. ``provider`` is injectable
     (a fake in tests); the default resolves the ``fast`` role. Empty when the connection declares
@@ -141,4 +159,5 @@ def propose_actions(graph: Optional[OntologyGraph], context: str, *, scope: str 
         tolerate(sys.exc_info()[1], "kinetic proposer is advisory; answer proceeds",
                  counter="kinetic.proposer_failed")
         return []
-    return validate_proposals(graph, list(out.proposals), scope=scope)
+    return validate_proposals(graph, list(out.proposals), scope=scope, schema_name=schema_name,
+                              resolver=resolver)

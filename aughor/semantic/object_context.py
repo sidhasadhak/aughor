@@ -48,6 +48,10 @@ def _entity_tables(entity: OntologyEntity) -> set[str]:
     return {n for n in names if n}
 
 
+def _type_word(name: str) -> str:
+    return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+
+
 def _values(instance: ObjectInstance) -> dict[str, Any]:
     return {str(p["name"]).lower(): p["value"] for p in instance.properties}
 
@@ -154,7 +158,8 @@ def object_notes(connection_id: str, entity: OntologyEntity, instance: ObjectIns
         tables = _entity_tables(entity)
         out = []
         for edit in edits_for_connection(connection_id, current_org_id() or ""):
-            if _bare(edit.table) not in tables or not edit.row_key:
+            # ON-4 — a property edit is shown as the object's property, with its provenance, not as a note.
+            if _bare(edit.table) not in tables or not edit.row_key or edit.kind == "property":
                 continue
             if (edit.key_column or edit.column).lower() == instance.key.lower() and str(edit.row_key) == instance.pk:
                 out.append({"column": edit.column, "kind": edit.kind, "body": edit.body, "source": edit.source,
@@ -167,18 +172,26 @@ def object_notes(connection_id: str, entity: OntologyEntity, instance: ObjectIns
 
 def object_actions(graph: OntologyGraph, entity: OntologyEntity, instance: ObjectInstance) -> list[dict]:
     names = {instance.key.lower(), f"{entity.api_name}_id", f"{snake_name(entity.id)}_id", f"{entity.api_name}_key"}
+    words = (_type_word(entity.api_name), _type_word(entity.id))
     out = []
     for action in graph.declared_actions():
-        owned = (action.entity or "").lower() in (entity.id.lower(), entity.api_name.lower())
+        owned = (action.entity or "").lower() in (entity.id.lower(), entity.api_name.lower()) or (
+            bool(action.object_type) and _type_word(action.object_type) in words)
         params, prefilled = [], []
         for param in action.params:
             value = param.default_value
-            if param.name.lower() in names:
+            if param.kind == "object":
+                # ON-4 — an object parameter of this object's type takes this very object.
+                if _type_word(param.object_type) in words:
+                    value = f"{param.object_type}:{instance.pk}"
+                    prefilled.append(param.name)
+            elif param.name.lower() in names:
                 value = instance.pk
                 prefilled.append(param.name)
             params.append({"name": param.name, "display_name": param.display_name or param.name,
                            "data_type": param.data_type, "required": param.required,
-                           "description": param.description, "value": value})
+                           "description": param.description, "value": value,
+                           "kind": param.kind, "object_type": param.object_type})
         if not owned and not prefilled:
             continue
         out.append({"id": action.id, "display_name": action.display_name or action.id,

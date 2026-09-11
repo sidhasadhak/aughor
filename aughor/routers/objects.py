@@ -39,6 +39,12 @@ def _open_scoped(connection_id: str, schema_name: Optional[str], graph):
                                            graph.schema_name or resolve_effective_schema(connection_id, schema_name))
 
 
+def _accepted_edits(connection_id: str) -> list:
+    """ON-4 — this org's accepted property edits on the connection's objects, merged at read time."""
+    from aughor.actions.overlay import accepted_object_edits
+    return accepted_object_edits(connection_id)
+
+
 @router.get("/objects/{object_type}/{pk}")
 def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
                     schema_name: Optional[str] = Query(default=None)):
@@ -54,7 +60,7 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
     db = _open_scoped(connection_id, schema_name, graph)
     try:
         try:
-            instance = get_object(graph, db, object_type, pk)
+            instance = get_object(graph, db, object_type, pk, overlay=_accepted_edits(connection_id))
         except ObjectNotFound as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         except ObjectQueryRefused as exc:
@@ -97,7 +103,7 @@ def get_object_catalog(connection_id: str = BUILTIN_ID, schema_name: Optional[st
     """Every object type the compiler can query: properties by role, links with their measured
     cardinality (and why an unusable one is not), verified segments and verified metrics."""
     from aughor.semantic.object_query import object_catalog
-    return object_catalog(_served_graph(connection_id, schema_name))
+    return object_catalog(_served_graph(connection_id, schema_name), overlay=_accepted_edits(connection_id))
 
 
 @router.post("/objects/query")
@@ -124,7 +130,8 @@ def post_object_query(
                                          graph.schema_name or resolve_effective_schema(connection_id, schema_name))
     try:
         try:
-            compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb")
+            compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",
+                                            overlay=_accepted_edits(connection_id))
         except ObjectQueryRefused as exc:
             return {"path": "refused", "refused": exc.reason, "available": exc.available,
                     "connection_id": connection_id, "schema_name": graph.schema_name}

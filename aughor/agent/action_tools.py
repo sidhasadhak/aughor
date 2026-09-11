@@ -107,7 +107,7 @@ def propose_one(connection_id: str, *, grants: list[str], action_id: str,
 
     validated = validate_proposals(
         graph, [ProposedAction(action_id=action_id, params=dict(params or {}),
-                               reasoning=reasoning)], scope=connection_id)
+                               reasoning=reasoning)], scope=connection_id, schema_name=schema_name)
     if not validated:
         return {"ok": False, "status": "invalid", "message": "The proposal did not validate."}
 

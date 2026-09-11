@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import ast
 import operator
+import re
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 from urllib.parse import quote
@@ -93,25 +94,41 @@ _CMP = {
 }
 
 
-def _eval(node: ast.AST, params: dict):
+def _eval(node: ast.AST, params: dict, objects: Optional[dict] = None):
+    objects = objects or {}
     if isinstance(node, ast.Expression):
-        return _eval(node.body, params)
+        return _eval(node.body, params, objects)
     if isinstance(node, ast.BoolOp):
-        vals = [_eval(v, params) for v in node.values]
+        vals = [_eval(v, params, objects) for v in node.values]
         return all(vals) if isinstance(node.op, ast.And) else any(vals)
     if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
-        return not _eval(node.operand, params)
+        return not _eval(node.operand, params, objects)
     if isinstance(node, ast.Compare):
-        left = _eval(node.left, params)
+        left = _eval(node.left, params, objects)
         for op, comp in zip(node.ops, node.comparators):
-            right = _eval(comp, params)
+            right = _eval(comp, params, objects)
             fn = _CMP.get(type(op))
             if fn is None:
                 raise CriterionError(f"operator not allowed: {type(op).__name__}")
-            if not fn(left, right):
+            try:
+                held = fn(left, right)
+            except TypeError as e:
+                # A date property against a string literal, say: unevaluable, so it fails closed.
+                raise CriterionError(f"cannot compare {type(left).__name__} with {type(right).__name__}") from e
+            if not held:
                 return False
             left = right
         return True
+    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name) and node.value.id in objects:
+        # ON-4 — `order.status`: a property of an object parameter's object, read live. Only a name
+        # bound to a resolved object may be dotted, and only into that object's property values.
+        target = objects[node.value.id]
+        props = target.get("properties") or {}
+        hit = next((k for k in props if k.lower() == node.attr.lower()), None)
+        if node.attr.startswith("_") or hit is None:
+            raise CriterionError(f"{target.get('object_type') or node.value.id} has no property "
+                                 f"'{node.attr}' (in a criterion)")
+        return props[hit]
     if isinstance(node, ast.Name):
         if node.id in params:
             return params[node.id]
@@ -119,18 +136,19 @@ def _eval(node: ast.AST, params: dict):
     if isinstance(node, ast.Constant):
         return node.value
     if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
-        return [_eval(e, params) for e in node.elts]
+        return [_eval(e, params, objects) for e in node.elts]
     raise CriterionError(f"expression not allowed in a criterion: {type(node).__name__}")
 
 
-def evaluate_predicate(expr: str, params: dict) -> bool:
-    """True/False for a submission-criterion predicate over ``params``. Raises
+def evaluate_predicate(expr: str, params: dict, objects: Optional[dict] = None) -> bool:
+    """True/False for a submission-criterion predicate over ``params`` — and, for an action that takes
+    objects, over their properties (``objects``, from :func:`resolve_objects`). Raises
     :class:`CriterionError` on anything outside the restricted grammar (fail-closed)."""
     try:
         tree = ast.parse(expr, mode="eval")
     except SyntaxError as e:
         raise CriterionError(f"criterion is not a valid expression: {e}") from e
-    return bool(_eval(tree, params))
+    return bool(_eval(tree, params, objects))
 
 
 # ── parameter coercion ───────────────────────────────────────────────────────────
@@ -164,9 +182,69 @@ def coerce_params(action: KineticAction, raw: dict) -> dict:
                 raise ParamError(f"missing required parameter '{p.name}'")
             if p.default_value is None:
                 continue
-            out[p.name] = _cast(p.default_value, p.data_type)
+            value = p.default_value
         else:
-            out[p.name] = _cast(raw[p.name], p.data_type)
+            value = raw[p.name]
+        out[p.name] = object_ref(value, p) if p.kind == "object" else _cast(value, p.data_type)
+    return out
+
+
+def _type_word(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def object_ref(value, param) -> str:
+    """ON-4 — the canonical ``"<type>:<key>"`` for a value passed to an object parameter:
+    ``"Order:123"``, ``{"object_type": "Order", "pk": "123"}``, or a bare key the parameter's own type
+    names. A reference to another object type is invalid, however plausible its key."""
+    want = param.object_type
+    if isinstance(value, dict):
+        typ, key = str(value.get("object_type") or want), value.get("pk", value.get("key"))
+    else:
+        text = str(value).strip()
+        typ, sep, rest = text.partition(":")
+        typ, key = (typ.strip(), rest.strip()) if sep else (want, text)
+    if key is None or str(key).strip() == "":
+        raise ParamError(f"parameter '{param.name}' needs an object key: '{want}:<key>'")
+    if _type_word(typ) != _type_word(want):
+        raise ParamError(f"parameter '{param.name}' takes an object of type {want}, not {typ}")
+    return f"{want}:{str(key).strip()}"
+
+
+#: ``(object_type, key) -> {object_type, type_id, pk, key, table, title, properties}`` — reads ONE
+#: object live and raises LookupError when none has that key (``semantic.object_instances``).
+ObjectResolver = Callable[[str, str], dict]
+
+
+def default_object_resolver(action: KineticAction, scope: str, schema_name: str = "") -> Optional[ObjectResolver]:
+    """The live resolver for ``scope`` — built only when the action takes objects."""
+    if not scope or not any(p.kind == "object" for p in action.params):
+        return None
+    from aughor.semantic.object_instances import object_resolver
+    return object_resolver(scope, schema_name)
+
+
+def resolve_objects(action: KineticAction, coerced: dict, resolver: Optional[ObjectResolver]) -> dict:
+    """ON-4 — every object parameter's object, read live: ``{param: resolved}``, plus ``object`` for
+    the one the action is about (its ``object_type``'s parameter, or its only object parameter). An
+    object that does not exist is a :class:`ParamError` — an action never runs against nothing."""
+    taken = [p for p in action.params if p.kind == "object" and p.name in coerced]
+    if not taken:
+        return {}
+    if resolver is None:
+        raise ParamError("this action takes objects, and there is no connection to read them from")
+    out: dict = {}
+    for p in taken:
+        key = str(coerced[p.name]).split(":", 1)[1]
+        try:
+            out[p.name] = resolver(p.object_type, key)
+        except (LookupError, ValueError) as e:
+            raise ParamError(str(getattr(e, "reason", "") or e)) from e
+    about = [p.name for p in taken
+             if action.object_type and _type_word(p.object_type) == _type_word(action.object_type)]
+    subject = about[0] if about else (taken[0].name if len(taken) == 1 else "")
+    if subject and "object" not in out:
+        out["object"] = out[subject]
     return out
 
 
@@ -387,12 +465,49 @@ def _dispatch_trigger_investigation(se: SideEffect, action: KineticAction, param
             **({"agent_id": req.agent_id} if req.agent_id else {})}
 
 
-def _dispatch_annotate(action: KineticAction, params: dict, scope: str) -> dict:
+def _fill_edit(template: str, params: dict) -> str:
+    try:
+        return template.format_map(params) if "{" in template else template
+    except (KeyError, IndexError, ValueError) as e:
+        raise KineticDispatchError(f"an edit references something the action does not declare: {e}") from e
+
+
+def _dispatch_object_edits(action: KineticAction, params: dict, scope: str, *, actor: str,
+                           objects: dict) -> dict:
+    """ON-4 — an annotate action's declared edits. Each sets one overlay property on one object the
+    action takes, keyed ``(object_type, key, property)`` and stamped with who ran it; the source is
+    never written. A property the object already reads from its source is refused here as well, so a
+    declaration that slipped past authoring still cannot rewrite a source value."""
+    from aughor.actions.overlay import OverlayEdit, save_edit
+    written = []
+    for edit in action.edits:
+        target = objects.get(edit.object)
+        if not target:
+            raise KineticDispatchError(f"the edit setting '{edit.property}' needs the object in "
+                                       f"'{edit.object}', which was not read")
+        if any(k.lower() == edit.property.lower() for k in (target.get("properties") or {})):
+            raise KineticDispatchError(f"'{edit.property}' is a column {target.get('object_type')} reads from "
+                                       "its source — an edit sets an overlay property, never a source value")
+        saved = save_edit(OverlayEdit(
+            connection_id=scope, table=str(target.get("table") or target.get("object_type") or ""),
+            column=edit.property, row_key=str(target["pk"]), key_column=str(target.get("key") or ""),
+            kind="property", body=_fill_edit(edit.value, params), note=_fill_edit(edit.note, params),
+            object_type=str(target.get("object_type") or ""), actor=actor, origin=f"action:{action.id}",
+            source="user"))
+        written.append({"object": f"{saved.object_type}:{saved.row_key}", "property": saved.column,
+                        "value": saved.body, "id": saved.id, "provenance": saved.provenance()})
+    return {"edits": written}
+
+
+def _dispatch_annotate(action: KineticAction, params: dict, scope: str, *, actor: str = "",
+                       objects: Optional[dict] = None) -> dict:
     """Write a human overlay edit to the K3 ledger — an annotation/correction merged onto reads,
     never a source mutation. The action's parameters carry the target + body. The row is named by
     ``row_key`` or, when that is absent, by the parameter its ``key_column`` names — an action taking
     ``order_id`` with ``key_column="order_id"`` annotates that order's row, which is how an object
     page pre-fills the object's key."""
+    if action.edits:
+        return _dispatch_object_edits(action, params, scope, actor=actor, objects=objects or {})
     from aughor.actions.overlay import OverlayEdit, save_edit
     if not params.get("table") or not params.get("body"):
         raise KineticDispatchError("annotate requires 'table' and 'body' parameters")
@@ -408,7 +523,8 @@ def _dispatch_annotate(action: KineticAction, params: dict, scope: str) -> dict:
     return {"annotation": edit.target(), "id": edit.id}
 
 
-def default_dispatch(action: KineticAction, params: dict, scope: str = "") -> dict:
+def default_dispatch(action: KineticAction, params: dict, scope: str = "", *, actor: str = "",
+                     objects: Optional[dict] = None) -> dict:
     """The wired-in dispatcher. ``notify``/``webhook`` and ``annotate`` fire now; the rest are
     seams that raise with the PR that will wire them, so a caller sees a clear signal not a no-op."""
     if action.kind == "side_effect":
@@ -424,7 +540,7 @@ def default_dispatch(action: KineticAction, params: dict, scope: str = "") -> di
                 raise KineticDispatchError(f"unknown side effect kind: {se.kind}")
         return {"side_effects": results}
     if action.kind == "annotate":
-        return _dispatch_annotate(action, params, scope)
+        return _dispatch_annotate(action, params, scope, actor=actor, objects=objects)
     if action.kind == "query":
         raise KineticDispatchError("query dispatch requires read-query wiring (K2b)")
     raise KineticDispatchError(f"unknown action kind: {action.kind}")
@@ -459,6 +575,8 @@ def execute_kinetic_action(
     scope: str = "",
     dispatch: Optional[Dispatch] = None,
     approved: bool = False,
+    schema_name: str = "",
+    resolver: Optional[ObjectResolver] = None,
 ) -> KineticResult:
     """Run one declared action through the full governed pipeline. ``scope`` is the connection
     id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
@@ -482,12 +600,21 @@ def execute_kinetic_action(
         govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
         return KineticResult("invalid_params", False, action.id, message=str(e))
 
+    # 1b — ON-4: the object each object parameter names, read live (side-effect-free). An object
+    #      that does not exist is invalid params: the action never runs against nothing.
+    try:
+        objects = resolve_objects(action, coerced,
+                                  resolver or default_object_resolver(action, scope, schema_name))
+    except ParamError as e:
+        govern.audit(gov_action, scope, "invalid_params", actor=actor, detail=str(e), risk=risk)
+        return KineticResult("invalid_params", False, action.id, message=str(e))
+
     # 2 — submission criteria, BEFORE the approval gate. Authored message returned verbatim.
     #     Neither a human accept nor a standing grant bypasses this: they pre-approve WHO may run,
     #     never WHAT values pass.
     for crit in action.submission_criteria:
         try:
-            passed = evaluate_predicate(crit.expr, coerced)
+            passed = evaluate_predicate(crit.expr, coerced, objects)
         except CriterionError as e:
             # An unevaluable criterion fails closed — the action does NOT run.
             govern.audit(gov_action, scope, "criterion_error", actor=actor,
@@ -538,7 +665,14 @@ def execute_kinetic_action(
 
     # 4 — dispatch (the ONLY step that can cause a side effect; reached only after every gate)
     try:
-        outcome = (dispatch or default_dispatch)(action, coerced, scope)
+        if dispatch is not None:
+            outcome = dispatch(action, coerced, scope)
+        elif action.edits:
+            # ON-4 — only an action that sets object properties needs who ran it and what it read;
+            # every other dispatch is called exactly as before.
+            outcome = default_dispatch(action, coerced, scope, actor=actor, objects=objects)
+        else:
+            outcome = default_dispatch(action, coerced, scope)
     except KineticDispatchError as e:
         govern.audit(gov_action, scope, "dispatch_error", actor=actor, detail=str(e), risk=risk)
         return KineticResult("dispatch_error", False, action.id, message=str(e))

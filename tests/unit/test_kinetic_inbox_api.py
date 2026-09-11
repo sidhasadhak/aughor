@@ -97,7 +97,7 @@ def test_propose_stages_to_the_inbox(monkeypatch):
 
     from aughor.actions.propose import Proposal
     monkeypatch.setattr("aughor.actions.propose.propose_actions",
-                        lambda graph, ctx, scope="", provider=None: [
+                        lambda graph, ctx, scope="", provider=None, **kw: [
                             Proposal("refund", "proposed", {"order_id": "8821"}, "because")])
 
     body = client.post("/kinetic-actions/propose",

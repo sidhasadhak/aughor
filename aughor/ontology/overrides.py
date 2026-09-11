@@ -96,6 +96,8 @@ _EDITABLE: dict[str, set[str]] = {
     "action": {
         "display_name", "description", "entity", "kind", "params", "rule",
         "submission_criteria", "side_effects", "risk", "origin",
+        # ON-4 — the object type the action is about, and the overlay properties it sets.
+        "object_type", "edits",
     },
 }
 

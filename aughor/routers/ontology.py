@@ -71,6 +71,8 @@ class _KineticActionBody(BaseModel):
     side_effects: Optional[list] = None              # each {kind, config}
     risk: Optional[str] = None                       # read_only | low | high
     origin: Optional[str] = None
+    object_type: Optional[str] = None                # ON-4 — the object type the action is about
+    edits: Optional[list] = None                     # ON-4 — each {object, property, value, note}
 
 
 class _MergeEntitiesRequest(BaseModel):
@@ -1025,6 +1027,31 @@ def _proposal_result(entity_id: str, ov) -> dict:
     }
 
 
+def _object_types_problem(declared, graph) -> str:
+    """ON-4 — why an action's objects do not hold in this scope, or "". Every object parameter and the
+    action's own object type must name an object type the scope serves, and an edit may not set a
+    column the type already reads from its source: an edit adds an overlay property, it never
+    rewrites a source value."""
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type, find_property
+    wanted = [p for p in declared.params if p.kind == "object"]
+    if not wanted and not declared.object_type:
+        return ""
+    if graph is None:
+        return "an object parameter needs an ontology built for this scope"
+    try:
+        types = {p.name: find_object_type(graph, p.object_type) for p in wanted}
+        if declared.object_type:
+            find_object_type(graph, declared.object_type)
+    except ObjectQueryRefused as exc:
+        return exc.reason
+    for edit in declared.edits:
+        entity = types[edit.object]
+        if find_property(entity, edit.property) is not None:
+            return (f"'{edit.property}' is a column {entity.id} reads from its source — an edit sets an "
+                    "overlay property and never rewrites a source value")
+    return ""
+
+
 @router.put("/ontology/kinetic-actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def author_kinetic_action(
     action_id: str,
@@ -1052,9 +1079,12 @@ def author_kinetic_action(
     prior = find_override(connection_id, effective, "action", action_id)
     fields = encrypt_action_secrets(fields, getattr(prior, "fields", None) if prior else None)
     try:
-        KineticAction.model_validate({**fields, "id": action_id})
+        declared = KineticAction.model_validate({**fields, "id": action_id})
     except Exception as e:
         raise HTTPException(status_code=422, detail=f"invalid action spec: {e}")
+    problem = _object_types_problem(declared, _get_ontology_graph(connection_id, effective))
+    if problem:
+        raise HTTPException(status_code=422, detail=f"invalid action spec: {problem}")
     ov = OntologyOverride(target_kind="action", target_id=action_id, fields=fields)
     ov, _ = _bind_and_persist(connection_id, effective, ov)
     return _override_result(ov)

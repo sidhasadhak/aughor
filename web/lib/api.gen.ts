@@ -10410,8 +10410,19 @@ export interface components {
              * @default
              */
             display_name: string;
+            /**
+             * Kind
+             * @default value
+             * @enum {string}
+             */
+            kind: "value" | "object";
             /** Name */
             name: string;
+            /**
+             * Object Type
+             * @default
+             */
+            object_type: string;
             /**
              * Required
              * @default true
@@ -13640,10 +13651,14 @@ export interface components {
             description?: string | null;
             /** Display Name */
             display_name?: string | null;
+            /** Edits */
+            edits?: unknown[] | null;
             /** Entity */
             entity?: string | null;
             /** Kind */
             kind?: string | null;
+            /** Object Type */
+            object_type?: string | null;
             /** Origin */
             origin?: string | null;
             /** Params */

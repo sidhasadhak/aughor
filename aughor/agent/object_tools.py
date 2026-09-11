@@ -30,6 +30,7 @@ _OBJECT_PARAMS = {
 
 def get_object_tool(connection_id: str, args: dict) -> dict:
     """One object with its properties and links, or a found=False answer that says why."""
+    from aughor.actions.overlay import accepted_object_edits
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.routers.ontology import resolve_effective_schema, served_ontology_graph
     from aughor.semantic.object_instances import ObjectNotFound, get_object, list_linked
@@ -49,7 +50,7 @@ def get_object_tool(connection_id: str, args: dict) -> dict:
     linked = None
     try:
         try:
-            instance = get_object(graph, db, object_type, key)
+            instance = get_object(graph, db, object_type, key, overlay=accepted_object_edits(connection_id))
         except ObjectNotFound as exc:
             return {"found": False, "summary": f"Not found: {exc}."}
         except ObjectQueryRefused as exc:
@@ -65,7 +66,8 @@ def get_object_tool(connection_id: str, args: dict) -> dict:
 
     out = instance.to_dict()
     properties = out.pop("properties")
-    out["properties"] = [{"name": p["name"], "value": p["value"], **({"unit": p["unit"]} if p.get("unit") else {})}
+    out["properties"] = [{"name": p["name"], "value": p["value"], **({"unit": p["unit"]} if p.get("unit") else {}),
+                          **({"set_by": p["overlay"]["provenance"]} if p.get("overlay") else {})}
                          for p in properties[:_MAX_PROPERTIES]]
     out["properties_truncated"] = len(properties) > _MAX_PROPERTIES
     many = [f"{link['count']} via {link['name']}" for link in instance.links

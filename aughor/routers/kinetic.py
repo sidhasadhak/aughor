@@ -80,7 +80,8 @@ def execute_action(
 
     from aughor.actions.executor import execute_kinetic_action
     # scope = the connection id — the grain the approval allowlist is keyed on.
-    result = execute_kinetic_action(action, body.params, actor=body.actor, scope=connection_id)
+    result = execute_kinetic_action(action, body.params, actor=body.actor, scope=connection_id,
+                                    schema_name=schema_name or "")
     if result.ok:
         # granted_by (A4) cites the standing grant that auto-allowed an unattended run ('' otherwise),
         # so the citation reaches the caller/receipt, not only the audit ledger.
@@ -109,7 +110,7 @@ def propose_actions_route(
         raise HTTPException(status_code=404, detail="Ontology not available")
 
     from aughor.actions.propose import propose_actions
-    proposals = propose_actions(graph, body.context, scope=connection_id)
+    proposals = propose_actions(graph, body.context, scope=connection_id, schema_name=schema_name or "")
 
     # A4: persist each VALID proposal so a human can accept it later (durable,
     # resolve-once). A single run_id groups this propose call; call_id = index makes a

@@ -363,6 +363,11 @@ class ActionParameter(BaseModel):
     required: bool = True
     description: str = ""
     default_value: Optional[str] = None  # serialised as string; cast at runtime
+    #: ON-4 — ``value`` is a typed scalar. ``object`` names ONE object of ``object_type`` (an ON-1
+    #: object type), passed as ``"<Type>:<key>"``; it is read live when the action is validated or
+    #: run, and its properties reach the submission criteria as ``<param>.<property>``.
+    kind: Literal["value", "object"] = "value"
+    object_type: str = ""
 
 
 class QueryTemplate(BaseModel):
@@ -512,6 +517,19 @@ def mask_action_secrets(dumped: dict) -> dict:
     return out
 
 
+class ObjectEdit(BaseModel):
+    """ON-4 — one property an ``annotate`` action sets on an object it takes.
+
+    Written to the edits overlay keyed ``(object_type, key, property)`` and merged onto that object
+    at read time; the source row is never touched. ``value`` and ``note`` are templates filled from
+    the action's declared parameters (``{reason}``), so what an accept writes is declared by the
+    author, never improvised by whoever proposed it."""
+    object: str = Field(min_length=1)        # the action's `object` parameter this edit lands on
+    property: str = Field(min_length=1, pattern=r"^[A-Za-z_][A-Za-z0-9_]*$")
+    value: str = ""
+    note: str = ""
+
+
 class KineticAction(BaseModel):
     """A declared, governed action — the Wave K write-surface unit (see the block comment above)."""
     id: str
@@ -535,6 +553,24 @@ class KineticAction(BaseModel):
     # `aughor.kernel.parallel_safety.assert_dispatchable`, called from the executor.
     parallel_safe: bool = False
     origin: Literal["manual", "learned", "structural"] = "manual"
+    #: ON-4 — the object type this action is about, and the overlay properties an ``annotate``
+    #: action sets on the objects it takes (see ObjectEdit).
+    object_type: str = ""
+    edits: list[ObjectEdit] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _objects_hold_together(self):
+        taken = {p.name for p in self.params if p.kind == "object"}
+        loose = [p.name for p in self.params if p.kind == "object" and not p.object_type.strip()]
+        if loose:
+            raise ValueError(f"object parameter {', '.join(loose)} must name its object_type")
+        if self.edits and self.kind != "annotate":
+            raise ValueError("only an annotate action declares edits")
+        for edit in self.edits:
+            if edit.object not in taken:
+                raise ValueError(f"the edit setting '{edit.property}' lands on '{edit.object}', "
+                                 "which is not one of this action's object parameters")
+        return self
 
 
 class CoreClaim(BaseModel):

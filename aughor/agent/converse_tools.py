@@ -115,6 +115,7 @@ def query_objects(connection_id: str, args: dict, *, emit: Optional[Emit] = None
     whole catalog — the disclosure ladder inside one tool rather than a second one. A refusal names
     why and what exists, and says where to fall back: the compiler never guesses.
     """
+    from aughor.actions.overlay import accepted_object_edits
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
     from aughor.routers.ontology import served_ontology_graph
     from aughor.semantic.object_query import (
@@ -130,7 +131,7 @@ def query_objects(connection_id: str, args: dict, *, emit: Optional[Emit] = None
         return {"path": "refused", "available": [],
                 "refused": "no ontology is built for this connection, so it has no object types — use run_sql"}
     if not args.get("measures"):
-        catalog = object_catalog(graph)
+        catalog = object_catalog(graph, overlay=accepted_object_edits(connection_id))
         want = str(args.get("object_type") or "").strip().lower()
         entry = next((t for t in catalog["object_types"] if want and want in (t["object_type"], t["id"].lower())), None)
         if entry is not None:
@@ -140,7 +141,8 @@ def query_objects(connection_id: str, args: dict, *, emit: Optional[Emit] = None
 
     conn = _connection(connection_id)
     try:
-        compiled = compile_object_query(args, graph, dialect=getattr(conn, "dialect", "") or "duckdb")
+        compiled = compile_object_query(args, graph, dialect=getattr(conn, "dialect", "") or "duckdb",
+                                        overlay=accepted_object_edits(connection_id))
     except ObjectQueryRefused as exc:
         return {"path": "refused", "refused": exc.reason, "available": exc.available[:40],
                 "instruction": ("Repair the names from `available` and call query_objects again — or, when the "

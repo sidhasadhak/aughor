@@ -13,6 +13,7 @@ types reaches SQL as text.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -26,6 +27,7 @@ from aughor.semantic.object_query import (
     find_property,
     link_problem,
     object_links,
+    overlay_properties,
     typed_literal,
 )
 
@@ -133,8 +135,10 @@ def _link_view(db: Any, link: ObjectLink, row: dict) -> dict:
     return {**view, "usable": True, "count": int(counted.rows[0][0]) if counted.rows else 0}
 
 
-def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str) -> ObjectInstance:
-    """One object — its properties, and its links resolved to a key or a count."""
+def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
+               overlay: Optional[list] = None) -> ObjectInstance:
+    """One object — its properties (with the overlay properties accepted edits set on it, ON-4), and
+    its links resolved to a key or a count."""
     entity = find_object_type(graph, object_type)
     row, columns, repeated = _fetch_row(db, entity, pk)
     key = _key_of(entity)
@@ -152,6 +156,17 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str) -> Obje
                            "data_type": prop.data_type if prop else "",
                            "unit": prop.unit if prop else "",
                            "description": prop.description if prop else ""})
+    for edits in overlay_properties(entity, overlay).values():
+        mine = next((e for e in edits if str(e.row_key) == str(pk)), None)
+        if mine is None:
+            continue
+        raw = str(mine.body).strip()
+        value = raw.lower() == "true" if raw.lower() in ("true", "false") else mine.body
+        properties.append({"name": mine.column, "value": value, "display_name": mine.column,
+                           "semantic_type": "overlay", "data_type": "BOOLEAN" if isinstance(value, bool) else "",
+                           "unit": "", "description": mine.note,
+                           "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
+                                       "origin": mine.origin, "provenance": mine.provenance()}})
     title_col = title_column(entity)
     title = _value(row, title_col) if title_col else None
     links = [_link_view(db, link, row) for link in object_links(graph, entity)]
@@ -203,3 +218,50 @@ def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: 
     result = _read(db, sql, chosen.describe())
     rows = list(result.rows or [])
     return {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
+
+
+def typed_value(value: Any, data_type: str) -> Any:
+    """A property value as its declared type. Some result paths carry every cell as text, and a criterion
+    comparing a number with text would fail closed forever; dates stay ISO text, which compares correctly
+    with an ISO literal."""
+    if not isinstance(value, str):
+        return value
+    kind, text = (data_type or "").upper(), value.strip()
+    try:
+        if "BOOL" in kind and text.lower() in ("true", "false"):
+            return text.lower() == "true"
+        if "INT" in kind and re.fullmatch(r"-?\d+", text):
+            return int(text)
+        if any(t in kind for t in ("DECIMAL", "NUMERIC", "DOUBLE", "FLOAT", "REAL", "NUMBER", "INT")):
+            return float(text)
+    except ValueError:
+        return value
+    return value
+
+
+def object_resolver(connection_id: str, schema_name: str = ""):
+    """ON-4 — reads ONE object by ``(object_type, key)`` for a declared action's object parameters,
+    through the graph and scoped connection the object pages use, so row policy and redaction apply as
+    they do there. Each call opens and closes its own connection: an action reads one or two objects,
+    and a held connection would outlive the run. Raises LookupError when no object has that key."""
+    def resolve(object_type: str, key: str) -> dict:
+        from aughor.db.connection import open_connection_for_with_schema
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(connection_id, schema_name or None)
+        if graph is None and schema_name:
+            graph = load_latest_ontology(connection_id, None)
+        if graph is None:
+            raise LookupError(f"no ontology is built for {connection_id}, so no {object_type} can be read")
+        entity = find_object_type(graph, object_type)
+        db = open_connection_for_with_schema(connection_id, graph.schema_name or schema_name)
+        try:
+            instance = get_object(graph, db, entity.api_name, key)
+        finally:
+            db.close()
+        table = ((entity.backing.table if entity.backing is not None else "")
+                 or (entity.source_tables[0] if entity.source_tables else entity.api_name))
+        return {"object_type": instance.object_type, "type_id": instance.type_id, "pk": instance.pk,
+                "key": instance.key, "table": table.rsplit(".", 1)[-1].strip('"').lower(),
+                "title": instance.title,
+                "properties": {p["name"]: typed_value(p["value"], p.get("data_type", "")) for p in instance.properties}}
+    return resolve

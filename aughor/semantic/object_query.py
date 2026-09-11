@@ -134,12 +134,15 @@ class CompiledObjectQuery:
     caveats: list[str] = field(default_factory=list)
     dimensions: list[str] = field(default_factory=list)     # the output columns that group
     measures: list[str] = field(default_factory=list)       # the output columns that aggregate
+    #: ON-4 — every accepted edit an overlay property merged into this read, with its provenance.
+    overlay: list[dict] = field(default_factory=list)
 
     def to_dict(self) -> dict:
         return {"path": "compiled", "sql": self.sql, "dialect": self.dialect,
                 "object_type": self.object_type, "columns": list(self.columns),
                 "dimensions": list(self.dimensions), "measures": list(self.measures),
-                "plan": list(self.plan), "links": list(self.links), "caveats": list(self.caveats)}
+                "plan": list(self.plan), "links": list(self.links), "caveats": list(self.caveats),
+                "overlay": list(self.overlay)}
 
 
 # ── links, read from where the query stands ─────────────────────────────────────────────
@@ -240,6 +243,25 @@ def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]
         return props[name]
     low = name.lower()
     return next((p for k, p in props.items() if k.lower() == low), None)
+
+
+def _type_word(name: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", (name or "").lower())
+
+
+def overlay_properties(entity: OntologyEntity, overlay: Optional[list]) -> dict[str, list]:
+    """ON-4 — an object type's overlay properties, ``{property (lower): [edit, …]}``, from the accepted
+    property edits on its objects. A name the type reads from its source is never one: an edit adds a
+    property, it does not shadow a column."""
+    words = {_type_word(entity.api_name), _type_word(entity.id)}
+    out: dict[str, list] = {}
+    for e in overlay or []:
+        if getattr(e, "kind", "") != "property" or _type_word(getattr(e, "object_type", "")) not in words:
+            continue
+        if not e.column or find_property(entity, e.column) is not None:
+            continue
+        out.setdefault(e.column.lower(), []).append(e)
+    return out
 
 
 def _literal(v: Any, path: str) -> str:
@@ -422,8 +444,13 @@ class _ManyLink:
 
 
 class _Compiler:
-    def __init__(self, graph: OntologyGraph, query: ObjectQuery, dialect: str, fiscal_start_month: int):
+    def __init__(self, graph: OntologyGraph, query: ObjectQuery, dialect: str, fiscal_start_month: int,
+                 overlay: Optional[list] = None):
         self.g = graph
+        #: ON-4 — the accepted property edits on this connection's objects, merged at read time.
+        self.overlay_edits = list(overlay or [])
+        self.overlay: list[dict] = []
+        self._overlay_noted: set = set()
         self.q = query
         self.dialect = dialect
         self.fiscal = fiscal_start_month
@@ -446,13 +473,62 @@ class _Compiler:
         return find_object_type(self.g, name)
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
-        p = find_property(entity, name)
+        p = find_property(entity, name) or self.virtual_prop(entity, name)
         if p is not None:
             return p
-        names = sorted(entity.properties or {})
+        names = sorted(entity.properties or {}) + sorted(overlay_properties(entity, self.overlay_edits))
         links = sorted(h.name for h in object_links(self.g, entity))
         raise ObjectQueryRefused(f"{entity.id} has no property '{name}' (in '{path}'){_did_you_mean(name, names + links)}",
                                  names + links)
+
+    def virtual_prop(self, entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
+        """ON-4 — an overlay property of ``entity``, as a property: BOOLEAN when every accepted value reads
+        true/false, text otherwise. None when no accepted edit sets it."""
+        edits = overlay_properties(entity, self.overlay_edits).get((name or "").strip().lower())
+        if not edits:
+            return None
+        boolean = {str(e.body).strip().lower() for e in edits} <= {"true", "false"}
+        return EntityProperty(name=edits[0].column, data_type="BOOLEAN" if boolean else "VARCHAR",
+                              semantic_type="flag" if boolean else "dimension",
+                              description="an overlay property — set by accepted edits, merged at read time")
+
+    def colref(self, scope: _Scope, alias: str, entity: OntologyEntity, p: EntityProperty) -> str:
+        """The SQL for a property of ``entity`` under ``alias``: its column or — for an overlay property —
+        the accepted values joined on the object's key. The source is read, never written."""
+        edits = None if find_property(entity, p.name) is not None else (
+            overlay_properties(entity, self.overlay_edits).get(p.name.lower()))
+        if not edits:
+            return f"{alias}.{quote_ident(p.name)}"
+        slot = ("overlay", alias, p.name.lower())
+        ov = scope.join_alias.get(slot)
+        if ov is None:
+            b = entity.backing
+            key = (b.primary_key if b is not None else "") or entity.identity_key
+            if not key:
+                raise ObjectQueryRefused(f"{entity.id} declares no key, so its overlay property '{p.name}' has "
+                                         "nothing to join on")
+            if len(edits) > _MAX_IN:
+                raise ObjectQueryRefused(f"'{p.name}' on {entity.id} carries {len(edits)} accepted edits — more "
+                                         f"than the {_MAX_IN} a read-time merge carries inline")
+            ov = self._alias("ov")
+            rows = " UNION ALL ".join(f"SELECT {_literal(str(e.row_key), p.name)} AS k, "
+                                      f"{_literal(str(e.body), p.name)} AS v" for e in edits)
+            scope.joins.append(f"LEFT JOIN ({rows}) AS {ov} "
+                               f"ON CAST({alias}.{quote_ident(key)} AS VARCHAR) = {ov}.k")
+            scope.join_alias[slot] = ov
+            self.note_overlay(entity, p.name, edits)
+        return f"CAST({ov}.v AS BOOLEAN)" if _is_bool(p) else f"{ov}.v"
+
+    def note_overlay(self, entity: OntologyEntity, name: str, edits: list) -> None:
+        if (entity.id, name.lower()) in self._overlay_noted:
+            return
+        self._overlay_noted.add((entity.id, name.lower()))
+        self.plan.append(f"overlay property {name} on {entity.id}: {len(edits)} accepted edit(s) merged at read "
+                         "time, keyed on the object — the source is never written")
+        for e in edits:
+            self.overlay.append({"object_type": entity.api_name, "pk": e.row_key, "property": e.column,
+                                 "value": e.body, "by": e.actor or e.source, "at": e.created_at,
+                                 "note": e.note, "origin": e.origin, "provenance": e.provenance()})
 
     def hop(self, entity: OntologyEntity, seg: str) -> Optional[ObjectLink]:
         hops = object_links(self.g, entity)
@@ -518,7 +594,7 @@ class _Compiler:
             entity = h.target
             hops.append(h)
         p = self.prop(entity, segs[-1], path)
-        return f"{alias}.{quote_ident(p.name)}", p, hops
+        return self.colref(scope, alias, entity, p), p, hops
 
     # ── conditions ──
     def condition(self, scope: _Scope, f: ObjectFilter) -> str:
@@ -529,7 +605,7 @@ class _Compiler:
             last = i == len(segs) - 1
             if last and not wants_link:
                 p = self.prop(entity, seg, f.path)
-                return _predicate(f"{alias}.{quote_ident(p.name)}", p, f)
+                return _predicate(self.colref(scope, alias, entity, p), p, f)
             h = self.need_hop(entity, seg, f.path)
             if h.to_one and not (last and wants_link):
                 alias = self.join_one(scope, alias, h)
@@ -608,9 +684,9 @@ class _Compiler:
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last:
-                p = find_property(entity, seg)
+                p = find_property(entity, seg) or self.virtual_prop(entity, seg)
                 if p is not None:
-                    return self.prop_measure(scope, alias, p, hops, t, label)
+                    return self.prop_measure(scope, alias, p, hops, t, label, entity=entity)
                 if self.hop(entity, seg) is None:
                     self.prop(entity, seg, t.path)          # raises, naming what exists
             h = self.need_hop(entity, seg, t.path)
@@ -630,7 +706,7 @@ class _Compiler:
         raise ObjectQueryRefused(f"{label}: measure path '{t.path}' did not resolve")
 
     def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[ObjectLink],
-                     t: MeasureTerm, label: str) -> str:
+                     t: MeasureTerm, label: str, entity: Optional[OntologyEntity] = None) -> str:
         _check_aggregate(t.agg, p, t.path, self.caveats)
         # A 1:1 hop cannot repeat a value (both keys are unique); an N:1 hop repeats the one
         # side once per matching row, and that is what a SUM, AVG or COUNT would count.
@@ -643,7 +719,7 @@ class _Compiler:
                 f"Anchor the query on {one.id} (object_type '{one.api_name}') and reach {scope.entity.id} "
                 "through its link, or use count_distinct / min / max, which repetition cannot change.")
         cond = self.where(scope, t.where)
-        value = f"{alias}.{quote_ident(p.name)}"
+        value = self.colref(scope, alias, entity, p) if entity is not None else f"{alias}.{quote_ident(p.name)}"
         if t.agg in ("sum", "avg") and _is_bool(p):
             value = f"CAST({value} AS INTEGER)"
         self.plan.append(f"{label}: {t.agg}({t.path}) over {scope.entity.id} rows"
@@ -813,7 +889,7 @@ class _Compiler:
             sql += f" LIMIT {int(q.limit)}"
         return CompiledObjectQuery(sql=self.render(sql), dialect=self.dialect, object_type=anchor.api_name,
                                    columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
-                                   dimensions=dims, measures=measure_names)
+                                   dimensions=dims, measures=measure_names, overlay=self.overlay)
 
     def render(self, sql: str) -> str:
         import sqlglot
@@ -833,8 +909,10 @@ class _Compiler:
 
 
 def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGraph], *, dialect: str = "duckdb",
-                         fiscal_start_month: Optional[int] = None) -> CompiledObjectQuery:
-    """Compile an object query over the served graph, or raise `ObjectQueryRefused` with why."""
+                         fiscal_start_month: Optional[int] = None,
+                         overlay: Optional[list] = None) -> CompiledObjectQuery:
+    """Compile an object query over the served graph, or raise `ObjectQueryRefused` with why. ``overlay``
+    is the connection's accepted property edits (ON-4): a property they set reads like a column."""
     if isinstance(query, dict):
         try:
             query = ObjectQuery.model_validate(query)
@@ -846,12 +924,12 @@ def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGrap
     if query.limit is not None and not 1 <= query.limit <= _MAX_LIMIT:
         raise ObjectQueryRefused(f"limit must be between 1 and {_MAX_LIMIT}")
     fiscal = fiscal_start_month if fiscal_start_month is not None else _org_fiscal_start()
-    return _Compiler(graph, query, (dialect or "duckdb").lower(), fiscal).build()
+    return _Compiler(graph, query, (dialect or "duckdb").lower(), fiscal, overlay).build()
 
 
 # ── the catalog a caller chooses names from ─────────────────────────────────────────────
 
-def object_catalog(graph: OntologyGraph) -> dict:
+def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict:
     """Every object type with its properties by role, its links (usable or why not), its verified
     segments and metrics — the names `compile_object_query` accepts, and nothing else."""
     types = []
@@ -875,6 +953,7 @@ def object_catalog(graph: OntologyGraph) -> dict:
             "links": links,
             "segments": sorted(k for k, s in (e.segments or {}).items() if s.verified and (s.filter_sql or "").strip()),
             "metrics": sorted(mid for mid, m in graph.metrics.items() if m.verified and metric_on(m, e)),
+            "overlay_properties": sorted(edits[0].column for edits in overlay_properties(e, overlay).values()),
         })
     return {"connection_id": graph.connection_id, "schema_name": graph.schema_name, "object_types": types}
 
@@ -898,5 +977,7 @@ def render_object_catalog(catalog: dict, *, max_chars: int = 8000) -> str:
             lines.append(f"  segments: {', '.join(t['segments'])}")
         if t.get("metrics"):
             lines.append(f"  metrics: {', '.join(t['metrics'])}")
+        if t.get("overlay_properties"):
+            lines.append(f"  overlay properties (accepted edits): {', '.join(t['overlay_properties'])}")
     text = "\n".join(lines)
     return text if len(text) <= max_chars else text[:max_chars].rsplit("\n", 1)[0] + "\n  …(truncated)"
