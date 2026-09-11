@@ -426,3 +426,43 @@ def test_converse_answers_end_to_end_through_the_loop(monkeypatch, fake_conn):
     assert result.answer == "there were 412 orders"
     assert [s.tool for s in result.steps] == ["run_sql"]
     assert result.steps[0].ok is True
+
+
+def test_a_join_that_over_counts_is_flagged_and_the_compiled_query_is_not(monkeypatch, tmp_path):
+    """Measured before ON-2's receipt was written: the battery's fan-out detector rides
+    `preflight_harden`, which needs a schema this door never passed, so a SUM of
+    orders.total_amount across order_items came back 2.4x with no receipt and no caveat.
+    The door now says so — and the object query compiled for the same question stays
+    quiet, because a pre-aggregated link cannot fan out."""
+    import json
+    from pathlib import Path
+
+    import duckdb
+
+    from aughor.db.connection import open_connection
+    from aughor.demo.setup import _seed_ecommerce
+    from aughor.ontology.models import OntologyGraph
+    from aughor.semantic.object_query import compile_object_query
+
+    path = tmp_path / "samples.duckdb"
+    con = duckdb.connect(str(path))
+    _seed_ecommerce(con)
+    con.close()
+    conn = open_connection("duckdb", str(path), schema_name="ecommerce", connection_id="fanout-t")
+    monkeypatch.setattr(ct, "_connection", lambda cid: conn)
+
+    naive = ("SELECT o.payment_method, SUM(o.total_amount) AS revenue FROM orders o "
+             "JOIN order_items i ON i.order_id = o.order_id GROUP BY 1")
+    out = ct.run_sql("fanout-t", {"sql": naive})
+    assert not out["error"]
+    assert any(c.startswith("possible over-count") for c in out["caveats"]), out["caveats"]
+    assert [r["guard"] for r in out["guard_receipts"]].count("fanout_detected") == 1
+
+    graph = OntologyGraph.model_validate(json.loads(
+        (Path(__file__).resolve().parents[2] / "evals" / "ablation_samples_ecommerce_ontology_measured.json").read_text()))
+    compiled = compile_object_query({"object_type": "order", "by": ["payment_method"], "measures": [
+        {"agg": "sum", "path": "total_amount"}, {"agg": "count", "path": "order_item"}]}, graph, fiscal_start_month=1)
+    quiet = ct.run_sql("fanout-t", {"sql": compiled.sql})
+    assert not quiet["error"]
+    assert not any(r["guard"] == "fanout_detected" for r in quiet["guard_receipts"]), quiet["guard_receipts"]
+    assert not any("over-count" in c for c in quiet["caveats"])

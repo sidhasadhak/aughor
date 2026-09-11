@@ -375,3 +375,31 @@ def test_e1_live_reads_real_types_no_date_false_positive(monkeypatch):
     # TIMESTAMP column of the same name is a genuine boundary footgun — must still caveat.
     r_ts = execute_guarded(_conn_with("TIMESTAMP", "acquired_at"), sql_date, query_id="p1")
     assert any("E1-date-boundary" in c for c in r_ts.caveats), r_ts.caveats
+
+
+def test_preflight_harden_flags_a_fanout_it_cannot_rewrite(monkeypatch):
+    """Detected with no provable rewrite used to be SILENT — the fanned SQL executed and no receipt
+    said a guard had seen it (found building ON-2's receipt, 2026-09-11). It leaves one now."""
+    from aughor.kernel.registries.execution_hooks import collect_guard_receipts
+    from aughor.sql.executor import preflight_harden
+
+    monkeypatch.setattr("aughor.sql.fanout.defan", lambda *a, **k: None)
+    with collect_guard_receipts() as receipts:
+        out = preflight_harden(_fanout_conn(), _FANNED, _FANOUT_SCHEMA)
+    assert out.strip() == _FANNED.strip()                      # flagged, never rewritten on a guess
+    assert [(r["guard"], r["action"]) for r in receipts] == [("fanout_detected", "flagged")]
+    assert "repeats each orders row once per matching lineitem row" in receipts[0]["detail"]
+
+
+def test_flag_fanout_says_so_for_a_door_that_runs_the_callers_exact_sql():
+    from aughor.kernel.registries.execution_hooks import collect_guard_receipts
+    from aughor.sql.executor import flag_fanout
+
+    with collect_guard_receipts() as receipts:
+        caveat = flag_fanout(_fanout_conn(), _FANNED, schema=_FANOUT_SCHEMA)
+    assert caveat and caveat.startswith("possible over-count")
+    assert [r["guard"] for r in receipts] == ["fanout_detected"]
+    no_schema_read = type("C", (), {"get_schema": lambda self: (_ for _ in ()).throw(AssertionError("read"))})()
+    assert flag_fanout(no_schema_read, "SELECT SUM(o_totalprice) FROM orders") is None   # no join: no schema read
+    assert flag_fanout(_fanout_conn(), "SELECT SUM(o_totalprice) FROM orders o JOIN orders p ON o.o_orderkey = p.o_orderkey",
+                       schema=_FANOUT_SCHEMA) is None

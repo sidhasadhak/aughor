@@ -100,17 +100,24 @@ def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
             dimension_ratio_chasm(sql, _tc, dialect=_dialect)
         if _ff:
             _rw = defan(sql, _ff, dialect=_dialect)
+            from aughor.kernel.registries.execution_hooks import emit_guard_receipt
             if _rw and _rw.strip() != sql.strip() and conn.dry_run(_rw)[0]:
                 # A4 — the rewrite is silent no longer: the receipt goes through the
                 # kernel's guard-receipt seam (the agent's hook forwards it to the
                 # live SSE sink; a bare platform has no hook and this is free).
-                from aughor.kernel.registries.execution_hooks import emit_guard_receipt
                 emit_guard_receipt(
                     "fanout_defan", "rewrote_sql",
                     detail=f"join fans out {_ff.hub_root} across {', '.join(_ff.satellites or [])} "
                            "— replaced with the exact pre-aggregated rewrite",
                     before=sql, after=_rw)
                 sql = _rw
+            else:
+                # Detected with no provable rewrite. Until 2026-09-11 this branch was silent:
+                # the fanned SQL executed and nothing anywhere said a guard had seen it.
+                emit_guard_receipt(
+                    "fanout_detected", "flagged",
+                    detail=fanout_detail(_ff) + " — no provable rewrite, so it executes as written",
+                    before=sql)
     except Exception as _exc:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "fan-out de-fan rewrite is advisory; the original SQL executes "
@@ -137,6 +144,54 @@ def preflight_harden(conn: "DatabaseConnection", sql: str, schema: str, *,
         tolerate(_exc, "pre-flight SQL repair is fail-open; original SQL executes and "
                        "the post-execute retry still applies", counter=f"{counter_prefix}_preflight")
     return sql
+
+
+_JOIN = re.compile(r"\bjoin\b", re.IGNORECASE)
+
+
+def fanout_detail(finding) -> str:
+    """One sentence a guard receipt and a caveat can both carry."""
+    if finding.kind == "parent_fanout":
+        parent = finding.satellites[0] if finding.satellites else "the parent table"
+        kids = ", ".join(finding.children) or "a finer-grained table"
+        return (f"{', '.join(finding.aggregates) or 'an aggregate'} over {parent} is taken across the join "
+                f"to {kids}, which repeats each {parent} row once per matching {kids} row")
+    if finding.kind == "dim_ratio":
+        return (f"a ratio joins {' and '.join(finding.satellites[:2])} on '{finding.hub_root}', which "
+                "multiplies each side by the other's rows")
+    return (f"{', '.join(finding.satellites)} are each on the many side of '{finding.hub_root}' and are "
+            "aggregated across one join")
+
+
+def flag_fanout(conn: "DatabaseConnection", sql: str, schema: Optional[str] = None) -> Optional[str]:
+    """Detect a join that over-counts and SAY so, without rewriting it — the posture for a door that
+    executes the caller's exact SQL (the converse `run_sql` tool: the model framed the query itself).
+
+    `preflight_harden` holds the same detector but only for callers that pass a rendered schema, and
+    `run_sql` never did — measured 2026-09-11 on the samples warehouse, a SUM of orders.total_amount
+    across order_items came back 2.4x through `execute_guarded` with no receipt and no caveat.
+    Returns the caveat and emits a `fanout_detected` receipt, or None. Fail-open: the query ran.
+    """
+    if not sql or not _JOIN.search(sql):
+        return None
+    try:
+        from aughor.db.schema_render import parse_schema_tables
+        from aughor.sql.fanout import detect_fanout, dimension_ratio_chasm
+        dialect = getattr(conn, "dialect", "duckdb") or "duckdb"
+        text = schema if schema is not None else conn.get_schema()
+        cols = {t: (list(c.keys()) if isinstance(c, dict) else c) for t, c in parse_schema_tables(text).items()}
+        finding = detect_fanout(sql, cols, dialect=dialect) or dimension_ratio_chasm(sql, cols, dialect=dialect)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the fan-out flag is advisory; the query already ran", counter="exec.fanout_flag")
+        return None
+    if not finding:
+        return None
+    detail = fanout_detail(finding)
+    from aughor.kernel.registries.execution_hooks import emit_guard_receipt
+    emit_guard_receipt("fanout_detected", "flagged", detail=detail, before=sql)
+    return (f"possible over-count: {detail} — pre-aggregate the many side per key before the join (or "
+            "query the finer grain directly) before trusting these totals")
 
 
 def execute_guarded(

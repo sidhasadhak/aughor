@@ -69,7 +69,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     days" answer scored wrong because the observation was empty.)
     """
     from aughor.kernel.registries.execution_hooks import collect_guard_receipts
-    from aughor.sql.executor import execute_guarded
+    from aughor.sql.executor import execute_guarded, flag_fanout
 
     sql = str(args.get("sql") or "").strip()
     if not sql:
@@ -78,6 +78,12 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
     conn = _connection(connection_id)
     with collect_guard_receipts() as receipts:
         result = execute_guarded(conn, sql, query_id="converse")
+        # The battery's fan-out detector rides `preflight_harden`, which needs a rendered
+        # schema this door never passed — so a join that over-counts ran here with no
+        # receipt and no caveat (measured 2026-09-11: 2.4× totals, silently). Flagged, not
+        # rewritten: the model framed this exact SQL, and `caveats` is where a query that
+        # succeeded and still misleads is said.
+        fanout = None if result.error else flag_fanout(conn, sql)
 
     rows = list(result.rows or [])
     out = {
@@ -88,7 +94,7 @@ def run_sql(connection_id: str, args: dict, *, emit: Optional[Emit] = None,
         "row_count": result.row_count,
         "truncated": len(rows) > _MAX_PREVIEW_ROWS,
         "error": result.error,
-        "caveats": list(result.caveats or []),
+        "caveats": list(result.caveats or []) + ([fanout] if fanout else []),
         "guard_receipts": [_receipt_dict(r) for r in receipts],
     }
     if result.error:
