@@ -16,6 +16,8 @@ export interface ObjectProperty {
   data_type: string;
   unit: string;
   description: string;
+  /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
+  overlay?: { by: string; at: string; note: string; origin: string; provenance: string };
 }
 
 /** A link from this object. A to-one link resolves to the linked object's key, a to-many link to
@@ -73,6 +75,9 @@ export interface ObjectActionParam {
   required: boolean;
   description: string;
   value: unknown;
+  /** ON-4 — `object` names one object of `object_type`, passed as "<type>:<key>". */
+  kind?: "value" | "object";
+  object_type?: string;
 }
 
 /** A declared action that takes this object — `prefilled` names the parameters carrying its key. */
@@ -163,6 +168,8 @@ export interface ObjectCatalogType {
   links: ObjectCatalogLink[];
   segments: string[];
   metrics: string[];
+  /** ON-4 — properties accepted edits set on this type's objects. */
+  overlay_properties?: string[];
 }
 
 export interface ObjectCatalog {

@@ -119,7 +119,8 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
             <div style={{ fontWeight: 600, fontSize: 13 }}>{a.id} <span style={{ color: "var(--t3)", fontWeight: 400 }}>· {a.kind} · {a.risk}</span></div>
             {a.description && <div style={{ fontSize: 12, color: "var(--t3)", margin: "4px 0" }}>{a.description}</div>}
             <div style={{ fontSize: 11, color: "var(--t3)" }}>
-              params: {(a.params || []).map((p: any) => `${p.name}:${p.data_type}`).join(", ") || "—"}
+              params: {(a.params || []).map((p: any) =>
+                `${p.name}:${p.kind === "object" ? p.object_type : p.data_type}`).join(", ") || "—"}
             </div>
             {(a.submission_criteria || []).map((c: any, i: number) => (
               <div key={i} style={{ fontSize: 11, color: "var(--t3)" }}>must satisfy: <code>{c.expr}</code></div>

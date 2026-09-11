@@ -202,6 +202,7 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
               <dt className="aug-fs-xs" title={p.description || p.name}
                 style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4 }}>
                 {isKey && <Icon name="key" size={12} label="Key" />}
+                {p.overlay && <Icon name="edit" size={12} label="Set by an accepted action" />}
                 {p.display_name}
               </dt>
               <dd className="aug-fs-sm"
@@ -214,6 +215,11 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                   </Link>
                 ) : cellText(p.value)}
                 {p.unit && p.value != null && <span style={{ color: "var(--t4)" }}> {p.unit}</span>}
+                {p.overlay && (
+                  <span className="aug-fs-xs" style={{ display: "block", color: "var(--t4)" }}>
+                    {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
+                  </span>
+                )}
               </dd>
             </React.Fragment>
           );
