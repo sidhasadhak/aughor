@@ -56,8 +56,10 @@ export const RING = { rx: 270, ry: 186 };
 export const RING_STEP = { rx: 170, ry: 124 };
 /** The arc one card needs on a ring — a neighbour card's width plus air. */
 export const CARD_ARC = 210;
-/** How much clear line a label needs, and how far it steps aside when the line does not have it. */
-export const LABEL_ROOM = 96;
+/** Half a link label's own chip. A label is a BOX, so the stretch of line it may sit in is the stretch clear of
+ *  both cards by this much — reserving only the cards' own size is what let a label cover a card's first row. */
+export const LABEL_HALF = { w: 62, h: 11 };
+/** How far a label steps off its line when the line has no room for it at all. */
 export const LABEL_ASIDE = 36;
 /** Room beyond the outermost ring for a card, and the smallest map that still holds the centred card. */
 export const MAP_PAD = { x: NEIGHBOUR_HALF.w + 24, y: NEIGHBOUR_HALF.h + 56 };
@@ -218,13 +220,21 @@ export function layoutMap(map: TypeMap, focus: string): MapLayout {
           labelY: (a.y + 2 * control.y + b.y) / 4,
         };
       }
-      const [ca, cb] = [reach(half(link.from), dx, dy), reach(half(link.to), dx, dy)];
-      // The middle of the stretch neither card covers. When that stretch is too short to hold a label — two cards
-      // almost touching, which the rings allow on a diagonal — the label steps aside off the line rather than
-      // being laid over a card.
-      const clear = length - ca - cb;
+      // Where the label sits, in two goes. First the stretch of line where the label's whole CHIP clears both
+      // cards — the label is a box, and reserving only the cards' own size is what let one cover a card's first
+      // row. Where the rings leave no such stretch (a short diagonal spoke), fall back to the stretch its CENTRE
+      // clears and step the chip off the line, so what it grazes is a card's margin rather than its text.
+      const chip = (h: { w: number; h: number }) => ({ w: h.w + LABEL_HALF.w, h: h.h + LABEL_HALF.h });
+      const room = (grow: boolean) => {
+        const box = (type: string) => (grow ? chip(half(type)) : half(type));
+        const [ca, cb] = [reach(box(link.from), dx, dy), reach(box(link.to), dx, dy)];
+        return { ca, clear: length - ca - cb };
+      };
+      const whole = room(true);
+      const fits = whole.clear > 0;
+      const { ca, clear } = fits ? whole : room(false);
       const t = clear > 0 ? (ca + clear / 2) / length : 0.5;
-      const aside = clear < LABEL_ROOM ? LABEL_ASIDE : 0;
+      const aside = fits ? 0 : LABEL_ASIDE;
       return {
         link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bowed: false,
         path: `M ${a.x} ${a.y} L ${b.x} ${b.y}`,

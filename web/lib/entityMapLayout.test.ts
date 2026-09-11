@@ -7,7 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  FOCUS_HALF, LABEL_ASIDE, NEIGHBOUR_HALF, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes,
+  FOCUS_HALF, LABEL_ASIDE, LABEL_HALF, NEIGHBOUR_HALF, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes,
 } from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink, TypeMapRow } from "@/lib/objectTypes";
 
@@ -154,23 +154,39 @@ describe("layoutMap", () => {
     expect(spoke.path).toMatch(/^M [\d.-]+ [\d.-]+ L [\d.-]+ [\d.-]+$/);
   });
 
-  it("steps a label off the line when the two cards leave it no room", () => {
-    const layout = layoutMap(star(2), "hub");
-    const hub = layout.nodes.find((n) => n.objectType === "hub")!;
-    const edge = layout.edges[0];
-    const onTheLine = Math.abs((edge.labelX - hub.x) * (edge.y2 - edge.y1) - (edge.labelY - hub.y) * (edge.x2 - edge.x1))
-      / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1);
-    expect(onTheLine).toBeCloseTo(LABEL_ASIDE, 6);
+  it("puts a label's whole chip in the clear where the ring leaves room for it", () => {
+    const layout = layoutMap(star(2), "hub");                 // two neighbours: the ring is at its roomiest
+    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
+    for (const edge of layout.edges) {
+      const other = layout.nodes.find((node) => node.objectType === edge.link.to)!;
+      const clears = (card: { x: number; y: number }, h: { w: number; h: number }) =>
+        Math.abs(edge.labelX - card.x) >= h.w + LABEL_HALF.w || Math.abs(edge.labelY - card.y) >= h.h + LABEL_HALF.h;
+      expect(clears(hub, FOCUS_HALF) && clears(other, NEIGHBOUR_HALF)).toBe(true);
+      const off = Math.abs((edge.labelX - edge.x1) * (edge.y2 - edge.y1) - (edge.labelY - edge.y1) * (edge.x2 - edge.x1))
+        / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1);
+      expect(off).toBeCloseTo(0, 6);                          // on its line: no step aside was needed
+    }
   });
 
-  it("sets every label on a spoke where neither card on its line hides it", () => {
-    const layout = layoutMap(star(7), "hub");
-    const hub = layout.nodes.find((n) => n.objectType === "hub")!;
+  it("steps a label off the line when the cards leave its chip no room", () => {
+    const layout = layoutMap(star(7), "hub");                 // a crowded ring: the spokes are short
+    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
+    const aside = layout.edges.map((edge) =>
+      Math.abs((edge.labelX - hub.x) * (edge.y2 - edge.y1) - (edge.labelY - hub.y) * (edge.x2 - edge.x1))
+      / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1));
+    expect(aside.some((d) => Math.abs(d - LABEL_ASIDE) < 1e-6)).toBe(true);
+  });
+
+  it.each([2, 5, 7, 12])("never sets a label inside either card, with %i neighbours", (n) => {
+    const layout = layoutMap(star(n), "hub");
+    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
     for (const edge of layout.edges) {
-      const other = layout.nodes.find((n) => n.objectType === edge.link.to)!;
+      const other = layout.nodes.find((node) => node.objectType === edge.link.to)!;
       const label = { x: edge.labelX, y: edge.labelY };
-      expect(Math.abs(label.x - hub.x) >= FOCUS_HALF.w || Math.abs(label.y - hub.y) >= FOCUS_HALF.h).toBe(true);
-      expect(Math.abs(label.x - other.x) >= NEIGHBOUR_HALF.w || Math.abs(label.y - other.y) >= NEIGHBOUR_HALF.h).toBe(true);
+      const clears = (card: { x: number; y: number }, h: { w: number; h: number }) =>
+        Math.abs(label.x - card.x) >= h.w || Math.abs(label.y - card.y) >= h.h;
+      expect(clears(hub, FOCUS_HALF)).toBe(true);
+      expect(clears(other, NEIGHBOUR_HALF)).toBe(true);
     }
   });
 });

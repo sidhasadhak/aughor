@@ -18,7 +18,7 @@ from aughor.db.connection import open_connection
 from aughor.demo.setup import _seed_ecommerce
 from aughor.ontology import overrides as OV
 from aughor.ontology.backing import apply_backing_measurements
-from aughor.ontology.bindings import binding_problem, describe_with, measure_binding
+from aughor.ontology.bindings import binding_problem
 from aughor.ontology.models import OntologyGraph
 from aughor.ontology.timeseries import (
     HISTORY_ROWS,
@@ -55,6 +55,18 @@ SELECT * FROM (VALUES
   ('O000002', TIMESTAMP '2024-03-01 00:00:00', 40.0, 'q'),
   ('O000003', NULL,                             7.0, 'n')
 ) AS t(order_id, seen_at, level, flag);
+"""
+
+#: The hand reference every compiled read is held to: each order's latest event row, found without a window
+#: function at all — a correlated pick of the newest row, ties broken the way the declaration breaks them.
+LATEST_REFERENCE = """
+SELECT {select} FROM orders o
+JOIN LATERAL (
+  SELECT e.event, e.backlog_hours, e.event_at FROM order_events e
+  WHERE e.order_id = o.order_id
+  ORDER BY e.event_at DESC, e.event DESC, e.backlog_hours DESC LIMIT 1
+) latest ON TRUE
+WHERE {where}
 """
 
 EVENTS = {"table": "order_events", "key": "order_id", "kind": "timeseries", "time_column": "event_at"}
@@ -217,15 +229,3 @@ def test_an_object_no_reading_reaches_shows_the_property_empty_rather_than_someo
     assert bound["level"]["value"] is None and bound["flag"]["value"] is None
     assert page.timeseries[0]["rows"] == []
 
-
-#: The hand reference every compiled read is held to: each order's latest event row, found without a window
-#: function at all — a correlated pick of the newest row, ties broken the way the declaration breaks them.
-LATEST_REFERENCE = """
-SELECT {select} FROM orders o
-JOIN LATERAL (
-  SELECT e.event, e.backlog_hours, e.event_at FROM order_events e
-  WHERE e.order_id = o.order_id
-  ORDER BY e.event_at DESC, e.event DESC, e.backlog_hours DESC LIMIT 1
-) latest ON TRUE
-WHERE {where}
-"""

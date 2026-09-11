@@ -31,7 +31,7 @@ from typing import Optional
 from aughor.ontology.bindings import binding_from, column_of
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.models import Binding
-from aughor.ontology.window_measures import compile_measure, describe, from_declaration
+from aughor.ontology.window_measures import compile_measure, from_declaration
 
 #: How many readings behind the latest one an object page shows.
 HISTORY_ROWS = 12
@@ -52,29 +52,34 @@ def latest_columns(binding: Binding) -> list[str]:
     return out
 
 
+def latest_order(binding: Binding) -> list[str]:
+    """What "latest" is ordered by: the time column, and then every column the reduction carries. The tail is not
+    decoration — it is what makes the last row ONE row when two readings share an instant."""
+    order: list[str] = []
+    for column in [binding.time_column, *latest_columns(binding)]:
+        if column and column.lower() not in {c.lower() for c in order}:
+            order.append(column)
+    return order
+
+
 def latest_declaration(binding: Binding, column: str) -> dict:
     """The stored declaration ON-5 instantiates for ONE timeseries property: its value on the object's latest row,
-    as a semiadditive `last` over the binding's time column, partitioned by the object's key. The ordering carries
-    every supplied column after the time column so the row it lands on is one row (see the module docstring)."""
-    order = [binding.time_column, *latest_columns(binding)]
-    seen: list[str] = []
-    for c in order:
-        if c and c.lower() not in {s.lower() for s in seen}:
-            seen.append(c)
+    as a semiadditive `last` over the binding's time column, partitioned by the object's key."""
     return {"expression": f"{SOURCE}.{quote_ident(column)}",
-            "order_by": ", ".join(f"{SOURCE}.{quote_ident(c)}" for c in seen),
+            "order_by": ", ".join(f"{SOURCE}.{quote_ident(c)}" for c in latest_order(binding)),
             "range": "current", "semiadditive": "last",
             "partition_by": [f"{SOURCE}.{quote_ident(binding.key)}"]}
 
 
 def latest_note(binding: Binding) -> str:
-    """What the reduction did, for a plan line, a caveat or a receipt — the declaration's own words."""
+    """What the reduction did, for a plan line, a caveat or a receipt. Read off the declaration the SQL is built
+    from — including the ordering, so nobody has to guess how a tie was broken."""
     columns = latest_columns(binding)
     if not columns:
         return f"reduced to each object's latest row by {binding.time_column}"
-    said = describe(from_declaration(latest_declaration(binding, columns[0])))
-    return (f"reduced to each object's latest row by {binding.time_column}, one row per {binding.key} — "
-            f"every property read as {said}")
+    from_declaration(latest_declaration(binding, columns[0]))       # raises unless the declaration compiles
+    return (f"reduced to each object's latest row by {binding.time_column} — one row per {binding.key}, every "
+            f"property its LAST value ordered by {', '.join(latest_order(binding))}, never summed across time")
 
 
 def latest_from(binding: Binding, alias: str, *, key_equals: Optional[str] = None) -> str:
