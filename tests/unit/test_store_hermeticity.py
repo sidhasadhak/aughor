@@ -267,3 +267,113 @@ def test_every_store_env_override_is_pointed_at_the_test_dir():
     assert unisolated == {}, (
         "these stores resolve to a path outside the suite's temp dir, so the tests write "
         f"the developer's live data/: {unisolated}. Add each to the list in tests/conftest.py")
+
+
+# ── 2026-09-11: the two stores the guard above could not see. `resolve_db_path` is one
+# way to resolve a store path; reading `os.environ` yourself is another, and these took
+# it — upload storage (`control_plane/vending.STORAGE_ROOT`, bound at IMPORT) and the
+# playbook (`playbook/store._default_path`, resolved per call). Neither passes through
+# that seam, so the population never contained them and the guard could not have failed.
+# A full suite run from a fresh worktree wrote `data/uploads/default/workspace/
+# rearm_single/{orders.csv,orders.csv.import.json}` and seeded `data/playbook.json` +
+# `data/playbook_versions.json` into the checkout; the live tree already held copies of
+# those two upload files dated 2026-08-12, so an earlier run had put a test schema in a
+# real workspace's upload store. ──────────────────────────────────────────────────────
+
+def test_upload_root_is_isolated():
+    """Asserted on the ENVIRONMENT and on a fresh resolution rather than on
+    `vending.STORAGE_ROOT`: that global is bound at import, and `test_object_store.py`
+    reloads the module under a patched env, which leaves the reloaded binding pointing at
+    a dead per-test tmp dir for the rest of the session. So this pins the property the
+    incident actually broke — upload storage never resolves inside the repo's `data/` —
+    which no test ordering can satisfy by accident."""
+    import os
+
+    from aughor.control_plane import vending
+
+    repo_data = (pathlib.Path(__file__).resolve().parents[2] / "data").resolve()
+    configured = pathlib.Path(os.environ["AUGHOR_UPLOAD_DIR"]).resolve()
+    assert "aughor-test-stores" in str(configured), "the suite did not point upload storage anywhere"
+    assert repo_data != configured and repo_data not in configured.parents
+
+    live = pathlib.Path(vending.vend_storage("probe").root).resolve()
+    assert repo_data not in live.parents, f"upload storage vends into the repo: {live}"
+
+
+def test_playbook_and_its_version_log_are_isolated():
+    """The version log is a SIBLING of the playbook file, so pointing the playbook alone
+    would still have left the append-only history landing in the repo."""
+    from aughor.playbook import store
+    assert "aughor-test-stores" in str(store._default_path())
+    assert "aughor-test-stores" in str(store._versions_path())
+
+
+def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
+    """The sibling of the generic guard above, for the stores it structurally cannot see.
+
+    That one's population is `resolve_db_path` call sites, so a store reading `os.environ`
+    itself never appears in it. This takes a population from the code by two other routes:
+    every `os.environ.get("AUGHOR_…")` whose own expression falls back to a path under the
+    repo's `data/`, plus every entry in the serverless `WRITABLE_STORES` registry — the
+    playbook needs the registry, because its fallback is a module constant rather than a
+    literal in the call.
+
+    Both sources are DERIVED, never listed here: a store added tomorrow that reads its env
+    var inline, or that registers itself as writable, joins this population the moment it
+    exists. A list in this file would only ever grow after somebody's data paid for it.
+    """
+    import ast
+    import os
+
+    from aughor.control_plane.writable_paths import WRITABLE_STORES
+
+    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
+    found: dict[str, str] = {var: "control_plane/writable_paths.py" for var in WRITABLE_STORES}
+
+    def _falls_back_to_repo_data(segment: str) -> bool:
+        return any(hint in segment for hint in ('"data"', "'data'", '"data/', "'data/"))
+
+    for path in root.rglob("*.py"):
+        source = path.read_text()
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:                      # not ours to police here
+            continue
+        # `os.environ.get(VAR) or <default>` puts the default in the enclosing BoolOp,
+        # not in the call, so the fallback has to be read from around the call.
+        enclosing: dict[int, str] = {}
+        for node in ast.walk(tree):
+            if isinstance(node, ast.BoolOp):
+                segment = ast.get_source_segment(source, node) or ""
+                for child in ast.walk(node):
+                    enclosing.setdefault(id(child), segment)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and node.args):
+                continue
+            name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
+            reads_env = name == "getenv" or (
+                name == "get" and isinstance(node.func, ast.Attribute)
+                and isinstance(node.func.value, ast.Attribute)
+                and node.func.value.attr == "environ")
+            first = node.args[0]
+            if not (reads_env and isinstance(first, ast.Constant)
+                    and isinstance(first.value, str) and first.value.startswith("AUGHOR_")):
+                continue
+            segment = enclosing.get(id(node)) or ast.get_source_segment(source, node) or ""
+            if _falls_back_to_repo_data(segment):
+                found.setdefault(first.value, str(path.relative_to(root)))
+
+    assert len(found) > len(WRITABLE_STORES), (
+        "found no inline env-pathed store defaults — the AST half of this guard has gone "
+        "blind and only the registry is left")
+    repo_data = (root.parent / "data").resolve()
+
+    def _leaks(env: str) -> bool:
+        resolved = pathlib.Path(os.environ.get(env, "") or "").resolve()
+        return not os.environ.get(env) or repo_data in resolved.parents or resolved == repo_data
+
+    unisolated = {env: where for env, where in sorted(found.items()) if _leaks(env)}
+    assert unisolated == {}, (
+        "these stores read their own env var and fall back into the repo's data/, and the "
+        f"suite has not pointed them anywhere else: {unisolated}. Add each to the list in "
+        "tests/conftest.py (and to scripts/dump_openapi.py, its sibling)")

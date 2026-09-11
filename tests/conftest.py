@@ -143,6 +143,22 @@ for _env, _file in (
     # store's run history, so test-written rows are not just clutter — they are potential
     # evidence in a graduation decision.
     ("AUGHOR_EVALS_DB", "evals.db"),
+    # Upload storage. `control_plane/vending.STORAGE_ROOT` reads this var at IMPORT and
+    # falls back to a CWD-relative `data/uploads`, so it never passed through
+    # `resolve_db_path` and the generic guard's population could not contain it. Measured
+    # 2026-09-11 on a full suite run from a fresh worktree: it wrote
+    # `data/uploads/default/workspace/rearm_single/{orders.csv,orders.csv.import.json}`
+    # into the checkout, and the live tree already held copies of exactly those two files
+    # dated 2026-08-12 — an earlier run had put a test schema in a REAL workspace's upload
+    # store. Assigned here, above every app import, because STORAGE_ROOT binds at import:
+    # a later `monkeypatch.setenv` is a silent no-op (aughor/knowledge/blobs.py says so).
+    ("AUGHOR_UPLOAD_DIR", "uploads"),
+    # The playbook, found by the same run. The app's startup seed writes `playbook.json`
+    # and appends to its immutable `playbook_versions.json` sibling. It resolves per call
+    # through AUGHOR_PLAYBOOK_PATH (the serverless redirect gave it the override it had
+    # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
+    # got a seeded playbook written into its `data/`.
+    ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
 ):
     os.environ[_env] = os.path.join(_test_stores_dir, _file)   # assigned, not setdefault
 
