@@ -116,12 +116,16 @@ def test_connection_persists_after_ingest_and_delete(tmp_path, monkeypatch):
     from aughor.control_plane import object_store as store_mod
     monkeypatch.setattr(store_mod, "mirror_up", lambda root, prefix: calls.append(prefix) or 1)
     monkeypatch.setattr(store_mod, "mirror_down", lambda root, prefix: 0)
-    monkeypatch.setenv("AUGHOR_UPLOAD_DIR", str(tmp_path / "uploads"))
-    import importlib
+    # Patch the root the vending seam reads at CALL time rather than reloading both
+    # modules under a patched env. `monkeypatch` restores the environment but not a
+    # reloaded module, so the old form left `vending.STORAGE_ROOT` bound to this test's
+    # tmp dir for the REST of the session — every later test inherited a dead upload
+    # root, and `test_store_hermeticity.py` caught it. The reloads bought nothing:
+    # `local_upload` imports `mirror_up`/`mirror_down` inside the functions that call
+    # them, and `vend_storage` reads `STORAGE_ROOT` through a property at call time.
     from aughor.control_plane import vending
-    importlib.reload(vending)
     from aughor.connectors.file import local_upload
-    importlib.reload(local_upload)
+    monkeypatch.setattr(vending, "STORAGE_ROOT", tmp_path / "uploads")
 
     csv = tmp_path / "probe.csv"
     csv.write_text("a,b\n1,2\n")

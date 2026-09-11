@@ -45,6 +45,12 @@ def _isolate_stores() -> None:
     os.environ.setdefault("AUGHOR_INSTRUCTIONS_FILE", os.path.join(tmp, "instructions.json"))
     os.environ.setdefault("AUGHOR_CANVAS_INSTRUCTIONS_FILE",
                           os.path.join(tmp, "canvas_instructions.json"))
+    # Upload storage and the playbook. Neither resolves through `resolve_db_path`, so
+    # neither appeared in any isolation list — including the conftest's, until a full
+    # suite run wrote both into a fresh checkout's `data/` on 2026-09-11. Registered in
+    # both places at once, which is the rule this file's sibling comment below states.
+    os.environ.setdefault("AUGHOR_UPLOAD_DIR", os.path.join(tmp, "uploads"))
+    os.environ.setdefault("AUGHOR_PLAYBOOK_PATH", os.path.join(tmp, "playbook.json"))
 
     # The DIRECTORY stores, which this dump never isolated: the docstring above said
     # "every store honours its AUGHOR_*_DB override", and that sentence was the gap — a
