@@ -99,7 +99,8 @@ def test_backing_keys_are_measured_and_a_false_grain_claim_is_corrected(tmp_path
         assert "grain_verified was True; measured False" in liar.backing.verification_note
         assert q.backing.verified is True and q.grain_verified is True
         assert bad_q.backing.verified is False and "NOT unique" in bad_q.backing.verification_note
-        assert report.grain_corrected == ["Review"] and report.summary()["not_unique"][0]["entity"] == "Review"
+        assert report.grain_refuted == ["Review"] and report.grain_confirmed == []
+        assert report.summary()["not_unique"][0]["entity"] == "Review"
     finally:
         db.close()
 

@@ -3698,7 +3698,12 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   `tests/unit/test_pack_ontology_claims.py`. **Measured on the real files — the dated
   count of claims by tier this wave asked for:** LuxExperience × fashion-ecommerce: 12
   measured-true · 27 expected · 0 measured-false, 9 objects matched. samples ×
-  core-ecommerce: 10 measured-true · 21 expected · 0 measured-false, 5 matched. What the
+  core-ecommerce: 10 measured-true · 21 expected · 0 measured-false, 5 matched. The DWH
+  connection's Olist-shaped `ecommerce` × core-ecommerce (live, through the door): 11
+  measured-true · 19 expected · **1 measured-false** — `Order → Customer` expected N:1,
+  measured 1:1 (Olist mints a `customer_id` per order; the person is `customer_unique_id`).
+  The core's expectation is wrong for that warehouse and the data wins, recorded as such —
+  the first claim the tier system was built for. What the
   expected tier says, honestly: on LuxExperience the builder never found `orders →
   customers`, `payments → orders`, `shipments → orders` or `returns → orders` — it linked
   everything through order_items — and never marked `orders.status` as a lifecycle though
@@ -3733,7 +3738,18 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   in `tests/unit/test_object_backing.py`; `aughor/ontology/backing.py` holds the
   measurement and `entity_from_clause`, the seam ON-2's compiler reads. Prompt-reach walk
   147 → 156; none of the nine new fields reach a block — the prompt still names tables,
-  which is ON-6's question, not this wave's. **Deferred from the draft, honestly:**
+  which is ON-6's question, not this wave's. **Measured live through the door, 2026-09-11,
+  four connections:** LuxExperience 14 backings unique, 13 grains CONFIRMED (the flag said
+  unverified; the key is unique); samples 5 unique, 5 confirmed; `workspace/amazon` —
+  `product_id` 1,351 distinct over 1,465 rows, grain REFUTED (the flag said verified); the
+  DWH connection's Olist-shaped `ecommerce` — 5 confirmed and FOUR keys that are not keys:
+  `OrderItem.order_item_id` is a per-order sequence, 21 distinct over 112,650 rows (the true
+  grain is `order_id + order_item_id`), `OrderPayment.order_id` 99,440 over 103,886 (several
+  payments per order), `OrderReview.review_id` 98,410 over 99,224 (Olist's duplicated review
+  ids), `Geolocation.geolocation_zip_code_prefix` 19,015 over 1,000,163. Every one of those
+  four was rendered "grain: ✓" or offered as an identity to the model before today; every one
+  now reads `backing.verified = False` with the counts in its note. **Deferred from the
+  draft, honestly:**
   `dedup.merge_entities` is not yet rewritten as "two tables, one backing" (it still
   concatenates `source_tables`); a query backing has no UI and no diff view; properties
   are still copied ColumnProfiles, not typed properties mapped to expressions.

@@ -67,7 +67,8 @@ def measure_backing(db: Any, backing: Backing, entity_id: str = "") -> BackingMe
 @dataclass
 class BackingReport:
     measurements: list[BackingMeasurement] = field(default_factory=list)
-    grain_corrected: list[str] = field(default_factory=list)
+    grain_confirmed: list[str] = field(default_factory=list)   # the flag said unverified; the key IS unique
+    grain_refuted: list[str] = field(default_factory=list)     # the flag said verified; the key is NOT unique
     overrides_measured: list[str] = field(default_factory=list)
 
     def summary(self) -> dict:
@@ -75,7 +76,8 @@ class BackingReport:
                 "unique": [m.entity_id for m in self.measurements if m.unique is True],
                 "not_unique": [{"entity": m.entity_id, "note": m.note} for m in self.measurements if m.unique is False],
                 "unmeasurable": [m.entity_id for m in self.measurements if m.unique is None],
-                "grain_corrected": list(self.grain_corrected),
+                "grain_confirmed": list(self.grain_confirmed),
+                "grain_refuted": list(self.grain_refuted),
                 "overrides_measured": list(self.overrides_measured)}
 
 
@@ -98,9 +100,9 @@ def apply_backing_measurements(graph: OntologyGraph, db: Any) -> BackingReport:
         if entity.backing.kind == "table" and entity.grain_verified != m.unique:
             entity.backing.verification_note = f"grain_verified was {entity.grain_verified}; measured {m.unique} — {m.note}"
             entity.grain_verified = m.unique
-            report.grain_corrected.append(entity.id)
-    if report.grain_corrected:
-        logger.info("[ontology:%s] grain corrected by measurement on %s", graph.connection_id, report.grain_corrected)
+            (report.grain_confirmed if m.unique else report.grain_refuted).append(entity.id)
+    if report.grain_refuted:
+        logger.info("[ontology:%s] grain REFUTED by measurement on %s", graph.connection_id, report.grain_refuted)
     return report
 
 
