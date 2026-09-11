@@ -94,7 +94,8 @@ by construction — 22 of 26 hard reference questions compile and all 22 answers
 person writes the object query, `POST /objects/query` answered "revenue per segment last quarter"
 live equal to the reference with no model call, and `run_sql`'s fan-out detector turned out never to
 have run on the conversation's door (found, flagged). A MODEL filling the same queries regressed
-(1/14 and 3/12 against raw 14/14 and 12/12), so `query_objects` stays behind its flag (§6 item 15).
+(1/14 and 3/12 against raw 14/14 and 12/12), so the conversation's door is PARKED behind its flag
+and ON-6 is RETIRED (§6 item 15, decided 2026-09-11); ON-3, the object pages, started.
 
 ---
 
@@ -3800,7 +3801,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   property, the ERD unchanged underneath, `GET /ontology/entities` unchanged for every
   single-table type.
 - ✅ **ON-2 · Objects at runtime — the compiled door — FIRST SLICE BUILT 2026-09-11** (the
-  user: *"Lets proceed with the roadmap!"*; branch `claude/on-2-object-query`, five commits).
+  user: *"Lets proceed with the roadmap!"*; branch `claude/on-2-object-query`; the conversation's
+  door PARKED 2026-09-11 on a measured regression, §6 item 15(c)).
   **What shipped.** `aughor/semantic/object_query.py`: the algebra below as a typed IR
   (`ObjectQuery`: object type · segment · filters · measures with `where` and `divide_by` ·
   `by` · `time`/`grain`/window · order/limit), compiled over the backings with no model call;
@@ -3954,8 +3956,11 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   instead of route-bound.
   **Receipt:** a churn-risk binding on `Customer`, its score on the object page and
   queryable through `query_objects`, the model version on the receipt.
-- **ON-6 · The context layer reaches the model — measured (rides after ON-0, gated by
-  it).** Entity `description`, `domain`, exclusions, `null_meaning`, `measure_grain`,
+- ❌ **ON-6 · The context layer reaches the model — RETIRED 2026-09-11** (the user: *"retire
+  ON-6"*; §6 item 15(d)). ON-0's falsifier fired on both blocks — four wrong labels, then every
+  label measured (ON-0a's re-run: raw 14/14, ontology 13/14) — so prompt injection is retired for
+  the ontology and the wave is cancelled as drafted. **The draft, kept for the record** (it rode
+  after ON-0, gated by it): Entity `description`, `domain`, exclusions, `null_meaning`, `measure_grain`,
   definition provenance and owners rendered question-scoped and verified-gated like the
   semantic layer today, each field's inclusion decided by ON-0's harness, not by
   taste. The fast phase gains a cheap, cached ENTITY MODEL so a fresh connection is not
@@ -4326,10 +4331,11 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         compiles over measured links — 22/26 hard questions, every answer right when a person
         fills the query; POST /objects/query driven live; run_sql's silent fan-out found and
         flagged; a MODEL filling it regressed, 1/14 and 3/12 against raw at ceiling, so
-        query_objects stays behind its flag — §6 item 15)
-        → ON-3 instances + the standard object view → ON-4 actions on objects with
-        the overlay merged into the next answer → ON-5 functions and model bindings
-        → ON-6 the context layer reaches the model, ratcheted by ON-0.
+        query_objects PARKED behind its flag — §6 item 15)
+        → ON-3 instances + the standard object view (STARTED 2026-09-11) → ON-4 actions on
+        objects with the overlay merged into the next answer → ON-5 functions and model
+        bindings. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
+        falsifier fired on both blocks (§6 item 15).
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -4615,8 +4621,8 @@ the browser** · **measure the premise before building.**
 > DECIDED the same day — all four clauses YES, every recommendation adopted as written;
 > the register is back at zero open and ON-0 started within the hour.
 > **Amended 2026-09-11:** item 15 (ON-2's exposure) arrived with ON-2's first slice and was
-> MEASURED the same day — a regression, so the flag stays off; it stays open for the two calls
-> it leaves (invest in the fill or park the door; retire ON-6). The register is at one.
+> MEASURED and DECIDED the same day — the door parked behind its flag, ON-6 retired, ON-3
+> started. The register is back at zero open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -4757,24 +4763,27 @@ the browser** · **measure the premise before building.**
     guard-cited allowlist (needs ON-2's coverage number); whether edits are ever
     materialised back to source (the read-only law stands until someone asks with
     a case).
-15. ⏳ **MEASURED 2026-09-11 — does ON-2's `query_objects` reach the conversation? Not on this
-    model; two calls remain the user's.** The falsifier was measured two ways (§3.15 ON-2): as
-    written, on the ledger, it fires (at most 2 of 35 real questions compile — but two-thirds of
-    those turns ask nothing SQL answers); on the hard reference sets the algebra compiles 22 of
-    26 with every answer right and no refusal the algebra caused.
+15. ✅ **DECIDED 2026-09-11 — ON-2's `query_objects` does not reach the conversation: the door
+    is PARKED, ON-6 is RETIRED, and ON-3 starts.** The user, verbatim: *"Park the door, retire
+    ON-6, start ON-3."* The falsifier was measured two ways (§3.15 ON-2): as written, on the
+    ledger, it fires (at most 2 of 35 real questions compile — but two-thirds of those turns ask
+    nothing SQL answers); on the hard reference sets the algebra compiles 22 of 26 with every
+    answer right and no refusal the algebra caused.
     ✅ **(a) Measured** (the user: *"run both measurements"*): a model filling the IR —
     `gemini-3.1-flash-lite`, given the schema and the object catalog, the compiler and scorer
     doing the rest — scored **1/14 and 3/12 against raw 14/14 and 12/12** (9/14 and 10/12 with the
     run_sql fallback). Four answers were genuinely wrong, seven fills malformed or empty, six
     honest refusals the fallback answered, zero refusals from the algebra.
     ✅ **(b) Not met — `ask.query_objects` stays off**, as recommended for a regression.
-    **Still the user's:** (c) invest in the fill — a stricter fill schema (`object_type`
-    required, `op` an enum, `metric` exclusive of `path`), worked examples, a stronger model —
-    and re-measure, or park the door and take ON-3. *Recommended: park it. Raw is at ceiling on
-    both sets, so a re-measure there can at best tie; the door's case needs a set where raw
-    fails, and ON-3 does not need a model to fill anything.* (d) Retire ON-6 on ON-0's
-    falsifier, which ON-0a's re-run fired again on a block that says true things.
-    *Recommended: retire it as written.*
+    ✅ **(c) PARKED** (recommended, adopted): the compiler and the `/objects` doors stay — they
+    are deterministic, measured right when a person fills the query, and ON-3 reads through
+    them — and the conversation's tool stays behind its flag. *Reopen only with a set where raw
+    FAILS and a fill that fixes the malformed shapes (`object_type` required, `op` an enum,
+    `metric` exclusive of `path`); a re-measure where raw is at ceiling can at best tie.*
+    ✅ **(d) RETIRED** (recommended, adopted): ON-6 is cancelled on ON-0's falsifier, fired on
+    both blocks. No new ontology prose is built toward the prompt. The blocks that already reach
+    it are untouched by this decision — removing them (keeping only those a guard cites) is its
+    own measured change, not a side effect of cancelling a wave.
 
 ---
 

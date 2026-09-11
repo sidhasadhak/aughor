@@ -273,7 +273,7 @@ FLAG_META = {
     },
     "ask.query_objects": {
         "label": "Offer the compiled object query to the conversation",
-        "description": "Put ON-2's query_objects tool at the head of the conversation's roster (it rides ask.converse): the model fills a typed object query — the object type, which objects, what to compute across which links, grouped how — and the SQL is COMPILED from the measured ontology, so a to-many link is pre-aggregated before the join and a sum across a to-one link is refused by construction. run_sql stays as the escape hatch under the guard battery. Offered only on a connection whose ontology is built. Off by default → the roster is exactly today's.",
+        "description": "Put ON-2's query_objects tool at the head of the conversation's roster (it rides ask.converse): the model fills a typed object query — the object type, which objects, what to compute across which links, grouped how — and the SQL is COMPILED from the measured ontology, so a to-many link is pre-aggregated before the join and a sum across a to-one link is refused by construction. run_sql stays as the escape hatch under the guard battery. Offered only on a connection whose ontology is built. Off by default → the roster is exactly today's. PARKED 2026-09-11 after a measured regression (ROADMAP §6 item 15): leave it off.",
     },
     "explore.route_wide": {
         "label": "Route wide questions to the explore wave",
@@ -370,12 +370,14 @@ EXPERIMENT: dict = {
                     "and the direct fast path agree for the same question), plus route-receipt "
                     "data on the converse/fast-path ratio. Graduation makes converse a "
                     "permanent third body and the flag dies",
-    "ask.query_objects": "does the compiled object door answer warehouse questions at least as well "
-                         "as model-written SQL, with fewer guard interventions? ON-2's falsifier gates "
-                         "exposure: the compilable share of real warehouse questions must reach 30% "
-                         "(ROADMAP §3.15 ON-2, measured 2026-09-11), and the ON-0 hard set run with the "
-                         "tool in the roster must not regress against raw. Graduation makes "
-                         "query_objects the roster's primary door and the flag dies",
+    "ask.query_objects": "PARKED 2026-09-11 by the user on a measured regression (ROADMAP §6 item 15): "
+                         "a model filling the object query scored 1/14 and 3/12 against raw 14/14 and "
+                         "12/12. The question stands — does the compiled door answer warehouse "
+                         "questions at least as well as model-written SQL? — but reopen it only with a "
+                         "set where raw FAILS and a fill that fixes the malformed shapes (object_type "
+                         "required, op an enum, metric exclusive of path); a re-run where raw is at "
+                         "ceiling can at best tie. Graduation would make query_objects the roster's "
+                         "primary door; deleting the flag and the tool is the other exit",
     "explore.route_wide": "do landscape questions answer better through the explore wave? "
                           "⚠️ GRID BLOCKED ON CORPUS (premise-checked 2026-08-07): "
                           "is_wide_question fires on 0/102 of the reference suite "
