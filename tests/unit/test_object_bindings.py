@@ -26,13 +26,15 @@ from aughor.ontology.bindings import (
     bind_binding,
     binding_block,
     binding_spec,
+    column_profiles,
     declared_bindings,
+    describe_with,
     measure_binding,
     propose_bindings,
+    select_lineage,
 )
 from aughor.ontology.filetree import export_tree, import_tree
 from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
-from aughor.routers.ontology import _columns_of
 from aughor.semantic.object_instances import get_object
 from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
 from aughor.semantic.object_types import describe_object_type, object_type_map
@@ -106,7 +108,7 @@ def _isolated_overrides(tmp_path, monkeypatch):
 def bind(graph: OntologyGraph, db, entity_id: str, name: str, spec: dict, *, count: bool = True) -> OntologyEntity:
     """The door's path without HTTP: bind against the warehouse, rebuild as the overlay will, count, attach."""
     entity = graph.entities[entity_id]
-    entry = bind_binding(entity, name, spec, graph, _columns_of(db))
+    entry = bind_binding(entity, name, spec, graph, describe_with(db))
     assert entry["bound"], entry["note"]
     built, skipped = declared_bindings(entity.model_copy(update={"bindings": []}), {name: entry["spec"]},
                                        {"entries": {name: entry}}, graph)
@@ -226,7 +228,7 @@ def test_a_timeseries_binding_keeps_its_coverage_and_is_not_read_before_on5(db, 
 # ── names: a binding adds properties and never shadows one ──────────────────────────────────
 
 def test_a_binding_adds_properties_and_refuses_what_it_cannot_take(db, graph):
-    order, describe = graph.entities["Order"], _columns_of(db)
+    order, describe = graph.entities["Order"], describe_with(db)
     renamed = bind_binding(order, "payments", {"table": "payments", "key": "ORDER_ID",
                                                "properties": {"payment_status": "status", "psp": "PSP"}},
                            graph, describe)
@@ -254,17 +256,86 @@ def test_a_binding_adds_properties_and_refuses_what_it_cannot_take(db, graph):
     assert "backing" in bind_binding(order, "orders", PAYMENTS, graph, describe)["note"]
 
 
-def test_a_keyed_select_binds_reads_like_a_table_and_is_not_added_up_without_a_profile(db, graph):
-    spec = {"sql": "SELECT order_id, psp AS processor, amount AS settled FROM payments WHERE status = 'settled'",
+def _numeric(data_type: str) -> bool:
+    return any(t in data_type.upper() for t in ("DECIMAL", "DOUBLE", "INT", "NUMERIC", "FLOAT", "REAL"))
+
+
+def test_a_keyed_select_carries_the_warehouse_types_and_borrows_roles_only_through_pass_through_columns(db, graph):
+    spec = {"sql": "SELECT p.order_id, p.payment_id, p.psp AS processor, p.amount AS settled, p.amount * 2 AS doubled, "
+                   "CAST(p.amount AS VARCHAR) AS amount_text, p.fraud_flag FROM payments p WHERE p.status = 'settled'",
             "key": "order_id"}
     [binding] = bind(graph, db, "Order", "settlements", spec).bindings
-    assert binding.reads == "query" and binding.verified is True and set(binding.properties) == {"processor", "settled"}
-    compiled = compile_({"object_type": "order", "filters": [{"path": "processor", "value": "visa"}],
-                         "measures": [{"agg": "count"}]}, graph)
-    assert rows(db, compiled.sql) == rows(db, "SELECT COUNT(*) FROM payments WHERE status = 'settled' AND psp = 'visa' "
-                                              "AND order_id IN (SELECT order_id FROM orders)")
-    why = refusal({"object_type": "order", "measures": [{"agg": "sum", "path": "settled"}]}, graph).reason
-    assert "not a known quantity" in why                       # no profile of a SELECT, so nothing is added up blind
+    assert binding.reads == "query" and binding.verified is True
+    props = binding.properties
+    assert set(props) == {"payment_id", "processor", "settled", "doubled", "amount_text", "fraud_flag"}
+    # a pass-through column borrows its source column's profile — renamed — and keeps the type the warehouse reported
+    assert (props["processor"].semantic_type, props["processor"].data_type) == ("dimension", "VARCHAR")
+    assert props["settled"].semantic_type == "measure" and _numeric(props["settled"].data_type)
+    assert props["payment_id"].semantic_type == "key" and props["fraud_flag"].semantic_type == "flag"
+    assert "BOOL" in props["fraud_flag"].data_type.upper()
+    # a computed column keeps the type it was reported with and borrows no role; a cast is not the column it casts
+    assert props["doubled"].semantic_type == "" and _numeric(props["doubled"].data_type)
+    assert (props["amount_text"].semantic_type, props["amount_text"].data_type) == ("", "VARCHAR")
+
+    by_processor = compile_({"object_type": "order", "by": ["processor"],
+                             "measures": [{"agg": "sum", "path": "settled", "decimals": 2},
+                                          {"agg": "sum", "path": "doubled", "decimals": 2}]}, graph)
+    assert rows(db, by_processor.sql) == rows(db, "SELECT p.psp, ROUND(SUM(p.amount), 2), ROUND(SUM(p.amount * 2), 2) "
+                                                  "FROM orders o LEFT JOIN (SELECT * FROM payments WHERE status = "
+                                                  "'settled') p ON p.order_id = o.order_id GROUP BY 1")
+    over = compile_({"object_type": "order", "filters": [{"path": "settled", "op": ">", "value": "400"}],
+                     "measures": [{"agg": "count"}]}, graph)
+    assert "> 400" in over.sql and "'400'" not in over.sql          # a numeric string meets a typed column as a number
+    assert rows(db, over.sql) == rows(db, "SELECT COUNT(*) FROM orders o JOIN payments p ON p.order_id = o.order_id "
+                                          "WHERE p.status = 'settled' AND p.amount > 400")
+    assert "identifier" in refusal({"object_type": "order", "measures": [{"agg": "sum", "path": "payment_id"}]},
+                                   graph).reason
+    assert "not a known quantity" in refusal({"object_type": "order",
+                                              "measures": [{"agg": "sum", "path": "amount_text"}]}, graph).reason
+
+
+def test_lineage_traces_only_a_column_the_select_passes_through_from_one_of_its_own_tables(graph):
+    traced = select_lineage(
+        "SELECT o.order_id, p.psp AS processor, status, amount, o.total_amount * 2 AS twice, "
+        "CAST(p.amount AS VARCHAR) AS amount_text, (SELECT MAX(rating) FROM reviews) AS best "
+        "FROM orders o JOIN payments AS p ON p.order_id = o.order_id", graph)
+    assert traced["order_id"] == ("orders", "order_id") and traced["processor"] == ("payments", "psp")
+    assert traced["amount"] == ("payments", "amount")           # unqualified, and only payments carries it
+    assert "status" not in traced                                # orders and payments both carry status: not guessed
+    assert not {"twice", "amount_text", "best"} & set(traced)    # an expression, a cast, a subquery
+    assert set(select_lineage("SELECT p.* FROM payments p JOIN orders o ON o.order_id = p.order_id", graph)) == set(
+        graph.entities["Payment"].properties)
+    assert select_lineage("WITH x AS (SELECT * FROM payments) SELECT x.psp FROM x", graph) == {}
+    assert select_lineage("SELECT psp FROM (SELECT * FROM payments) s", graph) == {}
+    assert select_lineage("SELECT * FROM payments p JOIN orders o ON o.order_id = p.order_id", graph) == {}
+    assert select_lineage("SELECT order_id FROM payments UNION SELECT order_id FROM orders", graph) == {}
+    assert select_lineage("this is not a select", graph) == {}
+
+
+def test_a_connector_without_typed_results_still_binds_and_the_profile_types_its_pass_through_columns(db, graph):
+    class Untyped:                                  # reports columns, never types
+        def execute(self, label, sql):
+            return db.execute(label, sql)
+
+    sql = "SELECT p.order_id, p.amount AS settled, p.amount * 2 AS doubled FROM payments p"
+    entry = bind_binding(graph.entities["Order"], "settlements", {"sql": sql, "key": "order_id"}, graph,
+                         describe_with(Untyped()))
+    assert entry["bound"] and entry["columns"] == {"order_id": "", "settled": "", "doubled": ""}
+    typed = column_profiles(graph, None, entry["columns"], sql)
+    assert typed["settled"].data_type == "DECIMAL(18,2)" and typed["settled"].semantic_type == "measure"
+    assert (typed["doubled"].data_type, typed["doubled"].semantic_type) == ("", "")   # nothing typed it: not added up
+
+    class Misaligned(Untyped):                      # reports fewer types than columns — positional, so none is trusted
+        def execute_typed(self, label, sql):
+            return db.execute(label, sql), {"types": ["VARCHAR"]}
+
+    columns, error = describe_with(Misaligned())(f"({sql}) AS b")
+    assert error is None and columns == {"order_id": "", "settled": "", "doubled": ""}
+
+
+def test_a_table_the_graph_never_profiled_binds_with_the_types_the_warehouse_reports(db, graph):
+    [binding] = bind(graph, db, "Order", "refunds", {"table": "refunds", "key": "order_id"}).bindings
+    assert _numeric(binding.properties["refund_amount"].data_type)
 
 
 # ── the receipt: a compiled query through the key join equals its hand-written reference ────
@@ -417,7 +488,7 @@ def test_describe_entity_leaves_out_a_binding_read_from_a_withheld_table(db, gra
 def test_the_overlay_rebuilds_a_bound_binding_from_its_entry_twice_alike_and_never_a_stale_one(db, graph):
     order = graph.entities["Order"]
     spec = {**PAYMENTS, "properties": {"psp": "psp", "payment_status": "status"}}
-    entry = bind_binding(order, "payments", spec, graph, _columns_of(db))
+    entry = bind_binding(order, "payments", spec, graph, describe_with(db))
     built, _ = declared_bindings(order, {"payments": entry["spec"]}, {"entries": {"payments": entry}}, graph)
     counted = measure_binding(db, order, built[0])
     entry["measured"] = {"spec": entry["spec"], **counted.counts()}

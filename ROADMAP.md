@@ -4207,9 +4207,19 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   the receipt — the panel suddenly read "3 of 3 objects". The counts were restored by re-measuring through the API;
   the overrides, export and recommendations trees now resolve `AUGHOR_ONTOLOGY_*_DIR`, pointed at the suite's temp dir
   and held by the store-hermeticity guard. `/objects/query` hands a NULL back as the text "NULL" (the legacy
-  stringified execute path), filed on its own. **Still open:** a keyed SELECT's properties carry no profile, so the
-  compiler will not add them up; a display property must come from the backing; the builder proposes static bindings
-  only; `dedup.merge_entities` is not yet "two tables, one binding"; nothing reads a timeseries binding before ON-5.
+  stringified execute path), filed on its own. **A keyed SELECT's columns carry types (the same day):** a binding's
+  columns are read through the connection's typed result channel, so every column carries the data type the warehouse
+  reports for it in that very SELECT, a cast or an expression included; a pass-through column (a bare column, renamed
+  or not, of a table in the SELECT's own FROM or JOINs) borrows that source column's profiled role, unit and
+  description, while an expression, a cast, a subquery's or a CTE's column, and an unqualified name two of its tables
+  carry borrow nothing (`select_lineage` never guesses). Live on LuxExperience: a keyed SELECT over payments bound on
+  Order (107,903 of 112,439 orders once failed payments are left out) typed `paid_eur` a measure (DOUBLE, traced to
+  `amount_eur`), `paid_net_eur` (`amount_eur * 0.9`) DOUBLE with no role, and `installments_text` (a cast) VARCHAR; the
+  sum of the computed and the pass-through column by the payments binding's method equalled its reference over seven
+  methods, the string "1000" met `paid_eur` as a number (8,070 orders, equal), a SUM of the cast was refused, and the
+  binding was removed. **Still open:** a display property must come from the backing; the builder proposes static
+  bindings only; `dedup.merge_entities` is not yet "two tables, one binding"; nothing reads a timeseries binding
+  before ON-5.
 - **ON-5, amended · Timeseries properties first — AMENDED 2026-09-11.** The "processes" half of the
   definition. A timeseries property — a shipment's latest location, a sensor reading, a status over time —
   is read from a timeseries binding (ON-1b) and becomes ON-5's first declared function: its latest value

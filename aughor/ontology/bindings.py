@@ -21,6 +21,11 @@ read for its columns before anything is written (`bind_binding`), and the overla
 that check recorded, without a database in hand (`declared_bindings`). The builder PROPOSES a binding wherever another
 type's table carries this type's key and the data proves it one row per object (`propose_bindings`); a proposal lives
 on `proposed_bindings`, which no query, page or answer reads.
+
+Every column a binding supplies carries the data type the warehouse reports for it in that very source
+(`describe_with`), and the role, unit and description of the column it reads: the table's own column for a table
+binding, and for a keyed SELECT the source column a pass-through projection names (`select_lineage`). A computed or
+cast column keeps the type it was reported with and borrows no meaning it does not have.
 """
 from __future__ import annotations
 
@@ -238,18 +243,93 @@ def _table_owner(graph: Optional[OntologyGraph], table: Optional[str]) -> Option
     return loose[0] if len(loose) == 1 else None
 
 
-def column_profiles(graph: Optional[OntologyGraph], table: Optional[str],
-                    columns: dict[str, str]) -> dict[str, EntityProperty]:
-    """``{column: its profile}`` for a binding's columns: the profile the builder took of the table where a type in
-    the graph is read from it (data type, role, unit, description), else the bare column with the data type the
-    warehouse reported — which may be empty, and then the compiler will not add it up."""
+def _profiles_of(graph: Optional[OntologyGraph], table: Optional[str]) -> dict[str, EntityProperty]:
+    """``{column (lowered): profile}`` the builder took of ``table``, through the type the graph reads from it."""
     owner = _table_owner(graph, table)
-    known = {k.lower(): p for k, p in ((owner.properties or {}) if owner is not None else {}).items()}
+    return {k.lower(): p for k, p in ((owner.properties or {}) if owner is not None else {}).items()}
+
+
+def select_lineage(sql: Optional[str], graph: Optional[OntologyGraph]) -> dict[str, tuple[str, str]]:
+    """``{output column (lowered): (table, column)}`` for the columns a keyed SELECT passes through unchanged: a bare
+    column, renamed or not, of a table in the SELECT's own FROM or JOINs — or every profiled column of the one table a
+    star reads (``*`` over a single table, or ``t.*``). Nothing else is traced. An expression, a cast, a column of a
+    subquery or a CTE, a star over several tables, or an unqualified name more than one of its tables carries has no
+    single source column, so it is left out rather than guessed; an unparseable SELECT traces nothing."""
+    import sqlglot
+    from sqlglot import exp
+    try:
+        tree = sqlglot.parse_one(sql or "", read="duckdb")
+    except Exception:  # noqa: BLE001 — a SELECT we cannot read borrows no profile; its reported types still stand
+        return {}
+    if not isinstance(tree, exp.Select):
+        return {}
+    ctes = {cte.alias_or_name.lower() for cte in tree.find_all(exp.CTE)}
+    tables: dict[str, str] = {}
+    for tb in tree.find_all(exp.Table):
+        clause = tb.parent
+        if not isinstance(clause, (exp.From, exp.Join)) or clause.parent is not tree:
+            continue                       # a subquery's or a CTE body's table, not one this SELECT reads directly
+        if not tb.db and tb.name.lower() in ctes:
+            continue                       # a CTE, which no builder profiled
+        tables[(tb.alias_or_name or tb.name).lower()] = ".".join(part for part in (tb.catalog, tb.db, tb.name) if part)
+
+    out: dict[str, tuple[str, str]] = {}
+    for projection in tree.expressions:
+        inner = projection.this if isinstance(projection, exp.Alias) else projection
+        qualifier = (inner.table or "").lower() if isinstance(inner, exp.Column) else ""
+        if isinstance(inner, exp.Star) or (isinstance(inner, exp.Column) and isinstance(inner.this, exp.Star)):
+            if qualifier:
+                starred = [tables[qualifier]] if qualifier in tables else []
+            else:
+                starred = list(tables.values()) if len(tables) == 1 else []
+            for table in starred:
+                for column, profile in _profiles_of(graph, table).items():
+                    out.setdefault(column, (table, profile.name))
+            continue
+        if not isinstance(inner, exp.Column) or not inner.name:
+            continue
+        if qualifier:
+            table = tables.get(qualifier)
+        elif len(tables) == 1:
+            table = next(iter(tables.values()))
+        else:
+            holding = [t for t in tables.values() if inner.name.lower() in _profiles_of(graph, t)]
+            table = holding[0] if len(holding) == 1 else None
+        if table:
+            out[projection.alias_or_name.lower()] = (table, inner.name)
+    return out
+
+
+def column_profiles(graph: Optional[OntologyGraph], table: Optional[str], columns: dict[str, str],
+                    sql: Optional[str] = None) -> dict[str, EntityProperty]:
+    """``{column: its profile}`` for a binding's columns (``columns`` is ``{column: the data type the warehouse
+    reported}``).
+
+    The DATA TYPE is the reported one whenever the warehouse reported one — it is the authority on what the column is
+    in this source, a cast or an expression included. The ROLE, unit and description are the profile the builder took
+    of the column read: the table's own column for a table binding, and for a keyed SELECT the source column a
+    pass-through projection names (`select_lineage`). A computed column borrows no role, so its reported type alone
+    decides what the compiler will do with it; a column nothing typed stays untyped, and the compiler will not add it
+    up."""
+    own = _profiles_of(graph, table) if table else {}
+    traced = select_lineage(sql, graph) if not table and (sql or "").strip() else {}
     out: dict[str, EntityProperty] = {}
     for col, data_type in columns.items():
-        profile = known.get(str(col).lower())
-        out[str(col)] = profile if profile is not None else EntityProperty(
-            name=str(col), display_name=_title(col), data_type=str(data_type or ""))
+        name = str(col)
+        if table:
+            profile = own.get(name.lower())
+        else:
+            source = traced.get(name.lower())
+            profile = _profiles_of(graph, source[0]).get(source[1].lower()) if source else None
+        if profile is None:
+            prop = EntityProperty(name=name, display_name=_title(name))
+        else:
+            same = profile.name.lower() == name.lower()
+            prop = profile.model_copy(update={"name": name,
+                                              "display_name": (profile.display_name or _title(name)) if same
+                                              else _title(name)})
+        reported = str(data_type or "").strip()
+        out[name] = prop.model_copy(update={"data_type": reported}) if reported else prop
     return out
 
 
@@ -362,6 +442,24 @@ def binding_spec(binding: Binding) -> dict:
     return spec
 
 
+def describe_with(db: Any) -> Describe:
+    """``describe(from_fragment)`` over an open connection: the columns a binding's source reports, each with the data
+    type the warehouse reports for it — read through the connection's typed result channel on a ``LIMIT 0`` statement,
+    so no row is fetched and the security gate still sees it — or ``""`` for every column where a connector reports no
+    types. ``({}, error)`` when the source cannot be read."""
+    def describe(source: str) -> tuple[dict[str, str], Optional[str]]:
+        sql = f"SELECT * FROM {source} LIMIT 0"
+        typed = getattr(db, "execute_typed", None)
+        result, payload = typed("binding_columns", sql) if callable(typed) else (db.execute("binding_columns", sql), None)
+        if getattr(result, "error", None):
+            return {}, result.error
+        names = [str(c) for c in (result.columns or [])]
+        types = [str(t or "") for t in ((payload or {}).get("types") or [])]
+        aligned = len(types) == len(names)             # positional, so a mismatched list types nothing
+        return {n: (types[i] if aligned else "") for i, n in enumerate(names)}, None
+    return describe
+
+
 def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[OntologyGraph],
                  describe: Describe) -> dict:
     """The bind entry for one binding a person set on ``entity`` (the served type): the spec's shape, then its source
@@ -398,8 +496,8 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
                     "note": f"its source has no time column '{spec['time_column']}' — its columns: {listed}"}
         spec["time_column"] = time_column
     others = [b for b in entity.bindings or [] if b.name != name]
-    properties, renamed, skipped, problem = supply(column_profiles(graph, spec.get("table"), columns), key,
-                                                   taken_names(graph, entity, others), spec.get("properties"),
+    properties, renamed, skipped, problem = supply(column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
+                                                   key, taken_names(graph, entity, others), spec.get("properties"),
                                                    strict=True)
     if problem:
         return {"bound": False, "note": problem, "spec": spec}
@@ -439,8 +537,8 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
             skipped.append(f"{name}: {entry.get('note') or 'not bound against the warehouse since it was written'}")
             continue
         columns = entry.get("columns") if isinstance(entry.get("columns"), dict) else {}
-        properties, renamed, lost, _ = supply(column_profiles(graph, spec.get("table"), columns), spec["key"],
-                                              taken_names(graph, entity, out), spec.get("properties"))
+        properties, renamed, lost, _ = supply(column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
+                                              spec["key"], taken_names(graph, entity, out), spec.get("properties"))
         binding = Binding(name=name, kind=spec["kind"], table=spec.get("table"), sql=spec.get("sql"), key=spec["key"],
                           time_column=spec.get("time_column", ""), properties=properties, columns=renamed,
                           skipped=lost, source="human", note="bound; not yet measured")

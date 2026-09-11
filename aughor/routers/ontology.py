@@ -942,17 +942,6 @@ def override_ontology_entity(
     return _override_result(ov)
 
 
-def _columns_of(db):
-    """ON-1b — ``describe(from_fragment)``: the columns a binding's source reports, ``({column: ""}, None)``, or the
-    error that stopped the read. The data type is left to the builder's profile of the table."""
-    def describe(source: str):
-        result = db.execute("__binding_columns__", f"SELECT * FROM {source} LIMIT 0")
-        if getattr(result, "error", None):
-            return {}, result.error
-        return {str(c): "" for c in (result.columns or [])}, None
-    return describe
-
-
 @router.put("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def bind_ontology_entity(
     entity_id: str,
@@ -970,7 +959,7 @@ def bind_ontology_entity(
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
-    from aughor.ontology.bindings import bind_binding, binding_block, declared_bindings, measure_binding
+    from aughor.ontology.bindings import bind_binding, binding_block, declared_bindings, describe_with, measure_binding
     from aughor.ontology.overrides import OntologyOverride, find_override, save_override
     from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
@@ -980,7 +969,7 @@ def bind_ontology_entity(
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
-        entry = bind_binding(entity, name, body.model_dump(exclude_none=True), graph, _columns_of(db))
+        entry = bind_binding(entity, name, body.model_dump(exclude_none=True), graph, describe_with(db))
         if not entry["bound"]:
             raise HTTPException(status_code=400, detail=f"binding '{name}' on {entity_id} did not bind: {entry['note']}")
         existing = find_override(connection_id, effective, "entity", entity_id)
