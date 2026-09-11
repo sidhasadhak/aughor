@@ -41,6 +41,7 @@ const ICON_MODULE = "components/ui/icon.tsx";
 const DRAWINGS = {
   "components/BrandLogos.tsx":      "vendor trademarks — Snowflake, Stripe, Postgres et al",
   "components/OntologyCanvas.tsx":  "graph edges and node geometry, computed per layout",
+  "components/ontology/EntityTypeMap.tsx": "the entity-type map's link lines and arrowheads, computed per layout",
   "components/ERDiagram.tsx":       "relationship edges between table cards",
   "components/ProcessMapper.tsx":   "the process map itself — nodes, edges, hit areas",
   "components/brief/Sparkline.tsx": "the sparkline path, area fill and end dot",

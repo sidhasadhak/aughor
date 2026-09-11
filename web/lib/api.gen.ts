@@ -7205,6 +7205,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/object-paths": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Paths
+         * @description ON-3b — how one object type reaches another: every chain of links within `max_hops`, each hop marked
+         *     followed or refused with the compiler's reason, followed paths first. An unknown type is `path: refused`.
+         */
+        get: operations["get_object_paths_object_paths_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/object-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Type Map
+         * @description ON-3b — the entity-type map: every object type with the measured facts its card shows (key verified, rows,
+         *     bindings, links the compiler follows, declared actions, verified metrics), and every link between two types
+         *     with its verb and measured cardinality. A cache read: no warehouse query, no model call.
+         */
+        get: operations["get_object_type_map_object_types_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/object-types/{object_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Type
+         * @description ON-3b — one object type as the entity-type panel shows it and `describe_entity` returns it: the key and
+         *     whether it is unique, the display property, every property with its source, the bindings, the links (followed,
+         *     or refused and why), the declared actions and the verified metrics. An unknown type is `path: refused`.
+         */
+        get: operations["get_object_type_object_types__object_type__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/objects/catalog": {
         parameters: {
             query?: never;
@@ -8109,6 +8174,28 @@ export interface paths {
          *     silently dropped at overlay or discovered at execute.
          */
         put: operations["author_kinetic_action_ontology_kinetic_actions__action_id__put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/links/{relationship_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Name Ontology Link
+         * @description Name a link by its business verb (ON-3b). Its mechanical names stay — every query and page still accepts
+         *     them — and this one is accepted beside them. Refused when it is not snake_case, or already names another
+         *     link or a property on either type the link joins: a path segment must name exactly one thing.
+         */
+        put: operations["name_ontology_link_ontology_links__relationship_id__put"];
         post?: never;
         delete?: never;
         options?: never;
@@ -13589,6 +13676,8 @@ export interface components {
             default_filters?: string[] | null;
             /** Description */
             description?: string | null;
+            /** Display Property */
+            display_property?: string | null;
             /** Exclude When */
             exclude_when?: string[] | null;
             /** Lifecycle States */
@@ -13671,6 +13760,14 @@ export interface components {
             side_effects?: unknown[] | null;
             /** Submission Criteria */
             submission_criteria?: unknown[] | null;
+        };
+        /**
+         * _LinkName
+         * @description ON-3b — a link's business-verb name (`shipment_ships_order`).
+         */
+        _LinkName: {
+            /** Name */
+            name: string;
         };
         /** _MeasureDef */
         _MeasureDef: {
@@ -26569,6 +26666,107 @@ export interface operations {
             };
         };
     };
+    get_object_paths_object_paths_get: {
+        parameters: {
+            query: {
+                source: string;
+                target: string;
+                connection_id?: string;
+                schema_name?: string | null;
+                max_hops?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_object_type_map_object_types_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_object_type_object_types__object_type__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                object_type: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_object_catalog_objects_catalog_get: {
         parameters: {
             query?: {
@@ -28032,6 +28230,44 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["_KineticActionBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    name_ontology_link_ontology_links__relationship_id__put: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                relationship_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_LinkName"];
             };
         };
         responses: {

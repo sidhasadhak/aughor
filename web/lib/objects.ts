@@ -24,6 +24,9 @@ export interface ObjectProperty {
  *  a count; one the compiler refuses carries `why_not` and is never traversed. */
 export interface ObjectLink {
   name: string;
+  /** ON-3b — the link's business-verb name, accepted beside `name`; "" when its verb names nothing. */
+  business_name?: string;
+  verb?: string;
   to: string;
   to_type: string;
   cardinality: string;
@@ -99,6 +102,22 @@ export interface ObjectRelated {
   actions: ObjectAction[];
 }
 
+/** ON-3b — which property titles this object, and on what warrant: a person's declaration (`human`), a proposal
+ *  from the profile (`proposed`), or the key when nothing else names it (a refuted proposal is named in
+ *  `refuted`). `value` is the title shown; null when the key names the object. */
+export interface ObjectDisplay {
+  property: string;
+  source: "proposed" | "human" | "key";
+  is_key: boolean;
+  verified: boolean | null;
+  rows: number | null;
+  non_null: number | null;
+  distinct: number | null;
+  note: string;
+  refuted?: string;
+  value: string | null;
+}
+
 export interface ObjectPage {
   path: "object";
   connection_id: string;
@@ -109,6 +128,7 @@ export interface ObjectPage {
   key: string;
   pk: string;
   title: string | null;
+  display?: ObjectDisplay;
   properties: ObjectProperty[];
   links: ObjectLink[];
   caveats: string[];
