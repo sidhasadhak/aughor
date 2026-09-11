@@ -98,6 +98,8 @@ have run on the conversation's door (found, flagged). A MODEL filling the same q
 and ON-6 is RETIRED (§6 item 15, decided 2026-09-11). ON-3's first slice shipped the same day: one
 object opened live by type and key, its links followed in place, the metrics, findings, notes and
 declared actions around it measured rather than inferred, and a key in an answer's table opens it.
+ON-4's first slice followed: a declared action takes an object, and an edit a human accepts on it is
+merged into the next read with who accepted it.
 
 ---
 
@@ -3976,6 +3978,28 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   **Receipt:** the agent proposes `flag_order_for_review(order=Order:123)` from a
   finding; a human accepts; `query_objects` over Orders now shows `review_flag=true` for
   123 with "annotated by <user>, <date>"; the receipt says so.
+  **Receipts — first slice, 2026-09-11 (unpushed, on `claude/on-2-object-query`).** A parameter can be
+  `kind: "object"` with an `object_type`, passed as `"<type>:<key>"` and read live through the object
+  pages' graph and scoped connection when a proposal is validated and again when it runs; a criterion
+  reads its properties (`order.status`, or `object.status` for the object the action is about), typed by
+  each property's declared type. An action declares its `object_type` and its `edits`: an accepted
+  annotate writes each to the edits overlay keyed `(object_type, key, property)` with who accepted it and
+  which action wrote it — never a source column, refused when authored and again at dispatch. The object
+  compiler merges an overlay property at read time (the accepted values joined on the object's key, a plan
+  line, each edit's provenance on the compiled result); the object page, the catalog, `get_object` and
+  `query_objects` read the same edits. **Live on LuxExperience, the receipt met:** `flag_order_for_review`
+  declared typed (an `order` object and a `reason`, `order.status != 'cancelled'`, `review_flag = true`);
+  the agent proposed it from support ticket CS0000653's complaint about order MYT-O00003141 (one model
+  call, validated live — the order is `returned`); it was accepted on the user's instruction (*"run the
+  proposal and accept it"*), recorded under their name; the next `POST /objects/query` over Orders returns
+  `MYT-O00003141 · review_flag = true` with the plan line "overlay property review_flag on Order: 1
+  accepted edit(s) merged at read time … the source is never written" and the provenance "annotated by
+  sidhasadhak via flag_order_for_review, 2026-09-11"; the order page shows the same. **Amended:** the
+  receipt runs through `POST /objects/query`, not `query_objects`, whose conversation door is parked
+  (§6 item 15). **Found on the way:** the warehouse hands object properties back as text, so a numeric
+  criterion would always have failed closed — values are now typed. **Still open:** no door removes one
+  accepted edit; an edit may not correct a source value (a correction is a different write, not taken on
+  here); the web authoring form cannot yet declare an object parameter or an edit (the API can).
 - **ON-5 · Functions and models on objects (the "intelligence mapping").** A
   **function** is a declared, deterministic computation over an object set — derived
   properties across ≤N link hops, and O5's window/semiadditive measures move here as
@@ -4364,7 +4388,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         query_objects PARKED behind its flag — §6 item 15)
         → ON-3 instances + the standard object view (FIRST SLICE 2026-09-11: object pages live, key
         links in answers, the receipt met end to end on a declared action) → ON-4 actions on
-        objects with the overlay merged into the next answer → ON-5 functions and model
+        objects with the overlay merged into the next answer (FIRST SLICE 2026-09-11: the receipt met live —
+        an agent-proposed, human-accepted flag read back with its provenance) → ON-5 functions and model
         bindings. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
 ```
