@@ -33,4 +33,9 @@ def test_a_refusal_is_classed_by_what_would_fix_it():
     assert refusal_kind("link x (A → B, N:N) is N:N by measurement — neither side is unique") == "graph"
     assert refusal_kind("measure sum(order.gmv): … that is the fan-out. Anchor the query on Order") == "law"
     assert refusal_kind("Order has no property 'gmv' (in 'gmv')") == "name"
+    # measured 2026-09-11: a model filled `metric` AND `path` on 5 of 26 questions — a malformed fill,
+    # which the first classifier filed as `ir` and so read as the algebra being too narrow
+    assert refusal_kind("measure total_revenue: a named metric carries its own formula — drop `path` "
+                        "and `where`, or measure a property with `agg`") == "form"
+    assert refusal_kind("filter 'status in' needs `values`: a list of 1–1000") == "form"
     assert refusal_kind("something the algebra has no word for") == "ir"

@@ -1,0 +1,658 @@
+{
+  "results": [
+    {
+      "id": "s01_order_count",
+      "trap": "control",
+      "question": "How many orders are in the dataset?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT COUNT(*) AS count FROM orders AS t0",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "count",
+              "agg": "count",
+              "path": "",
+              "metric": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from orders, key order_id (unmeasured)",
+          "measure count: count of Order objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 2.7
+    },
+    {
+      "id": "s02_total_revenue",
+      "trap": "fanout",
+      "question": "What is the total revenue across all orders?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(total_amount), 2) AS total_revenue FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "refused",
+        "refused": "measure total_revenue: a named metric carries its own formula \u2014 drop `path` and `where`, or measure a property with `agg`",
+        "refusal_kind": "form",
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "total_revenue",
+              "agg": "sum",
+              "path": "total_amount",
+              "metric": "revenue",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        }
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 3.5
+    },
+    {
+      "id": "s03_cancelled_count",
+      "trap": "value_domain",
+      "question": "How many orders were canceled?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status = 'cancelled'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT COUNT(*) AS count FROM orders AS t0 WHERE (t0.status = 'cancelled')",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [
+            {
+              "path": "status",
+              "op": "=",
+              "value": "cancelled"
+            }
+          ],
+          "measures": [
+            {
+              "name": "count",
+              "agg": "count",
+              "path": "",
+              "metric": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from orders, key order_id (unmeasured)",
+          "filter status = 'cancelled'",
+          "measure count: count of Order objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 3.4
+    },
+    {
+      "id": "s04_cancellation_rate",
+      "trap": "ratio",
+      "question": "What percentage of orders were cancelled?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN status = 'cancelled' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS cancelled_order_percentage FROM ecommerce.orders",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT (1.0 * (COUNT(*)) / NULLIF(COUNT(CASE WHEN (t0.status = 'cancelled') THEN 1 END), 0)) * 100.0 AS percentage_cancelled FROM orders AS t0",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "percentage_cancelled",
+              "agg": "count",
+              "path": "",
+              "metric": "",
+              "where": [],
+              "scale": 100.0,
+              "divide_by": {
+                "agg": "count",
+                "path": "",
+                "metric": "",
+                "where": [
+                  {
+                    "path": "status",
+                    "op": "=",
+                    "value": "cancelled"
+                  }
+                ]
+              }
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from orders, key order_id (unmeasured)",
+          "measure percentage_cancelled: count of Order objects",
+          "measure percentage_cancelled \u00f7: count of Order objects matching its where",
+          "measure percentage_cancelled: a ratio of the two aggregates, never an average of row ratios"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 3.4
+    },
+    {
+      "id": "s05_active_orders",
+      "trap": "lifecycle",
+      "question": "How many orders are still open, meaning not yet delivered, cancelled or refunded?",
+      "raw": {
+        "sql": "SELECT COUNT(*) FROM ecommerce.orders WHERE status NOT IN ('delivered', 'cancelled', 'refunded') AND status IS NOT NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "declined",
+        "query": {
+          "object_type": "",
+          "segment": "",
+          "filters": [
+            {
+              "path": "status",
+              "op": "not in",
+              "value": "",
+              "values": [
+                "delivered",
+                "cancelled",
+                "refunded"
+              ]
+            }
+          ],
+          "measures": [
+            {
+              "name": "open_orders",
+              "agg": "count",
+              "path": "",
+              "metric": "",
+              "where": [],
+              "divide_by_agg": "",
+              "divide_by_path": "",
+              "divide_by_metric": "",
+              "divide_by_where": [],
+              "scale": 1.0,
+              "decimals": -1
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true,
+          "limit": 0
+        }
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 2.2
+    },
+    {
+      "id": "s06_revenue_by_category",
+      "trap": "cardinality",
+      "question": "What is the total line revenue by product category?",
+      "raw": {
+        "sql": "SELECT p.category, ROUND(SUM(oi.line_total), 2) AS total_revenue FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT j1.category AS category, SUM(t0.line_total) AS total_line_revenue FROM order_items AS t0 LEFT JOIN products AS j1 ON t0.product_id = j1.product_id GROUP BY 1 ORDER BY 2 DESC",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order_item",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "total_line_revenue",
+              "agg": "sum",
+              "path": "line_total",
+              "metric": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "product.category"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order_item): OrderItem read from order_items, key item_id (unmeasured)",
+          "link order_item_to_product (OrderItem \u2192 Product, N:1): joined \u2014 to-one by measurement, so it cannot multiply OrderItem rows",
+          "by product.category",
+          "measure total_line_revenue: sum(line_total) over OrderItem rows"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 2.8
+    },
+    {
+      "id": "s07_orders_per_category",
+      "trap": "grain",
+      "question": "For each product category, how many distinct orders included at least one of its products?",
+      "raw": {
+        "sql": "SELECT p.category, COUNT(DISTINCT oi.order_id) AS order_count FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "refused",
+        "refused": "measure distinct_orders: count_distinct across product_to_order_item (Product \u2192 OrderItem, 1:N) does not add up over Product objects (one value can sit under two of them) \u2014 anchor the query on OrderItem instead",
+        "refusal_kind": "law",
+        "query": {
+          "object_type": "product",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "distinct_orders",
+              "agg": "count_distinct",
+              "path": "product_to_order_item.order_id",
+              "metric": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "category"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        }
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 5.7
+    },
+    {
+      "id": "s08_aov_delivered",
+      "trap": "segment",
+      "question": "What is the average order value of delivered orders?",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(total_amount) / NULLIF(COUNT(DISTINCT order_id), 0), 2) AS average_order_value FROM ecommerce.orders WHERE status = 'delivered'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "error",
+        "error": "fill failed: <failed_attempts>\n\n<generation number=\"1\">\n<exception>\n    Error code: 429 - [{'error': {'code': 429, 'message': 'You exceeded your current quota, please check your plan and billing details. For more information on this error, head to: https://ai.google.dev/gemini-api/docs/rate-limits. "
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 4.2
+    },
+    {
+      "id": "s09_spend_by_country",
+      "trap": "cardinality",
+      "question": "What is the total order revenue by customer country?",
+      "raw": {
+        "sql": "SELECT c.country, ROUND(SUM(o.total_amount), 2) AS total_revenue FROM ecommerce.customers c JOIN ecommerce.orders o ON c.customer_id = o.customer_id GROUP BY c.country",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "refused",
+        "refused": "measure total_revenue: a named metric carries its own formula \u2014 drop `path` and `where`, or measure a property with `agg`",
+        "refusal_kind": "form",
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "total_revenue",
+              "agg": "sum",
+              "path": "order_to_customer.country",
+              "metric": "revenue",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "customer.country"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        }
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 62.5
+    },
+    {
+      "id": "s10_avg_rating_by_category",
+      "trap": "fanout",
+      "question": "What is the average review rating for each product category?",
+      "raw": {
+        "sql": "SELECT p.category, ROUND(AVG(r.rating), 2) AS average_rating FROM ecommerce.reviews r JOIN ecommerce.order_items oi ON r.order_id = oi.order_id JOIN ecommerce.products p ON oi.product_id = p.product_id GROUP BY p.category",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "refused",
+        "refused": "no link 'order_to_review' from Order (in 'order_item_to_order.order_to_review.rating') \u2014 its links: order_to_customer, order_to_order_item",
+        "refusal_kind": "graph",
+        "query": {
+          "object_type": "order_item",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "",
+              "agg": "avg",
+              "path": "order_item_to_order.order_to_review.rating",
+              "metric": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "order_item_to_product.category"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        }
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 2.6
+    },
+    {
+      "id": "s11_items_per_order",
+      "trap": "ratio",
+      "question": "On average, how many line items does an order have?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(*) * 1.0 / NULLIF(COUNT(DISTINCT order_id), 0), 2) FROM ecommerce.order_items",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT AVG(t0.item_count) AS avg_item_count FROM orders AS t0",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "",
+              "agg": "avg",
+              "path": "item_count",
+              "metric": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from orders, key order_id (unmeasured)",
+          "measure avg(item_count): avg(item_count) over Order rows"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 2.0
+    },
+    {
+      "id": "s12_review_coverage",
+      "trap": "ratio",
+      "question": "What fraction of orders received a review?",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 1.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) FROM ecommerce.orders o LEFT JOIN ecommerce.reviews r ON o.order_id = r.order_id",
+        "class": "correct",
+        "match": 1.0
+      },
+      "objects": {
+        "class": "refused",
+        "refused": "no link 'order_to_review' from Order (in 'order_to_review') \u2014 its links: order_to_customer, order_to_order_item",
+        "refusal_kind": "graph",
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "fraction_of_orders_with_reviews",
+              "agg": "count_distinct",
+              "path": "order_id",
+              "metric": "",
+              "where": [
+                {
+                  "path": "order_to_review",
+                  "op": "exists"
+                }
+              ],
+              "scale": 1.0,
+              "divide_by": {
+                "agg": "count",
+                "path": "order_id",
+                "metric": "",
+                "where": []
+              }
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        }
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "raw"
+      },
+      "latency_s": 2.8
+    }
+  ],
+  "summary": {
+    "n": 12,
+    "arms": [
+      "raw",
+      "objects"
+    ],
+    "raw": {
+      "correct": 12
+    },
+    "objects": {
+      "correct": 3,
+      "refused": 5,
+      "silent-wrong": 2,
+      "declined": 1,
+      "error": 1
+    },
+    "raw_accuracy": 1.0,
+    "raw_silent_wrong": 0,
+    "objects_accuracy": 0.25,
+    "objects_silent_wrong": 2,
+    "objects_compiled_share": 0.417,
+    "objects_refused": [
+      {
+        "id": "s02_total_revenue",
+        "kind": "form",
+        "reason": "measure total_revenue: a named metric carries its own formula \u2014 drop `path` and `where`, or measure a property with `agg`"
+      },
+      {
+        "id": "s07_orders_per_category",
+        "kind": "law",
+        "reason": "measure distinct_orders: count_distinct across product_to_order_item (Product \u2192 OrderItem, 1:N) does not add up over Product objects (one value can sit under two of them) \u2014 anchor the query on OrderIt"
+      },
+      {
+        "id": "s09_spend_by_country",
+        "kind": "form",
+        "reason": "measure total_revenue: a named metric carries its own formula \u2014 drop `path` and `where`, or measure a property with `agg`"
+      },
+      {
+        "id": "s10_avg_rating_by_category",
+        "kind": "graph",
+        "reason": "no link 'order_to_review' from Order (in 'order_item_to_order.order_to_review.rating') \u2014 its links: order_to_customer, order_to_order_item"
+      },
+      {
+        "id": "s12_review_coverage",
+        "kind": "graph",
+        "reason": "no link 'order_to_review' from Order (in 'order_to_review') \u2014 its links: order_to_customer, order_to_order_item"
+      }
+    ],
+    "objects_declined": [
+      "s05_active_orders"
+    ],
+    "objects_fallback": {
+      "correct": 10,
+      "silent-wrong": 2
+    },
+    "objects_fallback_accuracy": 0.833,
+    "objects_fallback_silent_wrong": 2,
+    "objects_gains": [],
+    "objects_losses": [
+      "s04_cancellation_rate",
+      "s11_items_per_order"
+    ],
+    "objects_fallback_losses": [
+      "s04_cancellation_rate",
+      "s11_items_per_order"
+    ],
+    "dataset": "evals/ablation_samples_ecommerce.jsonl",
+    "connection": "samples/ecommerce",
+    "reference_failed": [],
+    "llm": {
+      "backend": "gemini",
+      "model": "gemini-3.1-flash-lite",
+      "role": "coder",
+      "fallback_chain": []
+    },
+    "ontology_available": null,
+    "ontology_source": "file:evals/ablation_samples_ecommerce_ontology_measured.json",
+    "ontology_context_chars": 0,
+    "arms_dropped": [],
+    "refusal_kinds_relabelled": {
+      "at": "2026-09-11",
+      "changes": [
+        {
+          "id": "s02_total_revenue",
+          "was": "ir",
+          "now": "form"
+        },
+        {
+          "id": "s09_spend_by_country",
+          "was": "ir",
+          "now": "form"
+        }
+      ],
+      "why": "the classifier that ran had no `form` kind, so malformed fills were filed as `ir`"
+    }
+  }
+}

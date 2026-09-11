@@ -11,6 +11,8 @@ ablation harness's scorer. A refusal is recorded with its reason and classed by 
     graph   the ontology lacks the link, measured it N:N, or never measured it — an ontology edit
     law     a construction law refused a query that would have been wrong (an authoring slip)
     name    a name the graph does not carry
+    form    the query as FILLED contradicts itself (a named metric given a path, a comparison with
+            no value) — the filler's slip, not the algebra's limit
     ir      the algebra cannot say it — the falsifier's own class
 
 What this is NOT: the share a model reaches when it fills the IR from the question. This is the
@@ -44,6 +46,8 @@ GRAPHS = {
 FALSIFIER_THRESHOLD = 0.30
 
 _KINDS = (
+    ("form", ("carries its own formula", "needs a property path", "is malformed", "needs one value",
+              "needs `values`", "must be an ISO date", "takes a link, not a property")),
     ("graph", ("no link", "N:N", "never been measured", "query backing", "links reach", "is not verified")),
     ("law", ("the fan-out", "does not add up", "not a quantity", "would repeat")),
     ("name", ("has no property", "no object type", "has no segment", "no metric")),

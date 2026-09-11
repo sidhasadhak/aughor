@@ -86,14 +86,15 @@ set re-authored on LuxExperience ran the same night — raw 13/14 = ontology 13/
 safe, NO LIFT; the falsifier fires as written, but the block carried four wrong N:N labels —
 the user decides, §3.15). **ON-0a built 2026-09-11 (three commits):** cardinality and lifecycle
 terminal states measured at build time, the map as claims — `packs/core-ecommerce` and
-`packs/fashion-ecommerce` — evaluated by tier; the re-run awaits the go (§3.15). **ON-1's first
-slice and ON-2's first slice built 2026-09-11:** objects have stable api names and a measured
-backing; the object-set algebra compiles over measured links with the join law by construction —
-22 of 26 hard reference questions compile and all 22 answers are right (the four refusals are
-missing links), `POST /objects/query` answered "revenue per segment last quarter" live equal to the
-reference with no model call, and `run_sql`'s fan-out detector turned out never to have run on
-the conversation's door (found, flagged). Whether `query_objects` reaches the conversation is the
-user's call (§6 item 15).
+`packs/fashion-ecommerce` — evaluated by tier; its re-run on the measured block ran
+2026-09-11 and lifted nothing (raw 14/14, ontology 13/14) — the falsifier fires on a block that says
+true things. **ON-1's first slice and ON-2's first slice built 2026-09-11:** objects have stable api
+names and a measured backing; the object-set algebra compiles over measured links with the join law
+by construction — 22 of 26 hard reference questions compile and all 22 answers are right when a
+person writes the object query, `POST /objects/query` answered "revenue per segment last quarter"
+live equal to the reference with no model call, and `run_sql`'s fan-out detector turned out never to
+have run on the conversation's door (found, flagged). A MODEL filling the same queries regressed
+(1/14 and 3/12 against raw 14/14 and 12/12), so `query_objects` stays behind its flag (§6 item 15).
 
 ---
 
@@ -3542,6 +3543,9 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
     measure relationship cardinality first (chip filed — the validator verifies key
     OVERLAP, never cardinality against row counts), rebuild the LuxExperience ontology,
     re-run, and decide on a block that says true things. ON-1/ON-2 proceed either way.
+    ✅ **Measured 2026-09-11 (ON-0a's re-run):** on the block that says true things the ontology
+    arm again gains nothing — 13/14 against raw 14/14, the one loss caught by a guard — so the
+    falsifier fires on both blocks; the recommendation is to retire ON-6 as written (see ON-0a).
     **The premise was wrong, too:** the run never waited on a key. The instance was keyed
     all along (Gemini, via `data/llm_config.json`, which outranks the `.env` OpenRouter
     lines — those are dead letters). What actually blocked it: the ontology store IS
@@ -3719,9 +3723,32 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   rebuild should look for. The claims are recorded on both measured fixtures. Trimmed from
   the draft: the harness `--builder` flag (two `--graph-json` inputs already are the two
   arms) and the `human` tier, declared but not yet written (the overrides tree does not
-  say which claims it settled). **Open, this wave:** the ON-0 hard set re-run with
-  `--graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json`
-  — the block that says true things, 28 model calls, awaiting the go.
+  say which claims it settled). **The re-run — DONE 2026-09-11** (the user:
+  *"run both measurements"*): ON-0's hard set on the block the measured graph renders
+  (`--graph-json 914df862/luxexperience=evals/ablation_luxexperience_ontology_measured.json`),
+  `gemini` / `gemini-3.1-flash-lite`, fallback none, every store redirected, in one run beside
+  ON-2's objects arm so both read the same raw baseline. Receipt
+  `evals/ablation_on0a_luxexperience_measured_results.json`:
+
+  | arm | correct | caught | silent-wrong | guards fired |
+  |---|---|---|---|---|
+  | raw | 14/14 | — | 0 | — |
+  | guarded | 14/14 | 0 | 0 | 0 |
+  | ontology | 13/14 | — | 1 | — |
+  | ontology_guarded | 13/14 | 1 | 0 | 2 |
+
+  **Ontology vs raw: gains [], losses [l13] — the block that says true things lifts nothing
+  either.** The one loss is the question the measured labels were meant to win: `l13` (order value
+  and items per order by platform). Raw answered it this run (it missed it in run 2 — at n = 14 one
+  question flips between runs); the ontology arm summed order GMV across order lines, and the
+  fan-out guard caught it. Across both blocks — four wrong N:N labels, then every label measured —
+  the ontology arm has gained nothing in 28 question-runs and lost one, while the guards kept every
+  arm safe. **The falsifier, read on a block that says true things: it fires.** ON-0's sentence and
+  this wave's say the same thing — prompt injection is retired for the ontology (blocks stay only
+  where a guard cites them) and ON-6 is cancelled; the map's value is the measured claims, the
+  compiled path's laws and what a person reads in the panel. The caveat, carried: one model, raw at
+  ceiling, so the set measures "does the block hurt" better than "can it help". **The call is the
+  user's; the recommendation is to retire ON-6 as written.**
 - ✅ **ON-1 · The noun decouples from the table — FIRST SLICE BUILT 2026-09-11.** What
   shipped: every entity carries a stable `api_name` (`OrderItem` → `order_item`, never
   the table's spelling; a set name is never overwritten) and a `backing` — its table by
@@ -3845,6 +3872,39 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   count. The compiler inherits what "verified" means (the formula EXECUTES), so a metric that runs
   and is not true compiles as faithfully as one that is: ON-0a's lesson a third time, now for
   metric formulas.
+  **The model-filled measurement — RUN 2026-09-11** (§6 item 15(a); the user: *"run both
+  measurements"*). A harness arm (`evals/ablation_eval.py --arms …,objects`, commit `f2a2ad25`): the
+  model sees the schema the raw arm sees plus the object catalog and returns a typed object query —
+  never SQL; the compiler writes the SQL or refuses; `objects_fallback` scores the product posture
+  (the tool first, model-written SQL when it does not answer). `gemini-3.1-flash-lite`, fallback
+  none, stores redirected. Receipts `evals/ablation_on0a_luxexperience_measured_results.json` (Lux,
+  the same run as ON-0a's re-run) and `evals/ablation_on2_objects_samples_results.json` (samples):
+
+  | set | raw | objects | compiled | objects + run_sql fallback |
+  |---|---|---|---|---|
+  | LuxExperience hard (14) | 14/14 | 1/14 | 6/14 | 9/14 |
+  | samples (12) | 12/12 | 3/12 | 5/12 | 10/12 |
+
+  **A regression — `ask.query_objects` stays off.** What the 26 fills did: 4 correct; 5 refused as
+  malformed (`form`: the model filled a named `metric` AND a `path`); 2 declined (the model left
+  `object_type` empty); 2 infrastructure errors (an empty structured output; a Gemini 429 quota
+  refusal); 6 honest graph or law refusals (N:N or missing links, a distinct count across a to-many
+  link — the fallback answered all six correctly); and 7 compiled answers the scorer marks wrong:
+  2 with the right numbers in the wrong shape (an extra group column; unrounded averages), 1 with
+  the right number from a different query that coincides on this data (`status = 'cancelled'` for
+  "never shipped" — 4,536 both), and **4 genuinely wrong** — a share's condition put in `by` instead
+  of the measure's `where` (100% per group), the order's shipping FEE for the shipment's shipping
+  COST (the right link is missing, so the model substituted), a ratio's condition on the denominator
+  (833% for 12%), and a denormalized `item_count` that disagrees with the lines (3.0 for 2.4). Zero
+  `ir` refusals: the algebra was never the limit, the filler was, and nothing compiled a fan-out.
+  🔑 **What this measures:** construction guarantees JOIN safety, not SEMANTIC correctness —
+  choosing the measure, the filter and the ratio's sides stays the model's job, and on sets where raw
+  is at ceiling a small model writing SQL it knows beats the same model filling an IR it has never
+  seen. Fixable without new theory, none of it built: `object_type` required and `op` an enum in the
+  fill schema, `metric` exclusive of `path`, a rounding convention, worked examples in the prompt, a
+  stronger model — then re-measure. Found by the same run: the first refusal classifier had no
+  `form` kind and filed a malformed fill as `ir`, which reads as "the algebra is too narrow";
+  relabelled in the stored results, where the relabelling is recorded.
   **Not built, honestly:** the semiadditive law has nothing to bind to — O5's
   `window_measures.from_declaration` has zero callers and no store holds a declaration, so "a
   semiadditive measure refuses a period SUM at compile time" waits on a declaration surface;
@@ -4259,12 +4319,14 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         as written, contested by four wrong N:N labels — the user decides) →
         ON-0a the core the business extends (built 2026-09-11: cardinality and terminal
         states measured at build time; the map as claims by tier — core-ecommerce ←
-        fashion-ecommerce ← the company; the hard-set re-run awaits the go) →
+        fashion-ecommerce ← the company; the hard-set re-run on the measured block ran
+        2026-09-11: no lift, the falsifier fires again) →
         ON-1 object types decoupled from tables (first slice built 2026-09-11) →
         ON-2 the compiled object-query door (FIRST SLICE BUILT 2026-09-11: the algebra
-        compiles over measured links — 22/26 hard questions, every answer right, the four
-        refusals missing links; POST /objects/query driven live; run_sql's silent fan-out
-        found and flagged; query_objects behind ask.query_objects — §6 item 15)
+        compiles over measured links — 22/26 hard questions, every answer right when a person
+        fills the query; POST /objects/query driven live; run_sql's silent fan-out found and
+        flagged; a MODEL filling it regressed, 1/14 and 3/12 against raw at ceiling, so
+        query_objects stays behind its flag — §6 item 15)
         → ON-3 instances + the standard object view → ON-4 actions on objects with
         the overlay merged into the next answer → ON-5 functions and model bindings
         → ON-6 the context layer reaches the model, ratcheted by ON-0.
@@ -4552,8 +4614,9 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-10:** item 14 (Arc ON) arrived, was open for one turn, and was
 > DECIDED the same day — all four clauses YES, every recommendation adopted as written;
 > the register is back at zero open and ON-0 started within the hour.
-> **Amended 2026-09-11:** item 15 (ON-2's exposure) arrived with ON-2's first slice —
-> OPEN; the register is at one.
+> **Amended 2026-09-11:** item 15 (ON-2's exposure) arrived with ON-2's first slice and was
+> MEASURED the same day — a regression, so the flag stays off; it stays open for the two calls
+> it leaves (invest in the fill or park the door; retire ON-6). The register is at one.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -4694,22 +4757,24 @@ the browser** · **measure the premise before building.**
     guard-cited allowlist (needs ON-2's coverage number); whether edits are ever
     materialised back to source (the read-only law stands until someone asks with
     a case).
-15. ⏳ **OPEN 2026-09-11 — does ON-2's `query_objects` reach the conversation?** The
-    falsifier was measured two ways (§3.15 ON-2): as written, on the ledger, it fires
-    (at most 2 of 35 real questions compile — but two-thirds of those turns ask nothing SQL
-    answers); on the hard reference sets the algebra compiles 22 of 26 with every answer
-    right and no refusal the algebra caused. What nothing has measured is a MODEL filling
-    the IR. Two clauses:
-    **(a) Measure it first?** Build the harness arm — the model fills the IR from the
-    question and the catalog, the compiler and scorer do the rest — and run it against raw
-    on the ON-0 hard set (14) and the samples set (12): about 52 calls on the configured
-    coder, every store redirected. *Recommended: yes — it is `ask.query_objects`'s stated
-    exit, and ON-0's founding lesson is that more context is not more correctness.*
-    **(b) Then flip `ask.query_objects` on for this instance** if (a) shows no regression
-    against raw. *Recommended: yes on no regression; otherwise the tool stays behind the
-    flag and its refusals say what to widen.*
-    Carried beside it, unchanged: ON-0a's open run (the hard set on the measured block, 28
-    calls) — both can share one session.
+15. ⏳ **MEASURED 2026-09-11 — does ON-2's `query_objects` reach the conversation? Not on this
+    model; two calls remain the user's.** The falsifier was measured two ways (§3.15 ON-2): as
+    written, on the ledger, it fires (at most 2 of 35 real questions compile — but two-thirds of
+    those turns ask nothing SQL answers); on the hard reference sets the algebra compiles 22 of
+    26 with every answer right and no refusal the algebra caused.
+    ✅ **(a) Measured** (the user: *"run both measurements"*): a model filling the IR —
+    `gemini-3.1-flash-lite`, given the schema and the object catalog, the compiler and scorer
+    doing the rest — scored **1/14 and 3/12 against raw 14/14 and 12/12** (9/14 and 10/12 with the
+    run_sql fallback). Four answers were genuinely wrong, seven fills malformed or empty, six
+    honest refusals the fallback answered, zero refusals from the algebra.
+    ✅ **(b) Not met — `ask.query_objects` stays off**, as recommended for a regression.
+    **Still the user's:** (c) invest in the fill — a stricter fill schema (`object_type`
+    required, `op` an enum, `metric` exclusive of `path`), worked examples, a stronger model —
+    and re-measure, or park the door and take ON-3. *Recommended: park it. Raw is at ceiling on
+    both sets, so a re-measure there can at best tie; the door's case needs a set where raw
+    fails, and ON-3 does not need a model to fill anything.* (d) Retire ON-6 on ON-0's
+    falsifier, which ON-0a's re-run fired again on a block that says true things.
+    *Recommended: retire it as written.*
 
 ---
 
