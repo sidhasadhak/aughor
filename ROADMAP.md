@@ -4063,7 +4063,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
 > of ontologies never measured against data. The one interop question, exporting our measured ontology to
 > Fabric IQ, is §6 item 16: open and unscheduled.
 
-- **ON-3b · The entity-type map — AMENDED 2026-09-11, not started.** The type-level view ON-3's instance
+- **ON-3b · The entity-type map — AMENDED 2026-09-11; FIRST SLICE BUILT the same day (unpushed, on
+  `claude/on-fabric-iq-amendments`).** The type-level view ON-3's instance
   pages lack, on the Ontology layer: a searchable entity-type rail; a canvas centred on the selected
   entity, its card carrying measured facts (key verified, bindings, rows, links, actions) rather than a
   paragraph, its links drawn with their business verb and measured cardinality, expandable a hop at a
@@ -4081,7 +4082,41 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   its links by verb; the panel lists every property with its source; "Customer → Shipment" returns its
   paths with each hop marked traversable or refused, with the reason; an order page's header shows the
   order's declared display property.
-- **ON-3c · The agent reads the type — AMENDED 2026-09-11, not started.** `describe_entity` (the agent's
+  **Receipts — first slice, 2026-09-11.** `aughor/semantic/object_types.py` describes a type from what the
+  graph measured: `GET /object-types` (the map — every type with its key verdict, rows, binding, links the
+  compiler follows, declared actions and verified metrics, and every link with its verb and measured
+  cardinality), `GET /object-types/{type}` (the panel) and `GET /object-paths` (every chain of links within
+  four hops, each hop marked the way ON-2 treats it, followed paths first, and `compiles_as` naming what the
+  compiler builds along one: a filter along any followed path of at most three links, a dimension only when
+  every hop reaches one object). The **display property** is a model field: proposed from the profile (a
+  property named after the type, then one whose name says it is a name, then the key), declared through the
+  overrides tree, and measured on `POST /ontology/measure` — a property names objects when at least 90% of them
+  carry a value and at least half of those values differ, so a category or a mostly empty column does not; a
+  refuted proposal gives way to the key, and a person's declaration stands with its measurement beside it. The
+  object page's title, a list of linked objects and `get_object`'s summary read it. **Business-verb link names**
+  are proposed from the verb on record at read time (so an enriched verb renames the link) and set by a person
+  through a new `link` override kind (`PUT /ontology/links/{id}`, refused when it is not snake_case or already
+  names a link or a property on either type); the compiler and the instance reader accept one beside the
+  mechanical name. The key measurement now records the backing's rows. Found on the way: `PUT
+  /ontology/entities/{id}` replaced the entity's whole override file, so declaring a display property would
+  have wiped a description, a backing or a routing rule — it now merges. **Live on LuxExperience, no model call
+  on the path:** the measure door found 14 of 14 keys unique, with their rows, and 14 of 14 display properties
+  naming their objects (Brand by `brand`, Warehouse by `name`, the other twelve by their keys); "Ship" in the
+  rail finds Shipment, whose centred card reads key `shipment_id` unique, 107,903 rows,
+  `luxexperience.shipments`, 1 of 1 links followed, its link drawn "associated with → N:1" to Order Line; the
+  panel lists its 12 properties with their sources; Customer → Shipment returns two paths — three hops through
+  Support Ticket and Order Line, followed and compiling as a filter, and four hops through Order, refused at hop
+  2 with the compiler's own sentence (N:N by measurement); order MYT-O00003141's header reads "named by
+  order_id", its measurement on hover (112,439 of 112,439 carry a value, 112,439 distinct). Driving it found three
+  layout defects, each fixed: the canvas centred before its layer had a width, labels sat under the centred card,
+  and property sources wrapped a few characters a line. Suite 9,698 passed; of eleven mutations of the new guards
+  ten failed a test, and the survivor exposed an alias written for a reason that was not true — removed, and its
+  test re-pinned on the real mechanism. **Still open:** an answer table's key links and the action cards still
+  print the key; no web door names a link yet (the API does); LuxExperience's verbs are the builder's generic
+  ones, so its proposed link names are too (`order_item_associated_with_shipment`) until a person names them; a
+  label can still clip a card on a sideways link in a narrow pane.
+- **ON-3c · The agent reads the type — AMENDED 2026-09-11; BUILT the same day, its live receipt awaiting one
+  agent turn.** `describe_entity` (the agent's
   roster and MCP, one body) returns the ON-1 object type instead of the context graph's table node: api
   name, the key and its verification, the display property, properties with role, type and SOURCE,
   bindings, links by name with measured cardinality and traversability (and the refusal reason), declared
@@ -4090,6 +4125,20 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   holds the roster diff honest, and no prompt text is added. **Receipt:** asked "what is a Shipment and
   where does its data come from?", the agent calls `describe_entity` and answers with each property's
   source and the measured links — and the same call over MCP returns the identical body.
+  **Receipts — first slice, 2026-09-11.** `describe_entity` (`aughor/mcp/knowledge_tools.py`, the body the
+  converse roster and the MCP server both call) resolves the name through the served ontology — a type, its
+  api name, display name or table, so "orders" and "ecommerce.orders" both answer Order — and returns `kind:
+  object_type` with `describe_object_type`'s dict and a line an agent can quote, live on LuxExperience: "Shipment
+  (shipment): key shipment_id — unique per object, measured over 107,903 rows; named by its key; 12 properties
+  read from luxexperience.shipments; 1 link, 1 followed by the compiler; 0 declared actions; 0 verified
+  metrics." G5's clearance trim still guards it (withheld, with a notice that never names the table); an unknown
+  type answers with the ontology's refusal and the types that exist; only where no ontology describes it does the
+  knowledge graph's table node answer, labelled `kind: table`. The conversation's copy no longer caps the body on
+  its own, so both transports return the identical dict, pinned by a test that calls both on one graph; both
+  routing descriptions now name the sources, the measured links and the sibling tools. `describe_entity` is not
+  in the Spotlight roster, so SP-5's ratchet passes unchanged and the identity test holds its two transports. No
+  prompt text was added. **Still open:** the receipt's agent turn — one conversation's model calls, waiting on
+  the user's go.
 - **ON-1b · Bindings — each property knows its source — AMENDED 2026-09-11, not started.** An object
   type's single `backing` becomes a list of **bindings**. Each binding is a table or keyed SELECT joined
   to the object on its key, with the properties it supplies and a kind — **static** (one row per object)
@@ -4486,7 +4535,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         links in answers, the receipt met end to end on a declared action) → ON-4 actions on
         objects with the overlay merged into the next answer (FIRST SLICE 2026-09-11: the receipt met live —
         an agent-proposed, human-accepted flag read back with its provenance) → AMENDED 2026-09-11 from
-        the Fabric IQ study (§3.15): ON-3b the entity-type map · ON-3c the agent reads the type · ON-1b
+        the Fabric IQ study (§3.15): ON-3b the entity-type map · ON-3c the agent reads the type (BOTH FIRST
+        SLICES 2026-09-11: the map, the measured display property and the path finder live on
+        LuxExperience; describe_entity returns the type, its agent-turn receipt awaiting the go) · ON-1b
         bindings, each property knowing its source → ON-5 functions and model bindings, timeseries
         properties first. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
