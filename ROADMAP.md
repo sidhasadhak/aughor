@@ -3754,7 +3754,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   compiled path's laws and what a person reads in the panel. The caveat, carried: one model, raw at
   ceiling, so the set measures "does the block hurt" better than "can it help". **The call is the
   user's; the recommendation is to retire ON-6 as written.**
-- ✅ **ON-1 · The noun decouples from the table — FIRST SLICE BUILT 2026-09-11.** What
+- ✅ **ON-1 · The noun decouples from the table — FIRST SLICE BUILT 2026-09-11.** *(Amended 2026-09-11:
+  **ON-1b · Bindings**, after the wave list.)* What
   shipped: every entity carries a stable `api_name` (`OrderItem` → `order_item`, never
   the table's spelling; a set name is never overwritten) and a `backing` — its table by
   default, filled from `source_tables[0]` + `identity_key` so every graph built before
@@ -3931,7 +3932,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   same question forced through `run_sql` hitting the fan-out guard. **Falsifier:**
   compilable share of the last 30 days of real questions (`session_events`) below 30%
   ⇒ the IR is too narrow; widen before exposing the tool.
-- **ON-3 · Instances — the object page and the object link.** `GET /objects/{type}/{pk}`
+- **ON-3 · Instances — the object page and the object link.** *(Amended 2026-09-11: **ON-3b · The
+  entity-type map** and **ON-3c · The agent reads the type**, after the wave list.)* `GET /objects/{type}/{pk}`
   resolved live through the backing; links resolved on demand; the zero-config
   **Standard Object View** the 07-22 study's Wave S named and nobody built — properties,
   links, the findings that cite this object (the context graph's `grounded_in`, finally
@@ -4000,7 +4002,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   criterion would always have failed closed — values are now typed. **Still open:** no door removes one
   accepted edit; an edit may not correct a source value (a correction is a different write, not taken on
   here); the web authoring form cannot yet declare an object parameter or an edit (the API can).
-- **ON-5 · Functions and models on objects (the "intelligence mapping").** A
+- **ON-5 · Functions and models on objects (the "intelligence mapping").** *(Amended 2026-09-11:
+  timeseries properties are its first citizen, after the wave list.)* A
   **function** is a declared, deterministic computation over an object set — derived
   properties across ≤N link hops, and O5's window/semiadditive measures move here as
   the first citizens. A **model binding** attaches a callable to an object type — a
@@ -4019,6 +4022,99 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   semantic layer today, each field's inclusion decided by ON-0's harness, not by
   taste. The fast phase gains a cheap, cached ENTITY MODEL so a fresh connection is not
   ontology-blind until a heavy build. **Receipt:** the ratchet up, per field, dated.
+
+**Amended 2026-09-11 — the Fabric IQ study: the connected entities become the agent's context,
+reached as tools.** *(The user: "Write the amendments into the roadmap.")*
+
+> **Origin.** The user asked for a deep scan of Microsoft's Ontology Playground
+> (`github.com/microsoft/Ontology-Playground` and its live site), shared a screenshot of the ontology
+> item in Microsoft Fabric (Fabric IQ), and pointed at two things in it: how entities are presented on
+> the ontology map, and that *each entity has properties and its associated data source*. The
+> definition every wave of this arc is held to, verbatim: *"Ontology is complete understanding and the
+> context of your business and its processes represented as connected entities. And these connected
+> entities and the relationship between them acts as a context for the Agent that work on your
+> behalf."*
+>
+> **What was measured (a read-only clone, the live site, and this repo, 2026-09-11).** *Theirs:* a
+> static learning site, not a runtime. Entity types with typed properties and an identifier flag,
+> relationships with a DECLARED cardinality, one table binding per entity; no constraints, actions,
+> metrics, display name or timeseries. The "NL2Ontology" query is keyword matching with canned answers;
+> the RDF and Fabric exports lose data (the Fabric export drops cardinality and bindings and mints new
+> ids on every conversion). *Fabric's own ontology item* (the screenshot): a searchable entity-type list;
+> a canvas centred on one entity, its card showing a binding count, its named relationships around it
+> (`ShipmentFulfillsOrder`); an entity-type panel with the key, an **instance display name**, and
+> properties listed with their **data source** and a **Static or Timeseries** type, beside a Bindings
+> tab. *Ours:* the Ontology layer draws every entity at once (tangled at LuxExperience's 14), dims
+> neighbours on hover, and has no entity search and no view centred on one entity; an entity has ONE
+> backing (a table or a keyed SELECT) and its properties record no source; there is no declared display
+> property (ON-3's object page guesses a title column from names); no timeseries property kind
+> (`window_measures.from_declaration` still has no caller); relationship verbs are generic; and the
+> agent's `describe_entity` (converse and MCP, one body) reads the context graph's TABLE node — column
+> names, source tables, the key column, a lifecycle flag — so the agent's view of an entity is still the
+> ERD row this section opened on.
+>
+> **How the definition is read here.** "Context for the agent" means what the agent can NAVIGATE and ACT
+> ON, not prose in its prompt: the prompt block was measured twice and lifted nothing (ON-0, ON-0a), so
+> ON-6 stays retired and the agent-facing amendment below is a tool. "Processes" is in the definition
+> too: what changes over time — lifecycles, events, readings — is in scope, not only nouns.
+>
+> **Not taken:** their data model (declared, never measured — ON-0a's law, *the data wins*, stays the
+> difference), the keyword query, the LLM ontology generator that loads unchecked output, and a catalogue
+> of ontologies never measured against data. The one interop question, exporting our measured ontology to
+> Fabric IQ, is §6 item 16: open and unscheduled.
+
+- **ON-3b · The entity-type map — AMENDED 2026-09-11, not started.** The type-level view ON-3's instance
+  pages lack, on the Ontology layer: a searchable entity-type rail; a canvas centred on the selected
+  entity, its card carrying measured facts (key verified, bindings, rows, links, actions) rather than a
+  paragraph, its links drawn with their business verb and measured cardinality, expandable a hop at a
+  time — the whole-graph view kept as the overview; and an entity-type panel: the key and whether it is
+  verified, the **display property**, the properties (role, data type, source, unit, and static or
+  timeseries once ON-5 lands), the bindings, the links (usable by the compiler, or refused and why), the
+  declared actions and the verified metrics. Two model additions ride it. A **declared display
+  property** on the object type — proposed from the profile, overridable through the overrides tree,
+  measured (non-null share, distinctness) like every claim — which the object page, the key links in
+  answers, the action cards and the agent's summaries use instead of a name guess. And **business-verb
+  link names** (`shipment_fulfills_order`), proposed at build and overridable, with the mechanical
+  `order_to_order_item` kept as the stable fallback. A path finder answers "how does Customer reach
+  Shipment?" with every hop's measured cardinality and whether ON-2 would traverse it.
+  **Receipt:** on LuxExperience, Shipment found in the rail; its centred card shows its key verified and
+  its links by verb; the panel lists every property with its source; "Customer → Shipment" returns its
+  paths with each hop marked traversable or refused, with the reason; an order page's header shows the
+  order's declared display property.
+- **ON-3c · The agent reads the type — AMENDED 2026-09-11, not started.** `describe_entity` (the agent's
+  roster and MCP, one body) returns the ON-1 object type instead of the context graph's table node: api
+  name, the key and its verification, the display property, properties with role, type and SOURCE,
+  bindings, links by name with measured cardinality and traversability (and the refusal reason), declared
+  actions with their object parameters, verified metrics. The same connected-entities slice ON-3b renders,
+  read by the agent as a tool; the context graph stays the citation substrate, SP-5's parity ratchet
+  holds the roster diff honest, and no prompt text is added. **Receipt:** asked "what is a Shipment and
+  where does its data come from?", the agent calls `describe_entity` and answers with each property's
+  source and the measured links — and the same call over MCP returns the identical body.
+- **ON-1b · Bindings — each property knows its source — AMENDED 2026-09-11, not started.** An object
+  type's single `backing` becomes a list of **bindings**. Each binding is a table or keyed SELECT joined
+  to the object on its key, with the properties it supplies and a kind — **static** (one row per object)
+  or **timeseries** (many rows per object over a time column) — and a verdict **measured** the ON-0a way:
+  a static binding's key must be unique; a timeseries binding's key must reach existing objects, its
+  coverage recorded. Every property then records its SOURCE (binding · column): what the entity-type panel
+  lists, what `describe_entity` returns, and what ON-2's compiler reads the property through. The first
+  binding IS today's backing, so every graph built before loads unchanged; a further binding is set
+  through the overrides tree, or proposed by the builder when another table carries the object's key.
+  An object spanning tables no longer needs a hand-written SELECT to be complete. **Receipt:** an object
+  type gains a second static binding from a table keyed on its key (measured unique); its panel shows each
+  property's source; an object query filtering on a property from that binding compiles through the key
+  join and equals its hand-written reference.
+- **ON-5, amended · Timeseries properties first — AMENDED 2026-09-11.** The "processes" half of the
+  definition. A timeseries property — a shipment's latest location, a sensor reading, a status over time —
+  is read from a timeseries binding (ON-1b) and becomes ON-5's first declared function: its latest value
+  and its history per object, with windowed and semiadditive measures over it (the first caller of O5's
+  `window_measures.from_declaration`). It shows on the object page as its latest value, when that was
+  measured, and a short history, and it is a property the compiler can filter and measure with its time
+  semantics explicit. **Receipt:** a timeseries binding on a real event table; an object page shows the
+  latest value with its timestamp; an object query for "objects whose latest value breaches a threshold"
+  equals its reference.
+- **Order, and why:** ON-3b and ON-3c first — they render and return only what the model already
+  measures, and ON-3c is the definition made mechanical for the agent; then ON-1b, the one model change;
+  then ON-5, its timeseries properties standing on ON-1b's bindings.
 
 **Deliberately not ported (re-read §4.2's law: the grammar, never the codebase):** an
 object store or sync layer · materialising edits back into source datasets · Spark-scale
@@ -4389,8 +4485,10 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         → ON-3 instances + the standard object view (FIRST SLICE 2026-09-11: object pages live, key
         links in answers, the receipt met end to end on a declared action) → ON-4 actions on
         objects with the overlay merged into the next answer (FIRST SLICE 2026-09-11: the receipt met live —
-        an agent-proposed, human-accepted flag read back with its provenance) → ON-5 functions and model
-        bindings. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
+        an agent-proposed, human-accepted flag read back with its provenance) → AMENDED 2026-09-11 from
+        the Fabric IQ study (§3.15): ON-3b the entity-type map · ON-3c the agent reads the type · ON-1b
+        bindings, each property knowing its source → ON-5 functions and model bindings, timeseries
+        properties first. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
         falsifier fired on both blocks (§6 item 15).
 ```
 
@@ -4679,6 +4777,9 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-11:** item 15 (ON-2's exposure) arrived with ON-2's first slice and was
 > MEASURED and DECIDED the same day — the door parked behind its flag, ON-6 retired, ON-3
 > started. The register is back at zero open.
+> **Amended 2026-09-11 (later):** item 16 (exporting the measured ontology to Microsoft Fabric IQ)
+> arrived with the Fabric IQ study and is **OPEN, not scheduled** — recorded so it is asked on purpose
+> rather than drifted into. One open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -4840,6 +4941,19 @@ the browser** · **measure the premise before building.**
     both blocks. No new ontology prose is built toward the prompt. The blocks that already reach
     it are untouched by this decision — removing them (keeping only those a guard cites) is its
     own measured change, not a side effect of cancelling a wave.
+16. ⏳ **OPEN (2026-09-11, not scheduled) — export the measured ontology to Microsoft Fabric IQ?**
+    Arrived with the Fabric IQ study (§3.15, "Amended 2026-09-11"). Fabric's ontology item wants what
+    Aughor measures and Microsoft's own playground export drops: object types with a verified key and a
+    display property, properties bound to their source columns, relationships with a cardinality, and ids
+    that stay stable across exports (ON-1's api names). For a customer already on Fabric it is a door — an
+    ontology Aughor built and measured, landing where their Fabric data agents read it — and it is also a
+    question of what leaves the platform, against §0's thesis that the ontology→agent loop is the moat. It
+    is not a second ontology store (§3.15's not-ported list): an export writes a definition and keeps
+    nothing. An RDF/OWL export is the same question at lower demand.
+    **(a)** Build an export door at all? **(b)** If yes, only after ON-1b (bindings are what it exports)
+    and once Fabric's published item-definition format is verified against Microsoft's documentation — the
+    playground's `fabric.ts` is a community implementation, not a contract.
+    *Recommended: not now; revisit when a customer on Fabric asks, with (b)'s preconditions.*
 
 ---
 
