@@ -363,6 +363,8 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
 }
 
 #: Measured 2026-08-01 after Wave W phases 1-3. A baseline may fall, never rise.
+#: 2026-09-11: every term found below its baseline was lowered to its measured count — the
+#: slack earlier paydowns left behind (agentic_ops 27→19, investigation_in_web 617→602, …).
 #: `blueprint`, `foundry`, `mindsdb` and `tableau` are at ZERO — they stay listed so
 #: the ratchet keeps them there.
 BASELINE: dict[str, int] = {
@@ -381,21 +383,21 @@ BASELINE: dict[str, int] = {
     # next to it are the only reason the term appears in that file at all. The paydown is
     # three sweep scripts that each held a local variable literally named `ada`.
     "ada": 556,
-    "agentic_ops": 27,
+    "agentic_ops": 19,
     "blueprint": 0,
     # 72 → 4: the wire-discriminant files were exempted with their reason (the API row
     # kind IS "charter"), and the two places it reached prose now say "built-in".
     "charter": 4,
     "control_room": 27,
-    "copilotkit": 5,
+    "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
     # outside CODE_ROOTS); Wave 2d removed the last one in a FLAG_META description.
-    "databricks": 49,
-    "digest": 166,
+    "databricks": 46,
+    "digest": 165,
     "expertise": 43,
     # 58 → 28: FleetOverviewPanel and the api.ts client are exempt — they name the
     # frozen /control-room/fleet route and its component. No reader sees the word.
-    "fleet": 28,
+    "fleet": 27,
     "foundry": 0,
     "genie": 23,
     "hire": 24,  # paid down 2026-08-22: the create flow replaced the hire wording
@@ -404,10 +406,13 @@ BASELINE: dict[str, int] = {
     # `insight_id` field references (the guard clause + its test) by rewording three
     # prose lines to the glossary's words — a finding references, narrative post-answer.
     # saying "finding" there (the glossary word) paid for the API names they must import.
-    "insight": 1883,
+    # 2026-09-11: 1883 → 1880. ON-3's object page reads findings through the store's
+    # glossary-named `get_findings` (the old name stays an alias for existing callers), and the
+    # context graph's loader moved to it in the same change.
+    "insight": 1880,
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
-    "investigation_in_web": 617,
+    "investigation_in_web": 602,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
@@ -422,7 +427,7 @@ BASELINE: dict[str, int] = {
     "kinetic": 347,
     "mindsdb": 0,
     "palantir": 6,
-    "persona": 216,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
+    "persona": 215,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history
                      # component (281 → 271) and VA-8 renamed the custom-agent detail
                      # component it hangs off (271 → 216). Both were named for the retired
                      # word and both were being edited anyway.
@@ -431,7 +436,7 @@ BASELINE: dict[str, int] = {
     # 88 → 87 → 86: the explore log line that announced steering said "specialist pack";
     # it now says "pack", which is what the glossary calls the thing. Lowered again after
     # #248 so the gain is locked in rather than left as headroom for the next occurrence.
-    "specialist": 86,
+    "specialist": 84,
     "tableau": 0,
 }
 

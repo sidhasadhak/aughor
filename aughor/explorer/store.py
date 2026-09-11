@@ -88,16 +88,20 @@ def is_complete(connection_id: str, schema_fingerprint: str | None = None) -> bo
     return True
 
 
-def get_insights(connection_id: str, include_invalid: bool = False) -> list[dict]:
+def get_findings(connection_id: str, include_invalid: bool = False) -> list[dict]:
     ins = load(connection_id).get("insights", [])
     return ins if include_invalid else [i for i in ins if not i.get("invalid")]
+
+
+#: The finder's name before the glossary settled on 'finding'; existing callers still read it.
+get_insights = get_findings
 
 
 def get_domain_insights(connection_id: str, include_invalid: bool = False) -> dict[str, list[dict]]:
     """Findings grouped by domain. Quarantined (invalid-flagged) ones
     are excluded by default — kept in the store for inspection, hidden from intel."""
     grouped: dict[str, list[dict]] = {}
-    for ins in get_insights(connection_id, include_invalid=include_invalid):
+    for ins in get_findings(connection_id, include_invalid=include_invalid):
         d = ins.get("domain", "General")
         grouped.setdefault(d, []).append(ins)
     return grouped

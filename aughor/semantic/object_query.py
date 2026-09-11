@@ -326,7 +326,7 @@ def _check_aggregate(agg: str, p: EntityProperty, path: str, caveats: list[str])
                        "quantity for a line total")
 
 
-def _metric_on(m: OntologyMetric, entity: OntologyEntity) -> bool:
+def metric_on(m: OntologyMetric, entity: OntologyEntity) -> bool:
     tables = {t.lower().rsplit(".", 1)[-1] for t in (m.tables or []) if t}
     mine = {t.lower().rsplit(".", 1)[-1] for t in entity.source_tables}
     if m.entity == entity.id:
@@ -579,13 +579,13 @@ class _Compiler:
         low = name.strip().lower()
         m = next((m for mid, m in self.g.metrics.items()
                   if low in (mid.lower(), m.id.lower(), (m.display_name or "").lower())), None)
-        mine = sorted(mid for mid, x in self.g.metrics.items() if x.verified and _metric_on(x, scope.entity))
+        mine = sorted(mid for mid, x in self.g.metrics.items() if x.verified and metric_on(x, scope.entity))
         if m is None:
             raise ObjectQueryRefused(f"no metric '{name}' on {scope.entity.id}{_did_you_mean(low, mine)}", mine)
         if not m.verified:
             raise ObjectQueryRefused(f"metric '{m.id}' is not verified ({m.verification_note or 'no note'}) — "
                                      "the compiler measures only with verified formulas", mine)
-        if not _metric_on(m, scope.entity):
+        if not metric_on(m, scope.entity):
             raise ObjectQueryRefused(f"metric '{m.id}' is defined on {m.entity or ', '.join(m.tables)}, not "
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
         self.plan.append(f"metric {m.id} (verified): {m.formula_sql}")
@@ -874,7 +874,7 @@ def object_catalog(graph: OntologyGraph) -> dict:
             "properties": roles,
             "links": links,
             "segments": sorted(k for k, s in (e.segments or {}).items() if s.verified and (s.filter_sql or "").strip()),
-            "metrics": sorted(mid for mid, m in graph.metrics.items() if m.verified and _metric_on(m, e)),
+            "metrics": sorted(mid for mid, m in graph.metrics.items() if m.verified and metric_on(m, e)),
         })
     return {"connection_id": graph.connection_id, "schema_name": graph.schema_name, "object_types": types}
 

@@ -740,8 +740,7 @@ def get_kinetic_actions(
     # DS-13 — masked, never raw. This feeds the authoring form, which must be able to show
     # that a credential is SET without being able to read it back out.
     from aughor.ontology.models import mask_action_secrets
-    return {aid: mask_action_secrets(a.model_dump())
-            for aid, a in graph.kinetic_actions.items()}
+    return {a.id: mask_action_secrets(a.model_dump()) for a in graph.declared_actions()}
 
 
 @router.get("/ontology/entities/{entity_id}/segments")

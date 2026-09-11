@@ -36,11 +36,11 @@ def load_findings(connection_id: str) -> list[dict]:
     exploration store (conn-scoped, the enumerable source) and marked ``source=
     "dossier"`` when the finding carries a captured dossier in the Ledger — the
     write-only half of the open loop, finally a graph node."""
-    from aughor.explorer.store import get_insights
+    from aughor.explorer.store import get_findings
     from aughor.explorer.scope import tables_in_sql
 
     out: list[dict] = []
-    for ins in get_insights(connection_id):
+    for ins in get_findings(connection_id):
         fid = str(ins.get("id") or "")
         text = str(ins.get("finding") or "")
         if not fid or not text:

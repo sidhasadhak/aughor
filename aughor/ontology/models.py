@@ -590,3 +590,9 @@ class OntologyGraph(BaseModel):
 
     def actions_for_entity(self, entity_id: str) -> list[QueryTemplate]:
         return [a for a in self.actions.values() if a.entity == entity_id]
+
+    def declared_actions(self) -> list:
+        """The human-declared governed actions overlaid on this graph, in id order — the write
+        surface's roster, read without reaching into the dict every consumer used to spell out."""
+        declared = self.kinetic_actions
+        return [declared[action_id] for action_id in sorted(declared)]

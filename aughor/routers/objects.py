@@ -46,6 +46,7 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
     to the linked object's key (to-one) or a count of the linked objects (to-many). A link the
     compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
     an unknown type is `path: refused` with the types that exist."""
+    from aughor.semantic.object_context import object_context
     from aughor.semantic.object_instances import ObjectNotFound, get_object
     from aughor.semantic.object_query import ObjectQueryRefused
 
@@ -59,8 +60,10 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
         except ObjectQueryRefused as exc:
             return {"path": "refused", "refused": exc.reason, "available": exc.available,
                     "connection_id": connection_id, "schema_name": graph.schema_name}
+        related = object_context(graph, db, connection_id, graph.schema_name, instance,
+                                 dialect=getattr(db, "dialect", "") or "duckdb")
         return {"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
-                **instance.to_dict()}
+                **instance.to_dict(), "related": related}
     finally:
         db.close()
 
