@@ -29,6 +29,17 @@ work happens exactly once.
 
 Thread-based rather than async: the callers reach this through
 `run_in_executor`, and one calls it synchronously.
+
+RE-ENTRANT FOR THE LEADER'S OWN THREAD. One decorated build can run another for the
+same key on the same thread: `LocalUploadConnection.build_intelligence` calls the
+decorated `DuckDBConnection.build_intelligence(self)`. From #305 until 2026-09-11 that
+inner call found the outer one registered and waited `WAIT_TIMEOUT_S` for an event only
+the outer call's return could set, then built anyway — so every LocalUpload build sat
+out the full ten minutes first (the API log's "waited 600s for ('workspace', 'scm')"),
+and the test session could not exit while its teardown joined four such workers. A
+wait on your own thread can never be released, so the leader's nested call runs
+straight through and the outer call keeps the key until it returns. Callers on any
+other thread still serialize.
 """
 from __future__ import annotations
 
@@ -45,7 +56,10 @@ logger = logging.getLogger(__name__)
 WAIT_TIMEOUT_S = 600.0
 
 _registry_lock = threading.Lock()
-_inflight: dict[tuple[str, str], threading.Event] = {}
+#: key → (the event followers wait on, the leader's thread ident). An ident is recycled
+#: only after its thread exits, and a leader removes its entry before returning, so the
+#: ident in a live entry can only be its leader's.
+_inflight: dict[tuple[str, str], tuple[threading.Event, int]] = {}
 
 
 def _key(conn) -> tuple[str, str]:
@@ -69,14 +83,24 @@ def single_flight_build(fn: Callable[..., str]) -> Callable[..., str]:
     @functools.wraps(fn)
     def wrapper(self, *args, **kwargs):
         key = _key(self)
+        me = threading.get_ident()
         with _registry_lock:
-            event = _inflight.get(key)
-            is_leader = event is None
-            if is_leader:
+            held = _inflight.get(key)
+            if held is None:
                 event = threading.Event()
-                _inflight[key] = event
+                _inflight[key] = (event, me)
+                role = "leader"
+            else:
+                event, leader = held
+                role = "nested" if leader == me else "follower"
 
-        if not is_leader:
+        if role == "nested":
+            # This thread already leads this key: one decorated build inside another.
+            # The event is set only when this thread returns, so waiting would sit out
+            # the whole timeout. The outer call still holds the key and releases it.
+            return fn(self, *args, **kwargs)
+
+        if role == "follower":
             logger.info("build_intelligence: %s already building — waiting", key)
             if not event.wait(timeout=WAIT_TIMEOUT_S):
                 logger.warning(
