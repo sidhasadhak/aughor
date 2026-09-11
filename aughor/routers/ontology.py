@@ -37,6 +37,20 @@ class _BackingSpec(BaseModel):
     primary_key: str
 
 
+class _BindingSpec(BaseModel):
+    """ON-1b — a further binding: a table or keyed SELECT joined to the object on its key."""
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    #: The binding's column that holds the object's key.
+    key: str
+    kind: Literal["static", "timeseries"] = "static"
+    #: A timeseries binding's time column.
+    time_column: Optional[str] = None
+    #: ``{property: column}``. Absent, every column but the key is supplied under its own name, and a name the type
+    #: already uses is skipped with the reason.
+    properties: Optional[dict[str, str]] = None
+
+
 class _EntityOverride(BaseModel):
     description: Optional[str] = None
     backing: Optional[_BackingSpec] = None
@@ -605,6 +619,7 @@ def measure_ontology(
            "lifecycles": reports["lifecycles"].summary(),
            "backings": reports["backings"].summary(),
            "display_properties": reports["display_properties"].summary(),
+           "bindings": reports["bindings"].summary(),
            "claims": claims.summary() if claims is not None else None}
     try:
         from aughor.kernel.ledger import Ledger
@@ -925,6 +940,95 @@ def override_ontology_entity(
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     return _override_result(ov)
+
+
+@router.put("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def bind_ontology_entity(
+    entity_id: str,
+    name: str,
+    body: _BindingSpec,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Bind a further source to an object type (ON-1b): a table or keyed SELECT joined to the object on its key,
+    supplying properties its backing does not carry. The source is read for its columns first — its key, its time
+    column and every property it supplies must exist and be free on the type, or nothing is written (400) — then it is
+    counted against the objects: a static binding must hold one row per object, a timeseries binding must reach them.
+    Merged into the type's other human edits; the response carries the binding as the entity-type panel shows it.
+    No model call."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.bindings import bind_binding, binding_block, declared_bindings, describe_with, measure_binding
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    from aughor.semantic.object_types import describe_object_type
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        entry = bind_binding(entity, name, body.model_dump(exclude_none=True), graph, describe_with(db))
+        if not entry["bound"]:
+            raise HTTPException(status_code=400, detail=f"binding '{name}' on {entity_id} did not bind: {entry['note']}")
+        existing = find_override(connection_id, effective, "entity", entity_id)
+        fields = dict(existing.fields) if existing else {}
+        fields["bindings"] = {**(fields.get("bindings") or {}), name: entry["spec"]}
+        kept = dict(existing.binding) if existing else {}
+        entries = {**((kept.get("bindings") or {}).get("entries") or {}), name: entry}
+        # Count it now, over exactly what the overlay will build, so the verdict arrives while the person is here.
+        built, _ = declared_bindings(entity.model_copy(update={"bindings": []}), fields["bindings"],
+                                     {"entries": entries}, graph)
+        mine = next((b for b in built if b.name == name), None)
+        if mine is not None:
+            counted = measure_binding(db, entity, mine)
+            entries[name] = {**entry, "measured": {"spec": entry["spec"], **counted.counts()}}
+        ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
+                              source=(existing.source if existing else "human"),
+                              binding={**kept, "bindings": binding_block(entries)})
+        save_override(connection_id, effective, ov)
+    finally:
+        db.close()
+    served = _get_ontology_graph(connection_id, effective)
+    described = (describe_object_type(served, entity_id)
+                 if served is not None and entity_id in served.entities else {})
+    row = next((b for b in described.get("bindings", []) if b["name"] == name), None)
+    return {**_override_result(ov), "binding": row}
+
+
+@router.delete("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def unbind_ontology_entity(
+    entity_id: str,
+    name: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Remove one binding a person set (ON-1b). The type's other human edits stay; the properties that binding
+    supplied stop resolving on the next read. 404 when the type has no such binding."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.bindings import binding_block
+    from aughor.ontology.overrides import OntologyOverride, delete_override, find_override, save_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    specs = dict((existing.fields.get("bindings") if existing else None) or {})
+    if existing is None or name not in specs:
+        raise HTTPException(status_code=404, detail=f"{entity_id} has no binding '{name}'")
+    specs.pop(name)
+    fields = {k: v for k, v in existing.fields.items() if k != "bindings"}
+    binding = {k: v for k, v in existing.binding.items() if k != "bindings"}
+    if specs:
+        fields["bindings"] = specs
+        entries = dict((existing.binding.get("bindings") or {}).get("entries") or {})
+        entries.pop(name, None)
+        binding["bindings"] = binding_block(entries)
+    if fields:
+        save_override(connection_id, effective, OntologyOverride(
+            target_kind="entity", target_id=entity_id, fields=fields, source=existing.source, binding=binding))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    return {"removed": True, "entity": entity_id, "binding": name}
 
 
 class _LinkName(BaseModel):

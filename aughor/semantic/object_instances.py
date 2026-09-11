@@ -17,6 +17,7 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from aughor.ontology.bindings import binding_from, binding_problem, column_of
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.display import display_of
 from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
@@ -105,6 +106,38 @@ def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str
     return dict(zip(columns, rows[0])), columns, len(rows) > 1
 
 
+def _bound_properties(db: Any, entity: OntologyEntity, key: str, pk: str) -> tuple[list[dict], list[str]]:
+    """ON-1b — the properties each further binding supplies for one object, read by its key under the compiler's
+    law: a binding measured one row per object is read; a static one that is not is named in a caveat and never
+    read; a timeseries binding is ON-5's. An object a binding does not cover reads those properties as empty."""
+    properties: list[dict] = []
+    caveats: list[str] = []
+    literal = typed_literal(str(pk), _key_property(entity, key), key)
+    for binding in entity.bindings or []:
+        problem = binding_problem(entity, binding)
+        supplied = list(binding.properties.items())
+        if problem or not supplied:
+            if problem and binding.kind == "static":
+                caveats.append(f"not read from {binding.name}: {problem}")
+            continue
+        columns = ", ".join(f"b.{quote_ident(column_of(binding, name))}" for name, _ in supplied)
+        result = _read(db, f"SELECT {columns} FROM {binding_from(binding, 'b')} "
+                           f"WHERE b.{quote_ident(binding.key)} = {literal} LIMIT 2",
+                       f"{entity.id} {pk!r} through {binding.name}")
+        rows = list(result.rows or [])
+        if len(rows) > 1:
+            caveats.append(f"{binding.name} holds more than one row for {key} = {pk!r} — showing the first")
+        values = list(rows[0]) if rows else [None] * len(supplied)
+        source = binding.table or "a keyed SELECT"
+        for (name, p), value in zip(supplied, values):
+            properties.append({"name": name, "value": value, "display_name": p.display_name or name,
+                               "semantic_type": p.semantic_type, "data_type": p.data_type, "unit": p.unit,
+                               "description": p.description,
+                               "binding": {"name": binding.name, "kind": binding.kind, "source": source,
+                                           "column": column_of(binding, name)}})
+    return properties, caveats
+
+
 def _link_view(db: Any, link: ObjectLink, row: dict) -> dict:
     view = {"name": link.name, "business_name": link.business, "verb": link.rel.verb,
             "to": link.target.api_name, "to_type": link.target.id,
@@ -152,6 +185,9 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "data_type": prop.data_type if prop else "",
                            "unit": prop.unit if prop else "",
                            "description": prop.description if prop else ""})
+    bound, bound_caveats = _bound_properties(db, entity, key, pk)
+    properties += bound
+    caveats += bound_caveats
     for edits in overlay_properties(entity, overlay).values():
         mine = next((e for e in edits if str(e.row_key) == str(pk)), None)
         if mine is None:

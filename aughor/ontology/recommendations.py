@@ -36,9 +36,12 @@ from typing import Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.ontology.models import OntologyGraph
 
-_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_recommendations"
+#: `data/ontology_recommendations`, or `AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR` — isolated with the overrides tree it feeds.
+_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR",
+                        Path(__file__).parent.parent.parent / "data" / "ontology_recommendations")
 
 # A measure must look like money and not be per-unit to be SUM-proposable.
 _CURRENCY_HINTS = ("currency", "money", "usd", "revenue", "amount", "spend", "sales")

@@ -18,6 +18,8 @@ export interface ObjectProperty {
   description: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
   overlay?: { by: string; at: string; note: string; origin: string; provenance: string };
+  /** ON-1b — read through a further binding on the object's key: which binding, its source, and the column. */
+  binding?: { name: string; kind: string; source: string; column: string };
 }
 
 /** A link from this object. A to-one link resolves to the linked object's key, a to-many link to

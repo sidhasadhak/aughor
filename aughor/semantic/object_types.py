@@ -17,8 +17,9 @@ from __future__ import annotations
 
 from typing import Optional, Union
 
+from aughor.ontology.bindings import binding_problem, binding_spec, column_of
 from aughor.ontology.display import display_of, key_of
-from aughor.ontology.models import LINK_NAME_PATTERN, OntologyEntity, OntologyGraph
+from aughor.ontology.models import LINK_NAME_PATTERN, Binding, OntologyEntity, OntologyGraph
 from aughor.semantic.object_query import (
     MAX_LINK_HOPS,
     ObjectLink,
@@ -52,21 +53,54 @@ def _entity(graph: OntologyGraph, object_type: Union[str, OntologyEntity]) -> On
 
 
 def _binding(entity: OntologyEntity, supplies: int) -> dict:
-    """The type's one binding today — its backing, with the facts measured on it (ON-1b makes it a list)."""
+    """The type's first binding — its backing, whose rows ARE its objects — with the facts measured on it."""
     b = entity.backing
-    common = {"key": key_of(entity), "verified": b.verified if b is not None else None,
-              "rows": b.rows if b is not None else None,
-              "note": b.verification_note if b is not None else "", "supplies": supplies}
+    key = key_of(entity)
+    common = {"primary": True, "kind": "static", "key": key, "object_key": key, "source": "backing",
+              "verified": b.verified if b is not None else None, "rows": b.rows if b is not None else None,
+              "note": b.verification_note if b is not None else "", "supplies": supplies, "usable": True}
     if b is not None and b.kind == "query":
-        return {"name": "query", "kind": "query", "sql": b.sql or "", **common}
+        return {"name": "query", "reads": "query", "sql": b.sql or "", **common}
     table = (b.table if b is not None else None) or (entity.source_tables[0] if entity.source_tables else "")
-    return {"name": _bare(table), "kind": "table", "table": table, **common}
+    return {"name": _bare(table), "reads": "table", "table": table, **common}
+
+
+def _further_binding(entity: OntologyEntity, binding: Binding) -> dict:
+    """ON-1b — one further binding as measured: its source and key, its kind, the objects it covers, the properties
+    it supplies and the columns it skipped — and whether the compiler reads it, or why not."""
+    problem = binding_problem(entity, binding)
+    row = {"name": binding.name, "primary": False, "kind": binding.kind, "reads": binding.reads,
+           **({"sql": binding.sql or ""} if binding.reads == "query" else {"table": binding.table or ""}),
+           "key": binding.key, "object_key": key_of(entity), "time_column": binding.time_column,
+           "source": binding.source, "verified": binding.verified, "rows": binding.rows,
+           "non_null": binding.non_null, "distinct": binding.distinct, "objects": binding.objects,
+           "covered": binding.covered, "orphans": binding.orphans, "note": binding.note,
+           "supplies": len(binding.properties), "skipped": dict(binding.skipped), "usable": not problem}
+    if problem:
+        row["why_not"] = problem
+    return row
 
 
 def _source(binding: dict, column: str) -> dict:
-    if binding["kind"] == "query":
+    """Where one property is read from: its binding by name, the binding's table (a keyed SELECT has none), the column."""
+    if binding["reads"] == "query":
         return {"binding": binding["name"], "column": column}
     return {"binding": binding["name"], "table": binding["table"], "column": column}
+
+
+def _proposals(entity: OntologyEntity) -> list[dict]:
+    """ON-1b — the bindings the data proposes for this type that no binding already reads, each with its measurement,
+    the properties it would supply and the spec that binds it. Nothing reads a proposal until a person binds it."""
+    bound = {((b.table or "").lower(), b.key.lower()) for b in entity.bindings or []}
+    out = []
+    for p in entity.proposed_bindings or []:
+        if ((p.table or "").lower(), p.key.lower()) in bound:
+            continue
+        out.append({"name": p.name, "kind": p.kind, "table": p.table or "", "key": p.key,
+                    "object_key": key_of(entity), "rows": p.rows, "distinct": p.distinct, "objects": p.objects,
+                    "covered": p.covered, "orphans": p.orphans, "verified": p.verified, "note": p.note,
+                    "supplies": sorted(p.properties), "skipped": dict(p.skipped), "spec": binding_spec(p)})
+    return out
 
 
 def link_row(h: ObjectLink) -> dict:
@@ -136,12 +170,15 @@ def _summary(d: dict) -> str:
     rows = f" over {key['rows']:,} rows" if key.get("rows") is not None else ""
     shown = d["display_property"]
     named = "its key" if shown["is_key"] else shown["property"]
-    binding = d["bindings"][0]
-    source = binding.get("table") or "a keyed SELECT"
+    primary, *further = d["bindings"]
     counts = d["counts"]
-    overlay = counts["properties"] - binding["supplies"]
+    overlay = counts["properties"] - sum(b["supplies"] for b in d["bindings"])
+    read = f"{_count(primary['supplies'], 'property', 'properties')} read from {primary.get('table') or 'a keyed SELECT'}"
+    for b in further:
+        read += (f", {b['supplies']:,} from {b.get('table') or 'a keyed SELECT'} (a {b['kind']} binding"
+                 + ("" if b["usable"] else " the compiler does not read yet") + ")")
     return (f"{d['display_name']} ({d['object_type']}): key {key['property']} — {verdict}{rows}; named by {named}; "
-            f"{_count(binding['supplies'], 'property', 'properties')} read from {source}"
+            f"{read}"
             + (f" and {_count(overlay, 'overlay property', 'overlay properties')} set by accepted actions"
                if overlay else "")
             + f"; {_count(counts['links'], 'link', 'links')}, {counts['traversable_links']:,} followed by the "
@@ -150,15 +187,27 @@ def _summary(d: dict) -> str:
 
 
 def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyEntity], *,
-                         overlay: Optional[list] = None) -> dict:
-    """What one object type is — the entity-type panel's content and `describe_entity`'s body, one dict."""
+                         overlay: Optional[list] = None, withheld: Optional[set[str]] = None) -> dict:
+    """What one object type is — the entity-type panel's content and `describe_entity`'s body, one dict.
+
+    ``withheld`` names tables the caller may not see (G5's clearance trim): a further binding or a proposal read from
+    one is left out with the properties it supplies, as though the type did not have it."""
     entity = _entity(graph, object_type)
     key = key_of(entity)
+    hidden = {t.lower() for t in withheld or ()}
     binding = _binding(entity, len(entity.properties or {}))
+    further = [(b, _further_binding(entity, b)) for b in entity.bindings or [] if (b.table or "").lower() not in hidden]
     properties = [{"name": name, "display_name": p.display_name or name, "role": p.semantic_type or "",
                    "data_type": p.data_type, "unit": p.unit, "is_key": name.lower() == key.lower(),
                    "null_rate": p.null_rate, "description": p.description, "source": _source(binding, name)}
                   for name, p in (entity.properties or {}).items()]
+    for bound, row in further:
+        for name, p in bound.properties.items():
+            properties.append({"name": name, "display_name": p.display_name or name, "role": p.semantic_type or "",
+                               "data_type": p.data_type, "unit": p.unit, "is_key": False, "null_rate": p.null_rate,
+                               "description": p.description,
+                               "source": {**_source(row, column_of(bound, name)), "kind": bound.kind,
+                                          **({} if row["usable"] else {"read": False})}})
     for edits in overlay_properties(entity, overlay).values():
         properties.append({"name": edits[0].column, "display_name": edits[0].column, "role": "overlay",
                            "data_type": "", "unit": "", "is_key": False, "null_rate": None,
@@ -167,6 +216,7 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
     links = [link_row(h) for h in object_links(graph, entity)]
     actions = type_actions(graph, entity)
     metrics, unverified = _metrics(graph, entity)
+    proposals = [p for p in _proposals(entity) if p["table"].lower() not in hidden]
     b = entity.backing
     out = {
         "object_type": entity.api_name, "id": entity.id, "display_name": entity.display_name or entity.id,
@@ -177,7 +227,8 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
         "time": entity.created_at_col or "",
         "properties": properties[:_MAX_PROPERTIES],
         "properties_truncated": len(properties) > _MAX_PROPERTIES,
-        "bindings": [binding],
+        "bindings": [binding] + [row for _, row in further],
+        "proposed_bindings": proposals,
         "links": links,
         "actions": actions,
         "metrics": metrics,
@@ -187,7 +238,8 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
                        "terminal": list(entity.terminal_states), "verified": entity.lifecycle_verified,
                        "note": entity.lifecycle_note}
                       if entity.has_lifecycle and entity.lifecycle_column else None),
-        "counts": {"properties": len(properties), "bindings": 1, "links": len(links),
+        "counts": {"properties": len(properties), "bindings": 1 + len(further),
+                   "proposed_bindings": len(proposals), "links": len(links),
                    "traversable_links": sum(1 for link in links if link["traversable"]),
                    "actions": len(actions), "metrics": len(metrics)},
     }
@@ -209,8 +261,10 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
                       "key_verified": b.verified if b is not None else None,
                       "rows": b.rows if b is not None else None, "table": _binding(e, 0).get("table", ""),
                       "display_property": shown["property"], "display_is_key": shown["is_key"],
-                      "properties": len(e.properties or {}) + len(overlay_properties(e, overlay)),
-                      "bindings": 1, "links": len(links),
+                      "properties": (len(e.properties or {}) + sum(len(b.properties) for b in e.bindings or [])
+                                     + len(overlay_properties(e, overlay))),
+                      "bindings": 1 + len(e.bindings or []), "proposed_bindings": len(_proposals(e)),
+                      "links": len(links),
                       "traversable_links": sum(1 for h in links if not link_problem(h)),
                       "actions": len(type_actions(graph, e)), "metrics": len(metrics)})
     edges = []
@@ -309,6 +363,7 @@ def link_name_problem(graph: OntologyGraph, relationship_id: str, name: str) -> 
         for h in object_links(graph, entity):
             if h.rel is not rel and wanted in (h.name.lower(), h.business.lower()):
                 return f"{entity.id} already has a link named {wanted!r} ({h.rel.id})"
-        if any(k.lower() == wanted for k in (entity.properties or {})):
+        names = list(entity.properties or {}) + [k for b in entity.bindings or [] for k in b.properties]
+        if any(k.lower() == wanted for k in names):
             return f"{entity.id} has a property named {wanted!r} — a path could not tell the two apart"
     return ""

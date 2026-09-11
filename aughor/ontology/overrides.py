@@ -37,6 +37,7 @@ from typing import Any, Callable, Literal, Optional
 import yaml
 from pydantic import BaseModel, Field
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.ontology.models import (
     ComputedProperty,
     KineticAction,
@@ -46,7 +47,13 @@ from aughor.ontology.models import (
     OntologyMetric,
 )
 
-_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_overrides"
+#: `data/ontology_overrides`, or `AUGHOR_ONTOLOGY_OVERRIDES_DIR` when set — the test conftest points it at a throwaway
+#: dir. It had no override until ON-1b: every measure door and build that counts what a person declared (a backing, a
+#: display property, a binding) reads this tree for the connection it measures and WRITES the verdict back, so a door
+#: test that cached a graph under LuxExperience's real connection id rewrote that connection's live Order override
+#: with counts from a three-row fixture.
+_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_OVERRIDES_DIR",
+                        Path(__file__).parent.parent.parent / "data" / "ontology_overrides")
 
 
 def overrides_root() -> Path:
@@ -90,6 +97,11 @@ _EDITABLE: dict[str, set[str]] = {
         # ON-3b: the property whose value names one object of this type. Bound against the graph (the
         # type must HAVE it); whether it names objects is measured on the measure door, on the binding.
         "display_property",
+        # ON-1b: the further bindings a person set — {name: {table | sql, key, kind, time_column?, properties?}}.
+        # Bound by reading each source's columns (`bindings.bind_binding`, at the bindings door); counted against
+        # the objects on the measure door; both verdicts ride the binding entry, so the overlay rebuilds them
+        # without a database.
+        "bindings",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -296,10 +308,17 @@ def _declared_display(ov: OntologyOverride, value: Any):
     )
 
 
-def _apply_entity(ent: OntologyEntity, ov: OntologyOverride) -> list[str]:
+def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[OntologyGraph] = None) -> list[str]:
     touched: list[str] = []
     for field, value in ov.fields.items():
         if field not in _EDITABLE["entity"]:
+            continue
+        if field == "bindings":
+            from aughor.ontology.bindings import declared_bindings
+            # ON-1b — rebuilt from what the bind and the count recorded; a binding that never bound reaches no reader.
+            ent.bindings, _skipped = declared_bindings(ent, value, ov.binding.get("bindings"), graph)
+            if ent.bindings:
+                touched.append(field)
             continue
         if field == "backing":
             from aughor.ontology.models import Backing
@@ -451,7 +470,7 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
         try:
             if ov.target_kind == "entity":
                 ent = graph.entities.get(ov.target_id)
-                touched = _apply_entity(ent, ov) if ent else []
+                touched = _apply_entity(ent, ov, graph) if ent else []
             elif ov.target_kind in ("object_set", "computed_property"):
                 ent = graph.entities.get(ov.entity_id or "")
                 if not ent:

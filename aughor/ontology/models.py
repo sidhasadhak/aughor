@@ -160,6 +160,50 @@ class Backing(BaseModel):
         return self.table or ""
 
 
+class Binding(BaseModel):
+    """ON-1b — a further source an object type's properties are read from (ROADMAP §3.15, amended 2026-09-11).
+
+    The type's first binding IS its `backing`: the rows that are its objects. A further binding is a table or a
+    keyed SELECT joined to the object on its key, with the properties it supplies, and a kind — `static` (one row
+    per object) or `timeseries` (many rows per object over `time_column`). Its claim is MEASURED the ON-0a way
+    (`aughor.ontology.bindings`): a static binding's key must be unique over its rows and reach objects that exist;
+    a timeseries binding's key must reach objects that exist, its coverage recorded. A person sets one through the
+    overrides tree; the data proposes one where another table carries the type's key, kept apart on
+    `OntologyEntity.proposed_bindings` so a proposal changes nothing until a person binds it.
+    """
+    name: str
+    kind: Literal["static", "timeseries"] = "static"
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    #: The binding's column that holds the object's key.
+    key: str = ""
+    #: Timeseries only: the column that places a row in time.
+    time_column: str = ""
+    #: Property name → the property it supplies.
+    properties: dict[str, EntityProperty] = Field(default_factory=dict)
+    #: Property name → the binding's column it is read from, for a property renamed to be free on the type (its
+    #: `status` supplied as `payment_status`). A property not listed is read from the column of its own name.
+    columns: dict[str, str] = Field(default_factory=dict)
+    #: Columns the binding has but does not supply, each with why — a name the type already uses.
+    skipped: dict[str, str] = Field(default_factory=dict)
+    source: Literal["human", "proposed"] = "human"
+    #: Measured — None until counted: the binding's rows, its rows with a key, its distinct keys, the objects it
+    #: was measured against, how many of them it covers, and the distinct keys that reach no object.
+    rows: Optional[int] = None
+    non_null: Optional[int] = None
+    distinct: Optional[int] = None
+    objects: Optional[int] = None
+    covered: Optional[int] = None
+    orphans: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+
+    @property
+    def reads(self) -> str:
+        """``query`` when the binding is a keyed SELECT, ``table`` otherwise."""
+        return "query" if (self.sql or "").strip() else "table"
+
+
 class OntologyEntity(BaseModel):
     id: str                                    # PascalCase: "Order", "Customer"
     display_name: str                          # human-readable business name, set/corrected by enricher
@@ -177,6 +221,13 @@ class OntologyEntity(BaseModel):
     #: ON-3b: the property that names one instance (see DisplayProperty) — proposed from the profile when
     #: the builder leaves it empty, so every graph built before carries one; measured on the measure door.
     display_property: Optional[DisplayProperty] = None
+    #: ON-1b: the further bindings a person set — tables or keyed SELECTs joined to the object on its key, each
+    #: supplying properties the backing does not carry (see Binding). The first binding is `backing`; this list
+    #: holds the rest, and is empty on every graph built before, which therefore loads unchanged.
+    bindings: list[Binding] = Field(default_factory=list)
+    #: ON-1b: the bindings the data proposes — another table carrying this type's key, measured one row per
+    #: object. Kept apart so a proposal changes no query, no page and no answer until a person binds it.
+    proposed_bindings: list[Binding] = Field(default_factory=list)
 
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None

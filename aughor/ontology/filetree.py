@@ -22,10 +22,13 @@ from typing import Optional
 
 import yaml
 
+from aughor.db.sqlite_util import resolve_db_path
 from aughor.ontology.models import OntologyGraph
 from aughor.ontology.overrides import OntologyOverride, _EDITABLE, _safe
 
-_EXPORT_ROOT = Path(__file__).parent.parent.parent / "data" / "ontology_export"
+#: `data/ontology_export`, or `AUGHOR_ONTOLOGY_EXPORT_DIR` — the overrides tree's sibling, isolated with it.
+_EXPORT_ROOT = resolve_db_path("AUGHOR_ONTOLOGY_EXPORT_DIR",
+                               Path(__file__).parent.parent.parent / "data" / "ontology_export")
 
 
 def export_root(conn: str, schema: str) -> Path:
@@ -47,6 +50,9 @@ def _editable_value(obj, field: str):
         return {k: getattr(value, k) for k in _BACKING_EDITABLE}
     if field == "display_property" and value is not None:
         return value.name          # ON-3b: the property's NAME is the edit; its measurement is not
+    if field == "bindings":
+        from aughor.ontology.bindings import binding_spec
+        return {b.name: binding_spec(b) for b in value or []}   # ON-1b: each binding's spec is the edit; its count is not
     return value
 
 

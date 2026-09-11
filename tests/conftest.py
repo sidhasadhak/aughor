@@ -186,6 +186,16 @@ for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR
 # the suite never mutates the live tree (born hermetic, unlike the older data/ stores).
 os.environ["AUGHOR_COLUMN_CONFIG_ROOT"] = os.path.join(_test_stores_dir,
                                                        "ontology_column_config")
+# ON-1b (2026-09-11) — the human overrides tree (data/ontology_overrides/{conn}/{schema}/…) and the export tree beside
+# it had no override. Every measure door and build that counts what a person declared (a backing, a display property,
+# a binding) reads the overrides tree for the connection it measures and WRITES the verdict back — so a door test that
+# cached a graph under LuxExperience's real connection id rewrote the developer's LIVE Order override with counts from a
+# three-row fixture. Found by the ON-1b live receipt, whose panel suddenly read "3 of 3 objects"; restored by
+# re-measuring through the running API. No tracked override is copied in: no test reads one.
+os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "ontology_overrides")
+os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
+# …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).
+os.environ["AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR"] = os.path.join(_test_stores_dir, "ontology_recommendations")
 # R8a — the documents registry (data/documents.json) is written by every index/delete;
 # isolate it so suite-driven indexing can never mutate the live registry.
 os.environ["AUGHOR_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "documents.json")
