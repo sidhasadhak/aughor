@@ -45,6 +45,8 @@ def _editable_value(obj, field: str):
     value = getattr(obj, field, None)
     if field == "backing" and value is not None:
         return {k: getattr(value, k) for k in _BACKING_EDITABLE}
+    if field == "display_property" and value is not None:
+        return value.name          # ON-3b: the property's NAME is the edit; its measurement is not
     return value
 
 

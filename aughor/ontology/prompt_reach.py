@@ -48,6 +48,7 @@ from aughor.ontology.models import (
     ActionParameter,
     ComputedProperty,
     DefinitionSource,
+    DisplayProperty,
     EntityProperty,
     KineticAction,
     ObjectEdit,
@@ -114,6 +115,9 @@ def fixture_graph() -> OntologyGraph:
                                      is_default=False, source="lifecycle", verified=True,
                                      verification_note="executed"),
         },
+        # ON-3b — a declared, measured display property, populated so the walk reaches every one of its fields.
+        display_property=DisplayProperty(name="order_value", source="human", rows=100, non_null=98, distinct=90,
+                                         verified=True, note="98 of 100 objects carry a value, 90 distinct"),
         created_at_col="created_at",
         default_filters=["exclude test orders"],
         exclude_when=["the order is a warranty replacement"],
@@ -147,6 +151,7 @@ def fixture_graph() -> OntologyGraph:
         join_sql="orders.customer_id = customers.customer_id",
         from_table="orders", from_col="customer_id", to_table="customers", to_col="customer_id",
         join_confidence="verified", nullable=True, value_overlap=0.98,
+        name="order_placed_by_customer",   # ON-3b — a person's business-verb link name, so the walk reaches it
     )
     metric = OntologyMetric(
         id="revenue", display_name="Revenue", description="Recognised order revenue",

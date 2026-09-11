@@ -62,6 +62,22 @@ function withArticle(noun: string): string {
   return `${/^[aeiou]/i.test(noun) ? "an" : "a"} ${noun}`;
 }
 
+/** ON-3b — which property titles this page, and on what warrant: a person's declaration, a proposal from the
+ *  profile, or the key when nothing else names the object (a refuted proposal says so on hover). */
+function DisplayChip({ display }: { display: NonNullable<ObjectPage["display"]> }) {
+  const warrant = display.source === "human" ? "declared" : display.source === "proposed" ? "proposed" : "the key";
+  const measured = display.verified === true ? "measured: it names objects"
+    : display.verified === false ? "measured: it does not name objects" : "not yet measured";
+  const detail = [`Titled by ${display.property} — ${warrant}${display.source === "key" ? "" : `, ${measured}`}`, display.note]
+    .filter(Boolean).join(". ");
+  return (
+    <span className="aug-tag aug-tag-gray" title={detail} data-testid="object-display-property"
+      style={{ whiteSpace: "nowrap" }}>
+      named by <span style={MONO}>{display.source === "key" ? "its key" : display.property}</span>
+    </span>
+  );
+}
+
 export function ObjectView({ objectType, pk, connectionId, schemaName }: {
   objectType: string;
   pk: string;
@@ -130,6 +146,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
             <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", whiteSpace: "nowrap" }}>
               {loaded.key} = {loaded.pk}
             </span>
+            {loaded.display && <DisplayChip display={loaded.display} />}
           </>
         ) : (
           <span className="aug-fs-ui" style={{ color: "var(--t2)" }}>{objectType} {pk}</span>

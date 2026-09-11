@@ -52,6 +52,9 @@ Grain = Literal["", "hour", "day", "week", "month", "quarter", "year"]
 _MAX_LIMIT = 10_000
 _MAX_IN = 1_000
 _MAX_HOPS = 3
+#: The most links one path may cross — public for the path finder (ON-3b), which marks a longer path as
+#: one the compiler would not take even when every hop on it is traversable.
+MAX_LINK_HOPS = _MAX_HOPS
 _COMPARE = {"=": "=", "!=": "<>", ">": ">", ">=": ">=", "<": "<", "<=": "<="}
 _ISO_DATE = re.compile(r"^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2}(\.\d+)?)?)?$")
 _NUMBER = re.compile(r"^-?\d+(\.\d+)?([eE][-+]?\d+)?$")
@@ -156,6 +159,9 @@ class ObjectLink:
     local_col: str
     remote_col: str
     label: str                             # cardinality read source → target
+    #: ON-3b — the relationship's business-verb name (`order_item_is_for_product`), accepted beside the
+    #: mechanical `name` wherever a link is named; "" when the verb on record names nothing.
+    business: str = ""
 
     @property
     def to_one(self) -> bool:
@@ -185,11 +191,12 @@ def object_links(graph: OntologyGraph, entity: OntologyEntity) -> list[ObjectLin
     for r in graph.relationships.values():
         label = r.measured_cardinality or r.cardinality
         if r.from_entity == entity.id and r.to_entity in graph.entities:
-            out.append(ObjectLink(r, entity, graph.entities[r.to_entity], r.api_name, r.from_col, r.to_col, label))
+            out.append(ObjectLink(r, entity, graph.entities[r.to_entity], r.api_name, r.from_col, r.to_col, label,
+                                  business=r.business_name()))
         if r.to_entity == entity.id and r.from_entity in graph.entities and r.from_entity != r.to_entity:
             left, right = label.split(":")
             out.append(ObjectLink(r, entity, graph.entities[r.from_entity], r.reverse_api_name,
-                            r.to_col, r.from_col, f"{right}:{left}"))
+                                  r.to_col, r.from_col, f"{right}:{left}", business=r.business_name()))
     return out
 
 
@@ -533,7 +540,8 @@ class _Compiler:
     def hop(self, entity: OntologyEntity, seg: str) -> Optional[ObjectLink]:
         hops = object_links(self.g, entity)
         low = seg.lower()
-        named = [h for h in hops if h.name.lower() == low]
+        # a link answers to its mechanical name and, beside it, to its business-verb name (ON-3b)
+        named = [h for h in hops if low in (h.name.lower(), h.business.lower())]
         if len(named) > 1:
             raise ObjectQueryRefused(f"'{seg}' names {len(named)} links from {entity.id} "
                                      f"({', '.join(h.rel.id for h in named)}) — the ontology must tell them apart")
@@ -932,6 +940,7 @@ def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGrap
 def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict:
     """Every object type with its properties by role, its links (usable or why not), its verified
     segments and metrics — the names `compile_object_query` accepts, and nothing else."""
+    from aughor.ontology.display import display_of
     types = []
     for e in sorted(graph.entities.values(), key=lambda x: x.api_name):
         roles: dict[str, list[str]] = {}
@@ -940,12 +949,13 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
         links = []
         for h in object_links(graph, e):
             problem = link_problem(h)
-            links.append({"name": h.name, "to": h.target.api_name, "cardinality": h.label,
-                          "on": f"{h.local_col} = {h.remote_col}", "usable": not problem,
+            links.append({"name": h.name, "business_name": h.business, "verb": h.rel.verb, "to": h.target.api_name,
+                          "cardinality": h.label, "on": f"{h.local_col} = {h.remote_col}", "usable": not problem,
                           **({"why_not": problem} if problem else {})})
         b = e.backing
         types.append({
             "object_type": e.api_name, "id": e.id, "display_name": e.display_name,
+            "display_property": display_of(e)["property"],
             "key": (b.primary_key if b is not None else "") or e.identity_key,
             "key_unique": b.verified if b is not None else None,
             "time": e.created_at_col or "",

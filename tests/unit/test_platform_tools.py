@@ -79,17 +79,15 @@ def test_search_without_a_query_is_an_answer_not_a_crash():
     assert "error" in pt.search_graph("c1", {})
 
 
-def test_describe_entity_caps_related_edges_and_says_so(monkeypatch):
-    monkeypatch.setattr(
-        "aughor.mcp.knowledge_tools.describe_entity",
-        lambda cid, e: {"available": True, "entity": {"label": e},
-                        "related": [{"edge": "join", "node_id": f"n{i}"}
-                                    for i in range(50)]})
+def test_describe_entity_returns_the_shared_body_untouched(monkeypatch):
+    """ON-3c — one body on both transports: the converse tool adds nothing and cuts nothing, so a cap is
+    the body's own and the MCP server's `describe_entity` returns the very same dict."""
+    body = {"available": True, "kind": "table", "entity": {"label": "orders"},
+            "related": [{"edge": "join", "node_id": f"n{i}"} for i in range(50)]}
+    monkeypatch.setattr("aughor.mcp.knowledge_tools.describe_entity", lambda cid, e: body)
 
-    out = pt.describe_entity("c1", {"entity": "orders"})
-
-    assert len(out["related"]) == pt._MAX_RELATED
-    assert out["related_truncated"] is True
+    assert pt.describe_entity("c1", {"entity": "orders"}) is body
+    assert "error" in pt.describe_entity("c1", {})
 
 
 # ── findings ─────────────────────────────────────────────────────────────────────────

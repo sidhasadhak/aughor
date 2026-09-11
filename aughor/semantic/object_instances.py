@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from aughor.ontology.cardinality import quote_ident
+from aughor.ontology.display import display_of
 from aughor.ontology.models import EntityProperty, OntologyEntity, OntologyGraph
 from aughor.semantic.object_query import (
     ObjectLink,
@@ -32,8 +33,6 @@ from aughor.semantic.object_query import (
 )
 
 _MAX_PAGE = 200
-#: Property-name fragments that make a column an object's human title, in preference order.
-_TITLE_HINTS = ("full_name", "display_name", "name", "title", "label")
 
 
 class ObjectNotFound(LookupError):
@@ -51,11 +50,13 @@ class ObjectInstance:
     properties: list[dict]
     links: list[dict]
     caveats: list[str] = field(default_factory=list)
+    #: ON-3b — what titles this object and on what warrant (`display_of`), with the value it shows.
+    display: dict = field(default_factory=dict)
 
     def to_dict(self) -> dict:
         return {"object_type": self.object_type, "type_id": self.type_id, "type_name": self.type_name,
-                "key": self.key, "pk": self.pk, "title": self.title, "properties": list(self.properties),
-                "links": list(self.links), "caveats": list(self.caveats)}
+                "key": self.key, "pk": self.pk, "title": self.title, "display": dict(self.display),
+                "properties": list(self.properties), "links": list(self.links), "caveats": list(self.caveats)}
 
 
 def _key_of(entity: OntologyEntity) -> str:
@@ -85,16 +86,10 @@ def _read(db: Any, sql: str, what: str):
 
 
 def title_column(entity: OntologyEntity) -> Optional[str]:
-    """The column that names an instance (`full_name`, `product_name`, `brand`…), or None. A
-    deterministic reading of the profile — a text or dimension property whose name says it is a
-    name — never a guess about the data."""
-    candidates = [n for n, p in (entity.properties or {}).items()
-                  if (p.semantic_type or "") in ("dimension", "text") and not p.is_primary_key]
-    for hint in _TITLE_HINTS:
-        for name in candidates:
-            if hint in name.lower():
-                return name
-    return None
+    """The column that titles one object: the type's declared display property (ON-3b), or None when its key
+    names it — the key is already on screen. A proposal the data refuted gives way to the key."""
+    shown = display_of(entity)
+    return None if shown["is_key"] else shown["property"]
 
 
 def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str], bool]:
@@ -111,7 +106,8 @@ def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str
 
 
 def _link_view(db: Any, link: ObjectLink, row: dict) -> dict:
-    view = {"name": link.name, "to": link.target.api_name, "to_type": link.target.id,
+    view = {"name": link.name, "business_name": link.business, "verb": link.rel.verb,
+            "to": link.target.api_name, "to_type": link.target.id,
             "cardinality": link.label, "on": f"{link.local_col} = {link.remote_col}",
             "kind": "to-one" if link.to_one else "to-many"}
     problem = link_problem(link)
@@ -167,19 +163,21 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "unit": "", "description": mine.note,
                            "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
                                        "origin": mine.origin, "provenance": mine.provenance()}})
-    title_col = title_column(entity)
-    title = _value(row, title_col) if title_col else None
+    shown = display_of(entity)
+    title = None if shown["is_key"] else _value(row, shown["property"])
     links = [_link_view(db, link, row) for link in object_links(graph, entity)]
     return ObjectInstance(object_type=entity.api_name, type_id=entity.id,
                           type_name=entity.display_name or entity.id, key=key, pk=str(pk),
                           title=str(title) if title is not None else None,
-                          properties=properties, links=links, caveats=caveats)
+                          properties=properties, links=links, caveats=caveats,
+                          display={**shown, "value": str(title) if title is not None else None})
 
 
 def _find_link(graph: OntologyGraph, entity: OntologyEntity, name: str) -> ObjectLink:
     links = object_links(graph, entity)
     low = (name or "").strip().lower()
-    named = [x for x in links if x.name.lower() == low]
+    # a link answers to its mechanical name and, beside it, to its business-verb name (ON-3b)
+    named = [x for x in links if low in (x.name.lower(), x.business.lower())]
     reaching = [x for x in links if low in (x.target.api_name.lower(), x.target.id.lower())]
     chosen = named or reaching
     if len(chosen) != 1:

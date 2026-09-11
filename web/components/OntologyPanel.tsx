@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import { Button }      from "@/components/ui/button";
@@ -1196,6 +1197,19 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
   const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
+  // ON-3b — the entity-type map, centred on one type, is this layer's first view; the whole-graph drawing stays
+  // one click away as the overview. The choice is remembered per browser.
+  const [view, setView] = useState<"map" | "overview">(() => {
+    try {
+      return typeof window !== "undefined" && window.localStorage.getItem("ont-view") === "overview" ? "overview" : "map";
+    } catch {
+      return "map";
+    }
+  });
+  const chooseView = (next: "map" | "overview") => {
+    setView(next);
+    try { window.localStorage.setItem("ont-view", next); } catch { /* no storage: the choice lasts this visit */ }
+  };
   /** Which schemas DO have an ontology, per the 404. Drives the empty state's offer. */
   const [builtSchemas,      setBuiltSchemas]      = useState<string[]>([]);
 
@@ -1257,7 +1271,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       )}
 
       {/* Org ⟷ Connection view toggle */}
-      <div className="flex items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
+      <div className="flex shrink-0 items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
         <button
           onClick={() => setOrgMode(true)}
           className={cn(
@@ -1273,6 +1287,19 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           )}
         >Connection</button>
       </div>
+
+      {/* ON-3b — the entity-type map, or the whole graph as the overview. */}
+      {!orgMode && graph && (
+        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Ontology view">
+          {(["map", "overview"] as const).map(v => (
+            <Button key={v} variant={view === v ? "secondary" : "ghost"} size="xs" aria-pressed={view === v}
+              onClick={() => chooseView(v)} data-testid={`ontology-view-${v}`}
+              title={v === "map" ? "One entity type at the centre, its links around it" : "Every entity type and link at once"}>
+              {v === "map" ? "Map" : "Overview"}
+            </Button>
+          ))}
+        </div>
+      )}
 
       {!orgMode && graph && (
         <div className="flex items-center gap-2 ml-auto">
@@ -1446,30 +1473,35 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       {headerBar}
 
       <div className="flex-1 flex overflow-hidden">
-        {/* Canvas — takes remaining width; relative so EdgeSqlPanel anchors correctly */}
-        <div className="flex-1 overflow-hidden relative">
-          <OntologyCanvas
-            graph={graph}
-            connId={connectionId}
-            selectedEntityId={selectedEntityId}
-            onSelectEntity={(id) => { setSelectedEntityId(id); setSelectedEdge(null); setShowSettings(false); }}
-            onInvestigate={onInvestigate}
-            onClickEdge={(rel) => setSelectedEdge(prev => prev?.id === rel.id ? null : rel)}
-          />
-
-          {/* Edge SQL template popup */}
-          {selectedEdge && (
-            <EdgeSqlPanel
-              rel={selectedEdge}
+        {view === "map" ? (
+          // ON-3b — the entity-type map brings its own rail and entity-type panel.
+          <EntityTypeMap connectionId={selectedConnId} schema={schema} />
+        ) : (
+          /* Canvas — takes remaining width; relative so EdgeSqlPanel anchors correctly */
+          <div className="flex-1 overflow-hidden relative">
+            <OntologyCanvas
               graph={graph}
-              onClose={() => setSelectedEdge(null)}
+              connId={connectionId}
+              selectedEntityId={selectedEntityId}
+              onSelectEntity={(id) => { setSelectedEntityId(id); setSelectedEdge(null); setShowSettings(false); }}
               onInvestigate={onInvestigate}
+              onClickEdge={(rel) => setSelectedEdge(prev => prev?.id === rel.id ? null : rel)}
             />
-          )}
-        </div>
 
-        {/* Detail drawer — slides in when an entity is selected */}
-        {selectedEntity && !showSettings && (
+            {/* Edge SQL template popup */}
+            {selectedEdge && (
+              <EdgeSqlPanel
+                rel={selectedEdge}
+                graph={graph}
+                onClose={() => setSelectedEdge(null)}
+                onInvestigate={onInvestigate}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Detail drawer — slides in when an entity is selected on the overview */}
+        {view === "overview" && selectedEntity && !showSettings && (
           <EntityDetailDrawer
             entity={selectedEntity}
             graph={graph}

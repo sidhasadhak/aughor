@@ -49,7 +49,6 @@ _MAX_TRUSTED = 10
 _MAX_MONITORS = 25
 _MAX_ALERTS = 5
 _MAX_CITATIONS = 10
-_MAX_RELATED = 20
 _SQL_PREVIEW = 400
 
 
@@ -79,19 +78,14 @@ def search_graph(connection_id: str, args: dict) -> dict:
 
 
 def describe_entity(connection_id: str, args: dict) -> dict:
-    """One entity's semantic slice — the shared MCP body, related edges capped."""
+    """One object type's connected slice — the shared MCP body, returned exactly as the MCP server returns
+    it (ON-3c: the same call on either transport is the same body, so any cap lives in the body)."""
     from aughor.mcp.knowledge_tools import describe_entity as _describe
 
     entity = str(args.get("entity") or "").strip()
     if not entity:
         return {"error": "no entity supplied"}
-
-    out = _describe(connection_id, entity)
-    related = out.get("related") or []
-    if len(related) > _MAX_RELATED:
-        out["related"] = related[:_MAX_RELATED]
-        out["related_truncated"] = True
-    return out
+    return _describe(connection_id, entity)
 
 
 def get_table_health(connection_id: str, args: dict) -> dict:
@@ -744,10 +738,15 @@ def platform_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec
         ToolSpec(
             name="describe_entity",
             description=(
-                "Everything Aughor has LEARNED about one table or entity — verified "
-                "joins with measured overlap, glossary terms, related findings. "
-                "Semantic knowledge, not raw columns: use describe_table for the "
-                "physical schema."
+                "What one business object TYPE is — an order, a customer, a shipment: its "
+                "key and whether the data proves it unique, the property that names one, "
+                "every property with its role, type and SOURCE (the table and column it is "
+                "read from), its links to other types with measured cardinality and whether "
+                "each can be followed (or why not), the declared actions that take it, and "
+                "its verified metrics. A $0 read of what the ontology measured — use it for "
+                "'what is X' and 'where does X's data come from'. get_object opens one "
+                "instance, search_graph finds findings and terms, describe_table shows raw "
+                "columns."
             ),
             parameters=_ENTITY_PARAMS,
             run=lambda a: describe_entity(connection_id, a),

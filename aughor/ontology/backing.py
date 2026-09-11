@@ -91,6 +91,7 @@ def apply_backing_measurements(graph: OntologyGraph, db: Any) -> BackingReport:
             continue
         m = measure_backing(db, entity.backing, entity.id)
         report.measurements.append(m)
+        entity.backing.rows = m.rows
         if m.unique is None:
             entity.backing.verified = None
             entity.backing.verification_note = m.note
@@ -126,7 +127,7 @@ def measure_override_backings(connection_id: str, schema_name: Optional[str], db
             continue
         m = measure_backing(db, backing, ov.target_id)
         entry = dict(ov.binding.get("backing") or {"bound": True, "note": ""})
-        entry.update({"unique": m.unique, "unique_note": m.note,
+        entry.update({"unique": m.unique, "unique_note": m.note, "rows": m.rows,
                       "sql": (backing.sql or "").strip(), "primary_key": backing.primary_key})
         ov.binding["backing"] = entry
         try:

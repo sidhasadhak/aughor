@@ -5,8 +5,9 @@ Four reads that had no MCP surface until every wave behind them landed: the cont
 machinery; S6 is composition, which is what the last wave in a program should mostly be.
 
 **The clearance question is the whole risk, and it is easy to miss.** MCP is an *external
-agent* surface. `search_graph` returns node labels and `describe_entity` returns a table's
-columns and joins — the same table-derived facts G5 spent a wave trimming out of prompts.
+agent* surface. `search_graph` returns node labels and `describe_entity` returns an object type's
+properties, their sources and its links (ON-3c) — the same table-derived facts G5 spent a wave
+trimming out of prompts.
 An external surface that skips the trim is a bigger hole than an internal one, because its
 consumer is not a person who might notice something looks wrong. So every function here
 that returns table-derived data goes through :mod:`aughor.govern.retrieval_trim`, and the
@@ -84,12 +85,68 @@ def search_graph(connection_id: str, query: str, *, limit: int = 10,
     return {"available": True, "count": len(kept), "nodes": kept, "notice": notice}
 
 
+#: Related edges the table-node fallback returns; the cut is declared, never silent.
+_MAX_RELATED = 20
+
+
+def _served_ontology(connection_id: str, schema_name: str = ""):
+    """The ontology `GET /ontology` serves for this scope — the one read the object pages and the compiler
+    use, so the agent is never handed a second opinion. Never builds."""
+    from aughor.routers.ontology import served_ontology_graph
+    return served_ontology_graph(connection_id, schema_name or None)
+
+
+def _accepted_edits(connection_id: str) -> list:
+    from aughor.actions.overlay import accepted_object_edits
+    return accepted_object_edits(connection_id)
+
+
 def describe_entity(connection_id: str, entity: str, *, schema_name: str = "",
                     org_id: str = "") -> dict:
-    """Everything the graph knows about one entity — J6's entity page, as data.
+    """What one business object TYPE is — ON-3c (ROADMAP §3.15, amended 2026-09-11).
 
-    The same slice the entity page renders, so the two cannot disagree: an agent and a
-    human asking about `orders` get one answer, which is the point of a committed graph.
+    The ON-1 object type as one connected slice: its key and whether the data proved it unique, the
+    property that names an instance, every property with its role, type and SOURCE, its bindings, its
+    links by name with measured cardinality and whether the compiler follows each (and why not), the
+    declared actions that take it, and its verified metrics. It is the dict the entity-type map renders
+    (`aughor.semantic.object_types`), so an agent and a person asking what a Shipment is get one answer.
+
+    Only when no ontology is built for the scope, or it has no such type, does this fall back to the
+    context graph's table node — labelled ``kind: "table"`` so the reader knows which one it got.
+    """
+    wanted = str(entity or "").strip()
+    graph = _served_ontology(connection_id, schema_name)
+    refused = None
+    if graph is not None and graph.entities:
+        from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
+        try:
+            found = find_object_type(graph, wanted.split(".")[-1])
+        except ObjectQueryRefused as exc:
+            found, refused = None, exc
+        if found is not None:
+            node = {"kind": "table", "data": {"source_tables": list(found.source_tables)}}
+            kept, notice = _trim_nodes([node], connection_id, graph.schema_name or schema_name)
+            if not kept:
+                # Withheld, and said so — an agent told "not found" reports it confidently, and wrongly.
+                return {"available": False, "reason": "withheld by data governance", "notice": notice}
+            from aughor.semantic.object_types import describe_object_type
+            body = describe_object_type(graph, found, overlay=_accepted_edits(connection_id))
+            return {"available": True, "kind": "object_type", "summary": body.pop("summary"),
+                    "object_type": body, "notice": notice}
+
+    out = _describe_table_node(connection_id, wanted, schema_name=schema_name, org_id=org_id)
+    if refused is not None and not out.get("available") and not out.get("notice"):
+        # The ontology's refusal is the better answer: it names the type that is missing and the ones that exist.
+        out.update({"reason": refused.reason, "object_types": refused.available[:40]})
+    return out
+
+
+def _describe_table_node(connection_id: str, entity: str, *, schema_name: str = "",
+                         org_id: str = "") -> dict:
+    """Everything the context graph knows about one table — the fallback when no object type describes it.
+
+    J6's entity page, as data: the same slice that page renders, so an agent and a person asking about
+    `orders` on a connection with no ontology still get one answer.
     """
     graph = _load_graph(connection_id, org_id)
     if graph is None or not graph.nodes:
@@ -127,7 +184,11 @@ def describe_entity(connection_id: str, entity: str, *, schema_name: str = "",
                             "measured": getattr(e.provenance, "measured", None),
                             "note": getattr(e.provenance, "note", "")})
             kept_ids.add(other)
-    return {"available": True, "entity": kept[0], "related": related, "notice": notice}
+    out = {"available": True, "kind": "table", "entity": kept[0], "related": related[:_MAX_RELATED],
+           "notice": notice}
+    if len(related) > _MAX_RELATED:
+        out["related_truncated"] = True
+    return out
 
 
 def get_table_health(connection_id: str, table: str = "", *,
