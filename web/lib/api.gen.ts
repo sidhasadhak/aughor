@@ -7251,6 +7251,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/objects/{object_type}/{pk}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Page
+         * @description ON-3: one object, resolved live through its backing — its properties, and its links resolved
+         *     to the linked object's key (to-one) or a count of the linked objects (to-many). A link the
+         *     compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
+         *     an unknown type is `path: refused` with the types that exist.
+         */
+        get: operations["get_object_page_objects__object_type___pk__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/{object_type}/{pk}/links/{link}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Object Links Page
+         * @description ON-3: one page of the objects a link reaches from one object, ordered by their key — refused
+         *     when the link is (unmeasured, N:N, or touching a query backing).
+         */
+        get: operations["get_object_links_page_objects__object_type___pk__links__link__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/obs/agent-alerts/events": {
         parameters: {
             query?: never;
@@ -26559,6 +26603,79 @@ export interface operations {
                 "application/json": components["schemas"]["ObjectQuery"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_object_page_objects__object_type___pk__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                object_type: string;
+                pk: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_object_links_page_objects__object_type___pk__links__link__get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+                limit?: number;
+                offset?: number;
+            };
+            header?: never;
+            path: {
+                object_type: string;
+                pk: string;
+                link: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

@@ -131,3 +131,31 @@ def test_a_streamed_compiled_answer_carries_a_receipt_that_names_the_compiled_pa
                                         "measure": "revenue", "dimension": "country"}
     assert written["guard_edges"][0][:2] == ("validated_by", "guard:object_compiler")
     assert written["payload_extra"]["path"] == "compiled" and written["payload_extra"]["body"] == "converse.query_objects"
+
+
+# ── ON-3: the object page's doors ───────────────────────────────────────────────────────
+
+def test_an_object_page_reads_one_order_live_and_404s_a_missing_key(warehouse, client):
+    r = client.get("/objects/order/O000123", params=PARAMS)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert (body["path"], body["key"], body["pk"]) == ("object", "order_id", "O000123")
+    (customer_id,) = _reference(warehouse, "SELECT customer_id FROM orders WHERE order_id = 'O000123'")[0]
+    links = {link["name"]: link for link in body["links"]}
+    assert links["order_to_customer"]["pk"] == str(customer_id)
+    assert links["order_to_order_item"]["count"] > 0
+    assert client.get("/objects/order/O999999", params=PARAMS).status_code == 404
+    refused = client.get("/objects/invoice/1", params=PARAMS).json()
+    assert refused["path"] == "refused" and "order" in refused["available"]
+
+
+def test_a_links_page_lists_the_linked_objects_in_key_order(warehouse, client):
+    r = client.get("/objects/customer/C00042/links/customer_to_order", params={**PARAMS, "limit": 3})
+    assert r.status_code == 200, r.text
+    page = r.json()
+    expected = [str(row[0]) for row in _reference(
+        warehouse, "SELECT order_id FROM orders WHERE customer_id = 'C00042' ORDER BY order_id")]
+    position = page["columns"].index("order_id")
+    assert [str(row[position]) for row in page["rows"]] == expected[:3] and page["has_more"] is True
+    refused = client.get("/objects/order_item/7/links/order_item_to_review", params=PARAMS).json()
+    assert refused["path"] == "refused" and "N:N" in refused["refused"]

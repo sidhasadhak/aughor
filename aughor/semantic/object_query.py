@@ -145,7 +145,7 @@ class CompiledObjectQuery:
 # ── links, read from where the query stands ─────────────────────────────────────────────
 
 @dataclass(frozen=True)
-class _Hop:
+class ObjectLink:
     rel: OntologyRelationship
     source: OntologyEntity
     target: OntologyEntity
@@ -162,20 +162,35 @@ class _Hop:
         return f"{self.name} ({self.source.id} → {self.target.id}, {self.label})"
 
 
-def _hops_from(graph: OntologyGraph, entity: OntologyEntity) -> list[_Hop]:
-    out: list[_Hop] = []
+def find_object_type(graph: OntologyGraph, name: str) -> OntologyEntity:
+    """An object type by its api name, id, display name or backing table — or a refusal naming the
+    types that exist. The one lookup the compiler, the instance reader and every door share."""
+    want = (name or "").strip()
+    low = want.lower()
+    for e in graph.entities.values():
+        if low in {e.id.lower(), e.api_name.lower(), (e.display_name or "").lower()}:
+            return e
+    for e in graph.entities.values():
+        if any(low in (t.lower(), t.lower().rsplit(".", 1)[-1]) for t in e.source_tables):
+            return e
+    names = sorted(e.api_name for e in graph.entities.values())
+    raise ObjectQueryRefused(f"no object type '{name}'{_did_you_mean(low, names)}", names)
+
+
+def object_links(graph: OntologyGraph, entity: OntologyEntity) -> list[ObjectLink]:
+    out: list[ObjectLink] = []
     for r in graph.relationships.values():
         label = r.measured_cardinality or r.cardinality
         if r.from_entity == entity.id and r.to_entity in graph.entities:
-            out.append(_Hop(r, entity, graph.entities[r.to_entity], r.api_name, r.from_col, r.to_col, label))
+            out.append(ObjectLink(r, entity, graph.entities[r.to_entity], r.api_name, r.from_col, r.to_col, label))
         if r.to_entity == entity.id and r.from_entity in graph.entities and r.from_entity != r.to_entity:
             left, right = label.split(":")
-            out.append(_Hop(r, entity, graph.entities[r.from_entity], r.reverse_api_name,
+            out.append(ObjectLink(r, entity, graph.entities[r.from_entity], r.reverse_api_name,
                             r.to_col, r.from_col, f"{right}:{left}"))
     return out
 
 
-def _link_problem(h: _Hop) -> str:
+def link_problem(h: ObjectLink) -> str:
     """Why this link may not be traversed, or "" when it may."""
     if h.rel.measured_cardinality is None:
         return (f"link {h.describe()} has never been measured — its label was inferred "
@@ -219,7 +234,7 @@ def _is_temporal(p: EntityProperty) -> bool:
     return (p.semantic_type or "") == "timestamp" or any(t in (p.data_type or "").upper() for t in ("DATE", "TIME"))
 
 
-def _find_prop(entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
+def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
     props = entity.properties or {}
     if name in props:
         return props[name]
@@ -242,7 +257,7 @@ def _literal(v: Any, path: str) -> str:
                              f"not {type(v).__name__}")
 
 
-def _typed_literal(v: Any, p: EntityProperty, path: str) -> str:
+def typed_literal(v: Any, p: EntityProperty, path: str) -> str:
     """A literal typed by the column it meets: a numeric string to a numeric column is a number, "true"
     to a boolean column is TRUE — so `"400"` and `400` compile alike on every dialect (BigQuery will not
     compare INT64 with STRING). A string that does not read as the column's type stays a string: whether
@@ -266,17 +281,17 @@ def _predicate(col: str, p: EntityProperty, f: ObjectFilter) -> str:
         if f.value is None or isinstance(f.value, (list, dict)):
             raise ObjectQueryRefused(f"filter '{f.path} {op}' needs one value (is_null / not_null for NULL, "
                                      "in for a list)")
-        return f"{col} {_COMPARE[op]} {_typed_literal(f.value, p, f.path)}"
+        return f"{col} {_COMPARE[op]} {typed_literal(f.value, p, f.path)}"
     vals = f.values or (f.value if isinstance(f.value, list) else [])
     if op in ("in", "not_in"):
         if not vals or len(vals) > _MAX_IN:
             raise ObjectQueryRefused(f"filter '{f.path} {op}' needs `values`: a list of 1–{_MAX_IN}")
-        rendered = ", ".join(_typed_literal(v, p, f.path) for v in vals)
+        rendered = ", ".join(typed_literal(v, p, f.path) for v in vals)
         return f"{col} {'IN' if op == 'in' else 'NOT IN'} ({rendered})"
     if op == "between":
         if len(vals) != 2:
             raise ObjectQueryRefused(f"filter '{f.path} between' needs `values`: [low, high]")
-        return f"{col} BETWEEN {_typed_literal(vals[0], p, f.path)} AND {_typed_literal(vals[1], p, f.path)}"
+        return f"{col} BETWEEN {typed_literal(vals[0], p, f.path)} AND {typed_literal(vals[1], p, f.path)}"
     raise ObjectQueryRefused(f"filter '{f.path}': {op} takes a link, not a property")
 
 
@@ -341,7 +356,7 @@ def _qualify(fragment: str, alias: str, read: str, *, what: str, expression: boo
     return node.sql(dialect="duckdb")
 
 
-def _from(entity: OntologyEntity, alias: str) -> str:
+def backing_from(entity: OntologyEntity, alias: str) -> str:
     b = entity.backing
     if b is not None and b.kind == "query" and b.sql:
         return f"({b.sql.strip().rstrip(';')}) AS {alias}"
@@ -383,7 +398,7 @@ class _Scope:
 @dataclass
 class _ManyLink:
     """One to-many link, pre-aggregated per its key: every measure over it becomes a column."""
-    hop: _Hop
+    hop: ObjectLink
     outer_alias: str
     alias: str
     inner: _Scope
@@ -401,7 +416,7 @@ class _ManyLink:
         key = f"{self.inner.alias}.{quote_ident(self.hop.remote_col)}"
         cols = ", ".join(f"{expr} AS {name}" for name, expr in self.columns)
         joins = "".join(f" {j}" for j in self.inner.joins)
-        return (f"LEFT JOIN (SELECT {key} AS k, {cols} FROM {_from(self.hop.target, self.inner.alias)}{joins} "
+        return (f"LEFT JOIN (SELECT {key} AS k, {cols} FROM {backing_from(self.hop.target, self.inner.alias)}{joins} "
                 f"GROUP BY {key}) AS {self.alias} "
                 f"ON {self.outer_alias}.{quote_ident(self.hop.local_col)} = {self.alias}.k")
 
@@ -428,28 +443,19 @@ class _Compiler:
 
     # ── names ──
     def entity(self, name: str) -> OntologyEntity:
-        want = (name or "").strip()
-        low = want.lower()
-        for e in self.g.entities.values():
-            if low in {e.id.lower(), e.api_name.lower(), (e.display_name or "").lower()}:
-                return e
-        for e in self.g.entities.values():
-            if any(low in (t.lower(), t.lower().rsplit(".", 1)[-1]) for t in e.source_tables):
-                return e
-        names = sorted(e.api_name for e in self.g.entities.values())
-        raise ObjectQueryRefused(f"no object type '{name}'{_did_you_mean(low, names)}", names)
+        return find_object_type(self.g, name)
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
-        p = _find_prop(entity, name)
+        p = find_property(entity, name)
         if p is not None:
             return p
         names = sorted(entity.properties or {})
-        links = sorted(h.name for h in _hops_from(self.g, entity))
+        links = sorted(h.name for h in object_links(self.g, entity))
         raise ObjectQueryRefused(f"{entity.id} has no property '{name}' (in '{path}'){_did_you_mean(name, names + links)}",
                                  names + links)
 
-    def hop(self, entity: OntologyEntity, seg: str) -> Optional[_Hop]:
-        hops = _hops_from(self.g, entity)
+    def hop(self, entity: OntologyEntity, seg: str) -> Optional[ObjectLink]:
+        hops = object_links(self.g, entity)
         low = seg.lower()
         named = [h for h in hops if h.name.lower() == low]
         if len(named) > 1:
@@ -464,18 +470,18 @@ class _Compiler:
                                      f"name one: {', '.join(names)}", names)
         return reaching[0] if reaching else None
 
-    def need_hop(self, entity: OntologyEntity, seg: str, path: str) -> _Hop:
+    def need_hop(self, entity: OntologyEntity, seg: str, path: str) -> ObjectLink:
         h = self.hop(entity, seg)
         if h is None:
-            links = sorted(x.name for x in _hops_from(self.g, entity))
+            links = sorted(x.name for x in object_links(self.g, entity))
             tail = (f" — its links: {', '.join(links)}" if links else f" — {entity.id} has no links in this ontology")
             raise ObjectQueryRefused(f"no link '{seg}' from {entity.id} (in '{path}'){tail}", links)
-        problem = _link_problem(h)
+        problem = link_problem(h)
         if problem:
             raise ObjectQueryRefused(problem)
         return h
 
-    def note_link(self, h: _Hop, treatment: str, line: str) -> None:
+    def note_link(self, h: ObjectLink, treatment: str, line: str) -> None:
         key = (h.rel.id, h.name, treatment)
         if key in self._noted:
             return
@@ -485,19 +491,19 @@ class _Compiler:
         self.plan.append(line)
 
     # ── joins and columns ──
-    def join_one(self, scope: _Scope, from_alias: str, h: _Hop) -> str:
+    def join_one(self, scope: _Scope, from_alias: str, h: ObjectLink) -> str:
         key = (from_alias, h.rel.id, h.name)
         if key in scope.join_alias:
             return scope.join_alias[key]
         alias = self._alias("j")
-        scope.joins.append(f"LEFT JOIN {_from(h.target, alias)} "
+        scope.joins.append(f"LEFT JOIN {backing_from(h.target, alias)} "
                            f"ON {from_alias}.{quote_ident(h.local_col)} = {alias}.{quote_ident(h.remote_col)}")
         scope.join_alias[key] = alias
         self.note_link(h, "joined", f"link {h.describe()}: joined — to-one by measurement, so it cannot "
                                     f"multiply {h.source.id} rows")
         return alias
 
-    def column(self, scope: _Scope, path: str, purpose: str) -> tuple[str, EntityProperty, list[_Hop]]:
+    def column(self, scope: _Scope, path: str, purpose: str) -> tuple[str, EntityProperty, list[ObjectLink]]:
         """A property reached through to-one links only."""
         segs = _split(path, purpose)
         entity, alias, hops = scope.entity, scope.alias, []
@@ -532,7 +538,7 @@ class _Compiler:
             return self.exists(alias, h, ".".join(segs[i + 1:]), f)
         raise ObjectQueryRefused(f"filter path '{f.path}' did not resolve")
 
-    def exists(self, outer_alias: str, h: _Hop, rest: str, f: ObjectFilter) -> str:
+    def exists(self, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter) -> str:
         inner = _Scope(entity=h.target, alias=self._alias("e"))
         conds = [f"{inner.alias}.{quote_ident(h.remote_col)} = {outer_alias}.{quote_ident(h.local_col)}"]
         negate = False
@@ -545,7 +551,7 @@ class _Compiler:
         self.note_link(h, treatment, f"link {h.describe()}: {'NOT EXISTS' if negate else 'EXISTS'} — keeps "
                                      f"{h.source.id} objects {'without' if negate else 'with'} a matching "
                                      f"{h.target.id}; the set is filtered, never multiplied")
-        sql = f"EXISTS (SELECT 1 FROM {_from(h.target, inner.alias)}{joins} WHERE {' AND '.join(conds)})"
+        sql = f"EXISTS (SELECT 1 FROM {backing_from(h.target, inner.alias)}{joins} WHERE {' AND '.join(conds)})"
         return f"NOT {sql}" if negate else sql
 
     def where(self, scope: _Scope, filters: list[ObjectFilter]) -> str:
@@ -602,7 +608,7 @@ class _Compiler:
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last:
-                p = _find_prop(entity, seg)
+                p = find_property(entity, seg)
                 if p is not None:
                     return self.prop_measure(scope, alias, p, hops, t, label)
                 if self.hop(entity, seg) is None:
@@ -611,7 +617,7 @@ class _Compiler:
             if h.to_one:
                 alias = self.join_one(scope, alias, h)
                 if last:                                    # a to-one linked object: its key
-                    key = _find_prop(h.target, h.remote_col) or EntityProperty(name=h.remote_col, semantic_type="key")
+                    key = find_property(h.target, h.remote_col) or EntityProperty(name=h.remote_col, semantic_type="key")
                     return self.prop_measure(scope, alias, key, hops + [h], t, label)
                 entity = h.target
                 hops.append(h)
@@ -623,7 +629,7 @@ class _Compiler:
             return self.many_measure(scope, h, ".".join(segs[i + 1:]), t, label)
         raise ObjectQueryRefused(f"{label}: measure path '{t.path}' did not resolve")
 
-    def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[_Hop],
+    def prop_measure(self, scope: _Scope, alias: str, p: EntityProperty, hops: list[ObjectLink],
                      t: MeasureTerm, label: str) -> str:
         _check_aggregate(t.agg, p, t.path, self.caveats)
         # A 1:1 hop cannot repeat a value (both keys are unique); an N:1 hop repeats the one
@@ -644,7 +650,7 @@ class _Compiler:
                          + (" matching its where" if cond else ""))
         return _agg_sql(t.agg, value, cond)
 
-    def many_measure(self, scope: _Scope, h: _Hop, rest: str, t: MeasureTerm, label: str) -> str:
+    def many_measure(self, scope: _Scope, h: ObjectLink, rest: str, t: MeasureTerm, label: str) -> str:
         agg = t.agg
         if agg == "count_distinct":
             raise ObjectQueryRefused(
@@ -693,7 +699,7 @@ class _Compiler:
         path = self.q.time.strip()
         e = scope.entity
         if not path:
-            if e.created_at_col and _find_prop(e, e.created_at_col) is not None:
+            if e.created_at_col and find_property(e, e.created_at_col) is not None:
                 path = e.created_at_col
             else:
                 stamps = [n for n, p in (e.properties or {}).items() if (p.semantic_type or "") == "timestamp"]
@@ -793,7 +799,7 @@ class _Compiler:
             names.append(name)
             measure_names.append(name)
 
-        sql = f"SELECT {', '.join(select)} FROM {_from(anchor, 't0')}"
+        sql = f"SELECT {', '.join(select)} FROM {backing_from(anchor, 't0')}"
         sql += "".join(f" {j}" for j in scope.joins)
         sql += "".join(f" {ml.join_sql()}" for ml in self._many.values())
         if where:
@@ -854,8 +860,8 @@ def object_catalog(graph: OntologyGraph) -> dict:
         for name, p in (e.properties or {}).items():
             roles.setdefault(p.semantic_type or "other", []).append(name)
         links = []
-        for h in _hops_from(graph, e):
-            problem = _link_problem(h)
+        for h in object_links(graph, e):
+            problem = link_problem(h)
             links.append({"name": h.name, "to": h.target.api_name, "cardinality": h.label,
                           "on": f"{h.local_col} = {h.remote_col}", "usable": not problem,
                           **({"why_not": problem} if problem else {})})

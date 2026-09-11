@@ -31,6 +31,64 @@ def _served_graph(connection_id: str, schema_name: Optional[str]):
     return graph
 
 
+def _open_scoped(connection_id: str, schema_name: Optional[str], graph):
+    """The connection, scoped to the schema the served graph was built for."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.routers.ontology import resolve_effective_schema
+    return open_connection_for_with_schema(connection_id,
+                                           graph.schema_name or resolve_effective_schema(connection_id, schema_name))
+
+
+@router.get("/objects/{object_type}/{pk}")
+def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
+                    schema_name: Optional[str] = Query(default=None)):
+    """ON-3: one object, resolved live through its backing — its properties, and its links resolved
+    to the linked object's key (to-one) or a count of the linked objects (to-many). A link the
+    compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
+    an unknown type is `path: refused` with the types that exist."""
+    from aughor.semantic.object_instances import ObjectNotFound, get_object
+    from aughor.semantic.object_query import ObjectQueryRefused
+
+    graph = _served_graph(connection_id, schema_name)
+    db = _open_scoped(connection_id, schema_name, graph)
+    try:
+        try:
+            instance = get_object(graph, db, object_type, pk)
+        except ObjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                    "connection_id": connection_id, "schema_name": graph.schema_name}
+        return {"path": "object", "connection_id": connection_id, "schema_name": graph.schema_name,
+                **instance.to_dict()}
+    finally:
+        db.close()
+
+
+@router.get("/objects/{object_type}/{pk}/links/{link}")
+def get_object_links_page(object_type: str, pk: str, link: str, connection_id: str = BUILTIN_ID,
+                          schema_name: Optional[str] = Query(default=None),
+                          limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+    """ON-3: one page of the objects a link reaches from one object, ordered by their key — refused
+    when the link is (unmeasured, N:N, or touching a query backing)."""
+    from aughor.semantic.object_instances import ObjectNotFound, list_linked
+    from aughor.semantic.object_query import ObjectQueryRefused
+
+    graph = _served_graph(connection_id, schema_name)
+    db = _open_scoped(connection_id, schema_name, graph)
+    try:
+        try:
+            page = list_linked(graph, db, object_type, pk, link, limit=limit, offset=offset)
+        except ObjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                    "connection_id": connection_id, "schema_name": graph.schema_name}
+        return {"path": "links", "connection_id": connection_id, "schema_name": graph.schema_name, **page}
+    finally:
+        db.close()
+
+
 @router.get("/objects/catalog")
 def get_object_catalog(connection_id: str = BUILTIN_ID, schema_name: Optional[str] = Query(default=None)):
     """Every object type the compiler can query: properties by role, links with their measured
