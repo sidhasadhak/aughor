@@ -39,13 +39,18 @@ import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
 import { getMyPreferences, putMyPreference } from "@/lib/api";
-import { CARD, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
-import { getTypeMap, type TypeMap, type TypeMapRow } from "@/lib/objectTypes";
+import { CARD, collapseParts, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
+import { declareEntity, getTypeMap, type DeclaredEntitySpec, type TypeMap, type TypeMapRow } from "@/lib/objectTypes";
 
 const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
 const RULE = "1px solid var(--b1)";
 /** How far a card or a link the picked type does not touch falls back. */
 const UNLIT = 0.38;
+const FIELD: React.CSSProperties = {
+  ...MONO, background: "var(--bg-2)", color: "var(--t1)", border: RULE, borderRadius: "var(--r2)", padding: "2px 6px",
+  minWidth: 0,
+};
+const SELECT: React.CSSProperties = { ...FIELD, maxWidth: 200 };
 
 function keyWords(verified: boolean | null): string {
   return verified === true ? "key unique" : verified === false ? "key not unique" : "key unmeasured";
@@ -117,7 +122,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
         if (!live) return;
         setMap(next);
         setSelected((current) =>
-          (current && next.object_types.some((t) => t.object_type === current) ? current : hubOf(next)));
+          (current && next.object_types.some((t) => t.object_type === current) ? current : hubOf(collapseParts(next))));
       })
       .catch((e: unknown) => { if (live) setError(e instanceof Error ? e.message : String(e)); });
     return () => { live = false; };
@@ -135,27 +140,63 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   if (!selected || map.object_types.length === 0) {
     return <EmptyState icon="node" title="This ontology has no object types yet." />;
   }
+  // ON-7 — a part is not a card: it is folded into its parent, and picking it lights the parent's card.
+  const drawn = collapseParts(map);
+  const picked = map.object_types.find((t) => t.object_type === selected);
+  const standing = picked?.absorbed_into && drawn.object_types.some((t) => t.object_type === picked.absorbed_into)
+    ? picked.absorbed_into : selected;
   return (
     <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }} data-testid="entity-type-map">
-      <TypeRail types={map.object_types} selected={selected} query={query} onQuery={setQuery} onPick={setSelected} />
-      <MapCanvas map={map} selected={selected} onSelect={setSelected} scope={scopeOf(connectionId, schema)} />
+      <TypeRail types={drawn.object_types} parts={map.object_types.filter((t) => t.absorbed_into)} selected={selected}
+        query={query} onQuery={setQuery} onPick={setSelected}
+        declare={(spec) => declareEntity(connectionId, spec, schema).then((made) => {
+          setVersion((v) => v + 1);
+          setSelected(made.object_type);
+        })} />
+      <MapCanvas map={drawn} selected={standing} onSelect={setSelected} scope={scopeOf(connectionId, schema)} />
       <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
         version={version} onOpen={setSelected} onChanged={() => setVersion((v) => v + 1)} />
     </div>
   );
 }
 
-function TypeRail({ types, selected, query, onQuery, onPick }: {
+function matches(t: TypeMapRow, wanted: string): boolean {
+  return [t.display_name, t.object_type, t.id, t.table].some((s) => s.toLowerCase().includes(wanted));
+}
+
+function TypeRail({ types, parts, selected, query, onQuery, onPick, declare }: {
   types: TypeMapRow[];
+  /** ON-7 — the types folded into a parent: listed under the cards, still openable by name. */
+  parts: TypeMapRow[];
   selected: string;
   query: string;
   onQuery: (q: string) => void;
   onPick: (objectType: string) => void;
+  declare: (spec: DeclaredEntitySpec) => Promise<void>;
 }) {
   const wanted = query.trim().toLowerCase();
-  const shown = wanted
-    ? types.filter((t) => [t.display_name, t.object_type, t.id, t.table].some((s) => s.toLowerCase().includes(wanted)))
-    : types;
+  const shown = wanted ? types.filter((t) => matches(t, wanted)) : types;
+  const shownParts = wanted ? parts.filter((t) => matches(t, wanted)) : parts;
+  const row = (t: TypeMapRow, part: boolean) => {
+    const current = t.object_type === selected;
+    return (
+      <Button key={t.object_type} variant="ghost" size="sm" onClick={() => onPick(t.object_type)}
+        aria-current={current ? "true" : undefined} data-testid={part ? "entity-rail-part" : "entity-rail-row"}
+        title={part ? `Open ${t.display_name}, a part of ${t.absorbed_into}` : `Light ${t.display_name} up on the map and open it here`}
+        className="h-auto w-full justify-start py-1.5"
+        style={current ? { background: "var(--bg-hover)" } : undefined}>
+        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, gap: 1 }}>
+          <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500 }}>
+            {t.display_name}
+          </span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+            {part ? `part of ${t.absorbed_into}` : `${keyWords(t.key_verified)} · ${t.links} ${t.links === 1 ? "link" : "links"}`}
+            {!part && t.parts?.length ? ` · ${t.parts.length} ${t.parts.length === 1 ? "part" : "parts"}` : ""}
+          </span>
+        </span>
+      </Button>
+    );
+  };
   return (
     <nav aria-label="Entity types"
       style={{ width: 212, flexShrink: 0, borderRight: RULE, display: "flex", flexDirection: "column", minHeight: 0,
@@ -165,31 +206,99 @@ function TypeRail({ types, selected, query, onQuery, onPick }: {
           aria-label="Find an entity type" data-testid="entity-rail-search" />
         <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6 }}>
           {shown.length === types.length ? `${types.length} types` : `${shown.length} of ${types.length} types`}
+          {parts.length ? ` · ${parts.length} ${parts.length === 1 ? "part" : "parts"}` : ""}
         </div>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 10px" }}>
-        {shown.length === 0 && <EmptyState variant="inline" title={`No type matches “${query.trim()}”.`} />}
-        {shown.map((t) => {
-          const current = t.object_type === selected;
-          return (
-            <Button key={t.object_type} variant="ghost" size="sm" onClick={() => onPick(t.object_type)}
-              aria-current={current ? "true" : undefined} data-testid="entity-rail-row"
-              title={`Light ${t.display_name} up on the map and open it here`}
-              className="h-auto w-full justify-start py-1.5"
-              style={current ? { background: "var(--bg-hover)" } : undefined}>
-              <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, gap: 1 }}>
-                <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500 }}>
-                  {t.display_name}
-                </span>
-                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-                  {keyWords(t.key_verified)} · {t.links} {t.links === 1 ? "link" : "links"}
-                </span>
-              </span>
-            </Button>
-          );
-        })}
+        {shown.length === 0 && shownParts.length === 0 && <EmptyState variant="inline" title={`No type matches “${query.trim()}”.`} />}
+        {shown.map((t) => row(t, false))}
+        {shownParts.length > 0 && (
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "8px 8px 2px", textTransform: "uppercase",
+                                              letterSpacing: ".06em", fontWeight: 600 }}>
+            Parts
+          </div>
+        )}
+        {shownParts.map((t) => row(t, true))}
       </div>
+      <DeclareEntity declare={declare} />
     </nav>
+  );
+}
+
+/** ON-7 — declare a business entity from the rail: the noun first, then the source that holds one row per object.
+ *  The server reads that source's columns and counts its key before anything is written; a table that already
+ *  backs a type is refused with the reason — rename or absorb that type instead of doubling it. */
+function DeclareEntity({ declare }: { declare: (spec: DeclaredEntitySpec) => Promise<void> }) {
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [reads, setReads] = useState<"table" | "query">("table");
+  const [source, setSource] = useState("");
+  const [key, setKey] = useState("");
+  const [domain, setDomain] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const ready = /^[A-Z][A-Za-z0-9]{0,63}$/.test(id.trim()) && !!name.trim() && !!source.trim() && !!key.trim();
+  const submit = async () => {
+    setBusy(true);
+    setProblem("");
+    const spec: DeclaredEntitySpec = { id: id.trim(), display_name: name.trim(),
+      backing: { primary_key: key.trim(), ...(reads === "table" ? { table: source.trim() } : { sql: source.trim() }) } };
+    if (domain.trim()) spec.domain = domain.trim();
+    try {
+      await declare(spec);
+      setOpen(false);
+      setId(""); setName(""); setSource(""); setKey(""); setDomain("");
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <div style={{ padding: "6px 10px 10px", borderTop: RULE }}>
+        <Button variant="outline" size="xs" onClick={() => setOpen(true)} data-testid="entity-declare-open"
+          title="Declare a business entity — the noun first, then the source bound into it">
+          <Icon name="plus" size={12} /> New entity
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div style={{ padding: "8px 10px 10px", borderTop: RULE, display: "flex", flexDirection: "column", gap: 6 }}
+      data-testid="entity-declare">
+      <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
+        A business entity, and the source whose rows are its objects. Its columns are read and its key counted
+        before anything is written.
+      </p>
+      <input className="aug-fs-xs" style={FIELD} value={id} placeholder="Id — PascalCase, e.g. PurchaseOrder"
+        aria-label="Entity id" onChange={(e) => setId(e.target.value)} />
+      <input className="aug-fs-xs" style={FIELD} value={name} placeholder="Display name" aria-label="Entity display name"
+        onChange={(e) => setName(e.target.value)} />
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <select className="aug-fs-xs" style={SELECT} value={reads} aria-label="Entity source kind"
+          onChange={(e) => setReads(e.target.value as "table" | "query")}>
+          <option value="table">table</option>
+          <option value="query">SELECT</option>
+        </select>
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={source}
+          aria-label={reads === "table" ? "Entity table" : "Entity SELECT"}
+          placeholder={reads === "table" ? "purchase_orders" : "SELECT … one row per object"}
+          onChange={(e) => setSource(e.target.value)} />
+      </div>
+      <input className="aug-fs-xs" style={FIELD} value={key} placeholder="Key column" aria-label="Entity key column"
+        onChange={(e) => setKey(e.target.value)} />
+      <input className="aug-fs-xs" style={FIELD} value={domain} placeholder="Domain (optional)" aria-label="Entity domain"
+        onChange={(e) => setDomain(e.target.value)} />
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={submit}>
+          {busy ? "Declaring…" : "Declare"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {problem && <p className="aug-fs-xs" style={{ margin: 0, color: "var(--red5)", lineHeight: 1.45 }}>{problem}</p>}
+    </div>
   );
 }
 
@@ -216,6 +325,7 @@ function EntityCard({ data }: NodeProps<RFNode<CardData>>) {
       </span>
       <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
         {keyWords(row.key_verified)} · {row.traversable_links} of {row.links} {row.links === 1 ? "link" : "links"}
+        {row.parts?.length ? ` · ${row.parts.length} ${row.parts.length === 1 ? "part" : "parts"}` : ""}
       </span>
     </div>
   );
@@ -289,11 +399,13 @@ function MapCanvas({ map, selected, onSelect, scope }: {
       if (!a || !b || link.from === link.to) return [];
       const on = lit.links.has(link.relationship);
       const verb = link.verb || "relates to";
+      // ON-7 — a link drawn from a parent's card on behalf of one of its parts says which part it came through.
+      const via = (link as { via?: string }).via;
       return [{
         id: link.relationship, source: link.from, target: link.to,
         sourceHandle: side(b.x - a.x, b.y - a.y), targetHandle: `${side(a.x - b.x, a.y - b.y)}-in`,
         // Only the picked type's links are named: every label at once is what made this map unreadable.
-        label: on ? `${verb} · ${link.cardinality}` : undefined,
+        label: on ? `${verb} · ${link.cardinality}${via ? ` · via ${via}` : ""}` : undefined,
         labelShowBg: true,
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 4,

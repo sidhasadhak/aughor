@@ -28,6 +28,20 @@ export interface TypeMapRow {
   traversable_links: number;
   actions: number;
   metrics: number;
+  /** ON-7 — who made the type: the builder from a table, a person, or an explorer's proposal. */
+  origin?: "table" | "human" | "model";
+  /** ON-7 — the type this one is a PART of (its api name), "" when it stands on its own. */
+  absorbed_into?: string;
+  /** ON-7 — the types that are parts of this one, each with the binding it is read through. */
+  parts?: TypePart[];
+}
+
+/** ON-7 — a type that is a part of another: an order's lines under Order. */
+export interface TypePart {
+  object_type: string;
+  display_name: string;
+  binding: string;
+  kind: string;
 }
 
 /** One link between two types, read from → to. */
@@ -43,6 +57,10 @@ export interface TypeMapLink {
   measured: boolean;
   traversable: boolean;
   why_not?: string;
+  /** ON-7 — the type each end is DRAWN as: a part's links are drawn from its parent's card. */
+  shown_from?: string;
+  shown_to?: string;
+  origin?: "join_map" | "human" | "model";
 }
 
 export interface TypeMap {
@@ -74,10 +92,12 @@ export interface PropertySource {
   table?: string;
   column?: string;
   edits?: number;
-  kind?: "static" | "timeseries";
+  kind?: "static" | "timeseries" | "detail";
   read?: boolean;
   /** ON-5 — set when the property is a FRAME over the readings rather than a column of the source. */
   frame?: string;
+  /** ON-7 — set when the property is a ROLLUP over a detail binding's rows rather than a column of the source. */
+  rollup?: string;
 }
 
 export interface TypeProperty {
@@ -98,7 +118,7 @@ export interface TypeProperty {
 export interface TypeBinding {
   name: string;
   primary: boolean;
-  kind: "static" | "timeseries";
+  kind: "static" | "timeseries" | "detail";
   reads: "table" | "query";
   table?: string;
   sql?: string;
@@ -120,6 +140,8 @@ export interface TypeBinding {
   why_not?: string;
   /** ON-5 — property name → what its frame over the readings is, in words. */
   frames?: Record<string, string>;
+  /** ON-7 — property name → what its rollup over the rows is, in words. */
+  rollups?: Record<string, string>;
 }
 
 /** ON-5 — a frame over a timeseries binding's readings: what it reads, how the readings inside the frame are
@@ -136,20 +158,30 @@ export interface FrameSpec {
 /** What a person sends to bind a source: its table or SELECT, the column holding the object's key, its kind, and —
  *  optionally — `{property: column}` to name what it supplies and `{property: frame}` to compute one. */
 export interface BindingSpec {
-  kind: "static" | "timeseries";
+  kind: "static" | "timeseries" | "detail";
   key: string;
   table?: string;
   sql?: string;
   time_column?: string;
   properties?: Record<string, string>;
   frames?: Record<string, FrameSpec>;
+  /** ON-7 — a DETAIL binding (many rows per object, no clock) supplies exactly these, each one value per object. */
+  rollups?: Record<string, RollupSpec>;
+  /** ON-7 — mark the bound table's own type a PART of this one; the mark holds only while the binding does. */
+  absorb?: boolean;
+}
+
+/** ON-7 — one rollup over a detail binding's rows: the column it reads and how the rows reduce to one value. */
+export interface RollupSpec {
+  column: string;
+  agg?: "sum" | "avg" | "min" | "max" | "count";
 }
 
 /** A binding the data proposes — another type's table carrying this type's key, measured one row per object. Nothing
  *  reads it until a person binds it with `spec`. */
 export interface ProposedBinding {
   name: string;
-  kind: "static" | "timeseries";
+  kind: "static" | "timeseries" | "detail";
   table: string;
   key: string;
   object_key: string;
@@ -182,6 +214,8 @@ export interface TypeLink {
   on: string;
   traversable: boolean;
   why_not?: string;
+  /** ON-7 — a link a person declared (or an explorer proposed) can be withdrawn; a found one is named, never deleted. */
+  origin?: "join_map" | "human" | "model";
 }
 
 export interface TypeAction {
@@ -214,6 +248,10 @@ export interface ObjectTypeDetail {
   domain: string;
   key: { property: string; verified: boolean | null; rows: number | null; note: string };
   display_property: DisplayPropertyFact;
+  /** ON-7 — who made the type, its parts, and the type it is a part of (a lapsed mark says why). */
+  origin?: "table" | "human" | "model";
+  parts?: TypePart[];
+  part_of?: PartOf | null;
   time: string;
   properties: TypeProperty[];
   properties_truncated: boolean;
@@ -227,9 +265,40 @@ export interface ObjectTypeDetail {
   lifecycle: { property: string; states: string[]; terminal: string[]; verified: boolean | null; note: string } | null;
   counts: {
     properties: number; bindings: number; proposed_bindings: number; links: number; traversable_links: number;
-    actions: number; metrics: number;
+    actions: number; metrics: number; parts?: number;
   };
   summary: string;
+}
+
+/** ON-7 — the type this one is a part of. `holds` is false when the parent no longer binds this type's table;
+ *  `note` says so. */
+export interface PartOf {
+  object_type: string;
+  id: string;
+  display_name: string;
+  holds: boolean;
+  note: string;
+}
+
+/** ON-7 — a business entity a person declares: the noun first, then the source bound into it. */
+export interface DeclaredEntitySpec {
+  id: string;
+  display_name: string;
+  description?: string;
+  domain?: string;
+  entity_type?: "reference_data" | "business_object" | "event" | "standalone";
+  backing: { table?: string; sql?: string; primary_key: string };
+}
+
+/** ON-7 — a link a person declares between two types: a business verb and the column each side joins on. */
+export interface DeclaredLinkSpec {
+  from_entity: string;
+  to_entity: string;
+  name: string;
+  from_column: string;
+  to_column: string;
+  cardinality?: "1:1" | "1:N" | "N:1" | "N:N";
+  reverse_name?: string;
 }
 
 export interface PathHop {
@@ -366,5 +435,52 @@ export async function nameLink(
   const res = await fetch(
     `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+
+/** ON-7 — declare a business entity. The server reads the source's columns and counts its key before anything is
+ *  written; a table that already backs a type is refused with the reason. Returns the type as the panel shows it. */
+export async function declareEntity(
+  connectionId: string, spec: DeclaredEntitySpec, schemaName?: string,
+): Promise<ObjectTypeDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/entities?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).entity;
+}
+
+/** ON-7 — withdraw a DECLARED entity. A type the builder made from a table is refused: absorb it instead. */
+export async function deleteEntity(connectionId: string, entityId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7 — declare a link between two types. Both columns must exist, the name must be free, and each side is
+ *  counted before anything is written; the compiler follows it exactly as a found link — measured, not N:N. */
+export async function declareLink(connectionId: string, spec: DeclaredLinkSpec, schemaName?: string): Promise<void> {
+  const res = await fetch(`${getApiBase()}/ontology/links?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7 — withdraw a DECLARED link. A found link is named, never deleted. */
+export async function deleteLink(connectionId: string, relationshipId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7 — mark a type a part of another ("" releases it). Bound against the graph: the parent must carry a binding
+ *  over this type's own table, and the mark holds only while it does. */
+export async function setPartOf(
+  connectionId: string, entityId: string, parentId: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ absorbed_into: parentId }) });
   if (!res.ok) throw new Error(await detailOf(res));
 }

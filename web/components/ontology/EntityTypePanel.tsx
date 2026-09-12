@@ -23,16 +23,22 @@ import { declaredActionsHref } from "@/lib/objectLinks";
 import {
   addBinding,
   declareDisplayProperty,
+  declareLink,
+  deleteEntity,
+  deleteLink,
   getObjectType,
   getTypePaths,
   measureOntology,
   nameLink,
   removeBinding,
+  setPartOf,
   type BindingSpec,
+  type DeclaredLinkSpec,
   type FrameSpec,
   type ObjectTypeDetail,
   type PropertySource,
   type ProposedBinding,
+  type RollupSpec,
   type TypeBinding,
   type TypeLink,
   type TypeMapRow,
@@ -126,6 +132,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: 
   onOpen: (objectType: string) => void;
   onChanged: () => void;
 }) {
+  const declared = detail.origin === "human" || detail.origin === "model";
   return (
     <>
       <header style={{ padding: "14px 16px 12px" }}>
@@ -133,17 +140,25 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: 
           <h2 className="aug-fs-h2" style={{ margin: 0, color: "var(--t1)" }}>{detail.display_name}</h2>
           <span className="aug-tag aug-tag-gray">{ROLE[detail.role] ?? detail.role}</span>
           {detail.domain && <span className="aug-tag aug-tag-violet">{detail.domain}</span>}
+          {declared && (
+            <span className="aug-tag aug-tag-blue" title={detail.origin === "model" ? "proposed by an explorer, not yet confirmed" : "declared by a person"}>
+              {detail.origin === "model" ? "proposed" : "declared"}
+            </span>
+          )}
         </div>
         <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 2 }}>{detail.object_type}</div>
         {detail.description && (
           <p className="aug-fs-sm" style={{ margin: "8px 0 0", color: "var(--t2)", lineHeight: 1.5 }}>{detail.description}</p>
         )}
+        <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+        {declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       </header>
       <KeySection detail={detail} />
       <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       <PropertiesSection detail={detail} />
       <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      <LinksSection detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+      <PartsSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+      <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
       <ActionsSection detail={detail} connectionId={connectionId} />
       <MetricsSection detail={detail} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
@@ -163,6 +178,142 @@ function KeySection({ detail }: { detail: ObjectTypeDetail }) {
         <span className={`aug-tag ${verdict[0]}`} data-testid="entity-key-verdict">{verdict[1]}</span>
       </div>
       {key.note && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{key.note}</p>}
+    </Section>
+  );
+}
+
+/** ON-7 — the type this one is a part of: named, openable, and releasable. A mark that no longer holds — the parent
+ *  dropped the binding this type was read through — says so rather than pretending. */
+function PartOfLine({ detail, connectionId, schema, onOpen, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onOpen: (objectType: string) => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const part = detail.part_of;
+  if (!part) return null;
+  const release = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await setPartOf(connectionId, detail.id, "", schema);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="aug-fs-xs" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}
+      data-testid="entity-part-of">
+      <span className={`aug-tag ${part.holds ? "aug-tag-blue" : "aug-tag-amber"}`}>{part.holds ? "part of" : "was a part of"}</span>
+      {part.holds
+        ? <Button variant="ghost" size="xs" onClick={() => onOpen(part.object_type)} title={`Open ${part.display_name}`}>{part.display_name}</Button>
+        : <span style={{ color: "var(--t2)" }}>{part.display_name}</span>}
+      <Button variant="minimal" size="xs" disabled={busy} onClick={release}
+        title="Stand this type on its own again — its binding on the parent stays">
+        {busy ? "Releasing…" : "Release"}
+      </Button>
+      {!part.holds && <span style={{ color: "var(--t3)", flexBasis: "100%", lineHeight: 1.45 }}>{part.note}</span>}
+      {problem && <span style={{ color: "var(--red5)", flexBasis: "100%" }}>{problem}</span>}
+    </div>
+  );
+}
+
+/** ON-7 — withdraw a declared type. Two clicks, because the second one takes the type with it. A type the builder
+ *  made from a table has no such door: it is absorbed into another, never deleted. */
+function WithdrawEntity({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const withdraw = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await deleteEntity(connectionId, detail.id, schema);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+      setArmed(false);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+      {armed ? (
+        <>
+          <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>Withdraw {detail.display_name} and every link declared on it?</span>
+          <Button variant="outline" size="xs" disabled={busy} onClick={withdraw} data-testid="entity-withdraw-confirm">
+            {busy ? "Withdrawing…" : "Withdraw"}
+          </Button>
+          <Button variant="ghost" size="xs" disabled={busy} onClick={() => setArmed(false)}>Keep</Button>
+        </>
+      ) : (
+        <Button variant="minimal" size="xs" onClick={() => setArmed(true)} data-testid="entity-withdraw"
+          title="Withdraw this declared type">
+          <Icon name="trash" size={12} /> Withdraw
+        </Button>
+      )}
+      {problem && <span className="aug-fs-xs" style={{ color: "var(--red5)", flexBasis: "100%" }}>{problem}</span>}
+    </div>
+  );
+}
+
+/** ON-7 — the types that are parts of this one: an order's lines, a return's logistics row. Each is still a type,
+ *  openable by name, and read through the binding shown beside it. */
+function PartsSection({ detail, types, connectionId, schema, onOpen, onChanged }: {
+  detail: ObjectTypeDetail;
+  types: TypeMapRow[];
+  connectionId: string;
+  schema?: string;
+  onOpen: (objectType: string) => void;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState("");
+  const [problem, setProblem] = useState("");
+  const parts = detail.parts ?? [];
+  if (parts.length === 0) return null;
+  // The write doors take the entity id; the map row has it, and the api name resolves there too.
+  const partId = (objectType: string) => types.find((t) => t.object_type === objectType)?.id ?? objectType;
+  const release = async (part: string, id: string) => {
+    setBusy(part);
+    setProblem("");
+    try {
+      await setPartOf(connectionId, id, "", schema);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  return (
+    <Section title="Parts" aside="types folded into this one">
+      {parts.map((part, i) => (
+        <div key={part.object_type} style={{ padding: "6px 0", borderTop: i ? RULE : undefined, display: "flex",
+                                              alignItems: "center", gap: 6, flexWrap: "wrap" }} data-testid="entity-part">
+          <Button variant="ghost" size="xs" onClick={() => onOpen(part.object_type)} title={`Open ${part.display_name}`}>
+            {part.display_name}
+          </Button>
+          <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)" }}>through {part.binding} · {part.kind}</span>
+          <Button variant="minimal" size="xs" disabled={busy === part.object_type} style={{ marginLeft: "auto" }}
+            onClick={() => release(part.object_type, partId(part.object_type))}
+            title="Stand this type on its own again — the binding stays">
+            {busy === part.object_type ? "Releasing…" : "Release"}
+          </Button>
+        </div>
+      ))}
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
   );
 }
@@ -237,9 +388,14 @@ function sourceText(source: PropertySource): { short: string; full: string } {
   if (source.frame) {
     return { short: source.frame, full: `${source.frame} · the timeseries binding ${source.binding}` };
   }
+  // ON-7 — a rollup likewise: computed over the object's rows, not read from one.
+  if (source.rollup) {
+    return { short: source.rollup, full: `${source.rollup} · the detail binding ${source.binding}` };
+  }
   const how = source.kind
     ? ` · the ${source.kind} binding ${source.binding}`
-      + (source.read === false ? ", not read yet" : source.kind === "timeseries" ? ", its latest value" : "")
+      + (source.read === false ? ", not read yet" : source.kind === "timeseries" ? ", its latest value"
+         : source.kind === "detail" ? ", rolled up" : "")
     : "";
   return { short: `${bare}.${column}`, full: `${table}.${column}${how}` };
 }
@@ -302,10 +458,26 @@ function FrameLines({ binding }: { binding: TypeBinding }) {
   );
 }
 
+/** ON-7 — the rollups a detail binding computes, each in the declaration's own words. */
+function RollupLines({ binding }: { binding: TypeBinding }) {
+  const rollups = Object.entries(binding.rollups ?? {});
+  if (rollups.length === 0) return null;
+  return (
+    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3 }}>
+      {rollups.map(([name, said]) => (
+        <div key={name} style={{ overflowWrap: "anywhere" }}>
+          <span style={MONO}>{name}</span> — {said}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function bindingVerdict(b: TypeBinding): [string, string] | null {
   if (b.primary) return null;
   if (b.usable) {
-    return ["aug-tag-green", b.kind === "timeseries" ? `read · latest by ${b.time_column}` : "read"];
+    return ["aug-tag-green", b.kind === "timeseries" ? `read · latest by ${b.time_column}`
+      : b.kind === "detail" ? "read · rolled up" : "read"];
   }
   if (b.kind === "timeseries" && !b.time_column) return ["aug-tag-gray", "no time column"];
   return b.verified === false ? ["aug-tag-red", "refuted"] : ["aug-tag-gray", "not yet measured"];
@@ -361,6 +533,7 @@ function BindingRow({ binding: b, first, busy, onRemove }: {
         <dd style={value}>{countNoun(b.supplies, "property", "properties")}</dd>
       </dl>
       <FrameLines binding={b} />
+      <RollupLines binding={b} />
       {!b.primary && (b.why_not || b.note) && (
         <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{b.why_not || b.note}</p>
       )}
@@ -388,7 +561,7 @@ function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding;
         <span style={MONO}>{p.key} → {p.object_key}</span> · {p.note}
       </p>
       <p className="aug-fs-xs" style={{ ...MONO, margin: "3px 0 0", color: "var(--t2)", overflowWrap: "anywhere" }}>
-        would supply {p.supplies.join(", ")}
+        would supply {p.supplies.join(", ")}{p.kind === "detail" ? " — many rows per object: a part" : ""}
       </p>
     </div>
   );
@@ -457,11 +630,17 @@ function DeclareBinding({ detail, busy, onDeclare }: {
   const [reads, setReads] = useState<"table" | "query">("table");
   const [source, setSource] = useState("");
   const [key, setKey] = useState(detail.key.property);
-  const [kind, setKind] = useState<"static" | "timeseries">("static");
+  const [kind, setKind] = useState<BindingSpec["kind"]>("static");
   const [timeColumn, setTimeColumn] = useState("");
   const [frames, setFrames] = useState<FrameRow[]>([]);
+  // ON-7 — a detail binding's rollups, and whether the bound table's own type becomes a part of this one.
+  const [rollups, setRollups] = useState<RollupRow[]>([{ name: "", agg: "sum", column: "" }]);
+  const [absorb, setAbsorb] = useState(true);
   const usable = kind === "timeseries" ? frames.filter((f) => f.name.trim() && f.column.trim()) : [];
-  const ready = !!name.trim() && !!source.trim() && !!key.trim() && (kind === "static" || !!timeColumn.trim())
+  const rolled = kind === "detail" ? rollups.filter((r) => r.name.trim() && r.column.trim()) : [];
+  const ready = !!name.trim() && !!source.trim() && !!key.trim()
+    && (kind !== "timeseries" || !!timeColumn.trim())
+    && (kind !== "detail" || rolled.length > 0)
     && usable.every((f) => f.what !== "avg-trailing" || Number(f.window) >= 1);
   const declare = () => {
     const spec: BindingSpec = { kind, key: key.trim() };
@@ -469,6 +648,10 @@ function DeclareBinding({ detail, busy, onDeclare }: {
     else spec.sql = source.trim();
     if (kind === "timeseries") spec.time_column = timeColumn.trim();
     if (usable.length) spec.frames = Object.fromEntries(usable.map((f) => [f.name.trim(), frameSpec(f)]));
+    if (kind === "detail") {
+      spec.rollups = Object.fromEntries(rolled.map((r) => [r.name.trim(), { column: r.column.trim(), agg: r.agg }]));
+      if (reads === "table" && absorb) spec.absorb = true;
+    }
     onDeclare(name.trim(), spec);
   };
   if (!open) {
@@ -483,8 +666,9 @@ function DeclareBinding({ detail, busy, onDeclare }: {
       <p className="aug-fs-xs" style={{ margin: "0 0 6px", color: "var(--t3)", lineHeight: 1.45 }}>
         A source joined to {detail.display_name} on its key. A <strong>static</strong> binding must hold one row per
         object; a <strong>timeseries</strong> holds many over a time column and is read as each object&rsquo;s latest
-        row. Every column but the key is supplied under its own name; one the type already uses is skipped with the
-        reason.
+        row; a <strong>detail</strong> holds many with no clock — an order&rsquo;s lines — and supplies only what its
+        rollups declare, each one value per object. Every column but the key is supplied under its own name; one the
+        type already uses is skipped with the reason.
       </p>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={name} placeholder="binding name"
@@ -504,9 +688,10 @@ function DeclareBinding({ detail, busy, onDeclare }: {
         <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={key} aria-label="Key column"
           placeholder={detail.key.property} onChange={(e) => setKey(e.target.value)} />
         <select className="aug-fs-xs" style={SELECT} value={kind} aria-label="Binding kind"
-          onChange={(e) => setKind(e.target.value as "static" | "timeseries")}>
+          onChange={(e) => setKind(e.target.value as BindingSpec["kind"])}>
           <option value="static">static</option>
           <option value="timeseries">timeseries</option>
+          <option value="detail">detail</option>
         </select>
         {kind === "timeseries" && (
           <>
@@ -560,8 +745,56 @@ function DeclareBinding({ detail, busy, onDeclare }: {
           </Button>
         </div>
       )}
+      {kind === "detail" && (
+        <div style={{ marginTop: 8 }} data-testid="declare-rollups">
+          <p className="aug-fs-xs" style={{ margin: "0 0 4px", color: "var(--t3)", lineHeight: 1.45 }}>
+            Rollups over those rows — each becomes a property of the type, computed across the object&rsquo;s own rows
+            before the join, so it can never multiply the objects.
+          </p>
+          {rollups.map((r, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+              <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={r.name}
+                aria-label={`Rollup ${i + 1} property`} placeholder="units"
+                onChange={(e) => setRollups((rs) => rs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+              <select className="aug-fs-xs" style={SELECT} value={r.agg} aria-label={`Rollup ${i + 1} agg`}
+                onChange={(e) => setRollups((rs) => rs.map((x, j) => j === i ? { ...x, agg: e.target.value as RollupAgg } : x))}>
+                <option value="sum">sum of</option>
+                <option value="count">how many carry</option>
+                <option value="avg">average of</option>
+                <option value="min">lowest</option>
+                <option value="max">highest</option>
+              </select>
+              <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={r.column}
+                aria-label={`Rollup ${i + 1} column`} placeholder="quantity"
+                onChange={(e) => setRollups((rs) => rs.map((x, j) => j === i ? { ...x, column: e.target.value } : x))} />
+              <Button variant="ghost" size="xs" onClick={() => setRollups((rs) => rs.filter((_, j) => j !== i))}>
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button variant="ghost" size="xs" style={{ marginTop: 4 }}
+            onClick={() => setRollups((rs) => [...rs, { name: "", agg: "sum", column: "" }])}>
+            + Add a rollup
+          </Button>
+          {reads === "table" && (
+            <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, color: "var(--t2)" }}>
+              <input type="checkbox" checked={absorb} aria-label="Absorb its type as a part"
+                onChange={(e) => setAbsorb(e.target.checked)} />
+              Fold that table&rsquo;s own type into {detail.display_name} as a part — hidden from the map, listed here
+            </label>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+type RollupAgg = NonNullable<RollupSpec["agg"]>;
+
+interface RollupRow {
+  name: string;
+  agg: RollupAgg;
+  column: string;
 }
 
 /** The frames a person can declare from here, each a shape they would recognise rather than the algebra's
@@ -646,8 +879,113 @@ function NameLink({ link, connectionId, schema, onChanged }: {
   );
 }
 
-function LinksSection({ detail, connectionId, schema, onOpen, onChanged }: {
+/** ON-7 — declare a link the builder did not find: another type, the verb the business uses, and the column on
+ *  each side that joins them. The server checks both columns exist, refuses a name already taken, measures each
+ *  side and how many keys meet, and the compiler follows the link exactly as a found one — measured, not N:N. */
+function AddRelationship({ detail, types, connectionId, schema, onChanged }: {
   detail: ObjectTypeDetail;
+  types: TypeMapRow[];
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const others = types.filter((t) => t.object_type !== detail.object_type);
+  const [open, setOpen] = useState(false);
+  const [to, setTo] = useState("");
+  const [name, setName] = useState("");
+  const [fromColumn, setFromColumn] = useState("");
+  const [toColumn, setToColumn] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const target = others.some((t) => t.object_type === to) ? to : (others[0]?.object_type ?? "");
+  const ready = !!target && /^[a-z][a-z0-9_]{0,79}$/.test(name.trim()) && !!fromColumn.trim() && !!toColumn.trim();
+  const declare = async () => {
+    setBusy(true);
+    setProblem("");
+    const row = others.find((t) => t.object_type === target);
+    const spec: DeclaredLinkSpec = { from_entity: detail.id, to_entity: row?.id ?? target, name: name.trim(),
+      from_column: fromColumn.trim(), to_column: toColumn.trim() };
+    try {
+      await declareLink(connectionId, spec, schema);
+      setOpen(false);
+      setName(""); setFromColumn(""); setToColumn("");
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <Button variant="minimal" size="xs" style={{ marginTop: 10 }} onClick={() => setOpen(true)} disabled={others.length === 0}
+        title="Declare a link the builder did not find — a verb, and the column on each side that joins them">
+        Add a relationship
+      </Button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: RULE }} data-testid="declare-link">
+      <div className="aug-fs-xs" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ color: "var(--t2)" }}>{detail.display_name}</span>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 130 }} value={name} placeholder="placed_by"
+          aria-label="Link verb" onChange={(e) => setName(e.target.value)} />
+        <select className="aug-fs-xs" style={SELECT} value={target} aria-label="Link target type"
+          onChange={(e) => setTo(e.target.value)}>
+          {others.map((t) => <option key={t.object_type} value={t.object_type}>{t.display_name}</option>)}
+        </select>
+      </div>
+      <div className="aug-fs-xs" style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+        <span style={{ color: "var(--t3)" }}>on</span>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 130 }} value={fromColumn} placeholder={detail.key.property}
+          aria-label="Link column on this type" onChange={(e) => setFromColumn(e.target.value)} />
+        <span style={{ color: "var(--t3)" }}>=</span>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 130 }} value={toColumn} placeholder="its column"
+          aria-label="Link column on the other type" onChange={(e) => setToColumn(e.target.value)} />
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={declare}>
+          {busy ? "Declaring…" : "Declare"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
+    </div>
+  );
+}
+
+/** ON-7 — withdraw a link a person declared. A found link is named, never deleted. */
+function WithdrawLink({ link, connectionId, schema, onChanged }: {
+  link: TypeLink;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const withdraw = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await deleteLink(connectionId, link.relationship, schema);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={withdraw} title="Withdraw this declared link">
+        {busy ? "Withdrawing…" : "Withdraw"}
+      </Button>
+      {problem && <span className="aug-fs-xs" style={{ color: "var(--red5)" }}>{problem}</span>}
+    </>
+  );
+}
+
+function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged }: {
+  detail: ObjectTypeDetail;
+  types: TypeMapRow[];
   connectionId: string;
   schema?: string;
   onOpen: (objectType: string) => void;
@@ -665,7 +1003,11 @@ function LinksSection({ detail, connectionId, schema, onOpen, onChanged }: {
             <span className={`aug-tag ${link.traversable ? "aug-tag-green" : "aug-tag-amber"}`}>
               {link.traversable ? "followed" : "refused"}
             </span>
+            {(link.origin === "human" || link.origin === "model") && <span className="aug-tag aug-tag-blue">declared</span>}
             <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+            {(link.origin === "human" || link.origin === "model") && (
+              <WithdrawLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+            )}
           </div>
           <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 3, overflowWrap: "anywhere" }}>
             {link.business_name && <>{link.business_name}{link.business_name_source === "human" ? " (declared)" : ""} · </>}
@@ -674,6 +1016,7 @@ function LinksSection({ detail, connectionId, schema, onOpen, onChanged }: {
           {link.why_not && <p className="aug-fs-xs" style={{ margin: "3px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{link.why_not}</p>}
         </div>
       ))}
+      <AddRelationship detail={detail} types={types} connectionId={connectionId} schema={schema} onChanged={onChanged} />
     </Section>
   );
 }

@@ -13,7 +13,7 @@
  *
  * Pure: the map component draws what this returns, and the tests pin it without a DOM.
  */
-import type { TypeMap } from "@/lib/objectTypes";
+import type { TypeMap, TypeMapLink } from "@/lib/objectTypes";
 
 export interface MapNode {
   objectType: string;
@@ -165,4 +165,29 @@ export function layoutMap(map: TypeMap, focus: string): MapLayout {
     nodes.push({ objectType, ring: -1, x: cx + (i - (unlinked.length - 1) / 2) * CARD_ARC, y: row });
   });
   return { nodes, width: cx * 2, height: unlinked.length ? row + CARD.h : cy * 2 };
+}
+
+
+/** ON-7 — the map with every PART folded into its parent: a type absorbed into another is not a card, and each
+ *  link that touches it is drawn from the type that stands for it (`shown_from` / `shown_to`, the server's answer
+ *  to "which card"), named with the part it came through. A link that would then join a card to itself — a part's
+ *  link to its own parent — is not drawn: it is the binding the part is read through, already on the parent's
+ *  card. Pure; the tests pin it. */
+export function collapseParts(map: TypeMap): TypeMap {
+  const names = new Map(map.object_types.map((t) => [t.object_type, t.display_name]));
+  const shown = new Set(map.object_types.filter((t) => !t.absorbed_into).map((t) => t.object_type));
+  const stands = (link: TypeMapLink, end: "from" | "to"): string => {
+    const card = end === "from" ? link.shown_from : link.shown_to;
+    return card && shown.has(card) ? card : link[end];
+  };
+  return {
+    ...map,
+    object_types: map.object_types.filter((t) => !t.absorbed_into),
+    links: map.links.flatMap((link) => {
+      const [from, to] = [stands(link, "from"), stands(link, "to")];
+      if (from === to || !shown.has(from) || !shown.has(to)) return [];
+      const via = [link.from, link.to].filter((end) => end !== from && end !== to).map((end) => names.get(end) ?? end);
+      return [{ ...link, from, to, ...(via.length ? { via: via.join(", ") } : {}) }];
+    }),
+  };
 }

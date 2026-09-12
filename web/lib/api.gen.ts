@@ -7872,7 +7872,16 @@ export interface paths {
         /** Get Ontology Entities */
         get: operations["get_ontology_entities_ontology_entities_get"];
         put?: never;
-        post?: never;
+        /**
+         * Declare Ontology Entity
+         * @description Declare a business entity (ON-7): the noun first, then the source bound into it — a table or a keyed
+         *     SELECT whose rows are its objects, with the column that is its key. The source is read for its columns and
+         *     the key is counted before anything is written (400 with the reason when it cannot be read); a table that
+         *     already backs a type is refused — rename or absorb that type instead of doubling it. The declaration lives
+         *     in the overrides tree with provenance (human, or a model's proposal) and survives every rebuild. No model
+         *     call.
+         */
+        post: operations["declare_ontology_entity_ontology_entities_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7912,7 +7921,13 @@ export interface paths {
         /** Override Ontology Entity */
         put: operations["override_ontology_entity_ontology_entities__entity_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete Declared Entity
+         * @description Withdraw a DECLARED entity (ON-7) — its override file, and with it the type. A type the builder made from
+         *     a table is not deletable here (404 says so): absorb it into another type, or leave it. A declared link on
+         *     the withdrawn type stops applying on the next read and is reported skipped, never silently kept.
+         */
+        delete: operations["delete_declared_entity_ontology_entities__entity_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -8258,6 +8273,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Declare Ontology Link
+         * @description Declare a link between two types (ON-7): a business verb and the column each side joins on. Both columns
+         *     must be properties of their type, the name must be free on the from-side and the reverse name on the to-side
+         *     (a path segment names one thing), and no found link may already join the same columns — name that one instead.
+         *     Each side is counted (a side is "1" when its key is unique — the cardinality, ON-0a's law) and the share of
+         *     from-keys the to-side holds is measured before anything is written; the compiler follows the link exactly as
+         *     it would a found one: measured, and not N:N. No model call.
+         */
+        post: operations["declare_ontology_link_ontology_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/links/{relationship_id}": {
         parameters: {
             query?: never;
@@ -8274,7 +8314,11 @@ export interface paths {
          */
         put: operations["name_ontology_link_ontology_links__relationship_id__put"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete Declared Link
+         * @description Withdraw a DECLARED link (ON-7). A link the builder found is not deletable here (404 says so).
+         */
+        delete: operations["delete_declared_link_ontology_links__relationship_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -13604,6 +13648,8 @@ export interface components {
          * @description ON-1b — a further binding: a table or keyed SELECT joined to the object on its key.
          */
         _BindingSpec: {
+            /** Absorb */
+            absorb?: boolean | null;
             /** Frames */
             frames?: {
                 [key: string]: {
@@ -13617,10 +13663,16 @@ export interface components {
              * @default static
              * @enum {string}
              */
-            kind: "static" | "timeseries";
+            kind: "static" | "timeseries" | "detail";
             /** Properties */
             properties?: {
                 [key: string]: string;
+            } | null;
+            /** Rollups */
+            rollups?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
             } | null;
             /** Sql */
             sql?: string | null;
@@ -13764,6 +13816,60 @@ export interface components {
             /** Model */
             model: string;
         };
+        /**
+         * _DeclaredBacking
+         * @description ON-7 — the source whose rows ARE a declared type's objects.
+         */
+        _DeclaredBacking: {
+            /** Primary Key */
+            primary_key: string;
+            /** Sql */
+            sql?: string | null;
+            /** Table */
+            table?: string | null;
+        };
+        /**
+         * _DeclaredEntity
+         * @description ON-7 — a business entity declared by a person (or an explorer, ON-7b): the noun first, the table bound
+         *     into it.
+         */
+        _DeclaredEntity: {
+            backing: components["schemas"]["_DeclaredBacking"];
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name: string;
+            /** Domain */
+            domain?: string | null;
+            /** Entity Type */
+            entity_type?: ("reference_data" | "business_object" | "event" | "standalone") | null;
+            /** Id */
+            id: string;
+            /** Origin */
+            origin?: ("human" | "model") | null;
+        };
+        /**
+         * _DeclaredLink
+         * @description ON-7 — a link declared between two types: a business verb and the column each side joins on.
+         */
+        _DeclaredLink: {
+            /** Cardinality */
+            cardinality?: ("1:1" | "1:N" | "N:1" | "N:N") | null;
+            /** From Column */
+            from_column: string;
+            /** From Entity */
+            from_entity: string;
+            /** Name */
+            name: string;
+            /** Origin */
+            origin?: ("human" | "model") | null;
+            /** Reverse Name */
+            reverse_name?: string | null;
+            /** To Column */
+            to_column: string;
+            /** To Entity */
+            to_entity: string;
+        };
         /** _DecompileRequest */
         _DecompileRequest: {
             /**
@@ -13776,6 +13882,8 @@ export interface components {
         };
         /** _EntityOverride */
         _EntityOverride: {
+            /** Absorbed Into */
+            absorbed_into?: string | null;
             /** Active Filter */
             active_filter?: string | null;
             backing?: components["schemas"]["_BackingSpec"] | null;
@@ -27877,6 +27985,42 @@ export interface operations {
             };
         };
     };
+    declare_ontology_entity_ontology_entities_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredEntity"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     merge_ontology_entities_ontology_entities_merge_post: {
         parameters: {
             query?: {
@@ -27930,6 +28074,40 @@ export interface operations {
                 "application/json": components["schemas"]["_EntityOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_declared_entity_ontology_entities__entity_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -28516,6 +28694,42 @@ export interface operations {
             };
         };
     };
+    declare_ontology_link_ontology_links_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredLink"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     name_ontology_link_ontology_links__relationship_id__put: {
         parameters: {
             query?: {
@@ -28533,6 +28747,40 @@ export interface operations {
                 "application/json": components["schemas"]["_LinkName"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_declared_link_ontology_links__relationship_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                relationship_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

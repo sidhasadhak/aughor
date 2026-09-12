@@ -132,7 +132,7 @@ def link_row(h: ObjectLink) -> dict:
     problem = link_problem(h)
     rel = h.rel
     row = {"name": h.name, "business_name": h.business, "business_name_source": rel.business_name_source(),
-           "verb": rel.verb, "relationship": rel.id,
+           "verb": rel.verb, "relationship": rel.id, "origin": rel.origin,
            "direction": "out" if rel.from_entity == h.source.id else "in",
            "to": h.target.api_name, "to_type": h.target.id, "to_name": h.target.display_name or h.target.id,
            "cardinality": h.label, "measured": rel.measured_cardinality is not None,

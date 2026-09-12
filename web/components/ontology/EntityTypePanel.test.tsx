@@ -18,12 +18,14 @@ import type { ObjectTypeDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getObjectType: async () => detail,
   addBinding: (...a: unknown[]) => addBinding(...a),
   nameLink: (...a: unknown[]) => nameLink(...a),
+  declareLink: (...a: unknown[]) => declareLink(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -66,9 +68,16 @@ const detail: ObjectTypeDetail = {
   summary: "Product — 1,000 objects.",
 };
 
+const rows = [
+  { object_type: "product", id: "products", display_name: "Product" },
+  { object_type: "brand", id: "Brand", display_name: "Brand" },
+].map((t) => ({ ...t, role: "business_object", domain: "", key: `${t.object_type}_id`, key_verified: true, rows: 1,
+                table: t.object_type, display_property: "", display_is_key: true, properties: 1, bindings: 1,
+                proposed_bindings: 0, links: 0, traversable_links: 0, actions: 0, metrics: 0 }));
+
 function panel() {
   return render(
-    <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={[]} version={0}
+    <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
       onOpen={() => {}} onChanged={() => {}} />);
 }
 
@@ -174,5 +183,74 @@ describe("EntityTypePanel — frames over a timeseries binding's readings", () =
     await user.click(screen.getByRole("button", { name: "Bind" }));
     await waitFor(() => expect(addBinding).toHaveBeenCalled());
     expect(addBinding.mock.calls[0][3]).not.toHaveProperty("frames");
+  });
+});
+
+describe("EntityTypePanel — ON-7: a part, and a link the builder did not find", () => {
+  beforeEach(() => {
+    addBinding.mockClear();
+    declareLink.mockClear();
+  });
+
+  it("declares a DETAIL binding with its rollups, and folds the table's type in as a part", async () => {
+    const user = userEvent.setup();
+    panel();
+    await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
+    await user.type(screen.getByLabelText("Binding name"), "lines");
+    await user.type(screen.getByLabelText("Table"), "order_items");
+    await user.selectOptions(screen.getByLabelText("Binding kind"), "detail");
+
+    // a detail binding with no rollup supplies nothing: the form refuses before the round trip
+    expect(screen.getByRole("button", { name: "Bind" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Rollup 1 property"), "units");
+    await user.type(screen.getByLabelText("Rollup 1 column"), "quantity");
+    await user.click(screen.getByRole("button", { name: "+ Add a rollup" }));
+    await user.type(screen.getByLabelText("Rollup 2 property"), "line_count");
+    await user.selectOptions(screen.getByLabelText("Rollup 2 agg"), "count");
+    await user.type(screen.getByLabelText("Rollup 2 column"), "item_id");
+    expect(screen.getByLabelText("Absorb its type as a part")).toBeChecked();
+
+    await user.click(screen.getByRole("button", { name: "Bind" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "detail", key: "product_id", table: "order_items",
+      rollups: { units: { column: "quantity", agg: "sum" }, line_count: { column: "item_id", agg: "count" } },
+      absorb: true,
+    });
+  });
+
+  it("sends no absorb on a keyed SELECT — there is no table whose type could fold in", async () => {
+    const user = userEvent.setup();
+    panel();
+    await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
+    await user.type(screen.getByLabelText("Binding name"), "lines");
+    await user.selectOptions(screen.getByLabelText("Source kind"), "query");
+    await user.type(screen.getByLabelText("SELECT"), "SELECT product_id, quantity FROM order_items");
+    await user.selectOptions(screen.getByLabelText("Binding kind"), "detail");
+    expect(screen.queryByLabelText("Absorb its type as a part")).toBeNull();
+    await user.type(screen.getByLabelText("Rollup 1 property"), "units");
+    await user.type(screen.getByLabelText("Rollup 1 column"), "quantity");
+    await user.click(screen.getByRole("button", { name: "Bind" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "detail", key: "product_id", sql: "SELECT product_id, quantity FROM order_items",
+      rollups: { units: { column: "quantity", agg: "sum" } },
+    });
+  });
+
+  it("declares a relationship by ENTITY ids, with the verb and the column on each side", async () => {
+    const user = userEvent.setup();
+    panel();
+    await user.click(await screen.findByRole("button", { name: "Add a relationship" }));
+    await user.type(screen.getByLabelText("Link verb"), "made_by");
+    await user.selectOptions(screen.getByLabelText("Link target type"), "brand");
+    expect(screen.getByRole("button", { name: "Declare" })).toBeDisabled();
+    await user.type(screen.getByLabelText("Link column on this type"), "brand_id");
+    await user.type(screen.getByLabelText("Link column on the other type"), "brand_id");
+    await user.click(screen.getByRole("button", { name: "Declare" }));
+    await waitFor(() => expect(declareLink).toHaveBeenCalled());
+    expect(declareLink.mock.calls[0]).toEqual(["c1", {
+      from_entity: "products", to_entity: "Brand", name: "made_by", from_column: "brand_id", to_column: "brand_id",
+    }, "s"]);
   });
 });
