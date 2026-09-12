@@ -18,7 +18,15 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
-from aughor.ontology.timeseries import HISTORY_ROWS, history_sql, latest_columns, latest_from, latest_note
+from aughor.ontology.timeseries import (
+    HISTORY_ROWS,
+    frame_note,
+    history_sql,
+    latest_columns,
+    latest_from,
+    latest_note,
+    reduced_columns,
+)
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.display import display_of
 from aughor.ontology.models import Binding, EntityProperty, OntologyEntity, OntologyGraph
@@ -137,7 +145,7 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
             continue
         # A timeseries binding reads its whole reduced row, so the time column is on it even when no property is
         # supplied from that column — the value is only half the fact, and WHEN is the other half.
-        read = latest_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
+        read = reduced_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
         where = "" if latest else f"WHERE b.{quote_ident(binding.key)} = {literal} "
         result = _read(db, f"SELECT {', '.join(f'b.{quote_ident(c)}' for c in read)} FROM {source_sql} "
                            f"{where}LIMIT 2", f"{entity.id} {pk!r} through {binding.name}")
@@ -163,9 +171,13 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
                                "binding": {"name": binding.name, "kind": binding.kind, "source": source,
                                            "column": column,
                                            **({"time_column": binding.time_column, "at": at,
-                                               "previous": before.get(column),
-                                               "previous_at": before.get(binding.time_column),
-                                               "note": latest_note(binding)} if latest else {})}})
+                                               "note": latest_note(binding)} if latest else {}),
+                                           # A frame is already a statement about a span of readings: "what it
+                                           # was before" is not a second fact about it, it is a different frame.
+                                           **({"frame": binding.frames[name].describe(),
+                                               "note": frame_note(binding, name)} if name in binding.frames else
+                                              {"previous": before.get(column),
+                                               "previous_at": before.get(binding.time_column)} if latest else {})}})
         if history is not None:
             series.append({**history, "latest_at": at})
     return properties, series, caveats

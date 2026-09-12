@@ -75,7 +75,8 @@ def _further_binding(entity: OntologyEntity, binding: Binding) -> dict:
            "source": binding.source, "verified": binding.verified, "rows": binding.rows,
            "non_null": binding.non_null, "distinct": binding.distinct, "objects": binding.objects,
            "covered": binding.covered, "orphans": binding.orphans, "note": binding.note,
-           "supplies": len(binding.properties), "skipped": dict(binding.skipped), "usable": not problem}
+           "supplies": len(binding.properties), "skipped": dict(binding.skipped), "usable": not problem,
+           "frames": {name: f.describe() for name, f in binding.frames.items()}}
     if problem:
         row["why_not"] = problem
     return row
@@ -211,6 +212,9 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
                                "data_type": p.data_type, "unit": p.unit, "is_key": False, "null_rate": p.null_rate,
                                "description": p.description,
                                "source": {**_source(row, column_of(bound, name)), "kind": bound.kind,
+                                          # ON-5 — a frame has no column of its own: it is computed over the
+                                          # readings, so what it IS is said instead of where it is read from.
+                                          **({"frame": bound.frames[name].describe()} if name in bound.frames else {}),
                                           **({} if row["usable"] else {"read": False})}})
     for edits in overlay_properties(entity, overlay).values():
         properties.append({"name": edits[0].column, "display_name": edits[0].column, "role": "overlay",

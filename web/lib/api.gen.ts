@@ -13604,6 +13604,12 @@ export interface components {
          * @description ON-1b — a further binding: a table or keyed SELECT joined to the object on its key.
          */
         _BindingSpec: {
+            /** Frames */
+            frames?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            } | null;
             /** Key */
             key: string;
             /**

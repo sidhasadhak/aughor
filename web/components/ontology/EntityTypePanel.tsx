@@ -29,6 +29,7 @@ import {
   nameLink,
   removeBinding,
   type BindingSpec,
+  type FrameSpec,
   type ObjectTypeDetail,
   type PropertySource,
   type ProposedBinding,
@@ -232,6 +233,10 @@ function sourceText(source: PropertySource): { short: string; full: string } {
   const table = source.table ?? source.binding;
   const bare = table.split(".").pop() ?? table;
   const column = source.column ?? "";
+  // ON-5 — a frame has no column: it is computed over the readings, so the row says what it is.
+  if (source.frame) {
+    return { short: source.frame, full: `${source.frame} · the timeseries binding ${source.binding}` };
+  }
   const how = source.kind
     ? ` · the ${source.kind} binding ${source.binding}`
       + (source.read === false ? ", not read yet" : source.kind === "timeseries" ? ", its latest value" : "")
@@ -282,6 +287,21 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
 /** A further binding's verdict: read by the compiler, and HOW — a timeseries binding is read as each object's
  *  latest value (ON-5), which is a different claim from a static one — or the reason it is not read. The backing
  *  carries none. */
+/** ON-5 — the frames a binding computes, each in the declaration's own words. */
+function FrameLines({ binding }: { binding: TypeBinding }) {
+  const frames = Object.entries(binding.frames ?? {});
+  if (frames.length === 0) return null;
+  return (
+    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3 }}>
+      {frames.map(([name, said]) => (
+        <div key={name} style={{ overflowWrap: "anywhere" }}>
+          <span style={MONO}>{name}</span> — {said}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function bindingVerdict(b: TypeBinding): [string, string] | null {
   if (b.primary) return null;
   if (b.usable) {
@@ -340,6 +360,7 @@ function BindingRow({ binding: b, first, busy, onRemove }: {
         <dt style={term}>Supplies</dt>
         <dd style={value}>{countNoun(b.supplies, "property", "properties")}</dd>
       </dl>
+      <FrameLines binding={b} />
       {!b.primary && (b.why_not || b.note) && (
         <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{b.why_not || b.note}</p>
       )}
@@ -438,12 +459,16 @@ function DeclareBinding({ detail, busy, onDeclare }: {
   const [key, setKey] = useState(detail.key.property);
   const [kind, setKind] = useState<"static" | "timeseries">("static");
   const [timeColumn, setTimeColumn] = useState("");
-  const ready = !!name.trim() && !!source.trim() && !!key.trim() && (kind === "static" || !!timeColumn.trim());
+  const [frames, setFrames] = useState<FrameRow[]>([]);
+  const usable = kind === "timeseries" ? frames.filter((f) => f.name.trim() && f.column.trim()) : [];
+  const ready = !!name.trim() && !!source.trim() && !!key.trim() && (kind === "static" || !!timeColumn.trim())
+    && usable.every((f) => f.what !== "avg-trailing" || Number(f.window) >= 1);
   const declare = () => {
     const spec: BindingSpec = { kind, key: key.trim() };
     if (reads === "table") spec.table = source.trim();
     else spec.sql = source.trim();
     if (kind === "timeseries") spec.time_column = timeColumn.trim();
+    if (usable.length) spec.frames = Object.fromEntries(usable.map((f) => [f.name.trim(), frameSpec(f)]));
     onDeclare(name.trim(), spec);
   };
   if (!open) {
@@ -495,8 +520,68 @@ function DeclareBinding({ detail, busy, onDeclare }: {
         </Button>
         <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
       </div>
+      {kind === "timeseries" && (
+        <div style={{ marginTop: 8 }}>
+          <p className="aug-fs-xs" style={{ margin: "0 0 4px", color: "var(--t3)", lineHeight: 1.45 }}>
+            Frames over those readings — each becomes a property of the type, computed across the object&rsquo;s own
+            readings and read at its latest one.
+          </p>
+          {frames.map((f, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+              <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={f.name}
+                aria-label={`Frame ${i + 1} property`} placeholder="avg_price_3"
+                onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+              <select className="aug-fs-xs" style={SELECT} value={f.what} aria-label={`Frame ${i + 1} shape`}
+                onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, what: e.target.value as Shape } : x))}>
+                <option value="avg-trailing">average of the last N</option>
+                <option value="sum-cumulative">total to date</option>
+                <option value="min-all">lowest ever</option>
+                <option value="max-all">highest ever</option>
+                <option value="count-all">how many readings</option>
+                <option value="previous">the reading before</option>
+              </select>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>of</span>
+              <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={f.column}
+                aria-label={`Frame ${i + 1} column`} placeholder="price"
+                onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, column: e.target.value } : x))} />
+              {f.what === "avg-trailing" && (
+                <input className="aug-fs-xs" style={{ ...FIELD, width: 60 }} value={f.window} type="number" min={1}
+                  aria-label={`Frame ${i + 1} readings`}
+                  onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, window: e.target.value } : x))} />
+              )}
+              <Button variant="ghost" size="xs" onClick={() => setFrames((fs) => fs.filter((_, j) => j !== i))}>
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button variant="ghost" size="xs" style={{ marginTop: 4 }}
+            onClick={() => setFrames((fs) => [...fs, { name: "", what: "avg-trailing", column: "", window: "3" }])}>
+            + Add a frame
+          </Button>
+        </div>
+      )}
     </div>
   );
+}
+
+/** The frames a person can declare from here, each a shape they would recognise rather than the algebra's
+ *  vocabulary. The API takes the full algebra; this offers the frames people actually ask for. */
+type Shape = "avg-trailing" | "sum-cumulative" | "min-all" | "max-all" | "count-all" | "previous";
+
+interface FrameRow {
+  name: string;
+  what: Shape;
+  column: string;
+  window: string;
+}
+
+function frameSpec(row: FrameRow): FrameSpec {
+  const column = row.column.trim();
+  if (row.what === "previous") return { column, offset: 1 };
+  const [agg, range] = row.what.split("-") as [FrameSpec["agg"], FrameSpec["range"]];
+  return range === "trailing"
+    ? { column, agg, range, window: Math.max(1, Number(row.window) || 1) }
+    : { column, agg, range };
 }
 
 function LinkSentence({ detail, link, onOpen }: { detail: ObjectTypeDetail; link: TypeLink; onOpen: (t: string) => void }) {

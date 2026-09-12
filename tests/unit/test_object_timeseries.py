@@ -355,3 +355,122 @@ def test_an_object_no_reading_reaches_shows_the_property_empty_rather_than_someo
     assert bound["level"]["value"] is None and bound["flag"]["value"] is None
     assert page.timeseries[0]["rows"] == []
 
+
+
+# ── frames over the readings (ON-5's second slice) ──────────────────────────────────────────
+#
+# The latest value answers "what is it now" and nothing about how it got there. `window_measures` has
+# compiled trailing, cumulative and LAG since O5; the object door could not ASK for one, because a frame
+# has to be computed on every reading and THEN read at the latest one, and window functions do not nest.
+# These hold the two-layer reduction to hand-written references — and to the rule that makes it safe: the
+# frame is computed inside the object's own partition, over the readings the reduction will reduce.
+
+FRAMED = {**EVENTS, "frames": {
+    "backlog_trailing_3": {"column": "backlog_hours", "agg": "avg", "range": "trailing", "window": 3},
+    "backlog_to_date": {"column": "backlog_hours", "agg": "sum", "range": "cumulative"},
+    "backlog_before": {"column": "backlog_hours", "offset": 1},
+}}
+
+#: Each order's frames, computed without the reduction: the last three readings by the declaration's own
+#: ordering, everything to date, and the one before the last.
+FRAME_REFERENCE = """
+WITH ranked AS (
+  SELECT order_id, backlog_hours,
+         ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY event_at DESC, event DESC, backlog_hours DESC) AS r
+  FROM order_events
+)
+SELECT (SELECT ROUND(AVG(backlog_hours), 6) FROM ranked WHERE order_id = '{order}' AND r <= 3),
+       (SELECT ROUND(SUM(backlog_hours), 6) FROM ranked WHERE order_id = '{order}'),
+       (SELECT backlog_hours FROM ranked WHERE order_id = '{order}' AND r = 2)
+"""
+
+
+def test_a_frame_over_the_readings_is_read_at_the_latest_one_and_equals_a_hand_reference(db, graph):
+    order = bind(graph, db, "Order", "events", FRAMED)
+    [binding] = order.bindings
+    assert binding.verified is True and binding_problem(order, binding) == ""
+
+    page = get_object(graph, db, "order", "O000001", overlay=[])
+    got = {p["name"]: p["value"] for p in page.properties}
+    want = db.execute("reference", FRAME_REFERENCE.format(order="O000001")).rows[0]
+
+    assert round(float(got["backlog_trailing_3"]), 6) == round(float(want[0]), 6)
+    assert round(float(got["backlog_to_date"]), 6) == round(float(want[1]), 6)
+    assert round(float(got["backlog_before"]), 6) == round(float(want[2]), 6)
+
+
+def test_a_frame_is_computed_inside_its_own_object_and_is_still_one_row_per_object(db, graph):
+    """The failure this shape exists to prevent: a frame computed across every object's readings, or a
+    reduction that multiplies the objects it joins to."""
+    bind(graph, db, "Order", "events", FRAMED)
+    orders, joined = ints(db, "SELECT (SELECT COUNT(*) FROM orders), "
+                              "(SELECT COUNT(*) FROM " + latest_from(
+                                  graph.entities["Order"].bindings[0], "b") + ")")
+    assert joined <= orders                      # the reduction can neither multiply nor invent objects
+
+    # Two orders' trailing averages differ from the average over BOTH — the partition is real.
+    both, apart = db.execute("reference", """
+        SELECT (SELECT ROUND(AVG(backlog_hours), 4) FROM (
+                  SELECT backlog_hours FROM order_events WHERE order_id IN ('O000001', 'O000002')
+                  ORDER BY event_at DESC LIMIT 3)),
+               (SELECT COUNT(DISTINCT x) FROM (
+                  SELECT ROUND(AVG(backlog_hours), 4) AS x FROM (
+                    SELECT order_id, backlog_hours,
+                           ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY event_at DESC, event DESC,
+                                              backlog_hours DESC) AS r
+                    FROM order_events WHERE order_id IN ('O000001', 'O000002')) WHERE r <= 3 GROUP BY order_id))
+    """).rows[0]
+    assert int(apart) == 2 and both is not None
+
+
+def test_a_frame_property_compiles_into_an_object_query_and_filters_by_it(db, graph):
+    """A frame is a per-object scalar, so the compiler measures and filters it exactly as it does any other
+    property the binding supplies — which is the answer to "what does a frame mean across an object set"."""
+    bind(graph, db, "Order", "events", FRAMED)
+    compiled = compile_({"object_type": "order",
+                         "filters": [{"path": "backlog_trailing_3", "op": ">", "value": 50}],
+                         "measures": [{"name": "n", "agg": "count"}]}, graph)
+    [got] = ints(db, compiled.sql)
+    [want] = ints(db, """
+        SELECT COUNT(*) FROM (
+          SELECT order_id, AVG(backlog_hours) AS m FROM (
+            SELECT order_id, backlog_hours,
+                   ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY event_at DESC, event DESC,
+                                      backlog_hours DESC) AS r
+            FROM order_events) WHERE r <= 3 GROUP BY order_id) WHERE m > 50
+    """)
+    assert got == want and got > 0
+
+
+def test_what_a_frame_says_it_is_reaches_the_page_and_the_type(db, graph):
+    bind(graph, db, "Order", "events", FRAMED)
+    page = get_object(graph, db, "order", "O000001", overlay=[])
+    framed = next(p for p in page.properties if p["name"] == "backlog_trailing_3")
+
+    assert framed["binding"]["frame"] == "the avg of backlog_hours over the trailing 3 readings"
+    assert "read at the object's latest reading" in framed["binding"]["note"]
+    assert "previous" not in framed["binding"]      # a frame is already a span; "before" is a different frame
+    assert framed["description"] == "the avg of backlog_hours over the trailing 3 readings"
+
+
+def test_a_frame_that_cannot_mean_anything_is_refused_before_it_is_written(db, graph):
+    from aughor.ontology.bindings import bind_binding, describe_with
+
+    def refuse(frames: dict) -> str:
+        return bind_binding(graph.entities["Order"], "events", {**EVENTS, "frames": frames},
+                            graph, describe_with(db))["note"]
+
+    assert "needs `window`" in refuse({"f": {"column": "backlog_hours", "range": "trailing"}})
+    assert "spans no fixed number" in refuse({"f": {"column": "backlog_hours", "range": "all", "window": 3}})
+    assert "a VALUE, not an aggregate" in refuse(
+        {"f": {"column": "backlog_hours", "offset": 1, "agg": "sum"}})
+    assert "unknown agg" in refuse({"f": {"column": "backlog_hours", "agg": "median", "window": 3}})
+    assert "which its source does not have" in refuse({"f": {"column": "nope", "range": "all"}})
+    assert "readings BACK" in refuse({"f": {"column": "backlog_hours", "offset": 0}})
+    # A name the type already carries is refused rather than shadowing it.
+    assert "status" in refuse({"status": {"column": "backlog_hours", "range": "all"}})
+    # And a frame is meaningless on a binding that holds one row per object.
+    flat = bind_binding(graph.entities["Order"], "flags",
+                        {"table": "order_flags", "key": "order_id", "kind": "static",
+                         "frames": {"f": {"column": "is_gift", "range": "all"}}}, graph, describe_with(db))
+    assert "a frame reads the readings of a timeseries binding" in flat["note"]

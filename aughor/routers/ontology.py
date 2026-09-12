@@ -49,6 +49,9 @@ class _BindingSpec(BaseModel):
     #: ``{property: column}``. Absent, every column but the key is supplied under its own name, and a name the type
     #: already uses is skipped with the reason.
     properties: Optional[dict[str, str]] = None
+    #: ON-5 — ``{property: {column, agg, range, window, offset}}``: frames over a timeseries binding's readings,
+    #: each becoming a property of the type read at the object's latest reading.
+    frames: Optional[dict[str, dict]] = None
 
 
 class _EntityOverride(BaseModel):

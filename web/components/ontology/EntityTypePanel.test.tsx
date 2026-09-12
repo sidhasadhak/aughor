@@ -127,3 +127,52 @@ describe("EntityTypePanel — declaring what the builder cannot propose", () => 
     expect(nameLink.mock.calls[0]).toEqual(["c1", "rel_product_order_item", "sold_as", "s"]);
   });
 });
+
+describe("EntityTypePanel — frames over a timeseries binding's readings", () => {
+  beforeEach(() => addBinding.mockClear());
+
+  it("declares the frames beside the binding, in the algebra the API takes", async () => {
+    const user = userEvent.setup();
+    panel();
+    await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
+    await user.type(screen.getByLabelText("Binding name"), "price_history");
+    await user.type(screen.getByLabelText("Table"), "price_history");
+    await user.selectOptions(screen.getByLabelText("Binding kind"), "timeseries");
+    await user.type(screen.getByLabelText("Time column"), "observed_at");
+
+    await user.click(screen.getByRole("button", { name: "+ Add a frame" }));
+    await user.type(screen.getByLabelText("Frame 1 property"), "avg_price_3");
+    await user.type(screen.getByLabelText("Frame 1 column"), "price");
+    await user.clear(screen.getByLabelText("Frame 1 readings"));
+    await user.type(screen.getByLabelText("Frame 1 readings"), "3");
+
+    await user.click(screen.getByRole("button", { name: "+ Add a frame" }));
+    await user.type(screen.getByLabelText("Frame 2 property"), "price_before");
+    await user.selectOptions(screen.getByLabelText("Frame 2 shape"), "previous");
+    await user.type(screen.getByLabelText("Frame 2 column"), "price");
+
+    await user.click(screen.getByRole("button", { name: "Bind" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({
+      kind: "timeseries", key: "product_id", table: "price_history", time_column: "observed_at",
+      frames: {
+        // "the reading before" carries neither an aggregate nor a window: it is one row, not a span.
+        avg_price_3: { column: "price", agg: "avg", range: "trailing", window: 3 },
+        price_before: { column: "price", offset: 1 },
+      },
+    });
+  });
+
+  it("sends no frames on a static binding — a frame over one row is that row", async () => {
+    const user = userEvent.setup();
+    panel();
+    await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
+    await user.type(screen.getByLabelText("Binding name"), "flags");
+    await user.type(screen.getByLabelText("Table"), "order_flags");
+
+    expect(screen.queryByRole("button", { name: "+ Add a frame" })).toBeNull();
+    await user.click(screen.getByRole("button", { name: "Bind" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).not.toHaveProperty("frames");
+  });
+});

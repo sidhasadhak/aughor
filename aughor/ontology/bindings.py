@@ -38,7 +38,8 @@ from typing import Any, Callable, Optional
 from aughor.ontology.backing import object_from
 from aughor.ontology.cardinality import quote_ident, quote_table
 from aughor.ontology.display import key_of
-from aughor.ontology.models import Backing, Binding, EntityProperty, OntologyEntity, OntologyGraph
+from aughor.ontology.models import Backing, Binding, EntityProperty, Frame, OntologyEntity, OntologyGraph
+from aughor.ontology.window_measures import RANGES
 
 logger = logging.getLogger(__name__)
 
@@ -377,6 +378,96 @@ def supply(columns: dict[str, EntityProperty], key: str, taken: dict[str, str],
     return properties, renamed, skipped, ""
 
 
+# ── frames over a timeseries binding's readings (ON-5) ──────────────────────────────
+
+#: What a frame may do to the readings inside it.
+AGGS: tuple[str, ...] = ("sum", "avg", "min", "max", "count")
+
+
+def frame_problem(name: str, raw: Any) -> str:
+    """Why a declared frame cannot be read as written, or "" — its shape only; its column is the warehouse's to
+    confirm. Refusals are sentences because a frame is declared by a person, and a frame that quietly did
+    something else would be indistinguishable from one that worked."""
+    if not _COLUMN.match(name or ""):
+        return f"'{name}' is not a property name — letters, digits and underscores"
+    if not isinstance(raw, dict):
+        return f"frame '{name}' is a mapping with `column`, and a `range` over the readings"
+    if not _COLUMN.match(str(raw.get("column") or "").strip()):
+        return f"frame '{name}' names the binding's column it reads in `column`"
+    offset, window = raw.get("offset"), raw.get("window")
+    if offset is not None:
+        # A reading N back is one row, not a span: it uses neither an aggregate nor a window, and saying so is
+        # better than accepting words the compiler would then ignore.
+        if not isinstance(offset, int) or isinstance(offset, bool) or offset < 1:
+            return f"frame '{name}' counts readings BACK in `offset` — a whole number of at least 1"
+        if raw.get("agg"):
+            return (f"frame '{name}' declares both `offset` and `agg` — a reading N back is a VALUE, not an "
+                    f"aggregate; drop one")
+        if window is not None:
+            return f"frame '{name}' declares both `offset` and `window` — a reading N back spans no window"
+        return ""
+    range_ = str(raw.get("range") or "trailing")
+    if range_ not in RANGES:
+        return f"frame '{name}' has an unknown range {range_!r} — known: {', '.join(RANGES)}"
+    if str(raw.get("agg") or "avg") not in AGGS:
+        return f"frame '{name}' has an unknown agg {raw.get('agg')!r} — known: {', '.join(AGGS)}"
+    if range_ in ("trailing", "leading") and not (isinstance(window, int) and not isinstance(window, bool)
+                                                  and window >= 1):
+        return f"frame '{name}' is {range_} and needs `window` — how many readings, including this one"
+    if range_ not in ("trailing", "leading") and window is not None:
+        return f"frame '{name}' is {range_}, which spans no fixed number of readings — drop `window`"
+    return ""
+
+
+def normalized_frame(raw: dict) -> dict:
+    """One frame as the overrides tree stores it: trimmed, the parts its shape does not use dropped. Idempotent.
+
+    A frame with an `offset` reads ONE row, so it carries no aggregate and no window and its range is `current` —
+    which is what `compile_measure` does with a LAG whatever the range says."""
+    column = str(raw.get("column") or "").strip()
+    if raw.get("offset") is not None:
+        return {"column": column, "range": "current", "offset": int(raw["offset"])}
+    out: dict = {"column": column, "range": str(raw.get("range") or "trailing"),
+                 "agg": str(raw.get("agg") or "avg")}
+    if out["range"] in ("trailing", "leading"):
+        out["window"] = int(raw["window"])
+    return out
+
+
+def frame_properties(frames: dict, columns: dict[str, EntityProperty], taken: dict[str, str],
+                     supplied: dict[str, EntityProperty]) -> tuple[dict[str, Frame], dict[str, EntityProperty], str]:
+    """``(frames, properties, problem)`` — a frame becomes a property of the type like any other, computed in the
+    reduction rather than read from a column.
+
+    What it borrows is what it can TRACE: a frame over one known column keeps that column's type and unit, because
+    the average of a price in EUR is a price in EUR — the one exception is `count`, which counts readings and is a
+    number of nothing. Nothing is inferred beyond that (ON-1b's law for a computed column), and the description is
+    the frame in the declaration's own words rather than a name someone has to decode."""
+    by_lower = {str(c).lower(): str(c) for c in columns}
+    out: dict[str, Frame] = {}
+    properties: dict[str, EntityProperty] = {}
+    for name, raw in frames.items():
+        name = str(name).strip()
+        frame = Frame(**normalized_frame(raw))
+        actual = by_lower.get(frame.column.lower())
+        if actual is None:
+            return {}, {}, (f"frame '{name}' reads '{frame.column}', which its source does not have — its "
+                            f"columns: {', '.join(sorted(by_lower.values()))[:200]}")
+        frame = frame.model_copy(update={"column": actual})
+        if name.lower() in taken:
+            return {}, {}, f"frame '{name}': {taken[name.lower()]}"
+        if any(p.lower() == name.lower() for p in {**supplied, **properties}):
+            return {}, {}, f"frame '{name}' is already supplied by this binding as a column — name it differently"
+        profile = columns[actual]
+        base = (EntityProperty(name=name) if frame.agg == "count" and not frame.offset
+                else profile.model_copy(update={"unit": profile.unit}))
+        properties[name] = base.model_copy(update={
+            "name": name, "display_name": _title(name), "is_primary_key": False, "is_derived": True,
+            "semantic_type": "measure", "description": frame.describe()})
+        out[name] = frame
+    return out, properties, ""
+
+
 # ── a person's binding: its spec, its bind against the warehouse, its rebuild at read time ──
 
 def spec_problem(name: str, spec: Any) -> str:
@@ -407,6 +498,17 @@ def spec_problem(name: str, spec: Any) -> str:
     if mapping is not None and (not isinstance(mapping, dict)
                                 or not all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items())):
         return "`properties` maps a property name to one of the binding's columns"
+    frames = spec.get("frames")
+    if frames is not None:
+        if not isinstance(frames, dict):
+            return "`frames` maps a property name to a frame over the binding's readings"
+        if frames and kind != "timeseries":
+            return ("a frame reads the readings of a timeseries binding — a static binding holds one row per "
+                    "object, and a frame over one row is that row")
+        for frame_name, raw in frames.items():
+            problem = frame_problem(str(frame_name), raw)
+            if problem:
+                return problem
     return ""
 
 
@@ -424,6 +526,9 @@ def normalized_spec(spec: dict) -> dict:
     mapping = spec.get("properties")
     if isinstance(mapping, dict) and mapping:
         out["properties"] = {str(k).strip(): str(v).strip() for k, v in mapping.items()}
+    frames = spec.get("frames")
+    if isinstance(frames, dict) and frames:
+        out["frames"] = {str(k).strip(): normalized_frame(v) for k, v in frames.items()}
     return out
 
 
@@ -438,7 +543,10 @@ def binding_spec(binding: Binding) -> dict:
     if binding.time_column:
         spec["time_column"] = binding.time_column
     if binding.columns:
-        spec["properties"] = {name: column_of(binding, name) for name in binding.properties}
+        spec["properties"] = {name: column_of(binding, name) for name in binding.properties
+                              if name not in binding.frames}
+    if binding.frames:
+        spec["frames"] = {name: normalized_frame(f.model_dump()) for name, f in binding.frames.items()}
     return spec
 
 
@@ -501,13 +609,21 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
                                                    strict=True)
     if problem:
         return {"bound": False, "note": problem, "spec": spec}
-    if not properties:
+    # A binding may supply nothing BUT frames — "the trailing average of a price" is a property the source has no
+    # column for, and demanding a pass-through column beside it would be arbitrary.
+    profiles = column_profiles(graph, spec.get("table"), columns, spec.get("sql"))
+    frames, framed, problem = frame_properties(spec.get("frames") or {}, profiles,
+                                               taken_names(graph, entity, others), properties)
+    if problem:
+        return {"bound": False, "note": problem, "spec": spec}
+    if not (properties or framed):
         return {"bound": False, "spec": spec,
                 "note": "it would supply no property" + (f" — every column's name is taken on {entity.id} "
                                                          f"({', '.join(sorted(skipped))}); name them in `properties`"
                                                          if skipped else "")}
     return {"bound": True, "note": "", "spec": spec, "columns": {str(c): str(t or "") for c, t in columns.items()},
-            "supplies": {p: renamed.get(p, p) for p in properties}, "skipped": skipped}
+            "supplies": {**{p: renamed.get(p, p) for p in properties},
+                         **{name: f.describe() for name, f in frames.items()}}, "skipped": skipped}
 
 
 def binding_block(entries: dict) -> dict:
@@ -537,10 +653,16 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
             skipped.append(f"{name}: {entry.get('note') or 'not bound against the warehouse since it was written'}")
             continue
         columns = entry.get("columns") if isinstance(entry.get("columns"), dict) else {}
-        properties, renamed, lost, _ = supply(column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
-                                              spec["key"], taken_names(graph, entity, out), spec.get("properties"))
+        profiles = column_profiles(graph, spec.get("table"), columns, spec.get("sql"))
+        taken = taken_names(graph, entity, out)
+        properties, renamed, lost, _ = supply(profiles, spec["key"], taken, spec.get("properties"))
+        frames, framed, frame_problem_note = frame_properties(spec.get("frames") or {}, profiles, taken, properties)
+        if frame_problem_note:
+            skipped.append(f"{name}: {frame_problem_note}")
+            continue
         binding = Binding(name=name, kind=spec["kind"], table=spec.get("table"), sql=spec.get("sql"), key=spec["key"],
-                          time_column=spec.get("time_column", ""), properties=properties, columns=renamed,
+                          time_column=spec.get("time_column", ""), properties={**properties, **framed},
+                          columns=renamed, frames=frames,
                           skipped=lost, source="human", note="bound; not yet measured")
         measured = entry.get("measured") if isinstance(entry.get("measured"), dict) else {}
         if measured.get("spec") == spec:

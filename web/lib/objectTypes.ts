@@ -76,6 +76,8 @@ export interface PropertySource {
   edits?: number;
   kind?: "static" | "timeseries";
   read?: boolean;
+  /** ON-5 — set when the property is a FRAME over the readings rather than a column of the source. */
+  frame?: string;
 }
 
 export interface TypeProperty {
@@ -116,10 +118,23 @@ export interface TypeBinding {
   skipped?: Record<string, string>;
   usable: boolean;
   why_not?: string;
+  /** ON-5 — property name → what its frame over the readings is, in words. */
+  frames?: Record<string, string>;
+}
+
+/** ON-5 — a frame over a timeseries binding's readings: what it reads, how the readings inside the frame are
+ *  reduced, and how far the frame reaches. `offset` is "the reading N back", which takes neither an aggregate nor
+ *  a window. Each frame becomes a property of the type, read at the object's latest reading. */
+export interface FrameSpec {
+  column: string;
+  agg?: "sum" | "avg" | "min" | "max" | "count";
+  range?: "current" | "cumulative" | "trailing" | "leading" | "all";
+  window?: number;
+  offset?: number;
 }
 
 /** What a person sends to bind a source: its table or SELECT, the column holding the object's key, its kind, and —
- *  optionally — `{property: column}` to name what it supplies. */
+ *  optionally — `{property: column}` to name what it supplies and `{property: frame}` to compute one. */
 export interface BindingSpec {
   kind: "static" | "timeseries";
   key: string;
@@ -127,6 +142,7 @@ export interface BindingSpec {
   sql?: string;
   time_column?: string;
   properties?: Record<string, string>;
+  frames?: Record<string, FrameSpec>;
 }
 
 /** A binding the data proposes — another type's table carrying this type's key, measured one row per object. Nothing
