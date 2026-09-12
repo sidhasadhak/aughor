@@ -134,12 +134,57 @@ class ExpectedAliases(_Base):
     values: dict[str, list[str]] = Field(default_factory=dict)
 
 
+class ExpectedPromise(_Base):
+    """A promise the core expects a stage to carry (ON-9) — with its TERMS left to the business: whether it dispatches
+    in two days or five, and which deadline column it keeps, only the business knows. `within_days` stays empty in a
+    core map; `deadline_hints` are the column-name fragments a per-object deadline is usually spelled with, and
+    `grain` the object it is usually kept per (a marketplace keeps a shipping limit per order LINE)."""
+    name: str = ""
+    kind: Literal["within_days", "deadline"] = "within_days"
+    within_days: Optional[int] = None
+    deadline_hints: list[str] = Field(default_factory=list)
+    grain: str = ""
+
+
+class ExpectedStage(_Base):
+    """One stage of an expected process: its name, and the column-name fragments the moment an object reaches it is
+    usually spelled with, in preference order."""
+    name: str
+    timestamp_hints: list[str] = Field(default_factory=list)
+    promise: Optional[ExpectedPromise] = None
+
+
+class ExpectedProcess(_Base):
+    """A process the core expects an object to go through (ON-9): its stages in order, where each one's moment is
+    usually found, and where a business usually makes a promise. A CLAIM like everything in the map — matched to this
+    graph's moments by name, never declared on its own; a person declares the process and the platform counts it."""
+    name: str
+    object: str
+    stages: list[ExpectedStage] = Field(default_factory=list)
+    description: str = ""
+
+
+class ExpectedRule(_Base):
+    """A definition the core expects the business to hold (ON-9) — a value set over a field (a market like DACH), or
+    a named condition — with its values left EMPTY, like `aliases`: the core knows the business groups these values,
+    and only the business knows how."""
+    name: str
+    object: str
+    kind: Literal["value_set", "condition"] = "value_set"
+    property_hint: str = ""
+    values: list[str] = Field(default_factory=list)
+    description: str = ""
+
+
 class PackOntology(_Base):
     """`ontology.yaml` — the approximate map of an industry, as claims to measure (§3.15 ON-0a)."""
     objects: list[ExpectedObject] = Field(default_factory=list)
     links: list[ExpectedLink] = Field(default_factory=list)
     lifecycles: list[ExpectedLifecycle] = Field(default_factory=list)
     aliases: list[ExpectedAliases] = Field(default_factory=list)
+    #: ON-9 — the processes the core expects, with placeholder promises, and the definitions it expects a business to hold.
+    processes: list[ExpectedProcess] = Field(default_factory=list)
+    rules: list[ExpectedRule] = Field(default_factory=list)
 
 
 class PackEval(_Base):

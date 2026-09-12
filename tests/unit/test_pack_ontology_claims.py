@@ -132,3 +132,54 @@ def test_the_measure_door_takes_a_pack_id(tmp_path, monkeypatch, client):
     assert any(c.provenance == "pack:core-ecommerce" for c in saved.core_claims)
     r2 = client.post("/ontology/measure", params={"connection_id": "914df862", "schema_name": "luxexperience"})
     assert r2.status_code == 200 and r2.json()["claims"] is None   # nothing deployed, no pack named
+
+
+# ── ON-9: processes and rules, expected by the map and settled by a person ─────────────────────
+
+SAMPLES = REPO / "evals" / "ablation_samples_ecommerce_ontology_measured.json"
+
+
+def _samples() -> OntologyGraph:
+    return OntologyGraph.model_validate(json.loads(SAMPLES.read_text()))
+
+
+def test_the_fashion_pack_expects_order_to_delivery_with_its_promises_left_to_the_business():
+    fashion = resolve_ontology("fashion-ecommerce")
+    [process] = fashion.processes
+    assert (process.name, process.object, [s.name for s in process.stages]) == (
+        "order_to_delivery", "Order", ["placed", "approved", "dispatched", "delivered"])
+    promises = [s.promise for s in process.stages if s.promise is not None]
+    assert [p.name for p in promises] == ["dispatch", "delivery"] and all(p.within_days is None for p in promises)
+    assert [r.name for r in fashion.rules] == ["dach"] and fashion.rules[0].values == []
+    assert resolve_ontology("core-ecommerce").processes == []
+
+
+def test_process_and_rule_claims_match_moments_by_name_and_leave_the_terms_to_the_business():
+    report = apply_core_claims(_samples(), resolve_ontology("fashion-ecommerce"), "fashion-ecommerce")
+    by = {(c.kind, c.subject): c for c in report.claims}
+    assert by[("process", "order_to_delivery · placed")].measured == "Order.order_date"
+    assert by[("process", "order_to_delivery · dispatched")].measured == "Order.shipped_at"
+    assert by[("process", "order_to_delivery · delivered")].measured == "Order.delivered_at"
+    approved = by[("process", "order_to_delivery · approved")]
+    assert approved.tier == "expected" and "no moment on Order" in approved.note
+    promise = by[("process", "order_to_delivery · dispatched promise")]
+    assert (promise.tier, promise.expected) == ("expected", "by a per-object deadline")
+    assert "kept per OrderItem" in promise.note
+    dach = by[("rule", "dach")]
+    assert dach.tier == "expected" and "none of its values" in dach.note
+
+
+def test_a_declared_process_or_rule_settles_its_claim_as_the_persons():
+    from aughor.ontology.models import BusinessRule, Process, ProcessStage
+    g = _samples()
+    g.processes["order_fulfilment"] = Process(id="order_fulfilment", entity="Order", stages=[
+        ProcessStage(name="placed", timestamp="order_date"), ProcessStage(name="shipped", timestamp="shipped_at")],
+        note="5,000 Order objects; 2 of 2 stages reached")
+    g.rules["dach"] = BusinessRule(id="dach", entity="Customer", kind="value_set", property="country",
+                                   values=["DE", "AT", "CH"])
+    report = apply_core_claims(g, resolve_ontology("fashion-ecommerce"), "fashion-ecommerce")
+    by = {(c.kind, c.subject): c for c in report.claims}
+    settled = by[("process", "order_to_delivery")]
+    assert (settled.tier, settled.measured) == ("human", "declared as order_fulfilment: placed → shipped")
+    assert not any(kind == "process" and subject.startswith("order_to_delivery ·") for kind, subject in by)
+    assert (by[("rule", "dach")].tier, by[("rule", "dach")].measured) == ("human", "declared as dach: DE, AT, CH")

@@ -21,3 +21,24 @@ links:
 aliases:
   - {field: brand_tier, values: {}}
   - {field: size,       values: {}}
+
+# ON-9 — the process the core expects an order to go through, and where a business usually makes its promises. A
+# stage's hints are column-name fragments, tried in order; a promise's TERMS are left empty — only the business knows
+# whether it dispatches within two days or five, and whether the deadline is per order or per line. Nothing here is
+# declared on its own: a person declares the process (POST /ontology/processes) and the platform counts it.
+processes:
+  - name: order_to_delivery
+    object: Order
+    description: an order, from purchase to the customer's door
+    stages:
+      - {name: placed, timestamp_hints: [purchase, placed, order_date, created]}
+      - {name: approved, timestamp_hints: [approved, paid_at, payment_date, authorized]}
+      - name: dispatched
+        timestamp_hints: [carrier, dispatch, shipped, ship_date]
+        promise: {name: dispatch, kind: deadline, deadline_hints: [shipping_limit, ship_by, dispatch_by], grain: OrderItem}
+      - name: delivered
+        timestamp_hints: [delivered_customer, delivered, delivery_date]
+        promise: {name: delivery, kind: deadline, deadline_hints: [estimated_delivery, promised_delivery, delivery_estimate]}
+# A market is a business's grouping of countries, and no two businesses draw it alike.
+rules:
+  - {name: dach, object: Customer, kind: value_set, property_hint: country, description: "the DACH market: the spellings of Germany, Austria and Switzerland this business uses"}

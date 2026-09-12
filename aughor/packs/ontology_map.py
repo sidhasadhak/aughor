@@ -68,6 +68,12 @@ def _merge(into: PackOntology, other: PackOntology) -> None:
     als = {a.field: a for a in into.aliases}
     als.update({a.field: a for a in other.aliases})
     into.aliases = list(als.values())
+    procs = {p.name: p for p in into.processes}
+    procs.update({p.name: p for p in other.processes})
+    into.processes = list(procs.values())
+    rules = {r.name: r for r in into.rules}
+    rules.update({r.name: r for r in other.rules})
+    into.rules = list(rules.values())
 
 
 def resolve_ontology(pack_id: str, _seen: Optional[set[str]] = None) -> Optional[PackOntology]:
@@ -86,7 +92,7 @@ def resolve_ontology(pack_id: str, _seen: Optional[set[str]] = None) -> Optional
             _merge(merged, po)
     if pack.ontology is not None:
         _merge(merged, pack.ontology)
-    if not (merged.objects or merged.links or merged.lifecycles or merged.aliases):
+    if not (merged.objects or merged.links or merged.lifecycles or merged.aliases or merged.processes or merged.rules):
         return None
     return merged
 
@@ -229,8 +235,89 @@ def apply_core_claims(graph: OntologyGraph, po: PackOntology, pack_id: str, db: 
                                 tier="expected", provenance=prov,
                                 note="the core declares the field has aliases and none of their values"))
 
+    claims += _process_claims(po, graph, matched, prov) + _rule_claims(po, graph, matched, prov)
+
     graph.core_claims = [c for c in graph.core_claims if c.provenance != prov] + claims
     return ClaimsReport(pack_id=pack_id, claims=claims, matched=matched)
+
+
+def _moment_named_like(entity, hints: list[str]) -> str:
+    """The first date or timestamp property of ``entity`` whose name holds one of ``hints``, tried in hint order."""
+    moments = [name for name, p in (entity.properties or {}).items()
+               if (p.semantic_type or "") == "timestamp" or any(t in (p.data_type or "").upper() for t in ("DATE", "TIME"))]
+    for binding in entity.bindings or []:
+        moments += [name for name, p in binding.properties.items()
+                    if (p.semantic_type or "") == "timestamp" or any(t in (p.data_type or "").upper() for t in ("DATE", "TIME"))]
+    for hint in hints:
+        found = next((m for m in moments if hint.lower() in m.lower()), None)
+        if found:
+            return found
+    return ""
+
+
+def _process_claims(po: PackOntology, graph: OntologyGraph, matched: dict[str, str], prov: str) -> list[CoreClaim]:
+    """ON-9 — an expected process: settled by a person where one is declared on its object (tier `human`), else each
+    stage matched to a moment by name, and each promise reported with its terms left to the business."""
+    out: list[CoreClaim] = []
+    for proc in po.processes:
+        path = " → ".join(s.name for s in proc.stages)
+        expected = f"{proc.object} goes through {path}"
+        eid = matched.get(proc.object)
+        entity = graph.entities.get(eid) if eid else None
+        if entity is None:
+            out.append(CoreClaim(kind="process", subject=proc.name, expected=expected, tier="expected", provenance=prov,
+                                 note=f"no table matched {proc.object}"))
+            continue
+        declared = next((p for p in (graph.processes or {}).values() if p.id == proc.name or p.entity == entity.id), None)
+        if declared is not None:
+            out.append(CoreClaim(kind="process", subject=proc.name, expected=expected,
+                                 measured=f"declared as {declared.id}: {' → '.join(s.name for s in declared.stages)}",
+                                 tier="human", provenance=prov, note=(declared.note or "declared, not yet counted")[:240]))
+            continue
+        for stage in proc.stages:
+            subject = f"{proc.name} · {stage.name}"
+            moment = _moment_named_like(entity, stage.timestamp_hints)
+            if moment:
+                out.append(CoreClaim(kind="process", subject=subject, expected=f"the moment {proc.object} reaches {stage.name}",
+                                     measured=f"{eid}.{moment}", tier="measured-true", provenance=prov,
+                                     note=f"{moment} is a moment on {eid} named like {stage.name} — declare the process to count it"))
+            else:
+                out.append(CoreClaim(kind="process", subject=subject, expected=f"the moment {proc.object} reaches {stage.name}",
+                                     tier="expected", provenance=prov,
+                                     note=f"no moment on {eid} is named like {', '.join(stage.timestamp_hints[:5]) or stage.name}"))
+            if stage.promise is not None:
+                promise = stage.promise
+                terms = (f"within {promise.within_days} days" if promise.within_days is not None
+                         else "by a per-object deadline" if promise.kind == "deadline" else "within some number of days")
+                out.append(CoreClaim(kind="process", subject=f"{subject} promise", expected=terms, tier="expected",
+                                     provenance=prov, note=("the core expects a promise here and leaves its terms to the "
+                                                            "business" + (f"; kept per {promise.grain}" if promise.grain else ""))))
+    return out
+
+
+def _rule_claims(po: PackOntology, graph: OntologyGraph, matched: dict[str, str], prov: str) -> list[CoreClaim]:
+    """ON-9 — an expected definition: settled by a person where a rule of that name, or over that field of its object,
+    is declared (tier `human`, its values named); otherwise expected, with the values left to the business."""
+    out: list[CoreClaim] = []
+    for rule in po.rules:
+        expected = f"a {rule.kind.replace('_', ' ')} over {rule.object}" + (f".{rule.property_hint}" if rule.property_hint else "")
+        eid = matched.get(rule.object)
+        entity = graph.entities.get(eid) if eid else None
+        declared = next((r for r in (graph.rules or {}).values()
+                         if r.id == rule.name or (entity is not None and r.entity == entity.id and rule.property_hint
+                                                   and rule.property_hint.lower() in (r.property or "").lower())), None)
+        if declared is not None:
+            out.append(CoreClaim(kind="rule", subject=rule.name, expected=expected,
+                                 measured=f"declared as {declared.id}" + (f": {', '.join(declared.values)}" if declared.values else ""),
+                                 tier="human", provenance=prov, note=(declared.note or "declared, not yet counted")[:240]))
+        elif entity is None:
+            out.append(CoreClaim(kind="rule", subject=rule.name, expected=expected, tier="expected", provenance=prov,
+                                 note=f"no table matched {rule.object}"))
+        else:
+            out.append(CoreClaim(kind="rule", subject=rule.name, expected=expected, tier="expected", provenance=prov,
+                                 note=("the core declares the definition and none of its values — the business fills them"
+                                       if not rule.values else f"the core suggests {', '.join(rule.values)}")))
+    return out
 
 
 def bound_pack_ids(connection_id: str, schema_name: Optional[str]) -> list[str]:
