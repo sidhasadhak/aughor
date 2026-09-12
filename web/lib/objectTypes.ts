@@ -34,6 +34,10 @@ export interface TypeMapRow {
   absorbed_into?: string;
   /** ON-7 — the types that are parts of this one, each with the binding it is read through. */
   parts?: TypePart[];
+  /** ON-7b — who said a declared type exists when a model did: `model:<id>@<version>`, kept once a person confirms. */
+  provenance?: string;
+  /** ON-7b — what an explorer proposed on this card that no person has confirmed yet: the type itself, and its bindings. */
+  unconfirmed?: number;
 }
 
 /** ON-7 — a type that is a part of another: an order's lines under Order. */
@@ -42,6 +46,9 @@ export interface TypePart {
   display_name: string;
   binding: string;
   kind: string;
+  /** ON-7b — `model` while the binding the part is read through is an explorer's unconfirmed proposal. */
+  origin?: "human" | "model";
+  provenance?: string;
 }
 
 /** One link between two types, read from → to. */
@@ -61,6 +68,8 @@ export interface TypeMapLink {
   shown_from?: string;
   shown_to?: string;
   origin?: "join_map" | "human" | "model";
+  /** ON-7b — `model:<id>@<version>` for a link an explorer proposed. */
+  provenance?: string;
 }
 
 export interface TypeMap {
@@ -125,7 +134,9 @@ export interface TypeBinding {
   key: string;
   object_key: string;
   time_column?: string;
-  source: "backing" | "human" | "proposed";
+  /** `model` — an explorer bound its own proposal (ON-7b): read like any other, proposed until a person confirms it. */
+  source: "backing" | "human" | "proposed" | "model";
+  provenance?: string;
   verified: boolean | null;
   rows: number | null;
   non_null?: number | null;
@@ -216,6 +227,8 @@ export interface TypeLink {
   why_not?: string;
   /** ON-7 — a link a person declared (or an explorer proposed) can be withdrawn; a found one is named, never deleted. */
   origin?: "join_map" | "human" | "model";
+  /** ON-7b — `model:<id>@<version>` for a link an explorer proposed, kept once a person confirms it. */
+  provenance?: string;
 }
 
 export interface TypeAction {
@@ -250,6 +263,8 @@ export interface ObjectTypeDetail {
   display_property: DisplayPropertyFact;
   /** ON-7 — who made the type, its parts, and the type it is a part of (a lapsed mark says why). */
   origin?: "table" | "human" | "model";
+  /** ON-7b — `model:<id>@<version>` when an explorer proposed the type. */
+  provenance?: string;
   parts?: TypePart[];
   part_of?: PartOf | null;
   time: string;
@@ -483,4 +498,93 @@ export async function setPartOf(
     `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
     { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ absorbed_into: parentId }) });
   if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-7b — where an explorer's proposal stands NOW, read from the served graph; `refused` is what the data said when it
+ *  was proposed. */
+export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" | "refused";
+
+/** ON-7b — one thing an explorer proposed: an entity, a part (a table read under an entity), or a link. */
+export interface DraftProposal {
+  key: string;
+  kind: "entity" | "part" | "link";
+  tier: ProposalTier;
+  sentence: string;
+  /** What the measurement said — the counts it rests on, or why it was refused. */
+  note: string;
+  /** The model's own reason. */
+  reason: string;
+  provenance: string;
+  target: { entity?: string; binding?: string; table?: string; part?: string; relationship?: string };
+  /** The type to open to see it where it lives ("" when nothing was written). */
+  object_type: string;
+}
+
+/** ON-7b — one explorer run: the model that ANSWERED (a fallback link may stand in for the one asked) and what came of it. */
+export interface DraftRun {
+  id: string;
+  at: string;
+  backend: string;
+  model: string;
+  fallback: boolean;
+  version: number;
+  provenance: string;
+  /** The run's trace — its model call and what it wrote, replayable in Activity. */
+  trace_id?: string;
+  catalogue_chars: number;
+  said: { entities?: number; parts?: number; links?: number };
+  written: number;
+  refused: number;
+  already: number;
+  withdrawn: number;
+}
+
+export interface OntologyDraft {
+  connection_id: string;
+  schema_name: string;
+  /** Newest first. */
+  runs: DraftRun[];
+  proposals: DraftProposal[];
+  counts: Record<ProposalTier, number>;
+  /** How the tables group into business entities: each card's tables. */
+  grouping: Record<string, string[]>;
+}
+
+/** ON-7b — a declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read through. */
+export interface ConfirmTarget {
+  kind: "entity" | "binding" | "link";
+  entity?: string;
+  binding?: string;
+  relationship?: string;
+}
+
+export interface ConfirmResult extends OntologyDraft {
+  confirmed: ConfirmTarget[];
+  refused: (ConfirmTarget & { why: string })[];
+}
+
+/** ON-7b — the scope's explorer draft. No model call. */
+export async function getOntologyDraft(connectionId: string, schemaName?: string): Promise<OntologyDraft> {
+  const res = await fetch(`${getApiBase()}/ontology/draft?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ON-7b — ask an explorer to draft the business: ONE model call. Every proposal is measured before it lands, and what
+ *  survives is written through the declaration doors, proposed until a person confirms it. */
+export async function exploreOntology(connectionId: string, schemaName?: string): Promise<OntologyDraft> {
+  const res = await fetch(`${getApiBase()}/ontology/explore?${scope(connectionId, schemaName)}`, { method: "POST" });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ON-7b — make proposals a person's: every one still the model's (`all`), or the named ones. A target that is not a
+ *  model's proposal comes back in `refused` with the reason. */
+export async function confirmProposals(
+  connectionId: string, request: { all?: boolean; targets?: ConfirmTarget[] }, schemaName?: string,
+): Promise<ConfirmResult> {
+  const res = await fetch(`${getApiBase()}/ontology/draft/confirm?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
 }

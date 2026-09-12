@@ -73,7 +73,7 @@ def _further_binding(entity: OntologyEntity, binding: Binding) -> dict:
     row = {"name": binding.name, "primary": False, "kind": binding.kind, "reads": binding.reads,
            **({"sql": binding.sql or ""} if binding.reads == "query" else {"table": binding.table or ""}),
            "key": binding.key, "object_key": key_of(entity), "time_column": binding.time_column,
-           "source": binding.source, "verified": binding.verified, "rows": binding.rows,
+           "source": binding.source, "provenance": binding.provenance, "verified": binding.verified, "rows": binding.rows,
            "non_null": binding.non_null, "distinct": binding.distinct, "objects": binding.objects,
            "covered": binding.covered, "orphans": binding.orphans, "note": binding.note,
            "supplies": len(binding.properties), "skipped": dict(binding.skipped), "usable": not problem,
@@ -84,11 +84,18 @@ def _further_binding(entity: OntologyEntity, binding: Binding) -> dict:
     return row
 
 
+def _binding_origin(binding: Binding) -> str:
+    """ON-7b — who bound a further binding: `model` for an explorer's proposal a person has not confirmed, else `human`."""
+    return "model" if binding.source == "model" else "human"
+
+
 def _part_rows(graph: OntologyGraph, entity: OntologyEntity) -> list[dict]:
-    """ON-7 — the types that are PARTS of this one, each with the binding it is read through."""
+    """ON-7 — the types that are PARTS of this one, each with the binding it is read through. ON-7b — a part an
+    explorer proposed is read through a binding it bound, so it is proposed until a person confirms that binding."""
     return [{"object_type": part.api_name, "id": part.id, "display_name": part.display_name or part.id,
              "binding": binding.name, "kind": binding.kind, "table": binding.table or "",
-             "rows": part.backing.rows if part.backing is not None else None}
+             "rows": part.backing.rows if part.backing is not None else None,
+             "origin": _binding_origin(binding), "provenance": binding.provenance}
             for part, binding in parts_of(graph, entity)]
 
 
@@ -114,10 +121,12 @@ def _source(binding: dict, column: str) -> dict:
 def _proposals(entity: OntologyEntity) -> list[dict]:
     """ON-1b — the bindings the data proposes for this type that no binding already reads, each with its measurement,
     the properties it would supply and the spec that binds it. Nothing reads a proposal until a person binds it."""
-    bound = {((b.table or "").lower(), b.key.lower()) for b in entity.bindings or []}
+    # By the BARE table name: the builder proposes `schema.table`, while a person or an explorer binds the table as the
+    # connection's schema reads it — and a table already bound must not be offered again beside its own binding.
+    bound = {(_bare(b.table or "").lower(), b.key.lower()) for b in entity.bindings or []}
     out = []
     for p in entity.proposed_bindings or []:
-        if ((p.table or "").lower(), p.key.lower()) in bound:
+        if (_bare(p.table or "").lower(), p.key.lower()) in bound:
             continue
         out.append({"name": p.name, "kind": p.kind, "table": p.table or "", "key": p.key,
                     "object_key": key_of(entity), "rows": p.rows, "distinct": p.distinct, "objects": p.objects,
@@ -132,7 +141,7 @@ def link_row(h: ObjectLink) -> dict:
     problem = link_problem(h)
     rel = h.rel
     row = {"name": h.name, "business_name": h.business, "business_name_source": rel.business_name_source(),
-           "verb": rel.verb, "relationship": rel.id, "origin": rel.origin,
+           "verb": rel.verb, "relationship": rel.id, "origin": rel.origin, "provenance": rel.provenance,
            "direction": "out" if rel.from_entity == h.source.id else "in",
            "to": h.target.api_name, "to_type": h.target.id, "to_name": h.target.display_name or h.target.id,
            "cardinality": h.label, "measured": rel.measured_cardinality is not None,
@@ -255,7 +264,7 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
     out = {
         "object_type": entity.api_name, "id": entity.id, "display_name": entity.display_name or entity.id,
         "description": entity.description, "role": entity.entity_type, "domain": entity.domain or "",
-        "origin": entity.origin, "parts": parts, "part_of": parent,
+        "origin": entity.origin, "provenance": entity.provenance, "parts": parts, "part_of": parent,
         "key": {"property": key, "verified": b.verified if b is not None else None,
                 "rows": b.rows if b is not None else None, "note": b.verification_note if b is not None else ""},
         "display_property": display_of(entity),
@@ -295,9 +304,14 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
         types.append({"object_type": e.api_name, "id": e.id, "display_name": e.display_name or e.id,
                       "role": e.entity_type, "domain": e.domain or "", "key": key_of(e),
                       # ON-7 — who made the type, whether it is a part of another (and of which), and its parts.
-                      "origin": e.origin, "absorbed_into": parent.api_name if parent is not None else "",
+                      "origin": e.origin, "provenance": e.provenance,
+                      "absorbed_into": parent.api_name if parent is not None else "",
                       "parts": [{"object_type": p.api_name, "display_name": p.display_name or p.id, "binding": b.name,
-                                 "kind": b.kind} for p, b in parts],
+                                 "kind": b.kind, "origin": _binding_origin(b)} for p, b in parts],
+                      # ON-7b — what an explorer proposed on this card that no person has confirmed yet: the type
+                      # itself, and each binding it bound.
+                      "unconfirmed": (int(e.origin == "model")
+                                      + sum(1 for bound in e.bindings or [] if bound.source == "model")),
                       "key_verified": b.verified if b is not None else None,
                       "rows": b.rows if b is not None else None, "table": _binding(e, 0).get("table", ""),
                       "display_property": shown["property"], "display_is_key": shown["is_key"],
@@ -318,6 +332,7 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
         edges.append({"relationship": r.id, "from": source.api_name, "to": target.api_name,
                       # ON-7 — the type each end is DRAWN as: a part's edges are drawn from its parent's card.
                       "shown_from": shown_from.api_name, "shown_to": shown_to.api_name, "origin": r.origin,
+                      "provenance": r.provenance,
                       "name": r.api_name, "reverse_name": r.reverse_api_name, "business_name": r.business_name(),
                       "verb": r.verb, "cardinality": r.measured_cardinality or r.cardinality,
                       "measured": r.measured_cardinality is not None, "traversable": not problem,

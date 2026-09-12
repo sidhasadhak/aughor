@@ -7841,6 +7841,53 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/draft": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Ontology Draft
+         * @description ON-7b — the scope's explorer draft: every proposal with where it stands NOW (read from the served graph —
+         *     proposed, confirmed, released, withdrawn — or refused when it was said), every run with the model that answered,
+         *     and how the tables group into business entities. With a reference scope, that grouping is compared with the
+         *     reference's, table by table. No model call, no warehouse query.
+         */
+        get: operations["get_ontology_draft_ontology_draft_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/draft/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Confirm Ontology Proposals
+         * @description ON-7b — a person makes an explorer's proposals theirs: `origin` becomes human, the provenance of the model that
+         *     proposed it is kept, and nothing else about the declaration or its measurement changes. `all` confirms every
+         *     proposal of the scope's draft that is still the model's; `targets` names declarations — a declared entity, a
+         *     declared link, or the binding a part is read through. A target that is not a model's proposal is refused with the
+         *     reason, never quietly confirmed. No model call.
+         */
+        post: operations["confirm_ontology_proposals_ontology_draft_confirm_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/duplicate-entities": {
         parameters: {
             query?: never;
@@ -8156,6 +8203,32 @@ export interface paths {
          */
         put: operations["override_entity_segment_ontology_entities__entity_id__segments__segment_id__put"];
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/explore": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explore Ontology
+         * @description ON-7b — an explorer drafts the BUSINESS ontology over this scope in ONE model call: which tables are one business
+         *     thing (an entity and its parts), the links the business names, and — rarely — an entity no table stands for. Every
+         *     proposal is measured before it lands — a part's key counted against its entity's objects, the data deciding static,
+         *     detail or timeseries; a link's sides counted and keys that never meet refused; a declared entity's key unique — and
+         *     what survives is written through ON-7's doors with `origin: model` and `model:<id>@<version>` provenance: read at
+         *     once, PROPOSED until a person confirms it. A second run writes nothing twice, and a proposal a person withdrew is
+         *     not proposed again. Costs one model call, so nothing starts it but a person asking.
+         */
+        post: operations["explore_ontology_ontology_explore_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13778,6 +13851,42 @@ export interface components {
             models?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** _ConfirmRequest */
+        _ConfirmRequest: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * All
+             * @default false
+             */
+            all: boolean;
+            /**
+             * Targets
+             * @default []
+             */
+            targets: components["schemas"]["_ConfirmTarget"][];
+        };
+        /**
+         * _ConfirmTarget
+         * @description One declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read
+         *     through.
+         */
+        _ConfirmTarget: {
+            /** Binding */
+            binding?: string | null;
+            /** Entity */
+            entity?: string | null;
+            /**
+             * Kind
+             * @enum {string}
+             */
+            kind: "entity" | "binding" | "link";
+            /** Relationship */
+            relationship?: string | null;
         };
         /** _ConnectionSettings */
         _ConnectionSettings: {
@@ -27920,6 +28029,77 @@ export interface operations {
             };
         };
     };
+    get_ontology_draft_ontology_draft_get: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+                /** @description Compare this scope's grouping of tables into business entities with another scope's (ON-7b's falsifier: a draft that fuses what the reference keeps apart) */
+                reference_connection_id?: string | null;
+                reference_schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    confirm_ontology_proposals_ontology_draft_confirm_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_ConfirmRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_duplicate_entities_ontology_duplicate_entities_get: {
         parameters: {
             query?: {
@@ -28507,6 +28687,38 @@ export interface operations {
                 "application/json": components["schemas"]["_SegmentOverride"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    explore_ontology_ontology_explore_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {

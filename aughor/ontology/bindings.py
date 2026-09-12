@@ -720,6 +720,12 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
                          **{name: f.describe() for name, f in frames.items()}}, "skipped": skipped}
 
 
+def _origin_of(entry: dict) -> str:
+    """ON-7b — who bound it, from its bind entry: `model` when an explorer bound its own proposal and no person has
+    confirmed it yet, `human` otherwise (every entry written before carries no origin, and was a person's)."""
+    return "model" if entry.get("origin") == "model" else "human"
+
+
 def binding_block(entries: dict) -> dict:
     """The override binding entry every binding on one type shares: ``bound`` only when each of them bound."""
     unbound = [f"{name}: {e.get('note') or 'not bound'}" for name, e in entries.items() if e.get("bound") is not True]
@@ -755,8 +761,8 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
                 skipped.append(f"{name}: {rollup_problem_note}")
                 continue
             binding = Binding(name=name, kind="detail", table=spec.get("table"), sql=spec.get("sql"),
-                              key=spec["key"], properties=rolled, rollups=rollups, source="human",
-                              note="bound; not yet measured")
+                              key=spec["key"], properties=rolled, rollups=rollups, source=_origin_of(entry),
+                              provenance=str(entry.get("provenance") or ""), note="bound; not yet measured")
             measured = entry.get("measured") if isinstance(entry.get("measured"), dict) else {}
             if measured.get("spec") == spec:
                 for k in _MEASURED:
@@ -771,7 +777,8 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
         binding = Binding(name=name, kind=spec["kind"], table=spec.get("table"), sql=spec.get("sql"), key=spec["key"],
                           time_column=spec.get("time_column", ""), properties={**properties, **framed},
                           columns=renamed, frames=frames,
-                          skipped=lost, source="human", note="bound; not yet measured")
+                          skipped=lost, source=_origin_of(entry), provenance=str(entry.get("provenance") or ""),
+                          note="bound; not yet measured")
         measured = entry.get("measured") if isinstance(entry.get("measured"), dict) else {}
         if measured.get("spec") == spec:
             for k in _MEASURED:

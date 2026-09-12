@@ -89,6 +89,9 @@ NON_GOVERNANCE_KINDS: frozenset[str] = frozenset({
     # ON-0a: a measurement pass over a built ontology (cardinality, lifecycles, pack
     # claims) — operational, like the build it follows; the gated edit is journaled by RBAC.
     "ontology.measure",
+    # ON-7b: an explorer's run — one model call and the counts of what it proposed, wrote and was refused. Each write
+    # goes through ON-7's gated doors, which RBAC journals like any person's edit; this is the run's telemetry.
+    "ontology.explore",
 })
 
 #: MI-1 — reviewed and judged governance-shaped, deliberately NOT yet in the feed.

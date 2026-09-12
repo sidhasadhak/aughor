@@ -11,10 +11,10 @@
  * card a person drags is remembered, so the next visit opens on their arrangement and not the layout's.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { TypeMap } from "@/lib/objectTypes";
+import type { OntologyDraft, TypeMap } from "@/lib/objectTypes";
 
 const handoff: { nodes: any[]; edges: any[]; onNodeDragStop?: (e: unknown, n: unknown) => void } =
   { nodes: [], edges: [] };
@@ -86,10 +86,40 @@ const declareEntity = vi.fn(async (..._args: unknown[]) => {
   return { object_type: "purchase_order" };
 });
 
+/** ON-7b — the explorer's draft: what the rail reads, and the two doors it calls. */
+const emptyDraft: OntologyDraft = {
+  connection_id: "c1", schema_name: "s", runs: [], proposals: [], grouping: {},
+  counts: { proposed: 0, confirmed: 0, released: 0, withdrawn: 0, refused: 0 },
+};
+const drafted: OntologyDraft = {
+  ...emptyDraft,
+  runs: [{ id: "r1", at: "2026-09-13T00:00:00Z", backend: "gemini", model: "m", fallback: false, version: 1,
+           provenance: "model:m@1", catalogue_chars: 100, said: { entities: 0, parts: 2, links: 1 },
+           written: 2, refused: 1, already: 0, withdrawn: 0 }],
+  proposals: [
+    { key: "part:order:order_item", kind: "part", tier: "proposed", sentence: "order_item is a part of order, read as lines (detail)",
+      note: "many rows per order", reason: "an order has lines", provenance: "model:m@1",
+      target: { entity: "order", binding: "lines", table: "order_item", part: "order_item" }, object_type: "order" },
+    { key: "link:country.country=order.country", kind: "link", tier: "proposed", sentence: "order ships_to country on country = country",
+      note: "measured N:1", reason: "orders ship to a country", provenance: "model:m@1",
+      target: { relationship: "order_ships_to_country" }, object_type: "order" },
+    { key: "link:country.country=product.product_id", kind: "link", tier: "refused",
+      sentence: "product made_in country on product_id = country", note: "the keys never meet", reason: "a guess",
+      provenance: "model:m@1", target: {}, object_type: "" },
+  ],
+  counts: { proposed: 2, confirmed: 0, released: 0, withdrawn: 0, refused: 1 },
+};
+const draftState: { value: OntologyDraft } = { value: emptyDraft };
+const exploreOntology = vi.fn(async (..._args: unknown[]) => { draftState.value = drafted; return drafted; });
+const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ ...draftState.value, confirmed: [], refused: [] }));
+
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getTypeMap: vi.fn(async () => served.map),
   declareEntity: (...a: unknown[]) => declareEntity(...a),
+  getOntologyDraft: vi.fn(async () => draftState.value),
+  exploreOntology: (...a: unknown[]) => exploreOntology(...a),
+  confirmProposals: (...a: unknown[]) => confirmProposals(...a),
 }));
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
@@ -220,7 +250,8 @@ describe("EntityTypeMap — ON-7: parts fold into their parent, and a person dec
     expect(handoff.nodes.map((n) => n.id).sort()).toEqual(["country", "order", "product"]);
     // the part's link to its own parent is the binding it is read through — not an edge; its link to Product is
     // drawn from Order's card and says it came through the part
-    expect(handoff.edges.map((e) => e.id)).toEqual(["oi_product"]);
+    // edges are drawn from the cards' live positions, one effect after the cards land — wait for them, never race them
+    await waitFor(() => expect(handoff.edges.map((e) => e.id)).toEqual(["oi_product"]));
     expect(handoff.edges[0].source).toBe("order");
     await waitFor(() => expect(handoff.edges[0].label).toBe("contains · 1:N · via order_item"));
     // the rail lists the part under the cards, and the card says it has one
@@ -242,5 +273,72 @@ describe("EntityTypeMap — ON-7: parts fold into their parent, and a person dec
       id: "PurchaseOrder", display_name: "Purchase order", backing: { primary_key: "po_id", table: "purchase_orders" },
     }, "s"));
     await waitFor(() => expect(screen.getByTestId("panel")).toHaveTextContent("purchase_order"));
+  });
+});
+
+describe("EntityTypeMap — ON-7b: the explorer's draft", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    stored.value = undefined;
+    served.map = map;
+    draftState.value = emptyDraft;
+    exploreOntology.mockClear();
+    confirmProposals.mockClear();
+    handoff.nodes = [];
+    handoff.edges = [];
+  });
+
+  it("offers a first draft and says what it costs, then shows what was proposed and what the data refused", async () => {
+    const user = userEvent.setup();
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    const run = await screen.findByTestId("explorer-draft-run");
+    expect(run).toHaveTextContent("Draft the business");
+    expect(screen.getByTestId("explorer-draft")).toHaveTextContent("One model call");
+    await user.click(run);
+    await waitFor(() => expect(exploreOntology).toHaveBeenCalledWith("c1", "s"));
+    await waitFor(() =>
+      expect(screen.getByTestId("explorer-draft-counts")).toHaveTextContent("2 proposed · 0 confirmed · 1 refused"));
+    expect(screen.getByTestId("explorer-draft-run")).toHaveTextContent("Draft again");
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    const rows = screen.getAllByTestId("explorer-proposal");
+    expect(rows).toHaveLength(3);
+    // a refusal says what the data said, never the model's own reason for proposing it
+    expect(rows[2]).toHaveTextContent("refused");
+    expect(rows[2]).toHaveTextContent("the keys never meet");
+    expect(rows[2]).not.toHaveTextContent("a guess");
+    expect(within(rows[2]).queryByRole("button", { name: "Confirm" })).toBeNull();
+  });
+
+  it("confirms every proposal in one click, and one at a time by the declaration it was written as", async () => {
+    const user = userEvent.setup();
+    draftState.value = drafted;
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await user.click(await screen.findByTestId("explorer-draft-confirm-all"));
+    await waitFor(() => expect(confirmProposals).toHaveBeenCalledWith("c1", { all: true }, "s"));
+    await user.click(screen.getByRole("button", { name: "Review" }));
+    const [part, link] = screen.getAllByTestId("explorer-proposal");
+    await user.click(within(part).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(confirmProposals).toHaveBeenLastCalledWith(
+      "c1", { targets: [{ kind: "binding", entity: "order", binding: "lines" }] }, "s"));
+    await user.click(within(link).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(confirmProposals).toHaveBeenLastCalledWith(
+      "c1", { targets: [{ kind: "link", relationship: "order_ships_to_country" }] }, "s"));
+  });
+
+  it("marks what an explorer proposed on its card and on its link", async () => {
+    served.map = {
+      ...map,
+      object_types: map.object_types.map((t) => (t.object_type === "order"
+        ? { ...t, origin: "model" as const, unconfirmed: 1, provenance: "model:m@1" } : t)),
+      links: map.links.map((l) => (l.relationship === "oi_order" ? { ...l, origin: "model" as const } : l)),
+    };
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.edges.length).toBe(2));
+    expect(within(screen.getByTestId("rf-node-order")).getByTestId("entity-map-card-proposed")).toHaveTextContent("proposed");
+    expect(screen.getByTestId("rf-node-product")).not.toHaveTextContent("proposed");
+    expect(handoff.edges.find((e) => e.id === "oi_order")!.style.stroke).toBe("var(--vio4)");
+    expect(handoff.edges.find((e) => e.id === "oi_product")!.style.stroke).toBe("var(--amb4)");   // refused stays refused
+    await waitFor(() =>
+      expect(handoff.edges.find((e) => e.id === "oi_order")!.label).toBe("belongs to · N:1 · proposed"));
   });
 });
