@@ -201,6 +201,30 @@ class Frame(BaseModel):
         return f"the {self.agg} of {self.column} on this reading"
 
 
+class Rollup(BaseModel):
+    """ON-7 — how ONE property of a type is rolled up from a DETAIL binding's rows (ROADMAP §3.15, the second
+    movement).
+
+    A detail binding holds many rows per object with no clock — an order's lines, a customer's tickets — so none
+    of its columns is a property of the object as it stands. A rollup names the one number that is: the sum of
+    the lines' quantity, how many lines there are, the largest unit price. It is computed inside the object's own
+    partition (GROUP BY the binding's key) BEFORE the join, so it arrives as one value per object and joins under
+    the same law a static binding does — it can never multiply the object set. What a rollup means across an
+    object SET is then the same question as for any other property, and the compiler treats it as one.
+    """
+    #: The binding's own column the rollup reads.
+    column: str
+    #: How the rows are reduced to one value per object.
+    agg: Literal["sum", "avg", "min", "max", "count"] = "sum"
+
+    def describe(self, part: str = "") -> str:
+        """The rollup in words, for a property's description and a plan line."""
+        rows = f"each object's {part} rows" if part else "each object's rows"
+        if self.agg == "count":
+            return f"how many of {rows} carry {self.column}"
+        return f"the {self.agg} of {self.column} over {rows}"
+
+
 class Binding(BaseModel):
     """ON-1b — a further source an object type's properties are read from (ROADMAP §3.15, amended 2026-09-11).
 
@@ -213,7 +237,9 @@ class Binding(BaseModel):
     `OntologyEntity.proposed_bindings` so a proposal changes nothing until a person binds it.
     """
     name: str
-    kind: Literal["static", "timeseries"] = "static"
+    #: `static` — one row per object; `timeseries` — many rows per object over `time_column` (ON-5); `detail` —
+    #: many rows per object with no clock, read at the object's grain only through its `rollups` (ON-7).
+    kind: Literal["static", "timeseries", "detail"] = "static"
     table: Optional[str] = None
     sql: Optional[str] = None
     #: The binding's column that holds the object's key.
@@ -230,6 +256,9 @@ class Binding(BaseModel):
     #: ON-5 — property name → the frame over the readings it is computed from. Timeseries bindings only; the
     #: name is a property of the type like any other, and its column exists only in the reduction.
     frames: dict[str, Frame] = Field(default_factory=dict)
+    #: ON-7 — property name → the rollup it is computed by. Detail bindings only; the name is a property of the
+    #: type like any other, and its column exists only in the pre-aggregation.
+    rollups: dict[str, Rollup] = Field(default_factory=dict)
     source: Literal["human", "proposed"] = "human"
     #: Measured — None until counted: the binding's rows, its rows with a key, its distinct keys, the objects it
     #: was measured against, how many of them it covers, and the distinct keys that reach no object.
@@ -272,6 +301,16 @@ class OntologyEntity(BaseModel):
     #: ON-1b: the bindings the data proposes — another table carrying this type's key, measured one row per
     #: object. Kept apart so a proposal changes no query, no page and no answer until a person binds it.
     proposed_bindings: list[Binding] = Field(default_factory=list)
+    #: ON-7 — where this type came from: `table` (the builder minted it from a profiled table — a PROPOSAL the
+    #: business keeps, absorbs or renames), `human` (declared through POST /ontology/entities), `model` (an
+    #: explorer's proposal, ON-7b). Every graph built before reads `table`, so it loads unchanged.
+    origin: Literal["table", "human", "model"] = "table"
+    #: ON-7 — the id of the type this one is a PART of: an order line is a part of Order, a return's logistics
+    #: row a part of Return. Set by a person (or through the bind door's `absorb`); it HOLDS only while the
+    #: parent carries a binding over this type's own table (`aughor.ontology.parts.part_of`), so removing that
+    #: binding releases the part without a second edit. A part stays a type — its objects, links and pages keep
+    #: working by its name — and is hidden from the map and listed under its parent instead.
+    absorbed_into: Optional[str] = None
 
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
@@ -418,6 +457,9 @@ class OntologyRelationship(BaseModel):
     #: renames the link without leaving a stale copy; the mechanical pair above stays the stable fallback
     #: every query and page still accepts.
     name: str = ""
+    #: ON-7 — `join_map` (the builder found the join), `human` (declared through POST /ontology/links), `model`
+    #: (an explorer's proposal). Every graph built before reads `join_map`.
+    origin: Literal["join_map", "human", "model"] = "join_map"
 
     @model_validator(mode="after")
     def _fill_link_names(self) -> "OntologyRelationship":

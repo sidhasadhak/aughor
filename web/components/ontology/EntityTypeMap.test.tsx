@@ -78,9 +78,18 @@ const map: TypeMap = {
   })),
 };
 
+const served: { map: TypeMap } = { map };
+/** The door answers with the type, and the map's re-read then carries it — as the server does. */
+const declareEntity = vi.fn(async (..._args: unknown[]) => {
+  const made = { ...map.object_types[0], object_type: "purchase_order", id: "PurchaseOrder", display_name: "Purchase order" };
+  served.map = { ...served.map, object_types: [...served.map.object_types, made] };
+  return { object_type: "purchase_order" };
+});
+
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
-  getTypeMap: vi.fn(async () => map),
+  getTypeMap: vi.fn(async () => served.map),
+  declareEntity: (...a: unknown[]) => declareEntity(...a),
 }));
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
@@ -93,6 +102,8 @@ describe("EntityTypeMap", () => {
     window.localStorage.clear();
     stored.value = undefined;
     putPreference.mockClear();
+    declareEntity.mockClear();
+    served.map = map;
     handoff.nodes = [];
     handoff.edges = [];
   });
@@ -182,5 +193,54 @@ describe("EntityTypeMap", () => {
     await userEvent.click(reset);
     await waitFor(() => expect(putPreference).toHaveBeenLastCalledWith("ontology_map_layout", { [SCOPE]: {} }));
     expect(handoff.nodes.find((n) => n.id === "order")!.position).not.toEqual({ x: 42, y: 7 });
+  });
+});
+
+describe("EntityTypeMap — ON-7: parts fold into their parent, and a person declares an entity", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    stored.value = undefined;
+    declareEntity.mockClear();
+    served.map = map;
+    handoff.nodes = [];
+    handoff.edges = [];
+  });
+
+  it("draws no card for a part, and draws its links from the parent's card, named through the part", async () => {
+    served.map = {
+      ...map,
+      object_types: map.object_types.map((t) =>
+        t.object_type === "order_item" ? { ...t, absorbed_into: "order" }
+          : t.object_type === "order" ? { ...t, parts: [{ object_type: "order_item", display_name: "order_item", binding: "lines", kind: "detail" }] }
+            : t),
+      links: map.links.map((l) => ({ ...l, shown_from: "order", shown_to: l.to })),
+    };
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.nodes.length).toBe(3));
+    expect(handoff.nodes.map((n) => n.id).sort()).toEqual(["country", "order", "product"]);
+    // the part's link to its own parent is the binding it is read through — not an edge; its link to Product is
+    // drawn from Order's card and says it came through the part
+    expect(handoff.edges.map((e) => e.id)).toEqual(["oi_product"]);
+    expect(handoff.edges[0].source).toBe("order");
+    await waitFor(() => expect(handoff.edges[0].label).toBe("contains · 1:N · via order_item"));
+    // the rail lists the part under the cards, and the card says it has one
+    expect(screen.getAllByTestId("entity-rail-part").map((b) => b.textContent)).toEqual(["order_itempart of order"]);
+    expect(screen.getByTestId("rf-node-order")).toHaveTextContent("1 part");
+  });
+
+  it("declares an entity from the rail and opens it", async () => {
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.nodes.length).toBe(4));
+    await userEvent.click(screen.getByTestId("entity-declare-open"));
+    await userEvent.type(screen.getByLabelText("Entity id"), "PurchaseOrder");
+    await userEvent.type(screen.getByLabelText("Entity display name"), "Purchase order");
+    await userEvent.type(screen.getByLabelText("Entity table"), "purchase_orders");
+    expect(screen.getByRole("button", { name: "Declare" })).toBeDisabled();       // no key yet
+    await userEvent.type(screen.getByLabelText("Entity key column"), "po_id");
+    await userEvent.click(screen.getByRole("button", { name: "Declare" }));
+    await waitFor(() => expect(declareEntity).toHaveBeenCalledWith("c1", {
+      id: "PurchaseOrder", display_name: "Purchase order", backing: { primary_key: "po_id", table: "purchase_orders" },
+    }, "s"));
+    await waitFor(() => expect(screen.getByTestId("panel")).toHaveTextContent("purchase_order"));
   });
 });

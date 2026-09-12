@@ -53,6 +53,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from aughor.ontology.parts import detail_from, rollup_note
 from aughor.ontology.timeseries import latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.models import (
@@ -235,6 +236,11 @@ def link_problem(h: ObjectLink) -> str:
     if h.label == "N:N":
         return (f"link {h.describe()} is N:N by measurement — neither {h.source.id}.{h.local_col} nor "
                 f"{h.target.id}.{h.remote_col} is unique, so no join or pre-aggregation over it is safe")
+    if h.rel.value_overlap is not None and h.rel.value_overlap <= 0:
+        # ON-7 — a declared link is measured on how many of its keys meet; none is a join that reads every
+        # linked value as NULL, and a NULL is not an answer. (The builder drops a found link like this at build.)
+        return (f"link {h.describe()} was measured and its keys never meet — no {h.source.id}.{h.local_col} value "
+                f"is held by {h.target.id}.{h.remote_col}; check the columns the link was declared on")
     return ""
 
 
@@ -621,7 +627,9 @@ class _Compiler:
             b = entity.backing
             key = (b.primary_key if b is not None else "") or entity.identity_key
             joined = self._alias("b")
-            source = latest_from(binding, joined) if binding.kind == "timeseries" else binding_from(binding, joined)
+            source = (latest_from(binding, joined) if binding.kind == "timeseries"
+                      else detail_from(binding, joined) if binding.kind == "detail"
+                      else binding_from(binding, joined))
             if not source:
                 raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which names "
                                          "no source to read it from")
@@ -648,6 +656,12 @@ class _Compiler:
         if self.hop(entity, low) is not None:
             raise ObjectQueryRefused(f"'{name}' names both a link and a binding on {entity.id} — the compiler "
                                      "will not guess which one a path means; rename one of them")
+        if binding.kind == "detail":
+            supplied = ", ".join(sorted(binding.properties)) or "none"
+            raise ObjectQueryRefused(f"{binding.name} on {entity.id} is a detail binding — many rows per object — "
+                                     f"read at the object's grain through its rollups ({supplied}); the rows "
+                                     f"themselves are reached at their own grain through the link to their type",
+                                     sorted(binding.properties))
         if binding.kind != "timeseries":
             supplied = ", ".join(sorted(binding.properties)) or "none"
             raise ObjectQueryRefused(f"{binding.name} on {entity.id} is a static binding — one row per object — "
@@ -762,6 +776,9 @@ class _Compiler:
             self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key}, "
                              f"{latest_note(binding)} — one row per {entity.id} by construction, so it cannot "
                              f"multiply {entity.id} rows ({binding.note})")
+        elif binding.kind == "detail":
+            self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key}, "
+                             f"{rollup_note(binding)} ({binding.note})")
         else:
             self.plan.append(f"binding {binding.name} on {entity.id}: {source} joined on {key} = {binding.key} — one "
                              f"row per {entity.id} by measurement ({binding.note}), so it cannot multiply "
@@ -769,7 +786,8 @@ class _Compiler:
         self.bindings.append({"binding": binding.name, "object_type": entity.api_name, "kind": binding.kind,
                               "source": source, "on": f"{key} = {binding.key}", "rows": binding.rows,
                               "objects": binding.objects, "covered": binding.covered,
-                              "treatment": "latest" if binding.kind == "timeseries" else "joined",
+                              "treatment": ("latest" if binding.kind == "timeseries"
+                                            else "rolled up" if binding.kind == "detail" else "joined"),
                               "time_column": binding.time_column or None})
 
     def note_overlay(self, entity: OntologyEntity, name: str, edits: list) -> None:

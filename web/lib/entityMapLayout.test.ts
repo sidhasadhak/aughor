@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { CARD, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes } from "@/lib/entityMapLayout";
+import { CARD, collapseParts, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes } from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink, TypeMapRow } from "@/lib/objectTypes";
 
 const link = (from: string, to: string): TypeMapLink => ({
@@ -129,5 +129,32 @@ describe("layoutMap", () => {
     const layout = layoutMap(lonely, "country");
     expect(layout.nodes).toEqual([{ objectType: "country", ring: 0, x: layout.width / 2, y: expect.any(Number) }]);
     expect(layout.width).toBeGreaterThanOrEqual(CARD.w);
+  });
+});
+
+describe("collapseParts — ON-7: a part is not a card", () => {
+  const folded = (): TypeMap => ({
+    ...commerce,
+    object_types: commerce.object_types.map((t) => (t.object_type === "order_item" ? { ...t, absorbed_into: "order" } : t)),
+    links: commerce.links.map((l) => ({ ...l, shown_from: l.from === "order_item" ? "order" : l.from,
+                                           shown_to: l.to === "order_item" ? "order" : l.to })),
+  });
+
+  it("drops the part's card and draws its links from the parent, saying which part they came through", () => {
+    const shown = collapseParts(folded());
+    expect(shown.object_types.map((t) => t.object_type)).toEqual(["customer", "order", "product", "shipment"]);
+    // order — order_item is the binding the part is read through, not an edge; the other two move to Order's card
+    expect(shown.links.map((l) => [l.relationship, l.from, l.to, (l as { via?: string }).via])).toEqual([
+      ["customer_order", "customer", "order", undefined],
+      ["order_item_product", "order", "product", "order_item"],
+      ["order_item_shipment", "order", "shipment", "order_item"],
+    ]);
+    expect(hubOf(shown)).toBe("order");                                  // the middle is the business entity now
+  });
+
+  it("changes nothing on a map with no parts, and keeps a link whose stand-in the server never named", () => {
+    expect(collapseParts(commerce)).toEqual(commerce);
+    const older = { ...folded(), links: commerce.links };                // an API that sends no shown_from/shown_to
+    expect(collapseParts(older).links.map((l) => l.relationship)).toEqual(["customer_order"]);
   });
 });

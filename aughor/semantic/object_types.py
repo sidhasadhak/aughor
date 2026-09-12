@@ -20,6 +20,7 @@ from typing import Optional, Union
 from aughor.ontology.bindings import binding_problem, binding_spec, column_of
 from aughor.ontology.display import display_of, key_of
 from aughor.ontology.models import LINK_NAME_PATTERN, Binding, OntologyEntity, OntologyGraph
+from aughor.ontology.parts import absorb_problem, part_of, parts_of
 from aughor.semantic.object_query import (
     MAX_LINK_HOPS,
     ObjectLink,
@@ -76,10 +77,31 @@ def _further_binding(entity: OntologyEntity, binding: Binding) -> dict:
            "non_null": binding.non_null, "distinct": binding.distinct, "objects": binding.objects,
            "covered": binding.covered, "orphans": binding.orphans, "note": binding.note,
            "supplies": len(binding.properties), "skipped": dict(binding.skipped), "usable": not problem,
-           "frames": {name: f.describe() for name, f in binding.frames.items()}}
+           "frames": {name: f.describe() for name, f in binding.frames.items()},
+           "rollups": {name: r.describe(binding.name) for name, r in binding.rollups.items()}}
     if problem:
         row["why_not"] = problem
     return row
+
+
+def _part_rows(graph: OntologyGraph, entity: OntologyEntity) -> list[dict]:
+    """ON-7 — the types that are PARTS of this one, each with the binding it is read through."""
+    return [{"object_type": part.api_name, "id": part.id, "display_name": part.display_name or part.id,
+             "binding": binding.name, "kind": binding.kind, "table": binding.table or "",
+             "rows": part.backing.rows if part.backing is not None else None}
+            for part, binding in parts_of(graph, entity)]
+
+
+def _part_of_row(graph: OntologyGraph, entity: OntologyEntity) -> Optional[dict]:
+    """ON-7 — the type this one is a part of, when the mark holds; a mark that lapsed says why."""
+    parent = part_of(graph, entity)
+    if parent is not None:
+        return {"object_type": parent.api_name, "id": parent.id, "display_name": parent.display_name or parent.id,
+                "holds": True, "note": ""}
+    if entity.absorbed_into:
+        return {"object_type": "", "id": entity.absorbed_into, "display_name": entity.absorbed_into, "holds": False,
+                "note": absorb_problem(graph, entity.absorbed_into, entity)}
+    return None
 
 
 def _source(binding: dict, column: str) -> dict:
@@ -110,7 +132,7 @@ def link_row(h: ObjectLink) -> dict:
     problem = link_problem(h)
     rel = h.rel
     row = {"name": h.name, "business_name": h.business, "business_name_source": rel.business_name_source(),
-           "verb": rel.verb, "relationship": rel.id,
+           "verb": rel.verb, "relationship": rel.id, "origin": rel.origin,
            "direction": "out" if rel.from_entity == h.source.id else "in",
            "to": h.target.api_name, "to_type": h.target.id, "to_name": h.target.display_name or h.target.id,
            "cardinality": h.label, "measured": rel.measured_cardinality is not None,
@@ -215,6 +237,9 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
                                           # ON-5 — a frame has no column of its own: it is computed over the
                                           # readings, so what it IS is said instead of where it is read from.
                                           **({"frame": bound.frames[name].describe()} if name in bound.frames else {}),
+                                          # ON-7 — a rollup likewise: computed over the object's rows, not read.
+                                          **({"rollup": bound.rollups[name].describe(bound.name)}
+                                             if name in bound.rollups else {}),
                                           **({} if row["usable"] else {"read": False})}})
     for edits in overlay_properties(entity, overlay).values():
         properties.append({"name": edits[0].column, "display_name": edits[0].column, "role": "overlay",
@@ -226,9 +251,11 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
     metrics, unverified = _metrics(graph, entity)
     proposals = [p for p in _proposals(entity) if p["table"].lower() not in hidden]
     b = entity.backing
+    parts, parent = _part_rows(graph, entity), _part_of_row(graph, entity)
     out = {
         "object_type": entity.api_name, "id": entity.id, "display_name": entity.display_name or entity.id,
         "description": entity.description, "role": entity.entity_type, "domain": entity.domain or "",
+        "origin": entity.origin, "parts": parts, "part_of": parent,
         "key": {"property": key, "verified": b.verified if b is not None else None,
                 "rows": b.rows if b is not None else None, "note": b.verification_note if b is not None else ""},
         "display_property": display_of(entity),
@@ -249,7 +276,7 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
         "counts": {"properties": len(properties), "bindings": 1 + len(further),
                    "proposed_bindings": len(proposals), "links": len(links),
                    "traversable_links": sum(1 for link in links if link["traversable"]),
-                   "actions": len(actions), "metrics": len(metrics)},
+                   "actions": len(actions), "metrics": len(metrics), "parts": len(parts)},
     }
     out["summary"] = _summary(out)
     return out
@@ -264,8 +291,13 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
         shown = display_of(e)
         b = e.backing
         metrics, _ = _metrics(graph, e)
+        parent, parts = part_of(graph, e), parts_of(graph, e)
         types.append({"object_type": e.api_name, "id": e.id, "display_name": e.display_name or e.id,
                       "role": e.entity_type, "domain": e.domain or "", "key": key_of(e),
+                      # ON-7 — who made the type, whether it is a part of another (and of which), and its parts.
+                      "origin": e.origin, "absorbed_into": parent.api_name if parent is not None else "",
+                      "parts": [{"object_type": p.api_name, "display_name": p.display_name or p.id, "binding": b.name,
+                                 "kind": b.kind} for p, b in parts],
                       "key_verified": b.verified if b is not None else None,
                       "rows": b.rows if b is not None else None, "table": _binding(e, 0).get("table", ""),
                       "display_property": shown["property"], "display_is_key": shown["is_key"],
@@ -282,7 +314,10 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
             continue
         forward = next((h for h in object_links(graph, source) if h.rel is r and h.target is target), None)
         problem = link_problem(forward) if forward is not None else "this link could not be read from its source"
+        shown_from, shown_to = part_of(graph, source) or source, part_of(graph, target) or target
         edges.append({"relationship": r.id, "from": source.api_name, "to": target.api_name,
+                      # ON-7 — the type each end is DRAWN as: a part's edges are drawn from its parent's card.
+                      "shown_from": shown_from.api_name, "shown_to": shown_to.api_name, "origin": r.origin,
                       "name": r.api_name, "reverse_name": r.reverse_api_name, "business_name": r.business_name(),
                       "verb": r.verb, "cardinality": r.measured_cardinality or r.cardinality,
                       "measured": r.measured_cardinality is not None, "traversable": not problem,
