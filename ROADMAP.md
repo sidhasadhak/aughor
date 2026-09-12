@@ -4133,7 +4133,25 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   TOP of an otherwise empty pane. Live on LuxExperience: 14 types, 11 relationships, the whole map at 88% in a
   1,004px pane with nothing scrolled off; Order Line (7 links) in the middle with its seven links named; picking
   Product lights Product, Order Line and Price History and names `contains 1:N` and `has 1:N`; Brand, Country,
-  Date and Warehouse listed under the map. 22 layout tests, seven web gates, 820 vitest.
+  Date and Warehouse listed under the map.
+  **Rebuilt on `@xyflow/react` the same day, on the user's second reading** (*"too clustered … the background of
+  ontology screen should not be dotted.. make the background colour darker too … the idea of a button to put an
+  entity in center is terrible.. you made it unnecessarily complex.. Make the Map zoomable, entities movable (and
+  persist position change).. we need only map in ontology.. overview doesnt matter if it is not being used as
+  context.. remove it"*). Pan, zoom, fit and drag are now the library's — the fifth canvas in this app on it —
+  which deleted three hand-rolled mechanisms (a scroll box, a zoom stepper, a pan handler) that between them still
+  could not move a card, and every line of edge and label geometry with them. A card a person drags STAYS there,
+  per connection, across reloads (`ont-map-layout:<connection>:<schema>` in that browser — per person, not yet
+  shared), with one button to put them all back; `layoutMap` now only decides where a card STARTS. Every card is
+  the same size — the centre used to be a bigger, denser card, which is most of what made the middle unreadable,
+  and everything it showed is in the panel already open beside it. The "centre the map here" button is gone: the
+  middle means the busiest type and nothing offers to change that. No dot grid, and the deeper `--bg-canvas`
+  ground. **The Overview is gone** with its drawer stack (613 lines) — a second drawing of the same facts that
+  nothing downstream read; the Org board keeps its own canvas, which is where `OntologyCanvas` still lives.
+  Driven live: the whole map fits its pane; Shipment dragged 112×72px to the top-left stayed there through a full
+  reload; picking Product lights it, Order Line and Price History and names `contains · 1:N` and `has · 1:N`.
+  16 tests pin the starting layout and 5 the canvas handoff — the only place a wrong handle id (an edge dropped in
+  silence, which looks exactly like an ontology with no links) would show. Seven web gates, 816 vitest.
 - **ON-3c · The agent reads the type — AMENDED 2026-09-11; BUILT and its RECEIPT MET the same day.**
   `describe_entity` (the agent's
   roster and MCP, one body) returns the ON-1 object type instead of the context graph's table node: api
