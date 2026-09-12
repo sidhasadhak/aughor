@@ -250,9 +250,17 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
                   </span>
                 )}
-                {/* ON-5 — a timeseries property is a value AT A TIME. The time is not a footnote to it. */}
+                {/* ON-5 — a timeseries property is a value AT A TIME, and what it was before is half of what a
+                    reader wants: a price of 246 says one thing after 287 and another after 210. */}
                 {p.binding?.kind === "timeseries" && p.value != null && (
-                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}> as of {cellText(p.binding.at)}</span>
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                    {" "}as of {cellText(p.binding.at)}
+                    {p.binding.previous != null && (
+                      <span title={`its reading of ${cellText(p.binding.previous_at)}`}>
+                        {" "}· from {cellText(p.binding.previous)}
+                      </span>
+                    )}
+                  </span>
                 )}
                 {p.binding && (
                   <span className="aug-fs-xs" style={{ ...MONO, display: "block", color: "var(--t4)" }}

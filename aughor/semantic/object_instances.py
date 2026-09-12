@@ -146,6 +146,13 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
             caveats.append(f"{binding.name} holds more than one row for {key} = {pk!r} — showing the first")
         by_column = dict(zip(read, list(rows[0]) if rows else [None] * len(read)))
         at = by_column.get(binding.time_column) if latest else None
+        # ON-5 — the reading BEFORE the latest one, read off the history's second row rather than by a second
+        # query: `history_sql` is ordered by the reduction's own ordering reversed, so its first row IS the row
+        # the latest value came from and its second is unambiguously the one before it.
+        history = _history(db, entity, binding, literal, pk) if latest else None
+        before: dict = {}
+        if history is not None and len(history["rows"]) > 1:
+            before = dict(zip(history["columns"], history["rows"][1]))
         source = binding.table or "a keyed SELECT"
         for name, p in supplied:
             column = column_of(binding, name)
@@ -156,9 +163,11 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
                                "binding": {"name": binding.name, "kind": binding.kind, "source": source,
                                            "column": column,
                                            **({"time_column": binding.time_column, "at": at,
+                                               "previous": before.get(column),
+                                               "previous_at": before.get(binding.time_column),
                                                "note": latest_note(binding)} if latest else {})}})
-        if latest:
-            series.append({**_history(db, entity, binding, literal, pk), "latest_at": at})
+        if history is not None:
+            series.append({**history, "latest_at": at})
     return properties, series, caveats
 
 

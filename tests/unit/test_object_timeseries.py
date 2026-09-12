@@ -46,6 +46,8 @@ FROM range(1, 6001) t(i);
 -- one order with a long history, so the page's cap is a real cap and not the whole of it
 INSERT INTO ecommerce.order_events
 SELECT 'O000001', TIMESTAMP '2022-01-01 00:00:00' + (i || ' days')::INTERVAL, 'packed', 5.00 FROM range(1, 21) t(i);
+CREATE TABLE ecommerce.order_flags AS
+SELECT printf('O%06d', i) AS order_id, i % 7 = 0 AS is_gift FROM range(1, 5001) t(i);
 CREATE TABLE ecommerce.order_signals AS
 SELECT * FROM (VALUES
   ('O000001', TIMESTAMP '2024-01-01 00:00:00', 10.0, 'a'),
@@ -196,6 +198,104 @@ def test_a_tie_on_time_still_yields_one_row_rather_than_a_mix_of_two(db, graph):
     assert rows(db, compiled.sql) == [("q", 40.0)]
 
 
+# ── the readings, as a set ──────────────────────────────────────────────────────────────────
+
+def test_the_bare_property_is_the_latest_value_and_the_binding_name_is_the_whole_history(db, graph):
+    """The distinction the whole wave turns on, held to two different reference numbers."""
+    bind(graph, db, "Order", "events", EVENTS)
+    latest = compile_({"object_type": "order", "filters": [{"path": "event", "value": "delivered"}],
+                       "measures": [{"agg": "count"}]}, graph)
+    ever = compile_({"object_type": "order", "filters": [{"path": "events.event", "value": "delivered"}],
+                     "measures": [{"agg": "count"}]}, graph)
+    [(latest_n,)] = rows(db, latest.sql)
+    [(ever_n,)] = rows(db, ever.sql)
+    assert latest_n == float(ints(db, LATEST_REFERENCE.format(select="COUNT(*)",
+                                                              where="latest.event = 'delivered'"))[0])
+    assert ever_n == float(ints(db, "SELECT COUNT(*) FROM orders o WHERE EXISTS (SELECT 1 FROM order_events e "
+                                    "WHERE e.order_id = o.order_id AND e.event = 'delivered')")[0])
+    assert ever_n > latest_n > 0                    # every order with a delivery, against those delivered LAST
+
+
+def test_a_condition_on_the_readings_filters_the_object_set_and_never_multiplies_it(db, graph):
+    bind(graph, db, "Order", "events", EVENTS)
+    compiled = compile_({"object_type": "order", "filters": [{"path": "events.backlog_hours", "op": ">",
+                                                              "value": 95}],
+                         "measures": [{"agg": "count"}]}, graph)
+    assert "EXISTS" in compiled.sql and "JOIN order_events" not in compiled.sql
+    assert rows(db, compiled.sql) == rows(db, "SELECT COUNT(*) FROM orders o WHERE EXISTS (SELECT 1 FROM "
+                                              "order_events e WHERE e.order_id = o.order_id AND "
+                                              "e.backlog_hours > 95)")
+    [noted] = compiled.bindings
+    assert (noted["treatment"], noted["kind"]) == ("semi-join", "timeseries")
+
+
+def test_an_aggregate_over_the_readings_equals_its_reference_and_rolls_up_as_a_ratio_of_sums(db, graph):
+    bind(graph, db, "Order", "events", EVENTS)
+    compiled = compile_({"object_type": "order",
+                         "measures": [{"agg": "count", "path": "events"},
+                                      {"agg": "sum", "path": "events.backlog_hours", "decimals": 2},
+                                      {"agg": "avg", "path": "events.backlog_hours", "decimals": 4},
+                                      {"agg": "max", "path": "events.backlog_hours"}]}, graph)
+    assert rows(db, compiled.sql) == rows(db, """
+        SELECT COUNT(*), ROUND(SUM(e.backlog_hours), 2), ROUND(AVG(e.backlog_hours), 4), MAX(e.backlog_hours)
+        FROM order_events e JOIN orders o ON o.order_id = e.order_id""")
+    assert "GROUP BY" in compiled.sql and "NULLIF" in compiled.sql      # pre-aggregated, and avg is a ratio
+    assert any("aggregated per order_id BEFORE the join" in line for line in compiled.plan)
+    [noted] = compiled.bindings
+    assert noted["treatment"] == "pre-aggregated"
+
+
+def test_a_where_on_a_readings_measure_reads_the_readings_own_columns(db, graph):
+    """"Only the readings since March" — the ask a latest value cannot answer."""
+    bind(graph, db, "Order", "events", EVENTS)
+    compiled = compile_({"object_type": "order",
+                         "measures": [{"agg": "count", "path": "events",
+                                       "where": [{"path": "event_at", "op": ">=", "value": "2023-06-01"}]},
+                                      {"agg": "avg", "path": "events.backlog_hours", "decimals": 4,
+                                       "where": [{"path": "event", "value": "packed"}]}]}, graph)
+    assert rows(db, compiled.sql) == rows(db, """
+        SELECT COUNT(CASE WHEN e.event_at >= TIMESTAMP '2023-06-01' THEN 1 END),
+               ROUND(AVG(CASE WHEN e.event = 'packed' THEN e.backlog_hours END), 4)
+        FROM order_events e JOIN orders o ON o.order_id = e.order_id""")
+
+
+def test_the_readings_and_the_latest_value_can_be_asked_for_together(db, graph):
+    bind(graph, db, "Order", "events", EVENTS)
+    compiled = compile_({"object_type": "order", "filters": [{"path": "event", "value": "delivered"}],
+                         "measures": [{"agg": "avg", "path": "backlog_hours", "decimals": 4},
+                                      {"agg": "avg", "path": "events.backlog_hours", "decimals": 4}]}, graph)
+    assert rows(db, compiled.sql) == rows(db, """
+        SELECT ROUND(AVG(latest.backlog_hours), 4), ROUND(1.0 * SUM(h.total) / NULLIF(SUM(h.n), 0), 4)
+        FROM orders o
+        JOIN LATERAL (SELECT e.event, e.backlog_hours FROM order_events e WHERE e.order_id = o.order_id
+                      ORDER BY e.event_at DESC, e.event DESC, e.backlog_hours DESC LIMIT 1) latest ON TRUE
+        LEFT JOIN (SELECT order_id, SUM(backlog_hours) AS total, COUNT(backlog_hours) AS n
+                   FROM order_events GROUP BY order_id) h ON h.order_id = o.order_id
+        WHERE latest.event = 'delivered'""")
+
+
+def test_what_the_readings_refuse_to_answer(db, graph):
+    order = bind(graph, db, "Order", "events", EVENTS)
+    bind(graph, db, "Order", "flags", {"table": "order_flags", "key": "order_id"})
+    refusals = [
+        ({"measures": [{"agg": "count_distinct", "path": "events.event"}]}, "does not add up"),
+        ({"measures": [{"agg": "sum", "path": "events"}]}, "needs one of its columns"),
+        ({"measures": [{"agg": "avg", "path": "events.event"}]}, "not a known quantity"),
+        ({"measures": [{"agg": "count", "path": "events.nope"}]}, "supplies no 'nope'"),
+        ({"measures": [{"agg": "count", "path": "flags.is_gift"}]}, "is a static binding"),
+        ({"filters": [{"path": "events", "op": "="}], "measures": [{"agg": "count"}]}, "set of readings"),
+        ({"filters": [{"path": "events.event.nope", "value": "x"}], "measures": [{"agg": "count"}]},
+         "has no links"),
+    ]
+    for query, said in refusals:
+        why = refusal({"object_type": "order", "measures": [{"agg": "count"}], **query}, graph).reason
+        assert said in why, (said, why)
+    # an unmeasured binding is refused as a set too, with the count door named
+    order.bindings[0].verified = None
+    assert "unmeasured" in refusal({"object_type": "order", "measures": [{"agg": "count", "path": "events"}]},
+                                   graph).reason
+
+
 # ── the object page ─────────────────────────────────────────────────────────────────────────
 
 def test_the_object_page_shows_the_latest_value_when_it_was_measured_and_the_history_behind_it(db, graph):
@@ -220,6 +320,32 @@ def test_the_object_page_shows_the_latest_value_when_it_was_measured_and_the_his
     when = [str(r[series["columns"].index("event_at")]) for r in series["rows"]]
     assert when == sorted(when, reverse=True)                  # newest first, which is how a person reads it
     assert when[0] == str(series["latest_at"])                 # and the first reading IS the latest value's
+
+
+def test_the_page_says_what_the_value_was_before_it_and_reads_it_off_the_same_history(db, graph):
+    bind(graph, db, "Order", "events", EVENTS)
+    page = get_object(graph, db, "order", "O000001")
+    bound = {p["name"]: p for p in page.properties if p.get("binding")}
+    [series] = page.timeseries
+    at = series["columns"].index("event_at")
+    # the history's FIRST row is the row the latest value came from — one ordering, not two
+    assert [str(v) for v in series["rows"][0]] == [str(bound[c]["value"]) for c in series["columns"]]
+    for column in ("event", "backlog_hours"):
+        i = series["columns"].index(column)
+        assert str(bound[column]["binding"]["previous"]) == str(series["rows"][1][i])
+        assert str(bound[column]["binding"]["previous_at"]) == str(series["rows"][1][at])
+    assert str(bound["event"]["binding"]["at"]) != str(bound["event"]["binding"]["previous_at"])
+
+
+def test_an_object_with_one_reading_has_no_previous_rather_than_its_own_value(db, graph):
+    bind(graph, db, "Order", "signals", SIGNALS)
+    page = get_object(graph, db, "order", "O000002")            # its two readings are tied on one instant
+    bound = {p["name"]: p for p in page.properties if p.get("binding")}
+    assert bound["level"]["value"] is not None
+    assert bound["level"]["binding"]["previous"] is not None    # two readings: the tie-break says which is which
+    page_one = get_object(graph, db, "order", "O000004")        # no reading at all
+    one = {p["name"]: p for p in page_one.properties if p.get("binding")}
+    assert one["level"]["value"] is None and one["level"]["binding"]["previous"] is None
 
 
 def test_an_object_no_reading_reaches_shows_the_property_empty_rather_than_someone_elses(db, graph):

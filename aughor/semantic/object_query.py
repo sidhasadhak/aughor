@@ -30,6 +30,11 @@ applied BY CONSTRUCTION instead of checked afterwards:
   joined as each object's LATEST row (ON-5, `aughor.ontology.timeseries`): the reduction is one row per object by
   construction, so the same law holds, and the filter and the measure then read a value whose time semantics are
   declared rather than improvised.
+* **A timeseries binding's READINGS are reachable as a SET** under the binding's own name (`price_history.price_eur`
+  against the bare `price_eur`, which is the latest value). They are the same shape as a to-many link and are
+  treated the same way, by the same code: pre-aggregated per the object's key before the join for a measure, and
+  EXISTS for a condition. `where` on such a measure reads the READING's own columns, which is how "only the
+  readings since March" is asked.
 
 Coverage-gated as v1 is: every name resolves against the served graph or the compiler REFUSES
 with the reason and the names that do exist. It never guesses, and a refusal is an answer —
@@ -42,7 +47,7 @@ import difflib
 import math
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal, Optional
+from typing import Any, Callable, Literal, Optional
 
 from pydantic import BaseModel, Field, ValidationError
 
@@ -347,6 +352,22 @@ def _predicate(col: str, p: EntityProperty, f: ObjectFilter) -> str:
     raise ObjectQueryRefused(f"filter '{f.path}': {op} takes a link, not a property")
 
 
+def _rollup(agg: str, alias: str, add: Callable[[str], str], value: Optional[str], cond: str) -> str:
+    """How a per-key aggregate rolls up to the object set — ONE law for a to-many LINK (ON-2) and for a
+    timeseries binding's READINGS (ON-5), because a second copy of it is exactly where an average of averages
+    would get in. `add` registers a column on the pre-aggregation and returns its name."""
+    if agg == "count":
+        return f"COALESCE(SUM({alias}.{add(_agg_sql('count', value, cond))}), 0)"
+    if agg == "sum":
+        return f"SUM({alias}.{add(_agg_sql('sum', value, cond))})"
+    if agg in ("min", "max"):
+        return f"{agg.upper()}({alias}.{add(_agg_sql(agg, value, cond))})"
+    # an average rolls up as a ratio of sums, never an average of per-key averages
+    s = add(_agg_sql("sum", value, cond))
+    n = add(_agg_sql("count", value, cond))
+    return f"1.0 * SUM({alias}.{s}) / NULLIF(SUM({alias}.{n}), 0)"
+
+
 def _agg_sql(agg: str, value: Optional[str], cond: str) -> str:
     """One aggregate, restricted to the rows `cond` admits. `value=None` counts rows."""
     if value is None:
@@ -445,6 +466,34 @@ class _Scope:
 
 
 @dataclass
+class _Readings:
+    """ON-5 — one timeseries binding's readings, pre-aggregated per the object's key. The same shape as a
+    to-many link (`_ManyLink`) and rolled up by the same law (`_rollup`): its source holds many rows per
+    object, so it is reduced to one row per object BEFORE the join and can never multiply the object set."""
+    binding: Binding
+    entity_key: str
+    outer_alias: str
+    alias: str
+    inner_alias: str
+    columns: list[tuple[str, str]] = field(default_factory=list)
+
+    def column(self, expr: str) -> str:
+        for name, existing in self.columns:
+            if existing == expr:
+                return name
+        name = f"v{len(self.columns) + 1}"
+        self.columns.append((name, expr))
+        return name
+
+    def join_sql(self) -> str:
+        key = f"{self.inner_alias}.{quote_ident(self.binding.key)}"
+        cols = ", ".join(f"{expr} AS {name}" for name, expr in self.columns)
+        return (f"LEFT JOIN (SELECT {key} AS k, {cols} FROM {binding_from(self.binding, self.inner_alias)} "
+                f"GROUP BY {key}) AS {self.alias} "
+                f"ON {self.outer_alias}.{quote_ident(self.entity_key)} = {self.alias}.k")
+
+
+@dataclass
 class _ManyLink:
     """One to-many link, pre-aggregated per its key: every measure over it becomes a column."""
     hop: ObjectLink
@@ -489,6 +538,8 @@ class _Compiler:
         self.caveats: list[str] = []
         self._n = 0
         self._many: dict[tuple, _ManyLink] = {}
+        #: ON-5 — one pre-aggregation per (object alias, timeseries binding) read as a set.
+        self._readings: dict[tuple, _Readings] = {}
         self._noted: set = set()
         #: Time columns typed DATE: a truncation over one must render as DATE_TRUNC, not
         #: TIMESTAMP_TRUNC, on dialects that tell the two apart (BigQuery).
@@ -579,6 +630,128 @@ class _Compiler:
             scope.join_alias[slot] = joined
             self.note_binding(entity, binding, key)
         return f"{joined}.{quote_ident(column_of(binding, p.name))}"
+
+    def object_key(self, entity: OntologyEntity) -> str:
+        """The column that holds an object's key — what every binding joins on."""
+        b = entity.backing
+        return (b.primary_key if b is not None else "") or entity.identity_key
+
+    def readings_binding(self, entity: OntologyEntity, name: str) -> Optional[Binding]:
+        """ON-5 — the timeseries binding ``name`` names on ``entity``, whose READINGS a path reaches as a set
+        (`price_history.price_eur`), as against the bare property name, which is the object's LATEST value.
+        None when nothing of that name binds here. A name that is both a link and a binding is refused rather
+        than resolved one way in silence."""
+        low = (name or "").strip().lower()
+        binding = next((b for b in entity.bindings or [] if b.name.lower() == low), None)
+        if binding is None:
+            return None
+        if self.hop(entity, low) is not None:
+            raise ObjectQueryRefused(f"'{name}' names both a link and a binding on {entity.id} — the compiler "
+                                     "will not guess which one a path means; rename one of them")
+        if binding.kind != "timeseries":
+            supplied = ", ".join(sorted(binding.properties)) or "none"
+            raise ObjectQueryRefused(f"{binding.name} on {entity.id} is a static binding — one row per object — "
+                                     f"so what it supplies is read by its own name ({supplied}), not through "
+                                     f"'{name}.'", sorted(binding.properties))
+        problem = binding_problem(entity, binding)
+        if problem:
+            raise ObjectQueryRefused(f"the readings of {binding.name} on {entity.id} cannot be read: {problem}")
+        if not self.object_key(entity):
+            raise ObjectQueryRefused(f"{entity.id} declares no key, so its {binding.name} readings have nothing "
+                                     "to hang off")
+        return binding
+
+    def readings_property(self, binding: Binding, name: str, path: str) -> EntityProperty:
+        """One column of a reading. A reading has no links of its own, so this is a single name."""
+        segs = _split(name, "reading")
+        supplied = sorted(binding.properties)
+        if len(segs) > 1:
+            raise ObjectQueryRefused(f"a reading of {binding.name} has no links — '{path}' must name one of its "
+                                     f"columns{_did_you_mean(segs[0], supplied)}", supplied)
+        low = segs[0].lower()
+        found = next((p for k, p in binding.properties.items() if k.lower() == low), None)
+        if found is None:
+            raise ObjectQueryRefused(f"{binding.name} supplies no '{segs[0]}' (in '{path}')"
+                                     f"{_did_you_mean(low, supplied)}", supplied)
+        return found
+
+    def readings_condition(self, alias: str, binding: Binding, f: ObjectFilter) -> str:
+        p = self.readings_property(binding, f.path, f.path)
+        return _predicate(f"{alias}.{quote_ident(column_of(binding, p.name))}", p, f)
+
+    def readings_exists(self, scope: _Scope, binding: Binding, rest: str, f: ObjectFilter) -> str:
+        """ON-5 — a condition on the READINGS keeps the objects with at least one reading that matches it. The
+        set is filtered, never multiplied, exactly as a to-many link's condition is."""
+        key = self.object_key(scope.entity)
+        inner = self._alias("e")
+        conds = [f"{inner}.{quote_ident(binding.key)} = {scope.alias}.{quote_ident(key)}"]
+        negate = False
+        if rest:
+            conds.append(self.readings_condition(inner, binding,
+                                                 ObjectFilter(path=rest, op=f.op, value=f.value, values=f.values)))
+        elif f.op in ("exists", "not_exists"):
+            negate = f.op == "not_exists"
+        else:
+            raise ObjectQueryRefused(f"'{binding.name}' is a set of readings — name one of its columns "
+                                     f"('{binding.name}.<column>'), or ask whether any reading exists at all "
+                                     "with op 'exists' / 'not_exists'")
+        self.note_readings(scope.entity, binding, "anti-join" if negate else "semi-join",
+                           f"readings of {binding.name} on {scope.entity.id}: "
+                           f"{'NOT EXISTS' if negate else 'EXISTS'} over {binding.table or 'a keyed SELECT'} — "
+                           f"keeps {scope.entity.id} objects {'without' if negate else 'with'} a matching "
+                           "reading; the set is filtered, never multiplied")
+        sql = f"EXISTS (SELECT 1 FROM {binding_from(binding, inner)} WHERE {' AND '.join(conds)})"
+        return f"NOT {sql}" if negate else sql
+
+    def readings_measure(self, scope: _Scope, binding: Binding, rest: str, t: MeasureTerm, label: str) -> str:
+        """ON-5 — an aggregate over a timeseries binding's READINGS: computed per object over its own rows,
+        then rolled up over the object set by the same law a to-many link's measure rolls up by. The bare
+        property is the object's LATEST value (`latest_from`); this is its history."""
+        if t.agg == "count_distinct":
+            raise ObjectQueryRefused(f"{label}: count_distinct over the readings of {binding.name} does not add "
+                                     f"up over {scope.entity.id} objects (one value can sit under two of them)")
+        slot = (scope.alias, binding.name)
+        r = self._readings.get(slot)
+        if r is None:
+            r = _Readings(binding=binding, entity_key=self.object_key(scope.entity), outer_alias=scope.alias,
+                          alias=self._alias("r"), inner_alias=self._alias("s"))
+            self._readings[slot] = r
+            self.note_readings(scope.entity, binding, "pre-aggregated",
+                               f"readings of {binding.name} on {scope.entity.id}: "
+                               f"{binding.table or 'a keyed SELECT'} aggregated per {binding.key} BEFORE the "
+                               f"join — many rows per {scope.entity.id} over {binding.time_column}, so each "
+                               f"{scope.entity.id} meets at most one aggregate row")
+        cond = " AND ".join(f"({self.readings_condition(r.inner_alias, binding, w)})" for w in t.where)
+        if not rest:
+            if t.agg != "count":
+                raise ObjectQueryRefused(f"{label}: {t.agg} over the readings of {binding.name} needs one of its "
+                                         f"columns ('{binding.name}.<column>')")
+            out = _rollup("count", r.alias, r.column, None, cond)
+            self.plan.append(f"{label}: readings of {binding.name} counted per {scope.entity.id}, then summed"
+                             + (" (its where applied to the readings)" if cond else ""))
+            return out
+        p = self.readings_property(binding, rest, t.path)
+        _check_aggregate(t.agg, p, t.path, self.caveats)
+        value = f"{r.inner_alias}.{quote_ident(column_of(binding, p.name))}"
+        if t.agg in ("sum", "avg") and _is_bool(p):
+            value = f"CAST({value} AS INTEGER)"
+        out = _rollup(t.agg, r.alias, r.column, value, cond)
+        self.plan.append(f"{label}: {t.agg}({t.path}) over the readings of {binding.name}, per "
+                         f"{scope.entity.id}, rolled up" + (" (a ratio of sums)" if t.agg == "avg" else "")
+                         + (" — its where applied to the readings" if cond else ""))
+        return out
+
+    def note_readings(self, entity: OntologyEntity, binding: Binding, treatment: str, line: str) -> None:
+        key = (entity.id, binding.name, treatment)
+        if key in self._bindings_noted:
+            return
+        self._bindings_noted.add(key)
+        self.plan.append(line)
+        self.bindings.append({"binding": binding.name, "object_type": entity.api_name, "kind": binding.kind,
+                              "source": binding.table or "a keyed SELECT",
+                              "on": f"{self.object_key(entity)} = {binding.key}", "rows": binding.rows,
+                              "objects": binding.objects, "covered": binding.covered, "treatment": treatment,
+                              "time_column": binding.time_column or None})
 
     def note_binding(self, entity: OntologyEntity, binding: Binding, key: str) -> None:
         if (entity.id, binding.name) in self._bindings_noted:
@@ -681,6 +854,12 @@ class _Compiler:
     def condition(self, scope: _Scope, f: ObjectFilter) -> str:
         segs = _split(f.path, "filter")
         entity, alias = scope.entity, scope.alias
+        # ON-5 — the first segment may name a timeseries binding, and then the path is about its READINGS
+        # rather than about a link or a property of the object. Readings hang off the object they bind to, so
+        # only here, at the anchor.
+        readings = self.readings_binding(entity, segs[0])
+        if readings is not None:
+            return self.readings_exists(scope, readings, ".".join(segs[1:]), f)
         wants_link = f.op in ("exists", "not_exists")
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
@@ -762,6 +941,9 @@ class _Compiler:
             return _agg_sql("count", None, cond)
         segs = _split(t.path, "measure")
         entity, alias, hops = scope.entity, scope.alias, []
+        readings = self.readings_binding(entity, segs[0])            # ON-5 — over its readings, not its latest
+        if readings is not None:
+            return self.readings_measure(scope, readings, ".".join(segs[1:]), t, label)
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last:
@@ -837,16 +1019,7 @@ class _Compiler:
                 f"{label}: {agg} over '{t.path}' would repeat {inner_hops[-1].target.id}'s value once per "
                 f"{h.target.id} row — anchor the query on {inner_hops[-1].target.id} instead")
         value = f"CAST({col} AS INTEGER)" if agg in ("sum", "avg") and _is_bool(p) else col
-        if agg == "count":
-            out = f"COALESCE(SUM({ml.alias}.{ml.column(_agg_sql('count', value, cond))}), 0)"
-        elif agg == "sum":
-            out = f"SUM({ml.alias}.{ml.column(_agg_sql('sum', value, cond))})"
-        elif agg in ("min", "max"):
-            out = f"{agg.upper()}({ml.alias}.{ml.column(_agg_sql(agg, value, cond))})"
-        else:   # avg over the linked rows — a ratio of sums, never an average of per-object averages
-            s = ml.column(_agg_sql("sum", value, cond))
-            n = ml.column(_agg_sql("count", value, cond))
-            out = f"1.0 * SUM({ml.alias}.{s}) / NULLIF(SUM({ml.alias}.{n}), 0)"
+        out = _rollup(agg, ml.alias, ml.column, value, cond)
         self.plan.append(f"{label}: {agg}({h.name}.{rest}) over {h.target.id} rows, per {h.source.id}, rolled up"
                          + (" (a ratio of sums)" if agg == "avg" else ""))
         return out
@@ -959,6 +1132,7 @@ class _Compiler:
         sql = f"SELECT {', '.join(select)} FROM {backing_from(anchor, 't0')}"
         sql += "".join(f" {j}" for j in scope.joins)
         sql += "".join(f" {ml.join_sql()}" for ml in self._many.values())
+        sql += "".join(f" {r.join_sql()}" for r in self._readings.values())
         if where:
             sql += " WHERE " + " AND ".join(f"({w})" for w in where)
         if grouped:

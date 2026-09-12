@@ -105,12 +105,17 @@ def latest_from(binding: Binding, alias: str, *, key_equals: Optional[str] = Non
 
 def history_sql(binding: Binding, key_equals: str, limit: int = HISTORY_ROWS) -> str:
     """The readings behind one object's latest value, newest first — the same source, unreduced. ``key_equals`` is
-    an already-typed literal for the object's key."""
+    an already-typed literal for the object's key.
+
+    Ordered by the REVERSE of the reduction's own ordering, not by time alone, so the first row it returns IS the
+    row `latest_from` reduces to — which is what lets a page read "and before that" off the second row rather
+    than running a second, differently-tied query for it."""
     columns = latest_columns(binding)
     if not (columns and binding.key and binding.time_column):
         return ""
+    newest_first = ", ".join(f"{SOURCE}.{quote_ident(c)} DESC" for c in latest_order(binding))
     return (f"SELECT {', '.join(f'{SOURCE}.{quote_ident(c)}' for c in columns)} "
             f"FROM {binding_from(binding, SOURCE)} "
             f"WHERE {SOURCE}.{quote_ident(binding.key)} = {key_equals} "
             f"AND {SOURCE}.{quote_ident(binding.time_column)} IS NOT NULL "
-            f"ORDER BY {SOURCE}.{quote_ident(binding.time_column)} DESC LIMIT {int(limit)}")
+            f"ORDER BY {newest_first} LIMIT {int(limit)}")
