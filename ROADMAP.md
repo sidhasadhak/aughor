@@ -106,6 +106,15 @@ person declares through the web what only the API took, one accepted edit can be
 reads by its name wherever a key was printed, and a frame over the readings (trailing, cumulative,
 the reading before) reaches the object door as a per-object value the compiler measures like any
 other. Arc MT was dropped the same day (§6 item 17): identity buys nothing where this actually runs.
+**The SECOND MOVEMENT, measured and adopted 2026-09-12 (§3.15):** entity = table is still true by
+construction (Lux 14 tables, 14 entities); no door creates an entity or a link; the scope is one
+`(connection, schema)`; there is no process, promise or stage; and the investigation never consults
+the ontology FIRST — it was bolted onto prompts that predate it, and only the text route was ever
+measured. LuxExperience has ZERO dispatch lag (synthetic); Olist on `baef6c3e/ecommerce` holds the
+real process (9.35% late dispatch, 8.11% late delivery, measured through the API). The user adopted
+waves ON-7 (declared entity, parts, links — STARTED), ON-7b (explorer agents map the business
+first), ON-8 (one ontology, many sources), ON-9 (processes and promises), ON-10 (the investigation
+starts from the ontology) and fixed ON-7 first; §6 item 18 holds the three open shape questions.
 
 ---
 
@@ -4396,6 +4405,173 @@ or is measured false. ON-4 wants ON-2's merge point; ON-3 is composition over ON
 ON-5 wants MI-3's ledger for provenance and nothing from MI-4's gates; ON-6 rides ON-0's
 ratchet and can interleave anywhere after it.
 
+**Amended 2026-09-12 — the SECOND MOVEMENT: the business ontology.** *(The user: "go ahead
+integrate this in the main roadmap and take on seven first.")*
+
+> **Origin.** The user, 2026-09-12, condensed: *"In the ontology we are still matching table to
+> table. The whole idea of an ontology is a business context which then relates to a background
+> table or set of tables, which may or may not come from the same schema or connection. For
+> LuxExperience the order table and the order-line table should be one entity called Orders;
+> returns and return logistics should not be two entities just because there are two tables. We
+> can't even create a new entity or connect one to another. Palantir, Microsoft and Snowflake
+> understand the business first, ideate it into distinct entities, then map those entities to the
+> semantic layer or the tables. If a stakeholder asks what is causing a delay in warehouse
+> dispatch, the investigating agent should know which dispatch, where to start, how to frame it as
+> a business question, what the business calls a delay (dispatch within two days is a business
+> rule the ontology should hold), the whole process from the assortment team's purchase order to
+> the customer's dispatch, and then which category, brand or product is always late."* Then, on
+> the measured answer that the investigation never consults the ontology first: *"this is a
+> terrific moment for us to have explorer agents map the ontology and create entities first,
+> based on the understanding of the connections and the tables in it, and then build everything
+> on top of it. The investigation should also have the ontology-first approach."*
+>
+> **How this was measured.** Code and the live instance, 2026-09-12, main `fceda230`: the
+> builder, the models, every route in `aughor/routers/ontology.py`, the served LuxExperience and
+> Olist graphs, and the Olist data itself through the API's own read-only SQL door.
+
+**What is true today (measured 2026-09-12):**
+
+| The claim | Measured | Where |
+|---|---|---|
+| "We still match table to table" | **True by construction.** `extract_structural_ontology` is the only minting site (*"table = entity: every profiled table becomes an entity"*). Lux: 14 tables, 14 entities (`Order` and `OrderItem`; `Return` and `ReturnLogistic`). Olist: 9 and 9. `dedup.merge_entities` fuses two AFTER the fact, by a person, through `POST /ontology/entities/merge`; the module header says *"DETECTION ONLY."* | `aughor/ontology/builder.py:846-913` · `aughor/ontology/dedup.py:4,66` · `aughor/routers/ontology.py:1586` |
+| "We can't create an entity or connect one to another" | **True.** No route creates an entity; every mutating route 404s on an unknown id. Relationships come only from the join map (`{from}_RELATES_TO_{to}`); the one human door, `PUT /ontology/links/{id}`, renames. The web has no "New entity" and no "Add relationship". | `aughor/routers/ontology.py:945,1058-1065` · `aughor/ontology/builder.py:918-963` · `web/components/ontology/EntityTypePanel.tsx` |
+| "Tables may come from another schema or connection" | **Scope is one `(connection, schema)`.** Cache key `connection:schema:fingerprint`; `OntologyGraph` carries one `connection_id` and one `schema_name`. `Backing` and `Binding` carry NO connection: another connection is inexpressible; another schema on the same connection binds by accident (`quote_table` splits on the dot, nothing compares the qualifier). A cross-source batched-foreach join engine EXISTS (`aughor/connectors/remote_join.cross_source_join`, door `/query/cross-source-join`) — the seam ON-8 uses. | `aughor/ontology/store.py:41` · `aughor/ontology/models.py:146-150,215-224,762-764` · `aughor/ontology/cardinality.py:44` |
+| "The ontology should hold the business rule" | **No process, no promise, no stage.** `lifecycle_states` is an UNORDERED set with no transitions; `lifecycle.py` can refute a terminal claim and nothing more. `sla`/`threshold`/`expected_within` occur only in freshness monitoring and metric target bands. | `aughor/ontology/models.py:289-340,502-503` · `aughor/ontology/lifecycle.py:1-20` · `aughor/monitors/runner.py:462` |
+| "The investigation should start from the ontology" | **It never consults it first.** The pipeline predates the ontology (`investigate.py` 2026-05-20, `builder.py` 2026-05-26), so the ontology was bolted onto existing prompts as text: the deep coder's schema gets the relationship block, the intake is enriched with entity fields AFTER the question is parsed, the baseline plan gets an entity-context block. Nothing resolves a question's TERMS to an entity, a stage or a definition; nothing proposes drivers from the link graph. Consulting first has NO measurement — what was measured and retired (R4 92%→58%; ON-0/ON-0a no lift) is the text route, on questions the raw schema can answer. | `aughor/agent/investigate.py:1327,5866,6452` · `aughor/ontology/prompt_reach.py:294` · §6 item 15 |
+| "Where can the dispatch question live?" | **Not on LuxExperience: every order ships within a day** (lag p50 0 · p95 1 · max 1 over 107,903 shipments; 0 never shipped — synthetic). **Olist (`baef6c3e/ecommerce`) holds the whole process plus a per-line promise:** `order_purchase_timestamp → order_approved_at → order_delivered_carrier_date → order_delivered_customer_date`, `order_estimated_delivery_date` per order, `order_items.shipping_limit_date` per line, sellers with a state, products with a category. Measured through `POST /query/run`: delivered after the estimate **7,826 / 96,478 = 8.11%**; handed to the carrier after the line's limit **10,423 / 111,456 = 9.35%**; approved→carrier p50/p90/p95 = **2 / 6 / 8 days**; office_furniture **28.4%** late dispatch, PR sellers **11.1%**. The data answers; the ontology cannot FRAME it — both deadlines are anonymous `timestamp` properties and "dispatched" is not a word the graph knows. | measured 2026-09-12 |
+
+**The reading that reconciles the critique with the record.** The critique is right about the
+NOUN layer, the SCOPE, the AUTHORING and the RULES. The record is right that a paragraph in the
+prompt does not move accuracy. Both hold at once because the definition this arc is held to is
+about what the agent can NAVIGATE and EXECUTE, not what it can read: an object type is what it
+queries; a link is what it traverses; a rule is a definition executed once and never re-derived.
+So this movement adds no prose to the prompt. It makes business meaning **executable** (a
+promise becomes a verified segment and a metric target by construction) and **navigable** (a
+question is framed against declared entities, stages and links before any SQL is written). Its
+falsifier is a set where the raw schema FAILS because the definition is not in the data — the
+set ON-0 never had.
+
+**The reference platforms, honestly.** Foundry: an object type is backed by ONE dataset and the
+pipeline layer does the joining; link types are DECLARED; the ontology spans every source because
+every source is ingested first (`docs/PALANTIR_FOUNDRY_STUDY_2026-07-22.md` §1.3). Fabric IQ: an
+entity type with SEVERAL bindings, declared relationships, static and timeseries properties, over
+anything in OneLake (the 2026-09-11 amendment above). Snowflake Semantic Views: logical tables,
+relationships, facts, dimensions, metrics — a semantic layer, per database. **None of the three
+has a first-class business PROCESS with promises.** Foundry carries that in Actions and
+Functions; process-mining tools carry it in event logs. A measured process is the natural
+extension of ON-0a's law (the data wins), and ground none of them holds.
+
+**Laws of the second movement (in addition to the standing laws above):**
+
+- **The table is bound INTO the entity, never the reverse.** A business entity is a
+  declaration; tables, keyed SELECTs and detail sources are bindings with a measured verdict.
+  The builder's per-table entities become PROPOSALS a person or an explorer confirms, absorbs,
+  renames or discards — and every existing graph deserialises unchanged (supersede, never
+  delete: a per-table entity is a declared entity whose backing is its table, `origin: table`).
+- **Every declaration is a claim the platform measures**, whoever made it — person, pack or
+  explorer. A stage no row reaches, a promise the data never breaches, a link whose key covers
+  nothing: reported as measured-false with its provenance, ON-0a's tiers unchanged. **Nothing
+  the model says becomes a fact** (J4): an explorer's proposal carries `model:<id>@<version>`,
+  is measured before it is shown, and is tiered `proposed` until a person confirms it.
+- **Framing is deterministic first.** Terms resolve against declared names, aliases, stages and
+  rules before a model is asked; the model chooses among candidates and words the frame; it
+  never invents the definition. The frame is SHOWN with the answer.
+- **The ERD stays a view.** The per-`(connection, schema)` measured graph becomes the SOURCE
+  CATALOGUE — what tables exist, profiled, with join proposals — an input to the business
+  ontology, never the ontology.
+
+**Waves of the second movement. The user fixed the first: ON-7. The recommended order after it
+is ON-7b → ON-9 → ON-10 → ON-8** (ON-9 and ON-10 are the only waves that change an answer and
+carry the falsifier; ON-8 is shape work that changes no answer by itself) — the user's knob.
+
+- 🎯 **ON-7 · The declared entity, its parts and its links — STARTED 2026-09-12** (the user:
+  *"take on seven first"*). `POST /ontology/entities` declares an entity (display name,
+  api_name, description, domain, a key claim); `POST /ontology/links` declares a link (business
+  verb, expected cardinality, the key path between two bindings); `DELETE` for both, refusing
+  where a consumer depends on the id (API names are stable). A third binding kind beside static
+  and timeseries: **`detail`** — N rows per object on the object's key, no time axis (order
+  lines, tickets, readings without a clock) — read at line grain, or rolled up to the object by a
+  declared aggregation per property (`sum quantity → units`, `count → line_count`, `any returned`;
+  `measure_grain` already knows per-unit from per-line). **Absorb a table as a part:** binding a
+  table that is today an entity of its own marks that entity `absorbed_into` the parent — kept
+  in the graph for byte-compatibility, hidden from the map and the agent's catalogue, its links
+  re-pointed to the parent through the part. The map gains *New entity*, *Add relationship*,
+  *Absorb as a part*; the builder's per-table entities carry `origin: table` and read as
+  proposals. Migration by supersession: every cached graph, override file and `GET /ontology/*`
+  payload deserialises unchanged. **Receipt:** LuxExperience as **8 business entities from 14
+  tables** through the doors, no model call: Order {orders + order_items (detail) + payments +
+  shipments}, Return {returns + return_logistics}, Product {products + price_history}, Customer
+  {customers + customer_service (detail)}, Brand, Warehouse, Country, Date; every earlier
+  compiled query (l05, l09, the bindings suite, the timeseries receipt) equal to its reference
+  through the new shape; "orders with more than 3 units" compiles over the detail roll-up and
+  equals its reference; the map reads 8 cards; a hand-written mutation set on the roll-up is
+  caught (the ON-1b pattern).
+- **ON-7b · The explorer maps the business first** (the user's addition, same day). When a
+  connection is registered — or on demand from the map — an explorer agent reads the SOURCE
+  CATALOGUE (table profiles, the join map with measured cardinality, sample values, glossary,
+  the bound pack's claims) and proposes the BUSINESS ontology: which tables are one thing
+  (entities with their parts), links with business verbs, domains, descriptions, and — once
+  ON-9 exists — the processes it recognises. Every proposal is written through ON-7's doors as a
+  claim with `model:<id>@<version>` provenance, MEASURED before it is shown (keys, coverage,
+  cardinality), and lands as a DRAFT ontology the platform and its agents build on immediately,
+  tiered `proposed` until a person confirms it in the map (provenance upgrades to `human`). This
+  is the playground study's "not taken" line made safe: their generator loads unchecked output;
+  ours measures every claim and keeps who said it. M12b's enrichment prompt becomes one input of
+  this pass, not the only model pass. **Receipt:** LuxExperience re-registered from its file: the
+  explorer's draft lands with its entities from 14 tables, each claim measured, the map showing
+  proposed against confirmed; a second run over the same catalogue is idempotent (no duplicate
+  proposals); the person confirms and the ON-7 receipt's queries still equal their references.
+  **Falsifier:** the draft's grouping is compared with ON-7's hand-declared 8; a draft that fuses
+  what the measured keys say are different things does not ship default-on. Costs model tokens —
+  never started unasked.
+- **ON-8 · One ontology, many sources.** The declared ontology is keyed by the organisation (or a
+  named domain within it — §6 item 18), not by a schema; a binding names
+  `connection_id.schema.table`; a link whose two sides live on different connections is
+  `traversal: cross-source` and the compiler resolves it through the existing batched-foreach
+  engine instead of one SQL; joins within a connection are unchanged. **Receipt:** one declared
+  entity bound to tables on two connections, measured, its objects and one cross-source link
+  readable through `/objects/query`; the latency of the cross-source hop on the receipt (it
+  decides whether §4's federation question reopens).
+- **ON-9 · Processes and promises.** `Process`: ordered `Stage`s, each anchored to (entity,
+  timestamp property | lifecycle state); a transition may carry a **promise** — a fixed duration
+  (`within 2 days`) or a per-object deadline property (`shipping_limit_date`,
+  `order_estimated_delivery_date`). `Rule`: a named, owned definition with scope and formula
+  ("revenue excludes cancelled and refunded", "DACH = DE, AT, CH" — the packs' empty `aliases`
+  filled at last). Both measured on declaration and on every rebuild: per transition p50/p90/p95
+  and breach rate; a promise never or always breached is flagged. From a measured promise the
+  platform DERIVES, by construction, a verified segment (`late_dispatch`), a computed property
+  (`dispatch_lag_days`) and a metric whose target is the promise (`dispatch_breach_rate`), so
+  "what is late" is executed once. Packs gain `processes:` and `rules:` (fashion-ecommerce ships
+  order-to-delivery with placeholder promises). **Receipt:** Olist declared as Order-to-delivery:
+  placed → approved → dispatched (promise `≤ shipping_limit_date`) → delivered (promise
+  `≤ order_estimated_delivery_date`); the measured breach rates equal the table above; the
+  derived segment and metric compile and equal their references.
+- **ON-10 · The investigation starts from the ontology.** A `frame_question` step BEFORE the
+  investigation's and the deep analysis's intake parse — today the ontology is consulted only
+  after (the table above): resolve the question's terms (entity names, aliases, stage names,
+  rule and metric names) → the frame: entity, process + stage, the rule or promise that defines
+  the outcome, the start binding, and **candidate drivers** = dimension entities reachable by
+  declared links within N hops (category through Product, brand through Brand, seller state
+  through Seller, warehouse through Shipment). Deterministic where names match; the model
+  chooses among candidates and words the frame; the frame is rendered into the intake, drives
+  the baseline plan (the planner already takes `render_entity_context`; ON-2's compiler already
+  produces breakdowns by linked dimensions) and is SHOWN with the answer: *"Read 'dispatch delay'
+  as stage Dispatched of Order-to-delivery breaching `shipping_limit_date` (9.35% of lines);
+  testing category, seller state, carrier."* **Receipt and the movement's falsifier:**
+  `evals/ablation_olist_business.jsonl`, 12–15 questions whose definitions are NOT in the schema
+  ("what is causing dispatch delays", "which categories are always late", "how is the delivery
+  promise doing by seller state", "returns turnaround against the promise"), every reference
+  executed; arms `raw`, `guarded`, `framed`. **If the framed arm does not beat raw on the
+  definition-dependent questions, the movement stops at ON-9's declarations and the framing is
+  retired the way ON-6 was.** Costs model calls — never started unasked.
+
+**Hosts.** ON-7's receipt on LuxExperience (shape, no delays needed). ON-9/ON-10's receipts on
+Olist (`baef6c3e/ecommerce`, real delays, no generator change); the LuxExperience pack's
+generator may later grow realistic dispatch lags so the demo pack can host the question (§6
+item 18). **Open for the user — §6 item 18:** the scope key for ON-8; whether Shipment and
+Payment are PARTS of Order (today bound as static 1:1 sources) or entities with a link; Olist
+first against enriching the Lux generator.
+
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -4752,6 +4928,15 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         and "products whose latest price > €500" compiles to 1,744, equal to its reference. The map was
         re-laid the same day on the user's reading of it (ON-3b). ON-6 (the context layer reaches the
         model) RETIRED 2026-09-11 — ON-0's falsifier fired on both blocks (§6 item 15).
+        → SECOND MOVEMENT, adopted 2026-09-12 (the user: "integrate this in the main roadmap and take on
+        seven first"): ON-7 the declared entity, its parts (a `detail` binding kind) and declared links —
+        🎯 STARTED 2026-09-12 (receipt: Lux as 8 business entities from 14 tables, no model call) →
+        ON-7b the explorer maps the business first (proposals with model provenance, measured, confirmed
+        in the map) → ON-9 processes and promises (Olist order-to-delivery; a promise derives the late
+        segment and the breach metric by construction) → ON-10 the investigation starts from the
+        ontology (frame_question before the intake parse; the falsifier is a set where raw FAILS because
+        the definition is not in the data) → ON-8 one ontology, many sources (org-keyed, bindings name
+        their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -5044,6 +5229,8 @@ the browser** · **measure the premise before building.**
 > rather than drifted into. One open.
 > **Amended 2026-09-12:** item 17 (Arc MT dropped — identity buys nothing where this actually runs)
 > arrived and was decided in the user's own sentence. Item 16 is still the only one open.
+> **Amended 2026-09-12 (later):** item 18 (the second movement's three shape questions) arrived with
+> the movement's adoption and is **OPEN, with recommendations** — none blocks ON-7. Two open: 16, 18.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -5228,6 +5415,22 @@ the browser** · **measure the premise before building.**
     documented "NEXT BUILD", not because it was contentious: the spec stands, unrefused, waiting on the user
     saying hosting matters. The signal was there a month earlier — MT-2 was keyed on a Google OAuth client the
     user never created — and was read as waiting rather than as not wanted.
+
+18. ⏳ **OPEN (2026-09-12, none blocks ON-7) — the second movement's shape questions.** Arrived with the
+    adoption of ON-7…ON-10 (§3.15, "Amended 2026-09-12 — the SECOND MOVEMENT"). The user fixed the order's
+    head (ON-7 first) and added ON-7b; three shape questions remain, each with a recommendation:
+    **(a) The scope key for ON-8** — the organisation, or a named DOMAIN inside it (one company may hold a
+    retail ontology and a finance ontology). *Recommended: a named domain, defaulting to one per organisation
+    — the key is `org/domain`, and a single-domain org never sees the second segment.*
+    **(b) Shipment and Payment: PARTS of Order, or entities of their own with a link?** Today both are
+    static 1:1 bindings on Lux's Order (ON-1b). *Recommended: parts — the business speaks of an order's
+    payment and an order's shipment; a shipment becomes an entity only where the business ships across
+    orders (consolidated freight), which a measured N:N key would show.*
+    **(c) The host for ON-9/ON-10's receipts** — Olist (`baef6c3e/ecommerce`, real delays: 9.35% late
+    dispatch, 8.11% late delivery) first, or enrich the LuxExperience pack's generator with realistic
+    dispatch lags so the demo pack can host the question. *Recommended: Olist first — no generator change,
+    real data; the pack enrichment follows as its own small, deterministic change so the demo can tell the
+    story.*
 
 ---
 
