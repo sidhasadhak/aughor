@@ -84,3 +84,21 @@ it("Sync now triggers the existing per-connection sync route", async () => {
   fireEvent.click(await screen.findByText("Sync now"));
   await waitFor(() => expect(api.triggerKnowledgeSync).toHaveBeenCalledWith("k1"));
 });
+
+it("falls back to its empty state when the sources cannot be loaded", async () => {
+  // The load is the one call in this component that did not catch — its connect and sync paths
+  // always did, and so does every loader in the panel it sits beside. An offline browser got an
+  // unhandled rejection where the component already knew how to render "nothing connected".
+  //
+  // What this asserts is the RENDER. The unhandled rejection itself is not assertable from here:
+  // it is a process-level event, and jsdom's `window` never sees it — a listener on that event is
+  // a guard that cannot fail. The regression is caught by the suite's own "Errors" count instead,
+  // which is exactly how this defect was found: every test passed and `npm test` exited 1.
+  api.getKnowledgeSources.mockRejectedValue(new Error("the API is not reachable"));
+
+  render(<KnowledgeSourcesSection />);
+
+  await waitFor(() => expect(api.getKnowledgeSources).toHaveBeenCalled());
+  expect(await screen.findByText(/None yet/)).toBeInTheDocument();
+  expect(screen.queryByText("Team wiki")).toBeNull();
+});

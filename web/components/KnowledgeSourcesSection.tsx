@@ -45,8 +45,13 @@ export function KnowledgeSourcesSection() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState<string | null>(null);
 
+  // A load that cannot reach the API leaves the section on its empty state — the state it already
+  // renders before the first answer arrives, and the one it shows when nothing is connected. Every
+  // other call in this component catches (connect, sync), and so does every loader in the panel
+  // beside it; this one did not, so an offline browser got an unhandled rejection instead of
+  // "None yet".
   const load = useCallback(async () => {
-    const out = await getKnowledgeSources();
+    const out = await getKnowledgeSources().catch(() => null);
     if (out) { setTypes(out.types); setSources(out.sources); }
   }, []);
 
