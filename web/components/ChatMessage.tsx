@@ -3,7 +3,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useOpenInQuery } from "@/lib/openInQuery";
 import { SqlResultTable } from "@/components/AugTable";
-import { objectLinkRender, useObjectColumnLinks, useObjectKeyColumns } from "@/components/objects/objectColumnLinks";
+import {
+  objectLinkRender, useObjectColumnLinks, useObjectKeyColumns, useObjectTitles,
+} from "@/components/objects/objectColumnLinks";
 import { ExportButton } from "@/components/ExportButton";
 import {
   Brief,
@@ -351,7 +353,7 @@ function ResultFigure({
 }) {
   const { columns, rows, chartType } = turn;
   // Before any early return: a hook cannot be skipped while the rows are still arriving.
-  const objectLinks = useObjectColumnLinks(columns, connectionId);
+  const objectLinks = useObjectColumnLinks(columns, connectionId, { rows });
   if (!columns.length) return streaming ? <FigureSkeleton /> : null;
   // Columns usually land a beat before rows — never flash an empty, headers-only
   // table mid-stream; hold a shimmer until at least one row arrives. (A genuine
@@ -518,6 +520,7 @@ export function SourcePanel({
 }) {
   const [copied,   setCopied]   = useState(false);
   const objectColumns = useObjectKeyColumns(connectionId);
+  const objectTitles = useObjectTitles(rows, columns, objectColumns, connectionId);
   const openInQuery = useOpenInQuery();
 
   // Detect each date column's true grain once (from the full column), so weekly
@@ -597,7 +600,7 @@ export function SourcePanel({
                   return (
                     <td key={ci} className="px-3 py-1.5 text-zinc-300 font-mono whitespace-nowrap">
                       {objectType && value != null && value !== ""
-                        ? objectLinkRender(objectType, { connectionId })(value)
+                        ? objectLinkRender(objectType, { connectionId, titles: objectTitles })(value)
                         : fmt(col, value, granByCol[ci])}
                     </td>
                   );

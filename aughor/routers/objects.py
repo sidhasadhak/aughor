@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
 from aughor.semantic.object_query import ObjectQuery
@@ -104,6 +105,37 @@ def get_object_catalog(connection_id: str = BUILTIN_ID, schema_name: Optional[st
     cardinality (and why an unusable one is not), verified segments and verified metrics."""
     from aughor.semantic.object_query import object_catalog
     return object_catalog(_served_graph(connection_id, schema_name), overlay=_accepted_edits(connection_id))
+
+
+class _TitlesRequest(BaseModel):
+    """The keys an answer table (or any list of keys) wants the names of."""
+    object_type: str
+    keys: list[str] = []
+
+
+@router.post("/objects/titles")
+def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
+                       schema_name: Optional[str] = Query(default=None)):
+    """The name of each object a set of keys names — one query over the backing, so a table of keys costs one
+    round trip. A type named by its own key resolves nothing and says so; a key nothing matches is absent from
+    the map rather than guessed at. An unknown type is `path: refused`. No model call."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.routers.ontology import resolve_effective_schema
+    from aughor.semantic.object_instances import titles
+    from aughor.semantic.object_query import ObjectQueryRefused
+
+    graph = _served_graph(connection_id, schema_name)
+    db = open_connection_for_with_schema(connection_id,
+                                         graph.schema_name or resolve_effective_schema(connection_id, schema_name))
+    try:
+        try:
+            found = titles(graph, db, body.object_type, body.keys)
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available,
+                    "connection_id": connection_id, "schema_name": graph.schema_name}
+        return {"path": "titles", "connection_id": connection_id, "schema_name": graph.schema_name, **found}
+    finally:
+        db.close()
 
 
 @router.get("/object-types")

@@ -93,3 +93,95 @@ def test_a_missing_key_is_not_found_an_unknown_type_is_refused_and_a_key_is_neve
     assert "order" in refused.value.available
     item = get_object(graph, db, "order_item", "7")                 # a BIGINT key, typed as a number
     assert {p["name"]: str(p["value"]) for p in item.properties}["item_id"] == "7"
+
+
+# ── the names behind the keys ────────────────────────────────────────────────────
+#
+# An answer table linked a key and rendered the key. Every type already declares the property that
+# names its objects, measured against its backing — it just never reached the table. These pin the
+# batch door that resolves a page of keys in ONE query, and its refusals.
+
+def test_many_keys_are_named_in_one_query_and_a_key_nothing_matches_is_simply_absent(db, graph):
+    from aughor.semantic.object_instances import titles
+
+    reference = {str(r[0]): str(r[1]) for r in db.execute(
+        "reference", "SELECT customer_id, full_name FROM customers ORDER BY customer_id LIMIT 5").rows}
+    found = titles(graph, db, "customer", [*reference, "C99999"])
+
+    assert found["property"] == "full_name" and found["truncated"] is False
+    assert found["titles"] == reference          # every key named, and the key nothing matches is not invented
+    assert "C99999" not in found["titles"]
+
+
+def test_a_type_named_by_its_key_resolves_nothing_and_says_so(db, graph):
+    from aughor.semantic.object_instances import titles
+
+    found = titles(graph, db, "order", ["O000123"])
+
+    assert found["titles"] == {} and found["property"] == "order_id"
+    assert "named by its key" in found["note"]   # the key is already on screen; a title would repeat it
+
+
+def test_titling_repeats_no_key_caps_the_batch_and_never_splices_one(db, graph):
+    from aughor.semantic.object_instances import MAX_TITLES, titles
+
+    over = titles(graph, db, "customer", [f"C{n:05d}" for n in range(MAX_TITLES + 10)])
+    assert over["truncated"] is True
+
+    quoted = titles(graph, db, "customer", ["x' OR '1'='1", "C00042", "C00042"])
+    assert set(quoted["titles"]) == {"C00042"}   # the injection matched nothing; the repeat asked once
+
+
+def test_a_name_on_a_static_binding_titles_the_object_and_the_batch_reads_it_through_the_binding(db, graph):
+    """ON-1b let a property live on a bound source; naming an object by one was the leftover. The binding joins
+    on the OBJECT's key, so its name is as single-valued as a column of the backing."""
+    from aughor.ontology.models import Binding, DisplayProperty, EntityProperty
+    from aughor.semantic.object_instances import titles
+
+    product = graph.entities["Product"]
+    product.bindings = [Binding(name="naming", kind="static", table="products", key="product_id",
+                                properties={"label": EntityProperty(name="label", data_type="VARCHAR")},
+                                columns={"label": "product_name"}, verified=True, note="one row per Product")]
+    product.display_property = DisplayProperty(name="label", source="human")
+
+    reference = {str(r[0]): str(r[1]) for r in db.execute(
+        "reference", "SELECT product_id, product_name FROM products ORDER BY product_id LIMIT 3").rows}
+    found = titles(graph, db, "product", list(reference))
+    assert found["titles"] == reference and found["through"] == "naming"
+
+    one = next(iter(reference))
+    assert get_object(graph, db, "product", one).title == reference[one]
+
+
+def test_a_display_property_is_measured_over_the_binding_that_supplies_it(db, graph):
+    from aughor.ontology.display import display_source, measure_display
+    from aughor.ontology.models import Binding, EntityProperty
+
+    product = graph.entities["Product"]
+    product.bindings = [Binding(name="naming", kind="static", table="products", key="product_id",
+                                properties={"label": EntityProperty(name="label", data_type="VARCHAR")},
+                                columns={"label": "product_name"}, verified=True, note="one row per Product")]
+
+    from_clause, column, through = display_source(product, "label")
+    assert through == "naming" and column == "product_name" and "products" in from_clause
+
+    measured = measure_display(db, product, "label", source="human")
+    rows, non_null, distinct = _one(db, "SELECT COUNT(*), COUNT(product_name), COUNT(DISTINCT product_name) "
+                                       "FROM products")
+    assert [measured.rows, measured.non_null, measured.distinct] == [int(rows), int(non_null), int(distinct)]
+    assert "read through the naming binding" in measured.note
+
+
+def test_an_unmeasured_binding_does_not_get_to_name_anything(db, graph):
+    """The one law for reading a binding holds for titles too: an uncounted binding is never joined, so its
+    column cannot become a name through the back door."""
+    from aughor.ontology.display import display_source
+    from aughor.ontology.models import Binding, EntityProperty
+
+    product = graph.entities["Product"]
+    product.bindings = [Binding(name="unmeasured", kind="static", table="products", key="product_id",
+                                properties={"label": EntityProperty(name="label", data_type="VARCHAR")},
+                                columns={"label": "product_name"})]                       # verified is None
+
+    from_clause, column, through = display_source(product, "label")
+    assert through == "" and column == "label"          # falls back to the backing, where there is no such column

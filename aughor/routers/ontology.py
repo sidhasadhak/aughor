@@ -895,16 +895,32 @@ def _override_result(ov) -> dict:
 
 def _display_property_or_error(connection_id: str, schema: str, entity_id: str, name: str) -> str:
     """ON-3b — the property a display-property edit names, spelled as the type spells it: 404 when the type is not
-    in the served graph, 400 naming its properties when it has no such property."""
+    in the served graph, 400 naming its properties when it has no such property.
+
+    A property a STATIC binding supplies may name objects too (ON-1b): the binding holds one row per object, so
+    the name is as single-valued as any column of the backing. A TIMESERIES binding is refused with its reason —
+    it is read as the object's latest row, so a title taken from it would change under the reader, and a title
+    that moves is not a name."""
+    from aughor.ontology.bindings import property_binding
     graph = _get_ontology_graph(connection_id, schema)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     wanted = str(name or "").strip()
+    bound = {p: b for b in (entity.bindings or []) for p in b.properties}
     match = next((k for k in (entity.properties or {}) if k.lower() == wanted.lower()), None)
     if match is None:
+        match = next((k for k in bound if k.lower() == wanted.lower()), None)
+    if match is None:
+        available = sorted({*(entity.properties or {}), *bound})
         raise HTTPException(status_code=400, detail=(f"{entity_id} has no property '{wanted}' — its properties: "
-                                                     f"{', '.join(sorted(entity.properties or {})) or 'none'}"))
+                                                     f"{', '.join(available) or 'none'}"))
+    binding = property_binding(entity, match)
+    if binding is not None and binding.kind == "timeseries":
+        raise HTTPException(status_code=400, detail=(
+            f"'{match}' is read from the timeseries binding {binding.name}, as this object's latest value — a "
+            f"title taken from it would change when the next reading lands. Name objects by a property of the "
+            f"backing or of a static binding."))
     return match
 
 

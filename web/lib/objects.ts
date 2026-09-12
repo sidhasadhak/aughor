@@ -304,3 +304,32 @@ export async function withdrawEdit(editId: string, connectionId?: string): Promi
     { method: "DELETE" });
   if (!res.ok) throw new Error(await detailOf(res));
 }
+
+
+/** ON-3b — what a set of keys is NAMED: one query over the backing per type. `titles` omits a key nothing
+ *  matched, and a type named by its own key resolves nothing and says so in `note`. */
+export interface ObjectTitles {
+  path: "titles";
+  connection_id: string;
+  schema_name: string;
+  object_type: string;
+  type_id: string;
+  key: string;
+  property: string;
+  titles: Record<string, string>;
+  truncated: boolean;
+  note?: string;
+}
+
+/** Resolve the names of many objects at once. Refusals and failures are the caller's to ignore: a table whose
+ *  titles do not arrive shows the keys it always showed. */
+export async function getObjectTitles(
+  objectType: string, keys: string[], connectionId?: string, schemaName?: string,
+): Promise<ObjectTitles | ObjectRefusal> {
+  const res = await fetch(`${getApiBase()}/objects/titles${scope(connectionId, schemaName)}`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ object_type: objectType, keys }),
+  });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
