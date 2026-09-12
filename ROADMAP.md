@@ -4141,8 +4141,9 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   context.. remove it"*). Pan, zoom, fit and drag are now the library's — the fifth canvas in this app on it —
   which deleted three hand-rolled mechanisms (a scroll box, a zoom stepper, a pan handler) that between them still
   could not move a card, and every line of edge and label geometry with them. A card a person drags STAYS there,
-  per connection, across reloads (`ont-map-layout:<connection>:<schema>` in that browser — per person, not yet
-  shared), with one button to put them all back; `layoutMap` now only decides where a card STARTS. Every card is
+  per connection, across reloads and ACROSS BROWSERS — it is a per-user preference (SP-3's store, a new key in its
+  closed registry, validated: at most 24 maps of at most 300 cards, each a finite x and y), with `localStorage`
+  keeping only the paint-before-fetch job the theme toggle already gave it; one button puts them all back; `layoutMap` now only decides where a card STARTS. Every card is
   the same size — the centre used to be a bigger, denser card, which is most of what made the middle unreadable,
   and everything it showed is in the panel already open beside it. The "centre the map here" button is gone: the
   middle means the busiest type and nothing offers to change that. No dot grid, and the deeper `--bg-canvas`
@@ -4288,10 +4289,25 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   (contemporary 141.8989 · luxury 295.6482 · ultra 562.1535) equalled the same reference, its counts summing to
   8,600 — every product, none multiplied, none dropped. 10 new tests in `tests/unit/test_object_timeseries.py`
   hold the reduction to hand references over a seeded warehouse, including the untimed reading and the tie.
-  **Still open:** the history is readable but not yet QUERYABLE as a set (no "every reading in the last 30 days"
-  in the object algebra); windowed measures over a timeseries property beyond the latest value (trailing, period
-  over period) are declared in O5 and not yet reachable from the object door; no web form declares a timeseries
-  binding (the API and the panel's Bind on a proposal do, and proposals are still static-only).
+  **Follow-ups built 2026-09-12** (the user: *"ON-5 follow-ups and small debts"*). **The readings are a set.** A
+  timeseries binding's rows are reachable under the binding's own name — `price_history.price_eur` against the
+  bare `price_eur`, which stays the latest value. They are the same shape as a to-many link and are treated the
+  same way BY THE SAME CODE: `_rollup` was lifted out of `many_measure` and is now the one law both use, because a
+  second copy of "an average rolls up as a ratio of sums, never an average of averages" is where that bug gets
+  back in. A measure pre-aggregates per the object's key before the join; a condition is EXISTS, so the set is
+  filtered and never multiplied; `where` on such a measure reads the READING's own columns, which is how "only the
+  readings since March" is asked without a clock. Refused: count_distinct (one value can sit under two objects), a
+  static binding through a `name.` path, and a name that is both a link and a binding. **And what it was before:**
+  the object page reads each timeseries property's PREVIOUS reading off the history it already fetched rather than
+  running a second, differently-tied query — `history_sql` is ordered by the reduction's own ordering reversed, so
+  its first row IS the row the latest value came from. Live: 3,389 LuxExperience products have a reading under
+  €150 and across all 12,312 of their readings the average is €121.7575, both equal to a hand reference;
+  `SKUTHE000000` reads "246.0 as of 2024-02-26 · from 287.0". 8 more tests.
+  **Still open:** O5's frame algebra over readings (trailing N periods, cumulative, LAG) is still not reachable
+  from the object door — a frame needs a second window layer inside the latest-row reduction (window functions do
+  not nest) and a decision about how a per-object window rolls up across an object set, which is its own wave
+  rather than a flag on a measure; no web form declares a timeseries binding (the API and the panel's Bind on a
+  proposal do, and proposals are still static-only).
 - **Order, and why:** ON-3b and ON-3c first — they render and return only what the model already
   measures, and ON-3c is the definition made mechanical for the agent; then ON-1b, the one model change;
   then ON-5, its timeseries properties standing on ON-1b's bindings.
