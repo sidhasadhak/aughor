@@ -243,11 +243,22 @@ def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
 
     Sibling schemas keep their intelligence. Schema-scoped agent stores
     (profile/ontology/briefing/watermark/pack bindings/monitors) drop only this
-    schema's entries via registered schema hooks; the connection-level aggregates
-    (the bare ``*_{conn}`` profile / exploration / briefing) are dropped because they
-    are stale the moment any schema is removed. Canvases bound to the schema, and the
-    investigations they (or schema-qualified SQL references) imply, cascade their
-    evidence. Best-effort + observable.
+    schema's entries via registered schema hooks.
+
+    **A connection-level artifact is dropped only if it is a DERIVED SUMMARY.** The bare
+    ``*_{conn}`` profile, briefing and patterns describe all of a connection's schemas at
+    once, so removing one genuinely makes them stale — and they can be rebuilt from the
+    data that is left. What they are NOT is history: the connection's episode log and its
+    exploration runs are records of what the agent actually did, and no later change makes
+    a record untrue. On a multi-schema connection they also hold work belonging to the
+    OTHER schemas — every run that was never schema-scoped writes there — so dropping them
+    when one schema goes deletes siblings' history (measured 2026-09-12: removing a
+    two-row test schema from a ten-schema workspace took the connection's whole episode
+    log, which the Activity feed reads by merging with the per-schema files). They go with
+    the CONNECTION instead, in :func:`purge_connection_artifacts`.
+
+    Canvases bound to the schema, and the investigations they (or schema-qualified SQL
+    references) imply, cascade their evidence. Best-effort + observable.
     """
     from aughor.kernel.registries.purge_hooks import (
         run_investigations_purge_hooks,
@@ -267,12 +278,12 @@ def purge_schema_artifacts(conn_id: str, schema: str) -> dict[str, int]:
     for k, v in run_schema_purge_hooks(conn_id, schema).items():
         counts[k] = counts.get(k, 0) + v
 
-    # ── connection-level aggregates — stale once any schema goes ────────────────
-    # Exploration state + the bare profile are the "explorer_files"/"profile_bare"
-    # SCHEMA HOOKS (agent/bootstrap.py) — already merged above. Episodes stay
-    # platform-owned files.
+    # ── this schema's episode log; the connection's stays ──────────────────────
+    # Episodes are platform-owned files (the bare profile is the "profile_bare" SCHEMA
+    # HOOK in agent/bootstrap.py, already merged above). The bare `episodes_{conn}.jsonl`
+    # is NOT this schema's to delete — see the docstring.
     counts["explorer_files"] = counts.get("explorer_files", 0) + _unlink_exact(
-        f"episodes_{safe}__{ssafe}.jsonl", f"episodes_{safe}.jsonl",
+        f"episodes_{safe}__{ssafe}.jsonl",
     )
 
     # ── canvases bound to this schema (platform) → their investigations + evidence ─

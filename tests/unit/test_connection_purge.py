@@ -106,6 +106,7 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     (isolated / f"business_profile_{conn}.json").write_text("{}")
     (isolated / f"exploration_{conn}__main.json").write_text("{}")
     (isolated / f"episodes_{conn}__main.jsonl").write_text("")
+    (isolated / f"episodes_{conn}.jsonl").write_text("")          # the connection's own record
     (isolated / f"knowledge_{conn}.json").write_text("[]")
     (isolated / f"annotations_{conn}.json").write_text("{}")
     (isolated / f"benchmarks_{conn}.json").write_text("[]")
@@ -151,7 +152,11 @@ def test_cascade_purges_everything_and_reports_counts(isolated):
     # ── the cascade is OBSERVABLE (it actually ran) ──────────────────────────────
     assert counts["upload_dir"] == 1
     assert counts["exploration"] == 1
-    assert counts["episodes"] == 1
+    # the connection's record goes WITH THE CONNECTION — both files, which is the other half
+    # of the rule the schema purge keeps (see test_schema_cascade…)
+    assert counts["episodes"] == 2
+    assert not (isolated / f"episodes_{conn}.jsonl").exists()
+    assert not (isolated / f"episodes_{conn}__main.jsonl").exists()
     assert counts["knowledge"] == 1
     assert counts["annotations"] == 1
     assert counts["benchmarks"] == 1
@@ -222,6 +227,8 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
     (isolated / f"exploration_{CONN}__{keep}.json").write_text("{}")
     (isolated / f"exploration_{CONN}.json").write_text("{}")
     (isolated / f"episodes_{CONN}.jsonl").write_text("")
+    (isolated / f"episodes_{CONN}__{gone}.jsonl").write_text("")
+    (isolated / f"episodes_{CONN}__{keep}.jsonl").write_text("")
     # briefing cache: gone scope + aggregate + sibling
     briefing._CACHE_PATH.write_text(json.dumps({
         f"{CONN}:{gone}": 1, CONN: 0, f"{CONN}:{keep}": 2}))
@@ -247,11 +254,16 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
 
     counts = purge.purge_schema_artifacts(CONN, gone)
 
-    # removed-schema + aggregates gone
+    # the removed schema's own artifacts, and the DERIVED summaries that spanned it, go
     assert not (isolated / f"business_profile_{CONN}__{gone}.json").exists()
-    assert not (isolated / f"business_profile_{CONN}.json").exists()
+    assert not (isolated / f"business_profile_{CONN}.json").exists()   # 'All schemas' — rebuildable
     assert not (isolated / f"exploration_{CONN}__{gone}.json").exists()
-    assert not (isolated / f"exploration_{CONN}.json").exists()
+    assert not (isolated / f"episodes_{CONN}__{gone}.jsonl").exists()
+    # …but the connection's own RECORDS stay: they are not summaries of the schemas, they are
+    # what every run that was never schema-scoped wrote — the siblings' history — and no later
+    # change makes a record untrue. They go when the CONNECTION goes.
+    assert (isolated / f"exploration_{CONN}.json").exists()
+    assert (isolated / f"episodes_{CONN}.jsonl").exists()
     bc = briefing._store().load()
     assert set(bc) == {f"{CONN}:{keep}"}                      # sibling kept, gone+aggregate dropped
     assert json.loads(watermark._PATH.read_text())[CONN] == {f"{keep}.sales": "d"}
@@ -262,6 +274,7 @@ def test_schema_purge_removes_schema_and_aggregates_keeps_siblings(isolated):
     # siblings survive
     assert (isolated / f"business_profile_{CONN}__{keep}.json").exists()
     assert (isolated / f"exploration_{CONN}__{keep}.json").exists()
+    assert (isolated / f"episodes_{CONN}__{keep}.jsonl").exists()
     assert canvas_store.get_canvas(keep_cv.id) is not None
 
 
