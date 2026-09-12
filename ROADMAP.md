@@ -112,9 +112,12 @@ construction (Lux 14 tables, 14 entities); no door creates an entity or a link; 
 the ontology FIRST — it was bolted onto prompts that predate it, and only the text route was ever
 measured. LuxExperience has ZERO dispatch lag (synthetic); Olist on `baef6c3e/ecommerce` holds the
 real process (9.35% late dispatch, 8.11% late delivery, measured through the API). The user adopted
-waves ON-7 (declared entity, parts, links — STARTED), ON-7b (explorer agents map the business
-first), ON-8 (one ontology, many sources), ON-9 (processes and promises), ON-10 (the investigation
-starts from the ontology) and fixed ON-7 first; §6 item 18 holds the three open shape questions.
+waves ON-7 (declared entity, parts, links — MERGED #494), ON-7b (explorer agents map the business
+first — first slice built and its receipt taken 2026-09-13: one model call drafted Lux's 14 tables as 8
+entities, every claim measured before it landed, and the falsifier fired once — tickets read under
+Order — so the explorer stays on demand), ON-8 (one ontology, many sources), ON-9 (processes and
+promises), ON-10 (the investigation starts from the ontology) and fixed ON-7 first; §6 item 18 holds the
+three open shape questions.
 
 ---
 
@@ -4541,7 +4544,56 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   through the new shape; "orders with more than 3 units" compiles over the detail roll-up and
   equals its reference; the map reads 8 cards; a hand-written mutation set on the roll-up is
   caught (the ON-1b pattern).
-- **ON-7b · The explorer maps the business first** (the user's addition, same day). When a
+- ✅ **ON-7b · The explorer maps the business first — FIRST SLICE BUILT + RECEIPT TAKEN 2026-09-13; the
+  falsifier FIRED once, so the explorer stays on demand** (the user: *"Go for ON-7b"*; branch
+  `claude/on-7b-explorer`). **What exists:** `aughor/ontology/explorer.py` — ONE model call over the SOURCE
+  CATALOGUE (`source_catalogue`: every type with its key verdict, rows and columns with sample values; the
+  builder's joins with measured cardinality and overlap; the bindings the data proposes; what is ALREADY
+  DECLARED; the glossary for this scope's own tables; the bound pack's claims), answered as three flat lists
+  (`BusinessDraft`: entities, parts, links). Every proposal is measured before it lands: a part's key is counted
+  against its entity's objects and the DATA picks static, detail or timeseries (a model's time column on a
+  one-row-per-object table is ignored; its rollups are kept only where the column exists, the aggregate is known
+  and the name is free, else a `count`); a link whose keys never meet is refused; a declared entity's key must
+  name one object per row. What survives is written through ON-7's own door bodies (`_bind_entity_core` ·
+  `_declare_entity_core` · `_declare_link_core`) with `origin: model` and `model:<id>@<version>` provenance — the
+  id of the binding that ANSWERED (`provider.answered_by`, set at the structured-call chokepoint and handed in
+  by the router, so the ontology package imports no inference code and a fallback link is named rather than the
+  model that was asked). Proposals are keyed by SUBSTANCE (the table under the entity, the two columns, the
+  rows), so a second run writes nothing twice and a proposal a person withdrew or released is never proposed
+  again; the record lives in `data/ontology_drafts` (isolated in conftest and `dump_openapi`), and a proposal's
+  tier — proposed · confirmed · released · withdrawn · refused — is read LIVE from the served graph. Doors: `POST
+  /ontology/explore` (its own trace, so its call reaches Spend and Activity) · `GET /ontology/draft` (with
+  `reference_connection_id`: the grouping comparison) · `POST /ontology/draft/confirm` (all, or named
+  declarations: `origin` becomes human, the provenance stays). The map's rail drafts, reviews and confirms;
+  cards, links, bindings and parts say *proposed* until a person confirms them. **Tests:**
+  `tests/unit/test_ontology_explorer.py` (the faux model over the seeded samples, through the real doors) and ten
+  guard mutations, every one caught. **Live receipt — LuxExperience registered again from its file as
+  `b428fce7`, its automatic exploration stopped at phase 4 before any model call; three model calls in all** (the
+  build's enrichment and two drafts; `gemini-3.1-flash-lite`, no fallback). Draft 1 proposed 6 parts and 3
+  links, and 8 landed: Order ← order_items as `lines` (detail: `total_units`, `line_count`), payments and
+  shipments (static), customer_service as `tickets` (static); Product ← price_history (timeseries on
+  `effective_date`); Return ← return_logistics (static); `Customer located_in Country`; `Product sold_by Brand`.
+  `Shipment ships_from Warehouse` on `warehouse_id` was refused — shipments carry the warehouse's NAME. Draft 2
+  did NOT repeat draft 1 (1 part and 4 links, at temperature 0): nothing was written twice — the 12 files draft
+  1 wrote are byte-identical, two repeated links read *already*, `returns → Order` was refused as a part of a part
+  — and two new measured links landed (`Brand originates_from Country`, 75% of keys meet; `Warehouse located_in
+  Country`, 100%). Nine proposals confirmed; the fused one (below) left proposed for the user. **Compiled =
+  reference, before and after confirming:** orders with more than 3 units 3,917 · top-customer GMV through
+  `placed_by` 18,384,951 (a link this build found itself) · products whose latest price > €500 1,744 · order
+  lines 191,093 · customers by country through the draft's `located_in` equal to the hand-written join (United
+  States 4,860, Canada 4,769, Ireland 2,484). Shipments by warehouse country is NOT reachable: no `ships_from`.
+  **The falsifier, against ON-7's hand-declared 8:** 8 groups each, 6 matched exactly (Brand, Country, Date,
+  Product, Return, Warehouse), table-pair precision 0.67 and recall 0.89, and ONE FUSION — the draft reads
+  customer_service under Order (each ticket names one order: 11,244 of 112,439) where the reference keeps it with
+  Customer — so `ships_default_on` is false and the registration hook stays unwired. 🔴 **Found by the
+  receipt:** the explore door ran without a trace and the session log drops a trace-less event, so draft 1's
+  model call was metered and never recorded (fixed; draft 2's call is in the log under its run) · the panel
+  kept offering *Bind* for four tables the draft had just bound — the builder proposes `schema.table`, the draft
+  binds the bare name (fixed in code; reaches a running API on its next restart). **Open on this wave:** tickets
+  under Order is the user's call (confirm, or remove the binding) · a name join (`warehouse = name`) was guessed
+  wrong once and not re-proposed · run-to-run variance means a second draft ADDS rather than repeats · the
+  explorer proposes no processes yet (ON-9) and does not name the builder's found links · the §6 item 18(b)
+  shape it drafted (Payment and Shipment as parts) agrees with the recommendation. When a
   connection is registered — or on demand from the map — an explorer agent reads the SOURCE
   CATALOGUE (table profiles, the join map with measured cardinality, sample values, glossary,
   the bound pack's claims) and proposes the BUSINESS ontology: which tables are one thing
@@ -4965,9 +5017,11 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         model) RETIRED 2026-09-11 — ON-0's falsifier fired on both blocks (§6 item 15).
         → SECOND MOVEMENT, adopted 2026-09-12 (the user: "integrate this in the main roadmap and take on
         seven first"): ON-7 the declared entity, its parts (a `detail` binding kind) and declared links —
-        🎯 STARTED 2026-09-12 (receipt: Lux as 8 business entities from 14 tables, no model call) →
+        ✅ MERGED #494 2026-09-12 (receipt: Lux as 8 business entities from 14 tables, no model call) →
         ON-7b the explorer maps the business first (proposals with model provenance, measured, confirmed
-        in the map) → ON-9 processes and promises (Olist order-to-delivery; a promise derives the late
+        in the map) — ✅ FIRST SLICE + RECEIPT 2026-09-13: Lux registered again, 8 business entities drafted
+        from 14 tables in one call, 4 of ON-7's 5 queries equal their references, the falsifier FIRED once
+        (tickets under Order) so it stays on demand → ON-9 processes and promises (Olist order-to-delivery; a promise derives the late
         segment and the breach metric by construction) → ON-10 the investigation starts from the
         ontology (frame_question before the intake parse; the falsifier is a set where raw FAILS because
         the definition is not in the data) → ON-8 one ontology, many sources (org-keyed, bindings name

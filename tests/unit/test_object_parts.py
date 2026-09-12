@@ -173,7 +173,8 @@ def test_a_type_is_a_part_only_while_its_parent_binds_its_table(db, graph):
     shown = object_type_map(graph)
     by_type = {t["object_type"]: t for t in shown["object_types"]}
     assert by_type["order_item"]["absorbed_into"] == "order" and by_type["order"]["parts"] == [
-        {"object_type": "order_item", "display_name": item.display_name or item.id, "binding": "lines", "kind": "detail"}]
+        {"object_type": "order_item", "display_name": item.display_name or item.id, "binding": "lines", "kind": "detail",
+         "origin": "human"}]
     to_product = next(e for e in shown["links"] if e["relationship"] == "OrderItem_RELATES_TO_Product")
     assert (to_product["from"], to_product["shown_from"], to_product["shown_to"]) == ("order_item", "order", "product")
     described = describe_object_type(graph, "order_item")

@@ -128,3 +128,70 @@ CONSTRAINTS:
     Use exact table names as shown in the schema (no added schema prefixes).
   • Omit rather than hallucinate — only return fields you are confident about.
 """
+
+
+#: ON-7b — the explorer that maps the BUSINESS first (ROADMAP §3.15, the second movement). It proposes; the platform
+#: measures every claim before anything lands, and a person confirms. Bump `aughor.ontology.explorer.EXPLORER_VERSION`
+#: when this changes — it is the `@<version>` of every proposal's provenance.
+EXPLORE_BUSINESS_PROMPT = """\
+You are mapping the BUSINESS behind a data warehouse — the things the business speaks of and how they relate — on top
+of a catalogue of its tables. Today every table is its own entity, because the platform made one per table. A business
+does not speak that way: an order HAS lines, a payment and a shipment; a return HAS its logistics record; a customer
+HAS support tickets; a product HAS a price history. Say which tables are one business thing, and which things relate.
+
+You PROPOSE. The platform measures every proposal against the data before it lands — whether a column really carries
+an entity's key, how many of its objects it reaches, whether two columns ever hold the same values — and refuses what
+the data does not hold. A person confirms what survives. Propose what the catalogue supports, spelling every entity
+id, table and column exactly as the catalogue spells them.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PARTS  (parts)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A PART is a table whose rows each belong to ONE object of another entity and are not a business thing on their own:
+an order's lines, its payment, its shipment; a return's logistics record; a customer's support tickets; a product's
+price readings. For each part:
+  • entity — the id of the entity it belongs to, from the catalogue (e.g. Order)
+  • table — the part's table, as listed
+  • key — the part table's column that holds the ENTITY's key (order_items.order_id for Order)
+  • name — how the business speaks of it, snake_case: lines, payment, shipment, logistics, tickets, price_history
+  • time_column — only when its rows are readings over time (a price history's valid_from); otherwise ""
+  • rollups — only when there are MANY rows per object: what the business counts or sums for each object, e.g.
+    {{"property": "units", "column": "quantity", "agg": "sum"}} or
+    {{"property": "line_count", "column": "order_item_id", "agg": "count"}}; agg is sum, avg, min, max or count
+  • reason — one short sentence
+Rules:
+  • A table others refer to as a thing in its own right — a product, a customer, a brand, a warehouse, a country, a
+    date — is an ENTITY, never a part.
+  • The MEASURED BY THE DATA lines are the platform's own counts: a table carrying an entity's key on many rows per
+    object is a strong part candidate; one row per object (a payment per order) can be a part too.
+  • A part belongs to exactly one entity, and to a top-level one: never make a part of a part.
+  • Skip everything under ALREADY DECLARED.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LINKS  (links)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Relations the business names that the JOINS list does not already hold: an order is placed_by a customer, a shipment
+ships_from a warehouse. For each:
+  • from_entity, to_entity — entity ids from the catalogue
+  • verb — snake_case, read from → to: placed_by, ships_from, sold_by, located_in
+  • from_column — a column of from_entity's OWN table; to_column — a column of to_entity's OWN table that holds the
+    same values (a name joins a name, an id joins an id — read the sample values)
+  • reason — one short sentence
+Skip any pair of columns the JOINS list already joins.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ENTITIES  (entities) — rarely needed
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Only for a business thing NO table stands for yet, read through ONE SELECT that returns one row per object:
+  • id — PascalCase; display_name; description — one sentence; domain
+  • sql — one SELECT over catalogue tables, no semicolon, one row per object
+    (e.g. SELECT DISTINCT category FROM products)
+  • key — the SELECT's column that names one object
+  • reason — one short sentence
+Most catalogues need none. Never declare an entity over a table the catalogue already lists.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+{catalogue}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Return three flat lists — entities, parts, links. Omit rather than guess: a proposal the data refutes is refused.
+"""

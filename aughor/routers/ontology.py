@@ -1020,6 +1020,14 @@ def bind_ontology_entity(
     counted against the objects: a static binding must hold one row per object, a timeseries binding must reach them.
     Merged into the type's other human edits; the response carries the binding as the entity-type panel shows it.
     No model call."""
+    return _bind_entity_core(entity_id, name, body.model_dump(exclude_none=True), connection_id, schema_name)
+
+
+def _bind_entity_core(entity_id: str, name: str, spec: dict, connection_id: str, schema_name: Optional[str], *,
+                      origin: str = "human", provenance: str = "") -> dict:
+    """The bind door's body, shared with the explorer (ON-7b), which binds what it proposes through exactly this path
+    — ``origin="model"`` and its provenance recorded on the bind entry, so the binding reads as proposed until a
+    person confirms it."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
@@ -1033,11 +1041,14 @@ def bind_ontology_entity(
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
-        spec = body.model_dump(exclude_none=True)
+        spec = dict(spec)
         absorb = bool(spec.pop("absorb", False))
         entry = bind_binding(entity, name, spec, graph, describe_with(db))
         if not entry["bound"]:
             raise HTTPException(status_code=400, detail=f"binding '{name}' on {entity_id} did not bind: {entry['note']}")
+        if origin == "model":
+            # ON-7b — an explorer's binding: read like any other, proposed until a person confirms it.
+            entry = {**entry, "origin": "model", "provenance": provenance}
         existing = find_override(connection_id, effective, "entity", entity_id)
         fields = dict(existing.fields) if existing else {}
         fields["bindings"] = {**(fields.get("bindings") or {}), name: entry["spec"]}
@@ -1146,6 +1157,12 @@ def declare_ontology_entity(
     already backs a type is refused — rename or absorb that type instead of doubling it. The declaration lives
     in the overrides tree with provenance (human, or a model's proposal) and survives every rebuild. No model
     call."""
+    return _declare_entity_core(body.model_dump(exclude_none=True), connection_id, schema_name)
+
+
+def _declare_entity_core(spec: dict, connection_id: str, schema_name: Optional[str]) -> dict:
+    """The entity door's body, shared with the explorer (ON-7b): the spec carries `origin` and, for a model's
+    proposal, its provenance."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
@@ -1156,15 +1173,15 @@ def declare_ontology_entity(
     from aughor.ontology.overrides import OntologyOverride, save_override
     from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
-    spec = body.model_dump(exclude_none=True)
     problem = entity_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
+    entity_id = str(spec["id"])
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
-    if body.id in graph.entities:
-        raise HTTPException(status_code=409, detail=f"an object type '{body.id}' already exists")
+    if entity_id in graph.entities:
+        raise HTTPException(status_code=409, detail=f"an object type '{entity_id}' already exists")
     fields = entity_fields(spec)
     if fields["backing"].get("table"):
         other = backs_existing_type(graph, fields["backing"]["table"])
@@ -1178,14 +1195,14 @@ def declare_ontology_entity(
     finally:
         db.close()
     if not entry.get("bound"):
-        raise HTTPException(status_code=400, detail=f"{body.id} did not bind: {entry.get('note')}")
-    ov = OntologyOverride(target_kind="entity", target_id=body.id, fields=fields, source=fields["origin"],
+        raise HTTPException(status_code=400, detail=f"{entity_id} did not bind: {entry.get('note')}")
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields, source=fields["origin"],
                           binding={"backing": entry})
     save_override(connection_id, effective, ov)
     served = _get_ontology_graph(connection_id, effective)
-    if served is None or body.id not in served.entities:
-        raise HTTPException(status_code=500, detail=f"{body.id} was written but does not read back — see the overlay report")
-    return {**_override_result(ov), "entity": describe_object_type(served, body.id)}
+    if served is None or entity_id not in served.entities:
+        raise HTTPException(status_code=500, detail=f"{entity_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "entity": describe_object_type(served, entity_id)}
 
 
 @router.delete("/ontology/entities/{entity_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -1225,6 +1242,12 @@ def declare_ontology_link(
     Each side is counted (a side is "1" when its key is unique — the cardinality, ON-0a's law) and the share of
     from-keys the to-side holds is measured before anything is written; the compiler follows the link exactly as
     it would a found one: measured, and not N:N. No model call."""
+    return _declare_link_core(body.model_dump(exclude_none=True), connection_id, schema_name)
+
+
+def _declare_link_core(spec: dict, connection_id: str, schema_name: Optional[str]) -> dict:
+    """The link door's body, shared with the explorer (ON-7b): the spec carries `origin` and, for a model's proposal,
+    its provenance."""
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.db.connection import open_connection_for_with_schema
@@ -1234,7 +1257,6 @@ def declare_ontology_link(
     from aughor.ontology.overrides import OntologyOverride, save_override
     from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
-    spec = body.model_dump(exclude_none=True)
     problem = link_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -1313,6 +1335,210 @@ def name_ontology_link(
     ov = OntologyOverride(target_kind="link", target_id=relationship_id, fields={"name": name})
     save_override(connection_id, effective, ov)
     return _override_result(ov)
+
+
+# ── ON-7b: the explorer maps the business first ────────────────────────────────────────────────
+
+
+class _ConfirmTarget(BaseModel):
+    """One declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read
+    through."""
+    kind: Literal["entity", "binding", "link"]
+    entity: Optional[str] = None
+    binding: Optional[str] = None
+    relationship: Optional[str] = None
+
+
+class _ConfirmRequest(BaseModel):
+    #: Every proposal of the scope's draft that is still the model's.
+    all: bool = False
+    targets: list[_ConfirmTarget] = []
+    #: Who confirms — recorded on the declaration beside the model that proposed it.
+    actor: str = ""
+
+
+def _through_door(write):
+    """Run one of ON-7's doors for the explorer: a refusal (a 4xx) becomes the explorer's refusal carrying the door's
+    own sentence; anything else is raised as it is."""
+    from aughor.ontology.explorer import ExplorerRefused
+    try:
+        return write()
+    except HTTPException as exc:
+        if exc.status_code >= 500:
+            raise
+        raise ExplorerRefused(str(exc.detail)) from exc
+
+
+@router.post("/ontology/explore", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def explore_ontology(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """ON-7b — an explorer drafts the BUSINESS ontology over this scope in ONE model call: which tables are one business
+    thing (an entity and its parts), the links the business names, and — rarely — an entity no table stands for. Every
+    proposal is measured before it lands — a part's key counted against its entity's objects, the data deciding static,
+    detail or timeseries; a link's sides counted and keys that never meet refused; a declared entity's key unique — and
+    what survives is written through ON-7's doors with `origin: model` and `model:<id>@<version>` provenance: read at
+    once, PROPOSED until a person confirms it. A second run writes nothing twice, and a proposal a person withdrew is
+    not proposed again. Costs one model call, so nothing starts it but a person asking."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    import uuid
+    from aughor.llm.provider import NoModelConfigured, answered_by, get_provider
+    from aughor.ontology.drafts import load_draft, save_draft
+    from aughor.telemetry import bind_trace
+    from aughor.ontology.explorer import DraftWriters, apply_draft, draft_business, draft_view, record_run
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=(f"No ontology built for schema '{effective}' on this connection — "
+                                                     "the explorer reads what the build measured, so build it first"))
+    glossary: dict = {}
+    try:
+        from aughor.semantic.glossary import load_merged_glossary
+        glossary = load_merged_glossary(connection_id=connection_id) or {}
+    except Exception:  # noqa: BLE001 — the glossary is one input among several, never a precondition
+        glossary = {}
+    # The run's own trace. The session log drops an event with no ambient trace, so without one the explorer's model
+    # call was metered and never recorded — missing from Spend and Activity on the one door that exists to spend.
+    trace_id = uuid.uuid4().hex
+    try:
+        with bind_trace(trace_id):
+            said, answerer, catalogue = draft_business(graph, get_provider("coder"), glossary=glossary,
+                                                       answered=answered_by)
+    except NoModelConfigured:
+        raise
+    except Exception as exc:  # noqa: BLE001 — a draft that could not be asked for writes nothing, and says why
+        raise HTTPException(status_code=502, detail=(f"the explorer's model call failed, so nothing was proposed: "
+                                                     f"{type(exc).__name__}: {str(exc)[:300]}"))
+    draft = load_draft(connection_id, effective)
+    writers = DraftWriters(
+        declare_entity=lambda spec: _through_door(lambda: _declare_entity_core(spec, connection_id, effective)),
+        bind=lambda entity_id, name, spec, absorb: _through_door(lambda: _bind_entity_core(
+            entity_id, name, {**spec, "absorb": absorb}, connection_id, effective,
+            origin="model", provenance=answerer.provenance)),
+        declare_link=lambda spec: _through_door(lambda: _declare_link_core(spec, connection_id, effective)),
+        served=lambda: _get_ontology_graph(connection_id, effective))
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        outcomes = apply_draft(said, graph, db, provenance=answerer.provenance, draft=draft, writers=writers)
+    finally:
+        db.close()
+    run = record_run(draft, outcomes, answerer, said, catalogue_chars=len(catalogue), trace_id=trace_id)
+    save_draft(draft)
+    _invalidate_schema_cache(connection_id)
+    try:
+        from aughor.kernel.ledger import Ledger
+        Ledger.default().emit("ontology.explore", {"ok": True, "schema": effective, "run": run.id,
+                                                   "backend": run.backend, "model": run.model,
+                                                   "fallback": run.fallback, "said": run.said,
+                                                   "written": run.written, "refused": run.refused,
+                                                   "already": run.already, "withdrawn": run.withdrawn},
+                              conn_id=connection_id, trace_id=trace_id)
+    except Exception:  # noqa: BLE001
+        import logging
+        logging.getLogger(__name__).debug("ontology.explore emit skipped", exc_info=True)
+    return {**draft_view(_get_ontology_graph(connection_id, effective), draft), "run": run.model_dump(),
+            "outcomes": [o.row() for o in outcomes]}
+
+
+@router.get("/ontology/draft", dependencies=[gate(Capability.ONTOLOGY_VIEW)])
+def get_ontology_draft(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+    reference_connection_id: Optional[str] = Query(
+        default=None, description="Compare this scope's grouping of tables into business entities with another "
+                                  "scope's (ON-7b's falsifier: a draft that fuses what the reference keeps apart)"),
+    reference_schema_name: Optional[str] = Query(default=None),
+):
+    """ON-7b — the scope's explorer draft: every proposal with where it stands NOW (read from the served graph —
+    proposed, confirmed, released, withdrawn — or refused when it was said), every run with the model that answered,
+    and how the tables group into business entities. With a reference scope, that grouping is compared with the
+    reference's, table by table. No model call, no warehouse query."""
+    from aughor.ontology.drafts import load_draft
+    from aughor.ontology.explorer import business_grouping, compare_groupings, draft_view
+    effective = _resolve_schema(connection_id, schema_name)
+    view = draft_view(_get_ontology_graph(connection_id, effective), load_draft(connection_id, effective))
+    if reference_connection_id:
+        reference = _get_ontology_graph(reference_connection_id, reference_schema_name)
+        if reference is None:
+            raise HTTPException(status_code=404,
+                                detail=f"No ontology built for the reference scope '{reference_connection_id}'")
+        grouping = business_grouping(reference)
+        view["comparison"] = {"reference_connection_id": reference_connection_id,
+                              "reference_schema_name": reference.schema_name, "reference_grouping": grouping,
+                              **compare_groupings(view["grouping"], grouping)}
+    return view
+
+
+@router.post("/ontology/draft/confirm", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def confirm_ontology_proposals(
+    body: _ConfirmRequest,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """ON-7b — a person makes an explorer's proposals theirs: `origin` becomes human, the provenance of the model that
+    proposed it is kept, and nothing else about the declaration or its measurement changes. `all` confirms every
+    proposal of the scope's draft that is still the model's; `targets` names declarations — a declared entity, a
+    declared link, or the binding a part is read through. A target that is not a model's proposal is refused with the
+    reason, never quietly confirmed. No model call."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.ontology.drafts import load_draft
+    from aughor.ontology.explorer import confirm_targets, draft_view
+    effective = _resolve_schema(connection_id, schema_name)
+    draft = load_draft(connection_id, effective)
+    targets = [t.model_dump(exclude_none=True) for t in body.targets]
+    if body.all:
+        targets += confirm_targets(_get_ontology_graph(connection_id, effective), draft)
+    if not targets:
+        raise HTTPException(status_code=400,
+                            detail="nothing to confirm — no target was named, and no proposal is still the model's")
+    confirmed, refused = [], []
+    for target in targets:
+        why = _confirm_proposal(connection_id, effective, target, body.actor.strip())
+        (refused if why else confirmed).append({**target, **({"why": why} if why else {})})
+    _invalidate_schema_cache(connection_id)
+    return {**draft_view(_get_ontology_graph(connection_id, effective), draft),
+            "confirmed": confirmed, "refused": refused}
+
+
+def _confirm_proposal(connection_id: str, schema: str, target: dict, actor: str) -> str:
+    """Make one model-proposed declaration a person's; returns why not, or ""."""
+    from datetime import datetime, timezone
+    from aughor.ontology.bindings import binding_block
+    from aughor.ontology.overrides import find_override, save_override
+    kind = target.get("kind")
+    now = datetime.now(timezone.utc).isoformat()
+    who = actor or "a person"
+    if kind in ("entity", "link"):
+        ident = str((target.get("entity") if kind == "entity" else target.get("relationship")) or "")
+        ov = find_override(connection_id, schema, kind, ident)
+        if ov is None or not ov.fields.get("declared"):
+            return f"no declared {kind} '{ident}'"
+        if ov.fields.get("origin") != "model":
+            return f"{ident} was declared by a person — there is no proposal to confirm"
+        ov.fields["origin"] = "human"
+        ov.source, ov.edited_at = "human", now
+        ov.edited_by = actor or ov.edited_by
+        ov.note = f"confirmed by {who}; proposed by {ov.fields.get('provenance') or 'a model'}"
+        save_override(connection_id, schema, ov)
+        return ""
+    if kind == "binding":
+        entity_id, name = str(target.get("entity") or ""), str(target.get("binding") or "")
+        ov = find_override(connection_id, schema, "entity", entity_id)
+        entries = dict(((ov.binding.get("bindings") or {}).get("entries") or {}) if ov is not None else {})
+        entry = entries.get(name)
+        if ov is None or entry is None:
+            return f"{entity_id} has no binding '{name}'"
+        if entry.get("origin") != "model":
+            return f"{entity_id}.{name} was bound by a person — there is no proposal to confirm"
+        entries[name] = {**entry, "origin": "human", "confirmed_by": who, "confirmed_at": now}
+        ov.binding["bindings"] = binding_block(entries)
+        save_override(connection_id, schema, ov)
+        return ""
+    return f"there is no {kind!r} to confirm"
 
 
 class _RoutingProposal(BaseModel):

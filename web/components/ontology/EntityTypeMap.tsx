@@ -40,7 +40,20 @@ import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
 import { getMyPreferences, putMyPreference } from "@/lib/api";
 import { CARD, collapseParts, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
-import { declareEntity, getTypeMap, type DeclaredEntitySpec, type TypeMap, type TypeMapRow } from "@/lib/objectTypes";
+import {
+  confirmProposals,
+  declareEntity,
+  exploreOntology,
+  getOntologyDraft,
+  getTypeMap,
+  type ConfirmTarget,
+  type DeclaredEntitySpec,
+  type DraftProposal,
+  type OntologyDraft,
+  type ProposalTier,
+  type TypeMap,
+  type TypeMapRow,
+} from "@/lib/objectTypes";
 
 const MONO: React.CSSProperties = { fontFamily: "var(--font-mono)" };
 const RULE = "1px solid var(--b1)";
@@ -113,6 +126,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   const [query, setQuery] = useState("");
   // Bumped by a write in the panel (a declared display property, a measurement) so the map and the panel re-read.
   const [version, setVersion] = useState(0);
+  const [draft, setDraft] = useState<OntologyDraft | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -128,6 +142,20 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
     return () => { live = false; };
   }, [connectionId, schema, version]);
 
+  // ON-7b — the explorer's draft beside the map: what it proposed, and where each proposal stands now. A scope with no
+  // draft — or an API older than the draft door — simply offers a first one.
+  useEffect(() => {
+    let live = true;
+    getOntologyDraft(connectionId, schema)
+      .then((next) => { if (live) setDraft(next); })
+      .catch(() => { if (live) setDraft(null); });
+    return () => { live = false; };
+  }, [connectionId, schema, version]);
+
+  // ON-7 — a part is not a card: it is folded into its parent. Memoised on the map itself, so a render that changes nothing
+  // the map draws — the draft arriving, a search in the rail — hands the canvas the same map and re-lays nothing.
+  const drawn = useMemo(() => (map ? collapseParts(map) : null), [map]);
+
   if (error) {
     return (
       <EmptyState icon="alert" title="The entity-type map could not be read"
@@ -136,12 +164,11 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
       </EmptyState>
     );
   }
-  if (!map) return <div style={{ flex: 1, padding: 24 }}><SkeletonRows rows={6} /></div>;
+  if (!map || !drawn) return <div style={{ flex: 1, padding: 24 }}><SkeletonRows rows={6} /></div>;
   if (!selected || map.object_types.length === 0) {
     return <EmptyState icon="node" title="This ontology has no object types yet." />;
   }
-  // ON-7 — a part is not a card: it is folded into its parent, and picking it lights the parent's card.
-  const drawn = collapseParts(map);
+  // ON-7 — picking a part lights its parent's card.
   const picked = map.object_types.find((t) => t.object_type === selected);
   const standing = picked?.absorbed_into && drawn.object_types.some((t) => t.object_type === picked.absorbed_into)
     ? picked.absorbed_into : selected;
@@ -152,6 +179,16 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
         declare={(spec) => declareEntity(connectionId, spec, schema).then((made) => {
           setVersion((v) => v + 1);
           setSelected(made.object_type);
+        })}
+        draft={draft}
+        explore={() => exploreOntology(connectionId, schema).then((next) => {
+          setDraft(next);
+          setVersion((v) => v + 1);
+        })}
+        confirm={(request) => confirmProposals(connectionId, request, schema).then((next) => {
+          setDraft(next);
+          setVersion((v) => v + 1);
+          if (next.refused.length) throw new Error(next.refused.map((r) => r.why).join("; "));
         })} />
       <MapCanvas map={drawn} selected={standing} onSelect={setSelected} scope={scopeOf(connectionId, schema)} />
       <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
@@ -164,7 +201,7 @@ function matches(t: TypeMapRow, wanted: string): boolean {
   return [t.display_name, t.object_type, t.id, t.table].some((s) => s.toLowerCase().includes(wanted));
 }
 
-function TypeRail({ types, parts, selected, query, onQuery, onPick, declare }: {
+function TypeRail({ types, parts, selected, query, onQuery, onPick, declare, draft, explore, confirm }: {
   types: TypeMapRow[];
   /** ON-7 — the types folded into a parent: listed under the cards, still openable by name. */
   parts: TypeMapRow[];
@@ -173,6 +210,10 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, declare }: {
   onQuery: (q: string) => void;
   onPick: (objectType: string) => void;
   declare: (spec: DeclaredEntitySpec) => Promise<void>;
+  /** ON-7b — the explorer's draft, and the two doors it offers: a draft, and a confirmation. */
+  draft: OntologyDraft | null;
+  explore: () => Promise<void>;
+  confirm: (request: { all?: boolean; targets?: ConfirmTarget[] }) => Promise<void>;
 }) {
   const wanted = query.trim().toLowerCase();
   const shown = wanted ? types.filter((t) => matches(t, wanted)) : types;
@@ -192,6 +233,7 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, declare }: {
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             {part ? `part of ${t.absorbed_into}` : `${keyWords(t.key_verified)} · ${t.links} ${t.links === 1 ? "link" : "links"}`}
             {!part && t.parts?.length ? ` · ${t.parts.length} ${t.parts.length === 1 ? "part" : "parts"}` : ""}
+            {t.unconfirmed ? ` · ${t.unconfirmed} proposed` : ""}
           </span>
         </span>
       </Button>
@@ -220,8 +262,115 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, declare }: {
         )}
         {shownParts.map((t) => row(t, true))}
       </div>
+      <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} />
       <DeclareEntity declare={declare} />
     </nav>
+  );
+}
+
+const TIER_TAG: Record<ProposalTier, string> = {
+  proposed: "aug-tag-violet", confirmed: "aug-tag-green", refused: "aug-tag-red", released: "aug-tag-gray",
+  withdrawn: "aug-tag-gray",
+};
+
+/** The declaration a proposal was written as, as the confirm door names it. */
+function targetOf(p: DraftProposal): ConfirmTarget {
+  if (p.kind === "entity") return { kind: "entity", entity: p.target.entity };
+  if (p.kind === "link") return { kind: "link", relationship: p.target.relationship };
+  return { kind: "binding", entity: p.target.entity, binding: p.target.binding };
+}
+
+/** ON-7b — the explorer's draft, from the rail. A person asks an explorer to map the business — one model call, and the
+ *  button says so — then reads what it proposed and what the data refused, and confirms. What the explorer proposed
+ *  already reads on the map, marked proposed, until a person confirms it or withdraws it where it lives. */
+function ExplorerDraft({ draft, explore, confirm, onOpen }: {
+  draft: OntologyDraft | null;
+  explore: () => Promise<void>;
+  confirm: (request: { all?: boolean; targets?: ConfirmTarget[] }) => Promise<void>;
+  onOpen: (objectType: string) => void;
+}) {
+  const [busy, setBusy] = useState<"" | "explore" | "confirm">("");
+  const [open, setOpen] = useState(false);
+  const [problem, setProblem] = useState("");
+  const run = draft?.runs[0];
+  const counts = draft?.counts;
+  const act = async (what: "explore" | "confirm", write: () => Promise<void>) => {
+    setBusy(what);
+    setProblem("");
+    try {
+      await write();
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy("");
+    }
+  };
+  const gone = counts ? counts.withdrawn + counts.released : 0;
+  return (
+    <div style={{ padding: "8px 10px", borderTop: RULE, display: "flex", flexDirection: "column", gap: 6 }}
+      data-testid="explorer-draft">
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600 }}>
+        Explorer draft
+      </div>
+      {run && counts ? (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t2)", lineHeight: 1.45 }} data-testid="explorer-draft-counts"
+          title={`${run.provenance}${run.fallback ? " (a fallback answered)" : ""} · ${run.at}`}>
+          {counts.proposed} proposed · {counts.confirmed} confirmed · {counts.refused} refused
+          {gone ? ` · ${gone} withdrawn` : ""}
+        </p>
+      ) : (
+        <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
+          An explorer reads these tables and proposes the business: which tables are one entity, and the links between
+          them. One model call. Every claim is measured before it lands and stays proposed until you confirm it.
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        <Button variant="outline" size="xs" disabled={!!busy} onClick={() => act("explore", explore)}
+          data-testid="explorer-draft-run"
+          title="One model call: an explorer proposes entities, parts and links, and the data measures each before it lands">
+          {busy === "explore" ? "Drafting…" : run ? "Draft again" : "Draft the business"}
+        </Button>
+        {counts && counts.proposed > 0 && (
+          <Button variant="outline" size="xs" disabled={!!busy} onClick={() => act("confirm", () => confirm({ all: true }))}
+            data-testid="explorer-draft-confirm-all" title="Make every proposal still the model's yours, exactly as measured">
+            {busy === "confirm" ? "Confirming…" : `Confirm ${counts.proposed}`}
+          </Button>
+        )}
+        {!!draft?.proposals.length && (
+          <Button variant="ghost" size="xs" onClick={() => setOpen((v) => !v)} aria-expanded={open}>
+            {open ? "Hide" : "Review"}
+          </Button>
+        )}
+      </div>
+      {open && draft && (
+        <div style={{ maxHeight: 260, overflowY: "auto" }}>
+          {draft.proposals.map((p) => (
+            <div key={p.key} style={{ padding: "5px 0", borderTop: RULE }} data-testid="explorer-proposal">
+              <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                <span className={`aug-tag ${TIER_TAG[p.tier]}`}>{p.tier}</span>
+                {p.tier === "proposed" && (
+                  <Button variant="minimal" size="xs" disabled={!!busy}
+                    onClick={() => act("confirm", () => confirm({ targets: [targetOf(p)] }))}>
+                    Confirm
+                  </Button>
+                )}
+                {p.object_type && p.tier !== "refused" && p.tier !== "withdrawn" && (
+                  <Button variant="minimal" size="xs" onClick={() => onOpen(p.object_type)}>Open</Button>
+                )}
+              </div>
+              <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t1)", overflowWrap: "anywhere", marginTop: 2 }}>
+                {p.sentence}
+              </div>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.45, overflowWrap: "anywhere" }}
+                title={p.note}>
+                {p.tier === "refused" || !p.reason ? p.note : p.reason}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {problem && <p className="aug-fs-xs" style={{ margin: 0, color: "var(--red5)", lineHeight: 1.45 }}>{problem}</p>}
+    </div>
   );
 }
 
@@ -318,10 +467,19 @@ function EntityCard({ data }: NodeProps<RFNode<CardData>>) {
           <Handle type="target" id={`${id}-in`} position={SIDES[id]} style={HANDLE} isConnectable={false} />
         </React.Fragment>
       ))}
-      <span className="aug-fs-sm"
-        style={{ color: "var(--t1)", fontWeight: picked ? 600 : 500, overflow: "hidden",
-                 textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {row.display_name}
+      <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0 }}>
+        <span className="aug-fs-sm"
+          style={{ color: "var(--t1)", fontWeight: picked ? 600 : 500, overflow: "hidden",
+                   textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {row.display_name}
+        </span>
+        {/* ON-7b — what an explorer proposed here that no person has confirmed yet */}
+        {row.unconfirmed ? (
+          <span className="aug-tag aug-tag-violet" data-testid="entity-map-card-proposed" style={{ flexShrink: 0 }}
+            title={row.origin === "model" ? `proposed by ${row.provenance || "an explorer"}` : "an explorer proposed part of this"}>
+            {row.origin === "model" ? "proposed" : `${row.unconfirmed} proposed`}
+          </span>
+        ) : null}
       </span>
       <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
         {keyWords(row.key_verified)} · {row.traversable_links} of {row.links} {row.links === 1 ? "link" : "links"}
@@ -401,19 +559,21 @@ function MapCanvas({ map, selected, onSelect, scope }: {
       const verb = link.verb || "relates to";
       // ON-7 — a link drawn from a parent's card on behalf of one of its parts says which part it came through.
       const via = (link as { via?: string }).via;
+      // ON-7b — a link an explorer proposed and no person has confirmed is drawn in the proposal colour and says so.
+      const proposed = link.origin === "model";
+      const ink = !link.traversable ? "var(--amb4)" : proposed ? "var(--vio4)" : "var(--blue3)";
       return [{
         id: link.relationship, source: link.from, target: link.to,
         sourceHandle: side(b.x - a.x, b.y - a.y), targetHandle: `${side(a.x - b.x, a.y - b.y)}-in`,
         // Only the picked type's links are named: every label at once is what made this map unreadable.
-        label: on ? `${verb} · ${link.cardinality}${via ? ` · via ${via}` : ""}` : undefined,
+        label: on ? `${verb} · ${link.cardinality}${via ? ` · via ${via}` : ""}${proposed ? " · proposed" : ""}` : undefined,
         labelShowBg: true,
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 4,
         labelBgStyle: { fill: "var(--bg-0)", stroke: link.traversable ? "var(--b2)" : "var(--amb2)" },
         labelStyle: { fill: "var(--t2)", fontSize: "var(--aug-fs-xs)" },
-        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14,
-                     color: link.traversable ? "var(--blue3)" : "var(--amb4)" },
-        style: { stroke: link.traversable ? "var(--blue3)" : "var(--amb4)",
+        markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: ink },
+        style: { stroke: ink,
                  strokeWidth: on ? 2 : 1.25, strokeDasharray: link.traversable ? undefined : "5 4",
                  opacity: on || lit.links.size === 0 ? 0.95 : UNLIT },
         data: { why: link.traversable ? "" : link.why_not ?? "" },

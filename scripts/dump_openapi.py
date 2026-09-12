@@ -71,9 +71,9 @@ def _isolate_stores() -> None:
     # A DIRECTORY too, and one that takes an EXCLUSIVE lock in local mode — so an unpinned
     # default here does not merely dirty `data/`, it contends with a running API.
     os.environ.setdefault("AUGHOR_QDRANT_PATH", os.path.join(tmp, "qdrant"))
-    # ON-1b — the ontology's three file trees: human overrides (a measure WRITES verdicts back into it), the export
-    # beside it, and the engine's recommendations. Isolated in tests/conftest.py in the same commit.
-    for _tree in ("OVERRIDES", "EXPORT", "RECOMMENDATIONS"):
+    # ON-1b — the ontology's file trees: human overrides (a measure WRITES verdicts back into it), the export beside it,
+    # the engine's recommendations, and (ON-7b) the explorer's draft record. Isolated in tests/conftest.py too.
+    for _tree in ("OVERRIDES", "EXPORT", "RECOMMENDATIONS", "DRAFTS"):
         os.environ.setdefault(f"AUGHOR_ONTOLOGY_{_tree}_DIR", os.path.join(tmp, f"ontology_{_tree.lower()}"))
 
 

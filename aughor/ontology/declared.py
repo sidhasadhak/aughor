@@ -86,6 +86,8 @@ def entity_fields(spec: dict) -> dict:
             out[field] = str(spec[field]).strip()
     if spec.get("entity_type"):
         out["entity_type"] = spec["entity_type"]
+    if str(spec.get("provenance") or "").strip():
+        out["provenance"] = str(spec["provenance"]).strip()      # ON-7b — the model that said it
     return out
 
 
@@ -148,7 +150,7 @@ def declared_entity(ov, graph: Optional[OntologyGraph]) -> Optional[OntologyEnti
         description=str(fields.get("description") or ""), source_tables=[table] if table else [],
         identity_key=key, grain_verified=unique is True, backing=backing, domain=fields.get("domain") or None,
         entity_type=fields.get("entity_type") or "business_object", origin=fields.get("origin") or "human",
-        properties=properties)
+        provenance=str(fields.get("provenance") or ""), properties=properties)
 
 
 def register_entity(graph: OntologyGraph, entity: OntologyEntity) -> None:
@@ -213,6 +215,8 @@ def link_fields(spec: dict) -> dict:
         out["cardinality"] = spec["cardinality"]
     if spec.get("reverse_name"):
         out["reverse_name"] = str(spec["reverse_name"]).strip()
+    if str(spec.get("provenance") or "").strip():
+        out["provenance"] = str(spec["provenance"]).strip()      # ON-7b — the model that said it
     return out
 
 
@@ -331,7 +335,7 @@ def declared_relationship(ov, graph: OntologyGraph) -> Optional[OntologyRelation
         join_confidence="verified" if (overlap or 0) > 0 else "inferred", nullable=False, value_overlap=overlap,
         measured_cardinality=measured, cardinality_note=note or str(entry.get("note") or ""),
         api_name=fields["name"], reverse_api_name=reverse_name_of(fields), name=fields["name"],
-        origin=fields.get("origin") or "human")
+        origin=fields.get("origin") or "human", provenance=str(fields.get("provenance") or ""))
 
 
 def register_relationship(graph: OntologyGraph, rel: OntologyRelationship) -> None:

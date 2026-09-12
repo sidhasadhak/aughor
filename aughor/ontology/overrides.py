@@ -107,6 +107,9 @@ _EDITABLE: dict[str, set[str]] = {
         # is editable so a declared type can be reference data or an event. `absorbed_into` marks the type a PART
         # of another — held only while the parent binds its table (`aughor.ontology.parts.part_of`).
         "declared", "origin", "entity_type", "absorbed_into",
+        # ON-7b — who said a declared type exists when a model did (`model:<id>@<version>`), kept when a person confirms
+        # the proposal and `origin` becomes human.
+        "provenance",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -124,7 +127,7 @@ _EDITABLE: dict[str, set[str]] = {
     # ON-7: a DECLARED link (POST /ontology/links) carries its whole spec — the two types, the columns each side
     # joins on, the expected cardinality, a reverse name, and who declared it.
     "link": {"name", "declared", "from_entity", "to_entity", "from_column", "to_column", "cardinality",
-             "reverse_name", "origin"},
+             "reverse_name", "origin", "provenance"},
 }
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.

@@ -22,6 +22,7 @@ import { countNoun, formatCount } from "@/lib/format";
 import { declaredActionsHref } from "@/lib/objectLinks";
 import {
   addBinding,
+  confirmProposals,
   declareDisplayProperty,
   declareLink,
   deleteEntity,
@@ -33,6 +34,7 @@ import {
   removeBinding,
   setPartOf,
   type BindingSpec,
+  type ConfirmTarget,
   type DeclaredLinkSpec,
   type FrameSpec,
   type ObjectTypeDetail,
@@ -141,7 +143,9 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: 
           <span className="aug-tag aug-tag-gray">{ROLE[detail.role] ?? detail.role}</span>
           {detail.domain && <span className="aug-tag aug-tag-violet">{detail.domain}</span>}
           {declared && (
-            <span className="aug-tag aug-tag-blue" title={detail.origin === "model" ? "proposed by an explorer, not yet confirmed" : "declared by a person"}>
+            <span className={`aug-tag ${detail.origin === "model" ? "aug-tag-violet" : "aug-tag-blue"}`}
+              title={detail.origin === "model" ? `proposed by ${detail.provenance || "an explorer"}, not yet confirmed`
+                : detail.provenance ? `declared — first proposed by ${detail.provenance}` : "declared by a person"}>
               {detail.origin === "model" ? "proposed" : "declared"}
             </span>
           )}
@@ -151,6 +155,13 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: 
           <p className="aug-fs-sm" style={{ margin: "8px 0 0", color: "var(--t2)", lineHeight: 1.5 }}>{detail.description}</p>
         )}
         <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+        {detail.origin === "model" && (
+          <div className="aug-fs-xs" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+            <span style={{ ...MONO, color: "var(--t3)" }}>{detail.provenance || "proposed by a model"}</span>
+            <ConfirmProposal target={{ kind: "entity", entity: detail.id }} connectionId={connectionId} schema={schema}
+              onChanged={onChanged} />
+          </div>
+        )}
         {declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       </header>
       <KeySection detail={detail} />
@@ -269,6 +280,41 @@ function WithdrawEntity({ detail, connectionId, schema, onChanged }: {
   );
 }
 
+/** ON-7b — make an explorer's proposal a person's. The declaration and its measurement stay exactly as they are; `origin`
+ *  becomes human and the model that proposed it is kept beside it. A target that is not a model's proposal is refused
+ *  with the reason, shown here. */
+function ConfirmProposal({ target, connectionId, schema, onChanged }: {
+  target: ConfirmTarget;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const confirm = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      const out = await confirmProposals(connectionId, { targets: [target] }, schema);
+      if (out.refused.length) setProblem(out.refused.map((r) => r.why).join("; "));
+      else onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <Button variant="outline" size="xs" disabled={busy} onClick={confirm} data-testid="proposal-confirm"
+        title="Make this proposal yours — it stays exactly as it was measured">
+        {busy ? "Confirming…" : "Confirm"}
+      </Button>
+      {problem && <span className="aug-fs-xs" style={{ color: "var(--red5)", flexBasis: "100%" }}>{problem}</span>}
+    </>
+  );
+}
+
 /** ON-7 — the types that are parts of this one: an order's lines, a return's logistics row. Each is still a type,
  *  openable by name, and read through the binding shown beside it. */
 function PartsSection({ detail, types, connectionId, schema, onOpen, onChanged }: {
@@ -306,6 +352,15 @@ function PartsSection({ detail, types, connectionId, schema, onOpen, onChanged }
             {part.display_name}
           </Button>
           <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)" }}>through {part.binding} · {part.kind}</span>
+          {part.origin === "model" && (
+            <>
+              <span className="aug-tag aug-tag-violet" title={`proposed by ${part.provenance || "an explorer"} — confirm it, or release it`}>
+                proposed
+              </span>
+              <ConfirmProposal target={{ kind: "binding", entity: detail.id, binding: part.binding }}
+                connectionId={connectionId} schema={schema} onChanged={onChanged} />
+            </>
+          )}
           <Button variant="minimal" size="xs" disabled={busy === part.object_type} style={{ marginLeft: "auto" }}
             onClick={() => release(part.object_type, partId(part.object_type))}
             title="Stand this type on its own again — the binding stays">
@@ -483,11 +538,13 @@ function bindingVerdict(b: TypeBinding): [string, string] | null {
   return b.verified === false ? ["aug-tag-red", "refuted"] : ["aug-tag-gray", "not yet measured"];
 }
 
-function BindingRow({ binding: b, first, busy, onRemove }: {
+function BindingRow({ binding: b, first, busy, onRemove, confirm }: {
   binding: TypeBinding;
   first: boolean;
   busy: boolean;
   onRemove?: () => void;
+  /** ON-7b — the door that makes an explorer's binding a person's, given only for one. */
+  confirm?: React.ReactNode;
 }) {
   const verdict = bindingVerdict(b);
   const term: React.CSSProperties = { color: "var(--t3)" };
@@ -499,6 +556,12 @@ function BindingRow({ binding: b, first, busy, onRemove }: {
         <span className="aug-fs-sm" style={{ ...MONO, color: "var(--t1)" }}>{b.name}</span>
         <span className="aug-tag aug-tag-gray">{b.primary ? "backing" : b.kind}</span>
         {verdict && <span className={`aug-tag ${verdict[0]}`}>{verdict[1]}</span>}
+        {b.source === "model" && (
+          <span className="aug-tag aug-tag-violet" title={`proposed by ${b.provenance || "an explorer"}, not yet confirmed`}>
+            proposed
+          </span>
+        )}
+        {confirm}
         {onRemove && (
           <Button variant="minimal" size="xs" disabled={busy} onClick={onRemove} style={{ marginLeft: "auto" }}
             title="Remove this binding — the properties it supplies stop resolving">
@@ -593,7 +656,12 @@ function BindingsSection({ detail, connectionId, schema, onChanged }: {
     <Section title="Bindings" aside="where its properties are read from">
       {detail.bindings.map((b, i) => (
         <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name}
-          onRemove={b.source === "human" ? () => act(b.name, () => removeBinding(connectionId, detail.id, b.name, schema)) : undefined} />
+          onRemove={b.source === "human" || b.source === "model"
+            ? () => act(b.name, () => removeBinding(connectionId, detail.id, b.name, schema)) : undefined}
+          confirm={b.source === "model" ? (
+            <ConfirmProposal target={{ kind: "binding", entity: detail.id, binding: b.name }} connectionId={connectionId}
+              schema={schema} onChanged={onChanged} />
+          ) : undefined} />
       ))}
       {proposals.length > 0 && (
         <div style={{ marginTop: 10 }}>
@@ -1003,7 +1071,21 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged }
             <span className={`aug-tag ${link.traversable ? "aug-tag-green" : "aug-tag-amber"}`}>
               {link.traversable ? "followed" : "refused"}
             </span>
-            {(link.origin === "human" || link.origin === "model") && <span className="aug-tag aug-tag-blue">declared</span>}
+            {link.origin === "human" && (
+              <span className="aug-tag aug-tag-blue"
+                title={link.provenance ? `declared — first proposed by ${link.provenance}` : "declared by a person"}>
+                declared
+              </span>
+            )}
+            {link.origin === "model" && (
+              <>
+                <span className="aug-tag aug-tag-violet" title={`proposed by ${link.provenance || "an explorer"}, not yet confirmed`}>
+                  proposed
+                </span>
+                <ConfirmProposal target={{ kind: "link", relationship: link.relationship }} connectionId={connectionId}
+                  schema={schema} onChanged={onChanged} />
+              </>
+            )}
             <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
             {(link.origin === "human" || link.origin === "model") && (
               <WithdrawLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />

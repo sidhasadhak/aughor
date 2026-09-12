@@ -259,7 +259,12 @@ class Binding(BaseModel):
     #: ON-7 — property name → the rollup it is computed by. Detail bindings only; the name is a property of the
     #: type like any other, and its column exists only in the pre-aggregation.
     rollups: dict[str, Rollup] = Field(default_factory=dict)
-    source: Literal["human", "proposed"] = "human"
+    #: `human` — a person bound it; `model` — an explorer proposed it and bound it through the same door (ON-7b), read
+    #: like any other binding and tiered proposed until a person confirms or removes it; `proposed` — the data proposes
+    #: it on `OntologyEntity.proposed_bindings`, and nothing reads it until someone binds it.
+    source: Literal["human", "proposed", "model"] = "human"
+    #: ON-7b — who said it, for a binding an explorer proposed: `model:<id>@<version>`, kept after a person confirms it.
+    provenance: str = ""
     #: Measured — None until counted: the binding's rows, its rows with a key, its distinct keys, the objects it
     #: was measured against, how many of them it covers, and the distinct keys that reach no object.
     rows: Optional[int] = None
@@ -311,6 +316,9 @@ class OntologyEntity(BaseModel):
     #: binding releases the part without a second edit. A part stays a type — its objects, links and pages keep
     #: working by its name — and is hidden from the map and listed under its parent instead.
     absorbed_into: Optional[str] = None
+    #: ON-7b — who said a declared type exists, when a model did: `model:<id>@<version>` (J4). A person's declaration
+    #: carries none; a proposal a person confirms keeps the model that first proposed it while `origin` becomes human.
+    provenance: str = ""
 
     # Domain grouping (e.g. "Commerce", "Customer", "Operations") — set by enricher
     domain: Optional[str] = None
@@ -460,6 +468,8 @@ class OntologyRelationship(BaseModel):
     #: ON-7 — `join_map` (the builder found the join), `human` (declared through POST /ontology/links), `model`
     #: (an explorer's proposal). Every graph built before reads `join_map`.
     origin: Literal["join_map", "human", "model"] = "join_map"
+    #: ON-7b — who said a declared link exists, when a model did: `model:<id>@<version>`, kept after a person confirms.
+    provenance: str = ""
 
     @model_validator(mode="after")
     def _fill_link_names(self) -> "OntologyRelationship":

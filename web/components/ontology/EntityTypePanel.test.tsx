@@ -10,7 +10,7 @@
  * that is where the bug would live: a form that looks right and posts a static binding with no time
  * column is refused by the server, silently, one round trip later.
  */
-import { describe, expect, it, vi, beforeEach } from "vitest";
+import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
@@ -19,13 +19,17 @@ import type { ObjectTypeDetail } from "@/lib/objectTypes";
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
+const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ confirmed: [], refused: [] as { why: string }[] }));
+/** The type the panel reads — the fixture below, unless a test shows another. */
+const shown: { detail?: ObjectTypeDetail } = {};
 
 vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
-  getObjectType: async () => detail,
+  getObjectType: async () => shown.detail ?? detail,
   addBinding: (...a: unknown[]) => addBinding(...a),
   nameLink: (...a: unknown[]) => nameLink(...a),
   declareLink: (...a: unknown[]) => declareLink(...a),
+  confirmProposals: (...a: unknown[]) => confirmProposals(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -252,5 +256,55 @@ describe("EntityTypePanel — ON-7: a part, and a link the builder did not find"
     expect(declareLink.mock.calls[0]).toEqual(["c1", {
       from_entity: "products", to_entity: "Brand", name: "made_by", from_column: "brand_id", to_column: "brand_id",
     }, "s"]);
+  });
+});
+
+describe("EntityTypePanel — ON-7b: what an explorer proposed, and a person's confirmation", () => {
+  beforeEach(() => {
+    confirmProposals.mockClear();
+    shown.detail = {
+      ...detail,
+      origin: "model",
+      provenance: "model:m@1",
+      bindings: [...detail.bindings, {
+        name: "lines", primary: false, kind: "detail", reads: "table", table: "order_items", key: "product_id",
+        object_key: "product_id", source: "model", provenance: "model:m@1", verified: true, rows: 10, note: "",
+        supplies: 1, usable: true, rollups: { units: "the sum of quantity over each object's lines rows" } }],
+      links: detail.links.map((l) => ({ ...l, origin: "model" as const, provenance: "model:m@1" })),
+    };
+  });
+  afterEach(() => { shown.detail = undefined; });
+
+  it("marks the type, its binding and its link proposed, and confirms each by the declaration it was written as", async () => {
+    const user = userEvent.setup();
+    const changed = vi.fn();
+    render(
+      <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+        onOpen={() => {}} onChanged={changed} />);
+    const confirms = await screen.findAllByTestId("proposal-confirm");
+    expect(confirms).toHaveLength(3);                                      // the type, its binding, its link
+    expect(screen.getByText("model:m@1")).toBeInTheDocument();
+    for (const button of confirms) await user.click(button);
+    await waitFor(() => expect(confirmProposals).toHaveBeenCalledTimes(3));
+    expect(confirmProposals.mock.calls.map((call) => call[1])).toEqual([
+      { targets: [{ kind: "entity", entity: "products" }] },
+      { targets: [{ kind: "binding", entity: "products", binding: "lines" }] },
+      { targets: [{ kind: "link", relationship: "rel_product_order_item" }] },
+    ]);
+    expect(changed).toHaveBeenCalledTimes(3);
+  });
+
+  it("says why when a confirmation is refused, and changes nothing", async () => {
+    confirmProposals.mockResolvedValueOnce({
+      confirmed: [], refused: [{ why: "products was declared by a person — there is no proposal to confirm" }] });
+    const user = userEvent.setup();
+    const changed = vi.fn();
+    render(
+      <EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+        onOpen={() => {}} onChanged={changed} />);
+    const [first] = await screen.findAllByTestId("proposal-confirm");
+    await user.click(first);
+    expect(await screen.findByText(/there is no proposal to confirm/)).toBeInTheDocument();
+    expect(changed).not.toHaveBeenCalled();
   });
 });

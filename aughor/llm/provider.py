@@ -381,6 +381,20 @@ def current_run_model() -> Optional[str]:
     return _run_model.get()
 
 
+# ON-7b — the binding that ANSWERED the most recent structured call in this context: the primary, or the fallback link
+# that stood in for it. A claim a model made carries the model that made it (J4), and `resolve_binding` names only the
+# model that was ASKED. Set by every successful `_complete_on`; a fresh tuple each time, so a caller can tell its own
+# call's answer from an earlier one by identity.
+_answered: contextvars.ContextVar[Optional[tuple[str, str, bool]]] = contextvars.ContextVar(
+    "aughor_llm_answered", default=None
+)
+
+
+def answered_by() -> Optional[tuple[str, str, bool]]:
+    """``(backend, model, fallback)`` of the last structured call that succeeded in this context, or None."""
+    return _answered.get()
+
+
 # Per-run sampling temperature (Wave E4). The role defaults are 0.1 for structured calls and
 # 0.0 for a few others, and the deep path's spine calls pass none at all — so a measured run
 # cannot floor the sampling noise it is trying to measure. A contextvar lands the decision at
@@ -2273,6 +2287,7 @@ class LLMProvider:
                          # salvaging how often" is the signal that retires a bad model.
                          extra=({"salvaged": True, "repairs": _stats.get("repairs", [])}
                                 if _stats.get("salvaged") else None))
+        _answered.set((backend, model, bool(fallback)))
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
 

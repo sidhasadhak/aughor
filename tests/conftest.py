@@ -212,6 +212,9 @@ os.environ["AUGHOR_ONTOLOGY_OVERRIDES_DIR"] = os.path.join(_test_stores_dir, "on
 os.environ["AUGHOR_ONTOLOGY_EXPORT_DIR"] = os.path.join(_test_stores_dir, "ontology_export")
 # …and the third tree of the family, the engine-proposed recommendations (a writer with the same hardcoded root).
 os.environ["AUGHOR_ONTOLOGY_RECOMMENDATIONS_DIR"] = os.path.join(_test_stores_dir, "ontology_recommendations")
+# ON-7b — the explorer's draft record (data/ontology_drafts/{conn}/{schema}.yaml), born beside the overrides tree it
+# writes into: an explore door test must never rewrite a live draft or its memory of what a person withdrew.
+os.environ["AUGHOR_ONTOLOGY_DRAFTS_DIR"] = os.path.join(_test_stores_dir, "ontology_drafts")
 # R8a — the documents registry (data/documents.json) is written by every index/delete;
 # isolate it so suite-driven indexing can never mutate the live registry.
 os.environ["AUGHOR_DOCUMENTS_REGISTRY"] = os.path.join(_test_stores_dir, "documents.json")
