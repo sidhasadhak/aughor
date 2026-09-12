@@ -352,8 +352,16 @@ def purge_connection_state(connection_id: str) -> int:
 
 
 def purge_schema_state(connection_id: str, schema: str) -> int:
-    """Drop one schema's run AND the stale bare aggregate; sibling schemas stay."""
-    return _family().purge_entries(exact=[f"{connection_id}__{schema}", connection_id])
+    """Drop ONE schema's exploration run; every sibling stays, and so does the connection's
+    own bare run.
+
+    That bare run is not an aggregate of the others — it is what a run writes when it was
+    never schema-scoped, so on a multi-schema connection it holds work belonging to the
+    siblings. It is also a RECORD of an exploration that happened, which no later change
+    makes untrue and which cannot be rebuilt without spending the model calls again. It
+    goes when the CONNECTION goes (`purge_connection_state`), not when one of its schemas
+    does."""
+    return _family().purge_entries(exact=[f"{connection_id}__{schema}"])
 
 
 def get_insights_canvas(canvas_id: str, include_invalid: bool = False) -> list[dict]:

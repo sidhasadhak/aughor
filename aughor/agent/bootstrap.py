@@ -279,7 +279,9 @@ def _qdrant_conn(conn_id, org_id):
 # schema-keyed hooks ----------------------------------------------------------
 
 def _exploration_schema(conn_id, schema):
-    """One schema's exploration run AND the stale bare aggregate; siblings stay."""
+    """ONE schema's exploration run. Siblings stay, and so does the connection's own bare
+    run — it is a record of work (and, on a multi-schema connection, the siblings' work),
+    not a summary that goes stale; it goes with the connection."""
     from aughor.explorer import store as explorer_store
     return {"explorer_files": explorer_store.purge_schema_state(conn_id, schema)}
 

@@ -10,8 +10,9 @@ Whether one holds is MEASURED here, the ON-0a way, never assumed:
 
 * a **static** binding is verified when its key is unique over its keyed rows AND reaches objects that exist — only
   then can a LEFT JOIN on it neither multiply nor invent objects, so only then does anything read it;
-* a **timeseries** binding is verified when its key reaches objects that exist; its latest value and its history
-  are ON-5's, so nothing reads one yet, and every reader says so (`binding_problem`).
+* a **timeseries** binding is verified when its key reaches objects that exist; it is read as each object's
+  LATEST row by its time column (ON-5, `aughor.ontology.timeseries`), which is one row per object again, so it
+  joins under the same law as a static one.
 
 Either way the counts are kept: the binding's rows, its keyed rows and distinct keys, the objects it was counted
 against, how many of those it covers, and the keys that reach no object.
@@ -99,10 +100,9 @@ def property_binding(entity: OntologyEntity, name: str) -> Optional[Binding]:
 def binding_problem(entity: OntologyEntity, binding: Binding) -> str:
     """Why a binding's properties may not be read, or "" when they may — one law for the compiler and the object
     page, as `link_problem` is one law for links."""
-    if binding.kind == "timeseries":
-        return (f"{binding.name} on {entity.id} is a timeseries binding — many rows per {entity.id} over "
-                f"{binding.time_column or 'its time column'} — and reading its latest value or its history is "
-                "ON-5's, not built yet")
+    if binding.kind == "timeseries" and not binding.time_column:
+        return (f"{binding.name} on {entity.id} is a timeseries binding with no time column — its properties are "
+                "read as the object's LATEST value (ON-5), and without a time column there is no latest")
     if binding.verified is None:
         return (f"binding {binding.name} on {entity.id} is unmeasured ({binding.note or 'never counted'}) — whether "
                 f"{binding.key} holds one row per {entity.id} has not been counted, and an uncounted binding is never "

@@ -68,14 +68,14 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   );
 }
 
-export function EntityTypePanel({ connectionId, schema, objectType, types, version, onFocus, onChanged }: {
+export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onChanged }: {
   connectionId: string;
   schema?: string;
   objectType: string;
   types: TypeMapRow[];
   /** Bumped when the map re-reads, so the panel re-reads with it. */
   version: number;
-  onFocus: (objectType: string) => void;
+  onOpen: (objectType: string) => void;
   /** A write here (a declaration, a measurement) changes what the map shows. */
   onChanged: () => void;
 }) {
@@ -99,7 +99,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     body = <EmptyState icon="info" title={`No object type “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
-      onFocus={onFocus} onChanged={onChanged} />;
+      onOpen={onOpen} onChanged={onChanged} />;
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
@@ -110,12 +110,12 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-function TypeDetail({ detail, connectionId, schema, types, onFocus, onChanged }: {
+function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
   types: TypeMapRow[];
-  onFocus: (objectType: string) => void;
+  onOpen: (objectType: string) => void;
   onChanged: () => void;
 }) {
   return (
@@ -135,10 +135,10 @@ function TypeDetail({ detail, connectionId, schema, types, onFocus, onChanged }:
       <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       <PropertiesSection detail={detail} />
       <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      <LinksSection detail={detail} onFocus={onFocus} />
+      <LinksSection detail={detail} onOpen={onOpen} />
       <ActionsSection detail={detail} connectionId={connectionId} />
       <MetricsSection detail={detail} />
-      <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onFocus={onFocus} />
+      <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
     </>
   );
 }
@@ -226,7 +226,8 @@ function sourceText(source: PropertySource): { short: string; full: string } {
   const bare = table.split(".").pop() ?? table;
   const column = source.column ?? "";
   const how = source.kind
-    ? ` · the ${source.kind} binding ${source.binding}${source.read === false ? ", not read yet" : ""}`
+    ? ` · the ${source.kind} binding ${source.binding}`
+      + (source.read === false ? ", not read yet" : source.kind === "timeseries" ? ", its latest value" : "")
     : "";
   return { short: `${bare}.${column}`, full: `${table}.${column}${how}` };
 }
@@ -271,11 +272,15 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
   );
 }
 
-/** A further binding's verdict: read by the compiler, or the reason it is not. The backing carries none. */
+/** A further binding's verdict: read by the compiler, and HOW — a timeseries binding is read as each object's
+ *  latest value (ON-5), which is a different claim from a static one — or the reason it is not read. The backing
+ *  carries none. */
 function bindingVerdict(b: TypeBinding): [string, string] | null {
   if (b.primary) return null;
-  if (b.usable) return ["aug-tag-green", "read"];
-  if (b.kind === "timeseries") return ["aug-tag-gray", "timeseries — not read yet"];
+  if (b.usable) {
+    return ["aug-tag-green", b.kind === "timeseries" ? `read · latest by ${b.time_column}` : "read"];
+  }
+  if (b.kind === "timeseries" && !b.time_column) return ["aug-tag-gray", "no time column"];
   return b.verified === false ? ["aug-tag-red", "refuted"] : ["aug-tag-gray", "not yet measured"];
 }
 
@@ -406,9 +411,9 @@ function BindingsSection({ detail, connectionId, schema, onChanged }: {
   );
 }
 
-function LinkSentence({ detail, link, onFocus }: { detail: ObjectTypeDetail; link: TypeLink; onFocus: (t: string) => void }) {
+function LinkSentence({ detail, link, onOpen }: { detail: ObjectTypeDetail; link: TypeLink; onOpen: (t: string) => void }) {
   const other = (
-    <Button variant="ghost" size="xs" onClick={() => onFocus(link.to)} title={`Centre the map on ${link.to_name}`}>
+    <Button variant="ghost" size="xs" onClick={() => onOpen(link.to)} title={`Light ${link.to_name} up on the map and open it here`}>
       {link.to_name}
     </Button>
   );
@@ -419,7 +424,7 @@ function LinkSentence({ detail, link, onFocus }: { detail: ObjectTypeDetail; lin
     : <>{other}{verb}{here}</>;
 }
 
-function LinksSection({ detail, onFocus }: { detail: ObjectTypeDetail; onFocus: (objectType: string) => void }) {
+function LinksSection({ detail, onOpen }: { detail: ObjectTypeDetail; onOpen: (objectType: string) => void }) {
   return (
     <Section title="Links" aside={`${detail.counts.traversable_links} of ${detail.counts.links} followed by the compiler`}>
       {detail.links.length === 0 && <EmptyState variant="inline" title={`No link reaches out from ${detail.display_name}.`} />}
@@ -427,7 +432,7 @@ function LinksSection({ detail, onFocus }: { detail: ObjectTypeDetail; onFocus: 
         <div key={`${link.relationship}:${link.name}`} style={{ padding: "7px 0", borderTop: i ? RULE : undefined }}
           data-testid="entity-link">
           <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
-            <LinkSentence detail={detail} link={link} onFocus={onFocus} />
+            <LinkSentence detail={detail} link={link} onOpen={onOpen} />
             <span className="aug-tag aug-tag-gray" style={MONO}>{link.cardinality}</span>
             <span className={`aug-tag ${link.traversable ? "aug-tag-green" : "aug-tag-amber"}`}>
               {link.traversable ? "followed" : "refused"}
@@ -497,12 +502,12 @@ function MetricsSection({ detail }: { detail: ObjectTypeDetail }) {
   );
 }
 
-function PathFinder({ detail, types, connectionId, schema, onFocus }: {
+function PathFinder({ detail, types, connectionId, schema, onOpen }: {
   detail: ObjectTypeDetail;
   types: TypeMapRow[];
   connectionId: string;
   schema?: string;
-  onFocus: (objectType: string) => void;
+  onOpen: (objectType: string) => void;
 }) {
   const others = types.filter((t) => t.object_type !== detail.object_type);
   const [target, setTarget] = useState("");
@@ -550,7 +555,7 @@ function PathFinder({ detail, types, connectionId, schema, onFocus }: {
               {countNoun(found.found, "path")}{found.truncated ? `, the first ${found.paths.length} shown` : ""} · the
               compiler crosses at most {found.compiler_max_hops} links in one path
             </p>
-            {found.paths.map((p) => <PathRow key={p.path} path={p} onFocus={onFocus} />)}
+            {found.paths.map((p) => <PathRow key={p.path} path={p} onOpen={onOpen} />)}
           </>
         )
       )}
@@ -558,7 +563,7 @@ function PathFinder({ detail, types, connectionId, schema, onFocus }: {
   );
 }
 
-function PathRow({ path, onFocus }: { path: TypePath; onFocus: (objectType: string) => void }) {
+function PathRow({ path, onOpen }: { path: TypePath; onOpen: (objectType: string) => void }) {
   return (
     <div style={{ padding: "8px 0", borderTop: RULE }} data-testid="entity-path">
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
@@ -581,7 +586,7 @@ function PathRow({ path, onFocus }: { path: TypePath; onFocus: (objectType: stri
               <span style={{ color: "var(--t3)" }}>
                 {hop.direction === "out" ? `— ${hop.verb || "relates to"} →` : `← ${hop.verb || "relates to"} —`}
               </span>
-              <Button variant="ghost" size="xs" onClick={() => onFocus(hop.to)} title={`Centre the map on ${hop.to_name}`}>
+              <Button variant="ghost" size="xs" onClick={() => onOpen(hop.to)} title={`Light ${hop.to_name} up on the map and open it here`}>
                 {hop.to_name}
               </Button>
               <span style={{ ...MONO, color: "var(--t3)" }}>{hop.cardinality}</span>

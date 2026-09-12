@@ -18,8 +18,21 @@ export interface ObjectProperty {
   description: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
   overlay?: { by: string; at: string; note: string; origin: string; provenance: string };
-  /** ON-1b — read through a further binding on the object's key: which binding, its source, and the column. */
-  binding?: { name: string; kind: string; source: string; column: string };
+  /** ON-1b — read through a further binding on the object's key: which binding, its source, and the column.
+   *  ON-5 — a `timeseries` binding reads the object's LATEST value: `at` is when that was measured, `previous`
+   *  is what it read on the reading before that (`previous_at` when), and `note` is the reduction in the
+   *  declaration's own words. */
+  binding?: {
+    name: string;
+    kind: string;
+    source: string;
+    column: string;
+    time_column?: string;
+    at?: unknown;
+    previous?: unknown;
+    previous_at?: unknown;
+    note?: string;
+  };
 }
 
 /** A link from this object. A to-one link resolves to the linked object's key, a to-many link to
@@ -120,6 +133,22 @@ export interface ObjectDisplay {
   value: string | null;
 }
 
+/** ON-5 — one timeseries binding's readings for this object, newest first: the value on top of the page is the
+ *  first of these. `latest_at` is when that reading was measured; `error` replaces the rows when the history
+ *  could not be read. */
+export interface ObjectTimeseries {
+  binding: string;
+  source: string;
+  key: string;
+  time_column: string;
+  note: string;
+  limit: number;
+  columns: string[];
+  rows: unknown[][];
+  latest_at?: unknown;
+  error?: string;
+}
+
 export interface ObjectPage {
   path: "object";
   connection_id: string;
@@ -134,6 +163,7 @@ export interface ObjectPage {
   properties: ObjectProperty[];
   links: ObjectLink[];
   caveats: string[];
+  timeseries?: ObjectTimeseries[];
   related: ObjectRelated;
 }
 

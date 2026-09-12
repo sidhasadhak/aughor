@@ -4070,7 +4070,7 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   paragraph, its links drawn with their business verb and measured cardinality, expandable a hop at a
   time — the whole-graph view kept as the overview; and an entity-type panel: the key and whether it is
   verified, the **display property**, the properties (role, data type, source, unit, and static or
-  timeseries once ON-5 lands), the bindings, the links (usable by the compiler, or refused and why), the
+  timeseries — the latter landed with ON-5), the bindings, the links (usable by the compiler, or refused and why), the
   declared actions and the verified metrics. Two model additions ride it. A **declared display
   property** on the object type — proposed from the profile, overridable through the overrides tree,
   measured (non-null share, distinctness) like every claim — which the object page, the key links in
@@ -4115,6 +4115,44 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   print the key; no web door names a link yet (the API does); LuxExperience's verbs are the builder's generic
   ones, so its proposed link names are too (`order_item_associated_with_shipment`) until a person names them; a
   label can still clip a card on a sideways link in a narrow pane.
+  **Re-laid 2026-09-12, on the user's reading of the map** (*"lets put the entities in the center of the
+  playground … it is very clustered and not easy to read … all the extended entities linked are visible by
+  default and once clicked on the entity type from the list, those get highlighted … Ideally, the entity with
+  highest links gets placed at the center, so that user understand which is the most critical entity in the
+  business"*). The centre is no longer "whatever was clicked": it is the type with the MOST links, and it stays
+  there — so the middle of the canvas is a claim about the business, the one the user asked it to make. Picking a
+  type LIGHTS it, its links and the types on the other end, and opens it in the panel; centring is a separate,
+  explicit act on a card. Every linked type is drawn at the ring of its shortest distance, with no expander
+  between a person and the second hop; a type its links never reach from the centre sits on the outermost ring,
+  and a type with NO links is listed under the map rather than parked on a far ring that would double the map's
+  size to say nothing. Only the lit type's links are named — every label at once was the clutter in the
+  screenshot. A link between two cards on one ring bows outward instead of cutting through the cards inside it; a
+  label reserves its own chip's width, and steps off its line where the rings leave none. The canvas sizes itself
+  to the pane before the first paint (measured, then kept by the ResizeObserver) and can be zoomed and dragged —
+  it used to be a fixed canvas the size of its rings, which is why a type with no links at all was drawn at the
+  TOP of an otherwise empty pane. Live on LuxExperience: 14 types, 11 relationships, the whole map at 88% in a
+  1,004px pane with nothing scrolled off; Order Line (7 links) in the middle with its seven links named; picking
+  Product lights Product, Order Line and Price History and names `contains 1:N` and `has 1:N`; Brand, Country,
+  Date and Warehouse listed under the map.
+  **Rebuilt on `@xyflow/react` the same day, on the user's second reading** (*"too clustered … the background of
+  ontology screen should not be dotted.. make the background colour darker too … the idea of a button to put an
+  entity in center is terrible.. you made it unnecessarily complex.. Make the Map zoomable, entities movable (and
+  persist position change).. we need only map in ontology.. overview doesnt matter if it is not being used as
+  context.. remove it"*). Pan, zoom, fit and drag are now the library's — the fifth canvas in this app on it —
+  which deleted three hand-rolled mechanisms (a scroll box, a zoom stepper, a pan handler) that between them still
+  could not move a card, and every line of edge and label geometry with them. A card a person drags STAYS there,
+  per connection, across reloads and ACROSS BROWSERS — it is a per-user preference (SP-3's store, a new key in its
+  closed registry, validated: at most 24 maps of at most 300 cards, each a finite x and y), with `localStorage`
+  keeping only the paint-before-fetch job the theme toggle already gave it; one button puts them all back; `layoutMap` now only decides where a card STARTS. Every card is
+  the same size — the centre used to be a bigger, denser card, which is most of what made the middle unreadable,
+  and everything it showed is in the panel already open beside it. The "centre the map here" button is gone: the
+  middle means the busiest type and nothing offers to change that. No dot grid, and the deeper `--bg-canvas`
+  ground. **The Overview is gone** with its drawer stack (613 lines) — a second drawing of the same facts that
+  nothing downstream read; the Org board keeps its own canvas, which is where `OntologyCanvas` still lives.
+  Driven live: the whole map fits its pane; Shipment dragged 112×72px to the top-left stayed there through a full
+  reload; picking Product lights it, Order Line and Price History and names `contains · 1:N` and `has · 1:N`.
+  16 tests pin the starting layout and 5 the canvas handoff — the only place a wrong handle id (an edge dropped in
+  silence, which looks exactly like an ontology with no links) would show. Seven web gates, 816 vitest.
 - **ON-3c · The agent reads the type — AMENDED 2026-09-11; BUILT and its RECEIPT MET the same day.**
   `describe_entity` (the agent's
   roster and MCP, one body) returns the ON-1 object type instead of the context graph's table node: api
@@ -4181,8 +4219,9 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   carries a type's measured-unique key one row per object — kept on `proposed_bindings`, read by no query, page or
   answer until a person binds it. ON-2's compiler reads a bound property through a LEFT JOIN on the key, taken once
   per object alias — at the anchor, behind a to-one hop, inside EXISTS and inside a pre-aggregation alike — and
-  refuses an unmeasured or refuted binding, and every timeseries binding (ON-5's), with the reason; the compiled
-  result lists the bindings it joined. The object page reads static bindings by the key under the same law. The
+  refuses an unmeasured or refuted binding with the reason; the compiled
+  result lists the bindings it joined. The object page reads a binding by the key under the same law. (A timeseries
+  binding was refused here until ON-5, which reads it as each object's latest row — one row per object again.) The
   entity-type panel and `describe_entity` list every binding with its verdict and coverage and every property with
   its source, the panel with Bind on a proposal and Remove on a person's binding; `describe_entity` leaves out a
   binding read from a table G5 withholds. In `tests/unit/test_object_bindings.py` eight compiled queries through a
@@ -4220,15 +4259,55 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   binding was removed. **Still open:** a display property must come from the backing; the builder proposes static
   bindings only; `dedup.merge_entities` is not yet "two tables, one binding"; nothing reads a timeseries binding
   before ON-5.
-- **ON-5, amended · Timeseries properties first — AMENDED 2026-09-11.** The "processes" half of the
-  definition. A timeseries property — a shipment's latest location, a sensor reading, a status over time —
-  is read from a timeseries binding (ON-1b) and becomes ON-5's first declared function: its latest value
-  and its history per object, with windowed and semiadditive measures over it (the first caller of O5's
-  `window_measures.from_declaration`). It shows on the object page as its latest value, when that was
+- **ON-5, amended · Timeseries properties first — AMENDED 2026-09-11; BUILT AND RECEIPT MET 2026-09-12.** The
+  "processes" half of the definition. A timeseries property — a shipment's latest location, a sensor reading, a
+  status over time — is read from a timeseries binding (ON-1b) and becomes ON-5's first declared function: its
+  latest value and its history per object, with windowed and semiadditive measures over it (the first caller of
+  O5's `window_measures.from_declaration`). It shows on the object page as its latest value, when that was
   measured, and a short history, and it is a property the compiler can filter and measure with its time
   semantics explicit. **Receipt:** a timeseries binding on a real event table; an object page shows the
   latest value with its timestamp; an object query for "objects whose latest value breaches a threshold"
   equals its reference.
+  **Built (`aughor/ontology/timeseries.py`).** A timeseries binding is reduced to ONE row per object — the
+  object's latest row by its time column — so it joins under exactly the law ON-1b proved for a static binding and
+  can neither multiply nor invent objects. Each property on that row is O5's declaration INSTANTIATED
+  (`semiadditive: last`, partitioned by the object's key, ordered by the time column), never window SQL written a
+  second time; `from_declaration` has its first caller. Three decisions live in the module, each with a test: a
+  reading whose time is NULL is out of the reduction, so "the latest" is never a row that did not say when; the
+  ordering carries the time column AND every supplied column, so two readings tied on one instant cannot hand one
+  property to one row and the next to another; and the history is the same source unreduced, newest first. The
+  compiler joins the reduction and says so in the plan (`treatment: latest`, with the time column); the object page
+  shows the value, WHEN it was measured and the readings behind it; `describe_object_type`'s one-liner — what the
+  agent quotes (ON-3c) — now says "a timeseries binding, read as each object's latest value by <column>".
+  **Receipt met 2026-09-12, live on LuxExperience (no model call).** `price_history` bound on `Product` as a
+  timeseries binding keyed `product_id` over `effective_date`: 26,005 rows over 8,600 keys, covering 8,600 of 8,600
+  products, verified. The page for `SKUTHE000000` (Zimmermann, retail €410) reads its **latest price €246.00 as of
+  2024-02-26**, markdown 0.4, `is_markdown` true — every one from the same row — over a history of five readings
+  newest first (246 ← 287 ← 328 ← 287 ← 410, the markdown visible as a walk down). `POST /objects/query` for
+  products whose **latest** price > €500 returned **1,744**, equal to a hand reference that picks each product's
+  newest row with a correlated LATERAL and no window function at all; average latest price by `brand_tier`
+  (contemporary 141.8989 · luxury 295.6482 · ultra 562.1535) equalled the same reference, its counts summing to
+  8,600 — every product, none multiplied, none dropped. 10 new tests in `tests/unit/test_object_timeseries.py`
+  hold the reduction to hand references over a seeded warehouse, including the untimed reading and the tie.
+  **Follow-ups built 2026-09-12** (the user: *"ON-5 follow-ups and small debts"*). **The readings are a set.** A
+  timeseries binding's rows are reachable under the binding's own name — `price_history.price_eur` against the
+  bare `price_eur`, which stays the latest value. They are the same shape as a to-many link and are treated the
+  same way BY THE SAME CODE: `_rollup` was lifted out of `many_measure` and is now the one law both use, because a
+  second copy of "an average rolls up as a ratio of sums, never an average of averages" is where that bug gets
+  back in. A measure pre-aggregates per the object's key before the join; a condition is EXISTS, so the set is
+  filtered and never multiplied; `where` on such a measure reads the READING's own columns, which is how "only the
+  readings since March" is asked without a clock. Refused: count_distinct (one value can sit under two objects), a
+  static binding through a `name.` path, and a name that is both a link and a binding. **And what it was before:**
+  the object page reads each timeseries property's PREVIOUS reading off the history it already fetched rather than
+  running a second, differently-tied query — `history_sql` is ordered by the reduction's own ordering reversed, so
+  its first row IS the row the latest value came from. Live: 3,389 LuxExperience products have a reading under
+  €150 and across all 12,312 of their readings the average is €121.7575, both equal to a hand reference;
+  `SKUTHE000000` reads "246.0 as of 2024-02-26 · from 287.0". 8 more tests.
+  **Still open:** O5's frame algebra over readings (trailing N periods, cumulative, LAG) is still not reachable
+  from the object door — a frame needs a second window layer inside the latest-row reduction (window functions do
+  not nest) and a decision about how a per-object window rolls up across an object set, which is its own wave
+  rather than a flag on a measure; no web form declares a timeseries binding (the API and the panel's Bind on a
+  proposal do, and proposals are still static-only).
 - **Order, and why:** ON-3b and ON-3c first — they render and return only what the model already
   measures, and ON-3c is the definition made mechanical for the agent; then ON-1b, the one model change;
   then ON-5, its timeseries properties standing on ON-1b's bindings.
@@ -4608,9 +4687,13 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         LuxExperience; describe_entity returns the type and the agent called it live through /ask) · ON-1b
         bindings, each property knowing its source (FIRST SLICE 2026-09-11: payments and shipments bound on
         LuxExperience's Order, each measured one row per order; l09 and l05, refused by ON-2, compile through
-        them and equal their references) → ON-5 functions and model bindings, timeseries
-        properties first. ON-6 (the context layer reaches the model) RETIRED 2026-09-11 — ON-0's
-        falsifier fired on both blocks (§6 item 15).
+        them and equal their references) → ON-5 functions and model bindings, TIMESERIES PROPERTIES
+        FIRST — ✅ BUILT AND RECEIPT MET 2026-09-12: a timeseries binding is reduced to each object's
+        latest row (O5's semiadditive `last` declaration instantiated, its first caller); price_history
+        bound on LuxExperience's Product reads €246.00 as of 2024-02-26 with its five readings behind it,
+        and "products whose latest price > €500" compiles to 1,744, equal to its reference. The map was
+        re-laid the same day on the user's reading of it (ON-3b). ON-6 (the context layer reaches the
+        model) RETIRED 2026-09-11 — ON-0's falsifier fired on both blocks (§6 item 15).
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)

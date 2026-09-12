@@ -32,7 +32,6 @@ import {
   OntologyNotBuilt,
   type OntologyProposal,
 } from "@/lib/api";
-import { OntologyCanvas } from "./OntologyCanvas";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
 import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
@@ -41,46 +40,8 @@ import { Icon } from "@/components/ui/icon";
 
 // ── Small reusable bits ───────────────────────────────────────────────────────
 
-function SqlToggle({ sql }: { sql: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1 aug-fs-xs text-zinc-500 hover:text-zinc-300 transition mt-1"
-      >
-        <span className={cn("transition-transform", open && "rotate-180")}>
-          <Icon name="chevd" size={16} />
-        </span>
-        SQL
-      </button>
-      {open && (
-        <pre className="mt-1.5 aug-fs-xs font-code text-zinc-300 bg-zinc-950 border border-zinc-700/60 rounded-[var(--r3)] p-3 overflow-x-auto whitespace-pre-wrap">
-          {sql}
-        </pre>
-      )}
-    </div>
-  );
-}
-
-function ConfidencePill({ c }: { c: string }) {
-  const cls =
-    c === "verified" ? "text-emerald-400 border-emerald-500/25 bg-emerald-500/8"
-    : c === "exact"  ? "text-sky-400 border-sky-500/25 bg-sky-500/8"
-    :                  "text-zinc-500 border-zinc-600 bg-zinc-800";
-  return (
-    <span className={cn("aug-fs-xs uppercase tracking-wide border rounded px-1.5 py-0.5", cls)}>
-      {c}
-    </span>
-  );
-}
-
 // ── Resizable side drawer ─────────────────────────────────────────────────────
 
-const DRAWER_MIN = 300;
-const DRAWER_MAX = 720;
-const DRAWER_DEFAULT = 360;
-const DRAWER_WIDTH_KEY = "ont-drawer-w";
 
 /**
  * Drawer width that persists across mounts, with a draggable left-edge handle.
@@ -89,659 +50,8 @@ const DRAWER_WIDTH_KEY = "ont-drawer-w";
  * right shrinks it.  Width is clamped to [DRAWER_MIN, DRAWER_MAX] and saved to
  * localStorage so the choice sticks.
  */
-function useResizableDrawer() {
-  const [width, setWidth] = useState<number>(() => {
-    if (typeof window === "undefined") return DRAWER_DEFAULT;
-    const raw = Number(window.localStorage.getItem(DRAWER_WIDTH_KEY));
-    return raw >= DRAWER_MIN && raw <= DRAWER_MAX ? raw : DRAWER_DEFAULT;
-  });
-  const dragging = useRef(false);
-
-  const onPointerDown = useCallback((e: React.PointerEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    const startX = e.clientX;
-    const startW = width;
-    const onMove = (ev: PointerEvent) => {
-      if (!dragging.current) return;
-      // Handle is on the LEFT edge; dragging left (negative dx) widens.
-      const next = Math.min(DRAWER_MAX, Math.max(DRAWER_MIN, startW - (ev.clientX - startX)));
-      setWidth(next);
-    };
-    const onUp = () => {
-      dragging.current = false;
-      window.removeEventListener("pointermove", onMove);
-      window.removeEventListener("pointerup", onUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
-      setWidth(w => { try { window.localStorage.setItem(DRAWER_WIDTH_KEY, String(w)); } catch {} return w; });
-    };
-    document.body.style.cursor = "col-resize";
-    document.body.style.userSelect = "none";
-    window.addEventListener("pointermove", onMove);
-    window.addEventListener("pointerup", onUp);
-  }, [width]);
-
-  const handle = (
-    <div
-      onPointerDown={onPointerDown}
-      onDoubleClick={() => { setWidth(DRAWER_DEFAULT); try { window.localStorage.setItem(DRAWER_WIDTH_KEY, String(DRAWER_DEFAULT)); } catch {} }}
-      title="Drag to resize · double-click to reset"
-      className="group absolute left-0 top-0 h-full w-1.5 -ml-0.5 cursor-col-resize z-10 flex items-stretch"
-      style={{ touchAction: "none" }}
-    >
-      <div className="w-px mx-auto h-full bg-transparent group-hover:bg-violet-400/70 transition-colors" />
-    </div>
-  );
-
-  return { width, handle };
-}
-
 // ── Entity detail drawer ──────────────────────────────────────────────────────
 
-type DrawerTab = "overview" | "relationships" | "actions" | "metrics" | "map";
-
-function EntityDetailDrawer({
-  entity,
-  graph,
-  connectionId,
-  schema,
-  onClose,
-  onEntityUpdated,
-  onActionUpdated,
-  onInvestigate,
-}: {
-  entity: OntologyEntity;
-  graph: OntologyGraph;
-  connectionId: string;
-  /** The schema this drawer is looking at. Reads AND writes carry it: a description
-   *  saved here must land in the graph on screen, not in whichever schema the server
-   *  would have resolved on its own. */
-  schema?: string;
-  onClose: () => void;
-  onEntityUpdated: (e: OntologyEntity) => void;
-  onActionUpdated: (a: QueryTemplate) => void;
-  onInvestigate?: (q: string) => void;
-}) {
-  const [tab, setTab] = useState<DrawerTab>("overview");
-  const [editingDesc, setEditingDesc] = useState(false);
-  const [draft, setDraft] = useState(entity.description);
-  const [saving, setSaving] = useState(false);
-  const [lifecycleCounts, setLifecycleCounts] = useState<LifecycleCount[] | null>(null);
-  // Which metric has its provenance open. One at a time: the panel answers "whose
-  // definition is this", and that question is asked about one number, not about a list.
-  const [provFor, setProvFor] = useState<string | null>(null);
-  const { width: drawerWidth, handle: resizeHandle } = useResizableDrawer();
-
-  useEffect(() => {
-    if (!entity.has_lifecycle || !entity.lifecycle_column) return;
-    getEntityLifecycleCounts(connectionId, entity.id, schema)
-      .then(setLifecycleCounts)
-      .catch(() => {});
-  }, [connectionId, schema, entity.id, entity.has_lifecycle, entity.lifecycle_column]);
-
-  const countMap = Object.fromEntries(
-    (lifecycleCounts ?? []).map(c => [c.state, c.count]),
-  );
-  const totalActive = (lifecycleCounts ?? [])
-    .filter(c => !entity.terminal_states.includes(c.state))
-    .reduce((s, c) => s + c.count, 0);
-
-  const incomingRels = Object.values(graph.relationships).filter(
-    r => r.to_entity === entity.id,
-  );
-  const outgoingRels = Object.values(graph.relationships).filter(
-    r => r.from_entity === entity.id,
-  );
-  const actions = Object.values(graph.actions).filter(
-    a => a.entity === entity.id,
-  );
-  const metrics = Object.values(graph.metrics).filter(
-    m => m.entity === entity.id,
-  );
-
-  const saveDesc = async () => {
-    if (draft === entity.description) { setEditingDesc(false); return; }
-    setSaving(true);
-    try {
-      const updated = await patchOntologyEntity(connectionId, entity.id, {
-        description: draft,
-      }, schema);
-      onEntityUpdated(updated);
-      setEditingDesc(false);
-    } finally { setSaving(false); }
-  };
-
-  const tabs: { id: DrawerTab; label: string; count?: number }[] = [
-    { id: "overview",      label: "Overview" },
-    { id: "relationships", label: "Relations",  count: incomingRels.length + outgoingRels.length },
-    { id: "actions",       label: "Actions",    count: actions.length },
-    { id: "metrics",       label: "Metrics",    count: metrics.length },
-    ...(entity.has_lifecycle ? [{ id: "map" as DrawerTab, label: "Map" }] : []),
-  ];
-
-  return (
-    <div
-      className="shrink-0 relative border-l border-zinc-700/70 flex flex-col bg-zinc-900 overflow-hidden"
-      style={{ width: drawerWidth }}
-    >
-      {resizeHandle}
-      {/* Drawer header */}
-      <div className="px-4 pt-4 pb-3 border-b border-zinc-700/60 flex items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5 flex-wrap">
-            <p className="text-sm font-semibold text-zinc-100 truncate">{entity.display_name}</p>
-            {entity.domain && (
-              <span className="aug-fs-xs uppercase tracking-wide border border-violet-500/25 bg-violet-500/8 text-violet-400 rounded px-1.5 py-0.5 shrink-0">
-                {entity.domain}
-              </span>
-            )}
-          </div>
-          <p className="aug-fs-xs font-mono text-zinc-500 truncate">{entity.source_tables[0]}</p>
-          {lifecycleCounts && totalActive > 0 && (
-            <p className="aug-fs-xs text-emerald-400/70 mt-0.5">
-              {formatCount(totalActive)} active records
-            </p>
-          )}
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {onInvestigate && (
-            <button
-              onClick={() => {
-                const q = entity.active_filter
-                  ? `Investigate ${entity.display_name}: what is driving recent changes? Focus on active records (${entity.active_filter}).`
-                  : `Investigate ${entity.display_name}: what is driving recent changes in this entity?`;
-                onInvestigate(q);
-              }}
-              className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2 py-1 transition"
-            >
-              Investigate →
-            </button>
-          )}
-          <button
-            onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition mt-0.5"
-          >
-            <Icon name="close" size={16} label="Close" />
-          </button>
-        </div>
-      </div>
-
-      {/* Tab bar */}
-      <div className="flex border-b border-zinc-700/60 px-1 shrink-0">
-        {tabs.map(t => (
-          <button
-            key={t.id}
-            onClick={() => setTab(t.id)}
-            className={cn(
-              "px-3 py-2.5 aug-fs-xs font-medium transition border-b-2 -mb-px capitalize",
-              tab === t.id
-                ? "border-violet-500 text-violet-400"
-                : "border-transparent text-zinc-500 hover:text-zinc-300",
-            )}
-          >
-            {t.label ?? t.id}
-            {typeof t.count === "number" && t.count > 0 && (
-              <span className="ml-1 aug-fs-xs text-zinc-500">{t.count}</span>
-            )}
-          </button>
-        ))}
-      </div>
-
-      {/* Drawer body */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
-
-        {/* ── Overview ─────────────────────────────────────────────────────── */}
-        {tab === "overview" && (
-          <>
-            {/* Description */}
-            <div>
-              <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
-                Description
-              </p>
-              {editingDesc ? (
-                <div className="space-y-1.5">
-                  <textarea
-                    value={draft}
-                    onChange={e => setDraft(e.target.value)}
-                    rows={3}
-                    className="w-full text-xs bg-zinc-800 border border-violet-500/40 rounded px-2 py-1.5 text-zinc-200 focus:outline-none resize-none"
-                    autoFocus
-                  />
-                  <div className="flex gap-2">
-                    <button
-                      onClick={saveDesc}
-                      disabled={saving}
-                      className="aug-fs-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-40"
-                    >
-                      {saving ? "saving…" : "save"}
-                    </button>
-                    <button
-                      onClick={() => { setDraft(entity.description); setEditingDesc(false); }}
-                      className="aug-fs-xs text-zinc-500 hover:text-zinc-300"
-                    >
-                      cancel
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p
-                  className="text-zinc-400 cursor-pointer hover:text-zinc-300 transition leading-relaxed"
-                  onClick={() => setEditingDesc(true)}
-                  title="Click to edit"
-                >
-                  {entity.description || (
-                    <span className="text-zinc-500 italic">Click to add description…</span>
-                  )}
-                </p>
-              )}
-            </div>
-
-            {/* Grain */}
-            <div>
-              <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
-                Identity key
-              </p>
-              <code className="text-zinc-400 font-code">{entity.identity_key}</code>
-              <span className={cn(
-                "ml-2 aug-fs-xs border rounded px-1.5 py-0.5",
-                entity.grain_verified
-                  ? "text-emerald-400 border-emerald-500/25"
-                  : "text-zinc-500 border-zinc-600",
-              )}>
-                {entity.grain_verified ? "grain verified" : "grain unverified"}
-              </span>
-            </div>
-
-            {/* Lifecycle */}
-            {entity.has_lifecycle && (
-              <div>
-                <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
-                  Lifecycle — <span className="font-mono normal-case">{entity.lifecycle_column}</span>
-                </p>
-                <div className="flex flex-wrap gap-1 mb-2">
-                  {entity.lifecycle_states.map(s => {
-                    const isTerm = entity.terminal_states.includes(s);
-                    const cnt = countMap[s];
-                    return (
-                      <span
-                        key={s}
-                        className={cn(
-                          "aug-fs-xs font-mono rounded px-1.5 py-0.5 border flex items-center gap-1",
-                          isTerm
-                            ? "text-zinc-500 border-zinc-600/60 bg-zinc-800/50"
-                            : "text-violet-300 border-violet-500/20 bg-violet-500/10",
-                        )}
-                      >
-                        {s}
-                        {cnt !== undefined && (
-                          <span className={cn(
-                            "aug-fs-xs font-sans tabular-nums",
-                            isTerm ? "text-zinc-500" : "text-violet-400/70",
-                          )}>
-                            {formatCount(cnt)}
-                          </span>
-                        )}
-                      </span>
-                    );
-                  })}
-                </div>
-                {entity.active_filter && (
-                  <div>
-                    <p className="aug-fs-xs text-zinc-500 mb-1">Active filter</p>
-                    <code className="aug-fs-xs text-emerald-300 font-code bg-zinc-800 border border-zinc-700/60 rounded px-2 py-1 block">
-                      {entity.active_filter}
-                    </code>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Business rules */}
-            {entity.default_filters.length > 0 && (
-              <div>
-                <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
-                  Default filters
-                </p>
-                <div className="space-y-1">
-                  {entity.default_filters.map((f, i) => (
-                    <code key={i} className="block aug-fs-xs font-code text-amber-300/80 bg-zinc-800 border border-zinc-700/40 rounded px-2 py-1">
-                      {f}
-                    </code>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Computed properties */}
-            {entity.computed_properties && entity.computed_properties.length > 0 && (
-              <div>
-                <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-1.5 font-semibold">
-                  Computed properties
-                </p>
-                <div className="space-y-1.5">
-                  {entity.computed_properties.map(cp => (
-                    <div key={cp.id} className="bg-zinc-800/50 border border-zinc-700/40 rounded-[var(--r3)] px-2.5 py-2 space-y-1">
-                      <div className="flex items-center gap-1.5">
-                        <span className="aug-fs-xs text-zinc-300 font-medium">{cp.label}</span>
-                        {cp.unit && (
-                          <span className="aug-fs-xs text-zinc-500 border border-zinc-700 rounded px-1 py-0.5">
-                            {cp.unit}
-                          </span>
-                        )}
-                      </div>
-                      <code className="block aug-fs-xs font-code text-emerald-300/80 leading-snug">
-                        {cp.formula_sql}
-                      </code>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </>
-        )}
-
-        {/* ── Relationships ─────────────────────────────────────────────────── */}
-        {tab === "relationships" && (
-          <div className="space-y-3">
-            {[
-              { label: "Outgoing", rels: outgoingRels },
-              { label: "Incoming", rels: incomingRels },
-            ].map(({ label, rels }) =>
-              rels.length > 0 ? (
-                <div key={label}>
-                  <p className="aug-fs-xs text-zinc-500 uppercase tracking-wider mb-2 font-semibold">
-                    {label}
-                  </p>
-                  <div className="space-y-2">
-                    {rels.map(r => (
-                      <RelationshipRow key={r.id} rel={r} fromPov={entity.id} />
-                    ))}
-                  </div>
-                </div>
-              ) : null,
-            )}
-            {incomingRels.length === 0 && outgoingRels.length === 0 && (
-              <p className="text-zinc-500 text-center py-6">No relationships.</p>
-            )}
-          </div>
-        )}
-
-        {/* ── Actions ──────────────────────────────────────────────────────── */}
-        {tab === "actions" && (
-          <div className="space-y-3">
-            {actions.length === 0 ? (
-              <p className="text-zinc-500 text-center py-6">No actions defined.</p>
-            ) : (
-              actions.map(a => (
-                <ActionRow
-                  key={a.id}
-                  action={a}
-                  connectionId={connectionId}
-                  schema={schema}
-                  onUpdated={onActionUpdated}
-                />
-              ))
-            )}
-          </div>
-        )}
-
-        {/* ── Metrics ──────────────────────────────────────────────────────── */}
-        {tab === "metrics" && (
-          <div className="space-y-3">
-            {metrics.length === 0 ? (
-              <p className="text-zinc-500 text-center py-6">No metrics defined.</p>
-            ) : (
-              metrics.map(m => (
-                <div key={m.id} className="bg-zinc-800/50 border border-zinc-700/50 rounded-[var(--r3)] p-3 space-y-2">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <p className="text-xs font-semibold text-zinc-200">{m.display_name}</p>
-                    {m.unit && <span className="aug-fs-xs text-zinc-500">{m.unit}</span>}
-                    {/* PX-5 — verification is the loudest fact on the card, not a line
-                        buried in the provenance drawer. A verified formula EXECUTED
-                        against this database; an unverified one is demoted and never
-                        injected as an exact expression. */}
-                    {m.verified ? (
-                      <span className="aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5 text-emerald-300 border-emerald-700/50">
-                        ✓ executed against your database
-                      </span>
-                    ) : (
-                      <span className="aug-fs-xs border rounded-[var(--r-chip)] px-1.5 py-0.5 text-amber-300 border-amber-700/50"
-                        title="Never injected as an exact expression until a run verifies it.">
-                        unverified — demoted
-                      </span>
-                    )}
-                    <Button variant="ghost" size="xs" className="ml-auto"
-                      onClick={() => setProvFor(provFor === m.id ? null : m.id)}>
-                      {provFor === m.id ? "Hide provenance" : "Whose definition?"}
-                    </Button>
-                  </div>
-                  {m.description && <p className="text-zinc-500">{m.description}</p>}
-                  <code className="block aug-fs-xs font-code text-emerald-300 bg-zinc-950 border border-zinc-700/40 rounded px-2 py-1.5">
-                    {m.formula_sql}
-                  </code>
-                  {provFor === m.id && (
-                    <MetricProvenancePanel metricId={m.id} connectionId={connectionId} schemaName={schema} />
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        )}
-
-        {tab === "map" && (
-          <ProcessMapper
-            connId={connectionId}
-            schema={schema}
-            entityId={entity.id}
-            onInvestigate={onInvestigate}
-          />
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RelationshipRow({
-  rel,
-  fromPov,
-}: {
-  rel: OntologyRelationship;
-  fromPov: string;
-}) {
-  const isFrom = rel.from_entity === fromPov;
-  return (
-    <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-[var(--r3)] px-3 py-2.5 space-y-1.5">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {isFrom ? (
-          <>
-            <span className="aug-fs-xs text-zinc-400 font-semibold">→</span>
-            <span className="text-xs text-zinc-200">{rel.to_entity}</span>
-          </>
-        ) : (
-          <>
-            <span className="text-xs text-zinc-200">{rel.from_entity}</span>
-            <span className="aug-fs-xs text-zinc-400 font-semibold">→</span>
-          </>
-        )}
-        <span className="aug-fs-xs text-violet-400 font-mono">
-          {verbLabel(rel.verb)}
-        </span>
-        <span className="aug-fs-xs font-mono text-zinc-500 border border-zinc-600 rounded px-1 py-0.5">
-          {rel.cardinality}
-        </span>
-        <ConfidencePill c={rel.join_confidence} />
-      </div>
-      <code className="aug-fs-xs font-code text-zinc-500 block truncate">{rel.join_sql}</code>
-    </div>
-  );
-}
-
-function ActionRow({
-  action,
-  connectionId,
-  schema,
-  onUpdated,
-}: {
-  action: QueryTemplate;
-  connectionId: string;
-  schema?: string;
-  onUpdated: (a: QueryTemplate) => void;
-}) {
-  const [editDesc, setEditDesc] = useState(false);
-  const [draft, setDraft] = useState(action.description);
-  const [saving, setSaving] = useState(false);
-
-  const save = async () => {
-    if (draft === action.description) { setEditDesc(false); return; }
-    setSaving(true);
-    try {
-      const updated = await patchQueryTemplate(connectionId, action.id, { description: draft }, schema);
-      onUpdated(updated);
-      setEditDesc(false);
-    } finally { setSaving(false); }
-  };
-
-  const typeColors: Record<string, string> = {
-    filter:    "text-amber-400 border-amber-500/20 bg-amber-500/8",
-    compute:   "text-violet-400 border-violet-500/20 bg-violet-500/8",
-    traverse:  "text-sky-400 border-sky-500/20 bg-sky-500/8",
-    aggregate: "text-emerald-400 border-emerald-500/20 bg-emerald-500/8",
-    validate:  "text-rose-400 border-rose-500/20 bg-rose-500/8",
-  };
-
-  return (
-    <div className="bg-zinc-800/50 border border-zinc-700/40 rounded-[var(--r3)] p-3 space-y-2">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <code className="aug-fs-xs font-code text-violet-300 font-semibold truncate">
-          {action.id}()
-        </code>
-        <span className={cn(
-          "aug-fs-xs uppercase tracking-wider border rounded px-1.5 py-0.5",
-          typeColors[action.action_type] ?? "text-zinc-500 border-zinc-600",
-        )}>
-          {action.action_type}
-        </span>
-      </div>
-
-      {editDesc ? (
-        <div className="space-y-1.5">
-          <input
-            value={draft}
-            onChange={e => setDraft(e.target.value)}
-            className="w-full text-xs bg-zinc-900 border border-violet-500/40 rounded px-2 py-1 text-zinc-200 focus:outline-none"
-            autoFocus
-          />
-          <div className="flex gap-2">
-            <button onClick={save} disabled={saving} className="aug-fs-xs text-emerald-400 hover:text-emerald-300 disabled:opacity-40">
-              {saving ? "saving…" : "save"}
-            </button>
-            <button onClick={() => { setDraft(action.description); setEditDesc(false); }} className="aug-fs-xs text-zinc-500 hover:text-zinc-300">
-              cancel
-            </button>
-          </div>
-        </div>
-      ) : (
-        <p
-          className="aug-fs-xs text-zinc-500 cursor-pointer hover:text-zinc-300 transition leading-relaxed"
-          onClick={() => setEditDesc(true)}
-          title="Click to edit"
-        >
-          {action.description || <span className="text-zinc-500 italic">No description</span>}
-        </p>
-      )}
-
-      {action.business_rules_enforced.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {action.business_rules_enforced.map((r, i) => (
-            <span key={i} className="aug-fs-xs text-amber-400/70 border border-amber-500/15 bg-amber-500/8 rounded px-1.5 py-0.5">
-              {r}
-            </span>
-          ))}
-        </div>
-      )}
-
-      <SqlToggle sql={action.sql_template} />
-    </div>
-  );
-}
-
-// ── Edge SQL template popup ───────────────────────────────────────────────────
-
-function EdgeSqlPanel({
-  rel,
-  graph,
-  onClose,
-  onInvestigate,
-}: {
-  rel: OntologyRelationship;
-  graph: OntologyGraph;
-  onClose: () => void;
-  onInvestigate?: (q: string) => void;
-}) {
-  const fromEntity = graph.entities[rel.from_entity];
-  const toEntity   = graph.entities[rel.to_entity];
-
-  const fromFilter = fromEntity?.active_filter ? `  -- active filter: ${fromEntity.active_filter}` : "";
-  const toFilter   = toEntity?.active_filter   ? `  -- active filter: ${toEntity.active_filter}` : "";
-
-  const sql = [
-    `SELECT`,
-    `  f.*, t.*`,
-    `FROM ${rel.from_table} f`,
-    `  ${rel.join_sql}`,
-    ...(fromFilter ? [fromFilter] : []),
-    ...(toFilter   ? [toFilter]   : []),
-    `LIMIT 1000;`,
-  ].join("\n");
-
-  const [copied, setCopied] = useState(false);
-  const copy = () => {
-    navigator.clipboard.writeText(sql).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 1800);
-    });
-  };
-
-  const investigateQ = `Analyse the join between ${fromEntity?.display_name ?? rel.from_entity} and ${toEntity?.display_name ?? rel.to_entity}: what does this ${verbLabel(rel.verb)} relationship reveal?`;
-
-  return (
-    <div className="absolute bottom-16 left-1/2 -translate-x-1/2 z-30 w-[480px] max-w-[90vw] bg-zinc-900 border border-zinc-700/70 rounded-md shadow-2xl shadow-black/60 overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-700/60">
-        <span className="aug-fs-xs text-violet-400 font-mono font-semibold flex-1 truncate">
-          {fromEntity?.display_name ?? rel.from_entity}
-          <span className="text-zinc-500 mx-1.5">→</span>
-          {toEntity?.display_name ?? rel.to_entity}
-          <span className="text-zinc-500 ml-2 font-sans font-normal">{verbLabel(rel.verb)}</span>
-        </span>
-        <span className="aug-fs-xs font-mono text-zinc-500 border border-zinc-700 rounded px-1.5 py-0.5">{rel.cardinality}</span>
-        <button onClick={onClose} className="text-zinc-500 hover:text-zinc-300 transition ml-1">
-          <Icon name="close" size={16} label="Close" />
-        </button>
-      </div>
-      <pre className="aug-fs-xs font-code text-zinc-300 bg-zinc-950 px-4 py-3 overflow-x-auto whitespace-pre leading-relaxed">
-        {sql}
-      </pre>
-      <div className="flex items-center gap-2 px-4 py-2.5 border-t border-zinc-700/60">
-        <button
-          onClick={copy}
-          className="aug-fs-xs text-zinc-400 hover:text-zinc-200 border border-zinc-700 hover:border-zinc-500 rounded px-2.5 py-1 transition"
-        >
-          {copied ? "Copied ✓" : "Copy SQL"}
-        </button>
-        {onInvestigate && (
-          <button
-            onClick={() => onInvestigate(investigateQ)}
-            className="aug-fs-xs text-violet-400 hover:text-violet-300 border border-violet-500/30 hover:border-violet-400/50 rounded px-2.5 py-1 transition"
-          >
-            Send to Chat →
-          </button>
-        )}
-        <span className="ml-auto aug-fs-xs text-zinc-500">click edge to inspect joins</span>
-      </div>
-    </div>
-  );
-}
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
@@ -1187,8 +497,6 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   const [graph,             setGraph]            = useState<OntologyGraph | null>(null);
   const [loading,           setLoading]          = useState(false);
   const [error,             setError]            = useState<string | null>(null);
-  const [selectedEntityId,  setSelectedEntityId] = useState<string | null>(null);
-  const [selectedEdge,      setSelectedEdge]     = useState<OntologyRelationship | null>(null);
   const [selectedConnId,    setSelectedConnId]   = useState(connectionId);
   const [showSettings,      setShowSettings]     = useState(false);
   const [showDuplicates,    setShowDuplicates]   = useState(false);
@@ -1197,19 +505,10 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
   const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
-  // ON-3b — the entity-type map, centred on one type, is this layer's first view; the whole-graph drawing stays
-  // one click away as the overview. The choice is remembered per browser.
-  const [view, setView] = useState<"map" | "overview">(() => {
-    try {
-      return typeof window !== "undefined" && window.localStorage.getItem("ont-view") === "overview" ? "overview" : "map";
-    } catch {
-      return "map";
-    }
-  });
-  const chooseView = (next: "map" | "overview") => {
-    setView(next);
-    try { window.localStorage.setItem("ont-view", next); } catch { /* no storage: the choice lasts this visit */ }
-  };
+  // ON-3b — the entity-type map IS this layer (re-laid 2026-09-12, the user: "we need only map in ontology..
+  // overview doesnt matter if it is not being used as context.. remove it in that case"). The whole-graph ERD it
+  // used to sit beside was a second drawing of the same facts that nothing downstream read; the Org board keeps
+  // its own canvas.
   /** Which schemas DO have an ontology, per the 404. Drives the empty state's offer. */
   const [builtSchemas,      setBuiltSchemas]      = useState<string[]>([]);
 
@@ -1220,7 +519,6 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
     setLoading(true);
     setError(null);
     setGraph(null);
-    setSelectedEntityId(null);
     setShowSettings(false);
     setShowDuplicates(false);
     getOntology(selectedConnId, schema)
@@ -1239,17 +537,6 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       .finally(() => setLoading(false));
   }, [selectedConnId, schema]);
 
-  const handleEntityUpdated = (updated: OntologyEntity) => {
-    if (!graph) return;
-    setGraph({ ...graph, entities: { ...graph.entities, [updated.id]: updated } });
-  };
-
-  const handleActionUpdated = (updated: QueryTemplate) => {
-    if (!graph) return;
-    setGraph({ ...graph, actions: { ...graph.actions, [updated.id]: updated } });
-  };
-
-  const selectedEntity = selectedEntityId ? graph?.entities[selectedEntityId] ?? null : null;
 
   // ── Header bar ──────────────────────────────────────────────────────────────
   const headerBar = (
@@ -1288,19 +575,6 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         >Connection</button>
       </div>
 
-      {/* ON-3b — the entity-type map, or the whole graph as the overview. */}
-      {!orgMode && graph && (
-        <div className="flex shrink-0 items-center gap-1" role="group" aria-label="Ontology view">
-          {(["map", "overview"] as const).map(v => (
-            <Button key={v} variant={view === v ? "secondary" : "ghost"} size="xs" aria-pressed={view === v}
-              onClick={() => chooseView(v)} data-testid={`ontology-view-${v}`}
-              title={v === "map" ? "One entity type at the centre, its links around it" : "Every entity type and link at once"}>
-              {v === "map" ? "Map" : "Overview"}
-            </Button>
-          ))}
-        </div>
-      )}
-
       {!orgMode && graph && (
         <div className="flex items-center gap-2 ml-auto">
           {graph.enriched ? (
@@ -1317,7 +591,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             {" · "}{countNoun(Object.keys(graph.relationships).length, "relationship")}
           </span>
           <button
-            onClick={() => { setShowDuplicates(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
+            onClick={() => { setShowDuplicates(v => !v); setShowSettings(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
               "aug-fs-xs px-2 py-0.5 rounded border transition",
               showDuplicates
@@ -1330,7 +604,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           </button>
           <Button
             variant="outline" size="xs"
-            onClick={() => { setShowOverrides(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
+            onClick={() => { setShowOverrides(v => !v); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
               "aug-fs-xs",
               showOverrides
@@ -1344,7 +618,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           </Button>
           <Button
             variant="outline" size="xs"
-            onClick={() => { setShowProposals(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowOverrides(false); }}
+            onClick={() => { setShowProposals(v => !v); setShowSettings(false); setShowDuplicates(false); setShowSkills(false); setShowOverrides(false); }}
             className={cn(
               "aug-fs-xs",
               showProposals
@@ -1357,7 +631,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             Proposals
           </Button>
           <button
-            onClick={() => { setShowSkills(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowSettings(false); setShowDuplicates(false); setShowProposals(false); }}
+            onClick={() => { setShowSkills(v => !v); setShowSettings(false); setShowDuplicates(false); setShowProposals(false); }}
             className={cn(
               "aug-fs-xs px-2 py-0.5 rounded border transition",
               showSkills
@@ -1369,7 +643,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
             Learned skills
           </button>
           <button
-            onClick={() => { setShowSettings(v => !v); setSelectedEntityId(null); setSelectedEdge(null); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
+            onClick={() => { setShowSettings(v => !v); setShowDuplicates(false); setShowSkills(false); setShowProposals(false); }}
             className={cn(
               "text-zinc-500 hover:text-zinc-300 transition ml-1",
               showSettings && "text-violet-400",
@@ -1473,46 +747,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       {headerBar}
 
       <div className="flex-1 flex overflow-hidden">
-        {view === "map" ? (
-          // ON-3b — the entity-type map brings its own rail and entity-type panel.
-          <EntityTypeMap connectionId={selectedConnId} schema={schema} />
-        ) : (
-          /* Canvas — takes remaining width; relative so EdgeSqlPanel anchors correctly */
-          <div className="flex-1 overflow-hidden relative">
-            <OntologyCanvas
-              graph={graph}
-              connId={connectionId}
-              selectedEntityId={selectedEntityId}
-              onSelectEntity={(id) => { setSelectedEntityId(id); setSelectedEdge(null); setShowSettings(false); }}
-              onInvestigate={onInvestigate}
-              onClickEdge={(rel) => setSelectedEdge(prev => prev?.id === rel.id ? null : rel)}
-            />
-
-            {/* Edge SQL template popup */}
-            {selectedEdge && (
-              <EdgeSqlPanel
-                rel={selectedEdge}
-                graph={graph}
-                onClose={() => setSelectedEdge(null)}
-                onInvestigate={onInvestigate}
-              />
-            )}
-          </div>
-        )}
-
-        {/* Detail drawer — slides in when an entity is selected on the overview */}
-        {view === "overview" && selectedEntity && !showSettings && (
-          <EntityDetailDrawer
-            entity={selectedEntity}
-            graph={graph}
-            connectionId={selectedConnId}
-            schema={schema}
-            onClose={() => setSelectedEntityId(null)}
-            onEntityUpdated={handleEntityUpdated}
-            onActionUpdated={handleActionUpdated}
-            onInvestigate={onInvestigate}
-          />
-        )}
+        {/* ON-3b — the entity-type map brings its own rail and entity-type panel. */}
+        <EntityTypeMap connectionId={selectedConnId} schema={schema} />
 
         {/* Settings panel */}
         {showSettings && (

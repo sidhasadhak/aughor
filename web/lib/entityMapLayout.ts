@@ -1,53 +1,46 @@
 /**
- * ON-3b — where each card sits on the entity-type map (ROADMAP §3.15, amended 2026-09-11).
+ * ON-3b — where each entity type STARTS on the map (ROADMAP §3.15; re-laid 2026-09-12).
  *
- * The map is centred on ONE type. The types one link away sit on the first ring; a person expands a neighbour to
- * open its links, and the types they reach sit on the ring outside it — breadth-first, so every type sits on the
- * ring of its shortest distance from the centre, and nothing beyond an unopened type is drawn. Rings are ellipses,
- * because cards are wide and short: a sideways link needs room for two card widths and its label, an upright one
- * only for two card heights. A ring grows with its cards so they never overlap, each ring is ordered by where its
- * types' nearest inner neighbours sit so links run outwards, and a link's label sits in the stretch of its line
- * that neither card covers.
+ * The map draws the whole business at once and puts the type with the most links in the middle, so the first thing
+ * a person reads off it is which entity everything else hangs from. Every other type sits on the ring of its
+ * shortest distance from that centre — one link away on the first ring, two on the second — and the types no link
+ * reaches at all sit in a row underneath, because a ring would claim a distance they do not have.
+ *
+ * This is a STARTING arrangement, not the arrangement: the canvas is `@xyflow/react`, so a person drags a card
+ * where they want it and that position is what they see next time. What lives here is only what has to be
+ * decided before anyone has dragged anything — which is why there is no edge geometry in this file any more. The
+ * canvas routes its own edges and places its own labels; this returns positions.
  *
  * Pure: the map component draws what this returns, and the tests pin it without a DOM.
  */
-import type { TypeMap, TypeMapLink } from "@/lib/objectTypes";
+import type { TypeMap } from "@/lib/objectTypes";
 
 export interface MapNode {
   objectType: string;
+  /** 0 at the centre, N for a type N links away, and -1 for a type no link reaches. */
   ring: number;
+  /** The CENTRE of the card. The canvas positions by a card's top-left corner and converts. */
   x: number;
   y: number;
 }
 
-/** A link's line, centre to centre, and where its label sits. */
-export interface MapEdge {
-  link: TypeMapLink;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  labelX: number;
-  labelY: number;
-}
-
 export interface MapLayout {
   nodes: MapNode[];
-  edges: MapEdge[];
   width: number;
   height: number;
 }
 
-/** Half the centred card and half a neighbour card — the stretch of a link's line each one hides. */
-export const FOCUS_HALF = { w: 118, h: 96 };
-export const NEIGHBOUR_HALF = { w: 90, h: 30 };
-/** The first ring's radii, and how much wider each ring outside it is. */
-export const RING = { rx: 310, ry: 200 };
-export const RING_STEP = { rx: 290, ry: 180 };
-/** The arc one card needs on a ring — a neighbour card's width plus air. */
-export const CARD_ARC = 210;
-/** Room beyond the outermost ring for a card. */
-export const MAP_PAD = { x: NEIGHBOUR_HALF.w + 10, y: NEIGHBOUR_HALF.h + 40 };
+/** Every card is the same size: the middle of the map is a position, not a bigger box. */
+export const CARD = { w: 196, h: 58 };
+/** The first ring's radii, and how much wider each ring outside it is. Ellipses, because cards are wide and
+ *  short: a sideways link needs room for two card widths and a label, an upright one only for two card heights. */
+export const RING = { rx: 330, ry: 215 };
+export const RING_STEP = { rx: 250, ry: 165 };
+/** The arc one card needs on a ring — a card's width plus air for the label beside it. */
+export const CARD_ARC = 250;
+/** Room around the outermost ring, and how far under it the unlinked row sits. */
+export const MAP_PAD = { x: CARD.w, y: CARD.h + 40 };
+export const UNLINKED_GAP = 96;
 
 function neighboursOf(map: TypeMap): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
@@ -64,43 +57,74 @@ function neighboursOf(map: TypeMap): Map<string, Set<string>> {
   return out;
 }
 
-/** type → ring for every type visible around `focus`: the focus, its neighbours, and the neighbours of each
- *  expanded type that is itself visible. */
-export function visibleRings(map: TypeMap, focus: string, expanded: ReadonlySet<string>): Map<string, number> {
+/** The type with the MOST links — the map's middle, which is the claim "this is what the business runs on".
+ *  Ties break on the display name so the middle never moves between two equal reads. */
+export function hubOf(map: TypeMap): string | null {
+  const degree = new Map<string, number>();
+  for (const link of map.links) {
+    if (link.from === link.to) continue;
+    degree.set(link.from, (degree.get(link.from) ?? 0) + 1);
+    degree.set(link.to, (degree.get(link.to) ?? 0) + 1);
+  }
+  const ranked = [...map.object_types].sort((a, b) =>
+    (degree.get(b.object_type) ?? 0) - (degree.get(a.object_type) ?? 0) ||
+    a.display_name.localeCompare(b.display_name));
+  return ranked[0]?.object_type ?? null;
+}
+
+/** The types no link touches at all, in the rail's order. They sit in a row under the map: a ring says how far a
+ *  type is along the links, and a type with no links has no such distance. The centre is never one of them. */
+export function unlinkedTypes(map: TypeMap, focus: string): string[] {
+  const linked = neighboursOf(map);
+  return map.object_types
+    .filter((t) => t.object_type !== focus && (linked.get(t.object_type)?.size ?? 0) === 0)
+    .map((t) => t.object_type);
+}
+
+/** type → ring for every LINKED type: the centre at 0, a type N links from it on ring N, and a type its links
+ *  never reach from here — a separate island of the graph — on the ring outside them all. */
+export function ringsOf(map: TypeMap, focus: string): Map<string, number> {
   const neighbours = neighboursOf(map);
   const rings = new Map<string, number>([[focus, 0]]);
   let frontier = [focus];
-  for (let depth = 0; frontier.length > 0; depth += 1) {
+  while (frontier.length > 0) {
     const next: string[] = [];
     for (const type of frontier) {
-      if (type !== focus && !expanded.has(type)) continue;          // only an opened type shows its links
+      const depth = rings.get(type) ?? 0;
       for (const other of Array.from(neighbours.get(type) ?? []).sort()) {
-        if (!rings.has(other)) {
-          rings.set(other, depth + 1);
-          next.push(other);
-        }
+        if (rings.has(other)) continue;
+        rings.set(other, depth + 1);
+        next.push(other);
       }
     }
     frontier = next;
   }
+  const island = Math.max(0, ...Array.from(rings.values())) + 1;
+  for (const type of map.object_types) {
+    if (rings.has(type.object_type) || (neighbours.get(type.object_type)?.size ?? 0) === 0) continue;
+    rings.set(type.object_type, island);
+  }
   return rings;
 }
 
-/** Whether a type has links to types the map is not yet showing — the expand affordance's condition. */
-export function hasHiddenNeighbours(map: TypeMap, type: string, rings: ReadonlyMap<string, number>): boolean {
-  return Array.from(neighboursOf(map).get(type) ?? []).some((other) => !rings.has(other));
+/** What one type lights up: itself, the types it links to, and those links. Nothing is lit when nothing is
+ *  picked — the map is then read whole. */
+export function litBy(map: TypeMap, type: string | null): { nodes: Set<string>; links: Set<string> } {
+  const nodes = new Set<string>();
+  const links = new Set<string>();
+  if (!type) return { nodes, links };
+  nodes.add(type);
+  for (const link of map.links) {
+    if (link.from !== type && link.to !== type) continue;
+    links.add(link.relationship);
+    nodes.add(link.from);
+    nodes.add(link.to);
+  }
+  return { nodes, links };
 }
 
-/** How far along a line in direction (dx, dy) a box of half-size `half` reaches from its centre. */
-function reach(half: { w: number; h: number }, dx: number, dy: number): number {
-  const length = Math.hypot(dx, dy) || 1;
-  const cos = Math.abs(dx) / length;
-  const sin = Math.abs(dy) / length;
-  return Math.min(cos > 1e-9 ? half.w / cos : Infinity, sin > 1e-9 ? half.h / sin : Infinity);
-}
-
-export function layoutMap(map: TypeMap, focus: string, expanded: ReadonlySet<string>): MapLayout {
-  const rings = visibleRings(map, focus, expanded);
+export function layoutMap(map: TypeMap, focus: string): MapLayout {
+  const rings = ringsOf(map, focus);
   const neighbours = neighboursOf(map);
   const members = new Map<number, string[]>();
   rings.forEach((ring, type) => members.set(ring, [...(members.get(ring) ?? []), type]));
@@ -114,12 +138,14 @@ export function layoutMap(map: TypeMap, focus: string, expanded: ReadonlySet<str
     const grow = Math.max(1, ((members.get(ring)?.length ?? 0) * CARD_ARC) / perimeter);
     radii.push({ rx: rx * grow, ry: ry * grow });
   }
-  const cx = radii[outer].rx + MAP_PAD.x;
+  const unlinked = unlinkedTypes(map, focus);
+  const cx = Math.max(radii[outer].rx + MAP_PAD.x, (unlinked.length * CARD_ARC) / 2 + MAP_PAD.x, CARD.w);
   const cy = radii[outer].ry + MAP_PAD.y;
 
   const angle = new Map<string, number>([[focus, 0]]);
-  const position = new Map<string, { x: number; y: number }>([[focus, { x: cx, y: cy }]]);
+  const nodes: MapNode[] = [{ objectType: focus, ring: 0, x: cx, y: cy }];
   for (let ring = 1; ring <= outer; ring += 1) {
+    // a ring is ordered by where its types' nearest inner neighbours sit, so links run outwards
     const inner = (type: string) => {
       const placed = Array.from(neighbours.get(type) ?? [])
         .filter((other) => rings.get(other) === ring - 1)
@@ -130,23 +156,13 @@ export function layoutMap(map: TypeMap, focus: string, expanded: ReadonlySet<str
     ordered.forEach((type, i) => {
       const a = -Math.PI / 2 + (2 * Math.PI * i) / ordered.length;
       angle.set(type, a);
-      position.set(type, { x: cx + Math.cos(a) * radii[ring].rx, y: cy + Math.sin(a) * radii[ring].ry });
+      nodes.push({ objectType: type, ring, x: cx + Math.cos(a) * radii[ring].rx, y: cy + Math.sin(a) * radii[ring].ry });
     });
   }
 
-  const half = (type: string) => (type === focus ? FOCUS_HALF : NEIGHBOUR_HALF);
-  const nodes = Array.from(rings.entries()).map(([objectType, ring]) => ({ objectType, ring, ...position.get(objectType)! }));
-  const edges = map.links
-    .filter((link) => link.from !== link.to && position.has(link.from) && position.has(link.to))
-    .map((link) => {
-      const a = position.get(link.from)!;
-      const b = position.get(link.to)!;
-      const [dx, dy] = [b.x - a.x, b.y - a.y];
-      const length = Math.hypot(dx, dy) || 1;
-      const [ca, cb] = [reach(half(link.from), dx, dy), reach(half(link.to), dx, dy)];
-      // the middle of the stretch neither card covers — the plain midpoint when the cards nearly touch
-      const t = length > ca + cb ? (ca + (length - ca - cb) / 2) / length : 0.5;
-      return { link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, labelX: a.x + dx * t, labelY: a.y + dy * t };
-    });
-  return { nodes, edges, width: cx * 2, height: cy * 2 };
+  const row = cy + radii[outer].ry + UNLINKED_GAP;
+  unlinked.forEach((objectType, i) => {
+    nodes.push({ objectType, ring: -1, x: cx + (i - (unlinked.length - 1) / 2) * CARD_ARC, y: row });
+  });
+  return { nodes, width: cx * 2, height: unlinked.length ? row + CARD.h : cy * 2 };
 }

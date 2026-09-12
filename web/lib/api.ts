@@ -35,7 +35,9 @@ export async function getConnections(): Promise<Connection[]> {
 // browsers and sessions; localStorage is only this device's paint-before-fetch cache.
 export interface MyPreferences {
   user: string;
-  preferences: Record<string, string>;
+  /** A value is whatever its key's validator admits — a string for `theme`, an object of card positions for
+   *  `ontology_map_layout`. The store's closed key registry is what types them; this map does not. */
+  preferences: Record<string, unknown>;
 }
 
 export async function getMyPreferences(): Promise<MyPreferences> {
@@ -44,7 +46,7 @@ export async function getMyPreferences(): Promise<MyPreferences> {
   return res.json();
 }
 
-export async function putMyPreference(key: string, value: string): Promise<void> {
+export async function putMyPreference(key: string, value: unknown): Promise<void> {
   const res = await fetch(`${getApiBase()}/me/preferences/${encodeURIComponent(key)}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },

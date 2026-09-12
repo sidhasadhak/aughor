@@ -55,10 +55,48 @@ def _connection_id(v: Any) -> str:
     return s
 
 
+#: How many ontology maps one person's arrangement is kept for, and how many cards on one map. Caps, because
+#: this value is the one key here that a UI writes on every drag rather than a person choosing from a list.
+MAX_MAPS = 24
+MAX_CARDS = 300
+
+
+def _map_layout(v: Any) -> dict:
+    """ON-3b — where a person dragged the cards on the ontology map, per connection and schema:
+    ``{"<connection>:<schema>": {"<object type>": {"x": <number>, "y": <number>}}}``. Cosmetic and self-scoped,
+    which is this store's whole custody line: it changes where YOU see a card and nothing about what runs."""
+    import math
+    if not isinstance(v, dict):
+        raise ValueError("must be an object of maps, keyed by '<connection>:<schema>'")
+    if len(v) > MAX_MAPS:
+        raise ValueError(f"keeps at most {MAX_MAPS} maps; this one carries {len(v)}")
+    out: dict[str, dict] = {}
+    for scope, cards in v.items():
+        key = str(scope or "").strip()
+        if not key or len(key) > 200:
+            raise ValueError("each map is keyed by '<connection>:<schema>'")
+        if not isinstance(cards, dict):
+            raise ValueError(f"'{key}' must map an object type to its position")
+        if len(cards) > MAX_CARDS:
+            raise ValueError(f"'{key}' places {len(cards)} cards; at most {MAX_CARDS} are kept")
+        placed: dict[str, dict] = {}
+        for name, at in cards.items():
+            try:
+                x, y = float(at["x"]), float(at["y"])          # type: ignore[index]
+            except (KeyError, TypeError, ValueError, IndexError) as exc:
+                raise ValueError(f"'{name}' needs a numeric x and y") from exc
+            if not (math.isfinite(x) and math.isfinite(y)):
+                raise ValueError(f"'{name}' needs a finite x and y")
+            placed[str(name)[:200]] = {"x": x, "y": y}
+        out[key] = placed
+    return out
+
+
 ALLOWED_KEYS: dict[str, tuple] = {
     "theme": (_one_of("dark", "light", "system"), "UI theme"),
     "density": (_one_of("comfortable", "compact"), "layout density"),
     "default_connection": (_connection_id, "connection new conversations open on"),
+    "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
 }
 
 
