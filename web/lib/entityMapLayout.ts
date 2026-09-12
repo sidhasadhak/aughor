@@ -1,74 +1,46 @@
 /**
- * ON-3b — where each card sits on the entity-type map (ROADMAP §3.15, amended 2026-09-11; re-laid 2026-09-12).
+ * ON-3b — where each entity type STARTS on the map (ROADMAP §3.15; re-laid 2026-09-12).
  *
- * The map draws the WHOLE business at once and puts the type with the most links at the centre, so the first thing
+ * The map draws the whole business at once and puts the type with the most links in the middle, so the first thing
  * a person reads off it is which entity everything else hangs from. Every other type sits on the ring of its
- * shortest distance from that centre — one link away on the first ring, two on the second — and a type no link
- * reaches sits on the ring outside them all rather than being left off. Nothing is hidden behind an expander:
- * what is dimmed, not what is drawn, is how the map answers "and what does THIS one touch?" (`litBy`).
+ * shortest distance from that centre — one link away on the first ring, two on the second — and the types no link
+ * reaches at all sit in a row underneath, because a ring would claim a distance they do not have.
  *
- * Rings are ellipses, because cards are wide and short: a sideways link needs room for two card widths and its
- * label, an upright one only for two card heights. A ring grows with its cards so they never overlap, each ring is
- * ordered by where its types' nearest inner neighbours sit so links run outwards, a link between two cards on the
- * SAME ring bows outward instead of cutting through the middle, and a link's label sits in the stretch of its line
- * that neither card covers.
+ * This is a STARTING arrangement, not the arrangement: the canvas is `@xyflow/react`, so a person drags a card
+ * where they want it and that position is what they see next time. What lives here is only what has to be
+ * decided before anyone has dragged anything — which is why there is no edge geometry in this file any more. The
+ * canvas routes its own edges and places its own labels; this returns positions.
  *
  * Pure: the map component draws what this returns, and the tests pin it without a DOM.
  */
-import type { TypeMap, TypeMapLink } from "@/lib/objectTypes";
+import type { TypeMap } from "@/lib/objectTypes";
 
 export interface MapNode {
   objectType: string;
+  /** 0 at the centre, N for a type N links away, and -1 for a type no link reaches. */
   ring: number;
+  /** The CENTRE of the card. The canvas positions by a card's top-left corner and converts. */
   x: number;
   y: number;
 }
 
-/** A link's line, the path it is drawn along, and where its label sits. */
-export interface MapEdge {
-  link: TypeMapLink;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  /** The SVG path the component draws: a line between rings, a bowed curve along one. */
-  path: string;
-  /** True when the two cards sit on the same ring and the link bows around it. */
-  bowed: boolean;
-  labelX: number;
-  labelY: number;
-  /** How much of the label the line has room for: its verb and cardinality, or the cardinality alone. */
-  label: "full" | "compact";
-}
-
 export interface MapLayout {
   nodes: MapNode[];
-  edges: MapEdge[];
-  /** Types no link touches — listed under the map, not drawn on a ring (`unlinkedTypes`). */
-  unlinked: string[];
   width: number;
   height: number;
 }
 
-/** Half the centred card and half a neighbour card — the stretch of a link's line each one hides. */
-export const FOCUS_HALF = { w: 118, h: 96 };
-export const NEIGHBOUR_HALF = { w: 90, h: 30 };
-/** The first ring's radii, and how much wider each ring outside it is. */
-export const RING = { rx: 270, ry: 186 };
-export const RING_STEP = { rx: 170, ry: 124 };
-/** The arc one card needs on a ring — a neighbour card's width plus air. */
-export const CARD_ARC = 210;
-/** Half a link label's own chip, named and compact. A label is a BOX, so the stretch of line it may sit in is the
- *  stretch clear of both cards by this much — reserving only the cards' own size is what let a label cover a card's
- *  first row. A busy ring leaves short spokes, and there the label drops to its cardinality alone (its verb moves
- *  to the title) rather than being laid over a card: a narrower true thing beats a wider one nobody can read. */
-export const LABEL_HALF = { w: 62, h: 11 };
-export const LABEL_COMPACT_HALF = { w: 27, h: 11 };
-/** How far a label steps off its line when even the compact chip has no room. */
-export const LABEL_ASIDE = 36;
-/** Room beyond the outermost ring for a card, and the smallest map that still holds the centred card. */
-export const MAP_PAD = { x: NEIGHBOUR_HALF.w + 24, y: NEIGHBOUR_HALF.h + 56 };
-export const MIN_HALF = { x: FOCUS_HALF.w + 60, y: FOCUS_HALF.h + 60 };
+/** Every card is the same size: the middle of the map is a position, not a bigger box. */
+export const CARD = { w: 196, h: 58 };
+/** The first ring's radii, and how much wider each ring outside it is. Ellipses, because cards are wide and
+ *  short: a sideways link needs room for two card widths and a label, an upright one only for two card heights. */
+export const RING = { rx: 330, ry: 215 };
+export const RING_STEP = { rx: 250, ry: 165 };
+/** The arc one card needs on a ring — a card's width plus air for the label beside it. */
+export const CARD_ARC = 250;
+/** Room around the outermost ring, and how far under it the unlinked row sits. */
+export const MAP_PAD = { x: CARD.w, y: CARD.h + 40 };
+export const UNLINKED_GAP = 96;
 
 function neighboursOf(map: TypeMap): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();
@@ -85,8 +57,8 @@ function neighboursOf(map: TypeMap): Map<string, Set<string>> {
   return out;
 }
 
-/** How many links each type has — the map centres on the busiest, which is the claim "this is what the business
- *  runs on". Ties break on the display name so the centre never moves between two equal reads. */
+/** The type with the MOST links — the map's middle, which is the claim "this is what the business runs on".
+ *  Ties break on the display name so the middle never moves between two equal reads. */
 export function hubOf(map: TypeMap): string | null {
   const degree = new Map<string, number>();
   for (const link of map.links) {
@@ -100,9 +72,8 @@ export function hubOf(map: TypeMap): string | null {
   return ranked[0]?.object_type ?? null;
 }
 
-/** The types no link touches at all, in the rail's order. A ring says how far a type is along the links; a type
- *  with no links has no such distance, so it is listed under the map rather than parked on a far ring that would
- *  double the map's size to say nothing. The centred type is never in this list — it is on the map. */
+/** The types no link touches at all, in the rail's order. They sit in a row under the map: a ring says how far a
+ *  type is along the links, and a type with no links has no such distance. The centre is never one of them. */
 export function unlinkedTypes(map: TypeMap, focus: string): string[] {
   const linked = neighboursOf(map);
   return map.object_types
@@ -137,7 +108,7 @@ export function ringsOf(map: TypeMap, focus: string): Map<string, number> {
 }
 
 /** What one type lights up: itself, the types it links to, and those links. Nothing is lit when nothing is
- *  selected — the map is then read whole. */
+ *  picked — the map is then read whole. */
 export function litBy(map: TypeMap, type: string | null): { nodes: Set<string>; links: Set<string> } {
   const nodes = new Set<string>();
   const links = new Set<string>();
@@ -150,14 +121,6 @@ export function litBy(map: TypeMap, type: string | null): { nodes: Set<string>; 
     nodes.add(link.to);
   }
   return { nodes, links };
-}
-
-/** How far along a line in direction (dx, dy) a box of half-size `half` reaches from its centre. */
-function reach(half: { w: number; h: number }, dx: number, dy: number): number {
-  const length = Math.hypot(dx, dy) || 1;
-  const cos = Math.abs(dx) / length;
-  const sin = Math.abs(dy) / length;
-  return Math.min(cos > 1e-9 ? half.w / cos : Infinity, sin > 1e-9 ? half.h / sin : Infinity);
 }
 
 export function layoutMap(map: TypeMap, focus: string): MapLayout {
@@ -175,12 +138,14 @@ export function layoutMap(map: TypeMap, focus: string): MapLayout {
     const grow = Math.max(1, ((members.get(ring)?.length ?? 0) * CARD_ARC) / perimeter);
     radii.push({ rx: rx * grow, ry: ry * grow });
   }
-  const cx = Math.max(radii[outer].rx + MAP_PAD.x, MIN_HALF.x);
-  const cy = Math.max(radii[outer].ry + MAP_PAD.y, MIN_HALF.y);
+  const unlinked = unlinkedTypes(map, focus);
+  const cx = Math.max(radii[outer].rx + MAP_PAD.x, (unlinked.length * CARD_ARC) / 2 + MAP_PAD.x, CARD.w);
+  const cy = radii[outer].ry + MAP_PAD.y;
 
   const angle = new Map<string, number>([[focus, 0]]);
-  const position = new Map<string, { x: number; y: number }>([[focus, { x: cx, y: cy }]]);
+  const nodes: MapNode[] = [{ objectType: focus, ring: 0, x: cx, y: cy }];
   for (let ring = 1; ring <= outer; ring += 1) {
+    // a ring is ordered by where its types' nearest inner neighbours sit, so links run outwards
     const inner = (type: string) => {
       const placed = Array.from(neighbours.get(type) ?? [])
         .filter((other) => rings.get(other) === ring - 1)
@@ -191,62 +156,13 @@ export function layoutMap(map: TypeMap, focus: string): MapLayout {
     ordered.forEach((type, i) => {
       const a = -Math.PI / 2 + (2 * Math.PI * i) / ordered.length;
       angle.set(type, a);
-      position.set(type, { x: cx + Math.cos(a) * radii[ring].rx, y: cy + Math.sin(a) * radii[ring].ry });
+      nodes.push({ objectType: type, ring, x: cx + Math.cos(a) * radii[ring].rx, y: cy + Math.sin(a) * radii[ring].ry });
     });
   }
 
-  const half = (type: string) => (type === focus ? FOCUS_HALF : NEIGHBOUR_HALF);
-  const nodes = Array.from(rings.entries())
-    .filter(([objectType]) => position.has(objectType))
-    .map(([objectType, ring]) => ({ objectType, ring, ...position.get(objectType)! }));
-  const edges = map.links
-    .filter((link) => link.from !== link.to && position.has(link.from) && position.has(link.to))
-    .map((link) => {
-      const a = position.get(link.from)!;
-      const b = position.get(link.to)!;
-      const [dx, dy] = [b.x - a.x, b.y - a.y];
-      const length = Math.hypot(dx, dy) || 1;
-      const bowed = rings.get(link.from) === rings.get(link.to) && (rings.get(link.from) ?? 0) > 0;
-      if (bowed) {
-        // A link along one ring bows AWAY from the centre rather than cutting across the cards inside it. The bow is
-        // PERPENDICULAR to the chord — pushing along the chord would only slide the line, not bend it — and its sign
-        // is whichever side points outwards. A chord straight through the middle has no outward side: it bends the
-        // one way perpendicular allows, deterministically.
-        const mid = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
-        const perp = { x: -dy / length, y: dx / length };
-        const outward = perp.x * (mid.x - cx) + perp.y * (mid.y - cy);
-        const sign = outward < 0 ? -1 : 1;
-        const bulge = Math.min(180, length * 0.3);
-        const control = { x: mid.x + perp.x * sign * bulge, y: mid.y + perp.y * sign * bulge };
-        return {
-          link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bowed: true, label: "full" as const,
-          path: `M ${a.x} ${a.y} Q ${control.x} ${control.y} ${b.x} ${b.y}`,
-          labelX: (a.x + 2 * control.x + b.x) / 4,   // the curve at its halfway point
-          labelY: (a.y + 2 * control.y + b.y) / 4,
-        };
-      }
-      // Where the label sits, in two goes. First the stretch of line where the label's whole CHIP clears both
-      // cards — the label is a box, and reserving only the cards' own size is what let one cover a card's first
-      // row. Where the rings leave no such stretch (a short diagonal spoke), fall back to the stretch its CENTRE
-      // clears and step the chip off the line, so what it grazes is a card's margin rather than its text.
-      const room = (chip: { w: number; h: number }) => {
-        const box = (type: string) => ({ w: half(type).w + chip.w, h: half(type).h + chip.h });
-        const [ca, cb] = [reach(box(link.from), dx, dy), reach(box(link.to), dx, dy)];
-        return { ca, clear: length - ca - cb };
-      };
-      const named = room(LABEL_HALF);
-      const short = named.clear > 0 ? named : room(LABEL_COMPACT_HALF);
-      const fits = short.clear > 0;
-      const { ca, clear } = fits ? short : room({ w: 0, h: 0 });
-      const t = clear > 0 ? (ca + clear / 2) / length : 0.5;
-      const aside = fits ? 0 : LABEL_ASIDE;
-      return {
-        link, x1: a.x, y1: a.y, x2: b.x, y2: b.y, bowed: false,
-        label: (named.clear > 0 ? "full" : "compact") as "full" | "compact",
-        path: `M ${a.x} ${a.y} L ${b.x} ${b.y}`,
-        labelX: a.x + dx * t - (dy / length) * aside,
-        labelY: a.y + dy * t + (dx / length) * aside,
-      };
-    });
-  return { nodes, edges, unlinked: unlinkedTypes(map, focus), width: cx * 2, height: cy * 2 };
+  const row = cy + radii[outer].ry + UNLINKED_GAP;
+  unlinked.forEach((objectType, i) => {
+    nodes.push({ objectType, ring: -1, x: cx + (i - (unlinked.length - 1) / 2) * CARD_ARC, y: row });
+  });
+  return { nodes, width: cx * 2, height: unlinked.length ? row + CARD.h : cy * 2 };
 }

@@ -1,15 +1,12 @@
 /**
- * ON-3b — the entity-type map's layout. The map is a claim about the business: the busiest type is in the middle,
- * a card on ring N is N links from it by the shortest route, a type no link reaches is still drawn rather than
- * dropped, no two cards on a ring overlap however many neighbours the centre has, a link along a ring bows out
- * instead of crossing the cards inside it, and a link's label sits where no card hides it.
+ * ON-3b — where the entity-type map STARTS each card. The map is a claim about the business: the busiest type is
+ * in the middle, a card on ring N is N links from it by the shortest route, a type no link reaches sits in the
+ * row underneath rather than being dropped, and no two cards overlap however many neighbours the middle has.
+ * Everything after that first arrangement is the canvas's and the person dragging on it.
  */
 import { describe, expect, it } from "vitest";
 
-import {
-  FOCUS_HALF, LABEL_ASIDE, LABEL_COMPACT_HALF, LABEL_HALF, NEIGHBOUR_HALF, hubOf, layoutMap, litBy,
-  ringsOf, unlinkedTypes,
-} from "@/lib/entityMapLayout";
+import { CARD, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes } from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink, TypeMapRow } from "@/lib/objectTypes";
 
 const link = (from: string, to: string): TypeMapLink => ({
@@ -38,26 +35,26 @@ const commerce = typeMap(link("customer", "order"), link("order", "order_item"),
 
 const star = (n: number) => typeMap(...Array.from({ length: n }, (_, i) => link("hub", `t${String(i).padStart(2, "0")}`)));
 
-/** Two boxes overlap unless they are a full width apart sideways or a full height apart upright. */
-const overlap = (a: { x: number; y: number }, b: { x: number; y: number }, half: { w: number; h: number }) =>
-  Math.abs(a.x - b.x) < 2 * half.w && Math.abs(a.y - b.y) < 2 * half.h;
+/** Two cards overlap unless they are a full width apart sideways or a full height apart upright. */
+const overlap = (a: { x: number; y: number }, b: { x: number; y: number }) =>
+  Math.abs(a.x - b.x) < CARD.w && Math.abs(a.y - b.y) < CARD.h;
 
 describe("hubOf", () => {
-  it("centres the map on the type with the most links", () => {
+  it("puts the type with the most links in the middle", () => {
     expect(hubOf(commerce)).toBe("order_item");
   });
 
-  it("breaks a tie on the display name, so the centre does not move between two equal reads", () => {
+  it("breaks a tie on the display name, so the middle does not move between two equal reads", () => {
     expect(hubOf(typeMap(link("b", "a")))).toBe("a");
   });
 
-  it("has no centre for a map with no types", () => {
+  it("has no middle for a map with no types", () => {
     expect(hubOf({ ...commerce, object_types: [] })).toBeNull();
   });
 });
 
 describe("ringsOf", () => {
-  it("puts the focus at the centre and every other type on the ring of its shortest distance", () => {
+  it("puts the focus in the middle and every other type on the ring of its shortest distance", () => {
     expect(Object.fromEntries(ringsOf(commerce, "order"))).toEqual({
       order: 0, customer: 1, order_item: 1, product: 2, shipment: 2,
     });
@@ -66,23 +63,17 @@ describe("ringsOf", () => {
   it("puts an island — linked types the focus cannot reach — on the ring outside them all", () => {
     const islands = { ...commerce, links: [...commerce.links, link("promo", "coupon")] };
     const rings = ringsOf({ ...islands, object_types: [...islands.object_types, row("promo"), row("coupon")] }, "order");
-    expect(rings.get("promo")).toBe(3);
-    expect(rings.get("coupon")).toBe(3);
+    expect([rings.get("promo"), rings.get("coupon")]).toEqual([3, 3]);
   });
 
-  it("gives a type with no links at all no ring — it is listed under the map instead", () => {
+  it("gives a type with no links at all no ring — it goes in the row under the map", () => {
     const map = withUnlinked(commerce, "country", "brand");
     expect(ringsOf(map, "order").has("country")).toBe(false);
     expect(unlinkedTypes(map, "order")).toEqual(["country", "brand"]);   // the rail's order, not re-sorted
   });
 
-  it("keeps the centred type off that list, however few links it has", () => {
+  it("keeps the middle out of that row, however few links it has", () => {
     expect(unlinkedTypes(withUnlinked(commerce, "country"), "country")).toEqual([]);
-  });
-
-  it("places a type on the ring of its SHORTEST distance", () => {
-    const triangle = typeMap(link("a", "b"), link("b", "c"), link("a", "c"));
-    expect(Object.fromEntries(ringsOf(triangle, "a"))).toEqual({ a: 0, b: 1, c: 1 });
   });
 });
 
@@ -99,108 +90,44 @@ describe("litBy", () => {
 });
 
 describe("layoutMap", () => {
-  it("draws every linked type, and hands the rest to the list under the map", () => {
-    const layout = layoutMap(withUnlinked(commerce, "country"), "order");
+  it("starts every type somewhere — on a ring, or in the row underneath", () => {
+    const layout = layoutMap(withUnlinked(commerce, "country", "brand"), "order");
     expect(layout.nodes.map((n) => n.objectType).sort())
-      .toEqual(["customer", "order", "order_item", "product", "shipment"]);
-    expect(layout.unlinked).toEqual(["country"]);
-  });
-
-  it("draws every link whose two types are both on the map, neighbour-to-neighbour included", () => {
-    const triangle = typeMap(link("a", "b"), link("b", "c"), link("a", "c"));
-    const layout = layoutMap(triangle, "a");
-    expect(layout.edges.map((e) => e.link.relationship).sort()).toEqual(["a_b", "a_c", "b_c"]);
+      .toEqual(["brand", "country", "customer", "order", "order_item", "product", "shipment"]);
+    const unlinked = layout.nodes.filter((n) => n.ring === -1);
+    expect(unlinked.map((n) => n.objectType)).toEqual(["country", "brand"]);
+    const ringed = layout.nodes.filter((n) => n.ring >= 0);
+    expect(Math.min(...unlinked.map((n) => n.y))).toBeGreaterThan(Math.max(...ringed.map((n) => n.y)));
+    expect(overlap(unlinked[0], unlinked[1])).toBe(false);
   });
 
   it.each([2, 7, 12, 40])("centres the focus and never overlaps two of %i neighbour cards", (n) => {
     const layout = layoutMap(star(n), "hub");
     const hub = layout.nodes.find((node) => node.objectType === "hub")!;
-    expect([hub.x, hub.y]).toEqual([layout.width / 2, layout.height / 2]);
+    expect(hub.x).toBe(layout.width / 2);
     const ring = layout.nodes.filter((node) => node.ring === 1);
     expect(ring).toHaveLength(n);
     for (let i = 0; i < ring.length; i += 1) {
-      expect(overlap(ring[i], hub, { w: (FOCUS_HALF.w + NEIGHBOUR_HALF.w) / 2, h: (FOCUS_HALF.h + NEIGHBOUR_HALF.h) / 2 }))
-        .toBe(false);
-      for (let j = i + 1; j < ring.length; j += 1) expect(overlap(ring[i], ring[j], NEIGHBOUR_HALF)).toBe(false);
+      expect(overlap(ring[i], hub)).toBe(false);
+      for (let j = i + 1; j < ring.length; j += 1) expect(overlap(ring[i], ring[j])).toBe(false);
     }
-  });
-
-  it("holds the centred card even when the type has no links at all", () => {
-    const layout = layoutMap(withUnlinked({ ...commerce, links: [], object_types: [] }, "country"), "country");
-    expect(layout.width).toBeGreaterThan(2 * FOCUS_HALF.w);
-    expect(layout.height).toBeGreaterThan(2 * FOCUS_HALF.h);
   });
 
   it("puts the second ring outside the first", () => {
     const layout = layoutMap(commerce, "order");
+    const hub = layout.nodes.find((n) => n.objectType === "order")!;
     const distance = (t: string) => {
       const node = layout.nodes.find((n) => n.objectType === t)!;
-      return Math.hypot(node.x - layout.width / 2, node.y - layout.height / 2);
+      return Math.hypot(node.x - hub.x, node.y - hub.y);
     };
     const inner = Math.max(distance("customer"), distance("order_item"));
     expect(Math.min(distance("product"), distance("shipment"))).toBeGreaterThan(inner);
   });
 
-  it("bows a link between two cards on one ring outwards, away from the cards inside it", () => {
-    const layout = layoutMap(typeMap(link("a", "b"), link("a", "c"), link("b", "c")), "a");
-    const centre = { x: layout.width / 2, y: layout.height / 2 };
-    const chord = layout.edges.find((e) => e.link.relationship === "b_c")!;
-    expect(chord.bowed).toBe(true);
-    expect(chord.path).toMatch(/^M [\d.-]+ [\d.-]+ Q /);
-    const midpoint = { x: (chord.x1 + chord.x2) / 2, y: (chord.y1 + chord.y2) / 2 };
-    expect(Math.hypot(chord.labelX - centre.x, chord.labelY - centre.y))
-      .toBeGreaterThan(Math.hypot(midpoint.x - centre.x, midpoint.y - centre.y));
-    const spoke = layout.edges.find((e) => e.link.relationship === "a_b")!;
-    expect(spoke.bowed).toBe(false);
-    expect(spoke.path).toMatch(/^M [\d.-]+ [\d.-]+ L [\d.-]+ [\d.-]+$/);
-  });
-
-  it("puts a label's whole chip in the clear where the ring leaves room for it", () => {
-    const layout = layoutMap(star(2), "hub");                 // two neighbours: the ring is at its roomiest
-    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
-    for (const edge of layout.edges) {
-      const other = layout.nodes.find((node) => node.objectType === edge.link.to)!;
-      const clears = (card: { x: number; y: number }, h: { w: number; h: number }) =>
-        Math.abs(edge.labelX - card.x) >= h.w + LABEL_HALF.w || Math.abs(edge.labelY - card.y) >= h.h + LABEL_HALF.h;
-      expect(clears(hub, FOCUS_HALF) && clears(other, NEIGHBOUR_HALF)).toBe(true);
-      const off = Math.abs((edge.labelX - edge.x1) * (edge.y2 - edge.y1) - (edge.labelY - edge.y1) * (edge.x2 - edge.x1))
-        / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1);
-      expect(off).toBeCloseTo(0, 6);                          // on its line: no step aside was needed
-    }
-  });
-
-  it("steps a label off the line when the cards leave its chip no room", () => {
-    const layout = layoutMap(star(7), "hub");                 // a crowded ring: the spokes are short
-    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
-    const aside = layout.edges.map((edge) =>
-      Math.abs((edge.labelX - hub.x) * (edge.y2 - edge.y1) - (edge.labelY - hub.y) * (edge.x2 - edge.x1))
-      / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1));
-    expect(aside.some((d) => Math.abs(d - LABEL_ASIDE) < 1e-6)).toBe(true);
-  });
-
-  it.each([2, 5, 7, 12])("keeps whichever chip it chose clear of both cards, with %i neighbours", (n) => {
-    const layout = layoutMap(star(n), "hub");
-    const hub = layout.nodes.find((node) => node.objectType === "hub")!;
-    for (const edge of layout.edges) {
-      const other = layout.nodes.find((node) => node.objectType === edge.link.to)!;
-      const chip = edge.label === "full" ? LABEL_HALF : LABEL_COMPACT_HALF;
-      const clears = (card: { x: number; y: number }, h: { w: number; h: number }) =>
-        Math.abs(edge.labelX - card.x) >= h.w + chip.w || Math.abs(edge.labelY - card.y) >= h.h + chip.h;
-      // the chip it is DRAWN with, not its centre: a label used to clear a card by its midpoint and cover its
-      // first row anyway. Where even the compact chip has no room it steps off the line instead (below).
-      const stepped = Math.abs((edge.labelX - hub.x) * (edge.y2 - edge.y1)
-        - (edge.labelY - hub.y) * (edge.x2 - edge.x1)) / Math.hypot(edge.x2 - edge.x1, edge.y2 - edge.y1) > 1e-6;
-      if (!stepped) expect(clears(hub, FOCUS_HALF) && clears(other, NEIGHBOUR_HALF)).toBe(true);
-    }
-  });
-
-  it("drops a label to its cardinality where the ring leaves no room for its verb", () => {
-    const roomy = layoutMap(star(2), "hub");                  // long spokes: the verb fits
-    expect(roomy.edges.every((e) => e.label === "full")).toBe(true);
-    // Seven is the tight count: the ring has not yet had to grow for its cards, so its spokes are shortest.
-    const crowded = layoutMap(star(7), "hub");
-    expect(crowded.edges.some((e) => e.label === "compact")).toBe(true);
-    const grown = layoutMap(star(14), "hub");                 // a ring grown for its cards has room again
-    expect(grown.edges.every((e) => e.label === "full")).toBe(true);
+  it("holds a map whose only type has no links at all", () => {
+    const lonely = { ...commerce, links: [], object_types: [row("country")] };
+    const layout = layoutMap(lonely, "country");
+    expect(layout.nodes).toEqual([{ objectType: "country", ring: 0, x: layout.width / 2, y: expect.any(Number) }]);
+    expect(layout.width).toBeGreaterThanOrEqual(CARD.w);
   });
 });
