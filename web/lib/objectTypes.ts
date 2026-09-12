@@ -76,6 +76,8 @@ export interface PropertySource {
   edits?: number;
   kind?: "static" | "timeseries";
   read?: boolean;
+  /** ON-5 — set when the property is a FRAME over the readings rather than a column of the source. */
+  frame?: string;
 }
 
 export interface TypeProperty {
@@ -116,10 +118,23 @@ export interface TypeBinding {
   skipped?: Record<string, string>;
   usable: boolean;
   why_not?: string;
+  /** ON-5 — property name → what its frame over the readings is, in words. */
+  frames?: Record<string, string>;
+}
+
+/** ON-5 — a frame over a timeseries binding's readings: what it reads, how the readings inside the frame are
+ *  reduced, and how far the frame reaches. `offset` is "the reading N back", which takes neither an aggregate nor
+ *  a window. Each frame becomes a property of the type, read at the object's latest reading. */
+export interface FrameSpec {
+  column: string;
+  agg?: "sum" | "avg" | "min" | "max" | "count";
+  range?: "current" | "cumulative" | "trailing" | "leading" | "all";
+  window?: number;
+  offset?: number;
 }
 
 /** What a person sends to bind a source: its table or SELECT, the column holding the object's key, its kind, and —
- *  optionally — `{property: column}` to name what it supplies. */
+ *  optionally — `{property: column}` to name what it supplies and `{property: frame}` to compute one. */
 export interface BindingSpec {
   kind: "static" | "timeseries";
   key: string;
@@ -127,6 +142,7 @@ export interface BindingSpec {
   sql?: string;
   time_column?: string;
   properties?: Record<string, string>;
+  frames?: Record<string, FrameSpec>;
 }
 
 /** A binding the data proposes — another type's table carrying this type's key, measured one row per object. Nothing
@@ -337,5 +353,18 @@ export async function addBinding(
 /** Remove a binding a person set; the properties it supplied stop resolving on the next read. */
 export async function removeBinding(connectionId: string, entityId: string, name: string, schemaName?: string): Promise<void> {
   const res = await fetch(bindingUrl(connectionId, entityId, name, schemaName), { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+
+/** Name a link by its business verb (ON-3b). The mechanical names stay and still resolve; this one is accepted
+ *  beside them. Refused when it is not snake_case, or already names another link or a property on either type
+ *  the link joins — a path segment must name exactly one thing. */
+export async function nameLink(
+  connectionId: string, relationshipId: string, name: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
   if (!res.ok) throw new Error(await detailOf(res));
 }

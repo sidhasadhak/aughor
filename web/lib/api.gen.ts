@@ -5889,11 +5889,36 @@ export interface paths {
         /**
          * List Annotations
          * @description Wave K5 — the human overlay edits on a connection, for the review UI.
+         *
+         *     Scoped to the current org, the way every read of this ledger is (`accepted_object_edits`): listing an
+         *     edit a withdrawal could not then find is a worse answer than not listing it.
          */
         get: operations["list_annotations_kinetic_actions_annotations_get"];
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/kinetic-actions/annotations/{edit_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw Annotation
+         * @description ON-4 — withdraw ONE overlay edit: an annotation on a row, or a property an accepted action set on
+         *     an object. The next read stops merging it and the object reads as the warehouse holds it — nothing is
+         *     restored, because the source was never written. 404 when this connection and org hold no such edit.
+         */
+        delete: operations["withdraw_annotation_kinetic_actions_annotations__edit_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -7310,6 +7335,28 @@ export interface paths {
          *     never guesses.
          */
         post: operations["post_object_query_objects_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/objects/titles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Object Titles
+         * @description The name of each object a set of keys names — one query over the backing, so a table of keys costs one
+         *     round trip. A type named by its own key resolves nothing and says so; a key nothing matches is absent from
+         *     the map rather than guessed at. An unknown type is `path: refused`. No model call.
+         */
+        post: operations["post_object_titles_objects_titles_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -13557,6 +13604,12 @@ export interface components {
          * @description ON-1b — a further binding: a table or keyed SELECT joined to the object on its key.
          */
         _BindingSpec: {
+            /** Frames */
+            frames?: {
+                [key: string]: {
+                    [key: string]: unknown;
+                };
+            } | null;
             /** Key */
             key: string;
             /**
@@ -14197,6 +14250,19 @@ export interface components {
             include_agents: boolean;
             /** Model */
             model?: string | null;
+        };
+        /**
+         * _TitlesRequest
+         * @description The keys an answer table (or any list of keys) wants the names of.
+         */
+        _TitlesRequest: {
+            /**
+             * Keys
+             * @default []
+             */
+            keys: string[];
+            /** Object Type */
+            object_type: string;
         };
         /** _TraceFeedbackRequest */
         _TraceFeedbackRequest: {
@@ -24199,6 +24265,39 @@ export interface operations {
             };
         };
     };
+    withdraw_annotation_kinetic_actions_annotations__edit_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+            };
+            header?: never;
+            path: {
+                edit_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_grants_route_kinetic_actions_grants_get: {
         parameters: {
             query?: {
@@ -26868,6 +26967,42 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ObjectQuery"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_object_titles_objects_titles_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_TitlesRequest"];
             };
         };
         responses: {

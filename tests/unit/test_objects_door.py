@@ -159,3 +159,47 @@ def test_a_links_page_lists_the_linked_objects_in_key_order(warehouse, client):
     assert [str(row[position]) for row in page["rows"]] == expected[:3] and page["has_more"] is True
     refused = client.get("/objects/order_item/7/links/order_item_to_review", params=PARAMS).json()
     assert refused["path"] == "refused" and "N:N" in refused["refused"]
+
+
+# ── the titles door (ON-3b) ─────────────────────────────────────────────────────────────────────
+
+def test_the_titles_door_names_a_page_of_keys_and_refuses_an_unknown_type(warehouse, client):
+    """What an answer table asks once for every key it linked, rather than once per key."""
+    want = {str(r[0]): str(r[1]) for r in _reference(
+        warehouse, "SELECT customer_id, full_name FROM customers ORDER BY customer_id LIMIT 4")}
+    r = client.post("/objects/titles", params=PARAMS, json={"object_type": "customer", "keys": list(want)})
+    assert r.status_code == 200, r.text
+    out = r.json()
+    assert out["path"] == "titles" and out["property"] == "full_name" and out["titles"] == want
+
+    keyed = client.post("/objects/titles", params=PARAMS, json={"object_type": "order", "keys": ["O000123"]}).json()
+    assert keyed["titles"] == {} and "named by its key" in keyed["note"]
+
+    refused = client.post("/objects/titles", params=PARAMS, json={"object_type": "invoice", "keys": ["1"]}).json()
+    assert refused["path"] == "refused" and "order" in refused["available"]
+
+    empty = client.post("/objects/titles", params=PARAMS, json={"object_type": "customer", "keys": []}).json()
+    assert empty["titles"] == {}      # no keys is not an error, and asks the warehouse nothing
+
+
+def test_a_display_property_may_come_from_a_static_binding_but_never_from_a_timeseries_one(warehouse, client):
+    """The declaration door's ON-1b widening, and the one it refuses with a sentence."""
+    # A keyed SELECT, because a type's own backing table may not be re-bound — and one row per product is what
+    # the door counts before it accepts it.
+    bound = client.put("/ontology/entities/Product/bindings/naming", params=PARAMS,
+                       json={"sql": "SELECT product_id, MAX(product_name) AS label FROM products GROUP BY 1",
+                             "key": "product_id", "kind": "static"})
+    assert bound.status_code == 200, bound.text
+    named = client.put("/ontology/entities/Product", params=PARAMS, json={"display_property": "label"})
+    assert named.status_code == 200, named.text
+
+    series = client.put("/ontology/entities/Product/bindings/moving", params=PARAMS,
+                        json={"table": "order_items", "key": "product_id", "kind": "timeseries",
+                              "time_column": "order_id", "properties": {"moving_price": "unit_price"}})
+    assert series.status_code == 200, series.text
+    refused = client.put("/ontology/entities/Product", params=PARAMS, json={"display_property": "moving_price"})
+    assert refused.status_code == 400
+    assert "would change when the next reading lands" in refused.json()["detail"]
+
+    missing = client.put("/ontology/entities/Product", params=PARAMS, json={"display_property": "nope"})
+    assert missing.status_code == 400 and "has no property 'nope'" in missing.json()["detail"]

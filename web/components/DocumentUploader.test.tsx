@@ -20,6 +20,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { DocumentEntry, KnowledgeStatus } from "@/lib/api";
 
 const listDocuments = vi.fn();
+// The panel renders KnowledgeSourcesSection beside the corpus, which loads the connected wikis on
+// mount. Unmocked, that call reached the developer's running platform for real (the setup file's
+// network guard turned it into 15 unhandled rejections, one per test in this file, and the whole
+// web suite exited non-zero while every test passed). Nothing here asserts on that section, so it
+// answers what a fresh install answers: the endpoint is there, nothing is connected.
+const getKnowledgeSources = vi.fn(async (..._a: unknown[]) => ({ types: [], sources: [] }));
 const getKnowledgeStatus = vi.fn();
 const previewDocumentChunks = vi.fn();
 const convertDocument = vi.fn();
@@ -30,6 +36,7 @@ vi.mock("@/lib/api", async importOriginal => {
   return {
     ...actual,
     listDocuments: (...a: unknown[]) => listDocuments(...a),
+    getKnowledgeSources: (...a: unknown[]) => getKnowledgeSources(...a),
     getKnowledgeStatus: (...a: unknown[]) => getKnowledgeStatus(...a),
     previewDocumentChunks: (...a: unknown[]) => previewDocumentChunks(...a),
     convertDocument: (...a: unknown[]) => convertDocument(...a),

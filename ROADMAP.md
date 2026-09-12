@@ -99,7 +99,13 @@ and ON-6 is RETIRED (§6 item 15, decided 2026-09-11). ON-3's first slice shippe
 object opened live by type and key, its links followed in place, the metrics, findings, notes and
 declared actions around it measured rather than inferred, and a key in an answer's table opens it.
 ON-4's first slice followed: a declared action takes an object, and an edit a human accepts on it is
-merged into the next read with who accepted it.
+merged into the next read with who accepted it. **ON-3b/ON-3c/ON-1b/ON-5 followed on 2026-09-11/12**
+(the Fabric IQ amendments: the entity-type map, the agent reading the type, bindings, and timeseries
+properties read as each object's latest value), **and the arc's leftovers closed 2026-09-12** — the
+person declares through the web what only the API took, one accepted edit can be withdrawn, an object
+reads by its name wherever a key was printed, and a frame over the readings (trailing, cumulative,
+the reading before) reaches the object door as a per-object value the compiler measures like any
+other. Arc MT was dropped the same day (§6 item 17): identity buys nothing where this actually runs.
 
 ---
 
@@ -2850,7 +2856,7 @@ exchange feeds Arc MI's funnel; VA-10 gates cross-user Know. CI-2/CI-3 (the plat
 identity and first roster) are, in hindsight, SP's Phase 0 — this arc aims what they
 began.
 
-### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12)
+### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
 > **Origin.** The user's 2026-09-07 directive, given while wiring Google sign-in:
 > *"any user who goes to vercel deployment should be asked to login using Gmail.. and
@@ -2907,6 +2913,15 @@ began.
 - Google side: an External consent screen in "Testing" mode shows an unverified-app
   warning and limits sign-ins to allow-listed test users; full verification is a
   later, user-keyed process with Google.
+
+> **DROPPED 2026-09-12 — the user, asked what was next after ON-5: *"MT-0 and MT-1 make no sense if this
+> is not hosted somewhere. Locally, I don't need it. And worse is not working as expected due to backend
+> compute and storage limitations."*** Identity and per-user tenancy pay off only on a hosted deployment,
+> and the hosted one is constrained enough that it does not work as expected — so the wave buys nothing
+> where the platform actually runs. MT-2 was already keyed on a Google OAuth client that was never created,
+> which was the same signal a month earlier, read as waiting rather than as not wanted. The spec below
+> stands as written and is not refused (§4 is for refusals): it waits on the user saying the hosted
+> deployment matters. Do not re-propose it as the next build.
 
 **Waves, in build order:**
 
@@ -3999,9 +4014,17 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   sidhasadhak via flag_order_for_review, 2026-09-11"; the order page shows the same. **Amended:** the
   receipt runs through `POST /objects/query`, not `query_objects`, whose conversation door is parked
   (§6 item 15). **Found on the way:** the warehouse hands object properties back as text, so a numeric
-  criterion would always have failed closed — values are now typed. **Still open:** no door removes one
-  accepted edit; an edit may not correct a source value (a correction is a different write, not taken on
-  here); the web authoring form cannot yet declare an object parameter or an edit (the API can).
+  criterion would always have failed closed — values are now typed. **Still open:** an edit may not correct a source value (a correction is a different
+  write, not taken on here).
+  ✅ **Closed 2026-09-12:** `withdraw_edit` + `DELETE /kinetic-actions/annotations/{id}` remove ONE accepted
+  edit — until then `purge_connections`, the catalog-delete cascade, was the only way back and took every edit on
+  the connection with it. Scoped the way a read is, so a withdrawal reaches no other connection's or org's row;
+  404 rather than a delete that deleted nothing; and it restores nothing, because nothing was ever written — it
+  stops the merge, and the object reads as the warehouse holds it. The object page carries each edit's id, so the
+  property an accepted action set and the note on the row are each withdrawn where they are shown. The kinetic
+  authoring form now declares an object parameter (`kind: object` with its type), the action's own `object_type`,
+  and the `edits` it writes. Found on the way: `GET /kinetic-actions/annotations` listed every org's edits on a
+  connection while every other read of that ledger scopes to the current one — scoped.
 - **ON-5 · Functions and models on objects (the "intelligence mapping").** *(Amended 2026-09-11:
   timeseries properties are its first citizen, after the wave list.)* A
   **function** is a declared, deterministic computation over an object set — derived
@@ -4111,10 +4134,15 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   layout defects, each fixed: the canvas centred before its layer had a width, labels sat under the centred card,
   and property sources wrapped a few characters a line. Suite 9,698 passed; of eleven mutations of the new guards
   ten failed a test, and the survivor exposed an alias written for a reason that was not true — removed, and its
-  test re-pinned on the real mechanism. **Still open:** an answer table's key links and the action cards still
-  print the key; no web door names a link yet (the API does); LuxExperience's verbs are the builder's generic
-  ones, so its proposed link names are too (`order_item_associated_with_shipment`) until a person names them; a
-  label can still clip a card on a sideways link in a narrow pane.
+  test re-pinned on the real mechanism. **Still open:** a label can still clip a card on a sideways link in a narrow pane.
+  ✅ **Closed 2026-09-12:** the answer table, the Source data drawer, the object page's linked lists, its to-one
+  links and its action cards read objects by NAME. `POST /objects/titles` resolves a page of keys in ONE query
+  over the backing (a table of 200 costs one round trip, not 200); a type named by its own key resolves nothing
+  and says so; a key nothing matches is absent rather than guessed at; the batch caps at 500 and every key is a
+  typed literal. The key stays on hover, in the link's title, because it is what the SQL filtered on — and a name
+  is decoration on a link that may never gate one: a titles door that fails or refuses leaves the table on its
+  keys. **A web door names a link** (the panel's *Name it*, on `PUT /ontology/links/{id}`), so LuxExperience's
+  generic verbs are now a person's to fix rather than a missing surface.
   **Re-laid 2026-09-12, on the user's reading of the map** (*"lets put the entities in the center of the
   playground … it is very clustered and not easy to read … all the extended entities linked are visible by
   default and once clicked on the entity type from the list, those get highlighted … Ideally, the entity with
@@ -4256,9 +4284,14 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   `amount_eur`), `paid_net_eur` (`amount_eur * 0.9`) DOUBLE with no role, and `installments_text` (a cast) VARCHAR; the
   sum of the computed and the pass-through column by the payments binding's method equalled its reference over seven
   methods, the string "1000" met `paid_eur` as a number (8,070 orders, equal), a SUM of the cast was refused, and the
-  binding was removed. **Still open:** a display property must come from the backing; the builder proposes static
-  bindings only; `dedup.merge_entities` is not yet "two tables, one binding"; nothing reads a timeseries binding
-  before ON-5.
+  binding was removed. **Still open:** the builder proposes static bindings only (a person declares a timeseries one
+  through the panel since 2026-09-12); `dedup.merge_entities` is not yet "two tables, one binding".
+  ✅ **Closed 2026-09-12:** a display property may come from a STATIC binding — the binding holds one row per
+  object, so its column is as single-valued as the backing's. `display_source` measures it over the binding's own
+  source, the titles door joins it on the object's key, and the object page reads it off the properties it has
+  already fetched: the same join in all three, so they cannot disagree. A TIMESERIES binding is refused with its
+  reason (its value is the latest row, so a title from it would change when the next reading lands), and an
+  unmeasured binding names nothing — the one law for reading a binding holds here too.
 - **ON-5, amended · Timeseries properties first — AMENDED 2026-09-11; BUILT AND RECEIPT MET 2026-09-12.** The
   "processes" half of the definition. A timeseries property — a shipment's latest location, a sensor reading, a
   status over time — is read from a timeseries binding (ON-1b) and becomes ON-5's first declared function: its
@@ -4303,14 +4336,39 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   its first row IS the row the latest value came from. Live: 3,389 LuxExperience products have a reading under
   €150 and across all 12,312 of their readings the average is €121.7575, both equal to a hand reference;
   `SKUTHE000000` reads "246.0 as of 2024-02-26 · from 287.0". 8 more tests.
-  **Still open:** O5's frame algebra over readings (trailing N periods, cumulative, LAG) is still not reachable
-  from the object door — a frame needs a second window layer inside the latest-row reduction (window functions do
-  not nest) and a decision about how a per-object window rolls up across an object set, which is its own wave
-  rather than a flag on a measure; no web form declares a timeseries binding (the API and the panel's Bind on a
-  proposal do, and proposals are still static-only).
+  ✅ **Both open items closed 2026-09-12** (the user: *"let's finish off ARC ON leftovers"*), on branch
+  `claude/on-leftovers`. **The frame algebra reaches the object door.** A binding may declare frames over its
+  readings — `{"frames": {"avg_price_3": {"column": "price", "agg": "avg", "range": "trailing", "window": 3}}}` —
+  and `latest_from` grows a second window layer when, and only when, one is declared: the readings with each
+  frame computed on them, wrapped by the same latest-row reduction, since the last value of a window of a window
+  is not expressible in one layer. A binding with no frames compiles the SQL it always did, byte for byte. The
+  narrowing to one object and the "a reading with no time has no place in time" rule moved down onto the inner
+  layer, because both must happen BEFORE the frame is computed — narrowing above it would average across every
+  object's readings and keep one row of the answer, which is the PARTITION BY error in a different costume.
+  **The roll-up question is answered by construction, not by a rule:** a frame is computed inside the object's
+  own partition and read at its latest row, so it arrives as ONE value per object and the compiler measures and
+  filters it exactly as it does any other bound property. Live in the tests: the orders whose trailing-3 backlog
+  average exceeds 50 equal a reference computed without the reduction at all. Refused with a sentence: a trailing
+  frame with no window, a window on a range that spans no fixed number of readings, an `agg` beside an `offset`
+  (a reading N back is a value, not an aggregate), an unknown agg, a column the source lacks, a name the type
+  already carries, and any frame at all on a static binding. A frame borrows only what it can trace — its
+  column's type and unit, because the average of a price in EUR is a price in EUR; `count` borrows neither.
+  **And the web declares a timeseries binding**: the entity-type panel's *Declare a binding* form takes a table
+  or a keyed SELECT, the key, static or timeseries with its time column, and the frames beside it, in the shapes
+  people ask for ("average of the last N", "the reading before") rather than the algebra's vocabulary.
 - **Order, and why:** ON-3b and ON-3c first — they render and return only what the model already
   measures, and ON-3c is the definition made mechanical for the agent; then ON-1b, the one model change;
   then ON-5, its timeseries properties standing on ON-1b's bindings.
+- ✅ **The leftovers, closed 2026-09-12** (the user: *"let's finish off ARC ON leftovers"*, having dropped
+  Arc MT the same turn). Three commits on `claude/on-leftovers`, each recorded in its wave above: **the
+  person can declare what only the API could** — a binding by hand (a timeseries one, or a keyed SELECT,
+  neither of which the builder ever proposes), a link's business name, an object parameter and an edit on
+  the authoring form — and **one accepted edit can be withdrawn**; **an object reads by its name** wherever
+  a key was printed, and a name may live on a static binding; **a frame over the readings** reaches the
+  object door. What is deliberately still open, and why, is on each wave: a correction that rewrites a
+  source value (a different write), `dedup.merge_entities` as "two tables, one binding", a query backing's
+  UI and diff view, a label clipping a card in a narrow pane, and the parked `ask.query_objects` fill —
+  which is §6 item 15's decision and costs model tokens to re-measure, not an oversight.
 
 **Deliberately not ported (re-read §4.2's law: the grammar, never the codebase):** an
 object store or sync layer · materialising edits back into source datasets · Spark-scale
@@ -4984,6 +5042,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-11 (later):** item 16 (exporting the measured ontology to Microsoft Fabric IQ)
 > arrived with the Fabric IQ study and is **OPEN, not scheduled** — recorded so it is asked on purpose
 > rather than drifted into. One open.
+> **Amended 2026-09-12:** item 17 (Arc MT dropped — identity buys nothing where this actually runs)
+> arrived and was decided in the user's own sentence. Item 16 is still the only one open.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -5158,6 +5218,16 @@ the browser** · **measure the premise before building.**
     and once Fabric's published item-definition format is verified against Microsoft's documentation — the
     playground's `fabric.ts` is a community implementation, not a contract.
     *Recommended: not now; revisit when a customer on Fabric asks, with (b)'s preconditions.*
+
+17. ✅ **DECIDED 2026-09-12 — Arc MT is not the next build, and not while this runs locally.** Asked what
+    followed ON-5, the recommendation was MT-0 + MT-1 (§3.12's own "next"). The user: *"MT-0 and MT-1 make no
+    sense if this is not hosted somewhere. Locally, I don't need it. And worse is not working as expected due to
+    backend compute and storage limitations."* Identity and per-user tenancy earn their keep only on a hosted
+    deployment, and the hosted one does not work well enough to be where the value is — so the wave buys nothing
+    where the platform actually runs and every receipt is actually taken. Recorded here because it reverses a
+    documented "NEXT BUILD", not because it was contentious: the spec stands, unrefused, waiting on the user
+    saying hosting matters. The signal was there a month earlier — MT-2 was keyed on a Google OAuth client the
+    user never created — and was read as waiting rather than as not wanted.
 
 ---
 

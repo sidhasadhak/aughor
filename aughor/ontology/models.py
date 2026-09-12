@@ -160,6 +160,47 @@ class Backing(BaseModel):
         return self.table or ""
 
 
+class Frame(BaseModel):
+    """ON-5 — a declared frame over a timeseries binding's readings (ROADMAP §3.15).
+
+    ON-5's first slice reads a timeseries binding as each object's LATEST row. That answers "what is this
+    product's price" and nothing about how it got there: "the average of its last three readings", "everything
+    it has been charged to date", "what it read before this" are frames over the same readings, and O5's
+    `window_measures` has compiled every one of them since the day it was written — nothing could ASK for one
+    through the object door.
+
+    A frame is per-object by construction: it is computed inside the binding's own partition, then read at the
+    object's latest row, so it arrives as ONE value per object and joins exactly as the latest value does. What
+    the frame means across an object SET is therefore the same question as for any other property — a SUM of
+    per-object trailing averages is a sum of per-object trailing averages — and the compiler treats it as one.
+    """
+    #: The binding's own column the frame reads.
+    column: str
+    #: How the readings in the frame are reduced to one number. Ignored — and refused — when `offset` is set:
+    #: "the reading before this one" is a value, not an aggregate.
+    agg: Literal["sum", "avg", "min", "max", "count"] = "avg"
+    #: The frame's extent, in `window_measures`' vocabulary.
+    range: Literal["current", "cumulative", "trailing", "leading", "all"] = "trailing"
+    #: How many readings, for trailing/leading — INCLUDING the current one.
+    window: Optional[int] = None
+    #: Readings back, for "what it read before this": compiles to LAG, never to an aggregate.
+    offset: Optional[int] = None
+
+    def describe(self) -> str:
+        """The frame in words, for a property's description and a plan line."""
+        if self.offset:
+            return f"{self.column} {self.offset} reading{'s' if self.offset > 1 else ''} back"
+        if self.range == "trailing":
+            return f"the {self.agg} of {self.column} over the trailing {self.window} readings"
+        if self.range == "leading":
+            return f"the {self.agg} of {self.column} over the next {self.window} readings"
+        if self.range == "cumulative":
+            return f"the {self.agg} of {self.column} over every reading up to this one"
+        if self.range == "all":
+            return f"the {self.agg} of {self.column} over every reading"
+        return f"the {self.agg} of {self.column} on this reading"
+
+
 class Binding(BaseModel):
     """ON-1b — a further source an object type's properties are read from (ROADMAP §3.15, amended 2026-09-11).
 
@@ -186,6 +227,9 @@ class Binding(BaseModel):
     columns: dict[str, str] = Field(default_factory=dict)
     #: Columns the binding has but does not supply, each with why — a name the type already uses.
     skipped: dict[str, str] = Field(default_factory=dict)
+    #: ON-5 — property name → the frame over the readings it is computed from. Timeseries bindings only; the
+    #: name is a property of the type like any other, and its column exists only in the reduction.
+    frames: dict[str, Frame] = Field(default_factory=dict)
     source: Literal["human", "proposed"] = "human"
     #: Measured — None until counted: the binding's rows, its rows with a key, its distinct keys, the objects it
     #: was measured against, how many of them it covers, and the distinct keys that reach no object.

@@ -214,6 +214,41 @@ def accepted_object_edits(connection_id: str) -> list[OverlayEdit]:
         return []
 
 
+def withdraw_edit(edit_id: str, connection_id: str = "", org_id: Optional[str] = None) -> Optional[OverlayEdit]:
+    """Remove ONE edit — the single-row sibling of `purge_connections`, which until now was the only way
+    to unsay an annotation and took the whole connection with it.
+
+    Scoped the way a read is: an edit is found only within the connection and org that hold it, so a
+    withdrawal cannot reach another tenant's row. Returns the edit that was removed, or None when nothing
+    in scope carries that id — the caller answers 404 rather than reporting a delete that deleted nothing.
+
+    Withdrawing restores nothing, because nothing was ever written: the source value is what it always
+    was, and the next read simply stops merging the overlay over it.
+    """
+    if not edit_id:
+        return None
+    with _LOCK:
+        c = _conn()
+        try:
+            sql = "SELECT * FROM overlay_edits WHERE id = ?"
+            args: list = [edit_id]
+            if connection_id:
+                sql += " AND connection_id = ?"
+                args.append(connection_id)
+            if org_id is not None:
+                sql += " AND org_id = ?"
+                args.append(org_id)
+            row = c.execute(sql, args).fetchone()
+            if row is None:
+                return None
+            edit = _row_to_edit(row)
+            c.execute("DELETE FROM overlay_edits WHERE id = ?", (edit.id,))
+            c.commit()
+            return edit
+        finally:
+            c.close()
+
+
 def purge_connections(connection_ids: list[str], org_id: Optional[str] = None) -> int:
     """Catalog-delete cascade — drop every overlay edit for the given connections. Returns the
     rows removed (observable, per the purge-hook contract)."""

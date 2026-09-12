@@ -239,6 +239,25 @@ def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
 
 @router.get("/kinetic-actions/annotations")
 def list_annotations(connection_id: str = BUILTIN_ID):
-    """Wave K5 — the human overlay edits on a connection, for the review UI."""
+    """Wave K5 — the human overlay edits on a connection, for the review UI.
+
+    Scoped to the current org, the way every read of this ledger is (`accepted_object_edits`): listing an
+    edit a withdrawal could not then find is a worse answer than not listing it."""
     from aughor.actions.overlay import edits_for_connection
-    return {"edits": [e.model_dump() for e in edits_for_connection(connection_id)]}
+    from aughor.org.context import current_org_id
+    return {"edits": [e.model_dump() for e in edits_for_connection(connection_id, current_org_id() or "")]}
+
+
+@router.delete("/kinetic-actions/annotations/{edit_id}")
+def withdraw_annotation(edit_id: str, connection_id: str = BUILTIN_ID):
+    """ON-4 — withdraw ONE overlay edit: an annotation on a row, or a property an accepted action set on
+    an object. The next read stops merging it and the object reads as the warehouse holds it — nothing is
+    restored, because the source was never written. 404 when this connection and org hold no such edit."""
+    from aughor.actions.overlay import withdraw_edit
+    from aughor.org.context import current_org_id
+    gone = withdraw_edit(edit_id, connection_id, current_org_id() or None)
+    if gone is None:
+        raise HTTPException(status_code=404,
+                            detail=f"No overlay edit '{edit_id}' on this connection — it may already be withdrawn")
+    return {"withdrawn": gone.id, "target": gone.target(), "kind": gone.kind,
+            "object_type": gone.object_type, "property": gone.column}

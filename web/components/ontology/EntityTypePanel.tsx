@@ -26,7 +26,10 @@ import {
   getObjectType,
   getTypePaths,
   measureOntology,
+  nameLink,
   removeBinding,
+  type BindingSpec,
+  type FrameSpec,
   type ObjectTypeDetail,
   type PropertySource,
   type ProposedBinding,
@@ -47,6 +50,11 @@ const RISK_TAG: Record<string, string> = { read_only: "aug-tag-green", low: "aug
 const SELECT: React.CSSProperties = {
   ...MONO, background: "var(--bg-2)", color: "var(--t1)", border: RULE, borderRadius: "var(--r2)", padding: "2px 6px",
   maxWidth: 200,
+};
+
+const FIELD: React.CSSProperties = {
+  ...MONO, background: "var(--bg-2)", color: "var(--t1)", border: RULE, borderRadius: "var(--r2)", padding: "2px 6px",
+  minWidth: 0,
 };
 
 function errorText(e: unknown): string {
@@ -135,7 +143,7 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: 
       <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
       <PropertiesSection detail={detail} />
       <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
-      <LinksSection detail={detail} onOpen={onOpen} />
+      <LinksSection detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
       <ActionsSection detail={detail} connectionId={connectionId} />
       <MetricsSection detail={detail} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
@@ -225,6 +233,10 @@ function sourceText(source: PropertySource): { short: string; full: string } {
   const table = source.table ?? source.binding;
   const bare = table.split(".").pop() ?? table;
   const column = source.column ?? "";
+  // ON-5 — a frame has no column: it is computed over the readings, so the row says what it is.
+  if (source.frame) {
+    return { short: source.frame, full: `${source.frame} · the timeseries binding ${source.binding}` };
+  }
   const how = source.kind
     ? ` · the ${source.kind} binding ${source.binding}`
       + (source.read === false ? ", not read yet" : source.kind === "timeseries" ? ", its latest value" : "")
@@ -275,6 +287,21 @@ function PropertiesSection({ detail }: { detail: ObjectTypeDetail }) {
 /** A further binding's verdict: read by the compiler, and HOW — a timeseries binding is read as each object's
  *  latest value (ON-5), which is a different claim from a static one — or the reason it is not read. The backing
  *  carries none. */
+/** ON-5 — the frames a binding computes, each in the declaration's own words. */
+function FrameLines({ binding }: { binding: TypeBinding }) {
+  const frames = Object.entries(binding.frames ?? {});
+  if (frames.length === 0) return null;
+  return (
+    <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3 }}>
+      {frames.map(([name, said]) => (
+        <div key={name} style={{ overflowWrap: "anywhere" }}>
+          <span style={MONO}>{name}</span> — {said}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function bindingVerdict(b: TypeBinding): [string, string] | null {
   if (b.primary) return null;
   if (b.usable) {
@@ -333,6 +360,7 @@ function BindingRow({ binding: b, first, busy, onRemove }: {
         <dt style={term}>Supplies</dt>
         <dd style={value}>{countNoun(b.supplies, "property", "properties")}</dd>
       </dl>
+      <FrameLines binding={b} />
       {!b.primary && (b.why_not || b.note) && (
         <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{b.why_not || b.note}</p>
       )}
@@ -406,9 +434,154 @@ function BindingsSection({ detail, connectionId, schema, onChanged }: {
           ))}
         </div>
       )}
+      <DeclareBinding detail={detail} busy={!!busy} onDeclare={(name, spec) =>
+        act(name, () => addBinding(connectionId, detail.id, name, spec, schema))} />
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
   );
+}
+
+/** ON-1b/ON-5 — declare a binding the data did not propose. The builder proposes only what it can see: another
+ *  table carrying this type's key, one row per object. A TIMESERIES source is never proposed — many rows per object
+ *  is exactly what the proposal check rejects — and neither is a keyed SELECT, so until this form both were
+ *  API-only, and the live Lux price history had to be bound with a hand-written PUT. The server reads the source's
+ *  columns and counts it against the objects before it answers; a spec that does not bind is refused with the
+ *  reason and nothing is written. */
+function DeclareBinding({ detail, busy, onDeclare }: {
+  detail: ObjectTypeDetail;
+  busy: boolean;
+  onDeclare: (name: string, spec: BindingSpec) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [reads, setReads] = useState<"table" | "query">("table");
+  const [source, setSource] = useState("");
+  const [key, setKey] = useState(detail.key.property);
+  const [kind, setKind] = useState<"static" | "timeseries">("static");
+  const [timeColumn, setTimeColumn] = useState("");
+  const [frames, setFrames] = useState<FrameRow[]>([]);
+  const usable = kind === "timeseries" ? frames.filter((f) => f.name.trim() && f.column.trim()) : [];
+  const ready = !!name.trim() && !!source.trim() && !!key.trim() && (kind === "static" || !!timeColumn.trim())
+    && usable.every((f) => f.what !== "avg-trailing" || Number(f.window) >= 1);
+  const declare = () => {
+    const spec: BindingSpec = { kind, key: key.trim() };
+    if (reads === "table") spec.table = source.trim();
+    else spec.sql = source.trim();
+    if (kind === "timeseries") spec.time_column = timeColumn.trim();
+    if (usable.length) spec.frames = Object.fromEntries(usable.map((f) => [f.name.trim(), frameSpec(f)]));
+    onDeclare(name.trim(), spec);
+  };
+  if (!open) {
+    return (
+      <Button variant="minimal" size="xs" style={{ marginTop: 10, alignSelf: "flex-start" }} onClick={() => setOpen(true)}>
+        Declare a binding
+      </Button>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: RULE }} data-testid="declare-binding">
+      <p className="aug-fs-xs" style={{ margin: "0 0 6px", color: "var(--t3)", lineHeight: 1.45 }}>
+        A source joined to {detail.display_name} on its key. A <strong>static</strong> binding must hold one row per
+        object; a <strong>timeseries</strong> holds many over a time column and is read as each object&rsquo;s latest
+        row. Every column but the key is supplied under its own name; one the type already uses is skipped with the
+        reason.
+      </p>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={name} placeholder="binding name"
+          aria-label="Binding name" onChange={(e) => setName(e.target.value)} />
+        <select className="aug-fs-xs" style={SELECT} value={reads} aria-label="Source kind"
+          onChange={(e) => setReads(e.target.value as "table" | "query")}>
+          <option value="table">table</option>
+          <option value="query">SELECT</option>
+        </select>
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1, minWidth: 220 }} value={source}
+          aria-label={reads === "table" ? "Table" : "SELECT"}
+          placeholder={reads === "table" ? "price_history" : "SELECT product_id, AVG(price) AS price FROM … GROUP BY 1"}
+          onChange={(e) => setSource(e.target.value)} />
+      </div>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>on</span>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={key} aria-label="Key column"
+          placeholder={detail.key.property} onChange={(e) => setKey(e.target.value)} />
+        <select className="aug-fs-xs" style={SELECT} value={kind} aria-label="Binding kind"
+          onChange={(e) => setKind(e.target.value as "static" | "timeseries")}>
+          <option value="static">static</option>
+          <option value="timeseries">timeseries</option>
+        </select>
+        {kind === "timeseries" && (
+          <>
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>over</span>
+            <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={timeColumn} aria-label="Time column"
+              placeholder="observed_at" onChange={(e) => setTimeColumn(e.target.value)} />
+          </>
+        )}
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={declare}>
+          {busy ? "Binding…" : "Bind"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {kind === "timeseries" && (
+        <div style={{ marginTop: 8 }}>
+          <p className="aug-fs-xs" style={{ margin: "0 0 4px", color: "var(--t3)", lineHeight: 1.45 }}>
+            Frames over those readings — each becomes a property of the type, computed across the object&rsquo;s own
+            readings and read at its latest one.
+          </p>
+          {frames.map((f, i) => (
+            <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 4 }}>
+              <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={f.name}
+                aria-label={`Frame ${i + 1} property`} placeholder="avg_price_3"
+                onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
+              <select className="aug-fs-xs" style={SELECT} value={f.what} aria-label={`Frame ${i + 1} shape`}
+                onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, what: e.target.value as Shape } : x))}>
+                <option value="avg-trailing">average of the last N</option>
+                <option value="sum-cumulative">total to date</option>
+                <option value="min-all">lowest ever</option>
+                <option value="max-all">highest ever</option>
+                <option value="count-all">how many readings</option>
+                <option value="previous">the reading before</option>
+              </select>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>of</span>
+              <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={f.column}
+                aria-label={`Frame ${i + 1} column`} placeholder="price"
+                onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, column: e.target.value } : x))} />
+              {f.what === "avg-trailing" && (
+                <input className="aug-fs-xs" style={{ ...FIELD, width: 60 }} value={f.window} type="number" min={1}
+                  aria-label={`Frame ${i + 1} readings`}
+                  onChange={(e) => setFrames((fs) => fs.map((x, j) => j === i ? { ...x, window: e.target.value } : x))} />
+              )}
+              <Button variant="ghost" size="xs" onClick={() => setFrames((fs) => fs.filter((_, j) => j !== i))}>
+                Remove
+              </Button>
+            </div>
+          ))}
+          <Button variant="ghost" size="xs" style={{ marginTop: 4 }}
+            onClick={() => setFrames((fs) => [...fs, { name: "", what: "avg-trailing", column: "", window: "3" }])}>
+            + Add a frame
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The frames a person can declare from here, each a shape they would recognise rather than the algebra's
+ *  vocabulary. The API takes the full algebra; this offers the frames people actually ask for. */
+type Shape = "avg-trailing" | "sum-cumulative" | "min-all" | "max-all" | "count-all" | "previous";
+
+interface FrameRow {
+  name: string;
+  what: Shape;
+  column: string;
+  window: string;
+}
+
+function frameSpec(row: FrameRow): FrameSpec {
+  const column = row.column.trim();
+  if (row.what === "previous") return { column, offset: 1 };
+  const [agg, range] = row.what.split("-") as [FrameSpec["agg"], FrameSpec["range"]];
+  return range === "trailing"
+    ? { column, agg, range, window: Math.max(1, Number(row.window) || 1) }
+    : { column, agg, range };
 }
 
 function LinkSentence({ detail, link, onOpen }: { detail: ObjectTypeDetail; link: TypeLink; onOpen: (t: string) => void }) {
@@ -424,7 +597,62 @@ function LinkSentence({ detail, link, onOpen }: { detail: ObjectTypeDetail; link
     : <>{other}{verb}{here}</>;
 }
 
-function LinksSection({ detail, onOpen }: { detail: ObjectTypeDetail; onOpen: (objectType: string) => void }) {
+/** ON-3b — name a link by the verb the business uses. The builder's generic name (`order_item_associated_with_
+ *  shipment`) is what the data proposes; only a person knows the business said "shipped as". The mechanical name
+ *  keeps working — this one is accepted beside it — so naming a link breaks no query and no saved path. */
+function NameLink({ link, connectionId, schema, onChanged }: {
+  link: TypeLink;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState(link.business_name || "");
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const save = async () => {
+    setBusy(true);
+    setProblem("");
+    try {
+      await nameLink(connectionId, link.relationship, name.trim(), schema);
+      setOpen(false);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <Button variant="ghost" size="xs" onClick={() => setOpen(true)}
+        title="Name this link the way the business says it — the mechanical name keeps working beside it">
+        {link.business_name_source === "human" ? "Rename" : "Name it"}
+      </Button>
+    );
+  }
+  return (
+    <span style={{ display: "inline-flex", alignItems: "center", gap: 5, flexWrap: "wrap" }}>
+      <input className="aug-fs-xs" style={{ ...FIELD, width: 220 }} value={name} autoFocus disabled={busy}
+        placeholder="shipped_as" aria-label={`Business name for ${link.name}`}
+        onChange={(e) => setName(e.target.value)}
+        onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) void save(); if (e.key === "Escape") setOpen(false); }} />
+      <Button variant="outline" size="xs" disabled={busy || !name.trim()} onClick={save}>
+        {busy ? "Naming…" : "Save"}
+      </Button>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      {problem && <span className="aug-fs-xs" style={{ color: "var(--red5)" }}>{problem}</span>}
+    </span>
+  );
+}
+
+function LinksSection({ detail, connectionId, schema, onOpen, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onOpen: (objectType: string) => void;
+  onChanged: () => void;
+}) {
   return (
     <Section title="Links" aside={`${detail.counts.traversable_links} of ${detail.counts.links} followed by the compiler`}>
       {detail.links.length === 0 && <EmptyState variant="inline" title={`No link reaches out from ${detail.display_name}.`} />}
@@ -437,6 +665,7 @@ function LinksSection({ detail, onOpen }: { detail: ObjectTypeDetail; onOpen: (o
             <span className={`aug-tag ${link.traversable ? "aug-tag-green" : "aug-tag-amber"}`}>
               {link.traversable ? "followed" : "refused"}
             </span>
+            <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
           </div>
           <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 3, overflowWrap: "anywhere" }}>
             {link.business_name && <>{link.business_name}{link.business_name_source === "human" ? " (declared)" : ""} · </>}

@@ -25,6 +25,7 @@ async function apiFetch(path: string, opts?: RequestInit) {
 }
 const put = (p: string, b: unknown) => apiFetch(p, { method: "PUT", body: JSON.stringify(b) });
 const post = (p: string, b: unknown) => apiFetch(p, { method: "POST", body: JSON.stringify(b) });
+const del = (p: string) => apiFetch(p, { method: "DELETE" });
 
 type Tab = "Actions" | "Propose" | "Annotations";
 
@@ -59,8 +60,14 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
   // PX-2 — params and criteria are typed ROWS, not JSON textareas. The crown-jewel
   // governance plane had the least-designed authoring surface on the platform: two
   // unlabeled JSON blobs. Both are lists of flat shapes, so rows are lossless.
-  const [params, setParams] = useState<{ name: string; data_type: string; required: boolean }[]>(
-    [{ name: "amount_eur", data_type: "NUMERIC", required: true }]);
+  // ON-4 — an action can be ABOUT an object type, take one of its objects as a parameter, and write a
+  // property onto it. All three were API-only until now: the panel listed them and could not declare one,
+  // so the only way to author `flag_order_for_review` was to PUT the override by hand.
+  const [objectType, setObjectType] = useState("");
+  const [params, setParams] = useState<
+    { name: string; kind: "value" | "object"; data_type: string; object_type: string; required: boolean }[]>(
+    [{ name: "amount_eur", kind: "value", data_type: "NUMERIC", object_type: "", required: true }]);
+  const [edits, setEdits] = useState<{ object: string; property: string; value: string; note: string }[]>([]);
   const [criteria, setCriteria] = useState<{ expr: string; message: string }[]>(
     [{ expr: "amount_eur <= 10000", message: "Refunds over EUR 10,000 need finance sign-off." }]);
   // DS-13 — the declarative custom component. Named fields rather than a JSON blob, which
@@ -85,9 +92,16 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
     setErr(null);
     try {
       const body: any = { kind, description, risk };
+      if (objectType.trim()) body.object_type = objectType.trim();
       const cleanParams = params.filter(p => p.name.trim());
-      if (cleanParams.length) body.params = cleanParams.map(p => ({
-        name: p.name.trim(), data_type: p.data_type, required: p.required }));
+      if (cleanParams.length) body.params = cleanParams.map(p => p.kind === "object"
+        ? { name: p.name.trim(), kind: "object", object_type: p.object_type.trim(), required: p.required }
+        : { name: p.name.trim(), data_type: p.data_type, required: p.required });
+      // An edit names one of the object params above and the property it writes; `{param}` placeholders in
+      // the value or the note are filled from the proposal, the way a side effect's body is.
+      const cleanEdits = edits.filter(e => e.object.trim() && e.property.trim());
+      if (cleanEdits.length) body.edits = cleanEdits.map(e => ({
+        object: e.object.trim(), property: e.property.trim(), value: e.value.trim(), note: e.note.trim() }));
       const cleanCriteria = criteria.filter(c => c.expr.trim());
       if (cleanCriteria.length) body.submission_criteria = cleanCriteria.map(c => ({
         expr: c.expr.trim(), message: c.message.trim() }));
@@ -122,6 +136,15 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
               params: {(a.params || []).map((p: any) =>
                 `${p.name}:${p.kind === "object" ? p.object_type : p.data_type}`).join(", ") || "—"}
             </div>
+            {a.object_type && (
+              <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>about: <code>{String(a.object_type)}</code></div>
+            )}
+            {(a.edits || []).map((e: any, i: number) => (
+              <div key={`ed${i}`} className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+                writes <code>{String(e.property)}</code> on <code>{String(e.object)}</code>
+                {e.value ? <> = <code>{String(e.value)}</code></> : null} — an overlay, never the source
+              </div>
+            ))}
             {(a.submission_criteria || []).map((c: any, i: number) => (
               <div key={i} style={{ fontSize: 11, color: "var(--t3)" }}>must satisfy: <code>{c.expr}</code></div>
             ))}
@@ -155,15 +178,27 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
           </select>
         </div>
         <input style={input} placeholder="description" value={description} onChange={e => setDescription(e.target.value)} />
-        <label style={hint}>the parameters a proposal must fill</label>
+        <input style={input} placeholder="object type this action is about (e.g. order) — optional"
+          value={objectType} onChange={e => setObjectType(e.target.value)} />
+        <label style={hint}>the parameters a proposal must fill — an object parameter names ONE object, read live</label>
         {params.map((p, i) => (
           <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
             <input style={{ ...input, flex: 2 }} placeholder="name (e.g. amount_eur)"
               value={p.name} onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, name: e.target.value } : x))} />
-            <select style={{ ...input, flex: 1 }} value={p.data_type}
-              onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, data_type: e.target.value } : x))}>
-              {["TEXT", "NUMERIC", "INTEGER", "BOOLEAN", "DATE"].map(t => <option key={t} value={t}>{t}</option>)}
+            <select style={{ ...input, width: 90 }} value={p.kind}
+              onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, kind: e.target.value as "value" | "object" } : x))}>
+              <option value="value">value</option>
+              <option value="object">object</option>
             </select>
+            {p.kind === "object" ? (
+              <input style={{ ...input, flex: 1 }} placeholder="object type (e.g. order)" value={p.object_type}
+                onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, object_type: e.target.value } : x))} />
+            ) : (
+              <select style={{ ...input, flex: 1 }} value={p.data_type}
+                onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, data_type: e.target.value } : x))}>
+                {["TEXT", "NUMERIC", "INTEGER", "BOOLEAN", "DATE"].map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+            )}
             <label className="aug-fs-xs" style={{ color: "var(--t3)", display: "flex", alignItems: "center", gap: 4, marginBottom: 6, whiteSpace: "nowrap" }}>
               <input type="checkbox" checked={p.required}
                 onChange={e => setParams(ps => ps.map((x, j) => j === i ? { ...x, required: e.target.checked } : x))} />
@@ -174,7 +209,7 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
           </div>
         ))}
         <Button size="xs" variant="ghost" className="mb-2"
-          onClick={() => setParams(ps => [...ps, { name: "", data_type: "TEXT", required: true }])}>
+          onClick={() => setParams(ps => [...ps, { name: "", kind: "value", data_type: "TEXT", object_type: "", required: true }])}>
           + Add a parameter
         </Button>
         <label style={hint}>what a proposal must satisfy — the message is shown verbatim when it fails</label>
@@ -191,6 +226,27 @@ function ActionsTab({ connectionId }: { connectionId: string }) {
         <Button size="xs" variant="ghost" className="mb-2"
           onClick={() => setCriteria(cs => [...cs, { expr: "", message: "" }])}>
           + Add a criterion
+        </Button>
+        <label style={hint}>
+          what an accepted proposal writes onto the object — an overlay merged at read time, never the source
+        </label>
+        {edits.map((e, i) => (
+          <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+            <input style={{ ...input, flex: 1 }} placeholder="object param (e.g. order)" value={e.object}
+              onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, object: ev.target.value } : x))} />
+            <input style={{ ...input, flex: 1 }} placeholder="property (e.g. review_flag)" value={e.property}
+              onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, property: ev.target.value } : x))} />
+            <input style={{ ...input, flex: 1 }} placeholder="value (e.g. true)" value={e.value}
+              onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, value: ev.target.value } : x))} />
+            <input style={{ ...input, flex: 2 }} placeholder="note — {param} is filled from the proposal" value={e.note}
+              onChange={ev => setEdits(es => es.map((x, j) => j === i ? { ...x, note: ev.target.value } : x))} />
+            <Button size="xs" variant="ghost" className="mb-1.5"
+              onClick={() => setEdits(es => es.filter((_, j) => j !== i))}>✕</Button>
+          </div>
+        ))}
+        <Button size="xs" variant="ghost" className="mb-2"
+          onClick={() => setEdits(es => [...es, { object: "", property: "", value: "true", note: "" }])}>
+          + Add an edit
         </Button>
         {kind === "side_effect" && (
           <>
@@ -272,6 +328,7 @@ function AnnotationsTab({ connectionId }: { connectionId: string }) {
   const [edits, setEdits] = useState<any[]>([]);
   const [err, setErr] = useState<string | null>(null);
   const [f, setF] = useState({ table: "", column: "", key_column: "", row_key: "", body: "", kind: "annotation" });
+  const [busy, setBusy] = useState<string | null>(null);
 
   const load = useCallback(() => {
     apiFetch(`/kinetic-actions/annotations?connection_id=${encodeURIComponent(connectionId)}`)
@@ -287,14 +344,31 @@ function AnnotationsTab({ connectionId }: { connectionId: string }) {
     } catch (e: any) { setErr(String(e.message || e)); }
   };
 
+  // ON-4 — one edit, unsaid. The connection-wide purge was the only way back before this.
+  const withdraw = async (id: string) => {
+    setErr(null); setBusy(id);
+    try {
+      await del(`/kinetic-actions/annotations/${encodeURIComponent(id)}?connection_id=${encodeURIComponent(connectionId)}`);
+      load();
+    } catch (e: any) { setErr(String(e.message || e)); }
+    finally { setBusy(null); }
+  };
+
   return (
     <div>
       <Err e={err} />
       {edits.length === 0
         ? <div style={hint}>No overlay edits yet. Enable <code>kinetic.overlay</code> and annotate a value below.</div>
         : edits.map((e, i) => (
-          <div key={i} style={card}>
-            <div style={{ fontSize: 12, fontFamily: "monospace" }}>{e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}</div>
+          <div key={e.id || i} style={card}>
+            <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
+              <div style={{ fontSize: 12, fontFamily: "monospace" }}>{e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}</div>
+              <div style={{ flex: 1 }} />
+              <Button size="xs" variant="ghost" disabled={busy === e.id} onClick={() => withdraw(e.id)}
+                title="Withdraw this edit — the next read stops merging it and the source value, never written, is what shows">
+                {busy === e.id ? "Withdrawing…" : "Withdraw"}
+              </Button>
+            </div>
             <div style={{ fontSize: 12, marginTop: 2 }}>{e.body} <span style={{ color: "var(--t3)" }}>· {e.source}</span></div>
           </div>
         ))}

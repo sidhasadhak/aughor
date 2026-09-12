@@ -17,8 +17,16 @@ import re
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from aughor.ontology.bindings import binding_from, binding_problem, column_of
-from aughor.ontology.timeseries import HISTORY_ROWS, history_sql, latest_columns, latest_from, latest_note
+from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from aughor.ontology.timeseries import (
+    HISTORY_ROWS,
+    frame_note,
+    history_sql,
+    latest_columns,
+    latest_from,
+    latest_note,
+    reduced_columns,
+)
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.display import display_of
 from aughor.ontology.models import Binding, EntityProperty, OntologyEntity, OntologyGraph
@@ -137,7 +145,7 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
             continue
         # A timeseries binding reads its whole reduced row, so the time column is on it even when no property is
         # supplied from that column — the value is only half the fact, and WHEN is the other half.
-        read = latest_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
+        read = reduced_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
         where = "" if latest else f"WHERE b.{quote_ident(binding.key)} = {literal} "
         result = _read(db, f"SELECT {', '.join(f'b.{quote_ident(c)}' for c in read)} FROM {source_sql} "
                            f"{where}LIMIT 2", f"{entity.id} {pk!r} through {binding.name}")
@@ -163,9 +171,13 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
                                "binding": {"name": binding.name, "kind": binding.kind, "source": source,
                                            "column": column,
                                            **({"time_column": binding.time_column, "at": at,
-                                               "previous": before.get(column),
-                                               "previous_at": before.get(binding.time_column),
-                                               "note": latest_note(binding)} if latest else {})}})
+                                               "note": latest_note(binding)} if latest else {}),
+                                           # A frame is already a statement about a span of readings: "what it
+                                           # was before" is not a second fact about it, it is a different frame.
+                                           **({"frame": binding.frames[name].describe(),
+                                               "note": frame_note(binding, name)} if name in binding.frames else
+                                              {"previous": before.get(column),
+                                               "previous_at": before.get(binding.time_column)} if latest else {})}})
         if history is not None:
             series.append({**history, "latest_at": at})
     return properties, series, caveats
@@ -249,15 +261,69 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "semantic_type": "overlay", "data_type": "BOOLEAN" if isinstance(value, bool) else "",
                            "unit": "", "description": mine.note,
                            "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
-                                       "origin": mine.origin, "provenance": mine.provenance()}})
+                                       "origin": mine.origin, "provenance": mine.provenance(),
+                                       "id": mine.id}})
     shown = display_of(entity)
-    title = None if shown["is_key"] else _value(row, shown["property"])
+    # Read off the ASSEMBLED properties, not the backing row: ON-1b lets a name live on a static binding, and
+    # `_bound_properties` has already fetched it. The backing row is still where a backing property comes from.
+    title = None if shown["is_key"] else _value({p["name"]: p["value"] for p in properties}, shown["property"])
     links = [_link_view(db, link, row) for link in object_links(graph, entity)]
     return ObjectInstance(object_type=entity.api_name, type_id=entity.id,
                           type_name=entity.display_name or entity.id, key=key, pk=str(pk),
                           title=str(title) if title is not None else None,
                           properties=properties, links=links, caveats=caveats, timeseries=series,
                           display={**shown, "value": str(title) if title is not None else None})
+
+
+#: The most keys one titling call resolves. An answer table shows a page of rows, not a warehouse; a
+#: request past this is answered for the first MAX_TITLES and says so, rather than building an IN list
+#: the database will refuse.
+MAX_TITLES = 500
+
+
+def titles(graph: OntologyGraph, db: Any, object_type: str, keys: list[str]) -> dict:
+    """The name of each object a set of keys names — ONE query over the backing, so an answer table of 200
+    customer ids costs one round trip rather than 200.
+
+    A type whose key IS its name resolves nothing and says so: the key is already on screen, and inventing a
+    title for it would put the same string in two columns. A key nothing matches is simply absent from the
+    map — a missing title is a key rendered as it always was, never a guess."""
+    entity = find_object_type(graph, object_type)
+    key = _key_of(entity)
+    column = title_column(entity)
+    wanted, seen = [], set()
+    for raw in keys:
+        text = str(raw)
+        if text not in seen and text != "":
+            seen.add(text)
+            wanted.append(text)
+    out = {"object_type": entity.api_name, "type_id": entity.id, "key": key,
+           "property": column or key, "titles": {}, "truncated": len(wanted) > MAX_TITLES}
+    if column is None:
+        out["note"] = f"{entity.display_name or entity.id} is named by its key — {key} is already the title"
+        return out
+    wanted = wanted[:MAX_TITLES]
+    if not wanted:
+        return out
+    prop = _key_property(entity, key)
+    literals = ", ".join(typed_literal(text, prop, key) for text in wanted)
+    # A name on a static binding (ON-1b) is read through that binding, joined on the object's key — the same
+    # join the object page makes for the same property, so the two cannot disagree.
+    binding = property_binding(entity, column)
+    if binding is not None and binding.kind == "static" and not binding_problem(entity, binding):
+        out["through"] = binding.name
+        sql = (f"SELECT t0.{quote_ident(key)}, d0.{quote_ident(column_of(binding, column))} "
+               f"FROM {backing_from(entity, 't0')} "
+               f"JOIN {binding_from(binding, 'd0')} ON d0.{quote_ident(binding.key)} = t0.{quote_ident(key)} "
+               f"WHERE t0.{quote_ident(key)} IN ({literals})")
+    else:
+        sql = (f"SELECT t0.{quote_ident(key)}, t0.{quote_ident(column)} FROM {backing_from(entity, 't0')} "
+               f"WHERE t0.{quote_ident(key)} IN ({literals})")
+    result = _read(db, sql, f"the names of {entity.id} objects")
+    # Matched back as TEXT: the warehouse hands a key back in its own type (an integer id comes back an int),
+    # and the caller asked with the string it had on screen.
+    out["titles"] = {str(row[0]): str(row[1]) for row in (result.rows or []) if row[1] is not None}
+    return out
 
 
 def _find_link(graph: OntologyGraph, entity: OntologyEntity, name: str) -> ObjectLink:

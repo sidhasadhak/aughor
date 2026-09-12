@@ -62,14 +62,30 @@ class DisplayMeasurement:
     note: str = ""
 
 
+def display_source(entity: OntologyEntity, name: str) -> tuple[str, str, str]:
+    """Where a display property is READ FROM: its FROM clause, the column in it, and — when a further binding
+    supplies it — that binding's name.
+
+    ON-1b let a property live on a bound source; a name did not, because this measured over the backing and
+    nothing else. A static binding holds one row per object, so counting its column over its own source counts
+    exactly the objects the backing counts. A TIMESERIES binding is refused before it reaches here (a title read
+    from the latest row would change under the reader), and so is a binding that does not bind."""
+    from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+    binding = property_binding(entity, name)
+    if binding is None or binding.kind != "static" or binding_problem(entity, binding):
+        return (entity.backing.from_clause() if entity.backing is not None else ""), name, ""
+    return binding_from(binding, "d0"), column_of(binding, name), binding.name
+
+
 def measure_display(db: Any, entity: OntologyEntity, name: str, source: str = "proposed") -> DisplayMeasurement:
-    """Count one property over the entity's backing. A probe that fails leaves it unmeasured, never refuted."""
+    """Count one property over the source it is read from — the backing, or the static binding that supplies it.
+    A probe that fails leaves it unmeasured, never refuted."""
     m = DisplayMeasurement(entity_id=entity.id, name=name, source=source)
-    from_clause = entity.backing.from_clause() if entity.backing is not None else ""
+    from_clause, column, through = display_source(entity, name)
     if not from_clause or not name:
         m.note = "no backing or no display property to measure"
         return m
-    col = quote_ident(name)
+    col = quote_ident(column)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {from_clause}"
     try:
         result = db.execute("__display_probe__", sql)
@@ -86,6 +102,8 @@ def measure_display(db: Any, entity: OntologyEntity, name: str, source: str = "p
         m.note = "probe returned an unreadable row"
         return m
     m.verified, m.note = verdict(m.rows, m.non_null, m.distinct)
+    if through:
+        m.note = f"{m.note} (read through the {through} binding)"
     return m
 
 

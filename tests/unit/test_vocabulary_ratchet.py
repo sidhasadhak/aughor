@@ -164,6 +164,22 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # and the two audited action names `gov_action_of` actually returns. Its own
          # prose says "declared action" and "governed write" throughout.
          "tests/unit/test_kinetic_inbox.py",
+         # ON-4's withdrawal door (2026-09-12), the sibling of the entry above and exempt on
+         # the same ground: this file is the HTTP suite for that router, so every hit is the
+         # frozen route it presses (`/kinetic-actions/annotations/{id}`, `…/inbox/{id}/accept`,
+         # `…/grants/{id}/revoke`), the `KineticAction` model its fixtures build, the
+         # `kinetic_actions` attribute its fake graph carries, or `aughor.routers.kinetic`,
+         # the module it patches. A test of a route has to press the route as it is spelled.
+         "tests/unit/test_kinetic_inbox_api.py",
+         # Same door, its web half. Every hit is the component's own name — `KineticPanel`,
+         # which the test imports and renders — or the same frozen route the panel calls. The
+         # panel is where a person withdraws an overlay edit; its prose says "action" and
+         # "annotation", and the test's own names say "declaring an action about an object".
+         "web/components/KineticPanel.test.tsx",
+         # ONE hit, the narrowest version of the same reason: `withdrawEdit` in the object
+         # plane's client calls `DELETE /kinetic-actions/annotations/{id}`, the route that
+         # exists. Everything else in the file says object, property, title, edit.
+         "web/lib/objects.ts",
          "web/lib/automationFlow",
          "web/components/AutomationGraph.tsx",
          # DS-1's palette is the sibling of those vocabulary tables and carries the kind
@@ -424,7 +440,9 @@ BASELINE: dict[str, int] = {
     # 2026-09-06: 348 → 347. SP-1/SP-3 leftovers: the inbox's four accept bodies now
     # share ONE lazy import of the executor's result type (`_executor_result`), so
     # two new accept kinds arrived while the count still fell by one.
-    "kinetic": 347,
+    "kinetic": 333,   # lowered 2026-09-12 with ON-4's withdrawal door: its HTTP suite, the panel's
+                      # test and the object client are exempt above (frozen route, real component name),
+                      # so the counted population shrank and the baseline follows it down.
     "mindsdb": 0,
     "palantir": 6,
     "persona": 215,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history

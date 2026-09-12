@@ -15,7 +15,9 @@ import React, { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 
 import { SqlResultTable } from "@/components/AugTable";
-import { objectLinkRender, useObjectColumnLinks, useObjectKeyColumns } from "@/components/objects/objectColumnLinks";
+import {
+  objectLinkRender, useKeyTitles, useObjectColumnLinks, useObjectKeyColumns,
+} from "@/components/objects/objectColumnLinks";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -28,6 +30,7 @@ import {
   getObjectPage,
   type LinkedObjectsPage,
   type ObjectAction,
+  type ObjectActionParam,
   type ObjectCitation,
   type ObjectLink,
   type ObjectMetric,
@@ -36,6 +39,7 @@ import {
   type ObjectPage,
   type ObjectRefusal,
   type ObjectTimeseries,
+  withdrawEdit,
 } from "@/lib/objects";
 
 interface Scope {
@@ -103,6 +107,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
     if (loaded?.path === "object") document.title = `${loaded.type_name} ${loaded.title ?? loaded.pk} · Aughor`;
   }, [loaded]);
 
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const workbench = connectionId ? `/?conn=${encodeURIComponent(connectionId)}` : "/";
   const toWorkbench = (
     <Link href={workbench}><Button variant="outline" size="sm">Open the workbench</Button></Link>
@@ -128,7 +133,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
       </EmptyState>
     );
   } else {
-    body = <ObjectBody page={loaded} scope={{ connectionId, schemaName }} />;
+    body = <ObjectBody page={loaded} scope={{ connectionId, schemaName }} reload={reload} />;
   }
 
   return (
@@ -162,7 +167,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
   );
 }
 
-function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
+function ObjectBody({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   const { related } = page;
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "20px 24px 40px" }}>
@@ -175,7 +180,7 @@ function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
       )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(300px,2fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <PropertiesCard page={page} scope={scope} />
+          <PropertiesCard page={page} scope={scope} reload={reload} />
           {(page.timeseries ?? []).map((series) => <HistoryCard key={series.binding} page={page} series={series} />)}
           <LinksCard page={page} scope={scope} />
           <CitationsCard page={page} citations={related.findings} />
@@ -183,7 +188,7 @@ function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
         <div className="flex min-w-0 flex-col gap-4">
           <ActionsCard page={page} actions={related.actions} scope={scope} />
           <MetricsCard page={page} metrics={related.metrics} />
-          <NotesCard notes={related.notes} />
+          <NotesCard notes={related.notes} scope={scope} reload={reload} />
         </div>
       </div>
     </div>
@@ -217,7 +222,35 @@ function propertiesSummary(page: ObjectPage): string {
     + (set ? `, and ${formatCount(set)} set by accepted actions.` : ".");
 }
 
-function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
+/** ON-4 — take back ONE accepted edit. The source was never written, so this restores nothing: it stops
+ *  the merge, and the next read shows the value the warehouse holds. */
+function Withdraw({ editId, what, scope, reload }: {
+  editId: string;
+  what: string;
+  scope: Scope;
+  reload: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const withdraw = useCallback(() => {
+    setBusy(true);
+    setError("");
+    withdrawEdit(editId, scope.connectionId)
+      .then(reload)
+      .catch((e: unknown) => { setError(errorText(e)); setBusy(false); });
+  }, [editId, scope.connectionId, reload]);
+  return (
+    <>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={withdraw}
+        title={`Withdraw ${what} — the source value, never written, is what this object reads again`}>
+        {busy ? "Withdrawing…" : "Withdraw"}
+      </Button>
+      {error && <span className="aug-fs-xs" style={{ color: "var(--red3)" }}>{error}</span>}
+    </>
+  );
+}
+
+function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   // A property that names another object — an order's customer_id — opens that object.
   const objectColumns = useObjectKeyColumns(scope.connectionId);
   return (
@@ -246,8 +279,11 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                 ) : cellText(p.value)}
                 {p.unit && p.value != null && <span style={{ color: "var(--t4)" }}> {p.unit}</span>}
                 {p.overlay && (
-                  <span className="aug-fs-xs" style={{ display: "block", color: "var(--t4)" }}>
+                  <span className="aug-fs-xs"
+                    style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t4)" }}>
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
+                    <Withdraw editId={p.overlay.id} what={`${p.display_name} on this ${page.type_name}`}
+                      scope={scope} reload={reload} />
                   </span>
                 )}
                 {/* ON-5 — a timeseries property is a value AT A TIME, and what it was before is half of what a
@@ -325,6 +361,9 @@ function HistoryCard({ page, series }: { page: ObjectPage; series: ObjectTimeser
 
 function LinksCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
   const [open, setOpen] = useState<string | null>(null);
+  // A to-one link resolves to the linked object's KEY; its name is one request for all of them together.
+  const titles = useKeyTitles(page.links.map((l) => ({ objectType: l.to, pk: l.pk })),
+                              scope.connectionId, scope.schemaName);
   if (page.links.length === 0) {
     return (
       <Section title="Links">
@@ -337,7 +376,7 @@ function LinksCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
       description="A to-one link opens the linked object; a to-many link lists its objects. A link the compiler refuses says why and is not followed.">
       {page.links.map((link, i) => (
         <div key={link.name} style={{ padding: "8px 0", borderTop: i ? ROW_RULE : undefined }}>
-          <LinkRow link={link} scope={scope} open={open === link.name}
+          <LinkRow link={link} scope={scope} open={open === link.name} titles={titles}
             onToggle={() => setOpen(open === link.name ? null : link.name)} />
           {open === link.name && <LinkedObjects page={page} link={link} scope={scope} />}
         </div>
@@ -346,7 +385,8 @@ function LinksCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
   );
 }
 
-function LinkRow({ link, scope, open, onToggle }: {
+function LinkRow({ link, scope, open, onToggle, titles }: {
+  titles: Map<string, string>;
   link: ObjectLink;
   scope: Scope;
   open: boolean;
@@ -356,10 +396,12 @@ function LinkRow({ link, scope, open, onToggle }: {
   if (!link.usable) {
     value = <span className="aug-fs-xs" style={{ color: "var(--t4)", textAlign: "right" }}>{link.why_not}</span>;
   } else if (link.kind === "to-one") {
+    const named = link.pk ? titles.get(`${link.to}\u0000${link.pk}`) : undefined;
     value = link.pk ? (
       <Link href={objectHref(link.to, link.pk, scope.connectionId, scope.schemaName)} className="aug-fs-sm"
-        style={{ ...MONO, color: "var(--blue3)" }} title={`Open ${link.to_type} ${link.pk}`}>
-        {link.pk}
+        style={{ ...(named ? {} : MONO), color: "var(--blue3)" }}
+        title={named ? `Open ${link.to_type} ${link.pk} — ${named}` : `Open ${link.to_type} ${link.pk}`}>
+        {named ?? link.pk}
       </Link>
     ) : <span className="aug-fs-sm" style={{ color: "var(--t4)" }}>none</span>;
   } else if ((link.count ?? 0) > 0) {
@@ -393,7 +435,7 @@ function LinkedObjects({ page, link, scope }: { page: ObjectPage; link: ObjectLi
   const [loading, setLoading] = useState(false);
   // Every column that names an object opens it in place — a ticket's order_id opens its order.
   const columnLinks = useObjectColumnLinks(head?.columns ?? NO_COLUMNS, scope.connectionId,
-                                           { schemaName: scope.schemaName, newTab: false });
+                                           { schemaName: scope.schemaName, newTab: false, rows });
 
   const load = useCallback((offset: number) => {
     setLoading(true);
@@ -505,14 +547,14 @@ function ActionsCard({ page, actions, scope }: { page: ObjectPage; actions: Obje
           action={<Link href={actionsTab}><Button variant="outline" size="xs">Open Actions</Button></Link>} />
       ) : (
         <div className="flex flex-col gap-3">
-          {actions.map((a) => <ActionOffer key={a.id} action={a} href={actionsTab} />)}
+          {actions.map((a) => <ActionOffer key={a.id} action={a} href={actionsTab} page={page} />)}
         </div>
       )}
     </Section>
   );
 }
 
-function ActionOffer({ action, href }: { action: ObjectAction; href: string }) {
+function ActionOffer({ action, href, page }: { action: ObjectAction; href: string; page: ObjectPage }) {
   return (
     <div className="aug-panel" style={{ padding: "10px 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
@@ -539,7 +581,7 @@ function ActionOffer({ action, href }: { action: ObjectAction; href: string }) {
                   style={{ ...MONO, margin: 0, display: "flex", alignItems: "center", gap: 4, overflowWrap: "anywhere",
                            color: filled ? "var(--blue5)" : p.value == null ? "var(--t4)" : "var(--t1)" }}>
                   {filled && <Icon name="check" size={12} label="Filled from this object" />}
-                  {p.value == null ? "to be filled" : cellText(p.value)}
+                  {p.value == null ? "to be filled" : objectParamText(p, page)}
                 </dd>
               </React.Fragment>
             );
@@ -553,7 +595,18 @@ function ActionOffer({ action, href }: { action: ObjectAction; href: string }) {
   );
 }
 
-function NotesCard({ notes }: { notes: ObjectNote[] }) {
+/** ON-4 — an object parameter is passed as "<type>:<key>", which is the wire and not something to read. On the
+ *  page of the object it names, the page already knows what to call it — so the card says the name and keeps the
+ *  wire value on hover. A parameter naming some OTHER object keeps its key: guessing at a name we have not read
+ *  is exactly what the object page exists to stop. */
+function objectParamText(param: ObjectActionParam, page: ObjectPage): string {
+  if (param.kind !== "object") return cellText(param.value);
+  const text = String(param.value);
+  const key = text.includes(":") ? text.slice(text.indexOf(":") + 1) : text;
+  return key === page.pk && page.title ? page.title : text;
+}
+
+function NotesCard({ notes, scope, reload }: { notes: ObjectNote[]; scope: Scope; reload: () => void }) {
   return (
     <Section title="Notes" description="Edits kept beside the data on this row; the source is never written.">
       {notes.length === 0 ? (
@@ -561,8 +614,10 @@ function NotesCard({ notes }: { notes: ObjectNote[] }) {
       ) : notes.map((n, i) => (
         <div key={`${n.column}:${n.at}:${i}`} style={{ padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
           <div className="aug-fs-sm" style={{ color: "var(--t1)", lineHeight: 1.5 }}>{n.body}</div>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+          <div className="aug-fs-xs"
+            style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t4)", marginTop: 2 }}>
             {[n.column, n.kind, n.source, typeof n.at === "string" ? relTime(n.at) : ""].filter(Boolean).join(" · ")}
+            {n.id && <Withdraw editId={n.id} what="this note" scope={scope} reload={reload} />}
           </div>
         </div>
       ))}

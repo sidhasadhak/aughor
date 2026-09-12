@@ -196,3 +196,67 @@ def test_annotate_action_writes_an_edit(monkeypatch):
     assert r.outcome["annotation"] == "orders.status#order_id=8821"
     edits = OV.edits_for_connection("conn-k3")
     assert len(edits) == 1 and edits[0].body == "known test order" and edits[0].source == "user"
+
+
+# ── withdrawal: one edit, unsaid ─────────────────────────────────────────────────
+#
+# Until now the only way to unsay an annotation was `purge_connections`, which takes every edit on
+# the connection with it. These pin the single-row door and, above all, its SCOPE: a withdrawal that
+# reached another connection's or another org's row would be a silent cross-tenant delete.
+
+def test_withdraw_removes_one_edit_and_returns_it():
+    OV.save_edit(_cell_edit(column="status", row_key="8821"))
+    OV.save_edit(_cell_edit(column="status", row_key="9002", body="second"))
+    target = next(e for e in OV.edits_for_connection("conn-k3") if e.row_key == "8821")
+
+    gone = OV.withdraw_edit(target.id, "conn-k3")
+
+    assert gone is not None and gone.id == target.id
+    assert gone.target() == "orders.status#order_id=8821"      # the caller can say what it withdrew
+    left = OV.edits_for_connection("conn-k3")
+    assert [e.row_key for e in left] == ["9002"]               # the other edit is untouched
+
+
+def test_withdraw_is_not_found_twice():
+    OV.save_edit(_cell_edit())
+    edit_id = OV.edits_for_connection("conn-k3")[0].id
+
+    assert OV.withdraw_edit(edit_id, "conn-k3") is not None
+    assert OV.withdraw_edit(edit_id, "conn-k3") is None        # a second withdrawal is a 404, not a no-op success
+
+
+def test_withdraw_does_not_reach_another_connection():
+    OV.save_edit(_cell_edit())
+    edit_id = OV.edits_for_connection("conn-k3")[0].id
+    try:
+        assert OV.withdraw_edit(edit_id, "conn-other") is None
+        assert len(OV.edits_for_connection("conn-k3")) == 1    # still there
+    finally:
+        OV.purge_connections(["conn-other"])
+
+
+def test_withdraw_does_not_reach_another_org():
+    OV.save_edit(_cell_edit(org_id="org-a"))
+    edit_id = OV.edits_for_connection("conn-k3")[0].id
+
+    assert OV.withdraw_edit(edit_id, "conn-k3", org_id="org-b") is None
+    assert len(OV.edits_for_connection("conn-k3")) == 1
+    assert OV.withdraw_edit(edit_id, "conn-k3", org_id="org-a") is not None
+
+
+def test_withdrawing_a_property_edit_stops_the_merge():
+    """ON-4 — the overlay property vanishes from the next read; the source was never written."""
+    OV.save_edit(_cell_edit(kind="property", column="review_flag", row_key="8821",
+                            object_type="Order", body="true", note="looks off"))
+    assert len(OV.object_edits("conn-k3", object_type="Order")) == 1
+
+    edit_id = OV.object_edits("conn-k3", object_type="Order")[0].id
+    OV.withdraw_edit(edit_id, "conn-k3")
+
+    assert OV.object_edits("conn-k3", object_type="Order") == []
+
+
+def test_withdraw_needs_an_id():
+    OV.save_edit(_cell_edit())
+    assert OV.withdraw_edit("", "conn-k3") is None
+    assert len(OV.edits_for_connection("conn-k3")) == 1

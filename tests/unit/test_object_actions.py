@@ -201,6 +201,41 @@ def test_the_object_page_shows_the_property_and_offers_the_action_pre_filled(gra
     assert {p["name"]: p["value"] for p in offer["params"]}["order"] == f"order:{ORDER}"
 
 
+def test_the_page_names_the_edit_and_withdrawing_it_puts_the_source_value_back(graph, db):
+    """The withdrawal door: an accepted edit is undoable one edit at a time, and undoing it restores
+    nothing — the source was never written, so the object simply reads as the warehouse holds it."""
+    assert _accept().ok
+    order = get_object(graph, db, "order", ORDER, overlay=OVL.object_edits(CONN, current_org_id() or ""))
+    flag = next(p for p in order.properties if p["name"] == "review_flag")
+    edit_id = flag["overlay"]["id"]
+    assert edit_id and edit_id == OVL.object_edits(CONN, current_org_id() or "")[0].id
+
+    gone = OVL.withdraw_edit(edit_id, CONN, current_org_id() or None)
+    assert gone is not None and gone.column == "review_flag"
+
+    left = OVL.object_edits(CONN, current_org_id() or "")
+    assert left == []
+    after = get_object(graph, db, "order", ORDER, overlay=left)
+    assert not [p for p in after.properties if p["name"] == "review_flag"]
+    with pytest.raises(ObjectQueryRefused, match="no property 'review_flag'"):
+        compile_object_query({"object_type": "order", "by": ["review_flag"],
+                              "measures": [{"name": "n", "agg": "count"}]}, graph, overlay=left)
+
+
+def test_a_row_note_carries_its_id_so_it_can_be_withdrawn(graph, db):
+    """A plain annotation on the object's row is listed as a note — and the note names the edit, or the
+    page could show a note nobody could take back."""
+    OVL.save_edit(OVL.OverlayEdit(connection_id=CONN, table="orders", column="status",
+                                  key_column="order_id", row_key=ORDER, kind="annotation",
+                                  body="known test order", source="user"))
+    order = get_object(graph, db, "order", ORDER)
+    note = next(n for n in object_context(graph, db, CONN, "ecommerce", order)["notes"]
+                if n["body"] == "known test order")
+
+    assert OVL.withdraw_edit(note["id"], CONN, current_org_id() or None) is not None
+    assert object_context(graph, db, CONN, "ecommerce", order)["notes"] == []
+
+
 def test_an_edit_that_would_rewrite_a_source_column_is_refused(graph):
     _declare(graph, "rewrite_status", {**FLAG, "submission_criteria": [],
                                        "edits": [{"object": "order", "property": "status", "value": "ok"}]})
