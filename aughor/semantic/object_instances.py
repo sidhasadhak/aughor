@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import Any, Optional
 
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from aughor.ontology.parts import detail_from, rollup_note
 from aughor.ontology.timeseries import (
     HISTORY_ROWS,
     frame_note,
@@ -138,15 +139,17 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
             if problem:
                 caveats.append(f"not read from {binding.name}: {problem}")
             continue
-        latest = binding.kind == "timeseries"
-        source_sql = latest_from(binding, "b", key_equals=literal) if latest else binding_from(binding, "b")
+        latest, detail = binding.kind == "timeseries", binding.kind == "detail"
+        # ON-7 — a detail binding is read through its pre-aggregation narrowed to this object, like a timeseries one.
+        source_sql = (latest_from(binding, "b", key_equals=literal) if latest
+                      else detail_from(binding, "b", key_equals=literal) if detail else binding_from(binding, "b"))
         if not source_sql:
             caveats.append(f"not read from {binding.name}: it names no source to read")
             continue
         # A timeseries binding reads its whole reduced row, so the time column is on it even when no property is
         # supplied from that column — the value is only half the fact, and WHEN is the other half.
         read = reduced_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
-        where = "" if latest else f"WHERE b.{quote_ident(binding.key)} = {literal} "
+        where = "" if (latest or detail) else f"WHERE b.{quote_ident(binding.key)} = {literal} "
         result = _read(db, f"SELECT {', '.join(f'b.{quote_ident(c)}' for c in read)} FROM {source_sql} "
                            f"{where}LIMIT 2", f"{entity.id} {pk!r} through {binding.name}")
         rows = list(result.rows or [])
@@ -172,6 +175,8 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
                                            "column": column,
                                            **({"time_column": binding.time_column, "at": at,
                                                "note": latest_note(binding)} if latest else {}),
+                                           **({"rollup": binding.rollups[name].describe(binding.name),
+                                               "note": rollup_note(binding)} if name in binding.rollups else {}),
                                            # A frame is already a statement about a span of readings: "what it
                                            # was before" is not a second fact about it, it is a different frame.
                                            **({"frame": binding.frames[name].describe(),

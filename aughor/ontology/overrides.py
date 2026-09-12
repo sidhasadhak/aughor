@@ -102,6 +102,11 @@ _EDITABLE: dict[str, set[str]] = {
         # the objects on the measure door; both verdicts ride the binding entry, so the overlay rebuilds them
         # without a database.
         "bindings",
+        # ON-7 — a DECLARED entity (POST /ontology/entities): `declared` marks the override as the type's whole
+        # existence rather than an edit of a built one; `origin` says who declared it (human | model); the role
+        # is editable so a declared type can be reference data or an event. `absorbed_into` marks the type a PART
+        # of another — held only while the parent binds its table (`aughor.ontology.parts.part_of`).
+        "declared", "origin", "entity_type", "absorbed_into",
     },
     # keyed by the frozen TargetKind value; the type it edits is a Segment
     "object_set": {"display_name", "description", "filter_sql", "is_default"},
@@ -116,7 +121,10 @@ _EDITABLE: dict[str, set[str]] = {
         "object_type", "edits",
     },
     # ON-3b: a relationship's business-verb name (`shipment_ships_order`), beside its stable mechanical names.
-    "link": {"name"},
+    # ON-7: a DECLARED link (POST /ontology/links) carries its whole spec — the two types, the columns each side
+    # joins on, the expected cardinality, a reverse name, and who declared it.
+    "link": {"name", "declared", "from_entity", "to_entity", "from_column", "to_column", "cardinality",
+             "reverse_name", "origin"},
 }
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
@@ -313,6 +321,8 @@ def _apply_entity(ent: OntologyEntity, ov: OntologyOverride, graph: Optional[Ont
     for field, value in ov.fields.items():
         if field not in _EDITABLE["entity"]:
             continue
+        if field == "declared":
+            continue                    # ON-7 — the type itself was built from this override (`apply_overrides`)
         if field == "bindings":
             from aughor.ontology.bindings import declared_bindings
             # ON-1b — rebuilt from what the bind and the count recorded; a binding that never bound reaches no reader.
@@ -449,11 +459,20 @@ def _apply_link(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     is reported as skipped."""
     from aughor.ontology.models import LINK_NAME_PATTERN
     rel = graph.relationships.get(ov.target_id)
+    touched: list[str] = []
+    if rel is None and ov.fields.get("declared"):
+        # ON-7 — a declared link is the relationship's whole existence, rebuilt from its measurement.
+        from aughor.ontology.declared import declared_relationship, register_relationship
+        rel = declared_relationship(ov, graph)
+        if rel is None:
+            return []
+        register_relationship(graph, rel)
+        touched.append("<declared>")
     name = str(ov.fields.get("name") or "").strip()
     if rel is None or not LINK_NAME_PATTERN.match(name):
-        return []
+        return touched
     rel.name = name
-    return ["name"]
+    return [*touched, "name"]
 
 
 def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> tuple[Optional[OntologyGraph], OverlayReport]:
@@ -470,7 +489,17 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
         try:
             if ov.target_kind == "entity":
                 ent = graph.entities.get(ov.target_id)
+                born = False
+                if ent is None and ov.fields.get("declared"):
+                    # ON-7 — a declared entity is the type's whole existence, rebuilt from what its bind recorded.
+                    from aughor.ontology.declared import declared_entity, register_entity
+                    ent = declared_entity(ov, graph)
+                    if ent is not None:
+                        register_entity(graph, ent)
+                        born = True
                 touched = _apply_entity(ent, ov, graph) if ent else []
+                if born:
+                    touched = ["<declared>", *touched]
             elif ov.target_kind in ("object_set", "computed_property"):
                 ent = graph.entities.get(ov.entity_id or "")
                 if not ent:
@@ -526,6 +555,9 @@ def bind_overrides(
         if field == "display_property":
             _bind_display_property(ov, value, graph)
             continue
+        if field == "absorbed_into":
+            _bind_absorbed(ov, value, graph)
+            continue
         if field not in _SQL_FIELDS or not str(value or "").strip():
             continue
         probe = _probe_sql(field, str(value), table)
@@ -560,6 +592,36 @@ def _bind_display_property(ov: OntologyOverride, value: Any, graph: Optional[Ont
     ov.binding["display_property"] = entry
 
 
+def bind_graph_only(ov: OntologyOverride, graph: Optional[OntologyGraph]) -> OntologyOverride:
+    """The binds that need no database — a display property (ON-3b) and a part mark (ON-7) are checked against
+    the GRAPH — so a connection that cannot be reached for the SQL binds still leaves them with a verdict rather
+    than an empty entry that reads as verified."""
+    for field, value in ov.fields.items():
+        if field == "display_property":
+            _bind_display_property(ov, value, graph)
+        elif field == "absorbed_into":
+            _bind_absorbed(ov, value, graph)
+    return ov
+
+
+def _bind_absorbed(ov: OntologyOverride, value: Any, graph: Optional[OntologyGraph]) -> None:
+    """ON-7 — a part mark binds when it HOLDS on the graph: the parent exists and carries a binding over this
+    type's own table (`parts.absorb_problem`, the one law). An empty value releases the part and binds
+    trivially. ALWAYS writes an entry; and whether the mark still holds is re-read on every read, so a parent
+    that drops the binding releases the part without a second edit."""
+    parent = str(value or "").strip()
+    if not parent:
+        ov.binding["absorbed_into"] = {"bound": True, "note": "released"}
+        return
+    entity = graph.entities.get(ov.target_id) if graph is not None else None
+    if entity is None:
+        ov.binding["absorbed_into"] = {"bound": False, "note": f"no object type {ov.target_id!r} in the graph"}
+        return
+    from aughor.ontology.parts import absorb_problem
+    problem = absorb_problem(graph, parent, entity)
+    ov.binding["absorbed_into"] = {"bound": not problem, "note": problem}
+
+
 def _bind_backing(ov: OntologyOverride, value: Any, explain: Callable[[str], Optional[str]]) -> None:
     """Bind a query backing by dry-running its SELECT (a table backing binds trivially).
     ALWAYS writes a binding entry, like an existence field: a backing nobody validated
@@ -569,6 +631,7 @@ def _bind_backing(ov: OntologyOverride, value: Any, explain: Callable[[str], Opt
     spec = value if isinstance(value, dict) else {}
     kind = spec.get("kind") or "table"
     sql, pk = str(spec.get("sql") or "").strip(), str(spec.get("primary_key") or "").strip()
+    table = str(spec.get("table") or "").strip()
     if kind == "query":
         if not sql or not pk:
             ov.binding["backing"] = {"bound": False, "note": "a query backing needs `sql` and `primary_key`"}
@@ -581,11 +644,17 @@ def _bind_backing(ov: OntologyOverride, value: Any, explain: Callable[[str], Opt
         entry = {"bound": err is None, "note": "" if err is None else err}
     else:
         entry = {"bound": True, "note": ""}
-    # a measurement taken for the SAME backing survives a re-bind
-    if prev.get("unique") is not None and prev.get("sql") == sql and prev.get("primary_key") == pk:
+    # a measurement taken for the SAME backing survives a re-bind — and so do the columns a declared entity's
+    # bind recorded (ON-7), which the overlay rebuilds the type's properties from
+    same = prev.get("sql") == sql and prev.get("primary_key") == pk and str(prev.get("table") or "") == table
+    if prev.get("unique") is not None and same:
         entry["unique"] = prev["unique"]
         entry["unique_note"] = prev.get("unique_note", "")
-    entry["sql"], entry["primary_key"] = sql, pk
+    if same:
+        for kept in ("columns", "rows"):
+            if kept in prev:
+                entry[kept] = prev[kept]
+    entry["sql"], entry["primary_key"], entry["table"] = sql, pk, table
     ov.binding["backing"] = entry
 
 

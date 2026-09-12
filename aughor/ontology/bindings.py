@@ -4,7 +4,9 @@ An object type's first binding is its backing (ON-1): the table or keyed SELECT 
 further binding is another table or keyed SELECT joined to the object on its key, supplying properties the backing
 does not carry — an order's payment method from `payments`, a customer's tier from `customer_profiles` — so an
 object that spans tables no longer needs a hand-written SELECT to be complete. Its kind is `static` (one row per
-object) or `timeseries` (many rows per object over a time column).
+object), `timeseries` (many rows per object over a time column) or — ON-7 — `detail` (many rows per object with no
+clock: an order's lines), which supplies exactly the rollups it declares, each computed per object before the join
+(`aughor.ontology.parts`).
 
 Whether one holds is MEASURED here, the ON-0a way, never assumed:
 
@@ -38,7 +40,7 @@ from typing import Any, Callable, Optional
 from aughor.ontology.backing import object_from
 from aughor.ontology.cardinality import quote_ident, quote_table
 from aughor.ontology.display import key_of
-from aughor.ontology.models import Backing, Binding, EntityProperty, Frame, OntologyEntity, OntologyGraph
+from aughor.ontology.models import Backing, Binding, EntityProperty, Frame, OntologyEntity, OntologyGraph, Rollup
 from aughor.ontology.window_measures import RANGES
 
 logger = logging.getLogger(__name__)
@@ -51,6 +53,8 @@ _COLUMN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 #: escaped — the overrides store's rule for a table a person names.
 _TABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,2}$")
 _SELECT = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
+#: The same three shapes, public — a declaration (ON-7, `aughor.ontology.declared`) is held to the identical rule.
+COLUMN_PATTERN, TABLE_PATTERN, SELECT_PATTERN = _COLUMN, _TABLE, _SELECT
 #: Tables the builder asks the data about for one type — a wide schema must not turn a measurement into a crawl.
 MAX_CANDIDATES = 8
 #: What a count of one binding records, on the model and on a bind entry.
@@ -101,6 +105,9 @@ def property_binding(entity: OntologyEntity, name: str) -> Optional[Binding]:
 def binding_problem(entity: OntologyEntity, binding: Binding) -> str:
     """Why a binding's properties may not be read, or "" when they may — one law for the compiler and the object
     page, as `link_problem` is one law for links."""
+    if binding.kind == "detail" and not binding.rollups:
+        return (f"{binding.name} on {entity.id} is a detail binding with no rollup — its rows are many per "
+                f"{entity.id} with no clock, so nothing of it is read at the object's grain until a rollup is declared")
     if binding.kind == "timeseries" and not binding.time_column:
         return (f"{binding.name} on {entity.id} is a timeseries binding with no time column — its properties are "
                 "read as the object's LATEST value (ON-5), and without a time column there is no latest")
@@ -150,7 +157,7 @@ def verdict(kind: str, key: str, entity_id: str, rows: Optional[int], non_null: 
              + (f"; {orphans:,} of its keys reach no {entity_id}" if orphans else ""))
     if not non_null:
         return False, f"{key}: none of its {rows:,} rows carries a key"
-    if kind == "timeseries":
+    if kind in ("timeseries", "detail"):
         detail = f"{key}: {non_null:,} keyed rows over {distinct:,} keys; {reach}"
     elif distinct != non_null:
         return False, f"{key}: {distinct:,} distinct over {non_null:,} keyed rows — NOT one row per {entity_id}; {reach}"
@@ -468,6 +475,61 @@ def frame_properties(frames: dict, columns: dict[str, EntityProperty], taken: di
     return out, properties, ""
 
 
+# ── rollups over a detail binding's rows (ON-7) ─────────────────────────────────────────────
+
+#: What a rollup may do to the rows inside an object's partition.
+ROLLUP_AGGS: tuple[str, ...] = ("sum", "avg", "min", "max", "count")
+
+
+def rollup_problem(name: str, raw: Any) -> str:
+    """Why a declared rollup cannot be read as written, or "" — its shape only; its column is the warehouse's to
+    confirm. Refusals are sentences, for the same reason a frame's are."""
+    if not _COLUMN.match(name or ""):
+        return f"'{name}' is not a property name — letters, digits and underscores"
+    if not isinstance(raw, dict):
+        return f"rollup '{name}' is a mapping with `column`, and an `agg` over the object's rows"
+    if not _COLUMN.match(str(raw.get("column") or "").strip()):
+        return f"rollup '{name}' names the binding's column it reads in `column`"
+    if str(raw.get("agg") or "sum") not in ROLLUP_AGGS:
+        return f"rollup '{name}' has an unknown agg {raw.get('agg')!r} — known: {', '.join(ROLLUP_AGGS)}"
+    return ""
+
+
+def normalized_rollup(raw: dict) -> dict:
+    """One rollup as the overrides tree stores it. Idempotent."""
+    return {"column": str(raw.get("column") or "").strip(), "agg": str(raw.get("agg") or "sum")}
+
+
+def rollup_properties(rollups: dict, columns: dict[str, EntityProperty], taken: dict[str, str],
+                      part: str) -> tuple[dict[str, Rollup], dict[str, EntityProperty], str]:
+    """``(rollups, properties, problem)`` — each rollup becomes a property of the type like any other, computed in
+    the pre-aggregation rather than read from a column. It borrows what it can trace: the rolled-up column's type
+    and unit (the sum of a quantity is a quantity; `count` counts rows and is a number of nothing) and nothing
+    more, ON-1b's law for a computed column."""
+    by_lower = {str(c).lower(): str(c) for c in columns}
+    out: dict[str, Rollup] = {}
+    properties: dict[str, EntityProperty] = {}
+    for name, raw in rollups.items():
+        name = str(name).strip()
+        rollup = Rollup(**normalized_rollup(raw))
+        actual = by_lower.get(rollup.column.lower())
+        if actual is None:
+            return {}, {}, (f"rollup '{name}' reads '{rollup.column}', which its source does not have — its "
+                            f"columns: {', '.join(sorted(by_lower.values()))[:200]}")
+        rollup = rollup.model_copy(update={"column": actual})
+        if name.lower() in taken:
+            return {}, {}, f"rollup '{name}': {taken[name.lower()]}"
+        if any(p.lower() == name.lower() for p in properties):
+            return {}, {}, f"rollup '{name}' is declared twice"
+        profile = columns[actual]
+        base = EntityProperty(name=name) if rollup.agg == "count" else profile.model_copy(update={"unit": profile.unit})
+        properties[name] = base.model_copy(update={
+            "name": name, "display_name": _title(name), "is_primary_key": False, "is_derived": True,
+            "semantic_type": "measure", "description": rollup.describe(part)})
+        out[name] = rollup
+    return out, properties, ""
+
+
 # ── a person's binding: its spec, its bind against the warehouse, its rebuild at read time ──
 
 def spec_problem(name: str, spec: Any) -> str:
@@ -487,13 +549,30 @@ def spec_problem(name: str, spec: Any) -> str:
     if not _COLUMN.match(str(spec.get("key") or "").strip()):
         return "a binding names the column that holds the object's key in `key`"
     kind = spec.get("kind") or "static"
-    if kind not in ("static", "timeseries"):
-        return "a binding's kind is static or timeseries"
+    if kind not in ("static", "timeseries", "detail"):
+        return "a binding's kind is static, timeseries or detail"
     time_column = str(spec.get("time_column") or "").strip()
     if kind == "timeseries" and not _COLUMN.match(time_column):
         return "a timeseries binding names its `time_column`"
-    if kind == "static" and time_column:
-        return "a static binding holds one row per object — `time_column` belongs to a timeseries binding"
+    if kind != "timeseries" and time_column:
+        return f"a {kind} binding has no time column — `time_column` belongs to a timeseries binding"
+    rollups = spec.get("rollups")
+    if kind == "detail":
+        # ON-7 — many rows per object with no clock: its columns are NOT properties of the object, so it supplies
+        # exactly what its rollups declare, and nothing else may be asked of it.
+        if spec.get("properties"):
+            return ("a detail binding's columns are many per object, so none is a property of it — declare what is "
+                    "rolled up in `rollups` ({name: {column, agg}}) instead of `properties`")
+        if spec.get("frames"):
+            return "frames read a timeseries binding's readings over time — a detail binding declares `rollups`"
+        if not isinstance(rollups, dict) or not rollups:
+            return "a detail binding declares at least one rollup in `rollups` — {name: {column, agg}}"
+        for rollup_name, raw in rollups.items():
+            problem = rollup_problem(str(rollup_name), raw)
+            if problem:
+                return problem
+    elif rollups:
+        return f"`rollups` roll up a detail binding's rows — a {kind} binding supplies its columns as they are"
     mapping = spec.get("properties")
     if mapping is not None and (not isinstance(mapping, dict)
                                 or not all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items())):
@@ -529,6 +608,9 @@ def normalized_spec(spec: dict) -> dict:
     frames = spec.get("frames")
     if isinstance(frames, dict) and frames:
         out["frames"] = {str(k).strip(): normalized_frame(v) for k, v in frames.items()}
+    rollups = spec.get("rollups")
+    if isinstance(rollups, dict) and rollups:
+        out["rollups"] = {str(k).strip(): normalized_rollup(v) for k, v in rollups.items()}
     return out
 
 
@@ -542,11 +624,13 @@ def binding_spec(binding: Binding) -> dict:
         spec["table"] = binding.table or ""
     if binding.time_column:
         spec["time_column"] = binding.time_column
-    if binding.columns:
+    if binding.columns and binding.kind != "detail":
         spec["properties"] = {name: column_of(binding, name) for name in binding.properties
                               if name not in binding.frames}
     if binding.frames:
         spec["frames"] = {name: normalized_frame(f.model_dump()) for name, f in binding.frames.items()}
+    if binding.rollups:
+        spec["rollups"] = {name: normalized_rollup(r.model_dump()) for name, r in binding.rollups.items()}
     return spec
 
 
@@ -604,6 +688,16 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
                     "note": f"its source has no time column '{spec['time_column']}' — its columns: {listed}"}
         spec["time_column"] = time_column
     others = [b for b in entity.bindings or [] if b.name != name]
+    reported = {str(c): str(t or "") for c, t in columns.items()}
+    if spec["kind"] == "detail":
+        # ON-7 — its columns are many per object, so it supplies exactly its rollups, each traced to a column.
+        rollups, rolled, problem = rollup_properties(spec["rollups"],
+                                                     column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
+                                                     taken_names(graph, entity, others), name)
+        if problem:
+            return {"bound": False, "note": problem, "spec": spec}
+        return {"bound": True, "note": "", "spec": spec, "columns": reported,
+                "supplies": {n: r.describe(name) for n, r in rollups.items()}, "skipped": {}}
     properties, renamed, skipped, problem = supply(column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
                                                    key, taken_names(graph, entity, others), spec.get("properties"),
                                                    strict=True)
@@ -621,7 +715,7 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
                 "note": "it would supply no property" + (f" — every column's name is taken on {entity.id} "
                                                          f"({', '.join(sorted(skipped))}); name them in `properties`"
                                                          if skipped else "")}
-    return {"bound": True, "note": "", "spec": spec, "columns": {str(c): str(t or "") for c, t in columns.items()},
+    return {"bound": True, "note": "", "spec": spec, "columns": reported,
             "supplies": {**{p: renamed.get(p, p) for p in properties},
                          **{name: f.describe() for name, f in frames.items()}}, "skipped": skipped}
 
@@ -655,6 +749,20 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
         columns = entry.get("columns") if isinstance(entry.get("columns"), dict) else {}
         profiles = column_profiles(graph, spec.get("table"), columns, spec.get("sql"))
         taken = taken_names(graph, entity, out)
+        if spec["kind"] == "detail":
+            rollups, rolled, rollup_problem_note = rollup_properties(spec.get("rollups") or {}, profiles, taken, name)
+            if rollup_problem_note:
+                skipped.append(f"{name}: {rollup_problem_note}")
+                continue
+            binding = Binding(name=name, kind="detail", table=spec.get("table"), sql=spec.get("sql"),
+                              key=spec["key"], properties=rolled, rollups=rollups, source="human",
+                              note="bound; not yet measured")
+            measured = entry.get("measured") if isinstance(entry.get("measured"), dict) else {}
+            if measured.get("spec") == spec:
+                for k in _MEASURED:
+                    setattr(binding, k, measured.get(k) if k != "note" else str(measured.get(k) or ""))
+            out.append(binding)
+            continue
         properties, renamed, lost, _ = supply(profiles, spec["key"], taken, spec.get("properties"))
         frames, framed, frame_problem_note = frame_properties(spec.get("frames") or {}, profiles, taken, properties)
         if frame_problem_note:
@@ -755,6 +863,22 @@ def propose_bindings(graph: OntologyGraph, db: Any) -> list[BindingMeasurement]:
             if m.verified is True and properties:
                 entity.proposed_bindings.append(binding)
                 used.add(name)
+            elif m.covered and m.non_null and m.distinct is not None and m.distinct != m.non_null:
+                # ON-7 — the key repeats: many rows per object, no clock — a PART. Proposed as a detail binding
+                # with the one rollup the data can vouch for, how many rows each object has; a person adds the rest.
+                part_key = key_of(other) or column
+                rollups, rolled, problem = rollup_properties({f"{name}_count": {"column": part_key, "agg": "count"}},
+                                                             dict(other.properties or {}), taken, name)
+                if problem:
+                    continue
+                part = Binding(name=name, kind="detail", table=table, key=column, properties=rolled, rollups=rollups,
+                               source="proposed")
+                md = measure_binding(db, entity, part)
+                md.stamp(part)
+                asked.append(md)
+                if md.verified is True:
+                    entity.proposed_bindings.append(part)
+                    used.add(name)
     proposed = [f"{m.entity_id}.{m.name}" for m in asked if m.verified is True]
     if proposed:
         logger.info("[ontology:%s] bindings proposed: %s", graph.connection_id, proposed)

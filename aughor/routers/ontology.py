@@ -43,9 +43,15 @@ class _BindingSpec(BaseModel):
     sql: Optional[str] = None
     #: The binding's column that holds the object's key.
     key: str
-    kind: Literal["static", "timeseries"] = "static"
+    kind: Literal["static", "timeseries", "detail"] = "static"
     #: A timeseries binding's time column.
     time_column: Optional[str] = None
+    #: ON-7 — ``{property: {column, agg}}``: what a DETAIL binding (many rows per object, no clock) rolls up to
+    #: one value per object; a detail binding supplies exactly these.
+    rollups: Optional[dict[str, dict]] = None
+    #: ON-7 — when the source table is another type's own table, mark that type a PART of this one (hidden from
+    #: the map, listed under this type). The mark holds only while this binding does.
+    absorb: Optional[bool] = None
     #: ``{property: column}``. Absent, every column but the key is supplied under its own name, and a name the type
     #: already uses is skipped with the reason.
     properties: Optional[dict[str, str]] = None
@@ -69,6 +75,40 @@ class _EntityOverride(BaseModel):
     use_instead: Optional[_UseInstead] = None
     #: ON-3b — the property whose value names one object of this type; it must be a property the type has.
     display_property: Optional[str] = None
+    #: ON-7 — the id of the type this one is a part of; "" releases it. Bound against the graph: the parent must
+    #: carry a binding over this type's own table, and the mark holds only while it does.
+    absorbed_into: Optional[str] = None
+
+
+class _DeclaredBacking(BaseModel):
+    """ON-7 — the source whose rows ARE a declared type's objects."""
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    primary_key: str
+
+
+class _DeclaredEntity(BaseModel):
+    """ON-7 — a business entity declared by a person (or an explorer, ON-7b): the noun first, the table bound
+    into it."""
+    id: str
+    display_name: str
+    description: Optional[str] = None
+    domain: Optional[str] = None
+    entity_type: Optional[Literal["reference_data", "business_object", "event", "standalone"]] = None
+    backing: _DeclaredBacking
+    origin: Optional[Literal["human", "model"]] = None
+
+
+class _DeclaredLink(BaseModel):
+    """ON-7 — a link declared between two types: a business verb and the column each side joins on."""
+    from_entity: str
+    to_entity: str
+    name: str
+    from_column: str
+    to_column: str
+    cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
+    reverse_name: Optional[str] = None
+    origin: Optional[Literal["human", "model"]] = None
 
 
 class _ActionOverride(BaseModel):
@@ -623,6 +663,8 @@ def measure_ontology(
            "backings": reports["backings"].summary(),
            "display_properties": reports["display_properties"].summary(),
            "bindings": reports["bindings"].summary(),
+           # ON-7 — every declared link, its sides counted again on this pass.
+           "declared_links": reports.get("declared_links", []),
            "claims": claims.summary() if claims is not None else None}
     try:
         from aughor.kernel.ledger import Ledger
@@ -874,7 +916,10 @@ def _bind_and_persist(connection_id: str, schema: str, ov):
         # `verified`. But an EXISTENCE field must never come back with an empty
         # binding — `verified` is `all(...) if binding else True`, so silence there
         # reads as "checked and fine" for a table nobody could look for. When the
-        # connection itself is unreachable, say THAT rather than nothing.
+        # connection itself is unreachable, say THAT rather than nothing — and the
+        # graph-only binds (a display property, a part mark) still get their verdict.
+        from aughor.ontology.overrides import bind_graph_only
+        bind_graph_only(ov, graph)
         for field in ov.fields:
             if field in EXISTENCE_FIELDS and field not in ov.binding:
                 ov.binding[field] = {
@@ -988,7 +1033,9 @@ def bind_ontology_entity(
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
-        entry = bind_binding(entity, name, body.model_dump(exclude_none=True), graph, describe_with(db))
+        spec = body.model_dump(exclude_none=True)
+        absorb = bool(spec.pop("absorb", False))
+        entry = bind_binding(entity, name, spec, graph, describe_with(db))
         if not entry["bound"]:
             raise HTTPException(status_code=400, detail=f"binding '{name}' on {entity_id} did not bind: {entry['note']}")
         existing = find_override(connection_id, effective, "entity", entity_id)
@@ -1009,11 +1056,48 @@ def bind_ontology_entity(
         save_override(connection_id, effective, ov)
     finally:
         db.close()
+    absorbed, warnings = None, []
+    if absorb:
+        # ON-7 — the bound table's own type becomes a PART of this one; refused with the reason, never guessed.
+        absorbed, why = _absorb_after_bind(connection_id, effective, entity_id, entry["spec"].get("table"))
+        if why:
+            warnings.append(why)
     served = _get_ontology_graph(connection_id, effective)
     described = (describe_object_type(served, entity_id)
                  if served is not None and entity_id in served.entities else {})
     row = next((b for b in described.get("bindings", []) if b["name"] == name), None)
-    return {**_override_result(ov), "binding": row}
+    result = _override_result(ov)
+    return {**result, "warnings": [*result["warnings"], *warnings], "binding": row,
+            "absorbed": absorbed, "parts": described.get("parts", [])}
+
+
+def _merge_entity_fields(connection_id: str, schema: str, entity_id: str, fields: dict):
+    """Merge ``fields`` into the entity's existing override (never replacing its file), bind and persist."""
+    from aughor.ontology.overrides import OntologyOverride, find_override
+    existing = find_override(connection_id, schema, "entity", entity_id)
+    ov = OntologyOverride(target_kind="entity", target_id=entity_id,
+                          fields={**(existing.fields if existing else {}), **fields},
+                          source=(existing.source if existing else "human"),
+                          binding=dict(existing.binding) if existing else {})
+    return _bind_and_persist(connection_id, schema, ov)
+
+
+def _absorb_after_bind(connection_id: str, schema: str, parent_id: str, table: Optional[str]) -> tuple[Optional[str], str]:
+    """ON-7 — ``(absorbed type id, why not)``: the type whose own rows are ``table``'s is marked a part of
+    ``parent_id`` when the mark holds on the served graph; otherwise nothing is written and the reason is returned."""
+    from aughor.ontology.declared import backs_existing_type
+    from aughor.ontology.parts import absorb_problem
+    graph = _get_ontology_graph(connection_id, schema)
+    if graph is None or not table:
+        return None, "absorb: a keyed SELECT names no table whose type could be absorbed"
+    other = backs_existing_type(graph, table)
+    if other is None or other.id == parent_id:
+        return None, f"absorb: no other object type is read from {table}"
+    problem = absorb_problem(graph, parent_id, other)
+    if problem:
+        return None, f"absorb: {problem}"
+    _merge_entity_fields(connection_id, schema, other.id, {"absorbed_into": parent_id})
+    return other.id, ""
 
 
 @router.delete("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -1048,6 +1132,155 @@ def unbind_ontology_entity(
     else:
         delete_override(connection_id, effective, "entity", entity_id)
     return {"removed": True, "entity": entity_id, "binding": name}
+
+
+@router.post("/ontology/entities", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_ontology_entity(
+    body: _DeclaredEntity,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Declare a business entity (ON-7): the noun first, then the source bound into it — a table or a keyed
+    SELECT whose rows are its objects, with the column that is its key. The source is read for its columns and
+    the key is counted before anything is written (400 with the reason when it cannot be read); a table that
+    already backs a type is refused — rename or absorb that type instead of doubling it. The declaration lives
+    in the overrides tree with provenance (human, or a model's proposal) and survives every rebuild. No model
+    call."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.bindings import describe_with
+    from aughor.ontology.declared import (
+        backs_existing_type, entity_fields, entity_spec_problem, measure_declared_backing,
+    )
+    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.semantic.object_types import describe_object_type
+    effective = _resolve_schema(connection_id, schema_name)
+    spec = body.model_dump(exclude_none=True)
+    problem = entity_spec_problem(spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    if body.id in graph.entities:
+        raise HTTPException(status_code=409, detail=f"an object type '{body.id}' already exists")
+    fields = entity_fields(spec)
+    if fields["backing"].get("table"):
+        other = backs_existing_type(graph, fields["backing"]["table"])
+        if other is not None:
+            raise HTTPException(status_code=400, detail=(
+                f"{fields['backing']['table']} already backs {other.id} — a second type over the same rows is a "
+                f"duplicate; rename {other.id}, or bind the table into another type and absorb it"))
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        entry = measure_declared_backing(db, fields, describe_with(db))
+    finally:
+        db.close()
+    if not entry.get("bound"):
+        raise HTTPException(status_code=400, detail=f"{body.id} did not bind: {entry.get('note')}")
+    ov = OntologyOverride(target_kind="entity", target_id=body.id, fields=fields, source=fields["origin"],
+                          binding={"backing": entry})
+    save_override(connection_id, effective, ov)
+    served = _get_ontology_graph(connection_id, effective)
+    if served is None or body.id not in served.entities:
+        raise HTTPException(status_code=500, detail=f"{body.id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "entity": describe_object_type(served, body.id)}
+
+
+@router.delete("/ontology/entities/{entity_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def delete_declared_entity(
+    entity_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw a DECLARED entity (ON-7) — its override file, and with it the type. A type the builder made from
+    a table is not deletable here (404 says so): absorb it into another type, or leave it. A declared link on
+    the withdrawn type stops applying on the next read and is reported skipped, never silently kept."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    if existing is None or not existing.fields.get("declared"):
+        graph = _get_ontology_graph(connection_id, effective)
+        if graph is not None and entity_id in graph.entities:
+            raise HTTPException(status_code=404, detail=(
+                f"{entity_id} was built from its table, not declared — a built type is absorbed into another or "
+                "kept, never deleted"))
+        raise HTTPException(status_code=404, detail=f"no declared entity '{entity_id}'")
+    delete_override(connection_id, effective, "entity", entity_id)
+    return {"removed": True, "entity": entity_id}
+
+
+@router.post("/ontology/links", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_ontology_link(
+    body: _DeclaredLink,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Declare a link between two types (ON-7): a business verb and the column each side joins on. Both columns
+    must be properties of their type, the name must be free on the from-side and the reverse name on the to-side
+    (a path segment names one thing), and no found link may already join the same columns — name that one instead.
+    Each side is counted (a side is "1" when its key is unique — the cardinality, ON-0a's law) and the share of
+    from-keys the to-side holds is measured before anything is written; the compiler follows the link exactly as
+    it would a found one: measured, and not N:N. No model call."""
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.declared import (
+        link_fields, link_id, link_problem_on_graph, link_spec_problem, measure_declared_link,
+    )
+    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.semantic.object_types import describe_object_type
+    effective = _resolve_schema(connection_id, schema_name)
+    spec = body.model_dump(exclude_none=True)
+    problem = link_spec_problem(spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    fields = link_fields(spec)
+    if link_id(fields) in graph.relationships:
+        raise HTTPException(status_code=409, detail=f"a link '{link_id(fields)}' already exists")
+    problem = link_problem_on_graph(graph, fields)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        entry = measure_declared_link(db, graph, fields)
+    finally:
+        db.close()
+    if not entry.get("bound"):
+        raise HTTPException(status_code=400, detail=f"link '{fields['name']}' did not bind: {entry.get('note')}")
+    ov = OntologyOverride(target_kind="link", target_id=link_id(fields), fields=fields, source=fields["origin"],
+                          binding={"link": entry})
+    save_override(connection_id, effective, ov)
+    served = _get_ontology_graph(connection_id, effective)
+    described = describe_object_type(served, fields["from_entity"]) if served is not None else {}
+    row = next((link for link in described.get("links", []) if link["relationship"] == ov.target_id), None)
+    return {**_override_result(ov), "link": row, "relationship": ov.target_id}
+
+
+@router.delete("/ontology/links/{relationship_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def delete_declared_link(
+    relationship_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw a DECLARED link (ON-7). A link the builder found is not deletable here (404 says so)."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "link", relationship_id)
+    if existing is None or not existing.fields.get("declared"):
+        raise HTTPException(status_code=404, detail=(
+            f"no declared link '{relationship_id}'" + (" — a found link is named, never deleted"
+                                                       if existing is not None else "")))
+    delete_override(connection_id, effective, "link", relationship_id)
+    return {"removed": True, "link": relationship_id}
 
 
 class _LinkName(BaseModel):

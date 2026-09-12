@@ -409,24 +409,27 @@ def test_proposals_name_tables_that_carry_a_key_one_row_per_object_and_change_no
     apply_backing_measurements(graph, db)
     asked = propose_bindings(graph, db)
     order = graph.entities["Order"]
-    [proposal] = order.proposed_bindings
+    [proposal] = [p for p in order.proposed_bindings if p.kind == "static"]
     assert (proposal.name, proposal.table, proposal.key, proposal.source, proposal.verified) == (
         "payments", "payments", "order_id", "proposed", True)
     assert "status" in proposal.skipped and proposal.covered == 4500
-    refuted = {m.name: m.verified for m in asked if m.entity_id == "Order"}
+    refuted = {m.name: m.verified for m in asked if m.entity_id == "Order" and m.kind == "static"}
     assert refuted["refunds"] is False and refuted["order_items"] is False       # asked, and the data said no
-    assert all(not e.proposed_bindings for eid, e in graph.entities.items() if eid != "Order")
+    # ON-7 — a key that REPEATS is many rows per object: proposed as a part (a detail binding), never as static
+    assert {p.name for p in order.proposed_bindings if p.kind == "detail"} >= {"refunds", "order_items"}
+    assert all(p.kind == "detail" for eid, e in graph.entities.items() if eid != "Order" for p in e.proposed_bindings)
 
     query = {"object_type": "order", "filters": [{"path": "psp", "value": "visa"}], "measures": [{"agg": "count"}]}
     assert "no property 'psp'" in refusal(query, graph).reason                  # a proposal is read by nothing
     assert not any(p.get("binding") for p in get_object(graph, db, "order", "O000001").properties)
     described = describe_object_type(graph, "order")
     assert len(described["bindings"]) == 1
-    assert described["proposed_bindings"][0]["spec"] == {"kind": "static", "key": "order_id", "table": "payments"}
+    payments = next(p for p in described["proposed_bindings"] if p["name"] == "payments")
+    assert payments["spec"] == {"kind": "static", "key": "order_id", "table": "payments"}
 
-    bind(graph, db, "Order", "payments", described["proposed_bindings"][0]["spec"])
+    bind(graph, db, "Order", "payments", payments["spec"])
     assert compile_(query, graph).bindings[0]["binding"] == "payments"          # bound by a person, it is read
-    assert describe_object_type(graph, "order")["proposed_bindings"] == []       # and no longer proposed
+    assert not any(p["kind"] == "static" for p in describe_object_type(graph, "order")["proposed_bindings"])   # and no longer proposed
 
 
 # ── what a person and the agent read ────────────────────────────────────────────────────────
@@ -584,12 +587,13 @@ def test_a_binding_is_bound_counted_compiled_proposed_and_removed_over_http(door
 
     measured = client.post("/ontology/measure", params=PARAMS).json()["bindings"]
     assert "Order.payments" in measured["verified"] and "Order.payments" in measured["overrides_measured"]
-    assert {"binding": "Order.payments"}.items() <= measured["proposed"][0].items()
-    assert client.get("/object-types/order", params=PARAMS).json()["proposed_bindings"] == []   # already bound
+    assert "Order.payments" in [p["binding"] for p in measured["proposed"]]
+    assert not any(p["kind"] == "static" for p in
+                   client.get("/object-types/order", params=PARAMS).json()["proposed_bindings"])   # already bound
 
     removed = client.delete("/ontology/entities/Order/bindings/payments", params=PARAMS)
     assert removed.status_code == 200 and removed.json()["removed"] is True
     after = client.get("/object-types/order", params=PARAMS).json()
-    assert len(after["bindings"]) == 1 and after["proposed_bindings"][0]["name"] == "payments"
+    assert len(after["bindings"]) == 1 and "payments" in {p["name"] for p in after["proposed_bindings"]}
     assert client.post("/objects/query", params=PARAMS, json=query).json()["path"] == "refused"
     assert client.delete("/ontology/entities/Order/bindings/payments", params=PARAMS).status_code == 404

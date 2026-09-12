@@ -243,11 +243,16 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
     # another type's table carries a type's key (after the keys above: only a key measured unique is proposed for).
     from aughor.ontology.bindings import BindingReport, measure_override_bindings, propose_bindings
     bindings = BindingReport(proposals=propose_bindings(graph, db))
-    measure_override_bindings(connection_id, schema_name, db, graph, report=bindings)
+    # ON-7 — what a person DECLARED (an entity, a link) is not in the raw graph; the override measurers count
+    # against a working copy that has it, and record on the override files — the cache stays raw.
+    from aughor.ontology.declared import measure_override_links, with_declared_entities
+    work = with_declared_entities(graph, connection_id, schema_name)
+    measure_override_bindings(connection_id, schema_name, db, work, report=bindings)
+    links_declared = measure_override_links(connection_id, schema_name, db, work)
     # ON-3b — whether each type's display property names its objects (the proposal here; a person's
     # declaration on its override binding).
     displays = apply_display_measurements(graph, db)
-    measure_override_display_properties(connection_id, schema_name, db, graph, report=displays)
+    measure_override_display_properties(connection_id, schema_name, db, work, report=displays)
     claims = apply_bound_pack_claims(graph, connection_id, schema_name, db)
     if pack_id:
         po = resolve_ontology(pack_id)
@@ -255,7 +260,7 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
             claims = apply_core_claims(graph, po, pack_id, db)
     _store.put(key, {"graph": graph.model_dump()})
     return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims,
-            "display_properties": displays, "bindings": bindings}
+            "display_properties": displays, "bindings": bindings, "declared_links": links_declared}
 
 
 def patch_action(
