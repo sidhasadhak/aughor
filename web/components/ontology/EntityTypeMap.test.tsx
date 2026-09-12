@@ -46,6 +46,17 @@ vi.mock("@xyflow/react", async (importOriginal) => {
 });
 vi.mock("@xyflow/react/dist/style.css", () => ({}));
 
+/** The per-user preference store the arrangement lives in — the map reads it on mount and writes it on a drop;
+ *  `localStorage` is only this device's paint-before-fetch cache. */
+const stored: { value: unknown } = { value: undefined };
+const putPreference = vi.fn(async (_key: string, value: unknown) => { stored.value = value; });
+
+vi.mock("@/lib/api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/api")>()),
+  getMyPreferences: vi.fn(async () => ({ user: "local", preferences: { ontology_map_layout: stored.value } })),
+  putMyPreference: (key: string, value: unknown) => putPreference(key, value),
+}));
+
 vi.mock("@/components/ontology/EntityTypePanel", () => ({
   EntityTypePanel: ({ objectType }: { objectType: string }) => <div data-testid="panel">{objectType}</div>,
 }));
@@ -74,11 +85,14 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
 
-const LAYOUT_KEY = "ont-map-layout:c1:s";
+const CACHE_KEY = "ont-map-layout";
+const SCOPE = "c1:s";
 
 describe("EntityTypeMap", () => {
   beforeEach(() => {
     window.localStorage.clear();
+    stored.value = undefined;
+    putPreference.mockClear();
     handoff.nodes = [];
     handoff.edges = [];
   });
@@ -118,13 +132,15 @@ describe("EntityTypeMap", () => {
     await waitFor(() => expect(handoff.edges.every((e) => e.label === undefined)).toBe(true));
   });
 
-  it("remembers where a person drags a card, and opens there next time", async () => {
+  it("keeps where a person drags a card in the preference store, and opens there next time", async () => {
     const { unmount } = render(<EntityTypeMap connectionId="c1" schema="s" />);
     await waitFor(() => expect(handoff.nodes.length).toBe(4));
     const before = handoff.nodes.find((n) => n.id === "order")!.position;
     handoff.onNodeDragStop!({}, { id: "order", position: { x: 42, y: 7 } });
-    await waitFor(() =>
-      expect(JSON.parse(window.localStorage.getItem(LAYOUT_KEY)!)).toEqual({ order: { x: 42, y: 7 } }));
+
+    const arranged = { [SCOPE]: { order: { x: 42, y: 7 } } };
+    await waitFor(() => expect(putPreference).toHaveBeenCalledWith("ontology_map_layout", arranged));
+    expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!)).toEqual(arranged);   // and the paint cache
     expect(before).not.toEqual({ x: 42, y: 7 });
 
     unmount();
@@ -136,6 +152,26 @@ describe("EntityTypeMap", () => {
     expect(handoff.nodes.find((n) => n.id === "product")!.position).not.toEqual({ x: 42, y: 7 });
   });
 
+  it("opens on the store's arrangement even when this browser has never seen it", async () => {
+    stored.value = { [SCOPE]: { product: { x: -8, y: 300 } } };      // arranged on another machine
+    expect(window.localStorage.getItem(CACHE_KEY)).toBeNull();
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() =>
+      expect(handoff.nodes.find((n) => n.id === "product")!.position).toEqual({ x: -8, y: 300 }));
+    expect(JSON.parse(window.localStorage.getItem(CACHE_KEY)!)).toEqual(stored.value);   // cached for next time
+  });
+
+  it("leaves another map's arrangement alone when it writes this one's", async () => {
+    stored.value = { "other:map": { order: { x: 5, y: 5 } } };
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await waitFor(() => expect(handoff.nodes.length).toBe(4));
+    handoff.onNodeDragStop!({}, { id: "order", position: { x: 42, y: 7 } });
+    await waitFor(() => expect(putPreference).toHaveBeenCalledWith("ontology_map_layout", {
+      "other:map": { order: { x: 5, y: 5 } },
+      [SCOPE]: { order: { x: 42, y: 7 } },
+    }));
+  });
+
   it("offers to put the arrangement back only once something has been moved", async () => {
     render(<EntityTypeMap connectionId="c1" schema="s" />);
     await waitFor(() => expect(handoff.nodes.length).toBe(4));
@@ -144,7 +180,7 @@ describe("EntityTypeMap", () => {
     handoff.onNodeDragStop!({}, { id: "order", position: { x: 42, y: 7 } });
     const reset = await screen.findByText(/Reset arrangement/);
     await userEvent.click(reset);
-    await waitFor(() => expect(window.localStorage.getItem(LAYOUT_KEY)).toBe("{}"));
+    await waitFor(() => expect(putPreference).toHaveBeenLastCalledWith("ontology_map_layout", { [SCOPE]: {} }));
     expect(handoff.nodes.find((n) => n.id === "order")!.position).not.toEqual({ x: 42, y: 7 });
   });
 });

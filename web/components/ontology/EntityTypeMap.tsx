@@ -38,6 +38,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
+import { getMyPreferences, putMyPreference } from "@/lib/api";
 import { CARD, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
 import { getTypeMap, type TypeMap, type TypeMapRow } from "@/lib/objectTypes";
 
@@ -50,26 +51,42 @@ function keyWords(verified: boolean | null): string {
   return verified === true ? "key unique" : verified === false ? "key not unique" : "key unmeasured";
 }
 
-/** Where a person's own arrangement is kept: per connection and schema, in this browser. */
-const layoutKey = (connectionId: string, schema?: string) => `ont-map-layout:${connectionId}:${schema ?? ""}`;
+/**
+ * Where a person's own arrangement lives: the per-user preference store (SP-3), keyed by connection and schema,
+ * so it follows them to their next browser and their next machine. `localStorage` is this device's
+ * paint-before-fetch cache and nothing more — the same seam the theme toggle uses.
+ */
+const LAYOUT_PREFERENCE = "ontology_map_layout";
+const CACHE_KEY = "ont-map-layout";
+const scopeOf = (connectionId: string, schema?: string) => `${connectionId}:${schema ?? ""}`;
 
 type Positions = Record<string, { x: number; y: number }>;
+type Layouts = Record<string, Positions>;
 
-function readPositions(key: string): Positions {
+/** Only the positions that are two finite numbers survive a read, wherever they came from. */
+function positionsOf(raw: unknown): Layouts {
+  if (!raw || typeof raw !== "object") return {};
+  const out: Layouts = {};
+  for (const [scope, cards] of Object.entries(raw as Record<string, unknown>)) {
+    if (!cards || typeof cards !== "object") continue;
+    out[scope] = Object.fromEntries(Object.entries(cards as Positions)
+      .filter(([, p]) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
+      .map(([id, p]) => [id, { x: p.x, y: p.y }]));
+  }
+  return out;
+}
+
+function readCache(): Layouts {
   if (typeof window === "undefined") return {};
   try {
-    const raw = window.localStorage.getItem(key);
-    const parsed = raw ? JSON.parse(raw) : null;
-    if (!parsed || typeof parsed !== "object") return {};
-    return Object.fromEntries(Object.entries(parsed as Positions)
-      .filter(([, p]) => p && Number.isFinite(p.x) && Number.isFinite(p.y)));
+    return positionsOf(JSON.parse(window.localStorage.getItem(CACHE_KEY) ?? "null"));
   } catch {
     return {};                                  // no storage, or something else wrote there: start from the layout
   }
 }
 
-function writePositions(key: string, positions: Positions): void {
-  try { window.localStorage.setItem(key, JSON.stringify(positions)); } catch { /* the move lasts this visit */ }
+function writeCache(layouts: Layouts): void {
+  try { window.localStorage.setItem(CACHE_KEY, JSON.stringify(layouts)); } catch { /* the fetch still has it */ }
 }
 
 /** Which side of a card a link leaves by — whichever way the other card actually lies, recomputed as cards move,
@@ -121,7 +138,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   return (
     <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }} data-testid="entity-type-map">
       <TypeRail types={map.object_types} selected={selected} query={query} onQuery={setQuery} onPick={setSelected} />
-      <MapCanvas map={map} selected={selected} onSelect={setSelected} storageKey={layoutKey(connectionId, schema)} />
+      <MapCanvas map={map} selected={selected} onSelect={setSelected} scope={scopeOf(connectionId, schema)} />
       <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
         version={version} onOpen={setSelected} onChanged={() => setVersion((v) => v + 1)} />
     </div>
@@ -208,25 +225,33 @@ const SIDES = { t: Position.Top, r: Position.Right, b: Position.Bottom, l: Posit
 const HANDLE: React.CSSProperties = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1, border: "none" };
 const NODE_TYPES = { entity: EntityCard };
 
-function MapCanvas({ map, selected, onSelect, storageKey }: {
+function MapCanvas({ map, selected, onSelect, scope }: {
   map: TypeMap;
   selected: string;
   onSelect: (objectType: string) => void;
-  storageKey: string;
+  scope: string;
 }) {
   const hub = useMemo(() => hubOf(map) ?? selected, [map, selected]);
   const start = useMemo(() => layoutMap(map, hub), [map, hub]);
   const rows = useMemo(() => new Map(map.object_types.map((t) => [t.object_type, t])), [map]);
   const lit = useMemo(() => litBy(map, selected), [map, selected]);
-  /** A person's own arrangement, read BEFORE the first paint — reading it in an effect would draw the map at the
-   *  layout's positions and then jump — and written on every drop. Re-read when the connection changes. */
-  const [moved, setMoved] = useState<Positions>(() => readPositions(storageKey));
-  const key = React.useRef(storageKey);
+  /** Every map this person has arranged. The cache is read BEFORE the first paint — reading only from the store
+   *  would draw the map at the layout's positions and then jump — and the store's answer wins when it lands. */
+  const [layouts, setLayouts] = useState<Layouts>(readCache);
   useEffect(() => {
-    if (key.current === storageKey) return;
-    key.current = storageKey;
-    setMoved(readPositions(storageKey));
-  }, [storageKey]);
+    let live = true;
+    getMyPreferences()
+      .then(({ preferences }) => {
+        if (!live) return;
+        const stored = positionsOf(preferences[LAYOUT_PREFERENCE]);
+        setLayouts(stored);
+        writeCache(stored);
+      })
+      // An unreachable store leaves the cached arrangement standing — cosmetic, never blocking.
+      .catch(() => {});
+    return () => { live = false; };
+  }, []);
+  const moved = useMemo(() => layouts[scope] ?? {}, [layouts, scope]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode<CardData>>([]);
   const [edges, setEdges] = useEdgesState<RFEdge>([]);
@@ -284,18 +309,21 @@ function MapCanvas({ map, selected, onSelect, storageKey }: {
     }));
   }, [map.links, nodes, lit, setEdges]);
 
-  const drop = useCallback((_e: unknown, node: RFNode) => {
-    setMoved((current) => {
-      const next = { ...current, [node.id]: { x: node.position.x, y: node.position.y } };
-      writePositions(storageKey, next);
+  /** One drop is one write: the cache for this device's next paint, the store for every other one. */
+  const keep = useCallback((positions: Positions) => {
+    setLayouts((current) => {
+      const next = { ...current, [scope]: positions };
+      writeCache(next);
+      putMyPreference(LAYOUT_PREFERENCE, next).catch(() => { /* the cache holds it for this device */ });
       return next;
     });
-  }, [storageKey]);
+  }, [scope]);
 
-  const reset = useCallback(() => {
-    setMoved({});
-    writePositions(storageKey, {});
-  }, [storageKey]);
+  const drop = useCallback((_e: unknown, node: RFNode) => {
+    keep({ ...(layouts[scope] ?? {}), [node.id]: { x: node.position.x, y: node.position.y } });
+  }, [keep, layouts, scope]);
+
+  const reset = useCallback(() => keep({}), [keep]);
 
   return (
     <div style={{ flex: 1, minWidth: 0, minHeight: 0, background: "var(--bg-canvas)" }} data-testid="entity-map-canvas">
