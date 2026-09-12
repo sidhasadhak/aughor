@@ -4484,8 +4484,43 @@ extension of ON-0a's law (the data wins), and ground none of them holds.
 is ON-7b → ON-9 → ON-10 → ON-8** (ON-9 and ON-10 are the only waves that change an answer and
 carry the falsifier; ON-8 is shape work that changes no answer by itself) — the user's knob.
 
-- 🎯 **ON-7 · The declared entity, its parts and its links — STARTED 2026-09-12** (the user:
-  *"take on seven first"*). `POST /ontology/entities` declares an entity (display name,
+- ✅ **ON-7 · The declared entity, its parts and its links — FIRST SLICE BUILT + RECEIPT MET 2026-09-12**
+  (the user: *"take on seven first"*; branch `claude/on-7-declared-entity`). **What exists:** `Binding.kind`
+  gains `detail` (many rows per object, no clock) with `rollups` (`Rollup`: column + sum|avg|min|max|count),
+  each computed inside the object's partition before the join (`aughor.ontology.parts.detail_from`) and read as
+  a property like any other; `OntologyEntity.origin` (table | human | model) and `absorbed_into` — a part mark
+  that HOLDS only while the parent binds the part's table (`parts.part_of`, one law for the bind door, the
+  override and every read; a lapsed mark says so); `OntologyRelationship.origin`. Doors: `POST/DELETE
+  /ontology/entities` (a declared type: its source read for columns and its key counted before anything is
+  written, `aughor.ontology.declared`; a table that backs a type is refused — rename or absorb instead),
+  `POST/DELETE /ontology/links` (each side counted, the share of keys that meet measured; a link whose keys
+  NEVER meet is stored with `value_overlap` 0 and REFUSED by the compiler — found on the receipt, see below),
+  the bind door's `absorb`, the entity override's `absorbed_into`. The overlay rebuilds a declared type and a
+  declared link from what the door recorded, DB-free; the measure door re-counts declared links against a
+  working copy that knows declared types (the cache stays raw). The builder proposes a table whose key REPEATS
+  as a part (a detail binding with a `count` rollup). Web: the rail lists parts under the cards and offers *New
+  entity*; a part's links are drawn from its parent's card, named through the part (`collapseParts`); the panel
+  declares a detail binding with rollups (and folds the table's type in), adds a relationship by entity ids,
+  shows parts and part-of, withdraws a declared type or link. **Receipts:** `tests/unit/test_object_parts.py`
+  (16 tests: rollups equal hand-written references, the roll-up never multiplies, a part lapses when its binding
+  goes, a declared type over a table and over a keyed SELECT, a declared link measured and traversed both ways,
+  a link whose keys never meet refused, the doors end to end); `test_object_bindings.py`'s proposals updated for
+  parts; web 839 green, seven gates green. **Live LuxExperience through the API, no model call:** Order ←
+  order_items as `lines` (detail; 112,439 of 112,439 covered; OrderItem folded in) · Return ← return_logistics
+  (static 50,048/50,048; ReturnLogistic folded) · Customer ← customer_service as `tickets` (detail; 7,841 of
+  35,136; CustomerService folded) · Payment, Shipment → parts of Order · Price → part of Product ⇒ **the map
+  reads 8 cards from 14 tables** (Order, Return, Product, Customer, Brand, Warehouse, Country, Date). Two links
+  the builder never found, declared: `Order placed_by Customer` (N:1, 100% of keys held) and `Shipment
+  ships_from Warehouse`. **Compiled = reference:** orders with more than 3 units 3,917 · GMV of top-customer
+  orders through `placed_by` 18,384,951 · shipments by warehouse country through `ships_from` (Italy 37,372 …)
+  · the ON-5 receipt still 1,744 · a part is still a type (191,093 order lines). 🔴 **Found by the receipt:** the
+  first `ships_from` was declared on `warehouse = warehouse_id`; the measurement said N:1 with **0% of keys
+  held** (shipments carry the warehouse's NAME), and the compiler still traversed it and answered NULL — a link
+  the data refutes must be refused, not followed: `link_problem` now refuses a measured zero overlap (pinned).
+  **Open on this wave:** §6 item 18(b) — Payment and Shipment are parts on the receipt as drafted; one *Release*
+  undoes it · the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types ·
+  a declared type does not round-trip through export/import · line-grain access to a part's rows stays through
+  the measured link (`order_to_order_item.category`), not through the binding's name. `POST /ontology/entities` declares an entity (display name,
   api_name, description, domain, a key claim); `POST /ontology/links` declares a link (business
   verb, expected cardinality, the key path between two bindings); `DELETE` for both, refusing
   where a consumer depends on the id (API names are stable). A third binding kind beside static

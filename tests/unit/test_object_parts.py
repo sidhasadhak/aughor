@@ -307,6 +307,25 @@ def test_a_declared_link_is_measured_on_both_sides_and_traversed_by_the_compiler
     assert (link["business_name"], link["cardinality"], link["traversable"]) == ("pays_for", "1:1", True)
 
 
+def test_a_declared_link_whose_keys_never_meet_is_stored_with_its_measurement_and_refused_by_the_compiler(db, graph):
+    declare_payment(db, graph)
+    apply_overrides(graph, *SCOPE)
+    # payments.psp holds 'visa' and the like; no order_id ever equals one — the columns are wrong, the data says so
+    ov = declare_link(db, graph, {**PAYS_FOR, "name": "settles", "from_column": "psp", "to_column": "order_id"})
+    assert ov.binding["link"]["value_overlap"] == 0.0 and ov.binding["link"]["bound"] is True
+    fresh = OntologyGraph.model_validate(json.loads(GRAPH.read_text()))
+    apply_overrides(fresh, *SCOPE)
+    rel = fresh.relationships["Payment_settles_Order"]
+    assert rel.join_confidence == "inferred" and rel.value_overlap == 0.0
+    hop = next(h for h in object_links(fresh, fresh.entities["Payment"]) if h.name == "settles")
+    assert "keys never meet" in link_problem(hop)
+    why = refusal({"object_type": "payment", "filters": [{"path": "settles.status", "value": "delivered"}],
+                   "measures": [{"agg": "count"}]}, fresh).reason
+    assert "keys never meet" in why
+    shown = next(l for l in describe_object_type(fresh, "payment")["links"] if l["relationship"] == "Payment_settles_Order")
+    assert shown["traversable"] is False and "never meet" in shown["why_not"]
+
+
 def test_a_declared_link_is_refused_where_it_cannot_land(db, graph):
     declare_payment(db, graph)
     apply_overrides(graph, *SCOPE)

@@ -236,6 +236,11 @@ def link_problem(h: ObjectLink) -> str:
     if h.label == "N:N":
         return (f"link {h.describe()} is N:N by measurement — neither {h.source.id}.{h.local_col} nor "
                 f"{h.target.id}.{h.remote_col} is unique, so no join or pre-aggregation over it is safe")
+    if h.rel.value_overlap is not None and h.rel.value_overlap <= 0:
+        # ON-7 — a declared link is measured on how many of its keys meet; none is a join that reads every
+        # linked value as NULL, and a NULL is not an answer. (The builder drops a found link like this at build.)
+        return (f"link {h.describe()} was measured and its keys never meet — no {h.source.id}.{h.local_col} value "
+                f"is held by {h.target.id}.{h.remote_col}; check the columns the link was declared on")
     return ""
 
 
