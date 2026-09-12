@@ -53,6 +53,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
+from aughor.ontology.derived import derived_for, find_derived_metric, find_derived_property, find_derived_segment
 from aughor.ontology.parts import detail_from, rollup_note
 from aughor.ontology.timeseries import latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
@@ -97,6 +98,10 @@ class ObjectFilter(BaseModel):
     value: Any = None
     #: The list for `in` / `not_in` / `between` (a list in `value` is read the same way).
     values: list[Any] = Field(default_factory=list)
+    #: ON-9 — compare with ANOTHER property of the same object instead of a value (`=`, `!=`, `>`, `>=`, `<`, `<=`):
+    #: a path read through to-one links only, of a comparable type. "Handed to the carrier after the line's shipping
+    #: limit" is `order_item_to_order.order_delivered_carrier_date > shipping_limit_date`.
+    value_path: str = ""
 
 
 class MeasureTerm(BaseModel):
@@ -270,6 +275,21 @@ def _is_numeric(p: EntityProperty) -> bool:
 
 def _is_temporal(p: EntityProperty) -> bool:
     return (p.semantic_type or "") == "timestamp" or any(t in (p.data_type or "").upper() for t in ("DATE", "TIME"))
+
+
+#: Public: a declaration's anchors are checked with the compiler's own reading of a property's kind (ON-9).
+is_temporal = _is_temporal
+
+
+def _family(p: EntityProperty) -> str:
+    """The kind of value a property holds, for a comparison between two properties (ON-9)."""
+    if _is_temporal(p):
+        return "point in time"
+    if _is_bool(p):
+        return "boolean"
+    if _is_numeric(p) or (p.semantic_type or "") in _SUMMABLE:
+        return "number"
+    return "text"
 
 
 def find_property(entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
@@ -550,6 +570,9 @@ class _Compiler:
         #: Time columns typed DATE: a truncation over one must render as DATE_TRUNC, not
         #: TIMESTAMP_TRUNC, on dialects that tell the two apart (BigQuery).
         self._date_cols: set[str] = set()
+        #: ON-9 — the derived properties being compiled right now (a derivation may not read itself), and those planned.
+        self._deriving: set = set()
+        self._derived_noted: set = set()
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -560,11 +583,13 @@ class _Compiler:
         return find_object_type(self.g, name)
 
     def prop(self, entity: OntologyEntity, name: str, path: str) -> EntityProperty:
-        p = find_property(entity, name) or self.virtual_prop(entity, name)
+        p = find_property(entity, name) or self.virtual_prop(entity, name) or self.derived_prop(entity, name)
         if p is not None:
             return p
         bound = sorted(name for binding in entity.bindings or [] for name in binding.properties)
-        names = sorted(entity.properties or {}) + bound + sorted(overlay_properties(entity, self.overlay_edits))
+        derived = sorted(d.name for d in derived_for(self.g, entity).properties)
+        names = (sorted(entity.properties or {}) + bound + sorted(overlay_properties(entity, self.overlay_edits))
+                 + derived)
         links = sorted(h.name for h in object_links(self.g, entity))
         raise ObjectQueryRefused(f"{entity.id} has no property '{name}' (in '{path}'){_did_you_mean(name, names + links)}",
                                  names + links)
@@ -580,6 +605,15 @@ class _Compiler:
                               semantic_type="flag" if boolean else "dimension",
                               description="an overlay property — set by accepted edits, merged at read time")
 
+    def derived_prop(self, entity: OntologyEntity, name: str) -> Optional[EntityProperty]:
+        """ON-9 — a property a declared process derives on ``entity`` (`dispatch_lag_days`): the whole calendar days
+        between two of the object's moments. None when nothing derives the name here."""
+        d = find_derived_property(self.g, entity, name)
+        if d is None:
+            return None
+        return EntityProperty(name=d.name, display_name=d.name, data_type="BIGINT", semantic_type="measure", unit="days",
+                              is_derived=True, description=f"{d.description} — derived from {d.source}")
+
     def colref(self, scope: _Scope, alias: str, entity: OntologyEntity, p: EntityProperty) -> str:
         """The SQL for a property of ``entity`` under ``alias``: its column, a further binding's column joined on
         the object's key (ON-1b), or — for an overlay property — the accepted values joined on the object's key.
@@ -587,6 +621,10 @@ class _Compiler:
         binding = property_binding(entity, p.name)
         if binding is not None:
             return self.binding_column(scope, alias, entity, binding, p)
+        if p.is_derived and find_property(entity, p.name) is None:
+            derived = find_derived_property(self.g, entity, p.name)
+            if derived is not None:
+                return self.derived_column(scope, alias, entity, derived)
         edits = None if find_property(entity, p.name) is not None else (
             overlay_properties(entity, self.overlay_edits).get(p.name.lower()))
         if not edits:
@@ -610,6 +648,32 @@ class _Compiler:
             scope.join_alias[slot] = ov
             self.note_overlay(entity, p.name, edits)
         return f"CAST({ov}.v AS BOOLEAN)" if _is_bool(p) else f"{ov}.v"
+
+    def derived_column(self, scope: _Scope, alias: str, entity: OntologyEntity, d) -> str:
+        """ON-9 — a derived lag: the calendar days between two of the object's moments, each read under the compiler's
+        own path law (to-one links only), so a moment on a linked object is joined once. Both moments are cast to DATE
+        first, so "days" means calendar days on every dialect. Refused while the process it comes from is unmeasured or
+        measured false."""
+        if not d.usable:
+            raise ObjectQueryRefused(f"{entity.id}.{d.name} is derived from {d.source}, which {d.why_not}")
+        slot = (entity.id, d.name.lower())
+        if slot in self._deriving:
+            raise ObjectQueryRefused(f"{entity.id}.{d.name} is derived from itself — its moments must be properties "
+                                     "the data holds")
+        self._deriving.add(slot)
+        try:
+            start, sp, _ = self.column_at(scope, entity, alias, d.start, f"derived {d.name}")
+            end, ep, _ = self.column_at(scope, entity, alias, d.end, f"derived {d.name}")
+        finally:
+            self._deriving.discard(slot)
+        for path, q in ((d.start, sp), (d.end, ep)):
+            if not _is_temporal(q):
+                raise ObjectQueryRefused(f"{entity.id}.{d.name} counts days to '{path}', which is not a date or "
+                                         f"timestamp ({q.data_type or q.semantic_type or 'untyped'})")
+        if slot not in self._derived_noted:
+            self._derived_noted.add(slot)
+            self.plan.append(f"derived property {d.name} on {entity.id}: {d.description} — from {d.source}, measured")
+        return f"DATE_DIFF('day', CAST({start} AS DATE), CAST({end} AS DATE))"
 
     def binding_column(self, scope: _Scope, alias: str, entity: OntologyEntity, binding: Binding,
                        p: EntityProperty) -> str:
@@ -853,14 +917,21 @@ class _Compiler:
 
     def column(self, scope: _Scope, path: str, purpose: str) -> tuple[str, EntityProperty, list[ObjectLink]]:
         """A property reached through to-one links only."""
+        return self.column_at(scope, scope.entity, scope.alias, path, purpose)
+
+    def column_at(self, scope: _Scope, entity: OntologyEntity, alias: str, path: str,
+                  purpose: str) -> tuple[str, EntityProperty, list[ObjectLink]]:
+        """A property reached through to-one links only, starting from ``entity`` under ``alias`` — the anchor, or an
+        object the query already joined (ON-9: a derived property's moments are read from the object that carries it).
+        The joins land on ``scope``."""
         segs = _split(path, purpose)
-        entity, alias, hops = scope.entity, scope.alias, []
+        start, hops = entity, []
         for seg in segs[:-1]:
             h = self.need_hop(entity, seg, path)
             if not h.to_one:
                 raise ObjectQueryRefused(
                     f"{purpose} '{path}' crosses {h.describe()}, a to-many link — it would repeat each "
-                    f"{scope.entity.id} once per {h.target.id}. A to-many link belongs in a measure "
+                    f"{start.id} once per {h.target.id}. A to-many link belongs in a measure "
                     "(pre-aggregated) or a filter (exists).")
             alias = self.join_one(scope, alias, h)
             entity = h.target
@@ -872,23 +943,35 @@ class _Compiler:
     def condition(self, scope: _Scope, f: ObjectFilter) -> str:
         segs = _split(f.path, "filter")
         entity, alias = scope.entity, scope.alias
+        if f.value_path and f.op not in _COMPARE:
+            raise ObjectQueryRefused(f"filter '{f.path} {f.op}' compares with another property ('{f.value_path}') — "
+                                     "that takes =, !=, >, >=, < or <=")
         # ON-5 — the first segment may name a timeseries binding, and then the path is about its READINGS
         # rather than about a link or a property of the object. Readings hang off the object they bind to, so
         # only here, at the anchor.
         readings = self.readings_binding(entity, segs[0])
         if readings is not None:
+            if f.value_path:
+                raise ObjectQueryRefused(f"filter '{f.path} {f.op} {f.value_path}': two properties are compared at the "
+                                         f"object's own grain, never over the readings of {readings.name}")
             return self.readings_exists(scope, readings, ".".join(segs[1:]), f)
         wants_link = f.op in ("exists", "not_exists")
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last and not wants_link:
                 p = self.prop(entity, seg, f.path)
-                return _predicate(self.colref(scope, alias, entity, p), p, f)
+                left = self.colref(scope, alias, entity, p)
+                return self.comparison(scope, left, p, f) if f.value_path else _predicate(left, p, f)
             h = self.need_hop(entity, seg, f.path)
             if h.to_one and not (last and wants_link):
                 alias = self.join_one(scope, alias, h)
                 entity = h.target
                 continue
+            if f.value_path:
+                raise ObjectQueryRefused(
+                    f"filter '{f.path} {f.op} {f.value_path}' crosses {h.describe()}, a to-many link — two properties "
+                    f"are compared at the object's own grain; anchor the query on {h.target.id} and reach "
+                    f"{h.source.id} through its link")
             return self.exists(alias, h, ".".join(segs[i + 1:]), f)
         raise ObjectQueryRefused(f"filter path '{f.path}' did not resolve")
 
@@ -911,12 +994,27 @@ class _Compiler:
     def where(self, scope: _Scope, filters: list[ObjectFilter]) -> str:
         return " AND ".join(f"({self.condition(scope, f)})" for f in filters)
 
+    def comparison(self, scope: _Scope, left: str, p: EntityProperty, f: ObjectFilter) -> str:
+        """ON-9 — one property compared with another of the same object: the right side is a path from the filter's
+        own object, through to-one links only, of the same kind of value (two moments, two numbers, two texts)."""
+        if f.value is not None or f.values:
+            raise ObjectQueryRefused(f"filter '{f.path} {f.op}' names a value AND value_path '{f.value_path}' — name one")
+        right, q, _ = self.column(scope, f.value_path, "comparison")
+        if _family(p) != _family(q):
+            raise ObjectQueryRefused(f"filter '{f.path} {f.op} {f.value_path}' compares a {_family(p)} with a "
+                                     f"{_family(q)}")
+        return f"{left} {_COMPARE[f.op]} {right}"
+
     def segment(self, scope: _Scope, name: str) -> str:
         segs = scope.entity.segments or {}
         low = name.strip().lower()
         seg = next((s for k, s in segs.items() if low in (k.lower(), (s.display_name or "").lower())), None)
         verified = sorted(k for k, s in segs.items() if s.verified)
         if seg is None:
+            derived = find_derived_segment(self.g, scope.entity, name)
+            if derived is not None:
+                return self.derived_segment(scope, derived)
+            verified += sorted(d.name for d in derived_for(self.g, scope.entity).segments if d.usable)
             raise ObjectQueryRefused(f"{scope.entity.id} has no segment '{name}'{_did_you_mean(low, verified)}", verified)
         if not seg.verified:
             raise ObjectQueryRefused(f"segment '{seg.id}' on {scope.entity.id} is not verified "
@@ -935,6 +1033,10 @@ class _Compiler:
                   if low in (mid.lower(), m.id.lower(), (m.display_name or "").lower())), None)
         mine = sorted(mid for mid, x in self.g.metrics.items() if x.verified and metric_on(x, scope.entity))
         if m is None:
+            derived = find_derived_metric(self.g, scope.entity, name)
+            if derived is not None:
+                return self.derived_metric(scope, derived)
+            mine += sorted(d.name for d in derived_for(self.g, scope.entity).metrics if d.usable)
             raise ObjectQueryRefused(f"no metric '{name}' on {scope.entity.id}{_did_you_mean(low, mine)}", mine)
         if not m.verified:
             raise ObjectQueryRefused(f"metric '{m.id}' is not verified ({m.verification_note or 'no note'}) — "
@@ -944,6 +1046,39 @@ class _Compiler:
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
         self.plan.append(f"metric {m.id} (verified): {m.formula_sql}")
         return _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
+
+    def _derived_filters(self, d, filters, what: str) -> list[ObjectFilter]:
+        try:
+            return [ObjectFilter.model_validate(f) for f in filters]
+        except ValidationError as exc:
+            raise ObjectQueryRefused(f"{what} '{d.name}' is derived from {d.source}, whose filters are malformed "
+                                     f"({exc.errors()[0]['msg']})") from exc
+
+    def derived_segment(self, scope: _Scope, d) -> str:
+        """ON-9 — a segment a declared promise or rule derives: its filters, in the door's own shape, compiled under
+        the door's own laws. Refused while the declaration is unmeasured or measured false."""
+        if not d.usable:
+            raise ObjectQueryRefused(f"segment '{d.name}' on {scope.entity.id} is derived from {d.source}, which "
+                                     f"{d.why_not}")
+        self.plan.append(f"segment {d.name} (derived from {d.source}, measured): {d.description}")
+        self.caveats.extend(c for c in d.caveats if c not in self.caveats)
+        return self.where(scope, self._derived_filters(d, d.filters, "segment"))
+
+    def derived_metric(self, scope: _Scope, d) -> str:
+        """ON-9 — the rate a declared promise derives: the objects that broke it over the objects that reached the
+        stage with it in force, each counted over the object set by the door's own law — a ratio of two counts, never
+        an average of per-object flags."""
+        if not d.usable:
+            raise ObjectQueryRefused(f"metric '{d.name}' on {scope.entity.id} is derived from {d.source}, which "
+                                     f"{d.why_not}")
+        label = f"metric {d.name}"
+        broke = self.term(scope, MeasureTerm(agg="count", where=self._derived_filters(d, d.breach, "metric")),
+                          f"{label} (broke the promise)")
+        reached = self.term(scope, MeasureTerm(agg="count", where=self._derived_filters(d, d.reached, "metric")),
+                            f"{label} (reached the stage with the promise in force)")
+        self.plan.append(f"{label} (derived from {d.source}, measured): {d.description} — a ratio of two counts")
+        self.caveats.extend(c for c in d.caveats if c not in self.caveats)
+        return f"1.0 * ({broke}) / NULLIF({reached}, 0)"
 
     def term(self, scope: _Scope, t: MeasureTerm, label: str) -> str:
         if t.metric:
@@ -965,7 +1100,7 @@ class _Compiler:
         for i, seg in enumerate(segs):
             last = i == len(segs) - 1
             if last:
-                p = find_property(entity, seg) or self.virtual_prop(entity, seg)
+                p = find_property(entity, seg) or self.virtual_prop(entity, seg) or self.derived_prop(entity, seg)
                 if p is not None:
                     return self.prop_measure(scope, alias, p, hops, t, label, entity=entity)
                 if self.hop(entity, seg) is None:
@@ -1097,7 +1232,8 @@ class _Compiler:
                 where.append(frag)
         for f in q.filters:
             where.append(self.condition(scope, f))
-            self.plan.append(f"filter {f.path} {f.op}" + ("" if f.value is None else f" {f.value!r}"))
+            self.plan.append(f"filter {f.path} {f.op}" + ("" if f.value is None else f" {f.value!r}")
+                             + (f" {f.value_path} (another property of the same object)" if f.value_path else ""))
 
         select: list[str] = []
         names: list[str] = []
@@ -1201,6 +1337,20 @@ def compile_object_query(query: ObjectQuery | dict, graph: Optional[OntologyGrap
     return _Compiler(graph, query, (dialect or "duckdb").lower(), fiscal, overlay).build()
 
 
+def property_at(graph: Optional[OntologyGraph], object_type: str, path: str, *,
+                purpose: str = "path") -> tuple[OntologyEntity, EntityProperty, list[ObjectLink]]:
+    """ON-9 — the property ``path`` names from ``object_type``, resolved by the compiler's own law (to-one links only;
+    a backing's, a binding's or a derived property), with the type it lands on and the links crossed — or
+    `ObjectQueryRefused` with why. What a declaration's anchors are checked against, so a stage the compiler could not
+    read is refused before it is written."""
+    if graph is None or not graph.entities:
+        raise ObjectQueryRefused("no ontology is built for this scope — there are no object types to resolve against")
+    compiler = _Compiler(graph, ObjectQuery(object_type=object_type, measures=[ObjectMeasure()]), "duckdb", 1)
+    anchor = compiler.entity(object_type)
+    _, prop, hops = compiler.column(_Scope(entity=anchor, alias="t0"), path, purpose)
+    return (hops[-1].target if hops else anchor), prop, hops
+
+
 # ── the catalog a caller chooses names from ─────────────────────────────────────────────
 
 def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict:
@@ -1227,6 +1377,11 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
             links.append({"name": h.name, "business_name": h.business, "verb": h.rel.verb, "to": h.target.api_name,
                           "cardinality": h.label, "on": f"{h.local_col} = {h.remote_col}", "usable": not problem,
                           **({"why_not": problem} if problem else {})})
+        # ON-9 — what a declared process or rule derives on this type is a name the compiler accepts, once measured.
+        derived = derived_for(graph, e)
+        for d in derived.properties:
+            if d.usable:
+                roles.setdefault("measure", []).append(d.name)
         b = e.backing
         types.append({
             "object_type": e.api_name, "id": e.id, "display_name": e.display_name,
@@ -1237,8 +1392,10 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
             "properties": roles,
             "bindings": bindings,
             "links": links,
-            "segments": sorted(k for k, s in (e.segments or {}).items() if s.verified and (s.filter_sql or "").strip()),
-            "metrics": sorted(mid for mid, m in graph.metrics.items() if m.verified and metric_on(m, e)),
+            "segments": (sorted(k for k, s in (e.segments or {}).items() if s.verified and (s.filter_sql or "").strip())
+                         + sorted(d.name for d in derived.segments if d.usable)),
+            "metrics": (sorted(mid for mid, m in graph.metrics.items() if m.verified and metric_on(m, e))
+                        + sorted(d.name for d in derived.metrics if d.usable)),
             "overlay_properties": sorted(edits[0].column for edits in overlay_properties(e, overlay).values()),
         })
     return {"connection_id": graph.connection_id, "schema_name": graph.schema_name, "object_types": types}

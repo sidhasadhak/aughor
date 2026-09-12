@@ -259,8 +259,18 @@ def measure_latest(connection_id: str, schema_name: str, db, pack_id: Optional[s
         if po is not None:
             claims = apply_core_claims(graph, po, pack_id, db)
     _store.put(key, {"graph": graph.model_dump()})
+    # ON-9 — declared processes and rules are counted against the SERVED graph (every declaration overlaid, with the
+    # counts this pass just recorded on the override files); what they count is written back on their own files. The
+    # rules read a second overlay, so one that reads a process's lag sees the process's fresh verdict.
+    from aughor.ontology.business_rules import measure_override_rules
+    from aughor.ontology.processes import measure_override_processes
+    processes = measure_override_processes(connection_id, schema_name, db,
+                                           overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
+    rules = measure_override_rules(connection_id, schema_name, db,
+                                   overlay_human_overrides(graph.model_copy(deep=True), connection_id, schema_name))
     return {"relationships": relationships, "lifecycles": lifecycles, "backings": backings, "claims": claims,
-            "display_properties": displays, "bindings": bindings, "declared_links": links_declared}
+            "display_properties": displays, "bindings": bindings, "declared_links": links_declared,
+            "processes": processes, "rules": rules}
 
 
 def patch_action(
@@ -405,6 +415,14 @@ def get_or_build_ontology(
                     from aughor.ontology.bindings import measure_override_bindings, propose_bindings
                     propose_bindings(graph, _vdb)
                     measure_override_bindings(connection_id, graph.schema_name, _vdb, graph)
+                    # ON-9 — declared processes and rules, counted against a working copy of this build's graph with
+                    # every declaration overlaid (the structural graph saved below stays raw).
+                    from aughor.ontology.business_rules import measure_override_rules
+                    from aughor.ontology.processes import measure_override_processes
+                    measure_override_processes(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
+                        graph.model_copy(deep=True), connection_id, graph.schema_name))
+                    measure_override_rules(connection_id, graph.schema_name, _vdb, overlay_human_overrides(
+                        graph.model_copy(deep=True), connection_id, graph.schema_name))
                     # ON-0a: the packs DEPLOYED on this connection are the core it extends —
                     # every claim in their maps is evaluated here, never rendered.
                     apply_bound_pack_claims(graph, connection_id, graph.schema_name, _vdb)

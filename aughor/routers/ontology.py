@@ -111,6 +111,52 @@ class _DeclaredLink(BaseModel):
     origin: Optional[Literal["human", "model"]] = None
 
 
+class _DeclaredPromise(BaseModel):
+    """ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, or by
+    a deadline property of the object that carries it (`grain`, reached from it through `via`)."""
+    name: Optional[str] = None
+    within_days: Optional[int] = None
+    deadline: Optional[str] = None
+    grain: Optional[str] = None
+    via: Optional[str] = None
+    target: Optional[float] = None
+
+
+class _DeclaredStage(BaseModel):
+    """ON-9 — one stage, anchored to the moment an object reaches it or to the states that place it there."""
+    name: str
+    display_name: Optional[str] = None
+    timestamp: Optional[str] = None
+    state: Optional[list[str]] = None
+    property: Optional[str] = None
+    promise: Optional[_DeclaredPromise] = None
+
+
+class _DeclaredProcess(BaseModel):
+    """ON-9 — a process one object type goes through: its stages in order."""
+    id: str
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    entity: str
+    stages: list[_DeclaredStage]
+    owner: Optional[str] = None
+    origin: Optional[Literal["human", "model", "pack"]] = None
+
+
+class _DeclaredRule(BaseModel):
+    """ON-9 — a named, owned definition over one type: a value set, or conditions in the object door's shape."""
+    id: str
+    display_name: Optional[str] = None
+    description: Optional[str] = None
+    entity: str
+    kind: Literal["value_set", "condition"] = "condition"
+    property: Optional[str] = None
+    values: Optional[list] = None
+    conditions: Optional[list[dict]] = None
+    owner: Optional[str] = None
+    origin: Optional[Literal["human", "model", "pack"]] = None
+
+
 class _ActionOverride(BaseModel):
     description: Optional[str] = None
     sql_template: Optional[str] = None
@@ -665,6 +711,9 @@ def measure_ontology(
            "bindings": reports["bindings"].summary(),
            # ON-7 — every declared link, its sides counted again on this pass.
            "declared_links": reports.get("declared_links", []),
+           # ON-9 — every declared process and rule, counted again on this pass.
+           "processes": reports.get("processes", []),
+           "rules": reports.get("rules", []),
            "claims": claims.summary() if claims is not None else None}
     try:
         from aughor.kernel.ledger import Ledger
@@ -1303,6 +1352,165 @@ def delete_declared_link(
                                                        if existing is not None else "")))
     delete_override(connection_id, effective, "link", relationship_id)
     return {"removed": True, "link": relationship_id}
+
+
+# ── ON-9: processes, promises and rules ─────────────────────────────────────────────────────
+
+
+@router.get("/ontology/processes")
+def list_ontology_processes(
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Every declared process (ON-9) with what its measurement counted — each stage and how many objects reach it,
+    each transition timed, each promise with its breaches and the names it derives — and every declared rule."""
+    from aughor.ontology.business_rules import describe_rule
+    from aughor.ontology.processes import describe_process
+    graph = _get_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    return {"connection_id": connection_id, "schema_name": graph.schema_name,
+            "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
+            "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())]}
+
+
+@router.post("/ontology/processes", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_ontology_process(
+    body: _DeclaredProcess,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Declare a process (ON-9): the type that goes through it, its stages in order — each anchored to the moment an
+    object reaches it or to the states that place it there — and on a stage the promise about reaching it: within N
+    calendar days of the previous stage, or by a deadline property of the object that carries it. Every anchor is
+    resolved by the object door's own path law and the whole declaration is COUNTED through its compiler before
+    anything is written (400 with the reason when it cannot be); the count rides the override file and is taken again
+    on every measure pass. The door then compiles what each promise derives — `late_<name>`, `<name>_breach_rate`,
+    `<name>_lag_days`. No model call."""
+    return _declare_process_core(body.model_dump(exclude_none=True), connection_id, schema_name)
+
+
+def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[str]) -> dict:
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.ontology.processes import (
+        NotMeasurable, describe_process, measure_process, process_entry, process_fields, process_spec_problem,
+        resolve_process,
+    )
+    effective = _resolve_schema(connection_id, schema_name)
+    problem = process_spec_problem(spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    process_id = str(spec["id"])
+    if process_id in graph.processes:
+        raise HTTPException(status_code=409, detail=f"a process '{process_id}' already exists")
+    problem, fields = resolve_process(graph, process_id, process_fields(spec))
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        measured = measure_process(db, graph, process_id, fields)
+    except NotMeasurable as exc:
+        raise HTTPException(status_code=400, detail=f"{process_id} could not be counted: {exc}") from exc
+    finally:
+        db.close()
+    ov = OntologyOverride(target_kind="process", target_id=process_id, fields=fields, source=fields["origin"],
+                          binding={"process": process_entry(fields, measured)})
+    save_override(connection_id, effective, ov)
+    served = _get_ontology_graph(connection_id, effective)
+    if served is None or process_id not in served.processes:
+        raise HTTPException(status_code=500, detail=f"{process_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "process": describe_process(served, served.processes[process_id])}
+
+
+@router.delete("/ontology/processes/{process_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def delete_declared_process(
+    process_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw a declared process (ON-9) — its override file, and with it every name it derived."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override
+    effective = _resolve_schema(connection_id, schema_name)
+    if find_override(connection_id, effective, "process", process_id) is None:
+        raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
+    delete_override(connection_id, effective, "process", process_id)
+    return {"removed": True, "process": process_id}
+
+
+@router.post("/ontology/rules", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def declare_ontology_rule(
+    body: _DeclaredRule,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Declare a named business rule (ON-9): a value set — the values of one property the business groups under one
+    name, "DACH is DE, AT and CH" — or conditions in the object door's shape. Compiled and COUNTED before it is
+    written: how many objects it admits, and for a value set the rows per value, a value no row holds flagged. The
+    object door reads it as a segment named by its id. No model call."""
+    return _declare_rule_core(body.model_dump(exclude_none=True), connection_id, schema_name)
+
+
+def _declare_rule_core(spec: dict, connection_id: str, schema_name: Optional[str]) -> dict:
+    from aughor import govern
+    govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.business_rules import (
+        describe_rule, measure_rule, resolve_rule, rule_entry, rule_fields, rule_spec_problem,
+    )
+    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.ontology.processes import NotMeasurable
+    effective = _resolve_schema(connection_id, schema_name)
+    problem = rule_spec_problem(spec)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail=f"No ontology built for schema '{effective}' on this connection")
+    rule_id = str(spec["id"])
+    if rule_id in graph.rules:
+        raise HTTPException(status_code=409, detail=f"a rule '{rule_id}' already exists")
+    problem, fields = resolve_rule(graph, rule_id, rule_fields(spec))
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        measured = measure_rule(db, graph, rule_id, fields)
+    except NotMeasurable as exc:
+        raise HTTPException(status_code=400, detail=f"{rule_id} could not be counted: {exc}") from exc
+    finally:
+        db.close()
+    ov = OntologyOverride(target_kind="rule", target_id=rule_id, fields=fields, source=fields["origin"],
+                          binding={"rule": rule_entry(fields, measured)})
+    save_override(connection_id, effective, ov)
+    served = _get_ontology_graph(connection_id, effective)
+    if served is None or rule_id not in served.rules:
+        raise HTTPException(status_code=500, detail=f"{rule_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "rule": describe_rule(served, served.rules[rule_id])}
+
+
+@router.delete("/ontology/rules/{rule_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def delete_declared_rule(
+    rule_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw a declared rule (ON-9) — its override file, and with it the segment it named."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override
+    effective = _resolve_schema(connection_id, schema_name)
+    if find_override(connection_id, effective, "rule", rule_id) is None:
+        raise HTTPException(status_code=404, detail=f"no declared rule '{rule_id}'")
+    delete_override(connection_id, effective, "rule", rule_id)
+    return {"removed": True, "rule": rule_id}
 
 
 class _LinkName(BaseModel):
