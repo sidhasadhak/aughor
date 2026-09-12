@@ -249,7 +249,8 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "semantic_type": "overlay", "data_type": "BOOLEAN" if isinstance(value, bool) else "",
                            "unit": "", "description": mine.note,
                            "overlay": {"by": mine.actor or mine.source, "at": mine.created_at, "note": mine.note,
-                                       "origin": mine.origin, "provenance": mine.provenance()}})
+                                       "origin": mine.origin, "provenance": mine.provenance(),
+                                       "id": mine.id}})
     shown = display_of(entity)
     title = None if shown["is_key"] else _value(row, shown["property"])
     links = [_link_view(db, link, row) for link in object_links(graph, entity)]

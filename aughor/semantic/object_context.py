@@ -163,7 +163,7 @@ def object_notes(connection_id: str, entity: OntologyEntity, instance: ObjectIns
                 continue
             if (edit.key_column or edit.column).lower() == instance.key.lower() and str(edit.row_key) == instance.pk:
                 out.append({"column": edit.column, "kind": edit.kind, "body": edit.body, "source": edit.source,
-                            "at": edit.created_at})
+                            "at": edit.created_at, "id": edit.id})
         return out
     except Exception as exc:  # noqa: BLE001
         tolerate(exc, "object page: overlay notes are best-effort", counter="objects.notes_scan")

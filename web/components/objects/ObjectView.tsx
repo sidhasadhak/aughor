@@ -36,6 +36,7 @@ import {
   type ObjectPage,
   type ObjectRefusal,
   type ObjectTimeseries,
+  withdrawEdit,
 } from "@/lib/objects";
 
 interface Scope {
@@ -103,6 +104,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
     if (loaded?.path === "object") document.title = `${loaded.type_name} ${loaded.title ?? loaded.pk} · Aughor`;
   }, [loaded]);
 
+  const reload = useCallback(() => setAttempt((n) => n + 1), []);
   const workbench = connectionId ? `/?conn=${encodeURIComponent(connectionId)}` : "/";
   const toWorkbench = (
     <Link href={workbench}><Button variant="outline" size="sm">Open the workbench</Button></Link>
@@ -128,7 +130,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
       </EmptyState>
     );
   } else {
-    body = <ObjectBody page={loaded} scope={{ connectionId, schemaName }} />;
+    body = <ObjectBody page={loaded} scope={{ connectionId, schemaName }} reload={reload} />;
   }
 
   return (
@@ -162,7 +164,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
   );
 }
 
-function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
+function ObjectBody({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   const { related } = page;
   return (
     <div style={{ maxWidth: 1180, margin: "0 auto", padding: "20px 24px 40px" }}>
@@ -175,7 +177,7 @@ function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
       )}
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(300px,2fr)]">
         <div className="flex min-w-0 flex-col gap-4">
-          <PropertiesCard page={page} scope={scope} />
+          <PropertiesCard page={page} scope={scope} reload={reload} />
           {(page.timeseries ?? []).map((series) => <HistoryCard key={series.binding} page={page} series={series} />)}
           <LinksCard page={page} scope={scope} />
           <CitationsCard page={page} citations={related.findings} />
@@ -183,7 +185,7 @@ function ObjectBody({ page, scope }: { page: ObjectPage; scope: Scope }) {
         <div className="flex min-w-0 flex-col gap-4">
           <ActionsCard page={page} actions={related.actions} scope={scope} />
           <MetricsCard page={page} metrics={related.metrics} />
-          <NotesCard notes={related.notes} />
+          <NotesCard notes={related.notes} scope={scope} reload={reload} />
         </div>
       </div>
     </div>
@@ -217,7 +219,35 @@ function propertiesSummary(page: ObjectPage): string {
     + (set ? `, and ${formatCount(set)} set by accepted actions.` : ".");
 }
 
-function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
+/** ON-4 — take back ONE accepted edit. The source was never written, so this restores nothing: it stops
+ *  the merge, and the next read shows the value the warehouse holds. */
+function Withdraw({ editId, what, scope, reload }: {
+  editId: string;
+  what: string;
+  scope: Scope;
+  reload: () => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const withdraw = useCallback(() => {
+    setBusy(true);
+    setError("");
+    withdrawEdit(editId, scope.connectionId)
+      .then(reload)
+      .catch((e: unknown) => { setError(errorText(e)); setBusy(false); });
+  }, [editId, scope.connectionId, reload]);
+  return (
+    <>
+      <Button variant="ghost" size="xs" disabled={busy} onClick={withdraw}
+        title={`Withdraw ${what} — the source value, never written, is what this object reads again`}>
+        {busy ? "Withdrawing…" : "Withdraw"}
+      </Button>
+      {error && <span className="aug-fs-xs" style={{ color: "var(--red3)" }}>{error}</span>}
+    </>
+  );
+}
+
+function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scope; reload: () => void }) {
   // A property that names another object — an order's customer_id — opens that object.
   const objectColumns = useObjectKeyColumns(scope.connectionId);
   return (
@@ -246,8 +276,11 @@ function PropertiesCard({ page, scope }: { page: ObjectPage; scope: Scope }) {
                 ) : cellText(p.value)}
                 {p.unit && p.value != null && <span style={{ color: "var(--t4)" }}> {p.unit}</span>}
                 {p.overlay && (
-                  <span className="aug-fs-xs" style={{ display: "block", color: "var(--t4)" }}>
+                  <span className="aug-fs-xs"
+                    style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t4)" }}>
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
+                    <Withdraw editId={p.overlay.id} what={`${p.display_name} on this ${page.type_name}`}
+                      scope={scope} reload={reload} />
                   </span>
                 )}
                 {/* ON-5 — a timeseries property is a value AT A TIME, and what it was before is half of what a
@@ -553,7 +586,7 @@ function ActionOffer({ action, href }: { action: ObjectAction; href: string }) {
   );
 }
 
-function NotesCard({ notes }: { notes: ObjectNote[] }) {
+function NotesCard({ notes, scope, reload }: { notes: ObjectNote[]; scope: Scope; reload: () => void }) {
   return (
     <Section title="Notes" description="Edits kept beside the data on this row; the source is never written.">
       {notes.length === 0 ? (
@@ -561,8 +594,10 @@ function NotesCard({ notes }: { notes: ObjectNote[] }) {
       ) : notes.map((n, i) => (
         <div key={`${n.column}:${n.at}:${i}`} style={{ padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
           <div className="aug-fs-sm" style={{ color: "var(--t1)", lineHeight: 1.5 }}>{n.body}</div>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+          <div className="aug-fs-xs"
+            style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t4)", marginTop: 2 }}>
             {[n.column, n.kind, n.source, typeof n.at === "string" ? relTime(n.at) : ""].filter(Boolean).join(" · ")}
+            {n.id && <Withdraw editId={n.id} what="this note" scope={scope} reload={reload} />}
           </div>
         </div>
       ))}

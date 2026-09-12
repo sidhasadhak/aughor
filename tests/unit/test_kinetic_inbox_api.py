@@ -107,3 +107,43 @@ def test_propose_stages_to_the_inbox(monkeypatch):
     assert prop["ok"] is True and "inbox_id" in prop
     # the staged proposal is retrievable and acceptable
     assert inbox.get_proposal(prop["inbox_id"]).action_id == "refund"
+
+
+# ── the withdrawal door (ON-4) ───────────────────────────────────────────────────
+
+def test_annotate_then_withdraw_over_http_and_a_second_withdrawal_is_404():
+    """One edit, unsaid. Until this door the only way back was the connection-wide purge."""
+    from aughor.actions import overlay as OV
+    OV.purge_connections(["conn-withdraw-t"])
+    try:
+        params = {"connection_id": "conn-withdraw-t"}
+        written = client.post("/kinetic-actions/annotate", params=params, json={
+            "table": "orders", "column": "status", "key_column": "order_id", "row_key": "8821",
+            "body": "known test order"}).json()
+        listed = client.get("/kinetic-actions/annotations", params=params).json()["edits"]
+        assert [e["id"] for e in listed] == [written["id"]]
+
+        gone = client.delete(f"/kinetic-actions/annotations/{written['id']}", params=params)
+        assert gone.status_code == 200, gone.text
+        assert gone.json()["target"] == "orders.status#order_id=8821"
+        assert client.get("/kinetic-actions/annotations", params=params).json()["edits"] == []
+
+        again = client.delete(f"/kinetic-actions/annotations/{written['id']}", params=params)
+        assert again.status_code == 404 and "already be withdrawn" in again.json()["detail"]
+    finally:
+        OV.purge_connections(["conn-withdraw-t"])
+
+
+def test_a_withdrawal_does_not_reach_another_connection_over_http():
+    from aughor.actions import overlay as OV
+    OV.purge_connections(["conn-withdraw-a", "conn-withdraw-b"])
+    try:
+        mine = client.post("/kinetic-actions/annotate", params={"connection_id": "conn-withdraw-a"},
+                           json={"table": "orders", "body": "mine"}).json()
+        wrong = client.delete(f"/kinetic-actions/annotations/{mine['id']}",
+                              params={"connection_id": "conn-withdraw-b"})
+        assert wrong.status_code == 404
+        assert client.get("/kinetic-actions/annotations",
+                          params={"connection_id": "conn-withdraw-a"}).json()["edits"] != []
+    finally:
+        OV.purge_connections(["conn-withdraw-a", "conn-withdraw-b"])

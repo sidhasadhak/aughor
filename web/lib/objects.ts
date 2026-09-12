@@ -17,7 +17,7 @@ export interface ObjectProperty {
   unit: string;
   description: string;
   /** ON-4 — set by an accepted action and merged at read time: who, when, and why. */
-  overlay?: { by: string; at: string; note: string; origin: string; provenance: string };
+  overlay?: { by: string; at: string; note: string; origin: string; provenance: string; id: string };
   /** ON-1b — read through a further binding on the object's key: which binding, its source, and the column.
    *  ON-5 — a `timeseries` binding reads the object's LATEST value: `at` is when that was measured, `previous`
    *  is what it read on the reading before that (`previous_at` when), and `note` is the reduction in the
@@ -84,6 +84,8 @@ export interface ObjectNote {
   body: string;
   source: string;
   at: string;
+  /** ON-4 — the overlay edit behind this note, so it can be withdrawn one edit at a time. */
+  id: string;
 }
 
 export interface ObjectActionParam {
@@ -288,4 +290,17 @@ export function cachedObjectCatalog(connectionId: string): Promise<ObjectCatalog
   });
   catalogs.set(connectionId, pending);
   return pending;
+}
+
+
+/** ON-4 — withdraw ONE overlay edit: the annotation on a row, or the property an accepted action set on
+ *  an object. The next read stops merging it and the object reads as the warehouse holds it — nothing is
+ *  restored, because the source was never written. A 404 means it is already gone. */
+export async function withdrawEdit(editId: string, connectionId?: string): Promise<void> {
+  const q = new URLSearchParams();
+  if (connectionId) q.set("connection_id", connectionId);
+  const res = await fetch(
+    `${getApiBase()}/kinetic-actions/annotations/${encodeURIComponent(editId)}${q.toString() ? `?${q}` : ""}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
 }

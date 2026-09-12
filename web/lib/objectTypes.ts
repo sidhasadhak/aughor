@@ -339,3 +339,16 @@ export async function removeBinding(connectionId: string, entityId: string, name
   const res = await fetch(bindingUrl(connectionId, entityId, name, schemaName), { method: "DELETE" });
   if (!res.ok) throw new Error(await detailOf(res));
 }
+
+
+/** Name a link by its business verb (ON-3b). The mechanical names stay and still resolve; this one is accepted
+ *  beside them. Refused when it is not snake_case, or already names another link or a property on either type
+ *  the link joins — a path segment must name exactly one thing. */
+export async function nameLink(
+  connectionId: string, relationshipId: string, name: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/links/${encodeURIComponent(relationshipId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
