@@ -1129,3 +1129,14 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-profile-lc-note { font-size: 11px; line-height: 1.5; color: var(--t3); }
 .aug-profile-gap { color: var(--amb4); }
 .aug-profile-rule { max-width: 360px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+
+/* ── Org (Aughor Intelligence · 08 Org) — the promoted-findings ledger, beside what Org holds ─── */
+.aug-ledger-bar > .aug-org-meta { margin-left: 0; }
+.aug-org-filter { margin-left: auto; width: 220px; }
+.aug-org-col-domain { width: 140px; }
+.aug-org-col-novelty { width: 72px; }
+.aug-org-col-when { width: 80px; }
+.aug-org-col-door { width: 92px; }
+.aug-org-domain { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-org-novelty { font-size: 11px; color: var(--t3); }
+.aug-org-door { text-align: right; }
