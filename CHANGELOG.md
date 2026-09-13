@@ -11,6 +11,17 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Added
+- **One-command install on macOS, Linux and Windows.** `./install.sh` (or `install.cmd`)
+  installs uv, Python, every Python and web dependency and — on a computer with no Node.js
+  20.9 or newer — an official Node.js build verified against nodejs.org's checksums; builds
+  the web app; starts Aughor and opens it in the browser. One line per step: what the tools
+  print goes to `.aughor/logs/`, and only a failed step shows its log's tail, with what to do
+  next. Running it again redoes only what changed. `aughor up` now serves a production build
+  (rebuilt when its inputs change), keeps server logs in files (`--dev` and `--verbose` show
+  them), opens the browser (`--no-browser` to skip), carries a moved API or web port through
+  to CORS and the chat proxy, and says when Aughor is already running. A new CI workflow runs
+  the installer on all three operating systems, once with the runner's Node.js and once with
+  a downloaded one.
 - **An automation can act as a connected account (DS-11, first half).** A new
   `integration_call` step spends a vault `Connection` — the OAuth grants VA-11 has been
   minting, refreshing and revoking with nothing able to use them. What a grant may do is

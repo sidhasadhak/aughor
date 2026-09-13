@@ -1,0 +1,108 @@
+name: Install
+
+# The installer on all three operating systems. ci.yml tests the code; this tests the first
+# thing a new user runs, which nothing else exercises on Windows or macOS at all: uv, Python,
+# every dependency and the web build from nothing, then Aughor started and both servers
+# answering.
+on:
+  pull_request:
+    paths:
+      - install.sh
+      - install.ps1
+      - install.cmd
+      - start.sh
+      - aughor/installer.py
+      - aughor/cli.py
+      - pyproject.toml
+      - uv.lock
+      - web/package.json
+      - web/package-lock.json
+      - .github/workflows/install.yml
+  push:
+    branches: [main]
+    paths:
+      - install.sh
+      - install.ps1
+      - install.cmd
+      - start.sh
+      - aughor/installer.py
+      - aughor/cli.py
+      - pyproject.toml
+      - uv.lock
+      - web/package.json
+      - web/package-lock.json
+      - .github/workflows/install.yml
+  # Dependencies and runner images move even when these files do not.
+  schedule:
+    - cron: '0 7 * * 1'    # Mondays, 07:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: install-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Install · ${{ matrix.os }} · ${{ matrix.node }} Node.js
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Every runner ships a Node.js, so without the second half the download path — the
+        # one a machine with no Node.js takes — would never run here.
+        node: [installed, downloaded]
+    env:
+      AUGHOR_NODE_DOWNLOAD: ${{ matrix.node == 'downloaded' && '1' || '' }}
+      # No monitor, automation or exploration clock in a smoke run.
+      AUGHOR_DISABLE_SCHEDULERS: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: ./install.sh --no-start
+
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: install.cmd --no-start
+
+      - name: Start, and both servers answer (macOS, Linux)
+        if: runner.os != 'Windows'
+        run: |
+          ./install.sh --no-browser > up.log 2>&1 &
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null &&
+               curl -fsS -o /dev/null http://127.0.0.1:3000/; then
+              cat up.log
+              exit 0
+            fi
+            sleep 2
+          done
+          cat up.log
+          tail -n 50 .aughor/logs/*.log || true
+          exit 1
+
+      - name: Start, and both servers answer (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Start-Process -FilePath cmd.exe -ArgumentList '/c', 'install.cmd --no-browser > up.log 2>&1' -NoNewWindow
+          for ($attempt = 0; $attempt -lt 90; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health | Out-Null
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
+              Get-Content up.log
+              exit 0
+            } catch {
+              Start-Sleep -Seconds 2
+            }
+          }
+          Get-Content up.log
+          Get-ChildItem .aughor/logs/*.log | ForEach-Object { Get-Content $_ -Tail 50 }
+          exit 1

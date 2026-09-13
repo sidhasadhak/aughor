@@ -2,7 +2,7 @@
 Aughor CLI — start the platform and run autonomous deep analyses from the terminal.
 
 Usage:
-  aughor up          # start API (:8000) + web UI (:3000) — the one-command bootstrap
+  aughor up          # install what's missing, start API (:8000) + web app (:3000), open it
   aughor investigate "Why did revenue drop 8% last week?"
   aughor investigate "Why did revenue drop 8% last week?" --db data/aughor.duckdb
   aughor seed        # create the fixture database
@@ -23,6 +23,7 @@ import duckdb
 from rich import box
 from rich.console import Console
 from rich.markdown import Markdown
+from rich.markup import escape
 from rich.padding import Padding
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn
@@ -105,7 +106,7 @@ def seed(db: str):
     console.print(f"  Failure rate APAC SMB on outage: {summary['apac_smb_outage_failure_rate_pct']}%")
 
 
-# ── Up (one-command bootstrap: API + web UI) ─────────────────────────────────
+# ── Up (install what's missing, start the API and the web app) ───────────────
 
 def _repo_root() -> Path:
     """Locate the repo root for `aughor up`.
@@ -170,57 +171,85 @@ def _port_owner(port: int) -> str:
     return f"{parts[0]} (pid {parts[1]})" if len(parts) >= 2 else ""
 
 
-def _check_port_free(port: int, what: str, flag: str) -> None:
+def _aughor_answers(port: int) -> bool:
+    """Whether the listener on `port` is an Aughor API — so a second `aughor up` can say that
+    Aughor is already running, instead of reading like a clash with some unknown program."""
+    import httpx
+
+    try:
+        response = httpx.get(f"http://127.0.0.1:{port}/health", timeout=1.0)
+        body = response.json() if response.status_code == 200 else None
+    except Exception:
+        return False  # not answering, not HTTP, or not JSON: not an Aughor API
+    return isinstance(body, dict) and "status" in body and "llm" in body
+
+
+def _check_port_free(port: int, what: str, flag: str, *, web_port: Optional[int] = None) -> None:
     """Refuse to start on a busy port — never kill the owner (it may be someone
-    else's live server). Print who owns it and how to pick another port."""
+    else's live server). Say who holds it, and how to pick another port."""
     if not _port_in_use(port):
         return
     owner = _port_owner(port)
-    owner_bit = f" — owned by [bold]{owner}[/bold]" if owner else ""
-    console.print(f"[red]Port {port} is already in use[/red] (needed for {what}){owner_bit}.", soft_wrap=True)
-    console.print(
-        f"Aughor won't kill it. Stop that process yourself, or pick another port with [bold]{flag}[/bold].",
-        soft_wrap=True,
-    )
+    held_by = f" (held by [bold]{escape(owner)}[/bold])" if owner else ""
+    console.print()
+    if flag == "--api-port" and _aughor_answers(port):
+        console.print(f"  [yellow]Aughor is already running[/yellow]: its API is on port {port}{held_by}.",
+                      soft_wrap=True)
+        if web_port is not None:
+            console.print(f"  Open [bold]http://localhost:{web_port}[/bold], or stop it first "
+                          "(Ctrl+C in the terminal it runs in).", soft_wrap=True)
+        console.print(f"  To start a second copy, give it other ports with [bold]{flag}[/bold] "
+                      "and [bold]--web-port[/bold].", soft_wrap=True)
+    else:
+        console.print(f"  [red]Port {port} is already in use[/red]{held_by}, and {what} needs it.",
+                      soft_wrap=True)
+        console.print("  Aughor won't kill another program. Stop it yourself, or pick another "
+                      f"port with [bold]{flag}[/bold].", soft_wrap=True)
+    console.print()
     sys.exit(1)
 
 
-def _launch(cmd: list[str], *, cwd: Path, env: Optional[dict] = None) -> subprocess.Popen:
-    """Thin Popen wrapper (module-level so tests can stub spawning). Children
-    inherit stdout/stderr — `aughor up` is a foreground dev runner."""
-    return subprocess.Popen(cmd, cwd=str(cwd), env=env)
+#: The default of AUGHOR_CORS_ORIGINS in aughor/api.py, mirrored so a web app on another port
+#: can be ADDED to it without importing the API. tests/unit/test_cli_up.py pins the two together.
+_DEFAULT_CORS_ORIGINS = "http://localhost:3000,http://localhost:3001,http://localhost:3210"
 
 
-def _ensure_web_deps(root: Path) -> None:
-    """First-run preflight: install frontend deps when web/node_modules is absent."""
-    web_dir = root / "web"
-    if not web_dir.is_dir():
-        console.print(f"[red]web/ not found under {root}[/red] — is this an Aughor checkout?")
-        sys.exit(1)
-    if (web_dir / "node_modules").exists():
-        return
-    console.print("[cyan]First run — installing frontend deps (npm install, one-time)…[/cyan]")
-    try:
-        proc = subprocess.run(["npm", "install", "--prefix", str(web_dir)])
-    except FileNotFoundError:
-        console.print("[red]npm not found.[/red] Install Node 20+ (https://nodejs.org) and re-run.")
-        sys.exit(1)
-    if proc.returncode != 0:
-        console.print("[red]npm install failed[/red] — see the output above.")
-        sys.exit(proc.returncode)
+def _api_env(web_port: Optional[int]) -> dict:
+    """The API's environment. Output unbuffered, so its log is current when a failure is read
+    back from it. And a web app on a port the API does not already accept is added to CORS —
+    otherwise the browser refuses every request it makes. An AUGHOR_CORS_ORIGINS the user set
+    is left exactly as it is."""
+    env = dict(os.environ)
+    env["PYTHONUNBUFFERED"] = "1"
+    if web_port is not None and "AUGHOR_CORS_ORIGINS" not in env:
+        origin = f"http://localhost:{web_port}"
+        if origin not in _DEFAULT_CORS_ORIGINS.split(","):
+            env["AUGHOR_CORS_ORIGINS"] = f"{_DEFAULT_CORS_ORIGINS},{origin}"
+    return env
+
+
+def _launch(cmd: list[str], *, cwd: Path, env: Optional[dict] = None,
+            log: Optional[Path] = None) -> subprocess.Popen:
+    """Start one server (module-level so tests can stub spawning). With `log` its output goes to
+    that file; without, it shares this terminal (`--dev`, `--verbose`)."""
+    if log is None:
+        return subprocess.Popen(cmd, cwd=str(cwd), env=env)
+    with open(log, "w", encoding="utf-8", errors="replace") as out:
+        return subprocess.Popen(cmd, cwd=str(cwd), env=env, stdin=subprocess.DEVNULL,
+                                stdout=out, stderr=subprocess.STDOUT)
 
 
 def _wait_for_health(
-    url: str, timeout: float = 60.0, *, is_alive: Optional[Callable[[], bool]] = None,
-    notice: str = "", notice_after: float = 12.0,
+    url: str, timeout: float = 120.0, *, is_alive: Optional[Callable[[], bool]] = None,
+    on_slow: Optional[Callable[[], None]] = None, slow_after: float = 12.0,
 ) -> Optional[dict]:
     """Poll /health until it answers 200 (returns its JSON) or the timeout lapses
     (returns None). `is_alive` short-circuits the wait when the API process dies.
 
-    `notice` is printed once, after `notice_after` seconds, so a slow start reads as
-    progress rather than a hang. The ceiling is generous because `is_alive` already
-    ends the wait the instant the API dies — waiting longer costs nothing on the
-    failure path, and giving up early on a slow machine cost the user the summary.
+    `on_slow` is called once, after `slow_after` seconds, so a slow start reads as progress
+    rather than a hang. The ceiling is generous because `is_alive` already ends the wait the
+    instant the API dies — waiting longer costs nothing on the failure path, and giving up
+    early on a slow machine cost the user the summary.
     """
     import httpx
     start = time.monotonic()
@@ -235,47 +264,108 @@ def _wait_for_health(
                 return r.json()
         except Exception:
             r = None  # not accepting connections yet — keep polling
-        if notice and not announced and time.monotonic() - start >= notice_after:
-            console.print(f"[dim]{notice}[/dim]")
+        if on_slow is not None and not announced and time.monotonic() - start >= slow_after:
+            on_slow()
             announced = True
         time.sleep(0.5)
     return None
 
 
-def _print_boot_summary(health: Optional[dict], api_port: int, web_port: Optional[int]) -> None:
+def _wait_for_web(port: int, timeout: float = 90.0, *,
+                  is_alive: Optional[Callable[[], bool]] = None) -> bool:
+    """Wait until the web server accepts connections. A connection rather than a page request:
+    `next dev` compiles a page on its first request, and the browser is the one to make it."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if is_alive is not None and not is_alive():
+            return False
+        try:
+            with socket.create_connection(("127.0.0.1", port), timeout=1.0):
+                return True
+        except OSError:
+            time.sleep(0.3)  # not listening yet
+    return False
+
+
+def _should_open_browser(no_browser: bool, dev: bool) -> bool:
+    """Open the web app for the person who just started it — but not in `--dev` (restarted all
+    day), not when told not to, and never where no browser can appear: CI, a pipe, an SSH
+    session, or a Linux machine with no display, where Python's `webbrowser` would start a
+    text-mode browser inside this very terminal."""
+    if no_browser or dev or os.environ.get("CI"):
+        return False
+    if not sys.stdout.isatty():
+        return False
+    if os.environ.get("SSH_CONNECTION") or os.environ.get("SSH_TTY"):
+        return False
+    if sys.platform.startswith("linux") and not (os.environ.get("DISPLAY") or os.environ.get("WAYLAND_DISPLAY")):
+        return False
+    return True
+
+
+def _open_browser(url: str) -> bool:
+    import webbrowser
+
+    try:
+        return bool(webbrowser.open(url, new=2))
+    except Exception:
+        return False  # no usable browser: the summary prints the address either way
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
+
+
+def _print_boot_summary(health: Optional[dict], api_port: int, web_port: Optional[int], *,
+                        logs: Optional[Path] = None, browser_opened: bool = False,
+                        next_time: str = "") -> None:
+    """Where Aughor is, and what is still missing before the first question."""
     console.print()
-    console.print(Rule("[bold cyan]Aughor is up[/bold cyan]", style="cyan"))
-    console.print(f"  API   [bold]http://localhost:{api_port}[/bold]  [dim](docs at /docs)[/dim]")
     if web_port is not None:
-        console.print(f"  Web   [bold]http://localhost:{web_port}[/bold]")
-    if health is None:
-        console.print("  [yellow]The API has not answered /health yet — it may still be starting.[/yellow]")
-        console.print("        [dim]The URLs above are still correct; check the logs for progress.[/dim]")
+        opened = "  [dim](opened in your browser)[/dim]" if browser_opened else ""
+        console.print(f"  [bold]Aughor is ready:[/bold] [bold cyan]http://localhost:{web_port}[/bold cyan]{opened}",
+                      soft_wrap=True)
+        console.print(f"  [dim]API http://localhost:{api_port} · API docs http://localhost:{api_port}/docs[/dim]",
+                      soft_wrap=True)
     else:
-        # No demo data is the DEFAULT state, not a fault — nothing is seeded on boot.
-        if health.get("fixture_db"):
-            console.print("  Data  demo dataset loaded")
-        else:
-            console.print("  Data  no demo data [dim](add a connection, or `aughor seed` for the demo)[/dim]")
+        console.print(f"  [bold]The API is ready:[/bold] [bold cyan]http://localhost:{api_port}[/bold cyan]"
+                      "  [dim](docs at /docs)[/dim]", soft_wrap=True)
+    console.print()
+    if health is None:
+        console.print("  [yellow]The API has not answered yet.[/yellow] It may still be starting; "
+                      "the address above is right.", soft_wrap=True)
+    else:
         llm = health.get("llm") or {}
-        backend, model = llm.get("backend") or "unknown", llm.get("model") or "?"
+        backend, model = llm.get("backend") or "", llm.get("model") or ""
         if llm.get("ready"):
-            console.print(f"  LLM   {backend} · {model} · [green]ready[/green]", soft_wrap=True)
+            console.print(f"  Model  {escape(backend)} · {escape(model)} · [green]ready[/green]", soft_wrap=True)
         else:
             # Name the half that is missing: nothing ships a default model, so
             # "API key missing" was the wrong diagnosis on every fresh install.
             reason, fix = {
                 "no_model": ("no model configured",
-                             "Pick one in Settings → Inference (it lists what the backend serves), "
-                             "or set AUGHOR_CODER_MODEL / AUGHOR_NARRATOR_MODEL in .env"),
+                             "choose one in Settings → Models, or set AUGHOR_CODER_MODEL "
+                             "and AUGHOR_NARRATOR_MODEL in .env"),
                 "no_key": ("API key missing",
-                           "Set the backend's key in Settings → Inference, or in .env"),
+                           f"add the {escape(backend) or 'backend'} key in Settings → Models, or in .env"),
             }.get(llm.get("reason"), ("not configured",
-                                      "Configure it in Settings → Inference, or in .env"))
-            console.print(f"  LLM   {backend} · {model} · [red]not ready ({reason})[/red]", soft_wrap=True)
-            console.print(f"        {fix}", soft_wrap=True)
+                                      "set one up in Settings → Models, or in .env"))
+            console.print(f"  Model  [yellow]{reason}[/yellow]: {fix}", soft_wrap=True)
+        # No demo data is the DEFAULT state, not a fault — nothing is seeded on boot.
+        if health.get("fixture_db"):
+            console.print("  Data   demo dataset loaded", soft_wrap=True)
+        else:
+            console.print("  Data   no demo data: connect your own with [bold]+ Add[/bold] in the app, "
+                          "or run [bold]uv run aughor seed[/bold] for a demo dataset", soft_wrap=True)
     console.print()
-    console.print("[dim]Ctrl-C stops everything.[/dim]")
+    if logs is not None:
+        console.print(f"  [dim]Server logs are in {escape(_display_path(logs))}[/dim]", soft_wrap=True)
+    if next_time:
+        console.print(f"  [dim]{escape(next_time)}[/dim]", soft_wrap=True)
+    console.print("  Press [bold]Ctrl+C[/bold] to stop Aughor.")
     console.print()
 
 
@@ -288,10 +378,16 @@ def _signal_quietly(proc: subprocess.Popen, method: str) -> None:
 
 
 def _terminate(procs: list[subprocess.Popen], grace: float = 5.0) -> None:
-    """Stop every still-running child: terminate → wait up to `grace`s → kill."""
+    """Stop every still-running child: terminate → wait up to `grace`s → kill. On Windows the
+    whole process tree: TerminateProcess ends ONE process, and a server's own children would
+    keep holding its port."""
     live = [p for p in procs if p.poll() is None]
     for p in live:
-        _signal_quietly(p, "terminate")
+        if os.name == "nt":
+            subprocess.run(["taskkill", "/PID", str(p.pid), "/T", "/F"],
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+        else:
+            _signal_quietly(p, "terminate")
     deadline = time.monotonic() + grace
     for p in live:
         try:
@@ -301,14 +397,12 @@ def _terminate(procs: list[subprocess.Popen], grace: float = 5.0) -> None:
             p.wait()
 
 
-def _supervise(procs: list[subprocess.Popen]) -> int:
-    """Foreground both children; return the exit code of whichever exits first
-    (the caller stops the sibling)."""
+def _supervise(procs: list[subprocess.Popen]) -> subprocess.Popen:
+    """Wait in the foreground until one server exits, and return it (the caller stops the rest)."""
     while True:
         for p in procs:
-            code = p.poll()
-            if code is not None:
-                return code
+            if p.poll() is not None:
+                return p
         time.sleep(0.5)
 
 
@@ -317,73 +411,139 @@ def _raise_sigterm(signum, frame):  # pragma: no cover — signal plumbing
 
 
 @cli.command()
-@click.option("--api-port", default=8000, show_default=True, type=int, help="Port for the FastAPI backend")
-@click.option("--web-port", default=3000, show_default=True, type=int, help="Port for the Next.js web UI")
-@click.option("--dev", is_flag=True, help="Run the API with auto-reload (uvicorn --reload)")
+@click.option("--api-port", default=8000, show_default=True, type=int, help="Port for the API")
+@click.option("--web-port", default=3000, show_default=True, type=int, help="Port for the web app")
+@click.option("--dev", is_flag=True,
+              help="Development mode: hot reload for the API and the web app, their logs in this terminal")
 @click.option("--api-only", is_flag=True, help="Start only the API")
-@click.option("--web-only", is_flag=True, help="Start only the web UI")
-def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool):
-    """Start Aughor — API + web UI — with one command.
+@click.option("--web-only", is_flag=True, help="Start only the web app")
+@click.option("--no-browser", is_flag=True, help="Don't open the web app in a browser")
+@click.option("--verbose", "-v", is_flag=True, help="Show install, build and server output in this terminal")
+def up(api_port: int, web_port: int, dev: bool, api_only: bool, web_only: bool,
+       no_browser: bool, verbose: bool):
+    """Start Aughor — the API and the web app — with one command.
 
-    Installs frontend deps on the first run, refuses to touch ports something
-    else owns, waits for the API to come up healthy, then prints where
-    everything is (URLs, demo-data status, LLM readiness). No data is
-    created on your behalf — run `aughor seed` if you want the demo dataset.
-    Ctrl-C stops both processes.
+    Installs whatever the web app is missing first (its packages, a fresh production build),
+    refuses to touch a port another program owns, waits until both servers answer, opens the
+    web app in your browser and says what is left to set up. Server logs go to .aughor/logs/
+    (--dev and --verbose show them here instead). No data is created on your behalf — run
+    `aughor seed` for the demo dataset. Ctrl+C stops everything.
     """
+    from aughor import installer
+
     if api_only and web_only:
         raise click.UsageError("--api-only and --web-only are mutually exclusive.")
 
     root = _repo_root()
     run_api, run_web = not web_only, not api_only
+    steps = installer.Steps(verbose=verbose, show_up_to_date=False)
+    if not os.environ.get("AUGHOR_INSTALLER"):  # started by the installer, its list continues
+        steps.header("Aughor")
 
     if run_api:
-        _check_port_free(api_port, "the Aughor API", "--api-port")
+        _check_port_free(api_port, "the Aughor API", "--api-port", web_port=web_port if run_web else None)
     if run_web:
-        _check_port_free(web_port, "the web UI", "--web-port")
-        _ensure_web_deps(root)
+        _check_port_free(web_port, "the web app", "--web-port")
+
+    node, web_env = None, None
+    if run_web:
+        try:
+            node, web_env = installer.prepare_web(root, steps, api_port=api_port, build=not dev)
+        except installer.InstallError as error:
+            steps.failure(error)
+            sys.exit(1)
+        except KeyboardInterrupt:
+            steps.line()
+            sys.exit(130)
+
+    # Server output goes to files, so the terminal keeps to what a person needs — unless they
+    # asked to watch it, and then a spinner would only scribble over it.
+    logs = None if (dev or verbose) else installer.log_dir(root)
+    steps.verbose = logs is None
+    api_log = logs / "api.log" if logs is not None else None
+    web_log = logs / "web.log" if logs is not None else None
+    label, done = {(True, True): ("Starting Aughor", "Aughor started"),
+                   (True, False): ("Starting the API", "API started"),
+                   (False, True): ("Starting the web app", "Web app started")}[(run_api, run_web)]
 
     procs: list[subprocess.Popen] = []
     api_proc: Optional[subprocess.Popen] = None
-    signal.signal(signal.SIGTERM, _raise_sigterm)  # docker/CI stop → same clean path as Ctrl-C
-
+    # docker/CI stop → the same clean path as Ctrl-C. Put back afterwards, so running this
+    # command inside a test process does not leave the handler behind.
+    previous_sigterm = signal.signal(signal.SIGTERM, _raise_sigterm)
     try:
+        health: Optional[dict] = None
+        try:
+            with steps.working(label, done) as spinner:
+                if run_api:
+                    # A bounded graceful shutdown. An open browser tab holds a stream to the API,
+                    # and without a bound uvicorn waits on it until `_terminate` gives up and
+                    # kills the API — skipping its own shutdown (clocks stopped, traces flushed).
+                    api_cmd = [sys.executable, "-m", "uvicorn", "aughor.api:app", "--port", str(api_port),
+                               "--timeout-graceful-shutdown", "3"]
+                    if dev:
+                        api_cmd += ["--reload"]
+                    api_proc = _launch(api_cmd, cwd=root, env=_api_env(web_port if run_web else None),
+                                       log=api_log)
+                    procs.append(api_proc)
+                web_proc: Optional[subprocess.Popen] = None
+                if node is not None and web_env is not None:
+                    # Next.js's own CLI under node: no npm layer between Ctrl+C and the server,
+                    # and no `.cmd` shim on Windows.
+                    web_cmd = [str(node.exe), str(installer.next_bin(root)), "dev" if dev else "start",
+                               "-p", str(web_port)]
+                    web_proc = _launch(web_cmd, cwd=root / "web", env=node.env(web_env), log=web_log)
+                    procs.append(web_proc)
+                if api_proc is not None:
+                    running_api = api_proc
+                    health = _wait_for_health(
+                        f"http://127.0.0.1:{api_port}/health",
+                        is_alive=lambda: running_api.poll() is None,
+                        on_slow=lambda: spinner.update("the first start takes a little longer"))
+                    if health is None and running_api.poll() is not None:
+                        raise installer.InstallError(
+                            f"The API stopped while starting (exit code {running_api.returncode}).",
+                            log=api_log, hint="" if api_log else "Its output is above.")
+                if web_proc is not None:
+                    running_web = web_proc
+                    ready = _wait_for_web(web_port, is_alive=lambda: running_web.poll() is None)
+                    if not ready and running_web.poll() is not None:
+                        raise installer.InstallError(
+                            f"The web app stopped while starting (exit code {running_web.returncode}).",
+                            log=web_log, hint="" if web_log else "Its output is above.")
+        except installer.InstallError as error:
+            steps.failure(error)
+            sys.exit(1)
+
+        opened = bool(run_web and _should_open_browser(no_browser, dev)
+                      and _open_browser(f"http://localhost:{web_port}"))
         if run_api:
-            api_cmd = [sys.executable, "-m", "uvicorn", "aughor.api:app", "--port", str(api_port)]
-            if dev:
-                api_cmd += ["--reload", "--timeout-graceful-shutdown", "3"]
-            api_proc = _launch(api_cmd, cwd=root)
-            procs.append(api_proc)
-
-        if run_web:
-            env = dict(os.environ)
-            if api_port != 8000:
-                # The web app defaults to http://localhost:8000 — point it at the chosen port.
-                env["NEXT_PUBLIC_API_URL"] = f"http://localhost:{api_port}"
-            web_cmd = ["npm", "run", "dev", "--prefix", str(root / "web"), "--", "-p", str(web_port)]
-            procs.append(_launch(web_cmd, cwd=root, env=env))
-
-        if api_proc is not None:
-            health = _wait_for_health(
-                f"http://127.0.0.1:{api_port}/health",
-                is_alive=lambda: api_proc.poll() is None,
-                notice="Still starting — migrations run on first boot…",
-            )
-            if health is None and api_proc.poll() is not None:
-                console.print(f"[red]API exited during startup (code {api_proc.returncode})[/red] — see the logs above.")
-                sys.exit(api_proc.returncode or 1)
-            _print_boot_summary(health, api_port, web_port if run_web else None)
+            _print_boot_summary(health, api_port, web_port if run_web else None, logs=logs,
+                                browser_opened=opened,
+                                next_time=installer.start_command_hint() if os.environ.get("AUGHOR_INSTALLER") else "")
         else:
-            console.print(f"\n  Web  [bold]http://localhost:{web_port}[/bold]  [dim](expects the API on :{api_port})[/dim]\n")
+            console.print()
+            console.print(f"  [bold]The web app is ready:[/bold] [bold cyan]http://localhost:{web_port}[/bold cyan]"
+                          f"  [dim](it expects the API on port {api_port})[/dim]", soft_wrap=True)
+            console.print()
+            console.print("  Press [bold]Ctrl+C[/bold] to stop it.")
+            console.print()
 
-        code = _supervise(procs)
-        console.print(f"\n[yellow]A process exited (code {code}) — stopping the rest.[/yellow]")
-        sys.exit(code)
+        stopped = _supervise(procs)
+        name, log = ("The API", api_log) if stopped is api_proc else ("The web app", web_log)
+        steps.failure(installer.InstallError(
+            f"{name} stopped unexpectedly (exit code {stopped.returncode}), so Aughor is stopping too.",
+            log=log))
+        sys.exit(stopped.returncode or 1)
     except KeyboardInterrupt:
-        console.print("\n[dim]Shutting down…[/dim]")
+        steps.line()
+        with steps.working("Stopping Aughor", "Aughor stopped"):
+            _terminate(procs, grace=10.0)
         sys.exit(0)
     finally:
-        _terminate(procs)
+        _terminate(procs, grace=10.0)
+        if previous_sigterm is not None:
+            signal.signal(signal.SIGTERM, previous_sigterm)
 
 
 # ── Investigate ──────────────────────────────────────────────────────────────

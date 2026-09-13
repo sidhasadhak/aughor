@@ -5,16 +5,17 @@ on `:8000` and streams investigations over Server-Sent Events.
 
 ## Running
 
-From the **repository root** (this starts the API and the web app together):
+From the **repository root** (this installs anything missing, then starts the API and the web
+app together):
 
 ```bash
-./start.sh
+./install.sh         # Windows: install.cmd
 ```
 
 To run only the frontend against an API you already have running:
 
 ```bash
-npm install
+npm ci
 npm run dev          # http://localhost:3000
 ```
 

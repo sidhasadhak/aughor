@@ -76,6 +76,11 @@ web/node_modules/
 web/.next/
 web/.env.local
 
+# The launcher's own files: a Node.js the installer downloaded when this computer had
+# none new enough, and the install and server logs that `aughor up` writes instead of
+# filling the terminal. Deleting it costs a re-download, never data.
+/.aughor/
+
 # IDEs
 .idea/
 .vscode/
