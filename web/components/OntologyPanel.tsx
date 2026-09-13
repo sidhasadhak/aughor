@@ -1,17 +1,13 @@
 "use client";
 import { Pending } from "@/components/ui/motion";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
-import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import { Button }      from "@/components/ui/button";
 import {
   getOntology,
-  patchQueryTemplate,
-  patchOntologyEntity,
-  getEntityLifecycleCounts,
   getConnectionSettings,
   updateConnectionSettings,
   rebuildOntology,
@@ -22,10 +18,7 @@ import {
   deleteLearnedSkill,
   getAutonomy,
   type OntologyGraph,
-  type OntologyEntity,
   type QueryTemplate,
-  type OntologyRelationship,
-  type LifecycleCount,
   type ConnectionSettings,
   type DuplicateCluster,
   type AutonomyLevel,
@@ -34,25 +27,9 @@ import {
   type OntologyProposal,
 } from "@/lib/api";
 import { OntologyOrgCanvas } from "./OntologyOrgCanvas";
-import { ProcessMapper } from "./ProcessMapper";
 import { cn } from "@/lib/utils";
-import { verbLabel, formatCount, formatTimestamp, countNoun } from "@/lib/format";
+import { formatTimestamp, countNoun } from "@/lib/format";
 import { Icon } from "@/components/ui/icon";
-
-// ── Small reusable bits ───────────────────────────────────────────────────────
-
-// ── Resizable side drawer ─────────────────────────────────────────────────────
-
-
-/**
- * Drawer width that persists across mounts, with a draggable left-edge handle.
- * Returns the current width plus a handle element to drop at the panel's leading
- * edge.  Dragging left widens the panel (it grows into the canvas); dragging
- * right shrinks it.  Width is clamped to [DRAWER_MIN, DRAWER_MAX] and saved to
- * localStorage so the choice sticks.
- */
-// ── Entity detail drawer ──────────────────────────────────────────────────────
-
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
@@ -679,8 +656,10 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         {headerBar}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-3">
-            <Pending label="Building ontology" className="aug-fs-h1 text-[var(--t3)]" />
-            <p className="text-sm text-zinc-500">Building ontology…</p>
+            {/* The read never builds (routers/ontology.py `_get_ontology_graph`), so this waits on a
+                read — "Building ontology…" promised work that was not happening. */}
+            <Pending label="Reading the ontology" className="aug-fs-h1 text-[var(--t3)]" />
+            <p className="text-sm text-[var(--t3)]">Reading the ontology…</p>
           </div>
         </div>
       </div>

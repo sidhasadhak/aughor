@@ -238,6 +238,32 @@ deprecated — there is no "disputed") and status columns, drawn as values witho
 order is recorded. Not drawn: per-table confidence and decided-by; channels, DCs, a fiscal week; a
 profiling-run count; Re-profile and Correct (nothing does either without an LLM call).
 
+**Org** (artboard 08) is a ledger of promoted findings — the one thing Org records. People and
+ownership, who to ask, and open disagreements are not recorded, so none of them is drawn, and the
+rail says so.
+
+**Memory** (artboard 06): the remembered readings as rows (what was ambiguous → how it is read, who
+settled it, where, how often served) with Revoke; trusted queries and the training corpus unchanged;
+a rail of sources, verdicts and the weekly acceptance loop. Not drawn: a retired list (Revoke
+deletes), Add lesson (no route), memory export, effect-on-behaviour figures (nothing measures them).
+
+**Actions** (artboard 07): declared actions (what each does, what it is about, its gate), overlay
+edits (each withdrawable) and propose-from-a-finding, beside an approval rail and the permission
+model as `govern/actions.py` enforces it. Proposing now only stages; approving in the rail is the
+one run — the old flow executed directly and left the staged row to be run again. Not drawn: scope,
+state, runs in 30 days, an edit's previous value, a dry run, a "disabled" gate.
+
+**Graph** (artboard 04): the strip (counts, freshness, Map · Explore · Tour · Review) and, in Map, a
+rail of structural warnings from the review queue. Not drawn: hop reachability and a three-hop
+limit, dots sized by row count, edges weighted by join frequency, radial and matrix layouts.
+
+**Ontology** (artboard 03): a card leads with the business name and carries its physical table in
+mono on the same line — the card stays a fixed 196×58, because the layout and people's saved
+arrangements place by it. Deliberately not adopted, by earlier decisions: the design's dot-grid
+canvas and its Fit (centre) button. Not drawn: a confidence bar (only key verified yes/no exists),
+an override badge (no flag on the type), fact/dimension kinds (the roles differ). The loading text
+said "Building ontology…" over a read that never builds; it now says what is happening.
+
 **Not yet:**
 - The Human / Agent / Substrate switcher — left out by the user until there is a concrete use.
 - An Agent Ops needs-human badge: `GET /control-room/needs-human` runs the expiry and parked-run
@@ -251,8 +277,11 @@ profiling-run count; Re-profile and Correct (nothing does either without an LLM 
   Monitors toggles).
 - The Agent Ops runs chart hatches RUNNER runs, which clashes with the hatch's one meaning
   (unknown, not zero) — left for a decision.
-- The other Intelligence screens (`Aughor Intelligence.dc.html` 03, 04, 06–09): Ontology, Graph,
-  Memory, Actions, Org, and Ontology on a warehouse that has just connected.
+- Ontology on a warehouse that has just connected (artboard 09): the design's crawl progress, ghost
+  nodes and "forming" list have nothing behind them — the build's inner stages land only at its end and
+  nothing partial is saved — so the empty state keeps its existing doors. Its build door calls
+  `POST /ontology/rebuild`, which today deletes a built ontology and builds nothing (flagged
+  separately, not fixed here).
 
 ## 10. Self-check before a screen ships
 

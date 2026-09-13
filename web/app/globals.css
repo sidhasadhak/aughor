@@ -1194,3 +1194,6 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-graph-warn-ask { color: var(--amb4); }
 .aug-graph-warn-bad { color: var(--red4); }
 .aug-graph-warn-why { font-size: 12px; line-height: 1.55; color: var(--t2); }
+
+/* ── Ontology (Aughor Intelligence · 03) — the card's physical table beside its business name ── */
+.aug-entity-card-table { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
