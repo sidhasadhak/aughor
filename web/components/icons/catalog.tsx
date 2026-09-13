@@ -28,14 +28,14 @@ export const IcoSchema = ({ color = "currentColor", size = 14 }: { color?: strin
 );
 
 export const IcoTable = ({ active = false, size = 14 }: { active?: boolean; size?: number }) => (
-  <span style={{ color: active ? "var(--blue4)" : "var(--t4)", display: "inline-flex", flexShrink: 0 }}>
+  <span style={{ color: active ? "var(--blue4)" : "var(--t3)", display: "inline-flex", flexShrink: 0 }}>
     <Icon name="table" size={size} />
   </span>
 );
 
 export const Chevron = ({ open }: { open: boolean }) => (
   <span style={{
-    display: "inline-flex", flexShrink: 0, color: "var(--t4)",
+    display: "inline-flex", flexShrink: 0, color: "var(--t3)",
     transition: "transform .15s", transform: open ? "rotate(90deg)" : "rotate(0deg)",
   }}>
     <Icon name="chevr" size={12} />

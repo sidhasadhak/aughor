@@ -3,40 +3,53 @@ import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
 
+/**
+ * The one button system — the Instrument component sheet (web/aughor-v2/INSTRUMENT.md §4).
+ *
+ * Radius 3, label 12/600, two heights: 26 and a small 22. A press steps the background
+ * and nothing else — no translate, no scale — because a label that moves under a cursor
+ * reads as a misclick. Focus is the global 2px --bfocus ring (app/globals.css), never a
+ * border change.
+ *
+ * Variant → the sheet's name:
+ *   default      Primary    --blue-solid fill, white label. One per view.
+ *   secondary    Secondary  --bg-3 fill, --b2 border, --t1 label.
+ *   outline      Ghost      transparent, --b2 border, --t2 label.
+ *   minimal      Ghost      the older name for the same look, kept for its call sites.
+ *   link         Minimal    --blue3 label, no border — the "show source" affordance.
+ *   ghost        Quiet      no chrome until hover: the toolbar / menu-row idiom. Not on the
+ *                           sheet, but it carries 500+ icon and row actions a border would box in.
+ *   destructive             transparent, --red2 border, --red4 label.
+ */
 const buttonVariants = cva(
-  "group/button inline-flex shrink-0 items-center justify-center rounded-[var(--r1)] border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-all outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px active:not-aria-[haspopup]:scale-[0.985] disabled:pointer-events-none disabled:opacity-40 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "group/button inline-flex shrink-0 items-center justify-center gap-1.5 rounded-[var(--r1)] border border-transparent bg-clip-padding text-sm font-medium leading-none whitespace-nowrap select-none transition-[background-color,border-color,color] duration-[var(--dur-1)] ease-[var(--ease-out)] disabled:pointer-events-none disabled:cursor-not-allowed aria-invalid:border-[var(--red2)] [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-3.5",
   {
     variants: {
       variant: {
-        // Aligned to the .aug-btn design language so <Button> is the single canonical system:
-        // primary now has a real button hover (the old `[a]:hover:` only fired on an anchor, so a
-        // plain default-variant button element had no hover at all); secondary carries the aug
-        // hairline + hover step; ghost uses the aug translucent lift; minimal matches .aug-btn-minimal.
-        default: "bg-primary text-primary-foreground font-semibold hover:bg-[var(--blue-solid-hover)]",
-        outline:
-          "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+        default:
+          "border-[var(--blue-solid)] bg-[var(--blue-solid)] font-semibold text-white hover:border-[var(--blue-solid-hover)] hover:bg-[var(--blue-solid-hover)] active:brightness-90 disabled:border-[var(--b2)] disabled:bg-[var(--bg-4)] disabled:text-[var(--t3)] disabled:opacity-55",
         secondary:
-          "bg-secondary text-secondary-foreground border-[var(--b2)] hover:bg-[var(--bg-4)] hover:border-[var(--b3)] aria-expanded:bg-[var(--bg-4)] aria-expanded:text-secondary-foreground",
-        ghost:
-          "hover:bg-[var(--bg-hover)] hover:text-[var(--t1)] aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--t1)]",
+          "border-[var(--b2)] bg-[var(--bg-3)] font-semibold text-[var(--t1)] hover:border-[var(--b3)] hover:bg-[var(--bg-4)] active:bg-[var(--bg-4)] aria-expanded:bg-[var(--bg-4)] disabled:border-[var(--b1)] disabled:bg-[var(--bg-1)] disabled:text-[var(--t3)] disabled:opacity-60",
+        outline:
+          "border-[var(--b2)] bg-transparent font-semibold text-[var(--t2)] hover:border-[var(--b3)] hover:bg-[var(--bg-3)] hover:text-[var(--t1)] active:bg-[var(--bg-4)] aria-expanded:bg-[var(--bg-3)] aria-expanded:text-[var(--t1)] disabled:border-[var(--b1)] disabled:text-[var(--t3)] disabled:opacity-60",
         minimal:
-          "border-[var(--b2)] text-[var(--t2)] hover:border-[var(--b3)] hover:text-[var(--t1)]",
+          "border-[var(--b2)] bg-transparent font-semibold text-[var(--t2)] hover:border-[var(--b3)] hover:bg-[var(--bg-3)] hover:text-[var(--t1)] active:bg-[var(--bg-4)] aria-expanded:bg-[var(--bg-3)] aria-expanded:text-[var(--t1)] disabled:border-[var(--b1)] disabled:text-[var(--t3)] disabled:opacity-60",
+        ghost:
+          "bg-transparent hover:bg-[var(--bg-hover)] hover:text-[var(--t1)] active:bg-[var(--bg-4)] aria-expanded:bg-[var(--bg-hover)] aria-expanded:text-[var(--t1)] disabled:opacity-60",
         destructive:
-          "bg-destructive/10 text-destructive hover:bg-destructive/20 focus-visible:border-destructive/40 focus-visible:ring-destructive/20 dark:bg-destructive/20 dark:hover:bg-destructive/30 dark:focus-visible:ring-destructive/40",
-        link: "text-primary underline-offset-4 hover:underline",
+          "border-[var(--red2)] bg-transparent font-semibold text-[var(--red4)] hover:bg-[var(--red1)] active:bg-[var(--red1)] disabled:opacity-60",
+        link:
+          "bg-transparent font-semibold text-[var(--blue3)] hover:text-[var(--blue4)] active:bg-[var(--bg-3)] disabled:text-[var(--t3)] disabled:opacity-60",
       },
       size: {
-        default:
-          "h-8 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        xs: "h-6 gap-1 rounded-[min(var(--radius-md),10px)] px-2 text-xs in-data-[slot=button-group]:rounded-[var(--r3)] has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3",
-        sm: "h-7 gap-1 rounded-[min(var(--radius-md),12px)] px-2.5 text-[0.8rem] in-data-[slot=button-group]:rounded-[var(--r3)] has-data-[icon=inline-end]:pr-1.5 has-data-[icon=inline-start]:pl-1.5 [&_svg:not([class*='size-'])]:size-3.5",
-        lg: "h-9 gap-1.5 px-2.5 has-data-[icon=inline-end]:pr-2 has-data-[icon=inline-start]:pl-2",
-        icon: "size-8",
-        "icon-xs":
-          "size-6 rounded-[min(var(--radius-md),10px)] in-data-[slot=button-group]:rounded-[var(--r3)] [&_svg:not([class*='size-'])]:size-3",
-        "icon-sm":
-          "size-7 rounded-[min(var(--radius-md),12px)] in-data-[slot=button-group]:rounded-[var(--r3)]",
-        "icon-lg": "size-9",
+        default: "h-[26px] px-[11px]",
+        lg: "h-[26px] px-[11px]",
+        sm: "h-[26px] px-[11px]",
+        xs: "h-[22px] gap-1 px-2 text-xs [&_svg:not([class*='size-'])]:size-3",
+        icon: "size-[26px]",
+        "icon-lg": "size-[26px]",
+        "icon-sm": "size-[22px]",
+        "icon-xs": "size-[22px] [&_svg:not([class*='size-'])]:size-3",
       },
     },
     defaultVariants: {

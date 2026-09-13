@@ -150,7 +150,7 @@ export function LifecyclePanel({
         ))}
       </div>
 
-      {error && <div style={{ fontSize: 11, color: "var(--red4, #f87171)" }}>{error}</div>}
+      {error && <div className="aug-fs-xs" style={{ color: "var(--red4)" }}>{error}</div>}
     </div>
   );
 }

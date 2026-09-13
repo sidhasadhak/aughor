@@ -86,7 +86,7 @@ function FactCard({
           {fact.lens}
         </StatusChip>
         {fact.table && (
-          <span className="aug-fs-xs font-mono truncate min-w-0" style={{ color: "var(--t4)" }} title={fact.table}>
+          <span className="aug-fs-xs font-mono truncate min-w-0" style={{ color: "var(--t3)" }} title={fact.table}>
             {fact.table}
           </span>
         )}

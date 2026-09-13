@@ -132,7 +132,7 @@ export function PlaybookPanel() {
               {seeding ? "Seeding…" : "Re-seed from KB"}
             </button>
           </div>
-          <div className="flex items-center gap-3 aug-fs-xs font-mono mb-3" style={{ color: "var(--t4)" }}>
+          <div className="flex items-center gap-3 aug-fs-xs font-mono mb-3" style={{ color: "var(--t3)" }}>
             <span><span style={{ color: "var(--grn4)" }}>{activeCount}</span> active</span>
             <span><span style={{ color: "var(--t3)" }}>{draftCount}</span> draft</span>
             {provenCount > 0 && <span><span style={{ color: "var(--blue4)" }}>{provenCount}</span> proven</span>}
@@ -153,7 +153,7 @@ export function PlaybookPanel() {
                 style={{
                   background: statusFilter === s ? "var(--blue1)" : "transparent",
                   border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
-                  color: statusFilter === s ? "var(--blue4)" : "var(--t4)",
+                  color: statusFilter === s ? "var(--blue4)" : "var(--t3)",
                 }}
               >
                 {s}
@@ -167,12 +167,12 @@ export function PlaybookPanel() {
           {loading && (
             <div className="space-y-1.5 px-3">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="h-14 rounded-[var(--r3)] animate-pulse" style={{ background: "var(--bg-1)" }} />
+                <div key={i} className="h-14 aug-skeleton" style={{ borderRadius: "var(--r3)" }} />
               ))}
             </div>
           )}
           {!loading && filtered.length === 0 && (
-            <p className="aug-fs-xs text-center py-8" style={{ color: "var(--t4)" }}>
+            <p className="aug-fs-xs text-center py-8" style={{ color: "var(--t3)" }}>
               {entries.length === 0 ? "No playbook entries yet. Click \"Re-seed from KB\" to generate." : "No entries match."}
             </p>
           )}
@@ -197,7 +197,7 @@ export function PlaybookPanel() {
                     title={e.recommendation}>
                     {e.recommendation.length > 80 ? e.recommendation.slice(0, 78) + "…" : e.recommendation}
                   </p>
-                  <p className="aug-fs-xs font-mono truncate mt-0.5" style={{ color: "var(--t4)" }}>{e.trigger_metric}</p>
+                  <p className="aug-fs-xs font-mono truncate mt-0.5" style={{ color: "var(--t3)" }}>{e.trigger_metric}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1 shrink-0 mt-0.5">
                   <StatusChip status={e.status} />
@@ -217,7 +217,7 @@ export function PlaybookPanel() {
       <div className="flex-1 overflow-y-auto min-h-0 p-6">
         {!selectedEntry ? (
           <div className="h-full flex items-center justify-center">
-            <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Select an entry to view and edit</p>
+            <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Select an entry to view and edit</p>
           </div>
         ) : (
           <PlaybookDetail
@@ -248,7 +248,7 @@ function PlaybookDetail({
           </span>
           <StatusChip status={entry.status} />
           {entry.source_kb_id && (
-            <span className="text-[11px] font-mono" style={{ color: "var(--t4)" }}>
+            <span className="text-[11px] font-mono" style={{ color: "var(--t3)" }}>
               from KB: {entry.source_kb_id}
             </span>
           )}
@@ -258,7 +258,7 @@ function PlaybookDetail({
 
       {/* Recommendation */}
       <div>
-        <p className="aug-fs-xs uppercase tracking-wider mb-1.5" style={{ color: "var(--t4)" }}>Recommendation</p>
+        <p className="aug-fs-xs uppercase tracking-wider mb-1.5" style={{ color: "var(--t3)" }}>Recommendation</p>
         <p className="aug-fs-ui leading-relaxed" style={{ color: "var(--t1)" }}>{entry.recommendation}</p>
       </div>
 
@@ -270,7 +270,7 @@ function PlaybookDetail({
           { label: "Owner",           value: entry.owner_role },
         ].map(({ label, value }) => value ? (
           <div key={label}>
-            <p className="aug-fs-xs uppercase tracking-wider mb-1" style={{ color: "var(--t4)" }}>{label}</p>
+            <p className="aug-fs-xs uppercase tracking-wider mb-1" style={{ color: "var(--t3)" }}>{label}</p>
             <p className="aug-fs-sm" style={{ color: "var(--t2)" }}>{value}</p>
           </div>
         ) : null)}
@@ -279,13 +279,13 @@ function PlaybookDetail({
       {/* Success rate */}
       <div className="flex items-center gap-4">
         <div>
-          <p className="aug-fs-xs uppercase tracking-wider mb-1" style={{ color: "var(--t4)" }}>Historical success rate</p>
+          <p className="aug-fs-xs uppercase tracking-wider mb-1" style={{ color: "var(--t3)" }}>Historical success rate</p>
           <p className="aug-fs-h1 font-semibold font-mono"
-            style={{ color: entry.historical_success_rate > 0 ? "var(--grn4)" : "var(--t4)" }}>
+            style={{ color: entry.historical_success_rate > 0 ? "var(--grn4)" : "var(--t3)" }}>
             {entry.historical_success_rate > 0 ? fmtRate(entry.historical_success_rate) : "No data yet"}
           </p>
           {entry.evidence_sources.length > 0 && (
-            <p className="aug-fs-xs mt-0.5" style={{ color: "var(--t4)" }}>
+            <p className="aug-fs-xs mt-0.5" style={{ color: "var(--t3)" }}>
               {entry.evidence_sources.length} deep analys{entry.evidence_sources.length > 1 ? "es" : "is"} as evidence
             </p>
           )}
@@ -297,7 +297,7 @@ function PlaybookDetail({
         <div className="flex flex-wrap gap-1.5">
           {entry.tags.map(t => (
             <span key={t} className="aug-fs-xs px-2 py-0.5 rounded-[var(--r-chip)] font-mono"
-              style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t4)" }}>
+              style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>
               {t}
             </span>
           ))}
@@ -362,22 +362,22 @@ function VersionHistory({ entryId, currentVersion }: { entryId: string; currentV
         Version history
         {currentVersion != null && (
           <span className="aug-fs-xs px-1.5 py-0.5 rounded-[3px] font-mono"
-            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t4)" }}>v{currentVersion}</span>
+            style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}>v{currentVersion}</span>
         )}
       </button>
       {open && (
         <div className="mt-2 space-y-1.5">
-          {versions === null && <p className="aug-fs-xs" style={{ color: "var(--t4)" }}>Loading…</p>}
-          {versions?.length === 0 && <p className="aug-fs-xs" style={{ color: "var(--t4)" }}>No frozen versions yet.</p>}
+          {versions === null && <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>Loading…</p>}
+          {versions?.length === 0 && <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>No frozen versions yet.</p>}
           {versions?.slice().reverse().map(v => (
             <div key={v.version} className="flex items-center gap-3 aug-fs-xs" style={{ color: "var(--t3)" }}>
               <span className="font-mono px-1.5 py-0.5 rounded-[3px]"
                 style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t2)" }}>v{v.version}</span>
-              <span style={{ color: "var(--t4)" }}>{v.saved_at ? formatTimestamp(v.saved_at) : ""}</span>
-              <span className="font-mono truncate" style={{ color: "var(--t4)" }} title={v.receipt}>{v.receipt ? v.receipt.slice(0, 16) + "…" : ""}</span>
+              <span style={{ color: "var(--t3)" }}>{v.saved_at ? formatTimestamp(v.saved_at) : ""}</span>
+              <span className="font-mono truncate" style={{ color: "var(--t3)" }} title={v.receipt}>{v.receipt ? v.receipt.slice(0, 16) + "…" : ""}</span>
             </div>
           ))}
-          <p className="aug-fs-xs mt-1" style={{ color: "var(--t4)" }}>
+          <p className="aug-fs-xs mt-1" style={{ color: "var(--t3)" }}>
             Immutable, receipt-pinned versions — a finding that cited an older version resolves against the exact content it relied on.
           </p>
         </div>

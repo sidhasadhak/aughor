@@ -25,29 +25,43 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const css = readFileSync(join(root, "aughor-v2/theme/tokens-v2.css"), "utf8");
 const ts = readFileSync(join(root, "components/charts/palette.ts"), "utf8");
 
-// ── parse the CSS tokens: dark = :root block, light = [data-theme="light"] block ──
-function cssBlock(afterMarker) {
-  const at = css.indexOf(afterMarker);
-  if (at < 0) throw new Error(`marker not found in tokens-v2.css: ${afterMarker}`);
-  return css.slice(at);
+// ── parse the CSS tokens ──────────────────────────────────────────────────────
+// dark = the block that opens at "── DARK", light = the [data-theme="light"] block.
+// A token may be an ALIAS — `--chart-1: var(--blue3)`, `--bg-2: var(--bg-1)` — and the
+// light block re-declares only literal values, inheriting every alias from the dark
+// block. Resolve the way the cascade does on <html data-theme="light">: the mode's own
+// declaration first, then the dark block's, following var() until a hex. A gate that
+// could read only literal hexes would force the theme to duplicate them.
+const darkAt = css.indexOf("── DARK");
+const lightAt = css.indexOf('[data-theme="light"]');
+if (darkAt < 0 || lightAt < darkAt) {
+  throw new Error('tokens-v2.css must hold a "── DARK" block followed by a [data-theme="light"] block');
 }
-function cssVarIn(block, name) {
-  const m = block.match(new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})`));
-  if (!m) throw new Error(`--${name} not found`);
-  return m[1].toUpperCase();
+const blocks = { dark: css.slice(darkAt, lightAt), light: css.slice(lightAt) };
+function declared(block, name) {
+  const m = block.match(new RegExp(`(?:^|[\\s;{])--${name}:\\s*([^;]+);`, "m"));
+  return m ? m[1].trim() : null;
 }
-const darkBlock = cssBlock("── DARK");
-const lightBlock = cssBlock('[data-theme="light"]');
-const fromCss = (block) => ({
-  series: [1, 2, 3, 4, 5, 6].map((k) => cssVarIn(block, `chart-${k}`)),
+function cssVarIn(mode, name, seen = new Set()) {
+  if (seen.has(name)) throw new Error(`--${name} is a cyclic alias`);
+  seen.add(name);
+  const value = declared(blocks[mode], name) ?? (mode === "light" ? declared(blocks.dark, name) : null);
+  if (!value) throw new Error(`--${name} not found (${mode})`);
+  const alias = value.match(/^var\(\s*--([a-zA-Z0-9-]+)\s*\)$/);
+  if (alias) return cssVarIn(mode, alias[1], seen);
+  if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`--${name} is neither a hex nor a var() alias: ${value}`);
+  return value.toUpperCase();
+}
+const fromCss = (mode) => ({
+  series: [1, 2, 3, 4, 5, 6].map((k) => cssVarIn(mode, `chart-${k}`)),
   // --chart-7 is the KIND accent, not a seventh series: it stays out of `series`
   // so the chart's fold-to-Other still happens at six. Parsed and checked here
   // because a token no gate reads is a token that drifts.
-  kindAccent: cssVarIn(block, "chart-7"),
-  deemph: cssVarIn(block, "chart-deemph"),
-  surface: cssVarIn(block, "bg-2"),
+  kindAccent: cssVarIn(mode, "chart-7"),
+  deemph: cssVarIn(mode, "chart-deemph"),
+  surface: cssVarIn(mode, "bg-2"),
 });
-const cssPal = { dark: fromCss(darkBlock), light: fromCss(lightBlock) };
+const cssPal = { dark: fromCss("dark"), light: fromCss("light") };
 
 // ── parse the TS literals ──
 function tsRecord(name) {

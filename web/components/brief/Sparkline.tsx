@@ -66,8 +66,12 @@ const PERIOD_LABEL: Record<Gran, string> = {
 
 export interface SeriesTrend {
   values: number[];
+  /** Each value's bucket, as the date column's raw text — same order and length as `values`. */
+  labels: string[];
   lastDelta: number | null;   // fractional period-over-period change (0.12 = +12%)
   periodLabel: string;        // MoM / WoW / YoY …
+  /** The detected bucket grain, so a caller can print a bucket as "Aug 2025". */
+  gran: Gran;
 }
 
 /** Pull an ordered numeric series out of a (date, …, value) result, if one exists. */
@@ -90,15 +94,20 @@ export function seriesTrend(columns: string[], rows: (string | number | null)[][
     .sort((a, b) => String(a[dateIdx]).localeCompare(String(b[dateIdx])));
   if (sorted.length < 3) return null;
 
-  const values = sorted.map(r => Number(r[numIdx])).filter(v => !isNaN(v));
-  if (values.length < 3) return null;
+  // Value and bucket stay paired through the NaN filter, so labels[i] is values[i]'s bucket.
+  const pairs = sorted
+    .map(r => [String(r[dateIdx]), Number(r[numIdx])] as const)
+    .filter(([, v]) => !isNaN(v));
+  if (pairs.length < 3) return null;
+  const values = pairs.map(([, v]) => v);
+  const labels = pairs.map(([l]) => l);
 
   const prev = values[values.length - 2];
   const last = values[values.length - 1];
   const lastDelta = prev !== 0 ? (last - prev) / Math.abs(prev) : null;
 
   const gran = detectGranularity(columns[dateIdx], sorted.map(r => r[dateIdx]));
-  return { values, lastDelta, periodLabel: PERIOD_LABEL[gran] ?? "vs prior" };
+  return { values, labels, lastDelta, periodLabel: PERIOD_LABEL[gran] ?? "vs prior", gran };
 }
 
 // ── TrendStrip — sparkline + signed period delta ───────────────────────────────

@@ -99,7 +99,7 @@ export function BriefAskPanel({
         borderBottom: "1px solid var(--b1)", flex: "0 0 auto",
       }}>
         <span className="aug-label">Ask this briefing</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>quick answers</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>quick answers</span>
         <Button variant="ghost" size="xs" onClick={onClose} title="Close" aria-label="Close"
           style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
           ×
@@ -108,10 +108,10 @@ export function BriefAskPanel({
 
       <div ref={scrollRef} style={{ flex: 1, minHeight: 0, overflowY: "auto", padding: "12px 14px" }}>
         {turns.length === 0 ? (
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.6 }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.6 }}>
             Ask a follow-up about this briefing — it already knows the verdict, the findings
             behind it, and which schema they came from.
-            <div style={{ marginTop: 10, color: "var(--t4)" }}>
+            <div style={{ marginTop: 10, color: "var(--t3)" }}>
               For a full deep analysis, use <strong style={{ color: "var(--t3)" }}>Open in Ask</strong> on an answer.
             </div>
           </div>

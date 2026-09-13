@@ -1,4 +1,5 @@
 "use client";
+import { Pending, SkeletonRows } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
@@ -6,19 +7,22 @@ import { getCatalogTree } from "@/lib/api";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { formatTimestamp, relTime } from "@/lib/format";
+import type { BriefHead } from "@/components/BriefingPanel";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
 // layer is first opened, then keep it mounted (see keep-alive note below).
 const loading = () => (
-  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-    <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+  <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+    <SkeletonRows rows={6} />
   </div>
 );
 
 const BriefingPanel    = dynamic(() => import("@/components/BriefingPanel").then(m => ({ default: m.BriefingPanel })),      { ssr: false, loading });
 const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then(m => ({ default: m.OntologyPanel })),       { ssr: false, loading });
-const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").then(m => ({ default: m.IntelligenceHub })),  { ssr: false, loading });
+const ProfilePanel     = dynamic(() => import("@/components/ProfilePanel").then(m => ({ default: m.ProfilePanel })),       { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
 const KineticPanel     = dynamic(() => import("@/components/KineticPanel").then(m => ({ default: m.KineticPanel })),       { ssr: false, loading });
@@ -144,6 +148,10 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   }, [connectionId, canvasId, connections]);
   const schema = selectedSchema ?? undefined;
 
+  // The Briefing lifts its header into the shell's (Aughor Intelligence · 01 Briefing): when the
+  // brief was written, and its two actions. Shown on the Briefing layer only.
+  const [briefHead, setBriefHead] = useState<BriefHead | null>(null);
+
   const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]));
 
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
@@ -154,7 +162,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
       {showConnPicker && (
         <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
+          <span style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
           <select
             value={connectionId}
             onChange={e => onConnectionChange?.(e.target.value)}
@@ -174,7 +182,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           when the connection exposes more than one schema (and never for a canvas). */}
       {showSchema && (
         <label style={{ marginLeft: showConnPicker ? 0 : "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
+          <span style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
           <select
             value={selectedSchema ?? ""}
             onChange={e => setSelectedSchema(e.target.value || null)}
@@ -193,14 +201,39 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     </>
   ) : undefined;
 
+  const briefTrailing = layer === "briefing" && briefHead ? (
+    <>
+      <span className={`aug-content-meta${briefHead.pending === "writing" ? " aug-content-meta-writing" : ""}`}
+        title={briefHead.generatedAt ? `Written ${formatTimestamp(briefHead.generatedAt)}` : undefined}>
+        {briefHead.pending === "writing" ? "being written now"
+          : briefHead.pending === "opening" ? "opening the brief"
+          : briefHead.generatedAt ? `written ${relTime(briefHead.generatedAt)} ago`
+          : briefHead.empty ? "no findings yet" : "not written yet"}
+      </span>
+      {!briefHead.empty && (
+        <Button variant="ghost" size="xs" disabled={!!briefHead.pending} onClick={briefHead.regenerate}
+          title={briefHead.hasNarrative ? "Write this briefing again from the current findings" : "Write the briefing from the current findings"}>
+          {briefHead.pending === "writing" ? <><Pending /> Writing</> : briefHead.hasNarrative ? "Regenerate" : "Write briefing"}
+        </Button>
+      )}
+      {briefHead.investigate && (
+        <Button size="xs" onClick={briefHead.investigate.run} title={`Investigate: ${briefHead.investigate.label}`}>
+          Investigate
+        </Button>
+      )}
+    </>
+  ) : undefined;
+
   return (
     <Workspace
+      title="Intelligence"
       layers={layers}
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Intelligence layers"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
+      headerTrailing={briefTrailing}
       renderLayer={id => {
         // `key` on the scope: a schema switch REMOUNTS the brief rather than mutating it in
         // place. Without it the panel keeps every piece of per-scope state it doesn't
@@ -212,7 +245,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
         // request issued twice under two scope keys. One settled mount, one wave.
         if (id === "briefing") return (canvasId || schemaResolved)
-          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
+          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} onHead={setBriefHead} />
           // PX-0 (§3.14) — never a SILENT pane while the schema resolves. This gate was
           // a bare grey div, and with no connection selected it held forever: the app's
           // default landing was a black void with no words on it. An empty state says
@@ -227,7 +260,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           );
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
-        if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
+        if (id === "hub")      return <ProfilePanel connectionId={connectionId} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;

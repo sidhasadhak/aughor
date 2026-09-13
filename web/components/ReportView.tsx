@@ -1,4 +1,5 @@
 "use client";
+import { Confidence, confidenceTier } from "@/components/ui/trust";
 
 import { useState, useEffect, useCallback } from "react";
 import { Badge } from "@/components/ui/badge";
@@ -187,7 +188,6 @@ function HypothesisAccordion({
   const [open, setOpen] = useState(false);
   const palette = H_PALETTES[index % H_PALETTES.length];
   const vm = VERDICT_META[hypothesis.verdict];
-  const vt = chipTone(vm.hue);
 
   return (
     <div className="rounded-[var(--r3)] border overflow-hidden" style={palette.ring}>
@@ -211,22 +211,13 @@ function HypothesisAccordion({
           {/* Verdict + confidence + toggle */}
           <div className="flex items-center gap-2 shrink-0 ml-2">
             <StatusChip hue={vm.hue}>{vm.label}</StatusChip>
-            <span className="aug-fs-xs font-mono text-zinc-500 w-8 text-right">
-              {Math.round(hypothesis.confidence * 100)}%
-            </span>
+            <Confidence value={hypothesis.confidence} />
             <span className="text-zinc-500 aug-fs-xs group-hover:text-zinc-400 transition">
               {open ? "▲" : "▼"}
             </span>
           </div>
         </div>
 
-        {/* Confidence bar */}
-        <div className="mt-2.5 ml-10 h-[3px] rounded-[var(--r-pill)] bg-zinc-800 overflow-hidden">
-          <div
-            className={`h-full rounded-[var(--r-pill)] ${vt.bar} transition-all duration-300`}
-            style={{ width: `${hypothesis.confidence * 100}%` }}
-          />
-        </div>
       </button>
 
       {/* ── Expanded detail ── */}
@@ -352,10 +343,12 @@ function KeyFindingCard({
     : -1;
   const palette = hypothesisIndex >= 0 ? H_PALETTES[hypothesisIndex % H_PALETTES.length] : null;
 
+  // The design system's thresholds (ui/trust confidenceTier), its hues as tokens.
+  const tier = confidenceTier(finding.confidence);
   const confidenceLabel =
-    finding.confidence >= 0.8 ? { text: "High confidence", color: "text-emerald-400", dot: "bg-emerald-400" } :
-    finding.confidence >= 0.5 ? { text: "Moderate confidence", color: "text-amber-400", dot: "bg-amber-400" } :
-                                 { text: "Low confidence", color: "text-red-400", dot: "bg-red-400" };
+    tier === "high" ? { text: "High confidence", color: "var(--grn4)", dot: "var(--grn3)" } :
+    tier === "mid"  ? { text: "Moderate confidence", color: "var(--amb4)", dot: "var(--amb3)" } :
+                      { text: "Low confidence", color: "var(--red4)", dot: "var(--red3)" };
 
   return (
     <div className="rounded-[var(--r3)] border border-zinc-600 bg-zinc-800/50 overflow-hidden">
@@ -376,9 +369,9 @@ function KeyFindingCard({
                 bar/% on every finding. The reference shows none; we keep the level
                 at this altitude but drop the clutter. The exact % stays available in
                 the expandable evidence below. */}
-            <div className="flex items-center gap-1.5" title={`${Math.round(finding.confidence * 100)}% confidence`}>
-              <span className={`h-1.5 w-1.5 rounded-[var(--r-pill)] shrink-0 ${confidenceLabel.dot}`} />
-              <span className={`text-xs ${confidenceLabel.color}`}>{confidenceLabel.text}</span>
+            <div className="flex items-center gap-1.5" title={`confidence ${finding.confidence.toFixed(2)}`}>
+              <span className="h-1.5 w-1.5 rounded-[var(--r-pill)] shrink-0" style={{ background: confidenceLabel.dot }} />
+              <span className="text-xs" style={{ color: confidenceLabel.color }}>{confidenceLabel.text}</span>
             </div>
             {/* Hypothesis chip */}
             {palette && hypothesisIndex >= 0 && (
@@ -486,7 +479,7 @@ function RecommendationCard({
           </button>
         )}
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
             {(["accepted", "implemented", "verified", "rejected", "dismissed"] as RecStatus[]).map(s => (
               <button
                 key={s}

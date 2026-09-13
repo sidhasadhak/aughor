@@ -23,6 +23,7 @@ import {
 import { hasProseBlocks, renderProseBlocks } from "@/components/brief/BriefProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/states";
 import { StatusChip } from "@/components/brief/StatusChip";
 import type { ChatTurn } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
@@ -667,7 +668,7 @@ function Section({
 function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onDeeper?: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t3)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
         <span>Trace · derived during exploration — instant, no re-run</span>
       </div>
       {dossier.finding && (
@@ -676,14 +677,14 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
       <DossierTrace dossier={dossier} />
       {dossier.sql && (
         <div>
-          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
+          <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
           <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
         </div>
       )}
       {onDeeper && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 2 }}>
           <Button variant="secondary" size="sm" onClick={onDeeper} className="aug-fs-sm border-[var(--b2)]">Investigate deeper →</Button>
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>Runs a fresh analysis, seeded with this trace.</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>Runs a fresh analysis, seeded with this trace.</span>
         </div>
       )}
     </div>
@@ -1662,29 +1663,22 @@ export function ChatMessage({
            what it produced; only the tail changes. `errorDetail` is null for a backend
            that predates the typed fields, which degrades to exactly the old red line. */}
       {turn.status === "error" && (
-        <div className="py-1">
-          <p className="aug-fs-sm text-red-400">{turn.error}</p>
-          {turn.errorDetail?.hint && (
-            <p className="aug-fs-xs text-zinc-400 mt-1">{turn.errorDetail.hint}</p>
-          )}
-          {turn.errorDetail && (turn.errorDetail.retryable || turn.errorDetail.recovery) && (
-            <div className="flex items-center gap-2 mt-2">
-              {turn.errorDetail.retryable && onRetry && (
-                <Button variant="minimal" size="xs" onClick={() => onRetry(turn.question)}>
-                  Retry
-                </Button>
-              )}
-              {turn.errorDetail.recovery === "switch_model" && (
-                <span className="aug-fs-xs text-zinc-500">
-                  or switch the model in Settings → Inference
-                </span>
-              )}
-              {turn.errorDetail.recovery === "fix_config" && (
-                <span className="aug-fs-xs text-zinc-500">Settings → Inference</span>
-              )}
-            </div>
-          )}
-        </div>
+        <ErrorState
+          kind="Answer failed"
+          style={{ margin: "4px 0" }}
+          what={turn.error}
+          means={[
+            turn.errorDetail?.hint,
+            turn.errorDetail?.recovery === "switch_model"
+              ? "Switching the model in Settings → Inference is the other way through."
+              : turn.errorDetail?.recovery === "fix_config"
+                ? "The fix is in Settings → Inference."
+                : null,
+          ].filter(Boolean).join(" ") || undefined}
+          doors={turn.errorDetail?.retryable && onRetry
+            ? [{ label: "Retry", onClick: () => onRetry(turn.question), primary: true }]
+            : undefined}
+        />
       )}
 
       {/* ── Tables used + timing — Deep Analysis keeps these here for now; the

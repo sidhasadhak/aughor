@@ -159,7 +159,7 @@ export function TabsBar({
                 className="aug-fs-ui"
                 title="Close tab"
                 onClick={() => onClose(t.id)}
-                style={{ color: "var(--t4)", padding: "0 4px" }}
+                style={{ color: "var(--t3)", padding: "0 4px" }}
               >
                 ×
               </Button>

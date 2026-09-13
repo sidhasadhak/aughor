@@ -40,7 +40,7 @@ export function ParamBar({
         padding: "6px 10px", borderBottom: "1px solid var(--b0)", flexShrink: 0,
       }}
     >
-      <span className="aug-fs-ui" style={{ color: "var(--t4)", flexShrink: 0 }}>
+      <span className="aug-fs-ui" style={{ color: "var(--t3)", flexShrink: 0 }}>
         Parameters
       </span>
 

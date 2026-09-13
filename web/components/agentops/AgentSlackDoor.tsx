@@ -243,7 +243,7 @@ export function AgentSlackDoor({
                   onChange={e => setSigningSecret(e.target.value)} placeholder="the signing secret" />
               </div>
             </div>
-            <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 8 }}>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 8 }}>
               Sent once to Aughor, checked against Slack before anything is stored, and held
               encrypted. They are cleared from this form as soon as the server has them.
             </div>

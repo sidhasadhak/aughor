@@ -1,4 +1,6 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
+import { Pending } from "@/components/ui/motion";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { formatCount } from "@/lib/format";
@@ -152,7 +154,7 @@ function SemanticStepPanel({
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="xs" onClick={onApply} disabled={!canApply || applying}
               className="h-auto font-normal aug-fs-xs px-3 py-1 rounded border-violet-500/40 bg-violet-500/15 text-violet-200 hover:text-violet-200 hover:bg-violet-500/25 dark:hover:bg-violet-500/25 transition disabled:opacity-40 gap-1.5">
-              {applying && <span className="w-3 h-3 border border-violet-300 border-t-transparent rounded-[var(--r-pill)] animate-spin" />}
+              {applying && <Pending />}
               {applying ? "Applying…" : "Apply"}
             </Button>
             {result && (
@@ -638,7 +640,7 @@ function AggPicker({ col, table, onAdd, onCancel }: {
   return (
     <>
       <div className="fixed inset-0 z-40 bg-black/50" onClick={onCancel} />
-      <div className="fixed z-50 rounded-md border border-zinc-600 bg-zinc-900 shadow-2xl p-6 w-[360px]"
+      <div className="fixed z-50 rounded-md border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-md)] p-6 w-[360px]"
         style={{ top:"50%", left:"50%", transform:"translate(-50%,-50%)" }}>
         <div className="flex items-start justify-between mb-5">
           <div>
@@ -710,7 +712,7 @@ function AcDropdown({ items, active, setActive, onSelect, onClose, pos }: {
   return (
     <>
       <div className="fixed inset-0 z-30" onMouseDown={onClose} />
-      <div className="fixed z-50 min-w-[220px] max-w-[320px] rounded-md border border-zinc-600/90 bg-zinc-900 shadow-2xl overflow-hidden"
+      <div className="fixed z-50 min-w-[220px] max-w-[320px] rounded-md border border-zinc-600/90 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden"
         style={{ top: flipUp ? pos.top - items.length * 28 - 40 : pos.top, left: pos.left }}>
         <div className="px-3 py-1.5 border-b border-zinc-700/50 flex items-center justify-between">
           <span className="aug-fs-xs text-zinc-500 font-medium">Suggestions</span>
@@ -931,7 +933,7 @@ function ResultsPane({
           >
             {creatingCanvas ? (
               <>
-                <span className="w-3 h-3 border border-violet-400 border-t-transparent rounded-[var(--r-pill)] animate-spin" />
+                <Pending />
                 Creating…
               </>
             ) : (
@@ -1310,7 +1312,7 @@ export function QueryBuilder({
         }
         if (isolated.includes(key)) {
           return (
-            <span title="No detected joins to other tables" className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>
+            <span title="No detected joins to other tables" className="aug-fs-ui shrink-0" style={{ color: "var(--t3)" }}>
               isolated
             </span>
           );
@@ -1319,7 +1321,7 @@ export function QueryBuilder({
           <Button
             variant="ghost" size="xs" onClick={() => ensureTable(key)} title="Add to query (auto-join)"
             className="aug-fs-ui h-auto shrink-0 rounded px-1.5 py-0 font-normal leading-tight opacity-0 transition group-hover/tbl:opacity-100 hover:bg-transparent dark:hover:bg-transparent"
-            style={{ color: "var(--t4)" }}
+            style={{ color: "var(--t3)" }}
           >
             + add
           </Button>
@@ -1721,7 +1723,7 @@ export function QueryBuilder({
             {showPinName && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setShowPinName(false)} />
-                <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl p-3">
+                <div className="absolute right-0 top-full mt-2 z-50 w-80 rounded-md border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)] p-3">
                   <p className="aug-fs-xs font-semibold text-zinc-300 mb-1">Pin to briefing cockpit</p>
                   <p className="aug-fs-xs text-zinc-500 mb-2.5 leading-snug">Re-run through the trust guards on save — a query that fails a guard is refused, not pinned.</p>
                   <input autoFocus value={pinName} onChange={e => setPinName(e.target.value)}
@@ -1769,12 +1771,12 @@ export function QueryBuilder({
             <span className="aug-fs-xs text-zinc-500">Cache</span>
           </label>
           <Button variant="ghost" onClick={triggerRun} disabled={running||!sql.trim()}
-            className={`h-auto gap-2 px-4 py-1.5 rounded-[var(--r3)] aug-fs-ui font-semibold transition ${
-              running ? "bg-zinc-700 text-zinc-400 cursor-not-allowed"
-                      : "bg-blue-600 hover:bg-blue-500 dark:hover:bg-blue-500 text-white hover:text-white shadow-sm"
+            className={`h-auto gap-2 px-4 py-1.5 rounded-[var(--r1)] aug-fs-sm font-semibold transition ${
+              running ? "bg-[var(--bg-4)] text-[var(--t3)] cursor-not-allowed opacity-80"
+                      : "bg-[var(--blue-solid)] hover:bg-[var(--blue-solid-hover)] dark:hover:bg-[var(--blue-solid-hover)] text-white hover:text-white"
             } ${SVG_SIZE_AUTO}`}>
             {running
-              ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-[var(--r-pill)] animate-spin"/>Running…</>
+              ? <><Pending />Running…</>
               : <><Icon name="run" size={10} />Run</>
             }
           </Button>
@@ -1921,7 +1923,7 @@ export function QueryBuilder({
                         {showMetricsCatalog && (
                           <>
                             <div className="fixed inset-0 z-30" onClick={()=>setShowMetricsCatalog(false)}/>
-                            <div className="absolute right-0 top-full mt-2 z-40 w-68 rounded-md border border-zinc-700 bg-zinc-900 shadow-2xl overflow-hidden min-w-[260px]">
+                            <div className="absolute right-0 top-full mt-2 z-40 w-68 rounded-md border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden min-w-[260px]">
                               <div className="px-4 py-2.5 border-b border-zinc-700/50">
                                 <p className="aug-fs-xs font-semibold text-zinc-400">Metrics Catalog</p>
                               </div>
@@ -2251,14 +2253,14 @@ export function QueryBuilder({
                 </div>
                 {running && (
                   <div className="flex items-center gap-2 py-16 justify-center text-zinc-500">
-                    <span className="w-4 h-4 border-2 border-zinc-600 border-t-zinc-400 rounded-[var(--r-pill)] animate-spin"/>
+                    <Pending />
                     <span className="aug-fs-sm">Running query…</span>
                   </div>
                 )}
                 {runError && !running && (
-                  <div className="p-4 rounded-md border border-red-500/20 bg-red-500/5">
-                    <p className="aug-fs-sm font-mono text-red-400">{runError}</p>
-                  </div>
+                  <ErrorState kind="Query failed" style={{ margin: 16 }}
+                    what={<span className="aug-mono" style={{ whiteSpace: "pre-wrap" }}>{runError}</span>}
+                    means="Edit the SQL and run it again." />
                 )}
                 {result && !running && (
                   <ResultsPane

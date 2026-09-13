@@ -167,7 +167,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
               style={ph === "failed" ? { background: "var(--red1)", color: "var(--red4)" }
                    : stoppedChip && ph !== "complete" ? { background: "var(--bg-3)", color: "var(--t3)" }
                    : { background: m.bg, color: m.color }}>
-              {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: m.color }} />}
+              {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: m.color }} />}
               <span style={{ opacity: 0.75 }}>{sch}</span>
               {" · "}
               {ph === "complete" ? "complete" : ph === "pending" ? "idle" : ph === "failed" ? "failed" : m.label}
@@ -177,11 +177,11 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
       ) : (
         <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
           style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
-          {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: meta.color }} />}
+          {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: meta.color }} />}
           {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
         </span>
       )}
-      <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
         {status.queries_executed > 0 && `${status.queries_executed} queries`}
         {status.facts_discovered > 0 && ` · ${status.facts_discovered} facts`}
         {status.insights_found    > 0 && ` · ${status.insights_found} findings`}
@@ -250,7 +250,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
 
   return (
     <div className="rounded-md p-3 space-y-2 mt-2" style={{ background: "var(--bg-0)", border: "0.5px solid var(--b2)" }}>
-      <p className="aug-fs-xs uppercase tracking-widest" style={{ color: "var(--t4)" }}>Guidance (optional)</p>
+      <p className="aug-fs-xs uppercase tracking-widest" style={{ color: "var(--t3)" }}>Guidance (optional)</p>
       <div className="flex gap-2">
         <input type="text" value={hint} onChange={e => setHint(e.target.value)}
           onKeyDown={e => e.key === "Enter" && !loading && handleRetry()}
@@ -263,7 +263,7 @@ function RetryPanel({ ep, connectionId, errorMsg, canvasId }: { ep: ExplorationE
           {loading ? "fixing…" : "Run fix"}
         </button>
         <button onClick={() => { setOpen(false); setResult(null); }}
-          className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t4)" }}>✕</button>
+          className="aug-fs-xs px-2 py-1.5 rounded" style={{ color: "var(--t3)" }}>✕</button>
       </div>
       {result && (
         <div className="space-y-2 pt-1">
@@ -340,14 +340,14 @@ function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode
     <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "12px 4px 8px" }}>
       {/* SQL */}
       <div>
-        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
+        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>SQL</p>
         <pre style={{ fontSize: 11, fontFamily: "var(--font-code)", color: "var(--t3)", background: "var(--bg-0)", border: "0.5px solid var(--b1)", borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {ep.sql || "(no sql)"}
         </pre>
       </div>
       {/* Result */}
       <div>
-        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
+        <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6 }}>Result</p>
         <pre style={{ fontSize: 11, fontFamily: "var(--font-code)", color: isError ? "var(--red4)" : "var(--t3)", background: isError ? "var(--red1)" : "var(--code-bg)", border: `0.5px solid ${isError ? "var(--red2)" : "var(--b1)"}`, borderRadius: 4, padding: "8px 10px", overflowX: "auto", whiteSpace: "pre-wrap", wordBreak: "break-all", lineHeight: 1.6, margin: 0 }}>
           {obsPreview}
         </pre>
@@ -355,7 +355,7 @@ function ExpandedDetail({ ep, connectionId, canvasId }: { ep: ExplorationEpisode
       {/* Query intent */}
       {ep.think && (
         <div>
-          <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
+          <p style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Query intent</p>
           <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.55, margin: 0 }}>{ep.think}</p>
         </div>
       )}
@@ -395,7 +395,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
     background: "var(--bg-0)",
     padding: "7px 8px",
     textAlign: "left", fontSize: 11,
-    fontFamily: "var(--font-mono)", color: "var(--t4)",
+    fontFamily: "var(--font-mono)", color: "var(--t3)",
     textTransform: "uppercase", letterSpacing: "0.07em",
     borderBottom: "1px solid var(--b2)", fontWeight: 500,
     whiteSpace: "nowrap",
@@ -404,7 +404,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
   };
 
   function thClick(col: SortCol) {
-    return { style: { ...TH, color: sortCol === col ? "var(--blue4)" : "var(--t4)" }, onClick: () => onSort(col) };
+    return { style: { ...TH, color: sortCol === col ? "var(--blue4)" : "var(--t3)" }, onClick: () => onSort(col) };
   }
 
   return (
@@ -422,7 +422,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
         </colgroup>
         <thead>
           <tr>
-            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "var(--blue4)" : "var(--t4)", cursor: "pointer" }}>
+            <th {...thClick("seq")} style={{ ...TH, textAlign: "right", paddingRight: 10, color: sortCol === "seq" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
               #<SortIcon active={sortCol === "seq"} dir={sortDir} />
             </th>
             <th {...thClick("ts")}>
@@ -437,7 +437,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
             <th {...thClick("status")}>
               status<SortIcon active={sortCol === "status"} dir={sortDir} />
             </th>
-            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "var(--blue4)" : "var(--t4)", cursor: "pointer" }}>
+            <th {...thClick("rows")} style={{ ...TH, textAlign: "right", color: sortCol === "rows" ? "var(--blue4)" : "var(--t3)", cursor: "pointer" }}>
               rows<SortIcon active={sortCol === "rows"} dir={sortDir} />
             </th>
             <th {...thClick("object")}>
@@ -506,7 +506,7 @@ function LogTable({ items, connectionId, canvasId, sortCol, sortDir, onSort }: L
                     {meta.object}
                   </td>
                   {/* expand */}
-                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, color: "var(--t4)" }}>
+                  <td style={{ padding: "7px 8px", textAlign: "center", fontSize: 11, color: "var(--t3)" }}>
                     {isOpen ? "▲" : "▼"}
                   </td>
                 </tr>
@@ -537,7 +537,7 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
         <button key={o.v} onClick={() => onChange(o.v)} style={{
           fontSize: 11, padding: "3px 9px", borderRadius: 4, cursor: "pointer",
           background: value === o.v ? "var(--blue1)" : "transparent",
-          color: value === o.v ? "var(--blue4)" : "var(--t4)",
+          color: value === o.v ? "var(--blue4)" : "var(--t3)",
           border: value === o.v ? "0.5px solid var(--blue2)" : "0.5px solid transparent",
           fontWeight: value === o.v ? 500 : 400,
           transition: "all .1s",
@@ -672,9 +672,9 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
     return (
       <div className="h-full flex flex-col">
         <StatusBar status={status} stopped={stopped} onStop={handleStop} onResume={handleResume} onRestart={handleRestart} stopping={stopping} resuming={resuming} restarting={restarting} />
-        <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t4)" }}>
+        <div className="flex-1 flex flex-col items-center justify-center gap-2" style={{ color: "var(--t3)" }}>
           <p className="aug-fs-sm">No activity recorded yet.</p>
-          <p className="aug-fs-xs" style={{ color: "var(--t4)" }}>Activity appears here as background exploration runs.</p>
+          <p className="aug-fs-xs" style={{ color: "var(--t3)" }}>Activity appears here as background exploration runs.</p>
         </div>
       </div>
     );
@@ -722,15 +722,15 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
           </button>
         )}
         {fixAllSummary && (
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
             fixed {fixAllSummary.fixed}/{fixAllSummary.total} · saved {fixAllSummary.saved}
             {fixAllSummary.flagged > 0 && ` (${fixAllSummary.flagged} flagged)`}
             {fixAllSummary.failed > 0 && ` · ${fixAllSummary.failed} still failing`}
           </span>
         )}
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
-          {isRunning && <span className="ml-2 animate-pulse" style={{ color: "var(--t3)" }}>● live</span>}
+          {isRunning && <span className="ml-2 inline-flex items-center gap-1.5" style={{ color: "var(--t3)" }}><span className="aug-dot aug-dot-live" aria-hidden />live</span>}
         </span>
         {filtered.length > DEFAULT_LIMIT && (
           <button onClick={() => setShowAll(v => !v)} style={{
@@ -747,7 +747,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
       {/* Table */}
       <div ref={scrollRef} className="flex-1 overflow-y-auto" style={{ background: "var(--bg-0)" }}>
         {displayed.length === 0 ? (
-          <div className="flex items-center justify-center h-32 aug-fs-xs" style={{ color: "var(--t4)" }}>
+          <div className="flex items-center justify-center h-32 aug-fs-xs" style={{ color: "var(--t3)" }}>
             No entries match the current filters.
           </div>
         ) : (

@@ -8,10 +8,11 @@
  * provider to mount or context to thread. One <Toaster/> lives in the root layout
  * and renders every toast, wherever it was raised.
  *
- * Design language: flat aug-panel surface (bg-1 lifted over content), a kind-coloured
- * left accent + glyph, Inter title / mono glyph, the shared type scale. Dark-only,
- * like the rest of the app. Auto-dismisses (errors linger longest); hover pauses the
- * timer; manual × dismiss. Announced via a stable aria-live region.
+ * Design language: a toast is one of the three things allowed to float (.aug-toast):
+ * --bg-1, a 3px left rule in its hue, radius 6, --shadow-md; a mono glyph, the title at
+ * 12px, the detail at 11px. It enters with step-in. Auto-dismisses (errors linger
+ * longest); hover pauses the timer; manual × dismiss. Announced via a stable aria-live
+ * region.
  */
 
 import { useEffect, useState, useSyncExternalStore } from "react";
@@ -95,11 +96,13 @@ function useHydrated(): boolean {
 }
 
 // ── presentation ──────────────────────────────────────────────────────────────
+// The glyphs are the guard vocabulary — ✓ passed, ◈ warned, ✕ refused — so a toast and a
+// guard chip say the same thing the same way.
 const KIND: Record<ToastKind, { glyph: string; color: string }> = {
-  success: { glyph: "✓", color: "var(--grn5)" },
-  error: { glyph: "✗", color: "var(--red5)" },
-  warning: { glyph: "⚠", color: "var(--amb5)" },
-  info: { glyph: "●", color: "var(--blue5)" },
+  success: { glyph: "✓", color: "var(--grn4)" },
+  error: { glyph: "✕", color: "var(--red4)" },
+  warning: { glyph: "◈", color: "var(--amb4)" },
+  info: { glyph: "●", color: "var(--blue4)" },
 };
 
 function ToastRow({ t }: { t: ToastData }) {
@@ -116,36 +119,28 @@ function ToastRow({ t }: { t: ToastData }) {
 
   return (
     <div
-      className="aug-anim-fade"
+      className={`aug-toast aug-toast-${t.kind} aug-anim-up`}
       onMouseEnter={() => setPaused(true)}
       onMouseLeave={() => setPaused(false)}
       style={{
         pointerEvents: "auto",
-        display: "flex",
-        gap: 10,
-        alignItems: "flex-start",
         width: 340,
         maxWidth: "calc(100vw - 32px)",
-        padding: "11px 10px 11px 12px",
-        background: "var(--bg-1)",
-        border: "1px solid var(--b2)",
-        borderLeft: `2px solid ${k.color}`,
-        borderRadius: "var(--r3)",
-        boxShadow: "var(--shadow-lg)",
       }}
     >
       <span
         aria-hidden
-        style={{ color: k.color, fontSize: 13, lineHeight: "18px", fontFamily: "var(--font-mono)", flex: "0 0 auto" }}
+        className="aug-fs-xs"
+        style={{ color: k.color, lineHeight: "18px", fontFamily: "var(--font-mono)", flex: "0 0 auto" }}
       >
         {k.glyph}
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="aug-fs-sm" style={{ color: "var(--t2)", fontWeight: 500, overflowWrap: "anywhere" }}>
+        <div className="aug-fs-sm" style={{ color: "var(--t1)", lineHeight: "18px", overflowWrap: "anywhere" }}>
           {t.title}
         </div>
         {t.description && (
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2, overflowWrap: "anywhere" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2, overflowWrap: "anywhere" }}>
             {t.description}
           </div>
         )}
@@ -155,7 +150,8 @@ function ToastRow({ t }: { t: ToastData }) {
         size="icon-xs"
         aria-label="Dismiss notification"
         onClick={() => dismissToast(t.id)}
-        style={{ flex: "0 0 auto", marginTop: -2, marginRight: -2, color: "var(--t4)", fontSize: 12, lineHeight: 1 }}
+        className="aug-fs-sm"
+        style={{ flex: "0 0 auto", marginTop: -2, marginRight: -2, color: "var(--t3)", lineHeight: 1 }}
       >
         ✕
       </Button>

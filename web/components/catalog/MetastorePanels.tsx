@@ -80,7 +80,7 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
           </div>
         </div>
         <div style={{ flex: 1, overflowY: "auto" }}>
-          {volumes.length === 0 && <p style={{ padding: 12, fontSize: 11, color: "var(--t4)" }}>No volumes yet.</p>}
+          {volumes.length === 0 && <p style={{ padding: 12, fontSize: 11, color: "var(--t3)" }}>No volumes yet.</p>}
           {volumes.map(v => (
             <div key={v.id} onClick={() => setSelected(v.id)}
               style={{ padding: "9px 12px", cursor: "pointer", borderBottom: "0.5px solid var(--b0)",
@@ -95,7 +95,7 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
       {/* object list for the selected volume */}
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minHeight: 0 }}>
         {!selected ? (
-          <p style={{ padding: 20, fontSize: 12, color: "var(--t4)" }}>Select or create a volume to manage its objects.</p>
+          <p style={{ padding: 20, fontSize: 12, color: "var(--t3)" }}>Select or create a volume to manage its objects.</p>
         ) : (
           <>
             <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
@@ -108,12 +108,12 @@ export function VolumesPanel({ catalogId }: { catalogId: string }) {
             </div>
             {err && <p style={{ padding: "8px 16px", fontSize: 11, color: "var(--red4)" }}>{err}</p>}
             <div style={{ flex: 1, overflowY: "auto" }}>
-              {objects.length === 0 && <p style={{ padding: 20, fontSize: 12, color: "var(--t4)" }}>No objects. Upload a file to get started.</p>}
+              {objects.length === 0 && <p style={{ padding: 20, fontSize: 12, color: "var(--t3)" }}>No objects. Upload a file to get started.</p>}
               {objects.map(o => (
                 <div key={o.id} style={{ display: "grid", gridTemplateColumns: "1fr 90px 130px 120px", padding: "10px 16px", borderBottom: "0.5px solid var(--b0)", alignItems: "center", gap: 8 }}>
                   <span style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{o.name}</span>
-                  <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{fmtBytes(o.size_bytes)}</span>
-                  <span style={{ fontSize: 11, color: "var(--t4)" }}>{o.mime_type}</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)", textAlign: "right" }}>{fmtBytes(o.size_bytes)}</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)" }}>{o.mime_type}</span>
                   <span style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
                     <a href={volumeObjectContentUrl(selected, o.id)} target="_blank" rel="noreferrer"
                       style={{ fontSize: 11, color: "var(--blue4)", textDecoration: "none" }}>Download</a>
@@ -165,7 +165,7 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
       </p>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 110px", padding: "5px 4px", borderBottom: "0.5px solid var(--b1)" }}>
         {["Workspace", "Access", ""].map(h => (
-          <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
+          <span key={h} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
         ))}
       </div>
       {rows.map(({ ws, member, granted }) => (
@@ -174,7 +174,7 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
           <span style={{ display: "flex", gap: 6 }}>
             {member && <span className="aug-tag aug-tag-blue" style={{ fontSize: 11 }}>Member</span>}
             {granted && <span className="aug-tag aug-tag-green" style={{ fontSize: 11 }}>Granted</span>}
-            {!member && !granted && <span style={{ fontSize: 11, color: "var(--t4)" }}>No access</span>}
+            {!member && !granted && <span style={{ fontSize: 11, color: "var(--t3)" }}>No access</span>}
           </span>
           <span style={{ justifySelf: "end" }}>
             {granted ? (
@@ -185,7 +185,7 @@ export function PermissionsPanel({ catalogId }: { catalogId: string }) {
           </span>
         </div>
       ))}
-      {rows.length === 0 && <p style={{ padding: "16px 4px", fontSize: 12, color: "var(--t4)" }}>No workspaces.</p>}
+      {rows.length === 0 && <p style={{ padding: "16px 4px", fontSize: 12, color: "var(--t3)" }}>No workspaces.</p>}
     </div>
   );
 }

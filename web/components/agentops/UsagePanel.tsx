@@ -34,6 +34,8 @@ import {
 } from "@/lib/api";
 import { fmtMs } from "@/lib/cost";
 import { compactNumber, formatCount, pct } from "@/lib/format";
+import { ErrorState } from "@/components/ui/states";
+import { SkeletonRows } from "@/components/ui/motion";
 
 export function UsagePanel({ range, onBrush, onOpenEvents }: {
   range: TimeRange;
@@ -58,10 +60,10 @@ export function UsagePanel({ range, onBrush, onOpenEvents }: {
   useEffect(() => { load(); }, [load]);
 
   if (error && !data) {
-    return <div className="aug-fs-sm" style={{ padding: 20, color: "var(--red4)" }}>{error}</div>;
+    return <div style={{ padding: 20 }}><ErrorState kind="Usage failed" what={error} /></div>;
   }
   if (!data) {
-    return <div className="aug-fs-sm" style={{ padding: 20, color: "var(--t2)" }}>Loading usage…</div>;
+    return <div style={{ padding: 20 }}><SkeletonRows rows={6} /></div>;
   }
 
   const label = rangeLabel(range);
@@ -121,7 +123,7 @@ export function UsagePanel({ range, onBrush, onOpenEvents }: {
                 title={off ? `Show ${s.label}` : `Hide ${s.label}`}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6, height: "auto",
-                  padding: "3px 8px", borderRadius: "var(--r-pill)",
+                  padding: "3px 8px", borderRadius: "var(--r-chip)",
                   border: "1px solid var(--b2)", background: "var(--bg-3)",
                   color: "var(--t1)", fontSize: 12, opacity: off ? 0.45 : 1,
                   textDecoration: off ? "line-through" : "none",

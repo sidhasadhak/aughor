@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -13,6 +14,7 @@ import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
 import { runDisplayTitle } from "@/lib/runTitle";
+import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
@@ -21,6 +23,9 @@ import { CommandPalette, GlobalCommands } from "@/components/CommandPalette";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { SkeletonRows } from "@/components/ui/motion";
+import { ActivityStrip } from "@/components/shell/ActivityStrip";
+import { useNavCounts, type NavCounts } from "@/components/shell/useNavCounts";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -32,9 +37,11 @@ import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NAVIGATE_EVENT, type NavigateRequest } from "@/lib/navigate";
 
 function LoadingPanel() {
+  // A lazy panel's first paint: skeleton rows the height of the lists and tables most
+  // panels open on. Never a spinner — there are none anywhere in the product.
   return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-      <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin var(--dur-breath) linear infinite" }} />
+    <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+      <SkeletonRows rows={6} />
     </div>
   );
 }
@@ -160,27 +167,6 @@ function NavIcon({ name, size = 14, color = "currentColor" }: { name: string; si
   );
 }
 
-// ── Aughor logo ────────────────────────────────────────────────────────────────
-
-function AughorLogo() {
-  // Real mark — invert to white on the dark app shell, then tint to brand blue
-  return (
-    <img
-      src="/aughor-logo.jpeg"
-      width={26}
-      height={26}
-      alt="Aughor"
-      style={{
-        display: "block",
-        borderRadius: 4,
-        // Black mark on white → invert to white, then push toward brand blue via hue
-        filter: "invert(1) sepia(1) saturate(2) hue-rotate(185deg) brightness(1.1)",
-        opacity: 0.92,
-      }}
-    />
-  );
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /** A finding headline shown as a plain one-line list subtitle: strip markdown emphasis (no bold
@@ -228,6 +214,8 @@ function Topbar({
   onCreateWorkspace,
   onUpdateWorkspace,
   onDeleteWorkspace,
+  theme,
+  onThemeChange,
 }: {
   onSearchOpen: () => void;
   onNavigate: (t: NavTab) => void;
@@ -242,54 +230,43 @@ function Topbar({
   onCreateWorkspace: (name: string) => Promise<Workspace>;
   onUpdateWorkspace: (id: string, connectionIds: string[]) => Promise<void>;
   onDeleteWorkspace: (id: string) => Promise<void>;
+  /** The active theme and the setter Settings uses — a click here persists exactly as a click there. */
+  theme: Theme;
+  onThemeChange: (t: Theme) => void;
 }) {
   return (
     <div className="aug-topbar">
-      {/* Logo — same width as sidebar */}
-      <div style={{ display: "flex", alignItems: "center", gap: 9, width: 224, flexShrink: 0 }}>
-        <AughorLogo />
-        <div>
-          <div style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", letterSpacing: ".01em" }}>
-            Aughor
-          </div>
-          {/* <div style={{ fontSize: 11, color: "var(--t4)", letterSpacing: ".06em", textTransform: "uppercase", marginTop: -1 }}>
-            Intelligence Platform
-          </div> */}
+      {/* The wordmark, then the scope it applies to — the workspace switcher sits beside
+          the name because everything below the topbar is read through it. */}
+      <span className="aug-wordmark">Aughor</span>
+      <WorkspaceSwitcher
+        workspaces={workspaces}
+        selectedWorkspace={selectedWorkspace}
+        allConnections={allConnections}
+        onWorkspaceChange={onWorkspaceChange}
+        onCreateWorkspace={onCreateWorkspace}
+        onUpdateWorkspace={onUpdateWorkspace}
+        onDeleteWorkspace={onDeleteWorkspace}
+      />
+      <ActivityStrip connectionId={selectedConn || undefined} onOpen={() => onNavigate("agentic-ops")} />
+
+      {/* Right: ⌘K — search, ask, or run a command — and the user menu */}
+      <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+        <button onClick={onSearchOpen} className="aug-command" aria-label="Search, ask, or run a command">
+          <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+            Search, ask, or run a command
+          </span>
+          <kbd>⌘K</kbd>
+        </button>
+        {/* The theme toggle: a mono segmented pair, one click from every screen. */}
+        <div className="aug-segmented" role="group" aria-label="Theme">
+          {(["dark", "light"] as const).map(t => (
+            <Button key={t} variant="ghost" size="xs" aria-pressed={theme === t}
+              onClick={() => onThemeChange(t)} className="aug-seg-item aug-seg-item-mono font-normal">
+              {t}
+            </Button>
+          ))}
         </div>
-      </div>
-
-      {/* Search */}
-      <button
-        onClick={onSearchOpen}
-        style={{
-          flex: 1, maxWidth: 520, margin: "0 auto",
-          display: "flex", alignItems: "center", gap: 10,
-          padding: "6px 12px", borderRadius: "var(--r2)",
-          background: "var(--bg-2)", border: "1px solid var(--b1)",
-          color: "var(--t3)", fontSize: 12, transition: "all .12s", cursor: "text",
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t2)"; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.color = "var(--t3)"; }}
-      >
-        <NavIcon name="search" size={13} />
-        <span style={{ flex: 1, textAlign: "left" }}>Search — or ask Spotlight anything…</span>
-        <span style={{ display: "flex", gap: 2, alignItems: "center" }}>
-          <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>⌘</kbd>
-          <kbd style={{ fontSize: 11, padding: "1px 4px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>K</kbd>
-        </span>
-      </button>
-
-      {/* Right: workspace switcher (top-level scope) + settings + avatar */}
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end", gap: 8, flexShrink: 0, minWidth: 224 }}>
-        <WorkspaceSwitcher
-          workspaces={workspaces}
-          selectedWorkspace={selectedWorkspace}
-          allConnections={allConnections}
-          onWorkspaceChange={onWorkspaceChange}
-          onCreateWorkspace={onCreateWorkspace}
-          onUpdateWorkspace={onUpdateWorkspace}
-          onDeleteWorkspace={onDeleteWorkspace}
-        />
         <AuthControl />
       </div>
     </div>
@@ -366,57 +343,77 @@ function Sidebar({
   tab,
   onNavigate,
   selectedConn,
+  counts,
 }: {
   tab: NavTab;
   onNavigate: (t: NavTab) => void;
   selectedConn: string;
+  /** Badge counts from read-only sources — see components/shell/useNavCounts.ts. */
+  counts?: NavCounts;
 }) {
-  const renderItem = (item: { id: string; icon: string; label: string }) => (
-    <button
-      key={item.id}
-      className={`aug-nav-item${tab === item.id ? " active" : ""}`}
-      onClick={() => onNavigate(item.id as NavTab)}
-      // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
-      // so every nav button read as anonymous. An explicit aria-label guarantees the name;
-      // aria-current marks the active destination for screen readers.
-      aria-label={item.label}
-      aria-current={tab === item.id ? "page" : undefined}
-    >
-      <NavIcon name={item.icon} size={14} color={tab === item.id ? "var(--blue4)" : "currentColor"} />
-      <span>{item.label}</span>
-      {/* Catalog is a catalog, not a monitor — no exploration badge here */}
-    </button>
-  );
+  // A badge is amber when what it counts waits on a human, neutral when it is only a count.
+  const badgeFor = (id: string): { value: number; waiting: boolean; noun: string } | null => {
+    if (id === "monitors" && counts?.unackedAlerts) return { value: counts.unackedAlerts, waiting: true, noun: "unacknowledged" };
+    if (id === "recents" && counts?.runningRuns) return { value: counts.runningRuns, waiting: false, noun: "running" };
+    return null;
+  };
+  const renderItem = (item: { id: string; icon: string; label: string }) => {
+    const badge = badgeFor(item.id);
+    return (
+      <button
+        key={item.id}
+        className={`aug-nav-item${tab === item.id ? " active" : ""}`}
+        onClick={() => onNavigate(item.id as NavTab)}
+        // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
+        // so every nav button read as anonymous. An explicit aria-label guarantees the name
+        // (and now the badge's count); aria-current marks the active destination.
+        aria-label={badge ? `${item.label}, ${badge.value} ${badge.noun}` : item.label}
+        aria-current={tab === item.id ? "page" : undefined}
+      >
+        <NavIcon name={item.icon} size={14} />
+        <span>{item.label}</span>
+        {badge && (
+          <span className={`aug-nav-badge${badge.waiting ? " aug-nav-badge-waiting" : ""}`}>{formatCount(badge.value)}</span>
+        )}
+      </button>
+    );
+  };
 
+  // Four groups, each ruled off in --b0, then Settings pinned to the bottom. The active
+  // item is the only coloured thing in the rail: a 2px --blue3 bar on --bg-sel.
   return (
     <nav className="aug-sidebar">
-      <div style={{ flex: 1, overflowY: "auto", padding: "6px 8px 6px" }}>
-        {/* Primary rail */}
-        {NAV_PRIMARY.map(renderItem)}
-
-        {/* Secondary sections — always expanded (static group headers) */}
+      <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
+        <div className="aug-nav-section">
+          {NAV_PRIMARY.map(renderItem)}
+        </div>
         {NAV_SECTIONS.map(section => (
-          <div key={section.label}>
-            <div className="aug-nav-group">{section.label}</div>
+          <div key={section.label} className="aug-nav-section">
+            <div className="aug-nav-group">
+              {section.label}
+              {section.label === "Operations" && (counts?.unackedAlerts ?? 0) > 0 && (
+                <span className="aug-nav-group-badge aug-nav-group-badge-waiting" title="Waiting on a human in Operations">
+                  {formatCount(counts!.unackedAlerts)}
+                </span>
+              )}
+            </div>
             {section.items.map(renderItem)}
           </div>
         ))}
       </div>
-      <div style={{ padding: "6px 8px 10px", borderTop: "1px solid var(--b0)" }}>
+      <div className="aug-nav-foot">
         {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
         {/* Demo posture is stated, not implied. The hosted demo names a real company, so
             a visitor must be able to see at a glance that the operational figures are
             synthetic — and "Local" was simply wrong there: the backend is a recording. */}
-        <div style={{ fontSize: 11, color: "var(--t4)", textAlign: "center", letterSpacing: ".04em", marginTop: 6 }}>
+        <div className="aug-fs-xs aug-mono" style={{ color: "var(--t3)", padding: "6px 14px 0" }}>
           {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
         </div>
         {DEMO_PACK && (
           <div
             title="These are completed analyses served from a frozen recording. The operational figures are synthetic and are not the financial results of any real company."
-            style={{
-              fontSize: 11, lineHeight: 1.35, color: "var(--t4)", textAlign: "center",
-              padding: "6px 6px 0", marginTop: 2, borderTop: "1px solid var(--b0)",
-            }}
+            className="aug-fs-xs"
+            style={{ lineHeight: 1.45, color: "var(--t3)", padding: "4px 14px 0" }}
           >
             Synthetic data · illustrative only
           </div>
@@ -534,8 +531,7 @@ function HomeScreen({
   return (
     <div className="aug-screen">
       <div className="aug-content-header">
-        <NavIcon name="home" size={14} color="var(--t3)" />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Home</span>
+        <span className="aug-content-title">Home</span>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: "24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
@@ -562,7 +558,7 @@ function HomeScreen({
                   <Button size="xs" variant={homeMode === "ask" ? "default" : "ghost"} aria-pressed={homeMode === "ask"} onClick={() => setHomeMode("ask")}>Quick</Button>
                   <Button size="xs" variant={homeMode === "investigate" ? "default" : "ghost"} aria-pressed={homeMode === "investigate"} onClick={() => setHomeMode("investigate")}>Agent</Button>
                 </div>
-                <span style={{ fontSize: 11, color: "var(--t4)" }}>
+                <span style={{ fontSize: 11, color: "var(--t3)" }}>
                   {homeMode === "ask" ? "a fast, grounded answer" : "a multi-step Agent run"}
                 </span>
                 <div style={{ flex: 1 }} />
@@ -715,16 +711,10 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
   return (
     <div className="aug-screen">
       <div className="aug-content-header">
-        <NavIcon name="clock" size={14} color="var(--t3)" />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Recents</span>
-        <div style={{ display: "flex", gap: 4, marginLeft: 12 }}>
+        <span className="aug-content-title">Recents</span>
+        <div className="aug-segmented" role="tablist" aria-label="Filter runs" style={{ marginLeft: 12 }}>
           {(["all", "investigation", "chat"] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)} style={{
-              padding: "3px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500, cursor: "pointer",
-              background: filter === f ? "var(--bg-sel)" : "transparent",
-              border: `1px solid ${filter === f ? "var(--blue2)" : "var(--b1)"}`,
-              color: filter === f ? "var(--blue5)" : "var(--t3)", transition: "all .1s",
-            }}>
+            <button key={f} role="tab" aria-selected={filter === f} onClick={() => setFilter(f)} className="aug-seg-item">
               {f === "all" ? "All" : f === "investigation" ? "Agent" : "Chat"}
             </button>
           ))}
@@ -803,7 +793,7 @@ function RecentsScreen({ onGoToChat, onOpenInvestigation, onOpenMachineView, wor
                   </div>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     {st && <span className={`aug-tag ${st[0]}`}>{st[1]}</span>}
-                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>{timeAgo(a.started_at)}</span>
+                    <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>{timeAgo(a.started_at)}</span>
                   </div>
                 </div>
               );
@@ -838,20 +828,13 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
   return (
     <div className="aug-screen">
       <div className="aug-content-header">
-        <NavIcon name="settings" size={14} color="var(--t3)" />
-        <span style={{ fontSize: 13, fontWeight: 500 }}>Settings</span>
+        <span className="aug-content-title">Settings</span>
       </div>
 
       {/* Sub-tab rail — grouped settings instead of one long scroll */}
-      <div style={{ display: "flex", alignItems: "center", gap: 2, padding: "8px 20px 0", borderBottom: "1px solid var(--b1)", flexShrink: 0 }}>
+      <div className="aug-tabs" role="tablist" aria-label="Settings sections" style={{ padding: "10px 16px 0", flexShrink: 0 }}>
         {SUBS.map(s => (
-          <button key={s.id} onClick={() => setSub(s.id)} style={{
-            padding: "7px 12px", fontSize: 12, fontWeight: 500, cursor: "pointer",
-            background: "none", border: "none",
-            color: sub === s.id ? "var(--t1)" : "var(--t3)",
-            borderBottom: `2px solid ${sub === s.id ? "var(--blue4)" : "transparent"}`,
-            marginBottom: -1,
-          }}>{s.label}</button>
+          <button key={s.id} role="tab" aria-selected={sub === s.id} onClick={() => setSub(s.id)} className="aug-tab">{s.label}</button>
         ))}
       </div>
 
@@ -1086,7 +1069,7 @@ function AddConnectionForm({
                     }}
                   >
                     <div style={{ fontWeight: 500 }}>{ct.label}</div>
-                    <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
+                    <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".04em", marginTop: 2 }}>{ct.category}</div>
                   </button>
                 ))
               ))}
@@ -1119,7 +1102,7 @@ function AddConnectionForm({
                 <div key={f.key}>
                   <div className="aug-label" style={{ marginBottom: 5 }}>
                     {f.label}
-                    {f.optional && <span style={{ color: "var(--t4)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
+                    {f.optional && <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 4 }}>(optional)</span>}
                   </div>
                   <input
                     value={fields[f.key] ?? ""}
@@ -1135,7 +1118,7 @@ function AddConnectionForm({
             </>
           )}
 
-          {error && <div style={{ fontSize: 11, color: "var(--red4)", padding: "6px 10px", background: "var(--red1)", border: "1px solid var(--red2)", borderRadius: "var(--r2)" }}>{error}</div>}
+          {error && <ErrorState kind="Connection failed" what={error} means="Nothing was saved. Check the details above and save again." />}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
             <Button type="button" onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
             <Button type="submit" disabled={loading || !name.trim()} variant="default" size="sm">
@@ -1531,6 +1514,7 @@ export default function Home() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState("");
+  const navCounts = useNavCounts(selectedWorkspace || undefined);
 
   // ── Workspace-scoped connections (the tenancy boundary) ───────────────────
   // Everything below the topbar sees only the connections belonging to the
@@ -1981,6 +1965,8 @@ export default function Home() {
 
       {/* Topbar */}
       <Topbar
+        theme={theme}
+        onThemeChange={setTheme}
         onSearchOpen={() => setShowSearch(true)}
         onNavigate={handleNavigate}
         connections={wsConnections}
@@ -2014,7 +2000,7 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} counts={navCounts} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>
@@ -2064,8 +2050,7 @@ export default function Home() {
             <div style={{ flex: 1, flexDirection: "column", overflow: "hidden", background: "var(--bg-0)", display: tab === "chat" ? "flex" : "none" }}>
                 {/* Chat header */}
                 <div className="aug-content-header">
-                  <NavIcon name="chat" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Investigate</span>
+                  <span className="aug-content-title">Investigate</span>
                   {activeCanvas ? (
                     <>
                       <span style={{
@@ -2088,7 +2073,7 @@ export default function Home() {
                         title="Clear canvas"
                         style={{
                           background: "none", border: "none", cursor: "pointer",
-                          color: "var(--t4)", padding: "2px 4px",
+                          color: "var(--t3)", padding: "2px 4px",
                           display: "flex", alignItems: "center",
                         }}
                       >
@@ -2267,8 +2252,7 @@ export default function Home() {
             {tab === "playbook" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <div className="aug-content-header">
-                  <NavIcon name="playbook" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Playbook</span>
+                  <span className="aug-content-title">Playbook</span>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 0 16px" }}>
                   <PlaybookPanel />
@@ -2279,8 +2263,7 @@ export default function Home() {
             {tab === "documents" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <div className="aug-content-header">
-                  <NavIcon name="folder" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Documents</span>
+                  <span className="aug-content-title">Documents</span>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 24px" }}>
                   <DocumentUploader />
@@ -2292,8 +2275,7 @@ export default function Home() {
             {tab === "inbox" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <div className="aug-content-header">
-                  <NavIcon name="spark" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Recommendation Inbox</span>
+                  <span className="aug-content-title">Recommendation Inbox</span>
                 </div>
                 <div style={{ flex: 1, overflowY: "auto", padding: "0 20px 16px" }}>
                   <RecommendationInbox onOpenInvestigation={invId => { setSelectedHistoryInvId(invId); setTab("chat"); }} workspaceId={selectedWorkspace} />
@@ -2305,9 +2287,8 @@ export default function Home() {
             {tab === "health" && (
               <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
                 <div className="aug-content-header">
-                  <NavIcon name="activity" size={14} color="var(--t3)" />
-                  <span style={{ fontSize: 13, fontWeight: 500 }}>Health Scorecard</span>
-                  <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 4 }}>
+                  <span className="aug-content-title">Health Scorecard</span>
+                  <span className="aug-content-meta">
                     {connections.find(c => c.id === selectedConn)?.name ?? selectedConn}
                   </span>
                 </div>

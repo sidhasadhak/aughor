@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { countNoun, formatCount } from "@/lib/format";
@@ -957,9 +958,7 @@ export function DocumentUploader() {
 
       {/* Error */}
       {uploadError && (
-        <div className="rounded-md border border-red-500/30 bg-red-500/5 p-3 aug-fs-xs text-red-400 whitespace-pre-wrap font-mono">
-          {uploadError}
-        </div>
+        <ErrorState kind="Upload failed" what={<span className="aug-mono" style={{ whiteSpace: "pre-wrap" }}>{uploadError}</span>} />
       )}
 
       {/* ── Document list ──────────────────────────────────────────────────────

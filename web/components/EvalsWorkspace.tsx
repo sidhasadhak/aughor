@@ -1,4 +1,5 @@
 "use client";
+import { SkeletonRows } from "@/components/ui/motion";
 
 import dynamic from "next/dynamic";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
@@ -9,8 +10,8 @@ import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 // (the Workspace's keep-alive), so a suite RUNNING in one layer survives a tab
 // switch to the other. Mirrors OperationsWorkspace (Part 2 REC-U5).
 const loading = () => (
-  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-    <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+  <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+    <SkeletonRows rows={6} />
   </div>
 );
 

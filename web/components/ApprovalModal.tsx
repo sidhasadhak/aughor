@@ -67,7 +67,7 @@ export function ApprovalModal() {
           }}>🔒</div>
           <div>
             <DialogTitle style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Approval required</DialogTitle>
-            <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em" }}>
+            <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em" }}>
               {info.risk}-risk action
             </div>
           </div>
@@ -80,7 +80,7 @@ export function ApprovalModal() {
 
         {!approved ? (
           <>
-            <p style={{ fontSize: 12, color: "var(--t4)", lineHeight: 1.5, margin: 0 }}>
+            <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.5, margin: 0 }}>
               Approving allowlists this action for this scope; every attempt is recorded in
               Security &amp; Audit.
             </p>

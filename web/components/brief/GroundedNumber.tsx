@@ -1,5 +1,6 @@
 "use client";
 
+import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 import { useState, type ReactNode } from "react";
 import { formatCount } from "@/lib/format";
 
@@ -110,14 +111,12 @@ export function GroundedNumber({
 
   return (
     <>
+      {/* The dashed underline IS the affordance (.aug-why): no icon, nothing added to the line. */}
       <button
         onClick={onClick}
-        title="Show the receipt — the query + cell behind this number"
-        style={{
-          background: "none", border: "none", padding: 0, cursor: "pointer",
-          font: "inherit", color: "inherit",
-          borderBottom: "1px dashed color-mix(in srgb, var(--blue4) 55%, transparent)",
-        }}
+        className="aug-why"
+        title="Why this number — the query and the cell behind it"
+        style={{ padding: 0, font: "inherit", color: "inherit" }}
       >
         {token}
       </button>
@@ -134,12 +133,10 @@ function ReceiptPopover({
   const left = Math.max(12, Math.min(x, (typeof window !== "undefined" ? window.innerWidth : 1280) - 392));
   const top = Math.min(y + 12, (typeof window !== "undefined" ? window.innerHeight : 800) - 240);
 
-  const badge = (() => {
-    if (!receipt || receipt.error) return null;
-    if (receipt.grounded === true) return { label: "✓ Grounded in results", color: "var(--grn3, #4ade80)" };
-    if (receipt.grounded === false) return { label: "⚠ Not found in results", color: "var(--amb3, #f5a623)" };
-    return { label: "Derived — not enforced against a single cell", color: "var(--t4)" };
-  })();
+  // The grounding check as a guard reading: passed when the figure matched a returned cell,
+  // warned when it did not. A derived figure says so rather than wearing a matched cell's chip.
+  const verdict: GuardVerdict | null = !receipt || receipt.error || receipt.grounded == null
+    ? null : receipt.grounded ? "passed" : "warned";
 
   return (
     <>
@@ -148,36 +145,31 @@ function ReceiptPopover({
         onClick={e => e.stopPropagation()}
         style={{
           position: "fixed", left, top, zIndex: 200, width: 380,
-          background: "var(--bg-2)", border: "1px solid var(--b2)", borderRadius: "var(--r3)",
-          boxShadow: "var(--shadow-lg)", padding: 13,
-          display: "flex", flexDirection: "column", gap: 9,
+          padding: "9px 11px", display: "flex", flexDirection: "column", gap: 7,
         }}
+        className="aug-popover"
       >
-        <div className="aug-label" style={{ color: "var(--t3)", letterSpacing: ".05em" }}>Receipt</div>
-        {loading && <div style={{ fontSize: 11, color: "var(--t3)" }}>Re-running the query live…</div>}
+        <div className="aug-label">Why this number</div>
+        {loading && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Re-running the query live…</div>}
         {!loading && receipt?.error && (
-          <div style={{ fontSize: 11, color: "var(--red4, #ff6b6b)" }}>{receipt.error}</div>
+          <div className="aug-fs-xs" style={{ color: "var(--red4)" }}>{receipt.error}</div>
         )}
         {!loading && receipt && !receipt.error && (
           <>
-            {badge && (
-              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                <span style={{ fontSize: 11, fontWeight: 600, color: badge.color }}>{badge.label}</span>
-                {receipt.matchedCell != null && (
-                  <span style={{ fontSize: 11, color: "var(--t2)" }}>
-                    cell = <strong>{fmtCell(receipt.matchedCell)}</strong>
-                  </span>
-                )}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+              {verdict
+                ? <GuardChip verdict={verdict}>{verdict === "passed" ? "grounded in the results" : "not found in the results"}</GuardChip>
+                : <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>derived — not matched to a single cell</span>}
+            </div>
+            {receipt.matchedCell != null && (
+              <div className="aug-why-row">
+                <span className="aug-why-key">matched cell</span>
+                <span className="aug-why-value">{fmtCell(receipt.matchedCell)}</span>
               </div>
             )}
-            {receipt.note && <div style={{ fontSize: 11, color: "var(--t3)" }}>{receipt.note}</div>}
+            {receipt.note && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{receipt.note}</div>}
             {receipt.sql && (
-              <pre style={{
-                margin: 0, fontFamily: "var(--font-code)", fontSize: 11, lineHeight: 1.5,
-                color: "var(--t2)", background: "var(--bg-1)", border: "1px solid var(--b1)",
-                borderRadius: "var(--r2)", padding: "8px 10px", maxHeight: 180, overflow: "auto",
-                whiteSpace: "pre-wrap", wordBreak: "break-word",
-              }}>{receipt.sql}</pre>
+              <pre className="aug-code" style={{ margin: 0, maxHeight: 180, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{receipt.sql}</pre>
             )}
           </>
         )}

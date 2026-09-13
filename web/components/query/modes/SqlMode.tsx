@@ -526,7 +526,7 @@ export function SqlMode({
           <ShortcutSheet />
           {schemaControl}
           {runAllSummary && !error && (
-            <span className="aug-fs-ui" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>
+            <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
               {runAllSummary}
             </span>
           )}
@@ -536,7 +536,7 @@ export function SqlMode({
             <span
               style={{
                 fontSize: 13, flexShrink: 0, whiteSpace: "nowrap",
-                color: verdict.passed ? "var(--t4)" : "var(--amb4)",
+                color: verdict.passed ? "var(--t3)" : "var(--amb4)",
               }}
               title={verdict.unchecked
                 ? (verdict.note || "The guards cannot read a parameterised query without values.")

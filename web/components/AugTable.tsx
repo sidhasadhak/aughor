@@ -47,18 +47,18 @@ function useThemeMode(): "light" | "dark" {
 
 const TOKEN_FALLBACK: Record<"dark" | "light", Record<string, string>> = {
   dark: {
-    "--bg-0": "#0A0A0E", "--bg-1": "#0C0D12", "--bg-2": "#121318", "--bg-3": "#181A21",
-    "--bg-4": "#20222B", "--b0": "#1A1C23", "--b1": "#23252E",
-    "--t1": "#F2F3F6", "--t2": "#989BA6", "--t3": "#686B77", "--t4": "#525B69",
-    "--blue3": "#5A9FD6", "--blue4": "#7DB6E8",
-    "--bg-hover": "rgba(255, 255, 255, 0.045)", "--bg-sel": "rgba(90, 159, 214, 0.14)",
+    "--bg-0": "#101010", "--bg-1": "#141312", "--bg-2": "#141312", "--bg-3": "#191614",
+    "--bg-4": "#232019", "--b0": "#1B1917", "--b1": "#242120",
+    "--t1": "#E9ECEE", "--t2": "#99A2A8", "--t3": "#6D767C", "--t4": "#545C62",
+    "--blue3": "#4C9AD6", "--blue4": "#7BB8E4",
+    "--bg-hover": "#191614", "--bg-sel": "#2A2119",
   },
   light: {
-    "--bg-0": "#F4F6FA", "--bg-1": "#FFFFFF", "--bg-2": "#FFFFFF", "--bg-3": "#F7F9FC",
-    "--bg-4": "#EDF1F7", "--b0": "#EEF1F6", "--b1": "#E7ECF3",
-    "--t1": "#1C2330", "--t2": "#5A6678", "--t3": "#8593A6", "--t4": "#A9B4C4",
-    "--blue3": "#1F77B4", "--blue4": "#175A88",
-    "--bg-hover": "rgba(15, 30, 60, 0.04)", "--bg-sel": "rgba(31, 119, 180, 0.10)",
+    "--bg-0": "#EDE8DF", "--bg-1": "#FDFBF7", "--bg-2": "#FDFBF7", "--bg-3": "#F5F1E9",
+    "--bg-4": "#EAE4D9", "--b0": "#EEE9E0", "--b1": "#E1DACF",
+    "--t1": "#12171A", "--t2": "#59636A", "--t3": "#77828A", "--t4": "#929BA1",
+    "--blue3": "#1C6FB5", "--blue4": "#17558B",
+    "--bg-hover": "#F5F1E9", "--bg-sel": "#E4EFF9",
   },
 };
 
@@ -144,7 +144,7 @@ function isNumericValue(v: unknown): boolean {
 
 function fmt(col: string, v: unknown): React.ReactNode {
   if (v == null) {
-    return <span style={{ color: "#2B3B52", userSelect: "none" }}>—</span>;
+    return <span style={{ color: "var(--t3)", userSelect: "none" }}>—</span>;
   }
   const s = String(v);
   // Percentage columns: stored ratio (|v|≤1) ×100, else already a percentage.
@@ -299,7 +299,7 @@ export function SqlResultTable({
                       {fmt(col, sums[i] as number)}
                     </span>
                   ) : i === firstTextCol ? (
-                    <span style={{ color: "#9DA1A8", fontWeight: 600 }}>Total</span>
+                    <span style={{ color: "var(--t3)", fontWeight: 600 }}>Total</span>
                   ) : null}
                 </Table.Summary.Cell>
               ))}

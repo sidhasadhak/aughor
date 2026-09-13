@@ -428,8 +428,8 @@ function FeatureFlags() {
         <details key={g.key} open={g.open || !!q} className="mb-2 last:mb-0">
           <summary className="cursor-pointer select-none list-none flex items-baseline gap-2 pt-1 pb-1.5">
             <span className="text-[11px] font-medium uppercase tracking-wide" style={{ color: "var(--t3)" }}>{g.title}</span>
-            <span className="text-[11px]" style={{ color: "var(--t4)" }}>{byGroup.get(g.key)!.length}</span>
-            <span className="aug-fs-xs leading-snug truncate" style={{ color: "var(--t4)" }}>— {g.hint}</span>
+            <span className="text-[11px]" style={{ color: "var(--t3)" }}>{byGroup.get(g.key)!.length}</span>
+            <span className="aug-fs-xs leading-snug truncate" style={{ color: "var(--t3)" }}>— {g.hint}</span>
           </summary>
           {byGroup.get(g.key)!.map(([name, f]) => (
             <div key={name}>
@@ -455,7 +455,7 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
       <div className="min-w-0">
         <div className="flex items-center gap-2">
           <span className="text-xs text-zinc-200">{f.label}</span>
-          <span className="text-[11px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t4)" }}>
+          <span className="text-[11px] font-mono px-1 py-0.5 rounded" style={{ background: "var(--bg-1)", color: "var(--t3)" }}>
             {chip}
           </span>
         </div>
@@ -465,7 +465,7 @@ function FlagRow({ name, f, chip, busy, onToggle }: {
           {f.description}
         </p>
         {f.disposition_note && (
-          <p className="aug-fs-xs mt-0.5 leading-snug italic" style={{ color: "var(--t4)" }}>{f.disposition_note}</p>
+          <p className="aug-fs-xs mt-0.5 leading-snug italic" style={{ color: "var(--t3)" }}>{f.disposition_note}</p>
         )}
         {long && (
           <Button size="xs" variant="ghost" className="mt-0.5 h-5 px-1"
@@ -510,7 +510,7 @@ function Toggle({ checked, disabled, onChange }: { checked: boolean; disabled?: 
 function GraduationEvidence({ g }: { g?: EvalGraduation }) {
   if (!g) {
     return (
-      <p className="aug-fs-xs pl-2 pb-1.5" style={{ color: "var(--t4)" }}>
+      <p className="aug-fs-xs pl-2 pb-1.5" style={{ color: "var(--t3)" }}>
         No graduation decision recorded yet — run its suite and record one from Evals.
       </p>
     );

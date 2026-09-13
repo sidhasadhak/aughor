@@ -41,7 +41,7 @@ export const aughorEditorTheme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
   ".cm-gutters": {
     backgroundColor: "var(--bg-0)",
-    color: "var(--t4)",
+    color: "var(--t3)",
     border: "none",
     borderRight: "1px solid var(--b0)",
   },
@@ -51,7 +51,7 @@ export const aughorEditorTheme = EditorView.theme({
     backgroundColor: "var(--bg-3)",
   },
   ".cm-cursor, .cm-dropCursor": { borderLeftColor: "var(--t1)" },
-  ".cm-placeholder": { color: "var(--t4)" },
+  ".cm-placeholder": { color: "var(--t3)" },
   // The statement the cursor sits in — the one ⌘↵ will run. Making "what will run"
   // visible is the whole reason statement-under-cursor execution is safe to offer.
   ".cm-activeStatement": {
@@ -73,7 +73,7 @@ export const aughorEditorTheme = EditorView.theme({
     color: "var(--t1)",
   },
   ".cm-completionIcon": { paddingRight: "12px", opacity: 0.6 },
-  ".cm-completionDetail": { color: "var(--t4)", fontStyle: "normal", marginLeft: "8px" },
+  ".cm-completionDetail": { color: "var(--t3)", fontStyle: "normal", marginLeft: "8px" },
   // ── The find / replace panel ───────────────────────────────────────────────
   // SE-6 opened this panel for the first time (`searchKeymap` had been registered
   // for two waves without the `search()` extension that provides the panel, so ⌘F
@@ -154,7 +154,7 @@ export const aughorHighlightStyle = HighlightStyle.define([
   { tag: [t.keyword, t.operatorKeyword, t.modifier], color: "var(--vio4)", fontWeight: "500" },
   { tag: [t.string, t.special(t.string)],            color: "var(--grn4)" },
   { tag: [t.number, t.bool, t.null],                 color: "var(--amb4)" },
-  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--t4)", fontStyle: "italic" },
+  { tag: [t.comment, t.lineComment, t.blockComment], color: "var(--t3)", fontStyle: "italic" },
   { tag: [t.function(t.variableName), t.standard(t.name)], color: "var(--blue4)" },
   { tag: [t.typeName, t.className],                  color: "var(--cyn4)" },
   { tag: t.invalid,                                  color: "var(--red4)" },

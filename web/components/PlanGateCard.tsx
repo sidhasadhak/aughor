@@ -49,7 +49,7 @@ export function PlanGateCard({
         <span className="aug-text-xs uppercase tracking-wide" style={{ color: "var(--t3)" }}>
           Review plan before running
         </span>
-        <span className="aug-text-xs font-mono" style={{ color: "var(--t4)" }}>
+        <span className="aug-text-xs font-mono" style={{ color: "var(--t3)" }}>
           {keptIdx.length}/{plan.subQuestions.length} steps · ~{formatCount(estKept)} tok
         </span>
       </div>
@@ -65,15 +65,15 @@ export function PlanGateCard({
                 className="w-full h-auto items-start justify-start gap-2 rounded px-2 py-1.5 whitespace-normal text-left font-normal hover:bg-transparent dark:hover:bg-transparent"
                 style={{ background: on ? "var(--bg-3)" : "transparent", opacity: on ? 1 : 0.45 }}
               >
-                <span className="mt-0.5 aug-text-xs" style={{ color: on ? "var(--grn4)" : "var(--t4)" }}>
+                <span className="mt-0.5 aug-text-xs" style={{ color: on ? "var(--grn4)" : "var(--t3)" }}>
                   {on ? "✓" : "○"}
                 </span>
                 <span className="flex flex-col gap-0.5 min-w-0">
                   <span className="aug-text-sm" style={{ color: "var(--t1)" }}>
-                    <span className="font-mono" style={{ color: "var(--t4)" }}>{sq.id} </span>
+                    <span className="font-mono" style={{ color: "var(--t3)" }}>{sq.id} </span>
                     {sq.question}
                   </span>
-                  <span className="aug-text-xs" style={{ color: "var(--t4)" }}>
+                  <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
                     {PURPOSE_LABEL[sq.purpose] ?? sq.purpose}
                     {sq.expected_output ? ` — ${sq.expected_output}` : ""}
                   </span>

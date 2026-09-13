@@ -200,7 +200,7 @@ export function Chart({
               {FORMAT_CHOICES.find((f) => f.d3 === userFormat)?.label ?? "123"}
             </button>
             {fmtOpen && (
-              <div className="absolute right-0 top-7 z-20 flex flex-col rounded border border-zinc-700 bg-zinc-900 shadow-lg">
+              <div className="absolute right-0 top-7 z-20 flex flex-col rounded border border-zinc-700 bg-zinc-900 shadow-[var(--shadow-sm)]">
                 {FORMAT_CHOICES.map((f) => (
                   <button
                     key={f.key}

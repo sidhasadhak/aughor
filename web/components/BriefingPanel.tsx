@@ -1,4 +1,6 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
+import { CiteRef, GuardChip } from "@/components/ui/trust";
 
 /**
  * BriefingPanel — M24a + M24b Synthesis Layer
@@ -16,7 +18,7 @@
  */
 
 import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
-import { formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
+import { countNoun, formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
 import {
   runDirectQuery,
   getDomainInsights,
@@ -60,10 +62,11 @@ import {
   type RevalidateResult,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
-import { Spinner } from "@/components/ui/motion";
-import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
+import { Pending, SkeletonRows } from "@/components/ui/motion";
+import { MovedNumbers } from "@/components/brief/MovedNumbers";
+import { useNorthStarMoves } from "@/components/brief/useNorthStarMoves";
+import { periodWord } from "@/components/brief/metricFormat";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
-import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
 import { PinnedCards } from "@/components/brief/PinnedCards";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
@@ -104,6 +107,8 @@ interface BriefingData {
   domains:       DomainStat[];
   domainCount:   number;
   totalInsights: number;
+  /** Queries the explorer spent on these domains, as the store counts them. */
+  queriesUsed:   number;
   synthesizedAt: string;
   /** insight_id → {insight, domain} so a narrative citation can resolve to the full
    *  finding and offer the same actions a finding card has. */
@@ -111,61 +116,7 @@ interface BriefingData {
 }
 
 // ── Inline citation renderer ───────────────────────────────────────────────────
-// Parses narrative text for [N] markers and renders them as interactive chips.
-
-function CitationChip({
-  ref: refNum,
-  citation,
-  onCitationClick,
-}: {
-  ref: string;
-  citation: BriefingCitation | undefined;
-  onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
-}) {
-  const [tooltip, setTooltip] = useState(false);
-
-  return (
-    <span style={{ position: "relative", display: "inline" }}>
-      <span
-        onMouseEnter={() => setTooltip(true)}
-        onMouseLeave={() => setTooltip(false)}
-        onClick={e => { if (citation) { setTooltip(false); onCitationClick(citation, e); } }}
-        className="aug-fs-xs"
-        style={{
-          display: "inline-flex", alignItems: "center", justifyContent: "center",
-          width: 18, height: 18, borderRadius: "50%",
-          fontWeight: 700, fontFamily: "var(--font-mono)",
-          background: "var(--blue3)", color: "var(--bg-0)",
-          cursor: citation ? "pointer" : "default",
-          verticalAlign: "middle", marginLeft: 2, flexShrink: 0,
-          transition: "background .1s",
-          userSelect: "none" as const,
-        }}
-        onMouseDown={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue4)"; }}
-        onMouseUp={e => { (e.currentTarget as HTMLElement).style.background = "var(--blue3)"; }}
-      >
-        {refNum}
-      </span>
-      {tooltip && citation && (
-        <span style={{
-          position: "absolute", bottom: "calc(100% + 6px)", left: "50%",
-          transform: "translateX(-50%)",
-          width: 240, padding: "8px 10px",
-          background: "var(--bg-3)", border: "1px solid var(--b2)",
-          borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)",
-          zIndex: 50, pointerEvents: "none" as const,
-        }}>
-          <div className="aug-label" style={{ marginBottom: 4 }}>
-            {citation.domain}{citation.angle ? ` · ${citation.angle}` : ""}
-          </div>
-          <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
-            {citation.finding.length > 120 ? citation.finding.slice(0, 120) + "…" : citation.finding}
-          </div>
-        </span>
-      )}
-    </span>
-  );
-}
+// Parses narrative text for [N] markers; each becomes a superscript into the apparatus.
 
 function NarrativeText({
   text,
@@ -176,7 +127,7 @@ function NarrativeText({
 }: {
   text: string;
   citations: BriefingCitation[];
-  onCitationClick: (citation: BriefingCitation, e: { clientX: number; clientY: number }) => void;
+  onCitationClick: (citation: BriefingCitation, anchor: DOMRect) => void;
   /** Connection + schema scope so each magnitude number can be grounded ("show the receipt"). */
   connectionId: string;
   schema?: string;
@@ -207,13 +158,11 @@ function NarrativeText({
       {parts.map((part, i) => {
         const match = part.match(/^\[(\d+)\]$/);
         if (match) {
+          const c = citationMap[match[1]];
           return (
-            <CitationChip
-              key={i}
-              ref={match[1]}
-              citation={citationMap[match[1]]}
-              onCitationClick={onCitationClick}
-            />
+            <CiteRef key={i} refNo={match[1]}
+              title={c ? `${c.domain}${c.angle ? ` · ${c.angle}` : ""} — ${c.finding}` : undefined}
+              onOpen={c ? anchor => onCitationClick(c, anchor) : undefined} />
           );
         }
         const ref = markerRefAt(i);
@@ -244,7 +193,7 @@ function NarrativeText({
   );
 }
 
-// ── Narrative card ─────────────────────────────────────────────────────────────
+// ── Citation actions ─────────────────────────────────────────────────────────────
 
 /** Shared context a narrative citation needs to open the same action menu a finding
  *  card has (resolve the cited insight, then Monitor/Promote/Share/Evidence/Dismiss). */
@@ -259,128 +208,6 @@ interface CitationActionContext {
   onTriggersHint: () => void;
   onDismissed:    () => void;
   onInvestigate:  (q: string, insightId?: string) => void;
-}
-
-function NarrativeCard({
-  narrative,
-  ctx,
-  hideHeadline = false,
-  collapsible = false,
-}: {
-  narrative: BriefingNarrativeResponse;
-  ctx: CitationActionContext;
-  /** When the VerdictHero already leads with the conclusion, suppress this card's
-   *  header so the headline_theme / "AI Synthesis" tag aren't shown twice. */
-  hideHeadline?: boolean;
-  /** Direction B: render only the lede (clamped + bottom fade) with a "Read full
-   *  synthesis" toggle, so the synthesis reads as the argument's close, not a second wall. */
-  collapsible?: boolean;
-}) {
-  const [active, setActive] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
-  const [expanded, setExpanded] = useState(false);
-  const clamped = collapsible && !expanded;
-  const onCitationClick = (citation: BriefingCitation, e: { clientX: number; clientY: number }) =>
-    setActive({ citation, x: e.clientX, y: e.clientY });
-  // Capability A — an inline investigation pulled from a citation, streamed below the prose.
-  const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
-
-  return (
-    // Flat panel in the shared card language (was a blue-gradient card). The section's .aug-label
-    // header outside already frames it; the prose carries the analysis.
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "18px 22px" }}>
-      {/* Header */}
-      {!hideHeadline && (
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <span className="aug-label">AI Synthesis</span>
-        {narrative.headline_theme && (
-          <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t1)" }}>
-            {narrative.headline_theme}
-          </span>
-        )}
-        {narrative.generated_at && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>
-            {timeAgo(narrative.generated_at)}
-          </span>
-        )}
-      </div>
-      )}
-
-      {/* Narrative prose with inline citations. When collapsible, only the lede shows —
-          clamped with a bottom fade to the card surface — until "Read full synthesis". */}
-      <div style={{ position: "relative" }}>
-        {/* No measure cap: a 72ch column left most of a wide panel empty and wrapped the
-            synthesis into a narrow ribbon. The prose fills the card it was given. */}
-        <div className="aug-fs-ui" style={{
-          color: "var(--t1)", lineHeight: 1.7, fontWeight: 400,
-          // The narrative is multi-paragraph prose (blank-line separated). NarrativeText renders it
-          // into a <span> so citation chips can sit inline, and HTML would collapse those breaks
-          // into one run-on block — pre-wrap keeps the paragraphing the narrator wrote.
-          whiteSpace: "pre-wrap",
-          ...(clamped ? { maxHeight: 150, overflow: "hidden" as const } : {}),
-        }}>
-          <NarrativeText
-            text={narrative.narrative}
-            citations={narrative.citations}
-            onCitationClick={onCitationClick}
-            connectionId={ctx.connectionId}
-            schema={ctx.schema}
-          />
-        </div>
-        {clamped && (
-          <div aria-hidden style={{ position: "absolute", left: 0, right: 0, bottom: 0, height: 54, background: "linear-gradient(180deg, rgba(0,0,0,0), var(--bg-2))", pointerEvents: "none" }} />
-        )}
-      </div>
-      {collapsible && (
-        <div style={{ marginTop: 8 }}>
-          <Button variant="ghost" size="xs" onClick={() => setExpanded(e => !e)}
-            style={{ color: "var(--blue4)", fontSize: 13, fontWeight: 500, padding: "2px 8px" }}>
-            {expanded ? "Show less ▴" : "Read full synthesis ▾"}
-          </Button>
-        </div>
-      )}
-
-      {/* Citation legend removed — the inline [n] chips in the prose are the pointers;
-          the repeated list below was redundant. */}
-
-      {/* The trust-gate audit trail used to render here, and it read as an error log at the
-          foot of the brief: red "Implausible ×7 — SUM() over the text column 'signup_fy'".
-          Those are DECISIONS ALREADY MADE — signals the gate correctly withheld — so a reader
-          gets nothing actionable, only the impression the brief is broken. Worse, the entries
-          were stale: nothing had produced them since the emission gate landed, and every brief
-          re-derived the same rejects from findings sitting in the store (now retired at source
-          by explorer/revalidate.py). `held_back` still ships on the response for the Trust
-          Receipt, which is where a provenance trail belongs. */}
-
-      {active && (
-        <CitationActionsPopover
-          citation={active.citation}
-          x={active.x}
-          y={active.y}
-          ctx={ctx}
-          onPull={(t) => { setThread(t); setActive(null); }}
-          onClose={() => setActive(null)}
-        />
-      )}
-
-      {/* Inline investigation pulled from a citation — seeded with the cited finding's SQL. */}
-      {thread && (
-        <InlineInvestigationThread
-          key={thread.key}
-          question={thread.question}
-          opts={{
-            connectionId: ctx.connectionId,
-            schema: ctx.schema ?? null,
-            canvasId: ctx.canvasId ?? null,
-            seedSql: thread.seedSql,
-            seedContext: thread.seedContext,
-            insightId: thread.key,  // the citation's insight id — seeds the rich dossier when present
-          }}
-          onClose={() => setThread(null)}
-          onOpenInAsk={ctx.onInvestigate}
-        />
-      )}
-    </div>
-  );
 }
 
 /** Anchored action menu for a narrative citation — resolves the cited insight (or a
@@ -475,79 +302,7 @@ function CitationActionsPopover({
   );
 }
 
-// ── Narrative generate button ──────────────────────────────────────────────────
-
-function GenerateBriefButton({
-  loading,
-  hasNarrative,
-  onClick,
-}: {
-  loading: boolean;
-  hasNarrative: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 7,
-        padding: "8px 16px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
-        background: loading
-          ? "var(--bg-2)"
-          : "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))",
-        border: `1px solid ${loading ? "var(--b1)" : "color-mix(in srgb, var(--blue4) 32%, var(--b1))"}`,
-        color: loading ? "var(--t3)" : "var(--blue4)",
-        cursor: loading ? "not-allowed" : "pointer",
-        transition: "all .15s",
-      }}
-      onMouseEnter={e => { if (!loading) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 22%, var(--bg-2))"; }}
-      onMouseLeave={e => { if (!loading) e.currentTarget.style.background = "color-mix(in srgb, var(--blue4) 14%, var(--bg-2))"; }}
-    >
-      {loading ? (
-        <>
-          <span style={{
-            width: 12, height: 12, border: "2px solid var(--b2)",
-            borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-            animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-          }} />
-          Generating…
-        </>
-      ) : (
-        <>
-          <Icon name="spark" size={12} />
-          {hasNarrative ? "Regenerate Briefing" : "Generate AI Briefing"}
-        </>
-      )}
-    </button>
-  );
-}
-
 // ── Helpers ────────────────────────────────────────────────────────────────────
-
-function noveltyColor(n: number): string {
-  if (n >= 7) return "var(--grn3)";
-  if (n >= 5) return "var(--blue4)";
-  if (n >= 3) return "var(--amb3)";
-  return "var(--t4)";
-}
-
-function noveltyLabel(n: number): string {
-  if (n >= 7) return "High";
-  if (n >= 5) return "Notable";
-  if (n >= 3) return "Mid";
-  return "Low";
-}
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
-}
 
 const PATTERN_TYPE_COLORS: Record<string, string> = {
   angle:       "var(--blue4)",
@@ -588,6 +343,7 @@ function synthesize(
 ): BriefingData {
   const allSignals: SynthesisSignal[] = [];
   let totalInsights = 0;
+  let queriesUsed = 0;
 
   // Index every insight by id (including degenerate ones) so a citation referencing
   // any finding can resolve to the full object for its action menu.
@@ -597,6 +353,7 @@ function synthesize(
   // signal slot (the backend now drops these at the source; this also hides any that
   // were stored before that fix). Such findings stay visible only in the full Hub ledger.
   for (const [domain, data] of Object.entries(domainData)) {
+    queriesUsed += data.queries_used ?? 0;
     for (const ins of data.insights) {
       insightById.set(ins.id, { insight: ins, domain });
       // Drop the impossible (e.g. inventory turnover 96,295×) from EVERY signal surface —
@@ -666,53 +423,10 @@ function synthesize(
     domains,
     domainCount:   domains.length,
     totalInsights,
+    queriesUsed,
     synthesizedAt: new Date().toISOString(),
     insightById,
   };
-}
-
-// ── Visual primitives ────────────────────────────────────────────────────────
-
-/** A compact bar showing a finding's novelty/signal strength (0–10). */
-function NoveltyMeter({ novelty, width = 56, showValue = true }: { novelty: number; width?: number; showValue?: boolean }) {
-  const pct = Math.max(4, Math.min(100, (novelty / 10) * 100));
-  const color = noveltyColor(novelty);
-  return (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }} title={`Novelty ${novelty.toFixed(1)} / 10`}>
-      <span style={{ width, height: 5, borderRadius: 3, background: "var(--bg-3)", display: "inline-block", overflow: "hidden", flexShrink: 0 }}>
-        <span style={{ display: "block", height: "100%", width: `${pct}%`, background: color, borderRadius: 3, transition: "width .5s ease" }} />
-      </span>
-      {showValue && <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color, fontWeight: 600 }}>{novelty.toFixed(1)}</span>}
-    </span>
-  );
-}
-
-/** Horizontal bar chart of findings per domain — shows the *shape* of the intelligence
- *  (which domains dominate) at a glance, with novelty driving bar opacity. */
-function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
-  const max = Math.max(1, ...domains.map(d => d.count));
-  return (
-    <div style={{ display: "flex", flexDirection: "column" as const, gap: 9 }}>
-      {domains.slice(0, 8).map(d => {
-        const color = domainColor(d.name);
-        const pct = Math.max(5, (d.count / max) * 100);
-        return (
-          <div key={d.name} style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
-              <span style={{ fontSize: 11, color: "var(--t2)", textTransform: "capitalize" as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</span>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
-            </div>
-            <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
-              <div style={{
-                height: "100%", width: `${pct}%`, background: color, borderRadius: 3,
-                opacity: 0.45 + Math.min(0.55, d.maxNovelty / 13), transition: "width .5s ease",
-              }} />
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
 }
 
 // ── Domain tag ─────────────────────────────────────────────────────────────────
@@ -758,7 +472,7 @@ function ScopeChip({ label, dot, count, active, onClick }: {
       variant="ghost" size="xs" onClick={onClick} className="px-3"
       aria-pressed={active}
       style={{
-        borderRadius: "var(--r-pill)", gap: 6, height: 26,
+        borderRadius: "var(--r-chip)", gap: 6, height: 26,
         background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
         border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
         color: active ? "var(--blue4)" : "var(--t2)",
@@ -767,7 +481,7 @@ function ScopeChip({ label, dot, count, active, onClick }: {
     >
       {dot && <span style={{ width: 7, height: 7, borderRadius: "var(--r-pill)", background: dot, flexShrink: 0 }} />}
       {label}
-      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: active ? "var(--blue4)" : "var(--t4)", opacity: 0.85 }}>{count}</span>
+      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: active ? "var(--blue4)" : "var(--t3)", opacity: 0.85 }}>{count}</span>
     </Button>
   );
 }
@@ -872,7 +586,7 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
       onMouseEnter={e => { if (!disabled && status === "idle") { e.currentTarget.style.borderColor = c; } }}
       onMouseLeave={e => { if (status === "idle") { e.currentTarget.style.borderColor = "var(--b2)"; } }}
     >
-      {status === "busy" && <Spinner size={10} color="currentColor" />}
+      {status === "busy" && <Pending />}
       {status === "done" ? `${label} ${txt}` : label}
     </button>
   );
@@ -979,7 +693,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
 
   if (dismissed) {
     return (
-      <span style={{ fontSize: 11, color: "var(--t4)", fontStyle: "italic" as const }}>
+      <span style={{ fontSize: 11, color: "var(--t3)", fontStyle: "italic" as const }}>
         Dismissed ✓ — hidden from intelligence (kept for review)
       </span>
     );
@@ -1001,13 +715,13 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
             <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 150, padding: 4, display: "flex", flexDirection: "column" as const, gap: 2 }}>
               <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                 onClick={() => { setMoreOpen(false); handlePromote(); }}
-                style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t4)" : "var(--t2)" }}>
+                style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
                 {promStatus === "done" ? "Promoted ✓" : "Promote"}
               </Button>
               <div style={{ position: "relative" }}>
                 <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                   onClick={() => { if (triggers.length === 0) { setMoreOpen(false); onTriggersHint(); } else { setShareOpen(v => !v); } }}
-                  style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t4)" : "var(--t2)" }}>
+                  style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
                   Share
                 </Button>
                 {shareOpen && triggers.length > 0 && (
@@ -1015,8 +729,8 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                     {triggers.map(t => (
                       <Button key={t.id} variant="ghost" size="xs" className="w-full justify-start h-auto"
                         onClick={() => { handleShareTo(t); setMoreOpen(false); }}
-                        style={{ padding: "7px 10px", fontSize: 12, color: t.enabled ? "var(--t2)" : "var(--t4)" }}>
-                        <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t4)", marginRight: 6 }}>{t.type}</span>{t.name}{!t.enabled && " (disabled)"}
+                        style={{ padding: "7px 10px", fontSize: 12, color: t.enabled ? "var(--t2)" : "var(--t3)" }}>
+                        <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>{t.name}{!t.enabled && " (disabled)"}
                       </Button>
                     ))}
                   </div>
@@ -1036,10 +750,10 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
           )}
         </div>
         {degenerate && (
-          <span title={noData} className="aug-label" style={{ padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)", background: "var(--bg-3)", border: "1px solid var(--b1)" }}>no data</span>
+          <span title={noData} className="aug-label" style={{ padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t3)", background: "var(--bg-3)", border: "1px solid var(--b1)" }}>no data</span>
         )}
         {shareMsg && (
-          <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
+          <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t3)" }}>{shareMsg}</span>
         )}
       </div>
     );
@@ -1074,11 +788,11 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                 style={{
                   display: "block", width: "100%", textAlign: "left" as const,
                   padding: "7px 10px", fontSize: 12, background: "transparent", border: "none",
-                  color: t.enabled ? "var(--t2)" : "var(--t4)", cursor: "pointer",
+                  color: t.enabled ? "var(--t2)" : "var(--t3)", cursor: "pointer",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
+                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>
                 {t.name}{!t.enabled && " (disabled)"}
               </button>
             ))}
@@ -1092,12 +806,12 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
         status="idle" color={btnColor} onClick={handleDismiss} />
       {degenerate && (
         <span title={noData} className="aug-label" style={{
-          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)",
+          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t3)",
           background: "var(--bg-3)", border: "1px solid var(--b1)",
         }}>no data</span>
       )}
       {shareMsg && (
-        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
+        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t3)" }}>{shareMsg}</span>
       )}
     </div>
   );
@@ -1233,7 +947,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
           }}
           style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
         >{busy ? "Re-validating…" : "Re-validate"}</button>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>as of {asOfText}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>as of {asOfText}</span>
       </div>
       {badge && (
         <div style={{ fontSize: 11, color: badge.c, lineHeight: 1.5 }}>
@@ -1371,267 +1085,6 @@ export function EvidenceDrawer({ insight, domain, onClose, connectionId }: {
   );
 }
 
-function HeadlineCard({ signal, onInvestigate, actions }: {
-  signal:       SynthesisSignal;
-  onInvestigate: (q: string, insightId?: string) => void;
-  actions?:      ReactNode;
-}) {
-  const { insight, domain } = signal;
-
-  return (
-    // Flat card — the novelty is carried by the label + meter, not a colour-coded border.
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", padding: "20px 24px" }}>
-      {/* Badge row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12, flexWrap: "wrap" as const }}>
-        <span className="aug-label">{noveltyLabel(insight.novelty)}</span>
-        <DomainTag domain={domain} />
-        {insight.angle && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
-        )}
-        <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={64} /></span>
-      </div>
-
-      {/* Finding */}
-      <div className="aug-fs-ui" style={{ fontWeight: 500, color: "var(--t1)", lineHeight: 1.65, marginBottom: 16 }}>
-        {insight.finding}
-      </div>
-
-      {/* Footer */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" as const }}>
-        {insight.entities_involved.length > 0 && (
-          <div style={{ display: "flex", gap: 4, flexWrap: "wrap" as const }}>
-            {insight.entities_involved.slice(0, 4).map(e => (
-              <span key={e} className="aug-fs-xs" style={{
-                padding: "1px 6px", borderRadius: "var(--r1)",
-                background: "var(--bg-3)", border: "1px solid var(--b1)",
-                color: "var(--t3)", fontFamily: "var(--font-mono)",
-              }}>{e.replace(/_/g, " ")}</span>
-            ))}
-          </div>
-        )}
-        <Button
-          variant="minimal" size="sm"
-          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-          style={{ marginLeft: "auto" }}
-        >
-          Investigate →
-        </Button>
-      </div>
-      {actions && (
-        <div style={{ marginTop: 12, paddingTop: 12, borderTop: "1px solid var(--b1)" }}>{actions}</div>
-      )}
-    </div>
-  );
-}
-
-// ── Verdict hero ────────────────────────────────────────────────────────────────
-/** Conclusion-first briefing lede: ONE bold verdict, a one-line proof, and the
- *  primary action — up front. The scope/provenance ("synthesized from N domains…")
- *  is demoted to a quiet footer so the lede isn't cluttered with background process.
- *  Falls back to the deterministic top finding when no AI narrative exists.
- *  Confidence % is deliberately NOT shown — it carried no call to action. */
-// Small provenance chips for the verdict hero's meta strip (module-level so they aren't
-// re-created on every VerdictHero render).
-function HeroStatPill({ value, label }: { value: number; label: string }) {
-  return (
-    <span className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
-      <span style={{ fontWeight: 600, color: "var(--t2)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
-      <span style={{ color: "var(--t4)" }}>{label}</span>
-    </span>
-  );
-}
-function HeroDivider() {
-  return <span style={{ width: 1, height: 11, background: "var(--b2)" }} />;
-}
-
-/** One "Numbers that moved" tile — a key figure extracted from a finding this cycle,
- *  carrying the identity to deep-link back to its ledger row. */
-interface DigestTile {
-  ident:      string;   // signalIdentity — the ledger row to scroll/expand
-  insightId:  string;   // the finding id — used to pin from the cockpit empty state
-  value:      string;
-  secondary?: string;
-  label:      string;   // the finding statement (clamped to 2 lines in the tile)
-  sublabel?:  string;   // a short descriptor (for the cockpit's suggested-pin chips)
-  domain:     string;
-  accent:     string;   // domain colour (honest — not a fabricated favorability judgement)
-  /** The finding itself, so a tile can open the same detail its ledger row does — the chart,
-   *  the untruncated statement, Evidence/Investigate — without a round-trip to find it. */
-  insight:    ExplorationInsight;
-}
-
-function VerdictHero({
-  narrative, headline, domainCount, totalInsights, synthesizedAt,
-  onInvestigate, controls, actions, scope, digest,
-  connectionId, onEvidence, vizConfigFor, onVizConfigChange,
-}: {
-  narrative:     BriefingNarrativeResponse | null;
-  headline:      SynthesisSignal | null;
-  domainCount:   number;
-  totalInsights: number;
-  synthesizedAt: string;
-  /** WP-5 — the schema this briefing is for; shown in the footer so two scopes can't be
-   *  confused (the flip used to swap a scoped verdict for an unscoped one with no signal). */
-  scope?:        string;
-  onInvestigate: (q: string, insightId?: string) => void;
-  controls?:     ReactNode;   // Generate / Reload buttons (top-right)
-  actions?:      ReactNode;   // FindingActions menu for the headline finding
-  /** "Numbers that moved" digest — figures extracted from this cycle's findings; each tile
-   *  opens its finding in place. Empty/absent → the row is omitted. */
-  digest?:       DigestTile[];
-  /** Everything a tile needs to expand in place into its finding's detail. */
-  connectionId?: string;
-  onEvidence?:   (ins: ExplorationInsight, domain: string) => void;
-  vizConfigFor?:      (insightId: string) => VizConfig | null;
-  onVizConfigChange?: (insightId: string, c: VizConfig) => void;
-}) {
-  // Master-detail on the digest: a tile opens its finding in place (chart + full statement)
-  // rather than only deep-linking down to the ledger. One open at a time, like the ledger.
-  const [openIdent, setOpenIdent] = useState<string | null>(null);
-  const openTile = digest?.find(d => d.ident === openIdent) ?? null;
-  // Both are grounded prose quoted verbatim — normalise float noise, never the wording.
-  const theme   = normalizeNumberPrecision(narrative?.headline_theme?.trim());
-  const finding = normalizeNumberPrecision(headline?.insight.finding?.trim());
-  const title   = theme || finding || "Intelligence briefing";
-  // When the AI theme is the headline, the top finding becomes the supporting lead.
-  const lead    = theme ? finding : undefined;
-  const isVerdict = !!narrative;
-
-  return (
-    // Flat panel in the shared card language (was a gradient + glow + shadow hero). Prominence now
-    // comes from position, the display-size verdict, and the primary action — not chrome.
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
-      <div style={{ padding: "18px 26px 17px" }}>
-        {/* eyebrow (context) + controls */}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
-          <span className="aug-label">
-            Intelligence briefing{scope ? <span style={{ color: "var(--t4)" }}>{"  ·  "}{scope}</span> : null}
-          </span>
-          {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
-        </div>
-
-        {/* verdict badge — dot + label (dots, not boxes, like the report surfaces) */}
-        <div style={{ display: "inline-flex", alignItems: "center", gap: 7, marginBottom: 11 }}>
-          <span style={{ width: 6, height: 6, borderRadius: "var(--r-pill)", background: "var(--blue4)" }} />
-          <span className="aug-label" style={{ color: "var(--blue4)" }}>{isVerdict ? "Verdict" : "Top finding"}</span>
-        </div>
-
-        {/* the ONE verdict — 24px (the digest row below now shares the hero's weight) */}
-        <div style={{
-          fontSize: 22, fontWeight: 600, lineHeight: 1.2, color: "var(--t1)",
-          letterSpacing: "-.02em", maxWidth: "56ch", textWrap: "balance" as const,
-          marginBottom: lead ? 10 : 0,
-        }}>{title}</div>
-
-        {/* one-line proof */}
-        {lead && (
-          <p className="aug-fs-ui" style={{
-            color: "var(--t2)", lineHeight: 1.6, maxWidth: 880, margin: 0,
-            display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as const, overflow: "hidden",
-          }}>{lead}</p>
-        )}
-
-        {/* actions (left) + trust & provenance (right) on one confident strip */}
-        <div style={{ display: "flex", alignItems: "center", gap: 16, marginTop: 18, flexWrap: "wrap" as const }}>
-          {(headline || actions) && (
-            <div style={{ display: "flex", gap: 9, alignItems: "center", flexWrap: "wrap" as const }}>
-              {headline && (
-                <Button
-                  variant="default" size="sm"
-                  onClick={() => onInvestigate(`Investigate: ${headline.insight.finding}`, headline.insight.id)}
-                >Investigate →</Button>
-              )}
-              {actions}
-            </div>
-          )}
-
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const }}>
-            {/* Aughor's differentiator, made explicit: every number is evidence-backed. */}
-            <span title="Every number is grounded in the data and cleared the trust guards"
-              className="aug-tag aug-tag-green">
-              ✓ Grounded &amp; guarded
-            </span>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 12 }}>
-              <HeroStatPill value={domainCount} label={domainCount === 1 ? "domain" : "domains"} />
-              <HeroDivider />
-              <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
-              <HeroDivider />
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{timeAgo(synthesizedAt)}</span>
-            </span>
-          </div>
-        </div>
-
-        {/* "Numbers that moved" — a 4-up digest of key figures pulled from this cycle's
-            findings; each tile is one click from its ledger row (the "every number one click
-            from its why" guarantee). Not north-star KPIs — cycle-specific movers. */}
-        {digest && digest.length > 0 && (
-          <div style={{ marginTop: 18 }}>
-            <div className="aug-label" style={{ marginBottom: 8, color: "var(--t3)" }}>Numbers that moved</div>
-            <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, digest.length)}, minmax(0, 1fr))`, gap: 12 }}>
-              {digest.slice(0, 4).map(d => (
-                <StatTile
-                  key={d.ident}
-                  accent={d.accent}
-                  accentBar
-                  labelLines={2}
-                  label={d.label}
-                  value={<span>{d.value}{d.secondary && <span style={{ color: "var(--t4)", fontSize: 15 }}>{d.secondary}</span>}</span>}
-                  expandable={!!connectionId}
-                  open={openIdent === d.ident}
-                  onClick={connectionId ? () => setOpenIdent(id => (id === d.ident ? null : d.ident)) : undefined}
-                  title={connectionId ? (openIdent === d.ident ? "Collapse" : "Click to open the finding — chart, full statement, evidence") : d.label}
-                  footer={
-                    /* No "finding →" deep-link any more: the tile's own row is now excluded from
-                       the ledger below (it was printing twice), so the link had nothing left to
-                       jump to — and the tile already opens the same detail in place on click. */
-                    <div className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{d.domain}</span>
-                    </div>
-                  }
-                />
-              ))}
-            </div>
-
-            {/* Master-detail: the clicked tile opens its finding IN PLACE — the untruncated
-                statement (the tile clamps to 2 lines) plus the grounded chart/table and the
-                same Evidence / Investigate actions the ledger row offers. Rendered below the
-                grid, not inside it, so it spans the full width regardless of column count. */}
-            {openTile && connectionId && (
-              <div className="aug-anim-up" style={{
-                marginTop: 12, padding: "12px 14px", borderRadius: "var(--r3)", background: "var(--bg-2)",
-                borderTop: "1px solid var(--b1)", borderRight: "1px solid var(--b1)",
-                borderBottom: "1px solid var(--b1)", borderLeft: `3px solid ${openTile.accent}`,
-              }}>
-                <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 10 }}>
-                  <div style={{ fontSize: 13, lineHeight: 1.5, color: "var(--t1)" }}>
-                    {normalizeNumberPrecision(openTile.insight.finding)}
-                  </div>
-                  <Button variant="ghost" size="xs" onClick={() => setOpenIdent(null)}
-                    title="Close" aria-label="Close"
-                    style={{ marginLeft: "auto", color: "var(--t3)", fontSize: 15, lineHeight: 1, height: "auto", padding: 2, cursor: "pointer" }}>
-                    ×
-                  </Button>
-                </div>
-                <FindingDetail
-                  key={openTile.ident}
-                  insight={openTile.insight}
-                  domain={openTile.domain}
-                  connectionId={connectionId}
-                  chartHeight={LEDGER_CHART_H}
-                  onInvestigate={onInvestigate}
-                  onEvidence={onEvidence ?? (() => {})}
-                  vizConfig={vizConfigFor?.(openTile.insight.id) ?? null}
-                  onVizConfigChange={onVizConfigChange ? c => onVizConfigChange(openTile.insight.id, c) : undefined}
-                />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
 // ── Findings — the bulletin ledger (Direction B) ────────────────────────────────
 /** The narrative layer's reading surface: every finding is ONE scannable row — novelty
  *  + domain, the statement with its figures inline, and the extracted key figure right-
@@ -1662,9 +1115,8 @@ function renderFigures(text: string): ReactNode[] {
  * The expanded body of a finding — its grounded result as a chart (or a big scalar, or an
  * honest "no chartable result"), plus Evidence / Investigate.
  *
- * Extracted from the ledger row so a digest tile can open the SAME detail: the tile and the
- * row are two entry points to one finding, and they were never going to stay in step as two
- * copies. Display edits persist through `vizConfig`/`onVizConfigChange`, keyed by the insight.
+ * Opened from its row in the findings ledger. Display edits persist through
+ * `vizConfig`/`onVizConfigChange`, keyed by the finding's id.
  */
 function FindingDetail({
   insight, domain, connectionId, chartHeight, onInvestigate, onEvidence,
@@ -1710,9 +1162,9 @@ function FindingDetail({
 
   return (
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 12 }}>
-      {phase === "loading" && <Shimmer h={chartHeight} r="var(--r2)" />}
+      {phase === "loading" && <div className="aug-skeleton" style={{ height: chartHeight, borderRadius: "var(--r2)" }} />}
       {phase === "text" && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "8px 2px" }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "8px 2px" }}>
           No chartable result for this finding — the statement above is the finding.
         </div>
       )}
@@ -1730,7 +1182,7 @@ function FindingDetail({
         </div>
       ))}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle || "The finding's grounded query"}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle || "The finding's grounded query"}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
             title="See the query + provenance behind this finding"
@@ -1784,13 +1236,13 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
         <div style={{ textAlign: "right", minWidth: 0 }}>
           {fig && (<>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {fig.value}{fig.secondary && <span style={{ color: "var(--t4)", fontSize: 12 }}>{fig.secondary}</span>}
+              {fig.value}{fig.secondary && <span style={{ color: "var(--t3)", fontSize: 12 }}>{fig.secondary}</span>}
             </div>
-            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
+            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
           </>)}
         </div>
         {/* chevron */}
-        <span aria-hidden style={{ color: "var(--t4)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
+        <span aria-hidden style={{ color: "var(--t3)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
       </div>
 
       {expanded && (
@@ -1858,12 +1310,6 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
 
   return (
     <div>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
-        <span className="aug-label" style={{ color: "var(--t2)" }}>Findings</span>
-        <span className="aug-fs-xs" style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", color: "var(--t4)" }}>
-          {Math.min(shown, signals.length)} of {signals.length} shown · ranked by novelty
-        </span>
-      </div>
       <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)", overflow: "hidden" }}>
         {top.map(sig => {
           const ident = signalIdentity(sig.insight);
@@ -1884,8 +1330,8 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
               style={{ color: "var(--t2)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
               Show next {Math.min(LEDGER_STEP, remaining)}
             </Button>
-          ) : <span style={{ color: "var(--t4)" }}>All findings shown</span>}
-          <span style={{ color: "var(--t4)" }}>· {Math.min(shown, signals.length)} of {signals.length}</span>
+          ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
+          <span style={{ color: "var(--t3)" }}>· {Math.min(shown, signals.length)} of {signals.length}</span>
           <div style={{ marginLeft: "auto", position: "relative" }}>
             <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
               style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
@@ -1904,44 +1350,6 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
             )}
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
-
-// ── Signal card ────────────────────────────────────────────────────────────────
-
-function SignalCard({ signal, onInvestigate, actions }: {
-  signal:       SynthesisSignal;
-  onInvestigate: (q: string, insightId?: string) => void;
-  actions?:      ReactNode;
-}) {
-  const { insight, domain } = signal;
-
-  return (
-    <div style={{
-      background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderRadius: "var(--r3)", padding: "14px 16px",
-      display: "flex", flexDirection: "column" as const, gap: 10,
-    }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
-        <DomainTag domain={domain} />
-        {insight.angle && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
-        )}
-        <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={40} /></span>
-      </div>
-      <div className="aug-fs-sm" style={{ color: "var(--t2)", lineHeight: 1.55, flex: 1 }}>
-        {insight.finding.length > 160 ? insight.finding.slice(0, 160) + "…" : insight.finding}
-      </div>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-        <Button
-          variant="minimal" size="xs"
-          onClick={() => onInvestigate(`Investigate: ${insight.finding}`, insight.id)}
-        >
-          Investigate →
-        </Button>
-        {actions}
       </div>
     </div>
   );
@@ -1986,27 +1394,6 @@ function PatternRow({ pattern, onInvestigate }: {
           hover in a fixed 12px slot so it never nudges the layout. */}
       <span aria-hidden className="opacity-0 group-hover:opacity-100 transition-opacity"
         style={{ flexShrink: 0, width: 12, textAlign: "right" as const, color: "var(--blue4)", fontWeight: 700, lineHeight: 1.4 }}>→</span>
-    </div>
-  );
-}
-
-// ── Org signal row (sidebar) ───────────────────────────────────────────────────
-
-function OrgSignalRow({ insight }: { insight: OrgInsight }) {
-  return (
-    <div style={{
-      padding: "10px 12px", borderRadius: "var(--r2)",
-      background: "var(--bg-2)", border: "1px solid var(--b1)",
-    }}>
-      <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" as const }}>
-        <DomainTag domain={insight.domain} />
-        {insight.angle && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
-        )}
-      </div>
-      <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
-        {insight.text.length > 120 ? insight.text.slice(0, 120) + "…" : insight.text}
-      </div>
     </div>
   );
 }
@@ -2140,13 +1527,9 @@ function BriefingEmpty({
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {spinning ? (
-          <div style={{
-            width: 22, height: 22, border: "2px solid var(--b2)",
-            borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-            animation: "aug-spin var(--dur-breath) linear infinite",
-          }} />
+          <Pending label="Generating the briefing" className="aug-fs-h1" style={{ color: "var(--t3)" }} />
         ) : (
-          <span style={{ color: "var(--t4)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
+          <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
         )}
       </div>
       <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
@@ -2174,7 +1557,7 @@ function BriefingEmpty({
         >
           {busy ? (
             <>
-              <span style={{ width: 12, height: 12, border: "2px solid var(--b2)", borderTop: "2px solid var(--blue4)", borderRadius: "50%", animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0 }} />
+              <Pending />
               Working…
             </>
           ) : (
@@ -2189,63 +1572,218 @@ function BriefingEmpty({
   );
 }
 
-// ── Loading state — content-shaped skeletons ────────────────────────────────────
-// Not a bare spinner: the briefing's OWN shape shimmers in place, so the layout doesn't
-// jump when the real content lands (the old spinner grew the section and shoved
-// everything below it down). Uses the app's standard skeleton idiom (animate-pulse on a
-// muted fill) and the same flat card language as the reskinned briefing.
+// ── The brief as an artefact (Aughor Intelligence · 01 Briefing) ────────────────────────────
+// A 700px measure, numbered sections in a 44px gutter, superscripts into a margin apparatus and a
+// signature block. The other Intelligence layers are instrument-dense and get none of it.
 
-/** One shimmer bar. */
-function Shimmer({ w = "100%", h = 12, r = "var(--r1)", mt = 0 }: { w?: number | string; h?: number; r?: string; mt?: number }) {
-  return <div className="animate-pulse" style={{ width: w, height: h, marginTop: mt, borderRadius: r, background: "var(--bg-3)" }} />;
+/** What the shell's header shows for this layer (IntelligenceWorkspace draws it). */
+export interface BriefHead {
+  /** When the brief on screen was written — the server's stamp, not when this page loaded. */
+  generatedAt: string | null;
+  /** `writing`: a brief asked for with Regenerate; `opening`: the cached brief being read. */
+  pending: "writing" | "opening" | null;
+  hasNarrative: boolean;
+  /** No findings in scope, so there is nothing to write a brief from. */
+  empty: boolean;
+  regenerate: () => void;
+  investigate: { label: string; run: () => void } | null;
 }
 
-const skelCard: React.CSSProperties = { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" };
+/** The cockpit's suggested pin — a key figure quoted from a finding. */
+interface SuggestedPin { insightId: string; value: string; label: string }
 
-/** The full-synthesis prose block while the narrative streams — mirrors NarrativeCard's shape. */
-function SynthesisSkeleton() {
+type NarrativeProps = {
+  citations: BriefingCitation[];
+  onCitationClick: (citation: BriefingCitation, anchor: DOMRect) => void;
+  connectionId: string;
+  schema?: string;
+};
+
+/** The narrator writes a 2–3 sentence lede, then 2–4 paragraphs of depth, blank-line separated
+ *  (knowledge/briefing.py). The lede stands under the verdict; the depth is §2. */
+export function splitLede(narrative: string): { lede: string; depth: string[] } {
+  const paras = narrative.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  return { lede: paras[0] ?? "", depth: paras.slice(1) };
+}
+
+/** How many figures in the prose can be matched to a live cell — the same rule that makes a
+ *  figure clickable, so the signature counts exactly what a reader can open. */
+function countReceiptFigures(text: string): number {
+  let n = 0;
+  withGroundedNumbers(normalizeNumberPrecision(text), () => { n++; return null; }, "count");
+  return n;
+}
+
+function BriefSection({ mark, children }: { mark: string; children: ReactNode }) {
   return (
-    <div style={{ ...skelCard, padding: "18px 22px", display: "flex", flexDirection: "column", gap: 9 }}
-      aria-busy="true" aria-label="Writing briefing">
-      {["100%", "97%", "99%", "94%", "98%", "62%"].map((w, i) => <Shimmer key={i} w={w} h={12} />)}
+    <section className="aug-brief-sec">
+      <div className="aug-brief-gutter" aria-hidden>{mark}</div>
+      <div className="aug-brief-body">{children}</div>
+    </section>
+  );
+}
+
+function SectionHead({ title, meta }: { title: string; meta?: ReactNode }) {
+  return (
+    <div className="aug-brief-head">
+      <h2 className="aug-brief-title">{title}</h2>
+      {meta != null && meta !== "" && <span className="aug-brief-meta">{meta}</span>}
     </div>
   );
 }
 
-/** Whole-briefing first load — verdict hero + 3 supporting signals + synthesis, in shape. */
-function BriefingLoading() {
+/**
+ * The margin the superscripts point into, and the brief's signature.
+ *
+ * Every note is a finding the prose cites, opening the same actions its superscript does. The
+ * signature says only what the screen can stand behind: how many figures a reader can check
+ * against a live cell, and how the trust gate read the cited findings. No confidence is printed
+ * — none is computed for a brief — and nothing animates toward one.
+ */
+function ApparatusRail({ citations, pending, hasNarrative, narrativeText, insightById, activeRef, onOpen }: {
+  citations:     BriefingCitation[];
+  pending:       BriefHead["pending"];
+  hasNarrative:  boolean;
+  narrativeText: string;
+  insightById:   Map<string, SynthesisSignal>;
+  activeRef:     string | null;
+  onOpen:        (citation: BriefingCitation, anchor: DOMRect) => void;
+}) {
+  const signed = hasNarrative && !pending;
+  const figures = signed ? countReceiptFigures(narrativeText) : 0;
+  // The trust gate's reading of the findings the prose leans on, as /domains stamped it. A
+  // metric move is a measured trend, not a gated finding, so it is not counted either way.
+  let passed = 0, confound = 0, unread = 0, gone = 0;
+  const seen = new Set<string>();
+  for (const c of citations) {
+    if (seen.has(c.insight_id) || c.insight_id.startsWith("metric-move::")) continue;
+    seen.add(c.insight_id);
+    const sig = insightById.get(c.insight_id);
+    const p = sig?.insight.plausibility;
+    if (!sig) gone++;
+    else if (p === undefined) unread++;
+    else if (p === null) passed++;
+    else if (p === "confound") confound++;
+  }
+  const sigText = [
+    figures > 0
+      ? `${countNoun(figures, "figure")} in the prose can be checked against a live cell — open one to see the match.`
+      : "The prose states no figure large enough to check against a cell.",
+    gone > 0
+      ? `${countNoun(gone, "cited finding")} ${gone === 1 ? "is" : "are"} no longer in the findings, so the trust gate has no reading of ${gone === 1 ? "it" : "them"}.`
+      : "",
+    unread > 0 ? `${countNoun(unread, "cited finding")} ${unread === 1 ? "carries" : "carry"} no trust-gate reading.` : "",
+  ].filter(Boolean).join(" ");
+  // Notes read in their own order, whatever order the narrator happened to cite them in.
+  const notes = [...citations].sort((a, b) => Number(a.ref) - Number(b.ref));
+
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 20 }} aria-busy="true" aria-label="Synthesizing intelligence">
-      {/* Verdict hero */}
-      <div style={{ ...skelCard, padding: "18px 26px 20px" }}>
-        <Shimmer w={130} h={10} />
-        <Shimmer w={70} h={10} mt={16} />
-        <Shimmer w="68%" h={22} mt={14} />
-        <Shimmer w="46%" h={22} mt={8} />
-        <Shimmer w="88%" h={13} mt={16} />
-        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-          <Shimmer w={120} h={30} />
-          <Shimmer w={180} h={30} />
-        </div>
+    <aside className="aug-apparatus" aria-label="Apparatus">
+      <div className="aug-apparatus-head">
+        <span className="aug-brief-eyebrow">Apparatus</span>
+        <span className={`aug-brief-meta${pending ? " aug-brief-writing" : ""}`}>
+          {pending === "writing" ? "being written" : pending === "opening" ? "opening" : countNoun(citations.length, "note")}
+        </span>
       </div>
-      {/* Supporting signals — 3-up */}
-      <div>
-        <Shimmer w={120} h={11} />
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 10 }}>
-          {[0, 1, 2].map(i => (
-            <div key={i} style={{ ...skelCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-              <Shimmer w={80} h={20} r="var(--r-pill)" />
-              <Shimmer w="100%" h={12} mt={4} />
-              <Shimmer w="92%" h={12} />
-              <Shimmer w="70%" h={12} />
+
+      {pending ? (
+        <div className="aug-apparatus-notes" aria-busy="true">
+          {["92%", "74%", "84%"].map((w, i) => (
+            <div key={i} className="aug-apparatus-note" style={{ cursor: "default" }}>
+              <span className="aug-apparatus-n">{i + 1}</span>
+              <span className="aug-apparatus-body aug-brief-skel" style={{ flex: 1 }}>
+                <span className="aug-skeleton" style={{ width: w }} />
+                <span className="aug-skeleton" style={{ width: "48%" }} />
+              </span>
             </div>
           ))}
         </div>
+      ) : citations.length === 0 ? (
+        <div className="aug-apparatus-notes">
+          <p className="aug-apparatus-empty">
+            {hasNarrative ? "This brief cites no findings." : "Notes appear when the brief is written — each one is a finding its prose cites."}
+          </p>
+        </div>
+      ) : (
+        <ol className="aug-apparatus-notes">
+          {notes.map(c => {
+            const missing = !insightById.has(c.insight_id) && !c.insight_id.startsWith("metric-move::");
+            // An angle can be a whole question; the meta keeps one line and the title keeps the rest.
+            const meta = [c.domain, missing ? "no longer in the findings" : c.angle].filter(Boolean).join(" · ");
+            const open = (el: HTMLElement) => onOpen(c, el.getBoundingClientRect());
+            return (
+              <li key={c.ref}>
+                <div role="button" tabIndex={0}
+                  className={`aug-apparatus-note${activeRef === c.ref ? " aug-apparatus-note-on" : ""}`}
+                  onClick={e => open(e.currentTarget)}
+                  onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(e.currentTarget); } }}>
+                  <span className="aug-apparatus-n">{c.ref}</span>
+                  <span className="aug-apparatus-body">
+                    <span className="aug-apparatus-text">{normalizeNumberPrecision(c.finding)}</span>
+                    <span className="aug-apparatus-meta" title={[c.domain, c.angle].filter(Boolean).join(" · ")}>{meta}</span>
+                  </span>
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      )}
+
+      <div className="aug-apparatus-sig">
+        <span className="aug-brief-eyebrow">{signed ? "Signature" : "Signature · not signed"}</span>
+        {signed ? (
+          <>
+            <p className="aug-apparatus-sig-text">{sigText}</p>
+            {(passed > 0 || confound > 0) && (
+              <div className="aug-apparatus-guards">
+                {passed > 0 && (
+                  <GuardChip verdict="passed" title="Cited findings the trust gate did not flag">plausible {passed}</GuardChip>
+                )}
+                {confound > 0 && (
+                  <GuardChip verdict="warned" title="Cited findings the trust gate flagged as a possible confound">confound {confound}</GuardChip>
+                )}
+              </div>
+            )}
+          </>
+        ) : (
+          <p className="aug-apparatus-sig-text">Nothing is signed until the brief is written.</p>
+        )}
       </div>
-      {/* Full synthesis */}
-      <div>
-        <Shimmer w={110} h={11} />
-        <div style={{ marginTop: 10 }}><SynthesisSkeleton /></div>
+    </aside>
+  );
+}
+
+// ── Loading state — the brief's own shape, waiting on real data ─────────────────────────────
+/** First load: the verdict, the moved numbers, the prose and the apparatus in shape, so nothing
+ *  jumps when the findings land. No spinner. */
+function BriefingLoading() {
+  return (
+    <div className="aug-brief-scroll" aria-busy="true" aria-label="Reading the findings">
+      <div className="aug-brief">
+        <div className="aug-brief-cols">
+          <div className="aug-brief-main">
+            <BriefSection mark="01">
+              <div className="aug-brief-measure aug-brief-skel">
+                <div className="aug-skeleton" style={{ width: 120 }} />
+                <div className="aug-skeleton aug-brief-skel-h1" style={{ width: "72%" }} />
+                <div className="aug-skeleton" style={{ width: "94%" }} />
+                <div className="aug-skeleton" style={{ width: "57%" }} />
+              </div>
+            </BriefSection>
+            <BriefSection mark="§1"><SkeletonRows rows={4} /></BriefSection>
+            <BriefSection mark="§2">
+              <div className="aug-brief-measure aug-brief-skel">
+                {["98%", "95%", "99%", "62%"].map((w, i) => <div key={i} className="aug-skeleton" style={{ width: w }} />)}
+              </div>
+            </BriefSection>
+          </div>
+          <aside className="aug-apparatus" aria-hidden>
+            <div className="aug-apparatus-head"><span className="aug-brief-eyebrow">Apparatus</span></div>
+            <div className="aug-apparatus-notes aug-brief-skel">
+              {["88%", "70%", "80%"].map((w, i) => <div key={i} className="aug-skeleton" style={{ width: w }} />)}
+            </div>
+          </aside>
+        </div>
       </div>
     </div>
   );
@@ -2260,6 +1798,7 @@ export function BriefingPanel({
   schema,
   workspaceId,
   schemaReady = true,
+  onHead,
 }: {
   connectionId: string;
   onInvestigate: (q: string, insightId?: string) => void;
@@ -2276,6 +1815,8 @@ export function BriefingPanel({
    *  waits for this so it never fires an unscoped request before the schema resolves.
    *  Defaults true for callers without a schema selector (e.g. a canvas mount). */
   schemaReady?: boolean;
+  /** The shell draws this layer's header: when the brief was written, and its actions. */
+  onHead?: (head: BriefHead | null) => void;
 }) {
   const [briefing, setBriefing]             = useState<BriefingData | null>(null);
   const [pinnedRefresh, setPinnedRefresh]   = useState(0);
@@ -2291,6 +1832,15 @@ export function BriefingPanel({
   const [narrative, setNarrative]           = useState<BriefingNarrativeResponse | null>(null);
   const [narrativeLoading, setNarrativeLoading] = useState(false);
   const [narrativeError, setNarrativeError] = useState<string | null>(null);
+  // Whether the brief in flight was asked for (Regenerate) or is the cached one being opened —
+  // the screen says "being written" only when it is.
+  const [narrativeForced, setNarrativeForced] = useState(false);
+  // One open citation at a time, wherever it was opened from — a superscript in the prose or its
+  // note in the apparatus — and the inline investigation a citation can pull.
+  const [activeCitation, setActiveCitation] = useState<{ citation: BriefingCitation; x: number; y: number } | null>(null);
+  const [thread, setThread] = useState<{ question: string; seedSql: string | null; seedContext: string; key: string } | null>(null);
+  const openCitation = useCallback((citation: BriefingCitation, anchor: DOMRect) =>
+    setActiveCitation({ citation, x: anchor.left, y: anchor.bottom }), []);
   // The scope this panel is currently rendering. Mirrors the server's `scope_key` EXACTLY
   // (`canvas:<id>` | `<conn>:<schema>` | `<conn>`) so a returned brief can be checked
   // against it — see the scope guard in `generateNarrative`.
@@ -2371,11 +1921,14 @@ export function BriefingPanel({
     const forScope = narrativeScope;
     setNarrativeLoading(true);
     setNarrativeError(null);
+    setNarrativeForced(forceRefresh);
     // Drop the OUTGOING brief up front. It belongs to whatever scope was current when it
     // was fetched; from here on the only correct thing to paint is this call's result or
     // an error. Leaving it up is how a previous schema's synthesis ended up rendered under
     // a new schema's verdict (the two are separate state; only the hero re-derived).
     setNarrative(null);
+    setActiveCitation(null);
+    setThread(null);
     try {
       const result = canvasId
         ? await generateCanvasBriefingNarrative(canvasId, forceRefresh, workspaceId)
@@ -2648,50 +2201,33 @@ export function BriefingPanel({
   const scopeDomain    = scope && briefing?.domains.some(d => d.name === scope) ? scope : null;
   const headlineIdent  = briefing?.headline ? signalIdentity(briefing.headline.insight) : null;
 
-  // "Numbers that moved" (hero digest) + the cockpit's suggested pins share ONE extraction:
-  // the top findings (unscoped, headline excluded) that yield a key figure, in impact order.
-  // Every figure is quoted from a grounded finding statement — never invented.
-  const movers = useMemo<DigestTile[]>(() => {
+  // The cockpit's suggested pins: the top findings (headline excluded) that yield a key figure, in
+  // impact order. Every figure is quoted from a grounded finding statement — never invented.
+  const movers = useMemo<SuggestedPin[]>(() => {
     if (!briefing) return [];
     const headlineId = briefing.headline ? signalIdentity(briefing.headline.insight) : null;
     const ranked = dedupeSignals([...briefing.signals, ...briefing.allSignals])
       .filter(s => signalIdentity(s.insight) !== headlineId);
-    const out: DigestTile[] = [];
+    const out: SuggestedPin[] = [];
     for (const s of ranked) {
       const fig = extractKeyFigure(s.insight.finding);
       if (!fig) continue;
-      out.push({
-        ident: signalIdentity(s.insight), insightId: s.insight.id,
-        value: fig.value, secondary: fig.secondary, sublabel: fig.sublabel,
-        // PX-1 — the tile quotes the finding's prose, and stored prose can carry raw
-        // float64s ("0.315801 of total Gross Sales"). Precision policy at the render
-        // boundary, same as everywhere else; the stored finding is untouched.
-        label: normalizeNumberPrecision(s.insight.finding),
-        domain: s.domain, accent: domainColor(s.domain),
-        insight: s.insight,
-      });
-      if (out.length >= 6) break;
+      out.push({ insightId: s.insight.id, value: fig.value, label: fig.sublabel || s.domain });
+      if (out.length >= 3) break;
     }
     return out;
   }, [briefing]);
 
-  // The digest and the ledger were reading the SAME ranked list, so the tiles WERE the ledger's
-  // first rows — every "Number that moved" printed twice on one screen. The tiles win: they lead
-  // the page and (since #190) expand in place into the same detail the ledger row offers, so
-  // nothing is lost by dropping them from the list below. Excluded by IDENTITY, like the
-  // headline, and unscoped — a tile stays on screen under a scope chip, so its ledger row would
-  // still be the duplicate.
-  const moverIdents    = useMemo(() => new Set(movers.map(m => m.ident)), [movers]);
+  // The ledger holds every finding in scope. The one exception is the top finding while no brief
+  // is written: it IS the verdict's title then, and printing it twice helps no one.
+  const hasNarrative   = !!narrative?.narrative;
   const scopedSignals  = !briefing
     ? []
     : dedupeSignals(
         scopeDomain
           ? briefing.allSignals.filter(s => s.domain === scopeDomain)
           : [...briefing.signals, ...briefing.allSignals],
-      ).filter(s => {
-        const ident = signalIdentity(s.insight);
-        return ident !== headlineIdent && !moverIdents.has(ident);
-      });
+      ).filter(s => hasNarrative || signalIdentity(s.insight) !== headlineIdent);
   const scopedPatterns = !briefing
     ? []
     : scopeDomain
@@ -2699,42 +2235,124 @@ export function BriefingPanel({
       : briefing.patterns;
 
   const hasPatterns    = scopedPatterns.length > 0;
-  const hasNarrative   = !!narrative?.narrative;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
-  // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
-  // digest-tile details). Scoped exactly like the narrative, so one schema's edits never show
-  // up under another's. Pinned cards persist their own display in `card.render` instead.
+  // Saved chart display per finding, for every card-less chart in the brief (the ledger's rows).
+  // Scoped exactly like the narrative, so one schema's edits never show up under another's.
+  // Pinned cards persist their own display in `card.render` instead.
   const { configFor: vizConfigFor, save: saveVizConfigFor } = useVizConfigs(narrativeScope);
 
   // PX-6 — the scheduled-delivery card, toggled from the control bar.
   const [showSchedule, setShowSchedule] = useState(false);
 
-  if (loading)  return <BriefingLoading />;
+  // §1 — the north-star metrics, each read for its latest move (the KPI tiles' queries, moved up).
+  const moves = useNorthStarMoves(connectionId, schema);
+
+  // The header the shell draws for this layer. The actions go through a ref so the effect re-runs
+  // only when what the header SHOWS changes, not on every render's fresh closures.
+  const headActions = useRef({ regenerate: () => {}, investigate: () => {} });
+  useEffect(() => {
+    headActions.current.regenerate = () => { void generateNarrative(!!narrative?.narrative); };
+    headActions.current.investigate = () => {
+      const h = briefing?.headline;
+      if (h) onInvestigate(`Investigate: ${h.insight.finding}`, h.insight.id);
+    };
+  });
+  const headlineFinding = briefing?.headline?.insight.finding ?? null;
+  const headPending: BriefHead["pending"] = narrativeLoading ? (narrativeForced ? "writing" : "opening") : null;
+  useEffect(() => {
+    onHead?.({
+      generatedAt: narrative?.generated_at ?? null,
+      pending: headPending,
+      hasNarrative,
+      empty: !loading && isEmpty,
+      regenerate: () => headActions.current.regenerate(),
+      investigate: headlineFinding
+        ? { label: normalizeNumberPrecision(headlineFinding), run: () => headActions.current.investigate() }
+        : null,
+    });
+  }, [onHead, narrative?.generated_at, headPending, hasNarrative, loading, isEmpty, headlineFinding]);
+  useEffect(() => () => onHead?.(null), [onHead]);
+
+  if (loading) return <BriefingLoading />;
 
   if (error) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontSize: 12, color: "var(--red4)" }}>{error}</div>
+      <div className="aug-brief-pad" style={{ flex: 1 }}>
+        <ErrorState kind="Briefing failed" what={error}
+          means="The findings for this scope could not be read, so there is no brief to show."
+          doors={[{ label: "Reload", onClick: () => { void load(); }, primary: true }]} />
       </div>
     );
   }
+
+  // What the brief says, split for its sections.
+  const { lede, depth } = splitLede(hasNarrative ? narrative?.narrative ?? "" : "");
+  const theme        = normalizeNumberPrecision(narrative?.headline_theme?.trim());
+  const topFinding   = normalizeNumberPrecision(briefing?.headline?.insight.finding?.trim());
+  const verdictTitle = (hasNarrative && theme) || topFinding || "Intelligence briefing";
+  const citations    = hasNarrative && narrative ? narrative.citations : [];
+  const pendingWord  = narrativeForced ? "being written" : "opening";
+  const verdictMeta  = briefing
+    ? [
+        countNoun(briefing.domainCount, "domain"),
+        countNoun(briefing.totalInsights, "finding"),
+        briefing.queriesUsed > 0 ? countNoun(briefing.queriesUsed, "query", "queries") : "",
+      ].filter(Boolean).join(" · ")
+    : "";
+  const movePeriods = [...new Set(moves.rows.map(r => r.period).filter((x): x is string => !!x))];
+  const movesMeta = moves.status === "ready"
+    ? [moves.industry, movePeriods.length === 1 ? `latest against ${periodWord(movePeriods[0])}` : "latest period against the one before"]
+        .filter(Boolean).join(" · ")
+    : undefined;
+  const showWhy      = narrativeLoading || depth.length > 0;
+  const showFindings = scopedSignals.length > 0 || (briefing?.domains.length ?? 0) > 1;
+  let sectionNo = 0;
+  const mark = () => `§${++sectionNo}`;
+  const narrativeProps: NarrativeProps = { citations, onCitationClick: openCitation, connectionId, schema };
+  const citationCtx: CitationActionContext | null = briefing
+    ? {
+        insightById: briefing.insightById, connectionId, canvasId, schema, triggers,
+        onEvidence: openEvidence, onTriggersHint: showTriggersHint, onDismissed: load, onInvestigate,
+      }
+    : null;
+  const threadEl = thread ? (
+    <InlineInvestigationThread
+      key={thread.key}
+      question={thread.question}
+      opts={{
+        connectionId, schema: schema ?? null, canvasId: canvasId ?? null,
+        seedSql: thread.seedSql, seedContext: thread.seedContext,
+        insightId: thread.key,  // the citation's insight id — seeds the rich dossier when present
+      }}
+      onClose={() => setThread(null)}
+      onOpenInAsk={onInvestigate}
+    />
+  ) : null;
 
   return (
     // Row, not a column: the ask panel is a fixed-width SIBLING that pushes the brief left
     // rather than overlaying it — the whole point is reading an answer against the brief it
     // is about. (Same shape as ChatPanel's source drawer.) The brief keeps its own scroller.
     <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
-    <div ref={scrollRef} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
+    <div ref={scrollRef} className="aug-brief-scroll">
 
       {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
           feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
       <EvidenceDrawer insight={evidenceInsight} domain={evidenceDomain} connectionId={connectionId} onClose={() => setEvidenceInsight(null)} />
 
+      {activeCitation && citationCtx && (
+        <CitationActionsPopover
+          citation={activeCitation.citation} x={activeCitation.x} y={activeCitation.y} ctx={citationCtx}
+          onPull={(t) => { setThread(t); setActiveCitation(null); }}
+          onClose={() => setActiveCitation(null)}
+        />
+      )}
+
       {/* ── Explorer control bar ── demoted to a thin machinery strip: it explains where the
           brief comes from, but it isn't content. Single hairline row, mono --t4. */}
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "9px 2px", borderBottom: "1px solid var(--b0)" }}>
-        <span style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", letterSpacing: ".08em", textTransform: "uppercase" }}>
+      <div className="aug-brief-strip">
+        <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", letterSpacing: ".08em", textTransform: "uppercase" }}>
           Explorer
         </span>
         {explorerStatus ? (
@@ -2759,7 +2377,7 @@ export function BriefingPanel({
                 figure counts something slightly different, so a second number here would
                 invite the reader to reconcile two things that were never the same. */}
             {explorerStatus.phase === "failed" && hasFindings && (
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 · the last run stopped short; earlier findings are kept
               </span>
             )}
@@ -2768,12 +2386,12 @@ export function BriefingPanel({
                 and either way it is machinery, not business content. */}
           </>
         ) : (
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>unknown</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>unknown</span>
         )}
         {explorerError && (
-          <span style={{ fontSize: 11, color: "var(--red5, #f87171)" }} title={explorerError}>
-            ✗ {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
-          </span>
+          <GuardChip verdict="refused" title={explorerError}>
+            {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
+          </GuardChip>
         )}
         {/* A dispatched action, named, until the status shows it. Without this the only
             feedback a click produced was a 42ms disabled flicker followed by seconds of
@@ -2847,172 +2465,171 @@ export function BriefingPanel({
         </div>
       </div>
 
-      {showSchedule && <BriefSchedule connId={connectionId} />}
+      {showSchedule && <div className="aug-brief-pad"><BriefSchedule connId={connectionId} /></div>}
 
-      {isEmpty ? (
-        <BriefingEmpty
-          status={explorerStatus}
-          // Its CTA already renders a spinner + "Working…" on `busy`; the bug was that
-          // `explorerBusy` tracked only the 42ms request, so that state was never seen.
-          // Holding it through the pending window is the whole fix for this surface.
-          busy={controlsLocked}
-          onStart={runExplorer}
-          onTrigger={runTriggerIntel}
-          canvasId={canvasId}
-        />
+      {isEmpty || !briefing ? (
+        <div className="aug-brief-pad">
+          <BriefingEmpty
+            status={explorerStatus}
+            // Its CTA already renders a spinner + "Working…" on `busy`; the bug was that
+            // `explorerBusy` tracked only the 42ms request, so that state was never seen.
+            // Holding it through the pending window is the whole fix for this surface.
+            busy={controlsLocked}
+            onStart={runExplorer}
+            onTrigger={runTriggerIntel}
+            canvasId={canvasId}
+          />
+        </div>
       ) : (
-        <>
+        <div className="aug-brief">
+          <div className="aug-brief-cols">
+            <div className="aug-brief-main">
 
-      {/* ── Verdict hero ── conclusion-first lede: the synthesized verdict + the top
-          finding + proof stats + the primary action, ahead of the full prose. */}
-      <VerdictHero
-        narrative={hasNarrative ? narrative : null}
-        headline={briefing.headline}
-        domainCount={briefing.domainCount}
-        totalInsights={briefing.totalInsights}
-        synthesizedAt={briefing.synthesizedAt}
-        scope={schema}
-        onInvestigate={onInvestigate}
-        digest={movers}
-        connectionId={connectionId}
-        onEvidence={openEvidence}
-        vizConfigFor={vizConfigFor}
-        onVizConfigChange={saveVizConfigFor}
-        controls={
-          <>
-            <GenerateBriefButton
-              loading={narrativeLoading}
-              hasNarrative={hasNarrative}
-              onClick={() => generateNarrative(hasNarrative)}
-            />
-            <button
-              onClick={load}
-              style={{
-                display: "inline-flex", alignItems: "center", gap: 5,
-                padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 11,
-                background: "var(--bg-2)", border: "1px solid var(--b1)",
-                color: "var(--t3)", cursor: "pointer", transition: "all .1s",
-              }}
-              onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
-              onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; e.currentTarget.style.borderColor = "var(--b1)"; }}
-            >
-              ↻ Reload
-            </button>
-          </>
-        }
-        actions={briefing.headline && (
-          <FindingActions
-            insight={briefing.headline.insight} domain={briefing.headline.domain}
-            connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
-            overflow
-            onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)}
-            onTriggersHint={showTriggersHint} onDismissed={() => load()}
-            onPinned={() => setPinnedRefresh(n => n + 1)} />
-        )}
-      />
+              {/* 01 — the verdict. The title is the narrator's theme and the lede its opening
+                  paragraph, superscripts and all. Without a written brief the top finding leads,
+                  and the eyebrow says that is what it is. */}
+              <BriefSection mark="01">
+                <div className="aug-brief-measure">
+                  <div className="aug-brief-eyebrow-row">
+                    {narrativeLoading && <span className="aug-dot aug-dot-analysing" aria-hidden />}
+                    <span className={`aug-brief-eyebrow${narrativeLoading ? " aug-brief-writing" : ""}`}>
+                      {narrativeLoading ? `Verdict · ${pendingWord}` : hasNarrative ? "Verdict" : "Top finding"}
+                    </span>
+                    <span className="aug-brief-meta">{verdictMeta}</span>
+                  </div>
+                  {narrativeLoading ? (
+                    <div className="aug-brief-skel" aria-busy="true" aria-label={`The verdict is ${pendingWord}`}>
+                      <div className="aug-skeleton aug-brief-skel-h1" style={{ width: "74%" }} />
+                      <div className="aug-skeleton" style={{ width: "96%" }} />
+                      <div className="aug-skeleton" style={{ width: "61%" }} />
+                    </div>
+                  ) : (
+                    <>
+                      <h1 className="aug-brief-verdict">{verdictTitle}</h1>
+                      {hasNarrative && lede && (
+                        <p className="aug-brief-lede"><NarrativeText text={lede} {...narrativeProps} /></p>
+                      )}
+                    </>
+                  )}
+                  {!narrativeLoading && narrativeError && (
+                    <div className="aug-brief-doors">
+                      <ErrorState kind="Synthesis failed" what={narrativeError}
+                        means="The findings below are unaffected; only the written verdict is missing." />
+                    </div>
+                  )}
+                  <div className="aug-brief-doors">
+                    {!askOpen && (
+                      <Button variant="secondary" size="xs" onClick={() => setAskOpen(true)}
+                        title="Quick answers, scoped to this brief and its schema">
+                        Ask this briefing
+                      </Button>
+                    )}
+                    {briefing.headline && (
+                      <>
+                        {(hasNarrative || narrativeLoading) && <span className="aug-brief-meta">top finding</span>}
+                        <FindingActions
+                          insight={briefing.headline.insight} domain={briefing.headline.domain}
+                          connectionId={connectionId} canvasId={canvasId} schema={schema} triggers={triggers}
+                          overflow
+                          onEvidence={(ins) => openEvidence(ins, briefing.headline!.domain)}
+                          onTriggersHint={showTriggersHint} onDismissed={() => load()}
+                          onPinned={() => setPinnedRefresh(n => n + 1)} />
+                      </>
+                    )}
+                  </div>
+                  {!showWhy && threadEl}
+                </div>
+              </BriefSection>
 
-      {/* ── Ask this briefing ── a launcher, not the surface. The conversation lives in a
-          side panel (BriefAskPanel) so it can hold a real multi-turn thread beside the brief
-          instead of stacking one-shot cards down the middle of the page. */}
-      {!askOpen && (
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <Button variant="default" onClick={() => setAskOpen(true)}
-            style={{ padding: "9px 16px", height: "auto" }}>
-            Ask this briefing →
-          </Button>
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
-            quick answers, scoped to this brief and its schema
-          </span>
-        </div>
-      )}
+              {/* §1 — the numbers that moved (MovedNumbers says what it leaves out, and why). */}
+              <BriefSection mark={mark()}>
+                <SectionHead title="The numbers that moved" meta={movesMeta} />
+                {moves.status === "none" ? (
+                  <p className="aug-brief-note">
+                    No north-star metrics are defined for this connection, so nothing is watched for movement.
+                    They are set in the connection&apos;s business profile.
+                  </p>
+                ) : moves.status === "loading" ? (
+                  <SkeletonRows rows={3} />
+                ) : (
+                  <MovedNumbers rows={moves.rows} scopeKey={narrativeScope} />
+                )}
+              </BriefSection>
 
-      {/* ── Scope chips ── focus the narrative layer (signals + patterns) on one domain. */}
-      <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
+              {/* §2 — why: the narrator's paragraphs of depth. No prose is drawn until there is
+                  prose; the skeleton only holds its place. */}
+              {showWhy && (
+                <BriefSection mark={mark()}>
+                  <SectionHead title="Why" meta={narrativeLoading
+                    ? <span className="aug-brief-writing">{narrativeForced ? "the narrator is writing — no prose until it is done" : "opening the brief"}</span>
+                    : `${countNoun(citations.length, "note")} in the apparatus`} />
+                  {narrativeLoading ? (
+                    <div className="aug-brief-measure aug-brief-skel" aria-busy="true">
+                      {["97%", "99%", "93%", "58%"].map((w, i) => <div key={i} className="aug-skeleton" style={{ width: w }} />)}
+                    </div>
+                  ) : (
+                    <div className="aug-brief-measure aug-brief-prose">
+                      {depth.map((para, i) => <p key={i}><NarrativeText text={para} {...narrativeProps} /></p>)}
+                    </div>
+                  )}
+                  {threadEl}
+                </BriefSection>
+              )}
 
-      {/* ── Findings ── the bulletin ledger: one scannable row per finding, chart on expand,
-          impact-ordered and scoped by the chips; keyed by scope so it resets on a scope change. */}
-      <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
-        onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
-        vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
+              {/* §3 — findings: every finding in scope, one row each, its chart on expand. */}
+              {showFindings && (
+                <BriefSection mark={mark()}>
+                  <SectionHead title="Findings"
+                    meta={`${countNoun(scopedSignals.length, "finding")}${scopeDomain ? ` in ${scopeDomain}` : ""} · ranked by impact`} />
+                  <ScopeChips domains={briefing.domains} total={briefing.totalInsights} active={scopeDomain} onChange={setScope} />
+                  <FindingsLedger key={scopeDomain ?? "all"} signals={scopedSignals} connectionId={connectionId}
+                    onInvestigate={onInvestigate} onEvidence={openEvidence} scrollRef={scrollRef}
+                    vizConfigFor={vizConfigFor} onVizConfigChange={saveVizConfigFor} />
+                </BriefSection>
+              )}
 
-      {/* ── Full synthesis ── the multi-paragraph narrative + interactive citations.
-          The hero above already carries the conclusion, so this card hides its header. */}
-      {(hasNarrative || narrativeLoading || narrativeError) && (
-        <div>
-          <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
-          {narrativeLoading && <SynthesisSkeleton />}
-          {!narrativeLoading && narrativeError && (
-            <div style={{
-              padding: "10px 14px", borderRadius: "var(--r2)",
-              background: "var(--red1)", border: "1px solid var(--red2)",
-              fontSize: 11, color: "var(--red4)",
-            }}>
-              {narrativeError}
+              {/* §4 — the cockpit: the user's own cards, which outlive any one brief. */}
+              <BriefSection mark={mark()}>
+                <SectionHead title="Your cockpit" meta="cards you pinned — they stay when the brief changes" />
+                <NewCardComposer connectionId={connectionId} schema={schema}
+                  onCreated={() => setPinnedRefresh(n => n + 1)} />
+                <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh}
+                  suggestions={movers}
+                  onPinned={() => setPinnedRefresh(n => n + 1)}
+                  onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
+                  onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
+              </BriefSection>
+
+              {/* §5 — patterns across domains. */}
+              {hasPatterns && (
+                <BriefSection mark={mark()}>
+                  <SectionHead title="Patterns" meta={`${countNoun(scopedPatterns.length, "pattern")} across domains`} />
+                  <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
+                    {scopedPatterns.map(pt => (
+                      <PatternRow key={pt.id} pattern={pt} onInvestigate={onInvestigate} />
+                    ))}
+                  </div>
+                </BriefSection>
+              )}
             </div>
-          )}
-          {!narrativeLoading && hasNarrative && narrative && (
-            <NarrativeCard
-              narrative={narrative}
-              hideHeadline
-              collapsible
-              ctx={{
-                insightById:    briefing.insightById,
-                connectionId,
-                canvasId,
-                schema,
-                triggers,
-                onEvidence:     openEvidence,
-                onTriggersHint: showTriggersHint,
-                onDismissed:    load,
-                onInvestigate,
-              }}
-            />
-          )}
-        </div>
-      )}
 
-      {/* ── Standing layer ── the cockpit + KPIs, marked off from this cycle's narrative by a
-            single violet rule (violet = user/pinned, already the system's semantic). The layer
-            is ALWAYS present now — even with no pins — so the cockpit teaches itself (empty
-            state) instead of vanishing. The cycle's findings read above in the ledger; the
-            cockpit is the surface the user curates, not a dump of the brief. */}
-      <div style={{ marginTop: 34, paddingTop: 20, borderTop: "1px solid var(--vio2)" }}>
-        <div className="aug-label" style={{ color: "var(--vio4)", marginBottom: 12 }}>Your cockpit</div>
-        {/* Door 3 (inline authoring) sits at the top so the first card can be composed even when empty. */}
-        <NewCardComposer connectionId={connectionId} schema={schema}
-          onCreated={() => setPinnedRefresh(n => n + 1)} />
-        <PinnedCards connectionId={connectionId} schema={schema} refreshKey={pinnedRefresh}
-          suggestions={movers.slice(0, 3).map(m => ({ insightId: m.insightId, value: m.value, label: m.sublabel || m.domain }))}
-          onPinned={() => setPinnedRefresh(n => n + 1)}
-          onOpenSource={(iid) => onInvestigate("Investigate this finding", iid)}
-          onEvidence={(iid) => { const sig = briefing.insightById.get(iid); if (sig) openEvidence(sig.insight, sig.domain); }} />
-
-        {/* ── Industry key metrics ── the vertical's north-star KPIs, computed live; click a
-              card to expand its trend. Renders a define-CTA (not nothing) when none are set. */}
-        <IndustryKpiStrip connectionId={connectionId} schema={schema} scopeKey={narrativeScope} />
-      </div>
-
-      {/* ── The findings now render as chart/table cards in the cockpit above (PinnedCards),
-          replacing the old text "Dashboard" section — one unified, arrangeable card surface. ── */}
-
-      {/* ── Top patterns ── a full-width row below the cockpit. */}
-      {hasPatterns && (
-        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 280px", minWidth: 240 }}>
-            <div className="aug-label" style={{ marginBottom: 10 }}>Top Patterns</div>
-            <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
-              {scopedPatterns.map(p => (
-                <PatternRow key={p.id} pattern={p} onInvestigate={onInvestigate} />
-              ))}
-            </div>
+            {/* The apparatus gives way to the ask panel: reading an answer against the brief needs
+                the width more than the notes do, and every note stays one superscript away. */}
+            {!askOpen && (
+              <ApparatusRail
+                citations={citations}
+                pending={headPending}
+                hasNarrative={hasNarrative}
+                narrativeText={narrative?.narrative ?? ""}
+                insightById={briefing.insightById}
+                activeRef={activeCitation?.citation.ref ?? null}
+                onOpen={openCitation}
+              />
+            )}
           </div>
         </div>
       )}
-    </>
-  )}
-
-      {/* Spinner keyframe */}
-          </div>
+    </div>
 
       {askOpen && (
         <BriefAskPanel

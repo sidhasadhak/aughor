@@ -556,6 +556,12 @@ function EntityCard({ data }: NodeProps<RFNode<CardData>>) {
                    textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
           {row.display_name}
         </span>
+        {/* The business name leads and the physical table follows in mono (Aughor Intelligence · 03 — "an
+            ontology that only shows table names is a schema diagram"). On one line, because the card is a
+            fixed 196×58 the layout places by: the table gives way first, and hides when it IS the name. */}
+        {row.table && row.table.split(".").pop() !== row.display_name && (
+          <span className="aug-entity-card-table" title={row.table}>{row.table.split(".").pop()}</span>
+        )}
         {/* ON-7b — what an explorer proposed here that no person has confirmed yet */}
         {row.unconfirmed ? (
           <span className="aug-tag aug-tag-violet" data-testid="entity-map-card-proposed" style={{ flexShrink: 0 }}

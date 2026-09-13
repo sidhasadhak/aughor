@@ -93,7 +93,7 @@ describe("KineticPanel — withdrawing one overlay edit", () => {
                      body: "known test order", source: "user" }];
     const user = userEvent.setup();
     render(<KineticPanel connectionId="c1" />);
-    await user.click(screen.getByRole("button", { name: "Annotations" }));
+    // The overlay edits share the page with the declared actions now — no tab to open first.
 
     await screen.findByText("known test order");
     await user.click(screen.getByRole("button", { name: "Withdraw" }));

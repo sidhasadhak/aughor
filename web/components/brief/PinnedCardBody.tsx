@@ -170,7 +170,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
             </div>
             {hist.length >= 2
               ? <Sparkline values={hist} width={sparkW} height={sparkH} color="var(--blue4)" />
-              : <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>trend builds as it refreshes</div>}
+              : <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>trend builds as it refreshes</div>}
           </>
         ) : isTabular && run ? (
           <ResultChartCard
@@ -237,7 +237,7 @@ export function PinnedCardBody({ cs, selected = false, dragHandleClass, onRemove
           <Button variant="ghost" size="xs" onClick={() => onRefresh(card.id)}
             style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px", marginLeft: "auto" }}>Refresh</Button>
           <Button variant="ghost" size="xs" onClick={() => onRemove(card.id)}
-            style={{ fontSize: 11, color: "var(--t4)", padding: "2px 6px" }}>Remove</Button>
+            style={{ fontSize: 11, color: "var(--t3)", padding: "2px 6px" }}>Remove</Button>
         </div>
       </div>
     </div>

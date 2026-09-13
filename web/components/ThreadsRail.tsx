@@ -137,7 +137,7 @@ export function ThreadsRail({
 
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
         {shown.length === 0 && query.trim() !== "" && (
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "6px 8px" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "6px 8px" }}>
             No conversation matches “{query.trim()}”.
           </div>
         )}
@@ -162,7 +162,7 @@ export function ThreadsRail({
                   onBlur={() => commitRename(t.session_id)}
                   className="aug-fs-xs h-7"
                 />
-                <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 3, paddingLeft: 2 }}>
+                <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3, paddingLeft: 2 }}>
                   Enter to save · empty restores the first question
                 </div>
               </div>
@@ -195,7 +195,7 @@ export function ThreadsRail({
                 >
                   {t.title}
                 </span>
-                <span className="aug-fs-xs block" style={{ color: "var(--t4)", marginTop: 2 }}>
+                <span className="aug-fs-xs block" style={{ color: "var(--t3)", marginTop: 2 }}>
                   {t.turns} {t.turns === 1 ? "turn" : "turns"} · {relTime(t.last_at)} ago
                 </span>
               </Button>

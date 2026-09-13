@@ -95,10 +95,10 @@ function TypeLine({ text, active }: { text: string; active: boolean }) {
 }
 
 const VERDICT_COLOR: Record<Verdict, string> = {
-  confirmed: "text-emerald-400",
-  refuted: "text-red-400",
-  inconclusive: "text-amber-400",
-  untested: "text-zinc-500",
+  confirmed: "text-[var(--grn4)]",
+  refuted: "text-[var(--red4)]",
+  inconclusive: "text-[var(--amb4)]",
+  untested: "text-[var(--t3)]",
 };
 
 // Sub-question purpose → leading icon (the platform set, 16px, colour
@@ -391,7 +391,7 @@ export function ThinkingTrace({ state, onShowSource }: Props) {
                 </p>
                 {step.sublabel && (
                   <p className={`aug-fs-xs mt-0.5 leading-snug aug-anim-fade ${
-                    step.verdict ? VERDICT_COLOR[step.verdict] : "text-zinc-500"
+                    step.verdict ? VERDICT_COLOR[step.verdict] : "text-[var(--t3)]"
                   }`}>
                     {step.sublabel}
                   </p>

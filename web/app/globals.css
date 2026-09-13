@@ -1,25 +1,31 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "../styles/tokens.css";
-/* v2 Tier 1: elevated primitive values, then shadows/glass/motion (override layer) */
 @import "../aughor-v2/theme/tokens-v2.css";
-@import "../aughor-v2/theme/elevation-motion.css";
 @import "../styles/type.css";
 @import "../styles/sql-tokens.css";
+
+/* ── Instrument · the component layer ────────────────────────────────────────
+   The import order above is load-bearing: styles/tokens.css holds the Tailwind and
+   shadcn bridges plus pre-theme values; aughor-v2/theme/tokens-v2.css is the active
+   Instrument token set and wins. Keep every @import bare and contiguous — Tailwind v4
+   silently drops an @import with a comment above or beside it, so comments live here.
+
+   The spec is web/aughor-v2/INSTRUMENT.md. Its thesis in one line: the product is a
+   claim about a number, so the interface is one warm monochrome plane where hairlines
+   carry the structure, colour is a data type, and only three things float — a popover,
+   a toast, a dialog. These rules are unlayered on purpose: they beat Tailwind's layered
+   utilities, which is what lets a class restyle a <Button> without touching its call site. */
 
 /* The app stamps [data-theme="dark"|"light"] on <html> (app/page.tsx theme effect);
    before the effect runs there is NO attribute and the app renders its default DARK
    look. `dark:` therefore matches explicit dark AND the un-stamped default, and turns
-   off only when light is stamped. (The old `.dark *` variant matched nothing — the
-   class is never set — so every dark: utility in components/ui was dead.) */
+   off only when light is stamped. */
 @custom-variant dark (&:is([data-theme="dark"] *, html:not([data-theme]) *));
 
 /* ── Font wiring (two families) ──────────────────────────────────────────────
    Inter carries the UI; JetBrains Mono carries every figure, id, timestamp and
-   metric. The `font-mono` Tailwind utility points at the mono family so the data
-   labels (table/column names, ids, numbers, chips) render in tabular monospace —
-   numbers as a precision instrument. `font-code` / `--font-code` stay mono for
-   real code/SQL `<pre>` blocks (same family). */
+   metric, and code. */
 @theme inline {
   --font-sans: var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-jetbrains-mono), 'Consolas', monospace;
@@ -27,25 +33,28 @@
 
   /* ── Tailwind's size steps, pinned to OUR scale ───────────────────────────
      Tailwind ships these in rem, and `html` below sets 1rem = 13px, so every
-     `text-xs` on the page was 0.75 × 13 = 9.75px — under the 11px legibility
-     floor type.css states, in 153 places, and invisible to a gate that looks
-     for pixels. Pinned in px they land on the scale by construction, so the
-     utility classes and the aug-fs-* classes cannot drift apart.
-     Keep in lockstep with styles/type.css. */
+     `text-xs` on the page was 0.75 × 13 = 9.75px — under the 11px floor. Pinned in px
+     they land on the scale by construction. The line heights are the spec's: 1.45 at
+     11 and 18, 1.55 at 12, 1.7 at 13, 1.5 at 15, 1.0 at 22. Keep in lockstep with
+     styles/type.css. */
   --text-xs:   11px;
+  --text-xs--line-height: 1.45;
   --text-sm:   12px;
+  --text-sm--line-height: 1.55;
   --text-base: 13px;
+  --text-base--line-height: 1.7;
   --text-lg:   15px;
+  --text-lg--line-height: 1.5;
   --text-xl:   18px;
+  --text-xl--line-height: 1.45;
   --text-2xl:  22px;
+  --text-2xl--line-height: 1;
 
-  /* ── shadcn semantic-variable bridge (UI Elevation Wave 1, move 5) ─────────
-     The aliases themselves live in styles/tokens.css (:root, both themes) and
-     point at tokens-v2 primitives; exposing them here makes the Tailwind
-     utilities (bg-background, border-border, text-muted-foreground, ring-ring,
-     bg-primary…) resolve — without this block every such class in
-     components/ui/* compiled to nothing. `--primary` is the INTERACTIVE blue
-     (--blue-solid via tokens-v2), never the chart/data blue. */
+  /* ── shadcn semantic-variable bridge ──────────────────────────────────────
+     The aliases live in styles/tokens.css and point at the theme's primitives;
+     exposing them here makes bg-background, border-border, text-muted-foreground,
+     ring-ring, bg-primary… resolve. `--primary` is the interactive fill
+     (--blue-solid), never the chart blue. */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -66,24 +75,25 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
-  /* Radius scale for harvested shadcn code (rounded-sm/md utilities + the
-     min(var(--radius-md),…) clamps in components/ui) — seated on the v2 radius
-     vocabulary. rounded-lg/xl stay banned by lint:tokens; use rounded-[var(--r3)]. */
+  /* Radius scale for harvested shadcn code (rounded-sm/md utilities and the
+     min(var(--radius-md),…) clamps in components/ui) — seated on 3 / 4 / 6.
+     rounded-lg/xl stay banned by lint:tokens; use rounded-[var(--r3)]. */
   --radius-sm: var(--r1);
   --radius-md: var(--r2);
 }
 
-/* ── Base reset ─────────────────────────────────────────────────────────── */
+/* ── Base ───────────────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; }
 
-/* ── Focus rings (accessibility — primary blue outline) ──────────────────── */
-:focus-visible {
+/* Focus is ONE ring everywhere: 2px --bfocus at 2px offset, never a border colour change
+   alone. :where() keeps it at zero specificity so a component that needs an inset ring
+   (a full-bleed row, a segmented item) can say so with a single class. */
+:where(a, button, input, select, textarea, summary, [tabindex], [contenteditable="true"]):focus-visible {
   outline: 2px solid var(--bfocus);
   outline-offset: 2px;
-  border-radius: var(--r1);
 }
-/* inputs show focus via border-color, not outline */
-.aug-input:focus-visible { outline: none; }
+/* A field inside a framed control (the chat composer): the frame draws the ring. */
+.aug-focus-frame:focus-visible { outline: none; }
 
 html, body {
   height: 100%;
@@ -97,377 +107,1093 @@ html, body {
 
 #__next, body > div:first-child { height: 100%; }
 
+::selection { background: var(--blue-solid); color: #fff; }
+
 button { font-family: var(--font-ui); cursor: pointer; }
-/* Raw <button>s get the chrome-stripping reset. The base-ui <Button> (data-slot="button") is
-   EXEMPT: this reset is unlayered, so it used to beat <Button>'s layered Tailwind variant
-   utilities (bg/border/text-color) and silently strip them — the root reason .aug-btn (unlayered
-   classes) was needed for visible buttons. Exempting it lets <Button> variants render, so it can
-   be the single canonical button system. */
-button:not([data-slot="button"]) { border: none; background: none; color: inherit; }
+/* Raw <button>s get the chrome-stripping reset. The base-ui <Button> (data-slot="button")
+   is EXEMPT so its variants render. :where() drops the reset to zero specificity, so an
+   .aug-* class on a raw button (a nav item, a tab, a segment) wins without a second class. */
+:where(button:not([data-slot="button"])) { border: none; background: none; color: inherit; }
 input, textarea, select { font-family: var(--font-ui); font-size: 13px; color: var(--t1); }
-/* Code elements are the ONLY monospace surface (single-font policy). This base
-   rule covers <pre>/<code> that have no explicit font; blocks carrying an
-   explicit font-code class/var override consistently. Tailwind preflight points
-   these at --font-mono (now the sans alias), so without this they'd go sans. */
-pre, code, kbd, samp { font-family: var(--font-code); }
+pre, code, kbd, samp {
+  font-family: var(--font-code);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
 a { color: var(--blue3); text-decoration: none; }
 a:hover { color: var(--blue4); }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--b2); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--b3); }
+/* Scroll area: a 3px --b3 thumb, no track. WebKit/Blink read the pseudo-elements; Blink
+   ignores them wherever scrollbar-width is set, so Firefox gets its own rule. */
+::-webkit-scrollbar { width: 3px; height: 3px; }
+::-webkit-scrollbar-track, ::-webkit-scrollbar-corner { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--b3); border-radius: var(--r1); }
+@supports not selector(::-webkit-scrollbar) {
+  * { scrollbar-width: thin; scrollbar-color: var(--b3) transparent; }
+}
 
 /* ── Layout ─────────────────────────────────────────────────────────────── */
 .aug-app { height: 100vh; overflow: hidden; display: flex; flex-direction: column; background: var(--bg-0); color: var(--t1); }
 .aug-body { flex: 1; display: flex; overflow: hidden; min-height: 0; }
 .aug-screen { flex: 1; display: flex; flex-direction: column; overflow: hidden; min-height: 0; }
 
-/* ── Topbar ──────────────────────────────────────────────────────────────── */
+/* ── Shell · topbar 48 ───────────────────────────────────────────────────── */
 .aug-topbar {
   height: var(--topbar);
-  background: var(--bg-1);
-  border-bottom: 1px solid var(--b1);
+  flex-shrink: 0;
   display: flex;
   align-items: center;
-  padding: 0 16px;
-  gap: 10px;
+  gap: 12px;
+  padding: 0 14px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--b1);
+  /* Above the rail (z 60): the workspace switcher and the user menu open from here and
+     must float over it. The topbar is only 48px tall, so nothing below is covered. */
+  position: relative;
+  z-index: 70;
+}
+.aug-wordmark {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: var(--t1);
+  white-space: nowrap;
+}
+.aug-workspace-switcher {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: 260px;
+  padding: 3px 9px;
+  border-radius: var(--r2);
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--t1);
+  cursor: pointer;
+  transition: border-color var(--dur-1) var(--ease-out), background var(--dur-1) var(--ease-out);
+}
+.aug-workspace-switcher:hover { border-color: var(--b3); }
+.aug-workspace-switcher[aria-expanded="true"] { background: var(--bg-4); border-color: var(--b3); }
+.aug-command {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 236px;
+  height: 26px;
+  padding: 0 9px;
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  font-size: 12px;
+  color: var(--t3);
+  text-align: left;
+  cursor: text;
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.aug-command:hover { border-color: var(--b3); }
+.aug-command kbd { margin-left: auto; font-size: 11px; color: var(--t3); }
+.aug-user-menu {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 2px 7px 2px 3px;
+  border-radius: var(--r2);
+  border: 1px solid var(--b2);
+  font-size: 12px;
+  color: var(--t2);
+}
+.aug-avatar {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
   flex-shrink: 0;
-  z-index: 50;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--b2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--t1);
 }
 
-/* ── Sidebar ─────────────────────────────────────────────────────────────── */
+/* ── Shell · rail 248 ───────────────────────────────────────────────────── */
 .aug-sidebar {
-  width: 224px;
-  background: var(--bg-nav);
-  border-right: 1px solid var(--b1);
+  width: var(--sidebar);
+  flex-shrink: 0;
   display: flex;
   flex-direction: column;
-  flex-shrink: 0;
   overflow: hidden;
-  /* Sit above any fixed content-area overlays (history backdrop z-40, etc.)
-     so sidebar nav items are always clickable regardless of panel state. */
+  background: var(--bg-nav);
+  border-right: 1px solid var(--b1);
+  /* Above any fixed content-area overlay (history backdrop z-40, etc.) so the rail
+     stays clickable whatever a panel is doing. */
   position: relative;
   z-index: 60;
 }
-
-/* ── Content header (per-screen) ─────────────────────────────────────────── */
-.aug-content-header {
-  height: 44px;
-  border-bottom: 1px solid var(--b1);
+.aug-nav-section { padding: 5px 0 7px; border-bottom: 1px solid var(--b0); }
+.aug-nav-group {
   display: flex;
   align-items: center;
-  padding: 0 20px;
-  gap: 12px;
-  flex-shrink: 0;
-  background: var(--bg-2);
+  gap: 8px;
+  padding: 4px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--t3);
 }
-
-/* ── Nav ─────────────────────────────────────────────────────────────────── */
 .aug-nav-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
-  padding: 7px 11px;
-  border-radius: var(--r2);
+  width: 100%;
+  height: 22px;
+  padding: 0 14px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1;
+  color: var(--t2);
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+/* Hover is a fill and nothing else — no bar, no weight — so it is never mistaken for active. */
+.aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
+/* Active: one item in the whole rail — --bg-sel, weight 500, a 2px --blue3 bar at the edge. */
+.aug-nav-item[aria-current="page"],
+.aug-nav-item.active { background: var(--bg-sel); color: var(--t1); font-weight: 500; }
+.aug-nav-item[aria-current="page"]::before,
+.aug-nav-item.active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--blue3);
+}
+/* A full-bleed row clips an outset ring against the rail's edge. */
+.aug-nav-item:focus-visible { outline-offset: -2px; }
+.aug-nav-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--r1);
+  background: var(--bg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--t3);
+}
+.aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
+.aug-nav-foot { margin-top: auto; padding: 4px 0 8px; border-top: 1px solid var(--b1); }
+
+/* ── Shell · the LIVE activity strip ─────────────────────────────────────────
+   The only always-on motion in the app: ticks of the same feed the Agent Ops activity tail
+   reads, so the warehouse is visibly thinking from every screen. A tick's height is a count;
+   its hue, when it has one, is the series colour of the agent that dominated that bucket. */
+.aug-activity-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--b1);
+}
+.aug-activity-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; color: var(--t3); }
+.aug-activity-ticks { display: flex; align-items: flex-end; gap: 3px; height: 16px; flex: none; }
+.aug-activity-tick { width: 3px; min-height: 2px; background: var(--b3); }
+.aug-activity-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--t2);
+}
+
+/* The theme toggle in the topbar: a mono segmented pair. */
+.aug-seg-item-mono { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; }
+
+/* A group header's count: amber when something inside is waiting on a human, neutral when it is
+   only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
+.aug-nav-group-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--t3);
+}
+.aug-nav-group-badge-waiting { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
+
+/* ── Shell · content header 44 ──────────────────────────────────────────── */
+.aug-content-header {
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--b1);
+}
+.aug-content-title { font-size: 13px; font-weight: 600; color: var(--t1); white-space: nowrap; }
+.aug-content-meta { font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+
+/* ── Selection — tabs underline, segmented fills; never both in one header ── */
+.aug-tabs { display: flex; align-items: flex-end; gap: 18px; border-bottom: 1px solid var(--b1); }
+.aug-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 0 7px;
+  margin-bottom: -1px;
   font-size: 12px;
   font-weight: 400;
   color: var(--t2);
-  position: relative;
-  width: 100%;
-  text-align: left;
-  transition: all 0.1s;
-  cursor: pointer;
-  background: transparent;
+  background: none;
   border: none;
+  border-bottom: 2px solid transparent;
+  cursor: pointer;
+  transition: color var(--dur-1) var(--ease-out);
 }
-.aug-nav-item:hover { background: var(--bg-hover); color: var(--t1); }
-/* Active tab reads NEUTRAL, not blue: a quiet grey wash + a muted blue-grey indicator
-   (the saturated --blue3 accent was too loud for the resting nav). */
-.aug-nav-item.active { background: rgba(255, 255, 255, 0.06); color: var(--t1); font-weight: 500; }
-.aug-nav-item.active::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 2px;
-  height: 16px;
-  background: var(--t2);
-  border-radius: 0 2px 2px 0;
-}
-.aug-nav-group {
+.aug-tab:hover { color: var(--t1); }
+.aug-tab[aria-selected="true"],
+.aug-tab.active { color: var(--t1); font-weight: 600; border-bottom-color: var(--blue3); }
+.aug-tab-badge {
+  padding: 0 6px;
+  border-radius: var(--r1);
+  background: var(--bg-3);
+  font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--t4);
-  padding: 12px 13px 4px;
-  margin-top: 4px;
-  border-top: 1px solid var(--b0);
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--t3);
+  font-variant-numeric: tabular-nums;
 }
-/* Collapsible secondary-section header — a clickable variant of aug-nav-group */
-.aug-nav-group-toggle {
-  display: flex;
+.aug-tab-badge-waiting { background: var(--amb1); color: var(--amb4); }
+
+.aug-segmented {
+  display: inline-flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  overflow: hidden;
+}
+.aug-seg-item {
+  display: inline-flex;
   align-items: center;
   gap: 6px;
-  width: 100%;
+  height: auto;
+  min-height: 0;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: var(--t2);
   background: transparent;
   border: none;
-  border-top: 1px solid var(--b0);
+  border-left: 1px solid var(--b2);
+  border-radius: 0;
   cursor: pointer;
-  transition: color 0.1s;
+  transition: background var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
-.aug-nav-group-toggle:hover { color: var(--t2); }
-.aug-nav-group-toggle[aria-expanded="true"] { color: var(--t3); }
+.aug-seg-item:first-child { border-left: none; }
+.aug-seg-item:hover { background: var(--bg-3); color: var(--t1); }
+.aug-seg-item[aria-selected="true"],
+.aug-seg-item[aria-pressed="true"],
+.aug-seg-item.active { background: var(--bg-4); color: var(--t1); font-weight: 600; }
+.aug-seg-item:disabled { color: var(--t3); cursor: not-allowed; background: transparent; }
+.aug-seg-item:focus-visible { outline-offset: -2px; }
 
-/* ── Tags ────────────────────────────────────────────────────────────────── */
+/* ── Badge — 11px mono rectangles at 3px, tint 1 · border 2 · text 4 ─────── */
+.aug-badge,
 .aug-tag {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 2px 9px;
-  border-radius: var(--r-pill);
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
   font-family: var(--font-mono);
   font-size: 11px;
-  font-weight: 500;
+  font-weight: 400;
+  line-height: 1.45;
   white-space: nowrap;
-  border: 1px solid transparent;
-  letter-spacing: 0.02em;
+  color: var(--t2);
 }
-.aug-tag-blue   { color: var(--blue5); background: var(--blue1); border-color: var(--blue2); }
-.aug-tag-green  { color: var(--grn5);  background: var(--grn1);  border-color: var(--grn2); }
-.aug-tag-amber  { color: var(--amb5);  background: var(--amb1);  border-color: var(--amb2); }
-.aug-tag-red    { color: var(--red5);  background: var(--red1);  border-color: var(--red2); }
-.aug-tag-violet { color: var(--vio5);  background: var(--vio1);  border-color: var(--vio2); }
-.aug-tag-gray   { color: var(--t2);    background: var(--bg-3);  border-color: var(--b2); }
-.aug-tag-cyan   { color: var(--cyn5);  background: var(--cyn1);  border-color: var(--cyn2); }
+.aug-badge-blue,   .aug-tag-blue   { background: var(--blue1); border-color: var(--blue2); color: var(--blue4); }
+.aug-badge-green,  .aug-tag-green  { background: var(--grn1);  border-color: var(--grn2);  color: var(--grn4); }
+.aug-badge-amber,  .aug-tag-amber  { background: var(--amb1);  border-color: var(--amb2);  color: var(--amb4); }
+.aug-badge-red,    .aug-tag-red    { background: var(--red1);  border-color: var(--red2);  color: var(--red4); }
+.aug-badge-violet, .aug-tag-violet { background: var(--vio1);  border-color: var(--vio2);  color: var(--vio4); }
+.aug-badge-cyan,   .aug-tag-cyan   { background: var(--cyn1);  border-color: var(--cyn2);  color: var(--cyn4); }
+.aug-badge-neutral, .aug-tag-gray  { background: var(--bg-3);  border-color: var(--b2);    color: var(--t2); }
 
-/* ── Buttons ─────────────────────────────────────────────────────────────── */
+/* ── Buttons — height 26 (small 22), radius 3, label 12/600 ────────────────
+   One primary per view. A press steps the background and the label holds still:
+   no translate, no scale. Loading is the rest state plus ◐ at .8 opacity. */
 .aug-btn {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
-  padding: 5px 12px;
+  height: 26px;
+  padding: 0 11px;
   border-radius: var(--r1);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.12s;
-  white-space: nowrap;
-  border: 1px solid transparent;
-  outline: none;
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
+  color: var(--t1);
   font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
 }
-.aug-btn-primary   { background: var(--blue-solid); border-color: var(--blue-solid); color: #fff; font-weight: 600; }
-.aug-btn-primary:hover { background: #2A82CC; border-color: #2A82CC; }
-.aug-btn-secondary { background: var(--bg-3); border-color: var(--b2); color: var(--t1); }
-.aug-btn-secondary:hover { background: var(--bg-4); border-color: var(--b3); }
-.aug-btn-ghost     { background: transparent; border-color: transparent; color: var(--t2); }
-.aug-btn-ghost:hover { background: var(--bg-hover); color: var(--t1); }
-.aug-btn-minimal   { background: transparent; border-color: var(--b2); color: var(--t2); }
-.aug-btn-minimal:hover { border-color: var(--b3); color: var(--t1); }
-.aug-btn-sm { padding: 2px 8px; font-size: 11px; }
-.aug-btn:disabled { opacity: 0.38; cursor: not-allowed; pointer-events: none; }
+.aug-btn:hover, .aug-btn:active { background: var(--bg-4); border-color: var(--b3); }
+.aug-btn-primary { background: var(--blue-solid); border-color: var(--blue-solid); color: #fff; }
+.aug-btn-primary:hover { background: var(--blue-solid-hover); border-color: var(--blue-solid-hover); }
+.aug-btn-primary:active {
+  background: color-mix(in srgb, var(--blue-solid) 86%, black);
+  border-color: color-mix(in srgb, var(--blue-solid) 86%, black);
+}
+.aug-btn-ghost { background: transparent; border-color: var(--b2); color: var(--t2); }
+.aug-btn-ghost:hover { background: var(--bg-3); border-color: var(--b3); color: var(--t1); }
+.aug-btn-ghost:active { background: var(--bg-4); border-color: var(--b3); color: var(--t1); }
+.aug-btn-minimal { background: transparent; border-color: transparent; color: var(--blue3); }
+.aug-btn-minimal:hover { background: transparent; border-color: transparent; color: var(--blue4); }
+.aug-btn-minimal:active { background: var(--bg-3); border-color: transparent; color: var(--blue4); }
+.aug-btn-sm { height: 22px; padding: 0 8px; font-size: 11px; }
+.aug-btn:disabled, .aug-btn[aria-disabled="true"] {
+  background: var(--bg-1);
+  border-color: var(--b1);
+  color: var(--t3);
+  opacity: .6;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+.aug-btn-primary:disabled, .aug-btn-primary[aria-disabled="true"] { background: var(--bg-4); border-color: var(--b2); opacity: .55; }
+.aug-btn-ghost:disabled, .aug-btn-minimal:disabled { background: transparent; }
+.aug-btn[aria-busy="true"] { opacity: .8; }
+.aug-btn[aria-busy="true"]::before { content: "◐"; font-family: var(--font-mono); font-weight: 400; }
 
-/* ── Inputs ──────────────────────────────────────────────────────────────── */
-.aug-input {
-  background: var(--bg-2);
+/* ── Fields — height 28, radius 4, --bg-3 fill, --b2 border ───────────────── */
+.aug-input,
+.aug-select,
+.aug-textarea {
+  width: 100%;
+  padding: 0 9px;
+  background: var(--bg-3);
   border: 1px solid var(--b2);
   border-radius: var(--r2);
   color: var(--t1);
-  padding: 6px 10px;
-  font-size: 12px;
   font-family: var(--font-ui);
-  outline: none;
-  transition: border-color 0.12s;
-  width: 100%;
+  font-size: 12px;
+  transition: border-color var(--dur-1) var(--ease-out);
 }
-.aug-input:focus { border-color: var(--bfocus); box-shadow: 0 0 0 3px var(--bg-sel); }
-.aug-input::placeholder { color: var(--t3); }
+input.aug-input, select.aug-input, .aug-select { height: 28px; }
+textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-height: 1.55; }
+.aug-input:hover, .aug-select:hover, .aug-textarea:hover { border-color: var(--b3); }
+.aug-input::placeholder, .aug-textarea::placeholder { color: var(--t3); font-style: normal; }
+.aug-input[aria-invalid="true"], .aug-select[aria-invalid="true"], .aug-textarea[aria-invalid="true"] { border-color: var(--red2); }
+.aug-input:disabled, .aug-select:disabled, .aug-textarea:disabled {
+  background: var(--bg-1);
+  border-color: var(--b1);
+  color: var(--t3);
+  opacity: .6;
+  cursor: not-allowed;
+}
+/* A value that is a figure is set in mono. */
+.aug-input-figure { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.aug-field-error { font-size: 11px; line-height: 1.45; color: var(--red4); }
 
-/* ── Data table ──────────────────────────────────────────────────────────── */
+/* ── Table — dense 24px rows, sticky header on --bg-1 ─────────────────────── */
 .aug-dt { width: 100%; border-collapse: collapse; font-size: 12px; }
 .aug-dt thead th {
-  text-align: left;
-  padding: 5px 12px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--t3);
-  border-bottom: 1px solid var(--b2);
-  background: var(--bg-2);
-  white-space: nowrap;
   position: sticky;
   top: 0;
   z-index: 2;
+  height: 22px;
+  padding: 0 10px;
+  text-align: left;
+  white-space: nowrap;
+  background: var(--bg-1);
+  border-bottom: 1px solid var(--b2);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--t3);
 }
 .aug-dt tbody td {
-  padding: 6px 12px;
+  height: 24px;
+  padding: 0 10px;
   border-bottom: 1px solid var(--b0);
-  font-family: var(--font-ui);
-  font-variant-numeric: tabular-nums;  /* aligned figures in the sans data grid */
-  font-size: 11px;
+  font-size: 12px;
   color: var(--t1);
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
+.aug-dt tbody tr { transition: background var(--dur-1) var(--ease-out); }
 .aug-dt tbody tr:hover td { background: var(--bg-hover); }
+.aug-dt tbody tr[aria-selected="true"] td,
+.aug-dt tbody tr.selected td { background: var(--bg-sel); }
+.aug-dt .num { text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 
-/* ── Code block ──────────────────────────────────────────────────────────── */
+/* ── Code — on --code-bg, one step below the canvas, never in a tinted box ── */
 .aug-code {
   font-family: var(--font-code);
   font-size: 11px;
-  line-height: 1.7;
+  line-height: 1.75;
   background: var(--code-bg);
   border: 1px solid var(--b1);
   border-radius: var(--r2);
-  padding: 10px 14px;
+  padding: 9px 11px;
   overflow-x: auto;
   white-space: pre;
   color: var(--t2);
 }
 
-/* ── Panel ───────────────────────────────────────────────────────────────── */
-.aug-panel { background: var(--bg-2); border: 1px solid var(--b1); border-radius: var(--r3); box-shadow: var(--shadow-sm); }
+/* ── Panel — one plane: a hairline frame, never a shadow ─────────────────── */
+.aug-panel {
+  background: var(--bg-2);
+  border: 1px solid var(--b1);
+  border-radius: var(--r3);
+  transition: border-color var(--dur-1) var(--ease-out);
+}
+.aug-panel-interactive:hover { border-color: var(--b3); }
 
-/* ── Callout ─────────────────────────────────────────────────────────────── */
+/* ── Callout — tint 1, border 2, a 3px left rule in hue 3 ─────────────────── */
 .aug-callout {
-  border-radius: 0 var(--r3) var(--r3) 0;
-  padding: 10px 14px;
   display: flex;
-  gap: 10px;
+  flex-direction: column;
+  gap: 5px;
+  padding: 9px 11px;
+  border: 1px solid var(--b2);
+  border-left-width: 3px;
+  border-radius: var(--r2);
+  background: var(--bg-3);
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--t1);
 }
-.aug-callout-blue   { background: var(--blue1); border-left: 3px solid var(--blue3); }
-.aug-callout-green  { background: var(--grn1);  border-left: 3px solid var(--grn3); }
-.aug-callout-amber  { background: var(--amb1);  border-left: 3px solid var(--amb3); }
-.aug-callout-red    { background: var(--red1);  border-left: 3px solid var(--red3); }
-.aug-callout-violet { background: var(--vio1);  border-left: 3px solid var(--vio3); }
+.aug-callout-kind {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.aug-callout-blue   { background: var(--blue1); border-color: var(--blue2); border-left-color: var(--blue3); }
+.aug-callout-green  { background: var(--grn1);  border-color: var(--grn2);  border-left-color: var(--grn3); }
+.aug-callout-amber  { background: var(--amb1);  border-color: var(--amb2);  border-left-color: var(--amb3); }
+.aug-callout-red    { background: var(--red1);  border-color: var(--red2);  border-left-color: var(--red3); }
+.aug-callout-violet { background: var(--vio1);  border-color: var(--vio2);  border-left-color: var(--vio3); }
+.aug-callout-blue   .aug-callout-kind { color: var(--blue3); }
+.aug-callout-green  .aug-callout-kind { color: var(--grn3); }
+.aug-callout-amber  .aug-callout-kind { color: var(--amb3); }
+.aug-callout-red    .aug-callout-kind { color: var(--red3); }
+.aug-callout-violet .aug-callout-kind { color: var(--vio3); }
 
-/* ── Dot indicator ───────────────────────────────────────────────────────── */
-.aug-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-.aug-dot-grn  { background: var(--grn3); }
-.aug-dot-blue { background: var(--blue3); }
-.aug-dot-amb  { background: var(--amb3); }
-.aug-dot-red  { background: var(--red3); }
-.aug-dot-gray { background: var(--t3); }
+/* ── Status dot — 7px, the only round chrome ─────────────────────────────── */
+.aug-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--t4); }
+.aug-dot-live, .aug-dot-grn        { background: var(--grn3); }
+.aug-dot-waiting, .aug-dot-amb     { background: var(--amb3); }
+.aug-dot-failed, .aug-dot-red      { background: var(--red3); }
+.aug-dot-analysing                 { background: var(--vio3); }
+.aug-dot-blue                      { background: var(--blue3); }
+.aug-dot-idle, .aug-dot-gray       { background: var(--t4); }
+.aug-dot-live, .aug-dot-analysing  { animation: aug-pulse 1.05s var(--ease-inout) infinite; }
 
-/* ── Progress bar ────────────────────────────────────────────────────────── */
-.aug-progress-track { height: 3px; background: var(--bg-4); border-radius: 2px; overflow: hidden; }
-.aug-progress-fill  { height: 100%; background: var(--blue3); border-radius: 2px; transition: width 0.3s; }
+/* ── Progress — a 3px rule, never a ring; the figure is printed beside it ─── */
+.aug-progress,
+.aug-progress-track { height: 3px; background: var(--bg-4); border-radius: var(--r1); overflow: hidden; }
+.aug-progress-fill { height: 100%; background: var(--blue3); transition: width var(--dur-3) var(--ease-out); }
 
-/* ── Utility shortcuts ───────────────────────────────────────────────────── */
-/* NOTE: aug-label is defined in type.css at 11px (design-system minimum). */
+/* ── Overlay — the only three things allowed to float ────────────────────── */
+.aug-popover,
+.aug-tooltip {
+  background: var(--bg-3);
+  border: 1px solid var(--b2);
+  border-radius: var(--r2);
+  box-shadow: var(--shadow-sm);
+  color: var(--t1);
+}
+.aug-tooltip { padding: 7px 9px; font-size: 11px; line-height: 1.45; }
+.aug-toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 11px;
+  background: var(--bg-1);
+  border: 1px solid var(--b1);
+  border-left: 3px solid var(--b3);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-md);
+}
+.aug-toast-success { border-left-color: var(--grn3); }
+.aug-toast-error   { border-left-color: var(--red3); }
+.aug-toast-warning { border-left-color: var(--amb3); }
+.aug-toast-info    { border-left-color: var(--blue3); }
+.aug-dialog {
+  background: var(--bg-1);
+  border: 1px solid var(--b2);
+  border-radius: var(--r3);
+  box-shadow: var(--shadow-md);
+  color: var(--t1);
+}
+.aug-scrim { background: var(--scrim); }
+
+/* ── Separator — --b1 between blocks, --b0 between rows ──────────────────── */
+.aug-separator, .aug-divh { height: 1px; background: var(--b1); }
+.aug-separator-row { height: 1px; background: var(--b0); }
+
+/* ── Utilities ───────────────────────────────────────────────────────────── */
 .aug-mono { font-family: var(--font-mono); }
-.aug-divh { height: 1px; background: var(--b1); }
+/* The pending mark: a control that is working keeps its rest state and gains ◐.
+   Static on purpose — there are no spinners anywhere in the product. */
+.aug-pending { display: inline-block; flex-shrink: 0; font-family: var(--font-mono); font-weight: 400; line-height: 1; opacity: .8; }
 
-/* ── Animations ──────────────────────────────────────────────────────────── */
-@keyframes aug-blink   { 0%, 100% { opacity: 1 } 50% { opacity: 0.25 } }
-@keyframes aug-slide-up { from { opacity: 0; transform: translateY(8px) } to { opacity: 1; transform: translateY(0) } }
-@keyframes aug-fade-in  { from { opacity: 0 } to { opacity: 1 } }
-@keyframes aug-spin     { from { transform: rotate(0) } to { transform: rotate(360deg) } }
-@keyframes aug-shimmer  { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
-
-/* Individual scale/translate properties — they COMPOSE with an element's own
-   `transform` (e.g. CommandPalette's translateX(-50%) centering) instead of
-   clobbering it the way animating `transform` would. */
-@keyframes aug-scale-pop { from { opacity: 0; scale: 0.96; translate: 0 6px } to { opacity: 1; scale: 1; translate: 0 0 } }
-
-.aug-anim-blink { animation: aug-blink 1.4s ease-in-out infinite; }
-.aug-anim-up    { animation: aug-slide-up var(--dur-norm) var(--ease-out) both; }
-.aug-anim-fade  { animation: aug-fade-in var(--dur-norm) var(--ease-out) both; }
-.aug-anim-spin  { animation: aug-spin var(--dur-breath) linear infinite; }
-/* Modal / drawer entrance — replaces instant mounts. */
-.aug-anim-pop   { animation: aug-scale-pop var(--dur-norm) var(--ease-pop) both; }
-.aug-shimmer {
-  background: linear-gradient(90deg, var(--bg-2) 25%, var(--bg-3) 50%, var(--bg-2) 75%);
-  background-size: 200% 100%;
-  animation: aug-shimmer 1.4s infinite;
+/* ── Four universal states · empty ───────────────────────────────────────── */
+.aug-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 560px;
+  padding: 16px;
 }
-/* B1 (ai-elements) — the TEXT variant of the same sweep: a readable label whose
-   gradient travels through it while something streams. Same keyframes, same
-   tokens; the block variant above stays for skeletons. */
+/* The ONE place the seventh size lives: an icon rendered at 28px in an empty state. */
+.aug-empty-glyph { display: inline-flex; color: var(--b3); }
+.aug-empty-title { font-size: 13px; font-weight: 600; color: var(--t1); }
+.aug-empty-body { font-size: 12px; line-height: 1.6; color: var(--t2); }
+.aug-empty-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.aug-empty-inline { max-width: none; gap: 8px; padding: 12px 0; color: var(--t3); }
+
+
+/* ── Four universal states · error, partial — and the refusal ────────────────
+   Error: three sentences in order — what failed, what it means, what to do — carrying the run
+   id and the exact object so it pastes into a ticket; Retry is never the only door offered.
+   Partial: Aughor's most important state. A real answer with a named hole, the hole stated in
+   the same breath as the figure. Refusal: the proudest state — confident, specific, and
+   offering the nearest answerable question; never an apology, never a dead end. */
+.aug-error,
+.aug-partial,
+.aug-refusal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--red2);
+  border-left: 3px solid var(--red3);
+  border-radius: var(--r2);
+  background: var(--red1);
+}
+.aug-refusal { gap: 7px; }
+.aug-partial { border-color: var(--amb2); border-left-color: var(--amb3); background: var(--amb1); }
+.aug-state-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aug-state-kind {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--red4);
+}
+.aug-partial .aug-state-kind { color: var(--amb4); }
+.aug-state-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+.aug-partial .aug-state-meta { color: var(--amb4); }
+.aug-state-claim { font-size: 13px; line-height: 1.6; color: var(--t1); }
+.aug-state-what { font-size: 12px; line-height: 1.6; color: var(--t1); }
+.aug-state-detail { font-size: 12px; line-height: 1.6; color: var(--t2); }
+.aug-state-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.aug-state-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--t2);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.aug-state-action:hover { background: var(--bg-3); border-color: var(--b3); color: var(--t1); }
+.aug-error .aug-state-action-primary { border-color: var(--red2); color: var(--red4); }
+.aug-refusal .aug-state-action-primary { color: var(--blue4); }
+.aug-partial .aug-state-action-primary { border-color: var(--amb2); color: var(--amb4); }
+.aug-state-ticket { font-size: 11px; line-height: 1.6; color: var(--t3); }
+.aug-state-ticket-id { font-family: var(--font-mono); color: var(--t2); }
+
+/* Beside a partial answer: one bar per attributed driver, the unattributed remainder hatched. */
+.aug-partial-bars { display: flex; flex-direction: column; gap: 5px; }
+.aug-partial-bar { display: flex; align-items: center; gap: 8px; }
+.aug-partial-bar-label { width: 64px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-partial-bar-fill { height: 7px; flex: none; background: var(--chart-deemph); }
+.aug-partial-bar-value { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; }
+.aug-partial-bar-unknown .aug-partial-bar-value { color: var(--amb4); }
+/* Unknown-not-zero: the hatch is the one grammar for a magnitude nobody could attribute. */
+.aug-hatch { background: repeating-linear-gradient(90deg, var(--amb3) 0 4px, transparent 4px 8px); }
+
+/* ── The trust system — Aughor's signature ───────────────────────────────────
+   Readable at 11px, never shouting, instantly told apart from ordinary chrome. */
+
+/* Guard verdict: three outcomes only — passed ✓, warned ◈, refused ✕. A 1px border and no fill,
+   so it reads as an instrument reading rather than a badge. */
+.aug-guard {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: var(--t2);
+}
+.aug-guard-passed  { border-color: var(--grn2); color: var(--grn4); }
+.aug-guard-warned  { border-color: var(--amb2); color: var(--amb4); }
+.aug-guard-refused { border-color: var(--red2); color: var(--red4); }
+
+/* Receipt chain: query → guard → guard → figure, one horizontal run drawn identically wherever
+   it appears. A broken link is a red segment with the chain intact — never a missing chain. */
+.aug-receipt-chain { display: inline-flex; flex-wrap: wrap; align-items: center; row-gap: 4px; }
+.aug-receipt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b3);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: var(--t1);
+}
+button.aug-receipt-link { cursor: pointer; }
+button.aug-receipt-link:hover { background: var(--bg-3); }
+.aug-receipt-query  { border-color: var(--blue2); color: var(--blue4); }
+.aug-receipt-passed { border-color: var(--grn2); color: var(--grn4); }
+.aug-receipt-warned { border-color: var(--amb2); color: var(--amb4); }
+.aug-receipt-broken { border-color: var(--red2); color: var(--red4); }
+.aug-receipt-arrow { padding: 0 5px; font-family: var(--font-mono); font-size: 11px; color: var(--b3); }
+
+/* Confidence: a computed number, never a mood. The rule fills left to right and the figure is
+   always printed beside it, because a bar alone cannot be cited. At or above 0.86 green, from
+   0.5 amber, below 0.5 red — and below 0.5 Aughor does not lead with it. */
+.aug-confidence { display: inline-flex; align-items: center; gap: 9px; }
+.aug-confidence-value { min-width: 30px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.aug-confidence-bar { width: 78px; height: 3px; flex: none; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
+.aug-confidence-fill { height: 100%; transition: width var(--dur-3) var(--ease-out); }
+.aug-confidence-note { font-size: 11px; color: var(--t2); }
+.aug-confidence-high .aug-confidence-value { color: var(--grn3); }
+.aug-confidence-high .aug-confidence-fill  { background: var(--grn3); }
+.aug-confidence-mid  .aug-confidence-value { color: var(--amb3); }
+.aug-confidence-mid  .aug-confidence-fill  { background: var(--amb3); }
+.aug-confidence-low  .aug-confidence-value { color: var(--red3); }
+.aug-confidence-low  .aug-confidence-fill  { background: var(--red3); }
+
+/* Citation marker, inline in prose: the dashed underline says the figure is checkable, the
+   superscript says where. An amber superscript is a note that argues with the sentence. */
+.aug-cite { font-family: var(--font-mono); border-bottom: 1px dashed color-mix(in srgb, currentColor 50%, transparent); cursor: help; }
+.aug-cite-ref { font-family: var(--font-mono); font-size: 11px; line-height: 0; vertical-align: super; color: var(--blue4); }
+.aug-cite-ref-dissent { color: var(--amb4); }
+
+/* Why this number: every figure answers it in one click, and the affordance IS the dashed
+   underline — no icon, no button, nothing added to the layout. The popover lists claim, matched
+   cell, snapshot, rows read and cost, then the doors: open in SQL · drill · dispute. */
+.aug-why { border-bottom: 1px dashed var(--b3); cursor: help; font-variant-numeric: tabular-nums; }
+.aug-why-card { display: flex; flex-direction: column; gap: 5px; min-width: 220px; padding: 9px 11px; }
+.aug-why-row { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; }
+.aug-why-key { color: var(--t3); }
+.aug-why-value { color: var(--t1); text-align: right; font-variant-numeric: tabular-nums; }
+.aug-why-actions { display: flex; gap: 12px; margin-top: 1px; padding-top: 6px; border-top: 1px solid var(--b1); }
+.aug-why-action { padding: 0; border: none; background: none; font-family: var(--font-mono); font-size: 11px; color: var(--blue3); cursor: pointer; }
+.aug-why-action:hover { color: var(--blue4); }
+
+/* ── Motion ────────────────────────────────────────────────────────────────
+   Every animation in the app, each explaining a state change. Durations are the three
+   tokens (--dur-1 90ms flip · --dur-2 160ms entrance · --dur-3 260ms layout); nothing
+   over 260ms, no spring, no overshoot. Scale and translate use the individual
+   properties so they compose with an element's own transform (CommandPalette centres
+   itself with translateX(-50%)). */
+@keyframes aug-fade-in   { from { opacity: 0 } to { opacity: 1 } }
+@keyframes aug-step-in   { from { opacity: 0; translate: 0 4px } to { opacity: 1; translate: 0 0 } }
+@keyframes aug-modal-pop { from { opacity: 0; scale: .98 } to { opacity: 1; scale: 1 } }
+@keyframes aug-check-pop { 0% { scale: 1 } 50% { scale: 1.04 } 100% { scale: 1 } }
+@keyframes aug-pulse     { 0%, 100% { opacity: .55; scale: 1 } 50% { opacity: 1; scale: 1.12 } }
+@keyframes aug-caret     { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
+@keyframes aug-shimmer   { 0% { background-position: -180px 0 } 100% { background-position: 180px 0 } }
+@keyframes aug-shimmer-text { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
+
+/* step-in: a trace step, tool call or evidence row arrived — opacity and 4px up. */
+.aug-anim-up, .aug-step-in, .aug-stream-in { animation: aug-step-in var(--dur-2) var(--ease-out) both; }
+.aug-anim-fade { animation: aug-fade-in var(--dur-2) var(--ease-out) both; }
+/* modal-pop: a dialog is taking focus — 0.98 to 1 from its own centre. */
+.aug-anim-pop { animation: aug-modal-pop var(--dur-2) var(--ease-out) both; }
+/* check-pop: a guard just passed — the only scale change in the product, and it settles. */
+.aug-check-pop { animation: aug-check-pop var(--dur-1) var(--ease-out); }
+/* pulse: something is running right now. */
+.aug-pulse-dot { animation: aug-pulse 1.05s var(--ease-inout) infinite; }
+/* streaming-caret: the agent is still writing — a block caret at the last glyph. */
+.aug-caret {
+  display: inline-block;
+  width: .5em;
+  height: 1em;
+  margin-left: .15em;
+  vertical-align: text-bottom;
+  background: var(--blue3);
+  animation: aug-caret 1s steps(1) infinite;
+}
+/* shimmer: a skeleton is waiting on real data. */
+.aug-skeleton,
+.aug-shimmer {
+  background: linear-gradient(90deg, var(--bg-3) 0%, var(--bg-4) 50%, var(--bg-3) 100%);
+  background-size: 360px 100%;
+  animation: aug-shimmer 1.1s linear infinite;
+}
+/* The text form of the same sweep: a readable label while something streams. */
 .aug-shimmer-text {
-  background: linear-gradient(90deg, var(--t4) 25%, var(--t2) 50%, var(--t4) 75%);
+  background: linear-gradient(90deg, var(--t3) 25%, var(--t2) 50%, var(--t3) 75%);
   background-size: 200% 100%;
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  animation: aug-shimmer 1.8s infinite;
+  animation: aug-shimmer-text 1.1s linear infinite;
 }
+/* press: the element's own :active background does the work; the label never moves. */
+.aug-pressable { transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
 
-/* Tactile press + crisp keyboard focus for interactive controls. Additive:
-   pair with an element's existing colour transition (Tailwind `transition`
-   already includes transform, so the press eases in and out). */
-.aug-pressable:active { transform: scale(0.97); }
-.aug-pressable:focus-visible { outline: 2px solid var(--bfocus); outline-offset: 2px; }
-
-/* ── Deep-Analysis trace (ThinkingTrace) step transitions ────────────────── */
-@keyframes aug-step-in  { from { opacity: 0; transform: translateY(5px) } to { opacity: 1; transform: none } }
-@keyframes aug-check-pop { 0% { transform: scale(0); opacity: 0 } 60% { transform: scale(1.3) } 100% { transform: scale(1); opacity: 1 } }
-@keyframes aug-pulse-dot { 0%, 100% { transform: scale(1); opacity: 1 } 50% { transform: scale(0.78); opacity: 0.85 } }
-@keyframes aug-flow-y   { from { background-position: 0 0 } to { background-position: 0 10px } }
-
-.aug-step-in   { animation: aug-step-in 0.34s ease-out both; }
-.aug-check-pop { animation: aug-check-pop 0.32s cubic-bezier(.34,1.56,.64,1); }
-.aug-pulse-dot { animation: aug-pulse-dot 1.15s ease-in-out infinite; }
-.aug-flow-y {
-  background-image: linear-gradient(to bottom, var(--amb4) 0 50%, transparent 50% 100%);
-  background-size: 100% 10px;
-  animation: aug-flow-y 0.65s linear infinite;
+/* disclosure: a trace, row group or methodology block opening. The grid-template-rows
+   0fr→1fr trick: a transition, not an animation, so mounting open paints instantly and
+   only a live data-open flip moves. */
+.aug-disclose {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows var(--dur-3) var(--ease-out);
 }
-
-/* ── Streaming caret (CK-0.2 token stream, UI Wave 2) ──────────────────────────
-   A soft round dot that trails the last streamed block while the narrative is
-   being written, then vanishes when the terminal `insight` event lands. The
-   inline-block sizing keeps it on the text baseline; the pulse reuses the same
-   1.1s cadence as the trace dot so the surface breathes at one rhythm. */
-@keyframes aug-caret { 0%, 100% { opacity: 1; transform: scale(1) } 50% { opacity: 0.35; transform: scale(0.7) } }
-.aug-caret {
-  display: inline-block; width: 0.5em; height: 0.5em; margin-left: 0.15em;
-  vertical-align: baseline; border-radius: var(--r-pill);
-  background: currentColor; animation: aug-caret 1.05s ease-in-out infinite;
-}
-/* Streamed text settles in with a whisper of blur+lift the first time it mounts;
-   applied once to the prose container (not per word), so markdown re-renders on
-   each delta don't re-trigger it. */
-@keyframes aug-stream-in { from { opacity: 0; filter: blur(2px); transform: translateY(3px) } to { opacity: 1; filter: blur(0); transform: none } }
-.aug-stream-in { animation: aug-stream-in var(--dur-slow, .32s) var(--ease-out, ease-out) both; }
-
-@media (prefers-reduced-motion: reduce) {
-  .aug-step-in, .aug-check-pop, .aug-pulse-dot, .aug-flow-y, .aug-caret, .aug-stream-in,
-  .aug-anim-blink, .aug-anim-up, .aug-anim-fade, .aug-anim-pop,
-  .aug-shimmer { animation: none; }
-  .aug-caret { opacity: 0.6; }
-  .aug-pressable:active { transform: none; }
-}
+.aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
+.aug-disclose > * { min-height: 0; overflow: hidden; }
 
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
 @keyframes edge-flow         { to { stroke-dashoffset: -12; } }
 @keyframes edge-flow-verified { to { stroke-dashoffset: -33; } }
 
-/* ── Smooth disclosure (CK-style reasoning row, UI Wave 3) ─────────────────
-   Height-animated collapsible region via the grid-template-rows 0fr→1fr trick:
-   the wrapper is a one-row grid whose row grows from nothing to content size;
-   the single child supplies the min-height:0 + overflow:hidden context the
-   fr-track needs. Because this is a *transition* (not an animation), mounting
-   directly in the open state paints instantly — restored/inert turns don't
-   animate; only a live data-open flip (user toggle / streaming arrival) does. */
-.aug-disclose {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows var(--dur-norm) var(--ease-out);
-}
-.aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
-.aug-disclose > * { min-height: 0; overflow: hidden; }
-
-@media (prefers-reduced-motion: reduce) {
-  .aug-disclose { transition: none; }
-}
-
-/* A stroke icon standing in for a FILLED state (a favourited star, a pinned item).
-   Tabler draws one glyph per concept, outline only; the filled variant is the same
-   drawing with its interior painted, which is exactly what a toggle's "on" needs —
-   the shape stays put and only its weight changes, so the eye reads state, not a
-   different icon. */
+/* A stroke icon standing in for a FILLED state (a favourited star, a pinned item): the
+   shape stays put and only its weight changes, so the eye reads state, not a new icon. */
 .aug-icon-filled { fill: currentColor; }
+
+/* ── Reduced motion — every fallback is the FINISHED frame, never the empty one ── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 1ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 1ms !important;
+  }
+  /* The caret is solid, the pulse is its lit colour, the skeleton a flat fill. */
+  .aug-caret { animation: none; opacity: 1; }
+  .aug-pulse-dot, .aug-dot-live, .aug-dot-analysing { animation: none; opacity: 1; scale: 1; }
+  .aug-skeleton, .aug-shimmer { animation: none; background: var(--bg-4); }
+  .aug-shimmer-text { animation: none; background: none; color: var(--t2); }
+  .aug-check-pop { animation: none; }
+}
+
+/* ── The brief as an artefact (Aughor Intelligence · 01 Briefing) ─────────────────────────────
+   Briefing is one of the two screens with artefact manners: a 700px measure, numbered sections in
+   a 44px gutter, superscripts into a margin apparatus, a signature block. The other Intelligence
+   layers stay instrument-dense and get none of it. */
+.aug-content-meta-writing { color: var(--vio4); }
+.aug-brief-scroll { flex: 1; min-width: 0; overflow-y: auto; }
+.aug-brief-strip { display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--b1); }
+.aug-brief-pad { padding: 16px 20px; }
+.aug-brief { container-type: inline-size; }
+.aug-brief-cols { display: flex; align-items: flex-start; min-width: 0; }
+.aug-brief-main { flex: 1; min-width: 0; }
+.aug-brief-sec { display: flex; border-top: 1px solid var(--b1); }
+.aug-brief-sec:first-child { border-top: 0; }
+.aug-brief-gutter {
+  width: 44px; flex: none; padding-top: 13px; border-right: 1px solid var(--b0);
+  text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--t4);
+}
+.aug-brief-body { flex: 1; min-width: 0; padding: 12px 22px 16px 20px; }
+.aug-brief-measure { max-width: 700px; }
+.aug-brief-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-bottom: 8px; }
+.aug-brief-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--t1); white-space: nowrap; }
+.aug-brief-meta {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
+}
+.aug-brief-head-end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
+.aug-brief-eyebrow {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--t3); white-space: nowrap;
+}
+.aug-brief-writing { color: var(--vio4); }
+.aug-brief-eyebrow-row { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
+.aug-brief-eyebrow-row > .aug-brief-meta { margin-left: auto; }
+.aug-brief-verdict {
+  margin: 0; font-size: 18px; font-weight: 600; line-height: 1.5;
+  letter-spacing: -0.01em; color: var(--t1); text-wrap: pretty;
+}
+.aug-brief-lede { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--t2); }
+.aug-brief-doors { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.aug-brief-prose { font-size: 13px; line-height: 1.8; color: var(--t1); }
+.aug-brief-prose > p { margin: 0 0 10px; }
+.aug-brief-prose > p:last-child { margin-bottom: 0; }
+.aug-brief-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--t3); }
+.aug-brief-skel { display: flex; flex-direction: column; gap: 8px; }
+.aug-brief-skel > .aug-skeleton { height: 11px; border-radius: var(--r1); }
+.aug-brief-skel > .aug-brief-skel-h1 { height: 18px; }
+.aug-cite-ref-open { padding: 0 1px; cursor: pointer; }
+.aug-cite-ref-open:hover { text-decoration: underline; }
+
+/* §1 — the numbers that moved. Receipts are columns, not badges. */
+.aug-moves-wrap { overflow-x: auto; }
+.aug-moves thead th { position: static; padding: 0 8px 0 0; background: transparent; }
+.aug-moves tbody td { padding: 0 8px 0 0; }
+.aug-moves thead th:last-child, .aug-moves tbody td:last-child { padding-right: 0; }
+.aug-moves .num { font-size: 11px; }
+.aug-moves-metric { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
+.aug-moves-overall { margin-left: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-moves-prior, .aug-moves-flat { color: var(--t3); }
+.aug-moves-good { color: var(--grn4); }
+.aug-moves-bad { color: var(--red4); }
+.aug-moves-writing { color: var(--vio4); }
+.aug-moves-dropped td { color: var(--t3); }
+.aug-moves-expandable { cursor: pointer; }
+.aug-moves-spark-skel { display: inline-block; width: 76px; height: 11px; border-radius: var(--r1); vertical-align: middle; }
+.aug-moves-detail { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--b1); border-radius: var(--r2); }
+.aug-moves-detail-head {
+  display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
+  font-size: 12px; font-weight: 600; color: var(--t1);
+}
+.aug-why.aug-receipt-ref {
+  font-family: var(--font-mono); font-size: 11px; color: var(--blue4); cursor: pointer;
+  border-bottom-color: color-mix(in srgb, var(--blue4) 50%, transparent);
+}
+
+/* The apparatus — the margin the superscripts point into, and the brief's signature. */
+.aug-apparatus {
+  width: 300px; flex: none; align-self: flex-start; position: sticky; top: 0;
+  max-height: calc(100vh - 92px); display: flex; flex-direction: column; border-left: 1px solid var(--b1);
+}
+.aug-apparatus-head {
+  height: 32px; flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 0 14px; border-bottom: 1px solid var(--b1);
+}
+.aug-apparatus-head > .aug-brief-meta { margin-left: auto; }
+.aug-apparatus-notes {
+  flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 8px;
+  list-style: none; display: flex; flex-direction: column; gap: 2px;
+}
+.aug-apparatus-note { display: flex; gap: 9px; padding: 5px 6px; border-radius: var(--r2); cursor: pointer; }
+.aug-apparatus-note:hover, .aug-apparatus-note-on { background: var(--bg-hover); }
+.aug-apparatus-n { flex: none; min-width: 12px; padding-top: 2px; font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
+.aug-apparatus-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.aug-apparatus-text {
+  font-size: 12px; line-height: 1.55; color: var(--t2);
+  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
+}
+.aug-apparatus-meta { font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.aug-apparatus-empty { margin: 0; padding: 4px 6px; font-size: 12px; line-height: 1.55; color: var(--t3); }
+.aug-apparatus-sig { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 10px 14px 12px; border-top: 1px solid var(--b1); }
+.aug-apparatus-sig-text { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t2); }
+.aug-apparatus-guards { display: flex; flex-wrap: wrap; gap: 5px; }
+@container (max-width: 980px) {
+  .aug-brief-cols { flex-direction: column; align-items: stretch; }
+  .aug-apparatus { width: auto; position: static; max-height: none; border-left: 0; border-top: 1px solid var(--b1); }
+}
+
+/* ── The claim ledger (Aughor Intelligence · 05 Evidence) ─────────────────────────────────────
+   A claim is a row, not a card; the selected claim opens in the inspector beside the ledger. */
+.aug-ledger { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.aug-ledger-pad { flex: 1; padding: 16px 20px; }
+.aug-ledger-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.aug-ledger-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--b1); }
+.aug-ledger-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+.aug-ledger-scroll { flex: 1; min-height: 0; overflow: auto; }
+.aug-ledger-table { table-layout: fixed; }
+.aug-ledger-table tbody td { height: auto; padding: 5px 10px; vertical-align: top; }
+.aug-ledger-table tbody tr { cursor: pointer; }
+.aug-ledger-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
+/* .aug-dt's nowrap outranks a bare class; the claim column is the one that wraps. */
+.aug-ledger-table tbody td.aug-ledger-claim { white-space: normal; }
+.aug-ledger-text { display: block; font-size: 12px; line-height: 1.5; color: var(--t1); }
+.aug-ledger-query {
+  display: block; max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
+}
+.aug-ledger-when { font-size: 11px; color: var(--t3); }
+.aug-ledger-none { color: var(--t3); }
+.aug-ledger-fb-validated { color: var(--grn4); }
+.aug-ledger-fb-disputed { color: var(--red4); }
+.aug-ledger-fb-context { color: var(--amb4); }
+.aug-ledger-col-id { width: 72px; }
+.aug-ledger-col-conf { width: 118px; }
+.aug-ledger-col-fb { width: 104px; }
+.aug-ledger-col-when { width: 68px; }
+.aug-ledger-empty { margin: 0; padding: 14px 16px; font-size: 12px; color: var(--t3); }
+.aug-ledger-foot {
+  flex: none; display: flex; gap: 16px; padding: 7px 16px; border-top: 1px solid var(--b1);
+  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
+}
+.aug-ledger-foot-note { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-inspector { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
+.aug-inspector-head { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--b1); }
+.aug-inspector-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
+.aug-inspector-end { margin-left: auto; }
+.aug-inspector-sec { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 11px 14px 12px; border-bottom: 1px solid var(--b1); }
+.aug-inspector-claim { margin: 0; font-size: 13px; line-height: 1.6; color: var(--t1); }
+.aug-inspector-rows { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.aug-inspector-rows > div { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
+.aug-inspector-rows dt { color: var(--t3); }
+.aug-inspector-rows dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t1); }
+.aug-inspector-sub { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-inspector-sql { padding-left: 0; padding-right: 0; }
+.aug-inspector-sql > .aug-inspector-sub, .aug-inspector-sql > .aug-inspector-note { padding: 0 14px; }
+.aug-inspector-pre {
+  margin: 0; padding: 9px 14px; white-space: pre-wrap; word-break: break-word; background: var(--code-bg);
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.7; color: var(--t2);
+}
+.aug-inspector-doors { display: flex; flex-wrap: wrap; gap: 6px; }
+.aug-fb-door[aria-pressed="true"] { font-weight: 600; }
+.aug-fb-door-validated[aria-pressed="true"] { background: var(--grn1); border-color: var(--grn2); color: var(--grn4); }
+.aug-fb-door-disputed[aria-pressed="true"] { background: var(--red1); border-color: var(--red2); color: var(--red4); }
+.aug-fb-door-needs_context[aria-pressed="true"] { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
+.aug-inspector-note { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t3); }
+
+/* ── The profile (Aughor Intelligence · 02 Profile) ───────────────────────────────────────────
+   Instrument-dense: numbered sections beside a rail of governed metrics and status columns. */
+.aug-profile { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.aug-profile-main { flex: 1; min-width: 0; overflow-y: auto; }
+.aug-profile-main > .aug-brief-strip + .aug-brief-sec { border-top: 0; }
+.aug-profile-strip-end { margin-left: auto; }
+.aug-profile-prose { margin: 0; max-width: 760px; font-size: 13px; line-height: 1.8; color: var(--t1); }
+.aug-profile-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.aug-profile-why { margin: 10px 0 0; max-width: 760px; font-size: 12px; line-height: 1.6; color: var(--t3); }
+.aug-profile-table .num { font-size: 11px; }
+.aug-profile-table td.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
+.aug-profile-dim { color: var(--t3); }
+.aug-profile-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--b0); font-size: 11px; line-height: 1.6; color: var(--t3); }
+.aug-profile-rail { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
+.aug-profile-rail-head { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--b1); }
+.aug-profile-rail-head > .aug-brief-meta { margin-left: auto; }
+.aug-profile-block { flex: none; display: flex; flex-direction: column; gap: 11px; padding: 10px 14px 12px; border-bottom: 1px solid var(--b1); }
+.aug-profile-metric { display: flex; flex-direction: column; gap: 3px; }
+.aug-profile-metric-head { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; }
+.aug-profile-metric-name { color: var(--t1); }
+.aug-profile-metric-v { color: var(--t3); }
+.aug-profile-metric-state { margin-left: auto; }
+.aug-profile-formula {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--t3);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.aug-profile-lc { display: flex; flex-direction: column; gap: 6px; }
+.aug-profile-lc-name { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-profile-states { display: flex; flex-wrap: wrap; gap: 4px; }
+.aug-profile-state { padding: 1px 6px; border: 1px solid var(--b2); border-radius: var(--r1); font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-profile-state-terminal { border-style: dashed; color: var(--t3); }
+.aug-profile-lc-note { font-size: 11px; line-height: 1.5; color: var(--t3); }
+.aug-profile-gap { color: var(--amb4); }
+.aug-profile-rule { max-width: 360px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+
+/* ── Org (Aughor Intelligence · 08 Org) — the promoted-findings ledger, beside what Org holds ─── */
+.aug-ledger-bar > .aug-org-meta { margin-left: 0; }
+.aug-org-filter { margin-left: auto; width: 220px; }
+.aug-org-col-domain { width: 140px; }
+.aug-org-col-novelty { width: 72px; }
+.aug-org-col-when { width: 80px; }
+.aug-org-col-door { width: 92px; }
+.aug-org-domain { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-org-novelty { font-size: 11px; color: var(--t3); }
+.aug-org-door { text-align: right; }
+
+/* ── Memory (Aughor Intelligence · 06 Memory) — readings as rows, where memory comes from beside ── */
+.aug-memory-col-source { width: 104px; }
+.aug-memory-col-conn { width: 104px; }
+.aug-memory-col-num { width: 72px; }
+.aug-memory-col-when { width: 72px; }
+.aug-memory-col-door { width: 88px; }
+.aug-memory-subject { color: var(--t2); }
+.aug-memory-source { font-size: 11px; color: var(--t2); }
+.aug-memory-conn { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-memory-share { display: flex; flex-direction: column; gap: 4px; }
+.aug-memory-share-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--t2); }
+.aug-memory-share-n { font-family: var(--font-mono); font-size: 11px; color: var(--t1); font-variant-numeric: tabular-nums; }
+.aug-memory-share-rule { height: 3px; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
+.aug-memory-share-rule > span { display: block; height: 100%; background: var(--chart-1); }
+
+/* ── Actions (Aughor Intelligence · 07 Actions) — declared actions, overlay edits, approvals ─── */
+.aug-actions-col-id { width: 180px; }
+.aug-actions-col-about { width: 110px; }
+.aug-actions-col-gate { width: 124px; }
+.aug-actions-col-target { width: 220px; }
+.aug-actions-id { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t1); }
+.aug-actions-kind { display: block; margin-top: 2px; color: var(--t3); }
+.aug-actions-about, .aug-actions-target { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-actions-gate { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-actions-gate-ask { color: var(--amb4); }
+.aug-actions-err { margin: 6px 0; font-size: 12px; line-height: 1.5; color: var(--red4); }
+.aug-actions-form { margin-top: 12px; padding: 12px; border: 1px solid var(--b1); border-radius: var(--r3); }
+.aug-actions-form-title { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--t1); }
+.aug-actions-proposals, .aug-approvals { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.aug-actions-proposal { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--b1); border-radius: var(--r2); }
+.aug-approval { display: flex; flex-direction: column; gap: 5px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
+.aug-approval:last-child { padding-bottom: 0; border-bottom: 0; }
+.aug-approval-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.aug-approval-head > .aug-brief-meta { margin-left: auto; }
+.aug-approval-kind { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--amb4); }
+.aug-approval-why { font-size: 12px; line-height: 1.55; color: var(--t1); }
+.aug-approval-params { font-family: var(--font-mono); font-size: 11px; color: var(--t3); word-break: break-all; }
+.aug-actions-perm { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.aug-actions-perm > div { display: flex; flex-direction: column; gap: 2px; }
+.aug-actions-perm dt { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-actions-perm dd { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
+
+/* ── Graph (Aughor Intelligence · 04 Graph) — the map beside what it cannot vouch for ─────────── */
+.aug-graph-modes { margin-left: auto; }
+.aug-graph-map { flex: 1; display: flex; min-width: 0; min-height: 560px; overflow: hidden; border: 1px solid var(--b1); border-radius: var(--r3); }
+.aug-graph-canvas { flex: 1; min-width: 0; }
+.aug-graph-rail { width: 300px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
+.aug-graph-warn { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
+.aug-graph-warn:last-of-type { padding-bottom: 0; border-bottom: 0; }
+.aug-graph-warn-kind { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); white-space: nowrap; }
+.aug-graph-warn-ask { color: var(--amb4); }
+.aug-graph-warn-bad { color: var(--red4); }
+.aug-graph-warn-why { font-size: 12px; line-height: 1.55; color: var(--t2); }
+
+/* ── Ontology (Aughor Intelligence · 03) — the card's physical table beside its business name ── */
+.aug-entity-card-table { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }

@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 import React from "react";
 import { ChartSkeleton } from "./ChartSkeleton";
@@ -85,19 +86,13 @@ export function ChartWrapper({
         {loading ? (
           <ChartSkeleton height={height - 24} />
         ) : error ? (
-          <div
-            className="flex flex-col items-center justify-center gap-2 h-full"
-            style={{ minHeight: height - 24 }}
-          >
-            <span className="text-xs font-semibold" style={{ color: "var(--red4)" }}>
-              Chart error
-            </span>
-            <span className="text-xs text-center max-w-xs" style={{ color: "var(--t3)" }}>
-              {error}
-            </span>
-            <span className="aug-fs-xs px-2 py-0.5 rounded border" style={{ borderColor: "var(--red3)", color: "var(--red4)" }}>
-              Retry by refreshing the query
-            </span>
+          <div style={{ minHeight: height - 24, display: "flex", alignItems: "center" }}>
+            <ErrorState
+              kind="Chart failed"
+              what={error}
+              means="The rows behind it are unchanged; refreshing the query draws it again."
+              style={{ flex: 1 }}
+            />
           </div>
         ) : empty ? (
           <div

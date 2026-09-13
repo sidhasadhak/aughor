@@ -34,9 +34,9 @@ export function SchemaPanel({ connId, connName }: Props) {
             <p className="text-xs text-red-400">{error}</p>
           </div>
         ) : loading ? (
-          <div className="p-4 space-y-3 animate-pulse">
+          <div className="p-4 space-y-3" aria-hidden>
             {[70, 50, 85, 60, 75].map((w, i) => (
-              <div key={i} className="h-3 bg-zinc-800 rounded" style={{ width: `${w}%` }} />
+              <div key={i} className="h-3 aug-skeleton" style={{ width: `${w}%`, borderRadius: "var(--r1)" }} />
             ))}
           </div>
         ) : richSchema ? (

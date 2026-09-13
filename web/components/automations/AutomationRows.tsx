@@ -446,7 +446,7 @@ export function ForEachRows({ e, onChange }: {
         </div>
       ))}
       {items.length > 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           runs once per item · read it as{" "}
           <code style={{ fontFamily: "var(--font-mono)", color: "var(--chart-2)" }}>
             {vocab.itemAlias}.{vocab.itemValueKey}

@@ -1,130 +1,57 @@
 "use client";
 
 /**
- * EvidencePanel — the Evidence Ledger as a first-class intelligence layer.
+ * EvidencePanel — the claim ledger (Aughor Intelligence · 05 Evidence).
  *
- * Every claim Aughor makes in a Deep Analysis is recorded with its source SQL,
- * confidence, freshness and the metric it leans on. This panel surfaces the recent
- * claims across the scope (connection / canvas) so the team can validate or dispute
- * them — closing the human-in-the-loop trust loop. Backed by /investigations/evidence/recent.
+ * A claim is a row, not a card: the sentence with the query beneath it, its confidence, the
+ * owner's feedback and when it was recorded — so a reader sweeps a column instead of reading
+ * cards. The selected claim opens in the inspector beside the ledger, with its whole query and
+ * the feedback doors. Backed by /investigations/evidence/recent.
+ *
+ * Drawn only from what the ledger records (aughor/evidence). What the design shows and the ledger
+ * does not carry is left out rather than invented:
+ *   - guard columns and a verdict per claim — guard results are not stored with a claim;
+ *   - refused claims — the ledger keeps what a deep analysis asserted, never what it refused;
+ *   - a receipt id, run time and bytes read — not stored;
+ *   - "used in" and an outcome — `downstream_recommendations` and `outcome_status` have no writer.
+ * `data_freshness` is the investigation's completion time (evidence/linker.py), so the row reads
+ * "recorded", never "data as of"; `metric_used` is a keyword guess, so it reads "mentions".
  */
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-import { useEffect, useState, useCallback } from "react";
-import { formatTimestamp } from "@/lib/format";
-import {
-  getRecentEvidenceClaims,
-  submitClaimFeedback,
-  type EvidenceClaim,
-} from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/motion";
+import { Confidence } from "@/components/ui/trust";
+import { getRecentEvidenceClaims, submitClaimFeedback, type EvidenceClaim } from "@/lib/api";
+import { countNoun, formatTimestamp, relTime } from "@/lib/format";
 
 type Feedback = "validated" | "disputed" | "needs_context";
+type Filter = "all" | "unreviewed" | Feedback;
 
-function confColor(c: number): string {
-  if (c >= 0.8) return "var(--grn3)";
-  if (c >= 0.5) return "var(--amb3)";
-  return "var(--t3)";
-}
-
-const FEEDBACK_META: Record<Feedback, { label: string; color: string }> = {
-  validated:     { label: "Validated",     color: "var(--grn4, #2e8c63)" },
-  disputed:      { label: "Disputed",      color: "var(--red4)" },
-  needs_context: { label: "Needs context", color: "var(--amb4, #b6862b)" },
+const FEEDBACK: Record<Feedback, { label: string; door: string; cls: string }> = {
+  validated:     { label: "validated",     door: "Validated",     cls: "aug-ledger-fb-validated" },
+  disputed:      { label: "disputed",      door: "Disputed",      cls: "aug-ledger-fb-disputed" },
+  needs_context: { label: "needs context", door: "Needs context", cls: "aug-ledger-fb-context" },
 };
 
-function fmtWhen(iso: string | null): string {
-  return formatTimestamp(iso);
-}
+const FILTERS: { id: Filter; label: string }[] = [
+  { id: "all",           label: "all" },
+  { id: "unreviewed",    label: "unreviewed" },
+  { id: "validated",     label: "validated" },
+  { id: "disputed",      label: "disputed" },
+  { id: "needs_context", label: "needs context" },
+];
 
-function ClaimCard({ claim, onInvestigate, onFeedback }: {
-  claim:        EvidenceClaim;
-  onInvestigate?: (q: string) => void;
-  onFeedback:   (claim: EvidenceClaim, fb: Feedback) => void;
-}) {
-  const [showSql, setShowSql] = useState(false);
-  const cColor = confColor(claim.confidence);
-  const fb = claim.owner_feedback as Feedback | null;
+/** How many recent claims the layer reads. */
+const LIMIT = 80;
 
-  return (
-    <div style={{
-      background: "var(--bg-2)", border: "1px solid var(--b1)",
-      borderLeft: `3px solid ${cColor}`, borderRadius: "var(--r3)",
-      padding: "14px 16px", display: "flex", flexDirection: "column" as const, gap: 10,
-    }}>
-      {/* Badge row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-        <span title="confidence" style={{
-          padding: "2px 8px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 700,
-          background: `color-mix(in srgb, ${cColor} 16%, transparent)`, color: cColor,
-        }}>{Math.round((claim.confidence ?? 0) * 100)}%</span>
-        {claim.metric_used && (
-          <span style={{
-            padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 11,
-            background: "var(--bg-3)", border: "1px solid var(--b1)",
-            color: "var(--t3)", fontFamily: "var(--font-mono)",
-          }}>{claim.metric_used}</span>
-        )}
-        {fb && (
-          <span style={{ fontSize: 11, fontWeight: 600, color: FEEDBACK_META[fb].color }}>
-            ● {FEEDBACK_META[fb].label}
-          </span>
-        )}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>
-          {fmtWhen(claim.created_at)}
-        </span>
-      </div>
+/** A claim id short enough for a column. */
+const shortId = (id: string) => `C-${id.replace(/[^a-z0-9]/gi, "").slice(-5)}`;
 
-      {/* Claim */}
-      <div style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.6 }}>{claim.claim_text}</div>
-
-      {/* Meta row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const, fontSize: 11, color: "var(--t4)" }}>
-        {claim.data_freshness && <span>data as of {fmtWhen(claim.data_freshness)}</span>}
-        {claim.sql_source && (
-          <button onClick={() => setShowSql(s => !s)} style={{
-            background: "transparent", border: "none", color: "var(--blue4)",
-            cursor: "pointer", fontSize: 11, padding: 0,
-          }}>{showSql ? "hide source query" : "show source query"}</button>
-        )}
-      </div>
-
-      {showSql && claim.sql_source && (
-        <pre style={{
-          margin: 0, padding: "10px 12px", borderRadius: "var(--r2)",
-          background: "var(--bg-1)", border: "1px solid var(--b1)",
-          fontSize: 11, fontFamily: "var(--font-code)", color: "var(--t2)",
-          whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.5,
-        }}>{claim.sql_source}</pre>
-      )}
-
-      {/* Actions: validate / dispute / needs-context + investigate */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const, marginTop: 2 }}>
-        {(Object.keys(FEEDBACK_META) as Feedback[]).map(k => {
-          const active = fb === k;
-          const meta = FEEDBACK_META[k];
-          return (
-            <button key={k} onClick={() => onFeedback(claim, k)} title={`Mark ${meta.label.toLowerCase()}`}
-              style={{
-                padding: "3px 9px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-                background: active ? `color-mix(in srgb, ${meta.color} 16%, transparent)` : "transparent",
-                border: `1px solid ${active ? meta.color : "var(--b2)"}`,
-                color: active ? meta.color : "var(--t3)", cursor: "pointer", transition: "all .12s",
-              }}
-              onMouseEnter={e => { if (!active) e.currentTarget.style.borderColor = meta.color; }}
-              onMouseLeave={e => { if (!active) e.currentTarget.style.borderColor = "var(--b2)"; }}>
-              {meta.label}
-            </button>
-          );
-        })}
-        {onInvestigate && (
-          <button onClick={() => onInvestigate(`Re-examine this claim: ${claim.claim_text}`)}
-            style={{
-              marginLeft: "auto", padding: "3px 10px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 500,
-              background: "var(--bg-sel)", border: "1px solid var(--blue2)", color: "var(--blue4)", cursor: "pointer",
-            }}>Re-examine →</button>
-        )}
-      </div>
-    </div>
-  );
+/** The query's first meaningful line, for the row; the inspector shows the query whole. */
+function queryLine(sql: string | null): string | null {
+  return sql?.split("\n").map(l => l.trim()).find(l => l && !l.startsWith("--")) ?? null;
 }
 
 export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
@@ -132,12 +59,15 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
   canvasId?:     string;
   onInvestigate?: (q: string) => void;
 }) {
-  const [claims, setClaims]   = useState<EvidenceClaim[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [claims, setClaims]         = useState<EvidenceClaim[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [filter, setFilter]         = useState<Filter>("all");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [saving, setSaving]         = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
-    getRecentEvidenceClaims(connectionId, canvasId, 80)
+    getRecentEvidenceClaims(connectionId, canvasId, LIMIT)
       .then(setClaims)
       .catch(() => setClaims([]))
       .finally(() => setLoading(false));
@@ -145,61 +75,182 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
 
   useEffect(() => { load(); }, [load]);
 
+  const counts = useMemo<Record<Filter, number>>(() => ({
+    all:           claims.length,
+    unreviewed:    claims.filter(c => !c.owner_feedback).length,
+    validated:     claims.filter(c => c.owner_feedback === "validated").length,
+    disputed:      claims.filter(c => c.owner_feedback === "disputed").length,
+    needs_context: claims.filter(c => c.owner_feedback === "needs_context").length,
+  }), [claims]);
+
+  const shown = useMemo(() => (
+    filter === "all" ? claims
+      : filter === "unreviewed" ? claims.filter(c => !c.owner_feedback)
+      : claims.filter(c => c.owner_feedback === filter)
+  ), [claims, filter]);
+
+  const selected = shown.find(c => c.id === selectedId) ?? shown[0] ?? null;
+
   const handleFeedback = useCallback(async (claim: EvidenceClaim, fb: Feedback) => {
-    // optimistic toggle (clicking the active one is still a set — server is the source of truth)
-    setClaims(cs => cs.map(c => c.id === claim.id ? { ...c, owner_feedback: fb } : c));
+    setSaving(true);
+    // Optimistic; clicking the active one is still a set — the server is the source of truth.
+    setClaims(cs => cs.map(c => (c.id === claim.id ? { ...c, owner_feedback: fb } : c)));
     try {
       await submitClaimFeedback(claim.investigation_id, claim.id, fb);
     } catch {
-      load(); // revert to server state on failure
+      load();   // revert to the server's state on failure
+    } finally {
+      setSaving(false);
     }
   }, [load]);
 
-  const validated = claims.filter(c => c.owner_feedback === "validated").length;
-  const disputed  = claims.filter(c => c.owner_feedback === "disputed").length;
+  if (loading) {
+    return <div className="aug-ledger-pad"><SkeletonRows rows={8} /></div>;
+  }
+
+  if (claims.length === 0) {
+    return (
+      <div className="aug-ledger-pad">
+        <EmptyState icon="ok" title="No evidence yet">
+          The ledger fills as deep analyses run on this {canvasId ? "canvas" : "connection"}: each one
+          records the claims it made and the query behind each.
+        </EmptyState>
+      </div>
+    );
+  }
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 16 }}>
-        <span className="aug-label">Evidence Ledger</span>
-        <span style={{ fontSize: 11, color: "var(--t4)" }}>
-          {claims.length} recent claim{claims.length === 1 ? "" : "s"}
-          {validated ? ` · ${validated} validated` : ""}{disputed ? ` · ${disputed} disputed` : ""}
-        </span>
-        <button onClick={load} style={{
-          marginLeft: "auto", padding: "3px 10px", borderRadius: "var(--r2)", fontSize: 11,
-          background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", cursor: "pointer",
-        }}>Refresh</button>
+    <div className="aug-ledger">
+      <div className="aug-ledger-main">
+        <div className="aug-ledger-bar">
+          <div role="group" aria-label="Filter claims by feedback" className="aug-segmented">
+            {FILTERS.map(f => (
+              <Button key={f.id} variant="ghost" size="xs" aria-pressed={filter === f.id}
+                className="aug-seg-item aug-seg-item-mono font-normal"
+                onClick={() => setFilter(f.id)}>
+                {f.label} {counts[f.id]}
+              </Button>
+            ))}
+          </div>
+          <span className="aug-ledger-meta">
+            {claims.length >= LIMIT ? `the latest ${LIMIT} claims` : countNoun(claims.length, "claim")}
+            {counts.disputed > 0 ? ` · ${counts.disputed} disputed` : ""}
+          </span>
+          <Button variant="ghost" size="xs" onClick={load}>Refresh</Button>
+        </div>
+
+        <div className="aug-ledger-scroll">
+          <table className="aug-dt aug-ledger-table">
+            <thead>
+              <tr>
+                <th className="aug-ledger-col-id">id</th>
+                <th>claim · and the query behind it</th>
+                <th className="aug-ledger-col-conf">confidence</th>
+                <th className="aug-ledger-col-fb">feedback</th>
+                <th className="num aug-ledger-col-when">when</th>
+              </tr>
+            </thead>
+            <tbody>
+              {shown.map(c => {
+                const query = queryLine(c.sql_source);
+                return (
+                  <tr key={c.id} aria-selected={selected?.id === c.id || undefined} tabIndex={0}
+                    onClick={() => setSelectedId(c.id)}
+                    onKeyDown={e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); setSelectedId(c.id); } }}>
+                    <td className="aug-ledger-id">{shortId(c.id)}</td>
+                    <td className="aug-ledger-claim">
+                      <span className="aug-ledger-text">{c.claim_text}</span>
+                      <span className="aug-ledger-query">{query ?? "no query recorded"}</span>
+                    </td>
+                    <td><Confidence value={c.confidence ?? 0} /></td>
+                    <td>
+                      {c.owner_feedback
+                        ? <span className={FEEDBACK[c.owner_feedback].cls}>{FEEDBACK[c.owner_feedback].label}</span>
+                        : <span className="aug-ledger-none">—</span>}
+                    </td>
+                    <td className="num aug-ledger-when" title={formatTimestamp(c.created_at)}>{relTime(c.created_at)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {shown.length === 0 && (
+            <p className="aug-ledger-empty">No claim here is {FILTERS.find(f => f.id === filter)?.label}.</p>
+          )}
+        </div>
+
+        <div className="aug-ledger-foot">
+          <span>showing {shown.length} of {claims.length}</span>
+          <span className="aug-ledger-foot-note">
+            guard results and refusals are not recorded with a claim, so the ledger has no guard or verdict column
+          </span>
+        </div>
       </div>
 
-      <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6, marginTop: 0, marginBottom: 18, maxWidth: 720 }}>
-        Every claim from a deep analysis is logged with its source query, confidence and freshness.
-        Validate or dispute them to teach Aughor which findings hold up.
-      </p>
-
-      {loading ? (
-        <div style={{ display: "flex", flexDirection: "column" as const, gap: 12 }}>
-          {[1, 2, 3].map(i => (
-            <div key={i} className="animate-pulse" style={{ height: 96, borderRadius: "var(--r3)", background: "var(--bg-2)" }} />
-          ))}
-        </div>
-      ) : claims.length === 0 ? (
-        <div style={{
-          padding: "32px 24px", borderRadius: "var(--r3)", border: "1px dashed var(--b2)",
-          background: "var(--bg-2)", textAlign: "center" as const, color: "var(--t3)",
-        }}>
-          <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t2)", marginBottom: 6 }}>No evidence yet</div>
-          <div style={{ fontSize: 12, lineHeight: 1.6, maxWidth: 460, margin: "0 auto" }}>
-            The ledger fills as you run deep analyses on this {canvasId ? "canvas" : "connection"}. Each
-            deep analysis records the claims it makes and the queries behind them here.
+      {selected && (
+        <aside className="aug-inspector" aria-label="The selected claim">
+          <div className="aug-inspector-head">
+            <span className="aug-brief-eyebrow">Claim</span>
+            <span className="aug-inspector-id">{shortId(selected.id)}</span>
+            <span className="aug-inspector-end"><Confidence value={selected.confidence ?? 0} title="confidence" /></span>
           </div>
-        </div>
-      ) : (
-        <div style={{ display: "flex", flexDirection: "column" as const, gap: 12 }}>
-          {claims.map(c => (
-            <ClaimCard key={c.id} claim={c} onInvestigate={onInvestigate} onFeedback={handleFeedback} />
-          ))}
-        </div>
+
+          <div className="aug-inspector-sec">
+            <p className="aug-inspector-claim">{selected.claim_text}</p>
+            <dl className="aug-inspector-rows">
+              <div>
+                <dt>recorded</dt>
+                <dd title={formatTimestamp(selected.created_at)}>{relTime(selected.created_at)} ago</dd>
+              </div>
+              <div>
+                <dt>investigation</dt>
+                <dd title={selected.investigation_id}>{selected.investigation_id}</dd>
+              </div>
+              {selected.metric_used && (
+                <div>
+                  <dt>mentions</dt>
+                  <dd>{selected.metric_used}</dd>
+                </div>
+              )}
+            </dl>
+          </div>
+
+          <div className="aug-inspector-sec aug-inspector-sql">
+            <span className="aug-inspector-sub">the query behind it</span>
+            {selected.sql_source
+              ? <pre className="aug-inspector-pre">{selected.sql_source}</pre>
+              : <p className="aug-inspector-note">No query was recorded for this claim.</p>}
+          </div>
+
+          <div className="aug-inspector-sec">
+            <span className="aug-brief-eyebrow">Feedback</span>
+            <div className="aug-inspector-doors">
+              {(Object.keys(FEEDBACK) as Feedback[]).map(k => (
+                <Button key={k} variant="outline" size="xs" disabled={saving}
+                  aria-pressed={selected.owner_feedback === k}
+                  className={`aug-fb-door aug-fb-door-${k}`}
+                  onClick={() => handleFeedback(selected, k)}>
+                  {FEEDBACK[k].door}
+                </Button>
+              ))}
+            </div>
+            <p className="aug-inspector-note">
+              Recorded on this claim. The alert summary counts the claims no one has reviewed; nothing
+              else reads feedback yet, so it does not change future claims.
+            </p>
+          </div>
+
+          {onInvestigate && (
+            <div className="aug-inspector-sec">
+              <div className="aug-inspector-doors">
+                <Button variant="secondary" size="xs"
+                  onClick={() => onInvestigate(`Re-examine this claim: ${selected.claim_text}`)}>
+                  Re-examine
+                </Button>
+              </div>
+            </div>
+          )}
+        </aside>
       )}
     </div>
   );

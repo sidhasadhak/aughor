@@ -28,7 +28,7 @@ export type TimelineRun = {
 };
 
 const STATE_COLOR: Record<string, string> = {
-  SUCCEEDED: "var(--grn4)", RUNNING: "var(--blue4)", PENDING: "var(--t4)",
+  SUCCEEDED: "var(--grn4)", RUNNING: "var(--blue4)", PENDING: "var(--t3)",
   PAUSED: "var(--amb4)", FAILED: "var(--red4)", CANCELLED: "var(--amb4)",
   INTERRUPTED: "var(--amb4)",
   ok: "var(--grn4)", failed: "var(--red4)", running: "var(--blue4)",

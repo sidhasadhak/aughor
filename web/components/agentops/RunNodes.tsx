@@ -154,7 +154,7 @@ export function FieldRow({ label, value, tone = "var(--t2)" }:
   return (
     <div className="aug-fs-xs" style={{ display: "flex", justifyContent: "space-between",
       gap: 8, padding: "2px 9px" }}>
-      <span style={{ color: "var(--t4)", flexShrink: 0 }}>{label}</span>
+      <span style={{ color: "var(--t3)", flexShrink: 0 }}>{label}</span>
       <span style={{ color: tone, textAlign: "right", overflow: "hidden",
         textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{value}</span>
     </div>
@@ -199,7 +199,7 @@ export function UsageBlock({ usage }: {
       {rows.map(([label, v]) => (
         <div key={label} className="aug-fs-xs"
           style={{ display: "flex", justifyContent: "space-between", padding: "1px 9px" }}>
-          <span style={{ color: "var(--t4)" }}>{label}</span>
+          <span style={{ color: "var(--t3)" }}>{label}</span>
           <span style={{ color: label === "Total" ? "var(--t1)" : "var(--t3)",
             fontVariantNumeric: "tabular-nums" }}>
             {v == null ? "—" : formatCount(v)}

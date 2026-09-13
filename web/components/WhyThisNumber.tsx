@@ -18,20 +18,21 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
-import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { StatusChip } from "@/components/brief/StatusChip";
+import { WhyFigure, GuardChip, type GuardVerdict } from "@/components/ui/trust";
 import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
-// A guard's action → chip hue + verb. `flagged` is the only cautionary one; a repair/trust is
-// a guard doing its job (info/positive), never red.
-function guardTone(action: string): { hue: ChipHue; verb: string } {
-  if (action === "flagged") return { hue: "caution", verb: "flagged" };
+// A guard's action → its verdict and verb. `flagged` is the only warned one; a repair is a guard
+// doing its job and the figure surviving it — passed, never red. A receipt is never a refusal.
+function guardVerdict(action: string): { verdict: GuardVerdict; verb: string } {
+  if (action === "flagged") return { verdict: "warned", verb: "flagged" };
   // `trusted` is deliberately absent: it is not a guard and is rendered in its own section.
   // It used to map to "reused a trusted query" here — a claim the receipt cannot support,
   // since the pattern was shown to the model rather than demonstrably used by it.
-  return { hue: "info", verb: action.replace(/_/g, " ") };   // validated_by, etc.
+  return { verdict: "passed", verb: action.replace(/_/g, " ") };   // validated_by, etc.
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -65,11 +66,11 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {groups.map((g) => (
         <div key={g.reason} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>{REASON_TITLE[g.reason]}</div>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{REASON_TITLE[g.reason]}</div>
           {g.nodes.map((n) => (
             <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span className="aug-fs-xs" style={{
-                color: n.present ? "var(--t1)" : "var(--t4)",
+                color: n.present ? "var(--t1)" : "var(--t3)",
                 textDecoration: n.present ? "none" : "line-through",
               }}>
                 {n.label}
@@ -87,7 +88,7 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
 
       {trace.edges.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>How they connect</div>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>How they connect</div>
           {trace.edges.map((e) => {
             const from = trace.nodes.find((n) => n.id === e.from_id);
             const to = trace.nodes.find((n) => n.id === e.to_id);
@@ -96,7 +97,7 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
                 <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
                   {from?.label ?? e.from_id} → {to?.label ?? e.to_id}
                 </span>
-                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{e.label || e.kind.replace(/_/g, " ")}</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{e.label || e.kind.replace(/_/g, " ")}</span>
                 <WarrantChip warrant={e.warrant} showDetail />
               </div>
             );
@@ -110,7 +111,7 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>{title}</div>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>{title}</div>
       {children}
     </div>
   );
@@ -241,12 +242,12 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 <Section title="Guards that fired">
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {guards.map((g, i) => {
-                      const t = guardTone(g.action);
+                      const t = guardVerdict(g.action);
                       return (
                         <div key={`g:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <StatusChip hue={t.hue} strength="soft">{g.name.replace(/_/g, " ")}</StatusChip>
-                            <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{t.verb}</span>
+                            <GuardChip verdict={t.verdict}>{g.name.replace(/_/g, " ")}</GuardChip>
+                            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{t.verb}</span>
                           </div>
                           {g.caveat && <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{g.caveat}</div>}
                         </div>
@@ -258,7 +259,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
 
               {trusted.length > 0 && (
                 <Section title={`Trusted patterns in scope (${trusted.length})`}>
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
                     Verified query patterns for this connection were put in front of the model
                     for this question. That is what the model was shown — not proof that this
                     answer reused one.
@@ -272,7 +273,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
                         {/* The promoter's own warrant sentence, verbatim — it is what
                             separates consistency-verified from human-checked. */}
                         {t.caveat && (
-                          <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                          <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
                             {t.caveat}
                           </div>
                         )}
@@ -284,7 +285,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
 
               {rec.resolved_readings.length > 0 && (
                 <Section title="Readings this connection already settled">
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
                     Applied so this question does not re-ask what was decided before.
                   </div>
                   {rec.resolved_readings.map((r, i) => (
@@ -392,8 +393,8 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 )}
                 {rec.model.id && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Model: {rec.model.id} ({rec.model.role})</div>}
                 {costSummary(rec.cost) && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Cost: {costSummary(rec.cost)}</div>}
-                {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
-                <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
+                {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
+                <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
                 {/* E6 — capture this exact question + executed SQL as an eval case. Moved
                     here from the older per-mode panel, which was the only place it lived. */}
                 {rec.connection.id && rec.executed_sql[0]?.sql && (
@@ -441,10 +442,12 @@ function GlanceChips({ rec }: { rec: PublicReceipt }) {
       title={m.detail ?? "Define this metric in the Semantic Layer to enforce it"}>
       define {m.metric}
     </StatusChip>));
+  const flagged = rec.guards.filter(g => g.action === "flagged").length;
   if (fired > 0) chips.push(
-    <StatusChip key="g" hue="positive" strength="soft">
+    <GuardChip key="g" verdict={flagged > 0 ? "warned" : "passed"}
+      title={flagged > 0 ? `${flagged} of them flagged something a reader must know` : undefined}>
       {fired} guard{fired !== 1 ? "s" : ""} fired
-    </StatusChip>);
+    </GuardChip>);
   if (trusted > 0) chips.push(
     <StatusChip key="t" hue="info" strength="soft"
       title="Verified query patterns were put in front of the model — not proof this answer reused one">
@@ -488,7 +491,7 @@ export function WhyThisNumber({ receiptId }: { receiptId: string }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
         {rec && <GlanceChips rec={rec} />}
         <Button size="xs" variant="ghost" onClick={() => setOpen(true)}
           style={{ color: "var(--t3)" }} aria-label="Why this number — open the Trust Receipt">
@@ -498,4 +501,24 @@ export function WhyThisNumber({ receiptId }: { receiptId: string }) {
       {open && <Drawer receiptId={receiptId} preloaded={rec} onClose={() => setOpen(false)} />}
     </>
   );
+}
+
+/** A receipt as a table cell: its short id in mono with a dashed underline, opening the same
+ *  Trust Receipt drawer as "Why this number →". Nothing is fetched until it is opened — a
+ *  column of these must not cost a request per row. */
+export function ReceiptRef({ receiptId, title }: { receiptId: string; title?: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <WhyFigure className="aug-receipt-ref" title={title ?? "Open the Trust Receipt"} onOpen={() => setOpen(true)}>
+        {receiptLabel(receiptId)}
+      </WhyFigure>
+      {open && <Drawer receiptId={receiptId} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** A receipt id short enough for a column: its last six letters and digits. */
+export function receiptLabel(id: string): string {
+  return `R-${id.replace(/[^a-z0-9]/gi, "").slice(-6)}`;
 }

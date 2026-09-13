@@ -53,7 +53,7 @@ import {
   IconAbc, IconAdjustmentsHorizontal, IconAlertCircle, IconArrowLeft, IconBell,
   IconBookmark, IconCalendar, IconChartBar, IconChevronLeft, IconChevronUp, IconColumns,
   IconCompass, IconCopy, IconDotsVertical, IconDownload, IconExternalLink, IconEye,
-  IconFolder, IconGripVertical, IconHash, IconKey, IconLink, IconLoader2, IconLock,
+  IconFolder, IconGripVertical, IconHash, IconKey, IconLink, IconLock,
   IconMaximize, IconMessageCircle, IconMinus, IconPencil, IconPin, IconPoint,
   IconPlayerStop, IconRobot, IconSchema, IconServer, IconTarget, IconTerminal2,
   IconToggleLeft, IconTrendingDown, IconTrendingUp, IconUser, IconUsers, IconWand,
@@ -180,7 +180,6 @@ const ICONS = {
   message: IconMessageCircle,
   trendup: IconTrendingUp,
   trenddown: IconTrendingDown,
-  spinner: IconLoader2,
   dot: IconPoint,
 
   // disclosure

@@ -122,7 +122,7 @@ export function McpServersSection() {
 
   return (
     <div style={{ marginBottom: 18 }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.06em",
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.06em",
         textTransform: "uppercase", marginBottom: 8 }}>
         MCP servers
       </div>
@@ -148,17 +148,17 @@ export function McpServersSection() {
           <div key={s.id} style={{ border: "1px solid var(--b1)",
             borderRadius: "var(--r2)", background: "var(--bg-1)", padding: "10px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: s.enabled ? "var(--t2)" : "var(--t4)" }}>
+              <span style={{ color: s.enabled ? "var(--t2)" : "var(--t3)" }}>
                 <Icon name="plug" size={15} />
               </span>
               <span className="aug-fs-ui" style={{ fontWeight: 600 }}>
                 {s.name || s.id}
               </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 {s.transport === "stdio" ? "process" : "url"}
               </span>
               {!s.enabled && (
-                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>● off</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>● off</span>
               )}
               <span style={{ flex: 1 }} />
               <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
@@ -170,7 +170,7 @@ export function McpServersSection() {
               </span>
             </div>
 
-            <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 4,
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4,
               fontFamily: "var(--font-mono)", overflow: "hidden",
               textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {s.transport === "stdio"
@@ -253,7 +253,7 @@ export function McpServersSection() {
                 placeholder="Authorization header (optional) — e.g. Bearer …"
                 aria-label="Authorization header"
                 value={authHeader} onChange={e => setAuthHeader(e.target.value)} />
-              <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 <Icon name="lock" size={11} /> Stored encrypted, and never returned by any
                 read — not even masked.
               </div>
@@ -287,7 +287,7 @@ export function McpServersSection() {
               Cancel
             </Button>
           </div>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             Adding a server contacts nothing. Press Discover afterwards to ask it what it
             offers.
           </div>
@@ -336,7 +336,7 @@ function ToolRoster({ tools, discoveredAt, serverId, onChanged }: {
 
   return (
     <div style={{ marginTop: 8, borderTop: "1px solid var(--b1)", paddingTop: 8 }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", marginBottom: 6 }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 6 }}>
         {/* Never the list without its age. */}
         Read from the server at {discoveredAt || "an unknown time"}.
       </div>
@@ -354,12 +354,12 @@ function ToolRoster({ tools, discoveredAt, serverId, onChanged }: {
             <div key={t.name} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
               <span className="aug-fs-xs" style={{ paddingTop: 1, flexShrink: 0,
                 color: callable ? "var(--grn4)" : granted ? "var(--amb4)"
-                  : stale ? "var(--red4)" : "var(--t4)" }}>
+                  : stale ? "var(--red4)" : "var(--t3)" }}>
                 {callable || granted ? "●" : "○"}
               </span>
               <div style={{ minWidth: 0, flex: 1 }}>
                 <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)",
-                  color: callable || granted ? "var(--t2)" : "var(--t4)" }}>{t.name}</span>
+                  color: callable || granted ? "var(--t2)" : "var(--t3)" }}>{t.name}</span>
                 {granted && (
                   // Named a write, not merely allowed. This is the one row on the panel
                   // that changes somebody else's system.
@@ -368,7 +368,7 @@ function ToolRoster({ tools, discoveredAt, serverId, onChanged }: {
                   </span>
                 )}
                 {t.description && (
-                  <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                  <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                     {" "}— {t.description}
                   </span>
                 )}
@@ -381,7 +381,7 @@ function ToolRoster({ tools, discoveredAt, serverId, onChanged }: {
                   </div>
                 )}
                 {granted && (
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
                     Granted{t.granted_by ? ` by ${t.granted_by}` : ""}
                     {t.granted_at ? ` on ${t.granted_at.slice(0, 10)}` : ""}. Covers the
                     declaration this server makes today — if that changes, the grant lapses.

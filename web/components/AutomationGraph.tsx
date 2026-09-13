@@ -59,6 +59,7 @@ import { OutcomeKeyPicker } from "@/components/automations/OutcomeKeyPicker";
 import { canvasClipboard, copyToCanvasClipboard } from "@/lib/canvasClipboard";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
+import { Pending } from "@/components/ui/motion";
 import {
   dryRunAutomationDraft, getActivityEvents, getAutomationGraph, getAutomationLayout,
   getAutomationVocabulary, saveAutomationLayout,
@@ -186,7 +187,7 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
       background: "var(--bg-2)",
     }}>
       <Handle type="target" position={Position.Left} style={{ opacity: 0 }} />
-      <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>{String(data.kind || "")}</div>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{String(data.kind || "")}</div>
       <div className="aug-fs-sm" style={{ fontWeight: 600, marginTop: 1 }}>
         {String(data.label || "")}
       </div>
@@ -225,7 +226,7 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
               // wrong half the time.
               : data.not_taken ? "not taken" : status}
           {!!fan && (
-            <span style={{ color: "var(--t4)" }}>
+            <span style={{ color: "var(--t3)" }}>
               {" "}· {fan.executed} of {fan.count}{fan.skipped ? ` · ${fan.skipped} held` : ""}
             </span>
           )}
@@ -233,10 +234,10 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
               "would run" is noise dressed as a measurement. */}
           {!data.dryRun && typeof data.duration_ms === "number"
             && (data.duration_ms as number) > 0 && (
-            <span style={{ color: "var(--t4)" }}> · {ms(data.duration_ms as number)}</span>
+            <span style={{ color: "var(--t3)" }}> · {ms(data.duration_ms as number)}</span>
           )}
           {typeof data.attempts === "number" && (data.attempts as number) > 1 && (
-            <span style={{ color: "var(--t4)" }}> · {String(data.attempts)} attempts</span>
+            <span style={{ color: "var(--t3)" }}> · {String(data.attempts)} attempts</span>
           )}
         </div>
       )}
@@ -251,13 +252,13 @@ function StepNode({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
       {!!data.agent_id && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 3 }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3 }}>
           {data.delegated ? "delegated to " : "as "}{String(data.agent_id)}
         </div>
       )}
       {/* What this step PRODUCED — the run's own answer to the design's `gives`. */}
       {produced.length > 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 3 }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 3 }}>
           gives {produced.join(" · ")}
         </div>
       )}
@@ -272,7 +273,7 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
       minWidth: 170, maxWidth: 210, borderRadius: 8, padding: "8px 10px",
       border: "1px dashed var(--border)", background: "var(--bg-2)",
     }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>when</div>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>when</div>
       <div className="aug-fs-sm" style={{ fontWeight: 600, marginTop: 1 }}>
         {String(data.detail || "manual")}
       </div>
@@ -282,7 +283,7 @@ function TriggerNode({ data }: { data: Record<string, unknown> }) {
         </div>
       )}
       {!!data.at && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 2 }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }}>
           {String(data.at).replace("T", " ").slice(0, 19)}
           {typeof data.duration_ms === "number" && (data.duration_ms as number) > 0
             ? ` · ${ms(data.duration_ms as number)}` : ""}
@@ -363,7 +364,7 @@ export function toFlow(graph: AutomationGraphData): { nodes: RFNode[]; edges: RF
           : { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
       markerEnd: { type: MarkerType.ArrowClosed,
                    color: isRoute ? "var(--chart-4)"
-                     : isData ? (e.guard ? "var(--chart-3)" : "var(--chart-1)") : "var(--t4)" },
+                     : isData ? (e.guard ? "var(--chart-3)" : "var(--chart-1)") : "var(--t3)" },
       data: { edgeType: e.type },
     };
   });
@@ -533,7 +534,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
     <div style={{
       width: NODE_W, borderRadius: "var(--r3)", background: "var(--bg-2)",
       border: `1px solid ${selected ? hue : "var(--b2)"}`,
-      boxShadow: selected ? `0 0 0 1px ${hue}, var(--shadow-md)` : "var(--shadow-sm)",
+      boxShadow: selected ? `0 0 0 1px ${hue}` : "none",
       transition: "box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out)",
     }}>
       {/* The unnamed target handle SEQUENCE edges land on — an edge with no
@@ -559,7 +560,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
         </span>
         <span className="aug-fs-ui" style={{ fontWeight: 600 }}>{kindLabel}</span>
         <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)",
-          border: "1px solid var(--b1)", borderRadius: "var(--r-pill)",
+          border: "1px solid var(--b1)", borderRadius: "var(--r-chip)",
           padding: "1px 8px", background: "var(--bg-1)" }}>
           {data.alias}
         </span>
@@ -567,22 +568,22 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
           <Button variant="ghost" size="icon-sm" aria-label={`run to ${data.alias}`}
             title="Run the chain to here — inert, nothing is sent"
             disabled={data.running}
-            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t3)" }}
             onClick={() => handlers.runToHere(data.alias)}>
-            <Icon name={data.running ? "spinner" : "run"} size={11} />
+            {data.running ? <Pending label="Running to here" /> : <Icon name="run" size={11} />}
           </Button>
         )}
         {data.canDuplicate && handlers && (
           <Button variant="ghost" size="icon-sm" aria-label={`duplicate ${data.alias}`}
             title="Duplicate this step (⌘D)"
-            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t3)" }}
             onClick={() => handlers.duplicate(data.alias)}>
             <Icon name="copy" size={11} />
           </Button>
         )}
         {data.canRemove && handlers && (
           <Button variant="ghost" size="icon-sm" aria-label={`remove ${data.alias}`}
-            className="nodrag" style={{ width: 20, height: 20, color: "var(--t4)" }}
+            className="nodrag" style={{ width: 20, height: 20, color: "var(--t3)" }}
             onClick={() => handlers.remove(data.alias)}>
             <Icon name="close" size={11} />
           </Button>
@@ -604,7 +605,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
                   title={`bind '${field}' — drag from a gives port`}
                 />
               )}
-              <div className="aug-fs-xs" style={{ color: "var(--t4)", marginBottom: 3,
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", marginBottom: 3,
                 letterSpacing: "0.04em" }}>
                 {field}
               </div>
@@ -651,7 +652,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
                      borderColor: "var(--chart-3)", background: "var(--chart-3)" }}
             title="this step runs only if the guard holds"
           />
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>
             only if{data.when.length > 1 ? ` · ${data.whenLogic}` : ""}
           </div>
           {guardSentences(data.when, guardOps).map((line, i) => (
@@ -676,7 +677,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
                      borderColor: "var(--chart-4)", background: "var(--chart-4)" }}
             title="this step runs when that step's Only if does not hold"
           />
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>
             otherwise
           </div>
           <div className="aug-fs-xs" style={{ color: "var(--chart-4)",
@@ -701,7 +702,7 @@ function DesignStepNodeInner({ data, selected }: { data: DesignNodeData; selecte
                      borderColor: "var(--chart-2)", background: "var(--chart-2)" }}
             title="this step runs once per item of this list"
           />
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.04em" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.04em" }}>
             for each
           </div>
           <div className="aug-fs-xs" style={{ color: "var(--chart-2)",
@@ -755,7 +756,7 @@ function DesignTriggerNode({ data }: {
   return (
     <div style={{
       width: 210, borderRadius: "var(--r3)", background: "var(--bg-2)",
-      border: "1px dashed var(--b3)", boxShadow: "var(--shadow-sm)",
+      border: "1px dashed var(--b3)",
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px",
         borderBottom: "1px solid var(--b1)" }}>
@@ -768,7 +769,7 @@ function DesignTriggerNode({ data }: {
         </span>
         <span className="aug-fs-ui" style={{ fontWeight: 600 }}>Trigger</span>
         {data.conditions.length > 1 && (
-          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t4)" }}>
+          <span className="aug-fs-xs" style={{ marginLeft: "auto", color: "var(--t3)" }}>
             {data.logic === "all" ? "all match" : "any match"}
           </span>
         )}
@@ -1449,7 +1450,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
     }))];
     const spineStyle = {
       style: { stroke: "var(--t4)", strokeWidth: 1, strokeDasharray: "3 3" },
-      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t4)" },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "var(--t3)" },
     };
     // DS-7 — where the spine attaches depends on the scheduling. Ordered: trigger →
     // first step (order itself is the rail's). Parallel: trigger → every ROOT, because
@@ -1599,7 +1600,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
             )}
             {header.enabled !== undefined && (
               <span className="aug-fs-xs" style={{ flexShrink: 0,
-                color: header.enabled ? "var(--grn4)" : "var(--t4)" }}>
+                color: header.enabled ? "var(--grn4)" : "var(--t3)" }}>
                 ● {header.enabled ? "enabled" : "disabled"}
               </span>
             )}
@@ -1709,11 +1710,11 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
         {mode === "execution" && runsOpen && !preview && graph && (
           <div style={{ width: 132, flexShrink: 0, overflowY: "auto",
                         border: "1px solid var(--border)", borderRadius: 8, padding: 4 }}>
-            <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px 4px" }}>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "2px 4px 4px" }}>
               runs
             </div>
             {(graph.runs?.length ?? 0) === 0 && (
-              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "2px 4px" }}>
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "2px 4px" }}>
                 no runs yet
               </div>
             )}
@@ -1729,7 +1730,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
                     color: active ? "var(--t1)" : "var(--t3)",
                   }}>
                   <div>{r.at ? r.at.replace("T", " ").slice(5, 16) : r.id.slice(0, 8)}</div>
-                  <div style={{ color: r.failed > 0 ? "var(--red4)" : "var(--t4)" }}>
+                  <div style={{ color: r.failed > 0 ? "var(--red4)" : "var(--t3)" }}>
                     {r.outcome}{r.failed > 0 ? ` · ${r.failed} failed` : ""}
                   </div>
                 </Button>
@@ -1881,7 +1882,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
                 </Panel>
               )}
               <Panel position="bottom-center">
-                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                   drag a <span style={{ color: "var(--chart-2)" }}>gives</span> dot onto an
                   input dot to bind · double-click an edge to unbind · ⌘D duplicates a
                   selected step, ⌘C / ⌘V move one between chains

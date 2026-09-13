@@ -26,7 +26,7 @@ import {
 import { Button } from "@/components/ui/button";
 
 const LABEL: React.CSSProperties = {
-  fontSize: 11, color: "var(--t4)", textTransform: "uppercase",
+  fontSize: 11, color: "var(--t3)", textTransform: "uppercase",
   letterSpacing: "0.07em", fontWeight: 600, marginBottom: 6,
 };
 
@@ -43,7 +43,7 @@ function EditableField({ value, placeholder, multiline = true, onSave }: {
     return (
       <div onClick={() => setEditing(true)}
         style={{ fontSize: 12, lineHeight: 1.5, cursor: "text", padding: "4px 6px", borderRadius: 4,
-          color: value ? "var(--t2)" : "var(--t4)", border: "1px solid transparent", whiteSpace: "pre-wrap" }}
+          color: value ? "var(--t2)" : "var(--t3)", border: "1px solid transparent", whiteSpace: "pre-wrap" }}
         onMouseEnter={e => (e.currentTarget.style.border = "1px solid var(--b1)")}
         onMouseLeave={e => (e.currentTarget.style.border = "1px solid transparent")}>
         {value || placeholder}
@@ -72,7 +72,7 @@ function EditableField({ value, placeholder, multiline = true, onSave }: {
       <div style={{ display: "flex", gap: 8 }}>
         <Button variant="default" size="xs" disabled={busy} onClick={save}>{busy ? "Saving…" : "Save"}</Button>
         <Button variant="ghost" size="xs" disabled={busy} onClick={() => { setDraft(value); setEditing(false); }}>Cancel</Button>
-        <span style={{ fontSize: 11, color: "var(--t4)", alignSelf: "center" }}>⌘↵ to save · Esc to cancel</span>
+        <span style={{ fontSize: 11, color: "var(--t3)", alignSelf: "center" }}>⌘↵ to save · Esc to cancel</span>
       </div>
     </div>
   );
@@ -85,7 +85,7 @@ function SubField({ caption, value, placeholder, accent, onSave }: {
 }) {
   return (
     <div style={{ marginTop: 6 }}>
-      <div style={{ fontSize: 11, color: accent ?? "var(--t4)", fontWeight: 600, marginBottom: 1 }}>{caption}</div>
+      <div style={{ fontSize: 11, color: accent ?? "var(--t3)", fontWeight: 600, marginBottom: 1 }}>{caption}</div>
       <EditableField value={value} placeholder={placeholder} multiline={false} onSave={onSave} />
     </div>
   );
@@ -109,7 +109,7 @@ export function GlossaryPanel({ table, columns, schema }: {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, [table]);
 
-  if (loading) return <p style={{ padding: 20, fontSize: 12, color: "var(--t4)" }}>Loading…</p>;
+  if (loading) return <p style={{ padding: 20, fontSize: 12, color: "var(--t3)" }}>Loading…</p>;
 
   const colEntry = (c: string) => (entry.columns ?? {})[c] ?? {};
 
@@ -139,7 +139,7 @@ export function GlossaryPanel({ table, columns, schema }: {
         />
 
         <div style={{ marginTop: 6 }}>
-          <div style={{ fontSize: 11, color: "var(--t4)", fontWeight: 600, marginBottom: 1 }}>Join hints — one per line</div>
+          <div style={{ fontSize: 11, color: "var(--t3)", fontWeight: 600, marginBottom: 1 }}>Join hints — one per line</div>
           <EditableField
             value={(entry.joins ?? []).join("\n")}
             placeholder="e.g. customers on customer_id"
@@ -153,7 +153,7 @@ export function GlossaryPanel({ table, columns, schema }: {
 
       {/* ── Column level ── */}
       <div style={LABEL}>Columns</div>
-      {columns.length === 0 && <p style={{ fontSize: 12, color: "var(--t4)" }}>No columns.</p>}
+      {columns.length === 0 && <p style={{ fontSize: 12, color: "var(--t3)" }}>No columns.</p>}
       {columns.map(c => {
         const ce = colEntry(c);
         return (

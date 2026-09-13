@@ -8,6 +8,10 @@
  * "restriction" into visible direction — the user watches the platform steer.
  *
  * Renders nothing for a turn with no receipts (most turns): no chrome, no cost.
+ *
+ * Each step leads with the guard's chip (INSTRUMENT.md §7): the mechanism's short name and its
+ * verdict — ✓ passed when the guard repaired and the figure survived, ◈ warned when it could only
+ * flag or caveat — so a receipt reads as an instrument reading before it reads as a sentence.
  */
 import {
   ChainOfThought,
@@ -17,6 +21,7 @@ import {
   ChainOfThoughtSearchResults,
   ChainOfThoughtStep,
 } from "@/components/ai-elements/chain-of-thought";
+import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 import type { GuardReceipt } from "@/lib/chatTurn";
 
 /** Human labels per guard id — the backend names the mechanism; the surface
@@ -35,6 +40,28 @@ const GUARD_LABEL: Record<string, string> = {
   fanout_replan: "Queries re-planned around a join fan-out",
   fanout_detected: "Join over-count flagged",
 };
+
+/** The mechanism's short name, for its chip. */
+const GUARD_SHORT: Record<string, string> = {
+  fanout_defan: "fan-out",
+  preflight_repair: "preflight",
+  sql_lint: "sql lint",
+  headline_grounding: "grounding",
+  narration_inversion: "narration",
+  measure_grain: "grain",
+  id_arithmetic: "id arithmetic",
+  e1_trust_checks: "trust checks",
+  concentration_pareto: "chart form",
+  fanout_replan: "fan-out",
+  fanout_detected: "fan-out",
+};
+
+/** A repair means the check ran and the figure survived it; a flag or a caveat means the check
+ *  found something the reader must know. A receipt is never a refusal — a withheld figure is
+ *  not a receipt. */
+function verdictFor(action: string): GuardVerdict {
+  return action === "flagged" || action === "caveated" || action === "caveated_headline" ? "warned" : "passed";
+}
 
 /** Compact verb for the action — reads as the step's sub-line with the detail. */
 const ACTION_VERB: Record<string, string> = {
@@ -72,7 +99,12 @@ export function GuardReceiptChain({
         {receipts.map((r, i) => (
           <ChainOfThoughtStep
             key={`${r.guard}-${i}`}
-            label={GUARD_LABEL[r.guard] ?? r.guard}
+            label={
+              <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                <GuardChip verdict={verdictFor(r.action)}>{GUARD_SHORT[r.guard] ?? r.guard.replace(/_/g, " ")}</GuardChip>
+                <span>{GUARD_LABEL[r.guard] ?? r.guard}</span>
+              </span>
+            }
             description={
               r.detail
                 ? `${ACTION_VERB[r.action] ?? r.action}: ${r.detail}`
@@ -84,13 +116,13 @@ export function GuardReceiptChain({
               <ChainOfThoughtSearchResults>
                 {r.before && (
                   <ChainOfThoughtSearchResult>
-                    <span style={{ color: "var(--t4)" }}>before</span>
+                    <span style={{ color: "var(--t3)" }}>before</span>
                     <span className="font-mono">{truncate(r.before)}</span>
                   </ChainOfThoughtSearchResult>
                 )}
                 {r.after && (
                   <ChainOfThoughtSearchResult>
-                    <span style={{ color: "var(--t4)" }}>after</span>
+                    <span style={{ color: "var(--t3)" }}>after</span>
                     <span className="font-mono">{truncate(r.after)}</span>
                   </ChainOfThoughtSearchResult>
                 )}

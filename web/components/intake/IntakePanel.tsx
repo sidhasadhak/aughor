@@ -70,7 +70,7 @@ const VERDICT_STYLE: Record<IntakeVerdict, { word: string; color: string }> = {
   new: { word: "new", color: "var(--grn4)" },
   changed: { word: "changed", color: "var(--blue4)" },
   conflict: { word: "conflict", color: "var(--amb4)" },
-  identical: { word: "already declared", color: "var(--t4)" },
+  identical: { word: "already declared", color: "var(--t3)" },
 };
 
 function VerdictChip({ verdict }: { verdict: IntakeVerdict }) {
@@ -94,7 +94,7 @@ function PayloadView({ payload }: { payload: Record<string, unknown> }) {
     <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "4px 12px", padding: "8px 0 2px" }}>
       {entries.map(([k, v]) => (
         <React.Fragment key={k}>
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", paddingTop: 1 }}>{k}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", paddingTop: 1 }}>{k}</span>
           {LONG_FIELDS.has(k) && typeof v === "string" ? (
             <pre className="aug-fs-xs" style={{
               margin: 0, whiteSpace: "pre-wrap", wordBreak: "break-word",
@@ -163,7 +163,7 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
             </Button>
           </div>
         ) : (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", flexShrink: 0 }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", flexShrink: 0 }}>
             {cand.status === "accepted" && cand.target_ref
               ? <>applied → <span style={{ fontFamily: "var(--font-mono)" }}>{cand.target_ref}</span></>
               : cand.status}
@@ -197,7 +197,7 @@ function CandidateRow({ cand, decision, onDecide, edit, onEdit, applyError }: {
                   background: "var(--bg-1)", border: `1px solid ${editInvalid ? "var(--red4)" : "var(--b1)"}`,
                   borderRadius: "var(--r2)", padding: 8, boxSizing: "border-box", resize: "vertical" }} />
               <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span className="aug-fs-xs" style={{ color: editInvalid ? "var(--red4)" : "var(--t4)" }}>
+                <span className="aug-fs-xs" style={{ color: editInvalid ? "var(--red4)" : "var(--t3)" }}>
                   {editInvalid ? "Not valid JSON yet." : "An edited object is accepted with your version."}
                 </span>
                 <Button size="xs" variant="ghost" onClick={() => onEdit(undefined)}>Discard edit</Button>
@@ -227,11 +227,11 @@ function ProvenanceNote({ targetRef }: { targetRef: string }) {
     })();
     return () => { live = false; };
   }, [targetRef]);
-  if (err) return <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>trail unavailable</span>;
-  if (!trail) return <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>…</span>;
+  if (err) return <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>trail unavailable</span>;
+  if (!trail) return <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>…</span>;
   const t = trail[0] as { bundle_source?: string; uploaded_by?: string; uploaded_at?: string;
     resolved_by?: string; content_hash?: string } | undefined;
-  if (!t) return <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>no trail recorded</span>;
+  if (!t) return <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>no trail recorded</span>;
   return (
     <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
       from <strong>{t.bundle_source || "an import"}</strong>, uploaded by {t.uploaded_by || "?"}
@@ -564,7 +564,7 @@ export function IntakePanel({ connId }: { connId: string }) {
             </Button>
           </div>
           {bundles.length === 0 && (
-            <p className="aug-fs-sm" style={{ color: "var(--t4)", margin: "8px 0" }}>
+            <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: "8px 0" }}>
               Nothing imported yet — pick a door above to stage your first plan.
             </p>
           )}
@@ -579,7 +579,7 @@ export function IntakePanel({ connId }: { connId: string }) {
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {b.source || "bundle"}
               </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 {formatTimestamp(b.uploaded_at, "short")} · {b.uploaded_by || "?"}
               </span>
             </Button>
@@ -589,7 +589,7 @@ export function IntakePanel({ connId }: { connId: string }) {
         {/* Plan */}
         <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 8 }}>
           {!plan && (
-            <p className="aug-fs-sm" style={{ color: "var(--t4)", margin: "8px 0" }}>
+            <p className="aug-fs-sm" style={{ color: "var(--t3)", margin: "8px 0" }}>
               {bundles.length ? "Select an import to review its plan." : ""}
             </p>
           )}
@@ -600,7 +600,7 @@ export function IntakePanel({ connId }: { connId: string }) {
                 <span style={{ color: "var(--grn4)" }}>{plan.summary.new} new</span>
                 <span style={{ color: "var(--blue4)" }}>{plan.summary.changed} changed</span>
                 {plan.summary.conflict > 0 && <span style={{ color: "var(--amb4)" }}>{plan.summary.conflict} in conflict</span>}
-                <span style={{ color: "var(--t4)" }}>{plan.summary.identical} already declared</span>
+                <span style={{ color: "var(--t3)" }}>{plan.summary.identical} already declared</span>
               </div>
 
               {pending.length > 0 && (
@@ -657,7 +657,7 @@ export function IntakePanel({ connId }: { connId: string }) {
                       {c.status === "accepted"
                         ? <><span style={{ color: "var(--grn4)" }}>accepted</span>
                             {c.target_ref && <ProvenanceNote targetRef={c.target_ref} />}</>
-                        : <span style={{ color: "var(--t4)" }}>dismissed</span>}
+                        : <span style={{ color: "var(--t3)" }}>dismissed</span>}
                     </div>
                   ))}
                 </div>
@@ -670,7 +670,7 @@ export function IntakePanel({ connId }: { connId: string }) {
                     {noops.length} already declared — nothing to decide
                   </Button>
                   {showNoop && (
-                    <ul className="aug-fs-sm" style={{ color: "var(--t4)", margin: "6px 0 0", paddingLeft: 26 }}>
+                    <ul className="aug-fs-sm" style={{ color: "var(--t3)", margin: "6px 0 0", paddingLeft: 26 }}>
                       {noops.map(c => <li key={c.id}>{KIND_WORD[c.kind] ?? c.kind}: {candidateLabel(c.kind, c.payload)}</li>)}
                     </ul>
                   )}
@@ -708,7 +708,7 @@ export function IntakePanel({ connId }: { connId: string }) {
           <pre className="aug-fs-xs" style={{ margin: 0, maxHeight: 260, overflow: "auto",
             fontFamily: "var(--font-mono)", color: "var(--t2)", background: "var(--bg-1)",
             border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 10 }}>{exportText}</pre>
-          <p className="aug-fs-xs" style={{ color: "var(--t4)", margin: 0 }}>
+          <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: 0 }}>
             Import it on another deployment and an identical re-import plans zero changes.
           </p>
         </div>

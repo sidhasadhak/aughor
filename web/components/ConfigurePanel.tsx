@@ -127,7 +127,7 @@ function AboutTab({
           onChange={(e) => setDesc(e.target.value)}
           rows={4}
           placeholder="What is this canvas about? Auto-generated from your data — edit anytime."
-          className="w-full resize-none border border-[var(--b2)] rounded-md px-3 py-2 aug-fs-sm text-[var(--t1)] placeholder:text-[var(--t4)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
+          className="w-full resize-none border border-[var(--b2)] rounded-md px-3 py-2 aug-fs-sm text-[var(--t1)] placeholder:text-[var(--t3)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
           style={{ background: "var(--bg-0)", fontFamily: "var(--font-ui)" }}
         />
       </div>
@@ -342,7 +342,7 @@ function DataTab({
             {isAll
               ? "All tables included in this canvas."
               : `${includedCount} of ${allTables.length} table${allTables.length === 1 ? "" : "s"} included.`}
-            {saving && <span className="text-[var(--t4)]"> · saving…</span>}
+            {saving && <span className="text-[var(--t3)]"> · saving…</span>}
           </p>
           <div className="flex items-center gap-2 shrink-0">
             <button
@@ -416,7 +416,7 @@ function DataTab({
             <span className="w-20 text-right text-[var(--t3)] shrink-0 font-mono">
               {compactNumber(Number(t.row_count), 1)}
             </span>
-            <button onClick={() => setSelected(t)} className="text-[var(--t4)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
+            <button onClick={() => setSelected(t)} className="text-[var(--t3)] group-hover:text-[var(--t2)] transition ml-1 shrink-0">
               <Icon name="chevr" size={16} />
             </button>
           </div>
@@ -483,7 +483,7 @@ function InstructionsEditor({
         disabled={!loaded}
         aria-label={label}
         placeholder={loaded ? placeholder : "Loading…"}
-        className="flex-1 resize-none border border-[var(--b2)] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[var(--t1)] placeholder:text-[var(--t4)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
+        className="flex-1 resize-none border border-[var(--b2)] rounded-md px-3 py-2.5 aug-fs-sm font-mono text-[var(--t1)] placeholder:text-[var(--t3)] focus:outline-none focus:border-[var(--bfocus)] transition-colors"
         style={{ background: "var(--bg-0)" }}
       />
       <div className="flex justify-end shrink-0">
@@ -585,7 +585,7 @@ export function ConfigurePanel({ canvas, connections, onClose, onCanvasUpdate, o
 
       {/* Panel — anchored below topbars, not covering the header */}
       <div
-        className="fixed right-0 bottom-0 z-50 flex flex-col border-l border-[var(--b1)] shadow-2xl"
+        className="fixed right-0 bottom-0 z-50 flex flex-col border-l border-[var(--b1)] shadow-[var(--shadow-md)]"
         style={{ top: "100px", width: "400px", background: "var(--bg-0)" }}
       >
         {/* Panel header */}

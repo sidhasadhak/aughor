@@ -391,7 +391,7 @@ export function ResultsGrid({
             style={{ width: 180, background: "var(--bg-0)", border: "1px solid var(--b1)",
               borderRadius: "var(--r1)", color: "var(--t1)", padding: "2px 7px", outline: "none" }}
           />
-          <span className="aug-fs-xs" style={{ color: find.trim() && !matches.length ? "var(--amb4)" : "var(--t4)",
+          <span className="aug-fs-xs" style={{ color: find.trim() && !matches.length ? "var(--amb4)" : "var(--t3)",
             whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }} data-testid="grid-find-count">
             {!find.trim() ? "" : matches.length ? `${findIdx + 1} of ${formatCount(matches.length)}` : "no match"}
           </span>
@@ -509,7 +509,7 @@ export function ResultsGrid({
                   </span>
                   {/* The arrow is drawn only when a sort is active: a permanent pair of
                       faded arrows on every column is noise on a wide result. */}
-                  {sorted && <span style={{ color: "var(--t4)" }}>{sorted === "desc" ? "↓" : "↑"}</span>}
+                  {sorted && <span style={{ color: "var(--t3)" }}>{sorted === "desc" ? "↓" : "↑"}</span>}
                   <div
                     onMouseDown={header.getResizeHandler?.()}
                     onTouchStart={header.getResizeHandler?.()}
@@ -568,7 +568,7 @@ export function ResultsGrid({
                         ...cellBase, width: cell.column.getSize(), flexShrink: 0,
                         textAlign: view.numeric.has(name) ? "right" : "left",
                         fontVariantNumeric: view.numeric.has(name) ? "tabular-nums" : undefined,
-                        color: isNull ? "var(--t4)" : "var(--t2)",
+                        color: isNull ? "var(--t3)" : "var(--t2)",
                         fontFamily: "var(--font-code, monospace)",
                         cursor: "cell",
                         background: inSel ? "var(--bg-sel)" : undefined,
@@ -594,7 +594,7 @@ export function ResultsGrid({
       : { display: "flex", flexDirection: "column" }}>
       {controlBar}
       {transposed && view.transposeCut > 0 && (
-        <div className="aug-fs-xs" style={{ padding: "3px 10px", color: "var(--t4)",
+        <div className="aug-fs-xs" style={{ padding: "3px 10px", color: "var(--t3)",
           background: "var(--bg-1)", borderBottom: "1px solid var(--b0)" }}>
           Showing the first {TRANSPOSE_ROWS} rows as columns — {formatCount(view.transposeCut)} more
           are in the result but not in this view.
@@ -611,7 +611,7 @@ export function ResultsGrid({
           display: "flex", flexDirection: "column", maxHeight: 220 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 10px" }}>
             <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{focusedName}</span>
-            <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
               row {sel.r1 + 1}{focused === null ? " · NULL" : ` · ${formatCount(String(focused).length)} chars`}
             </span>
             <span style={{ flex: 1 }} />
@@ -625,7 +625,7 @@ export function ResultsGrid({
           </div>
           <pre className="aug-fs-sm" data-testid="grid-value-text" style={{ margin: 0, padding: "0 10px 10px",
             overflow: "auto", whiteSpace: "pre-wrap", wordBreak: "break-word",
-            fontFamily: "var(--font-mono)", color: focused === null ? "var(--t4)" : "var(--t2)" }}>
+            fontFamily: "var(--font-mono)", color: focused === null ? "var(--t3)" : "var(--t2)" }}>
             {viewerText(focused)}
           </pre>
         </div>

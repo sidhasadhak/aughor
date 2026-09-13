@@ -39,14 +39,11 @@ declare global {
 const GSI_SRC = "https://accounts.google.com/gsi/client";
 
 function StaticAvatar() {
+  // No identity is configured, so there is no one to name — the avatar alone, in the
+  // user-menu frame the signed-in state wears.
   return (
-    <div className="aug-fs-xs" style={{
-      width: 28, height: 28, borderRadius: "var(--r2)",
-      background: "var(--bg-3)", border: "1px solid var(--b2)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      color: "var(--t2)", fontWeight: 600,
-    }}>
-      AU
+    <div className="aug-user-menu" style={{ padding: 2 }} title="No identity configured">
+      <span className="aug-avatar">AU</span>
     </div>
   );
 }
@@ -124,20 +121,19 @@ export function AuthControl() {
   return (
     <div style={{ position: "relative" }}>
       <Button variant="ghost" onClick={() => setMenuOpen(o => !o)} title={email}
-        className="h-auto p-0 font-normal aug-fs-xs"
-        style={{
-          width: 28, height: 28, borderRadius: "var(--r2)",
-          background: "var(--grn1, var(--bg-3))", border: "1px solid var(--b2)",
-          display: "flex", alignItems: "center", justifyContent: "center",
-          color: "var(--t1)", fontWeight: 600, cursor: "pointer",
-        }}>
-        {initials}
+        aria-expanded={menuOpen}
+        className="aug-user-menu h-auto font-normal">
+        <span className="aug-avatar">{initials}</span>
+        <span style={{ maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {email.split("@")[0]}
+        </span>
+        <span aria-hidden className="aug-mono" style={{ color: "var(--t3)" }}>▾</span>
       </Button>
       {menuOpen && (
         <div style={{
           position: "absolute", right: 0, top: 34, zIndex: 60, minWidth: 200,
-          background: "var(--bg-1)", border: "1px solid var(--b2)",
-          borderRadius: "var(--r3)", padding: 10,
+          background: "var(--bg-3)", border: "1px solid var(--b2)",
+          borderRadius: "var(--r2)", boxShadow: "var(--shadow-sm)", padding: 10,
           display: "flex", flexDirection: "column", gap: 8,
         }}>
           <span className="aug-fs-sm" style={{ color: "var(--t1)", overflowWrap: "anywhere" }}>{email}</span>

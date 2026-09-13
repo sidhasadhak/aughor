@@ -146,7 +146,7 @@ export function DeployMenu({ automationId, onChanged }: DeployMenuProps) {
                       ● {STATE[d.state].label}
                     </span>
                     {d.detail && (
-                      <span className="aug-fs-xs" style={{ color: "var(--t4)", overflow: "hidden",
+                      <span className="aug-fs-xs" style={{ color: "var(--t3)", overflow: "hidden",
                         textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.detail}</span>
                     )}
                   </div>

@@ -141,7 +141,7 @@ function PaletteRow({ entry, onAdd }: RowProps) {
             what the next one can bind to, and that is not visible until the node is on
             the canvas otherwise. */}
         {!!gives && usable && (
-          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             gives {gives}
           </div>
         )}
@@ -267,7 +267,7 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
 
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 6px" }}>
         {entries === null ? (
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "6px 4px" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "6px 4px" }}>
             Loading…
           </div>
         ) : failed ? (
@@ -284,7 +284,7 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
                 <div
                   className="aug-fs-xs"
                   style={{
-                    color: "var(--t4)", textTransform: "uppercase",
+                    color: "var(--t3)", textTransform: "uppercase",
                     letterSpacing: "0.06em", padding: "4px 4px 5px",
                   }}
                 >
@@ -312,7 +312,7 @@ export function AutomationPalette({ connId, only, bindFilter, onClearBindFilter,
           })
         )}
         {entries !== null && !failed && !shown.length && (
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "6px 4px" }}>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "6px 4px" }}>
             Nothing matches “{query}”.
           </div>
         )}

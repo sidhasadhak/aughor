@@ -198,7 +198,7 @@ export function SavedQueryBar({
         {activeName
           ? <span style={{ maxWidth: 110, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{activeName}</span>
           : "Saved"}
-        {list.length > 0 && <span style={{ color: "var(--t4)" }}>{list.length}</span>}
+        {list.length > 0 && <span style={{ color: "var(--t3)" }}>{list.length}</span>}
       </Button>
 
       <Button
@@ -245,7 +245,7 @@ export function SavedQueryBar({
 
             <div style={{ maxHeight: 320, overflowY: "auto" }}>
               {list.length === 0 ? (
-                <p className="aug-fs-ui" style={{ padding: "12px", color: "var(--t4)" }}>
+                <p className="aug-fs-ui" style={{ padding: "12px", color: "var(--t3)" }}>
                   No saved queries for this connection yet.
                 </p>
               ) : list.map(q => (
@@ -261,20 +261,20 @@ export function SavedQueryBar({
                 >
                   <div style={{ minWidth: 0, flex: 1 }}>
                     <p className="aug-fs-ui truncate" style={{ color: "var(--t1)" }}>{q.name}</p>
-                    <p className="aug-fs-ui truncate font-mono" style={{ color: "var(--t4)" }}>
+                    <p className="aug-fs-ui truncate font-mono" style={{ color: "var(--t3)" }}>
                       {(q.sql || "").replace(/\s+/g, " ").slice(0, 52)}
                     </p>
                   </div>
                   {/* Which editor this opens in, stated before you click rather than
                       discovered by watching the mode change under you. */}
-                  <span className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>
+                  <span className="aug-fs-ui shrink-0" style={{ color: "var(--t3)" }}>
                     {isVisualQuery(q) ? "visual" : "sql"}
                   </span>
                   <Button
                     variant="ghost" size="xs" title="Delete saved query"
                     onClick={e => void remove(q.id, e)}
                     className="h-auto shrink-0 p-0 font-normal leading-none opacity-0 transition group-hover/sq:opacity-100 hover:bg-transparent dark:hover:bg-transparent"
-                    style={{ color: "var(--t4)" }}
+                    style={{ color: "var(--t3)" }}
                   >
                     ✕
                   </Button>

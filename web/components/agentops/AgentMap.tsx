@@ -188,7 +188,7 @@ export function AgentMap({
         ...(e.dashed ? { strokeDasharray: "4 4" } : {}),
       },
       markerEnd: { type: MarkerType.ArrowClosed,
-                   color: e.dashed ? "var(--t4)" : "var(--b2)" },
+                   color: e.dashed ? "var(--t3)" : "var(--b2)" },
     }));
     return { nodes: rfNodes, edges: rfEdges };
   }, [agent, bots, automations, alerts, connections, open]);

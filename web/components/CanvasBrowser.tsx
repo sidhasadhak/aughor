@@ -94,7 +94,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 32%, transparent)"}`,
           display: "flex", alignItems: "center", justifyContent: "center",
         }}>
-          <Icon name={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+          <Icon name={CANVAS_ICON} size={17} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
         </div>
         <div style={{ minWidth: 0, flex: 1 }}>
           <div style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", lineHeight: 1.35,
@@ -110,10 +110,10 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
             onClick={e => { e.stopPropagation(); onDelete(); }}
             title="Delete Data Canvas"
             className="aug-canvas-card-delete"
-            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)",
+            style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)",
               padding: 3, marginTop: -2, marginRight: -2, borderRadius: 4, opacity: 0, transition: "opacity .12s, color .1s" }}
             onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "var(--t4)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; }}
           >
             <Icon name={TRASH_ICON} size={13} />
           </button>
@@ -134,7 +134,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           <span style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "2px 8px",
             borderRadius: 4, background: "var(--bg-3)", border: "1px solid var(--b1)",
             fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap" }}>
-            <Icon name={DB_ICON} size={10} color="var(--t4)" />{connection.name}
+            <Icon name={DB_ICON} size={10} color="var(--t3)" />{connection.name}
           </span>
         )}
         <span style={{ display: "inline-flex", alignItems: "center", padding: "2px 8px", borderRadius: 4,
@@ -143,7 +143,7 @@ function CanvasCard({ row, onSelect, onDelete }: { row: CanvasRow; onSelect: () 
           fontSize: 11, color: n === 0 ? "var(--grn4)" : "var(--t3)", whiteSpace: "nowrap" }}>
           {tableLabel}
         </span>
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap" }}>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>
           {updated}
         </span>
       </div>
@@ -251,14 +251,14 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               : "color-mix(in srgb, var(--blue3) 35%, transparent)"}`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <Icon name={CANVAS_ICON} size={13} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+            <Icon name={CANVAS_ICON} size={13} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
           </div>
           <div style={{ minWidth: 0 }}>
             <div style={{ fontSize: 13, fontWeight: 500, color: "var(--t1)" }}>
               {canvas.name}
             </div>
             {canvas.is_legacy && (
-              <div style={{ fontSize: 11, color: "var(--t4)" }}>auto-generated</div>
+              <div style={{ fontSize: 11, color: "var(--t3)" }}>auto-generated</div>
             )}
           </div>
         </div>
@@ -289,7 +289,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
       key: "connection",
       width: 200,
       render: (_, { connection }) => {
-        if (!connection) return <span style={{ color: "var(--t4)" }}>—</span>;
+        if (!connection) return <span style={{ color: "var(--t3)" }}>—</span>;
         const ct = connection.conn_type;
         const label = ct === "duckdb" ? "DuckDB" : ct === "postgres" ? "PG" : ct.toUpperCase().slice(0, 4);
         return (
@@ -299,9 +299,9 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             background: "var(--bg-3)", border: "1px solid var(--b1)",
             fontSize: 11, color: "var(--t2)", whiteSpace: "nowrap",
           }}>
-            <Icon name={DB_ICON} size={10} color="var(--t4)" />
+            <Icon name={DB_ICON} size={10} color="var(--t3)" />
             {connection.name}
-            <span style={{ color: "var(--t4)", fontSize: 11 }}>{label}</span>
+            <span style={{ color: "var(--t3)", fontSize: 11 }}>{label}</span>
           </span>
         );
       },
@@ -341,13 +341,13 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
             title="Delete Data Canvas"
             style={{
               background: "none", border: "none", cursor: "pointer",
-              color: "var(--t4)", padding: "4px", opacity: 0,
+              color: "var(--t3)", padding: "4px", opacity: 0,
               display: "inline-flex", alignItems: "center", borderRadius: 3,
               transition: "color .1s, opacity .1s",
             }}
             className="aug-canvas-row-delete"
             onMouseEnter={e => { e.currentTarget.style.color = "var(--red4)"; }}
-            onMouseLeave={e => { e.currentTarget.style.color = "var(--t4)"; }}
+            onMouseLeave={e => { e.currentTarget.style.color = "var(--t3)"; }}
           >
             <Icon name={TRASH_ICON} size={13} />
           </button>
@@ -394,7 +394,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           onFocusCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b2)"; }}
           onBlurCapture={e => { (e.currentTarget as HTMLDivElement).style.borderColor = "var(--b1)"; }}
         >
-          <Icon name={SEARCH_ICON} size={14} color="var(--t4)" />
+          <Icon name={SEARCH_ICON} size={14} color="var(--t3)" />
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
@@ -406,7 +406,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
           />
           {search && (
             <button onClick={() => setSearch("")}
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0 }}>
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0 }}>
               ✕
             </button>
           )}
@@ -471,9 +471,9 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
               onMouseEnter={e => { if (!sortOpen) e.currentTarget.style.background = "var(--bg-2)"; }}
               onMouseLeave={e => { if (!sortOpen) e.currentTarget.style.background = "transparent"; }}
             >
-              <span style={{ color: "var(--t4)" }}>Sort:</span>
+              <span style={{ color: "var(--t3)" }}>Sort:</span>
               {SORT_LABELS[sort]}
-              <Icon name={CHEVD_ICON} size={12} color="var(--t4)" />
+              <Icon name={CHEVD_ICON} size={12} color="var(--t3)" />
             </button>
             {sortOpen && (
               <div style={{

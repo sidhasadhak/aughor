@@ -1,274 +1,159 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import { getOrgIntelligence, deleteOrgInsight, type OrgInsight } from "@/lib/api";
+/**
+ * OrgIntelPanel — what the organisation shares (Aughor Intelligence · 08 Org).
+ *
+ * Drawn from the one thing Org records: findings promoted from a connection so every workspace can
+ * read them, as a ledger — domain, the finding with the angle it came from, novelty, when it was
+ * promoted. The design's Org layer also infers people and ownership, who to ask, and open
+ * disagreements between people's readings of a term. Nothing stores any of that, so none of it is
+ * drawn, and the rail says so in a sentence rather than leaving a reader to look for it.
+ *
+ * `GET /org-intelligence` reads the vector store and answers [] when that store fails, so an outage
+ * reads the same as nothing promoted. Only an HTTP failure is shown as an error.
+ */
+import { useCallback, useEffect, useMemo, useState } from "react";
 
-// ── Novelty label ──────────────────────────────────────────────────────────────
-
-function noveltyLabel(n: number): { label: string; color: string } {
-  if (n >= 5) return { label: "High", color: "var(--grn3)" };
-  if (n >= 3) return { label: "Mid",  color: "var(--amb3)" };
-  return           { label: "Low",  color: "var(--t3)" };
-}
-
-function fmtDate(iso: string): string {
-  try {
-    return new Date(iso).toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-  } catch {
-    return iso;
-  }
-}
-
-// ── Insight card ──────────────────────────────────────────────────────────────
-
-function InsightCard({ insight, onDelete }: { insight: OrgInsight; onDelete: () => void }) {
-  const [deleting, setDeleting] = useState(false);
-  const nov = noveltyLabel(insight.novelty ?? 3);
-
-  const handleDelete = async () => {
-    if (deleting) return;
-    setDeleting(true);
-    try {
-      await deleteOrgInsight(insight.id);
-      onDelete();
-    } catch {
-      setDeleting(false);
-    }
-  };
-
-  return (
-    <div
-      style={{
-        background: "var(--bg-1)",
-        border: "1px solid var(--b1)",
-        borderRadius: 6,
-        padding: "10px 12px",
-        display: "flex",
-        flexDirection: "column",
-        gap: 6,
-      }}
-    >
-      {/* Meta row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-        {insight.domain && (
-          <span
-            style={{
-              fontSize: 11,
-              fontWeight: 600,
-              textTransform: "uppercase",
-              letterSpacing: "0.06em",
-              color: "var(--t3)",
-              background: "color-mix(in srgb, var(--t3) 12%, transparent)",
-              borderRadius: 3,
-              padding: "1px 5px",
-            }}
-          >
-            {insight.domain}
-          </span>
-        )}
-        {insight.angle && (
-          <span style={{ fontSize: 11, color: "var(--t3)" }}>{insight.angle}</span>
-        )}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: nov.color, fontWeight: 600 }}>
-          {nov.label} novelty
-        </span>
-      </div>
-
-      {/* Finding text */}
-      <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>
-        {insight.text}
-      </p>
-
-      {/* Footer row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
-        <span style={{ fontSize: 11, color: "var(--t3)" }}>
-          Promoted {fmtDate(insight.promoted_at)}
-        </span>
-        {insight.canvas_id && (
-          <span
-            style={{
-              fontSize: 11,
-              color: "var(--t3)",
-              background: "var(--bg-2)",
-              borderRadius: 3,
-              padding: "1px 5px",
-              fontFamily: "var(--font-mono)",
-            }}
-          >
-            canvas:{insight.canvas_id.slice(0, 8)}
-          </span>
-        )}
-        <button
-          onClick={handleDelete}
-          disabled={deleting}
-          style={{
-            marginLeft: "auto",
-            fontSize: 11,
-            color: deleting ? "var(--t3)" : "var(--red3)",
-            background: "none",
-            border: "none",
-            cursor: deleting ? "default" : "pointer",
-            padding: "2px 6px",
-            borderRadius: 3,
-          }}
-        >
-          {deleting ? "…" : "Remove"}
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ── Main panel ─────────────────────────────────────────────────────────────────
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SkeletonRows } from "@/components/ui/motion";
+import { ErrorState } from "@/components/ui/states";
+import { deleteOrgInsight, getOrgIntelligence, type OrgInsight } from "@/lib/api";
+import { countNoun, formatTimestamp, relTime } from "@/lib/format";
 
 export function OrgIntelPanel() {
   const [insights, setInsights] = useState<OrgInsight[]>([]);
   const [loading, setLoading]   = useState(true);
+  const [failed, setFailed]     = useState(false);
   const [search, setSearch]     = useState("");
+  const [removing, setRemoving] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    setFailed(false);
     try {
       setInsights(await getOrgIntelligence());
     } catch {
       setInsights([]);
+      setFailed(true);
     } finally {
       setLoading(false);
     }
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { void load(); }, [load]);
 
-  const handleDelete = (id: string) => {
-    setInsights(prev => prev.filter(i => i.id !== id));
-  };
+  const remove = useCallback(async (id: string) => {
+    setRemoving(id);
+    try {
+      await deleteOrgInsight(id);
+      setInsights(prev => prev.filter(i => i.id !== id));
+    } catch {
+      // It stays listed: the server still holds it.
+    } finally {
+      setRemoving(null);
+    }
+  }, []);
 
-  // Filter + group by domain
-  const filtered = insights.filter(i =>
-    !search || i.text.toLowerCase().includes(search.toLowerCase()) || i.domain.toLowerCase().includes(search.toLowerCase())
-  );
-
-  const domains = Array.from(new Set(filtered.map(i => i.domain || "General"))).sort();
+  const query = search.trim().toLowerCase();
+  const shown = useMemo(() => {
+    const list = query
+      ? insights.filter(i => [i.text, i.domain, i.angle].some(v => (v || "").toLowerCase().includes(query)))
+      : insights;
+    return [...list].sort((a, b) =>
+      (a.domain || "General").localeCompare(b.domain || "General") || (b.promoted_at || "").localeCompare(a.promoted_at || ""));
+  }, [insights, query]);
+  const domainCount = useMemo(() => new Set(insights.map(i => i.domain || "General")).size, [insights]);
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", flex: 1, overflow: "hidden", gap: 0 }}>
-      {/* Toolbar */}
-      <div
-        style={{
-          padding: "10px 16px",
-          borderBottom: "1px solid var(--b1)",
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          flexShrink: 0,
-        }}
-      >
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Filter findings…"
-          style={{
-            flex: 1,
-            background: "var(--bg-2)",
-            border: "1px solid var(--b1)",
-            borderRadius: 5,
-            padding: "5px 10px",
-            fontSize: 12,
-            color: "var(--t1)",
-            outline: "none",
-          }}
-        />
-        <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>
-          {filtered.length} insight{filtered.length !== 1 ? "s" : ""}
-        </span>
-        <button
-          onClick={load}
-          style={{
-            fontSize: 11,
-            color: "var(--t3)",
-            background: "none",
-            border: "1px solid var(--b1)",
-            borderRadius: 4,
-            padding: "4px 8px",
-            cursor: "pointer",
-          }}
-        >
-          Refresh
-        </button>
-      </div>
-
-      {/* Body */}
-      <div style={{ flex: 1, overflowY: "auto", padding: "16px" }}>
-        {loading ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {[1, 2, 3].map(i => (
-              <div
-                key={i}
-                className="animate-pulse"
-                style={{ height: 80, borderRadius: 6, background: "var(--bg-1)" }}
-              />
-            ))}
-          </div>
-        ) : filtered.length === 0 ? (
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              gap: 10,
-              height: 240,
-              color: "var(--t3)",
-            }}
-          >
-            <span style={{ fontSize: 28, opacity: 0.25 }}>◈</span>
-            <span style={{ fontSize: 12 }}>
-              {search ? "No findings match your filter" : "No org-wide intelligence yet"}
+    <div className="aug-ledger">
+      <div className="aug-ledger-main">
+        <div className="aug-ledger-bar">
+          <span className="aug-brief-eyebrow">Org</span>
+          {!loading && !failed && (
+            <span className="aug-ledger-meta aug-org-meta">
+              {countNoun(insights.length, "promoted finding")} · {countNoun(domainCount, "domain")}
             </span>
-            {!search && (
-              <span style={{ fontSize: 11, color: "var(--t3)", maxWidth: 280, textAlign: "center" }}>
-                Promote canvas domain findings via the "Promote to Org →" button in Domain Intel to build collective knowledge.
-              </span>
-            )}
+          )}
+          <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Filter findings"
+            aria-label="Filter promoted findings" className="aug-input aug-org-filter" />
+          <Button variant="ghost" size="xs" onClick={() => { void load(); }}>Refresh</Button>
+        </div>
+
+        {loading ? (
+          <div className="aug-ledger-pad"><SkeletonRows rows={6} /></div>
+        ) : failed ? (
+          <div className="aug-ledger-pad">
+            <ErrorState kind="Org failed" what="The promoted findings could not be read."
+              doors={[{ label: "Try again", onClick: () => { void load(); }, primary: true }]} />
+          </div>
+        ) : insights.length === 0 ? (
+          <div className="aug-ledger-pad">
+            <EmptyState icon="spark" title="Nothing promoted yet">
+              A finding reaches Org when someone promotes it: open a finding on a connection&apos;s Briefing and choose
+              Promote to Org from its menu. Every workspace reads what is promoted here.
+            </EmptyState>
           </div>
         ) : (
-          <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-            {domains.map(domain => {
-              const domainInsights = filtered.filter(i => (i.domain || "General") === domain);
-              return (
-                <section key={domain}>
-                  <div
-                    style={{
-                      fontSize: 11,
-                      fontWeight: 700,
-                      textTransform: "uppercase",
-                      letterSpacing: "0.08em",
-                      color: "var(--t3)",
-                      marginBottom: 8,
-                      paddingBottom: 4,
-                      borderBottom: "1px solid var(--b1)",
-                    }}
-                  >
-                    {domain}
-                    <span style={{ fontWeight: 400, marginLeft: 6 }}>
-                      · {domainInsights.length}
-                    </span>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {domainInsights.map(insight => (
-                      <InsightCard
-                        key={insight.id}
-                        insight={insight}
-                        onDelete={() => handleDelete(insight.id)}
-                      />
-                    ))}
-                  </div>
-                </section>
-              );
-            })}
-          </div>
+          <>
+            <div className="aug-ledger-scroll">
+              <table className="aug-dt aug-ledger-table">
+                <thead>
+                  <tr>
+                    <th className="aug-org-col-domain">domain</th>
+                    <th>finding · and the angle it came from</th>
+                    <th className="num aug-org-col-novelty">novelty</th>
+                    <th className="num aug-org-col-when">promoted</th>
+                    <th className="aug-org-col-door"><span className="sr-only">Remove</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shown.map(i => (
+                    <tr key={i.id}>
+                      <td className="aug-org-domain">{i.domain || "General"}</td>
+                      <td className="aug-ledger-claim">
+                        <span className="aug-ledger-text">{i.text}</span>
+                        {(i.angle || i.canvas_id) && (
+                          <span className="aug-ledger-query">
+                            {[i.angle, i.canvas_id ? `canvas ${i.canvas_id.slice(0, 8)}` : ""].filter(Boolean).join(" · ")}
+                          </span>
+                        )}
+                      </td>
+                      <td className="num aug-org-novelty">{i.novelty == null ? "—" : i.novelty.toFixed(1)}</td>
+                      <td className="num aug-ledger-when" title={formatTimestamp(i.promoted_at)}>{relTime(i.promoted_at)}</td>
+                      <td className="aug-org-door">
+                        <Button variant="ghost" size="xs" disabled={removing === i.id}
+                          onClick={() => { void remove(i.id); }} title="Remove this finding from Org">
+                          {removing === i.id ? "Removing" : "Remove"}
+                        </Button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {shown.length === 0 && (
+                <p className="aug-ledger-empty">No promoted finding matches “{search.trim()}”.</p>
+              )}
+            </div>
+            <div className="aug-ledger-foot">
+              <span>showing {shown.length} of {insights.length}</span>
+            </div>
+          </>
         )}
       </div>
+
+      <aside className="aug-inspector" aria-label="What Org holds">
+        <div className="aug-inspector-head"><span className="aug-brief-eyebrow">What Org holds</span></div>
+        <div className="aug-inspector-sec">
+          <p className="aug-inspector-note">
+            Findings promoted from a connection, so every workspace can read them. Remove takes a finding out of Org.
+          </p>
+          <p className="aug-inspector-note">
+            Org does not infer people, owners, who to ask, or disagreements over what a term means — nothing records
+            them yet.
+          </p>
+        </div>
+      </aside>
     </div>
   );
 }

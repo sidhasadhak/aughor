@@ -27,7 +27,7 @@ export function ClarifyGateCard({
           Which reading did you mean?
         </span>
         {clarify.metricLabel && (
-          <span className="aug-text-xs font-mono" style={{ color: "var(--t4)" }}>
+          <span className="aug-text-xs font-mono" style={{ color: "var(--t3)" }}>
             {clarify.metricLabel}
           </span>
         )}
@@ -57,7 +57,7 @@ export function ClarifyGateCard({
         ))}
       </ul>
 
-      <span className="aug-text-xs" style={{ color: "var(--t4)" }}>
+      <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
         Your choice is remembered for this connection — you won&apos;t be asked again.
       </span>
     </div>

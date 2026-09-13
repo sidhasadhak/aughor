@@ -372,7 +372,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
               return (
                 <div key={c.name} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: i % 2 ? "var(--bg-1)" : "var(--bg-0)", borderTop: i ? "1px solid var(--b0)" : "none" }}>
                   <span style={{ flex: "1 1 0", minWidth: 0, fontSize: 12, fontWeight: 500, color: "var(--t1)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.name}</span>
-                  <span style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{c.detected_type}</span>
                   <select value={chosen[c.name] ?? detected} onChange={e => setChosen(p => ({ ...p, [c.name]: e.target.value }))}
                     style={{ fontSize: 12, padding: "5px 8px", borderRadius: 5, background: "var(--bg-2)", color: changed ? "var(--blue4,#60a5fa)" : "var(--t2)", border: `1px solid ${changed ? "var(--blue4,#60a5fa)" : "var(--b1)"}`, cursor: "pointer", fontFamily: "var(--font-mono)", flexShrink: 0, width: 120 }}>
                     {opts.map(o => <option key={o} value={o}>{o}</option>)}
@@ -393,7 +393,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
               );
             })}
           </div>
-          <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>
+          <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>
             Overridden types use <span style={{ fontFamily: "var(--font-mono)" }}>TRY_CAST</span> — values that don&apos;t fit become NULL rather than failing the import.
           </p>
         </div>
@@ -415,7 +415,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                   {a.preview.rows.map((row, ri) => (
                     <tr key={ri}>
                       {row.map((v, ci) => (
-                        <td key={ci} style={{ padding: "6px 10px", color: v === null ? "var(--t4)" : "var(--t2)", borderBottom: "1px solid var(--b0)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontStyle: v === null ? "italic" : "normal" }}>{v === null ? "NULL" : v}</td>
+                        <td key={ci} style={{ padding: "6px 10px", color: v === null ? "var(--t3)" : "var(--t2)", borderBottom: "1px solid var(--b0)", whiteSpace: "nowrap", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", fontStyle: v === null ? "italic" : "normal" }}>{v === null ? "NULL" : v}</td>
                       ))}
                     </tr>
                   ))}
@@ -572,12 +572,12 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
       <div>
         <p style={sectionLabel}>Tables in Workspace{files.length ? ` · ${files.length}` : ""}</p>
         {files.length === 0 ? (
-          <p style={{ fontSize: 12, color: "var(--t4)" }}>No tables yet. Upload a file to create your first one.</p>
+          <p style={{ fontSize: 12, color: "var(--t3)" }}>No tables yet. Upload a file to create your first one.</p>
         ) : (
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {grouped.filter(g => g.items.length > 0).map(g => (
               <div key={g.schema}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--t4)", fontFamily: "var(--font-mono)", marginBottom: 7 }}>{g.schema}</p>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "var(--t3)", fontFamily: "var(--font-mono)", marginBottom: 7 }}>{g.schema}</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {g.items.map(f => (
                     <div key={`${f.schema}.${f.filename}`} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 13px", borderRadius: 8, background: "var(--bg-1)", border: "1px solid var(--b1)" }}>
@@ -590,9 +590,9 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
                       </span>
                       <Button variant="ghost" onClick={() => remove(f)} title="Remove table"
                         className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-                        style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)", display: "flex", alignItems: "center", justifyContent: "center" }}
+                        style={{ width: 26, height: 26, borderRadius: 6, cursor: "pointer", background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)", display: "flex", alignItems: "center", justifyContent: "center" }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--red4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--red4)"; }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t3)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                       >
                         <Icon name="trash" size={13} />
                       </Button>
@@ -762,7 +762,7 @@ export function AddDataPanel({ onClose, onAdded, workspaceId }: {
               </div>
             ))}
 
-            {visible.length === 0 && <p style={{ fontSize: 12, color: "var(--t4)" }}>No sources match.</p>}
+            {visible.length === 0 && <p style={{ fontSize: 12, color: "var(--t3)" }}>No sources match.</p>}
           </>
         ) : isUpload ? (
           <div style={{ maxWidth: 760 }}>

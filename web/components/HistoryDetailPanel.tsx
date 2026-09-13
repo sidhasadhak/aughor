@@ -1,4 +1,5 @@
 "use client";
+import { Confidence, confidenceTier } from "@/components/ui/trust";
 
 import { useEffect, useRef, useState } from "react";
 import { Separator } from "@/components/ui/separator";
@@ -230,7 +231,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
           {!evidenceLoading && evidence.length === 0 && (
             <div style={{ padding: "40px 0", textAlign: "center" }}>
               <p style={{ fontSize: 13, color: "var(--t3)", marginBottom: 6 }}>No evidence claims yet.</p>
-              <p style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5 }}>
                 Claims are extracted automatically when a deep analysis completes.
               </p>
             </div>
@@ -282,7 +283,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 {localizeCurrency(inv.question)}
               </div>
             </div>
-            <p style={{ marginTop: 4, fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", textAlign: "right" }}>{inv.connection_id}</p>
+            <p style={{ marginTop: 4, fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", textAlign: "right" }}>{inv.connection_id}</p>
           </div>
 
           {/* Agent trace — the run's thinking, reconstructed from the stored phases so it is
@@ -374,9 +375,8 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
             <div
               className="rounded-md flex flex-col overflow-hidden"
               style={{
-                background: "var(--bg-0)",
-                border: "1px solid rgba(255,255,255,0.09)",
-                boxShadow: "var(--shadow-lg), 0 1px 0 rgba(255,255,255,0.04) inset",
+                background: "var(--bg-3)",
+                border: "1px solid var(--b2)",
               }}
             >
               <textarea
@@ -434,7 +434,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 </button>
               </div>
             </div>
-            <p className="aug-fs-sm text-center" style={{ color: "var(--t4)" }}>Always review the accuracy of responses.</p>
+            <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
           </div>
         </div>
       )}
@@ -470,18 +470,8 @@ const FEEDBACK_STYLES = {
   needs_context:{ label: "Needs context", color: "var(--amb4)",  bg: "var(--amb1)",  border: "var(--amb2)" },
 };
 
-function ConfidenceBar({ value }: { value: number }) {
-  const pct = Math.round(value * 100);
-  const color = value >= 0.75 ? "var(--grn3)" : value >= 0.5 ? "var(--amb3)" : "var(--red3)";
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-      <div style={{ flex: 1, height: 3, background: "var(--bg-4)", borderRadius: 2, overflow: "hidden" }}>
-        <div style={{ width: `${pct}%`, height: "100%", background: color, borderRadius: 2, transition: "width .3s" }} />
-      </div>
-      <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", minWidth: 28 }}>{pct}%</span>
-    </div>
-  );
-}
+// A confidence tier's hue — the same three steps ui/trust's <Confidence> draws.
+const TIER_COLOR = { high: "var(--grn3)", mid: "var(--amb3)", low: "var(--red3)" } as const;
 
 function EvidenceClaimCard({
   claim,
@@ -504,7 +494,7 @@ function EvidenceClaimCard({
       <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
         <div style={{
           width: 6, height: 6, borderRadius: "50%", flexShrink: 0, marginTop: 5,
-          background: claim.confidence >= 0.75 ? "var(--grn3)" : claim.confidence >= 0.5 ? "var(--amb3)" : "var(--red3)",
+          background: TIER_COLOR[confidenceTier(claim.confidence)],
         }} />
         <p style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.5 }}>
           {claim.claim_text}
@@ -517,12 +507,12 @@ function EvidenceClaimCard({
       </div>
 
       {/* Confidence bar */}
-      <ConfidenceBar value={claim.confidence} />
+      <Confidence value={claim.confidence} />
 
       {/* Meta row */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         {claim.hypothesis_id && (
-          <span style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+          <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
             phase: {claim.hypothesis_id}
           </span>
         )}
@@ -532,7 +522,7 @@ function EvidenceClaimCard({
           </span>
         )}
         {claim.data_freshness && (
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
             data as of {formatTimestamp(claim.data_freshness, "short")}
           </span>
         )}

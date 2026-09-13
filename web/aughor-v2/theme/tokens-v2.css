@@ -1,217 +1,183 @@
 /* ════════════════════════════════════════════════════════════════════════════
-   AUGHOR v2 — TOKEN OVERRIDE LAYER
+   AUGHOR — INSTRUMENT · the active token set
    ────────────────────────────────────────────────────────────────────────────
-   Drop-in re-skin of the existing design tokens. Re-declares ONLY the primitive
-   tokens (backgrounds, borders, text, intent ramps, accent, radius, shadow,
-   layout, chart chrome) — every Tailwind / shadcn bridge and accent-palette
-   bridge in the original tokens.css reads these through var(), so they cascade
-   automatically and no component file needs editing for the re-skin.
+   The design system the product runs on: the Claude Design project "Aughor Design
+   System", adopted 2026-09-13. The spec, in this codebase's names, is
+   web/aughor-v2/INSTRUMENT.md. Imported after styles/tokens.css, whose Tailwind and
+   shadcn bridges read every primitive below through var(), so the values here restyle
+   the whole app at once.
 
-   ── HOW TO USE ──────────────────────────────────────────────────────────────
-   Import AFTER the original tokens.css so these win the cascade:
+   The thesis: Aughor's product is a claim about a number, and the interface's whole job
+   is to make that claim checkable at a glance. Everything structural is monochrome on
+   warm paper — the paper is warm, the ink and the encoding are not. One plane, not a
+   stack of cards: hierarchy comes from hairlines and the honest weight of type. Colour
+   is a data type.
 
-       @import "../styles/tokens.css";      // keeps all bridges/aliases
-       @import "./aughor-v2/tokens-v2.css";  // overrides primitives
+   Names are frozen; values moved. 41 distinct colour values per theme. An alias is a
+   real var() to another token, never a duplicated hex, which is how the count holds:
+     · bg-2 aliases bg-1 (there are no cards), bg-hover aliases bg-3, bg-nav aliases bg-0
+     · every step 5 aliases its step 4 — 1 tint · 2 border · 3 the colour · 4 text
+     · chart-1..6 ARE the six intent hues, so a red line and an adverse figure are the
+       same red; chart-axis, chart-grid and chart-tick alias b2, b0 and t4
+     · cyan is series duty only: its tint and border alias bg-3 and b2
 
-   To revert: remove the second import. Nothing else changes.
-
-   Variable NAMES are identical to styles/tokens.css — only VALUES differ.
-   See MAPPING.md for the old→new table and rationale.
-
-   ── THE SYSTEM ──────────────────────────────────────────────────────────────
-   A console language: cool near-neutral surfaces, ONE blue that means
-   "interactive", flat hairline structure, and shape that stays out of the way.
-
-     Structure is borders, not shadows.  A 1px hairline separates surfaces at
-     every level; shadow is reserved for things that genuinely float above the
-     page (menus, dialogs, tooltips). Panels that "lift" compete with the data.
-
-     Shape is tight.  3 / 4 / 6px — a badge, a control, a panel. Nothing on a
-     rectangular surface exceeds 6px. Density is a feature in a tool people
-     keep open all day; a soft corner reads as a consumer app.
-
-     One accent.  Blue is reserved for interaction — links, focus, selection,
-     the active tab, the primary button. It never decorates. Status colour
-     (green/amber/red) means an OUTCOME and never an affordance, so a green
-     button and a blue button never sit side by side meaning the same thing.
-
-     Both modes are first-class.  Every token below is defined in both blocks;
-     nothing resolves in one theme and falls through in the other. The light
-     block is the reference design; the dark block is its counterpart in the
-     same hue family, so a colour keeps its meaning across the toggle.
+   Three decisions, taken when this set was adopted:
+     1. The design's hues were held to lint:palette, not the gate to the hues. Four
+        failed a hard check — dark grn3, amb3 and cyn3 left the lightness band or sat
+        under the chroma floor, grn3 sat at normal-vision ΔE 15.0 from blue3, and light
+        cyn3 sat under the chroma floor. Each moved the minimum the validator needed:
+        dark grn3 ΔE 0.9, amb3 ΔE 4.3, cyn3 ΔE 1.1; light cyn3 ΔE 3.3. Every other
+        value is the design's hex.
+     2. chart-7 stays a separately validated KIND accent rather than aliasing vio3: the
+        automation canvas shows all seven step kinds at once, and a seventh kind in
+        chart-3's colour cannot be told from the third.
+     3. t3 and t4 are the design's, dimmer than the ramp they replace, and t4 carries no
+        text: every text colour that was t4 moved to t3. t4 is for ticks and rules.
    ════════════════════════════════════════════════════════════════════════════ */
 
-/* ── DARK (default) ──────────────────────────────────────────────────────── */
+/* ── DARK · the default, rendered before the theme attribute is stamped ─────── */
 :root {
-  /* Backgrounds — a cool, deep near-neutral. The canvas sits BELOW the
-     surfaces so panels read as raised planes without a shadow doing the work. */
-  --bg-0: #0D1318;   /* canvas — the page behind everything */
-  --bg-1: #12191F;   /* chrome: sidebar, topbar */
-  --bg-2: #12191F;   /* surface: cards, panels, table bodies */
-  --bg-3: #1A232B;   /* surface-2: table headers, insets, inputs */
-  --bg-4: #202B34;   /* surface-3: pressed states, gauge tracks */
-  --bg-hover: #202B34;   /* one step up — the same value a pressed surface uses */
-  --bg-nav:   #1A232B;   /* the left rail sits ABOVE the page, not level with it: it is
-                            chrome you navigate from, and lifting it is what separates
-                            "where am I going" from "what am I looking at". */
-  --bg-sel:   #14324C;   /* blue-tinted selection: rows, active nav, checked items */
+  /* surfaces — 7 values, 4 aliases */
+  --bg-0: #101010;          /* canvas */
+  --bg-1: #141312;          /* chrome: topbar, content header */
+  --bg-2: var(--bg-1);      /* a "card" is the same plane, by design */
+  --bg-3: #191614;          /* inset, input, code well — a notch under b0 so rules stay visible */
+  --bg-4: #232019;          /* pressed */
+  --bg-hover: var(--bg-3);  /* row and nav hover */
+  --bg-nav: var(--bg-0);    /* the rail sits level with the page */
+  --bg-sel: #2A2119;        /* selected row, active nav */
+  --bg-canvas: var(--bg-0); /* the Data Canvas ground: no tinted ground on chrome */
+  --scrim: rgba(8, 7, 6, .72);
+  --code-bg: #0C0B0B;       /* SQL, logs, pre */
 
-  /* Borders — the hairline structure that carries the whole layout. Four steps
-     so a table's internal rules can sit visibly under its outer frame. */
-  --b0: #1B252E;   /* line-faint: internal table-row separators */
-  --b1: #232F39;   /* line: default border / divider */
-  --b2: #2F3D48;   /* line-strong: inputs, pills, emphasised borders */
-  --b3: #3C4B58;   /* hover / focus-adjacent borders */
-  --bfocus: #62AEEF;
+  /* lines — 4 values; b0 is the row rule and carries most of the structure */
+  --b0: #1B1917;
+  --b1: #242120;
+  --b2: #322D29;
+  --b3: #453E37;
+  --bfocus: var(--blue3);
 
-  /* Text — four tiers, all of them legible. --t4 is the floor: it is still a
-     readable grey, not a decorative one. A tier nobody can read is not a tier. */
-  --t1: #E6EDF3;
-  --t2: #93A7B6;
-  --t3: #69808F;
-  --t4: #5D7283;
+  /* text — 4 values; t3 is captions and meta, t4 is never text */
+  --t1: #E9ECEE;
+  --t2: #99A2A8;
+  --t3: #6D767C;
+  --t4: #545C62;
 
-  /* Accent — one blue. --blue3 is THE interaction accent (links, focus, active
-     tab, selection). --blue-solid is the primary-button FILL: deliberately a
-     darker step than --blue3 so it carries white text at full contrast, which
-     is what `--primary-foreground: #fff` in tokens.css already promises. */
-  --blue1: #16324B; --blue2: #1E4C74; --blue3: #62AEEF; --blue4: #8CC5F6; --blue5: #BFDCFA;
-  --blue-solid:       #1F6CB0;   /* primary-button fill (white text) */
-  --blue-solid-hover: #2A82CC;   /* primary-button hover fill */
-  --vio-solid:        #6A4FB5;   /* deep-analysis solid fill (white text) */
+  /* intent — 1 tint · 2 border · 3 the colour · 4 text · 5 aliases 4
+     blue interactive · green guard passed, healthy, live · violet deep analysis ·
+     amber waiting on a human · red adverse figure, failed run, refusal · cyan no state */
+  --blue1: #0E2130; --blue2: #163C56; --blue3: #4C9AD6; --blue4: #7BB8E4; --blue5: var(--blue4);
+  --grn1:  #0C2A20; --grn2:  #134838; --grn3:  #3EAB82; --grn4:  #6BC9A6; --grn5:  var(--grn4);
+  --vio1:  #1A1832; --vio2:  #2C2852; --vio3:  #8B7DC8; --vio4:  #ADA2DC; --vio5:  var(--vio4);
+  --amb1:  #2A2310; --amb2:  #4C4018; --amb3:  #B88D30; --amb4:  #DCB667; --amb5:  var(--amb4);
+  --red1:  #2C1418; --red2:  #502229; --red3:  #D45B6A; --red4:  #E68792; --red5:  var(--red4);
+  --cyn1:  var(--bg-3); --cyn2: var(--b2); --cyn3: #32A6B2; --cyn4: #6FC5CE; --cyn5: var(--cyn4);
+
+  /* solid — the one filled button; a white label clears AA on it in both themes */
+  --blue-solid:       #1F6CB0;
+  --blue-solid-hover: #2680CE;
+  --vio-solid:        var(--vio3);
   --primary:          var(--blue-solid);
 
-  /* Status ramps — outcome colour. 1 is the soft wash a badge sits on, 3 is the
-     colour itself, 5 is the brightest emphasis. Same three anchors as light. */
-  --grn1:  #133528; --grn2:  #1C543F; --grn3:  #57C79A; --grn4:  #7AD7B2; --grn5:  #A8E7CC;
-  --amb1:  #3A2A14; --amb2:  #5C441F; --amb3:  #E0A45C; --amb4:  #EBBC85; --amb5:  #F4D4AE;
-  --red1:  #3A1720; --red2:  #5E2532; --red3:  #F08A9C; --red4:  #F6A8B6; --red5:  #FBC8D1;
-  --vio1:  #221A3E; --vio2:  #362A5E; --vio3:  #9E86D8; --vio4:  #B7A4E5; --vio5:  #D2C6F0;
-  --cyn1:  #0C2E33; --cyn2:  #144A52; --cyn3:  #4FBECB; --cyn4:  #7AD3DD; --cyn5:  #A9E5EC;
+  /* charts — the six intent hues in CVD order. The ORDER is the colour-blindness
+     guarantee: consecutive slots separate on lightness as well as hue. Do not reorder.
+     Mirrored in components/charts/palette.ts; lint:palette validates both. */
+  --chart-1: var(--blue3);
+  --chart-2: var(--grn3);
+  --chart-3: var(--vio3);
+  --chart-4: var(--amb3);
+  --chart-5: var(--cyn3);
+  --chart-6: var(--red3);
+  --chart-7: #9B2378;       /* the KIND accent, not a series: min 15.5 CVD / 17.5 normal vs the six */
+  --chart-deemph: #4E5A6A;  /* the only chart-only value: context series, the Other fold */
+  --chart-axis: var(--b2);
+  --chart-grid: var(--b0);
+  --chart-tick: var(--t4);
+  --chart-threshold-warn:   var(--amb3);
+  --chart-threshold-crit:   var(--red3);
+  --chart-threshold-target: var(--chart-deemph);
 
-  /* Radius — badge · control · panel. 6px is the ceiling on any rectangular
-     surface; the pill is the one sanctioned exception (REC-U1). */
-  --r1: 3px;
-  --r2: 4px;
-  --r3: 6px;
-  --r-pill: 9999px;    /* only things that are ACTUALLY round: avatars, status dots */
-  --r-chip: var(--r1); /* tags, badges, filters, counts — rectangles, like every
-                          other small surface. The reference design reserves the
-                          full round for dots alone, and a pill among rectangles
-                          reads as a different system. */
-  --r-composer: 8px;   /* the chat composer — a control, held to the control scale */
+  /* elevation — only a popover, a toast or a dialog floats */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, .55);
+  --shadow-md: 0 1px 2px rgba(0, 0, 0, .55), 0 6px 16px rgba(0, 0, 0, .42);
+  --shadow-lg: var(--shadow-sm);   /* the older name menus and popovers reach for */
+  --shadow-xl: var(--shadow-md);   /* the older name dialogs reach for */
 
-  /* Layout — app shell */
+  /* geometry — 3 · 4 · 6, and 6 is a ceiling, not a default */
+  --r1: 3px;                /* chips, tags, buttons */
+  --r2: 4px;                /* inputs, nav items, small containers */
+  --r3: 6px;                /* frames, panels, overlays */
+  --r-pill: 9999px;         /* only what IS round: avatars and status dots */
+  --r-chip: var(--r1);      /* a text-bearing chip is a rectangle */
+  --r-composer: var(--r2);  /* the chat composer is a field */
+
+  /* shell */
   --sidebar: 248px;
-  --topbar:  48px;
-  /* Chat measure. Was 880px, on the reasoning that a reading column should never run
-     edge-to-edge on a wide monitor — true of prose, but a chat turn here is mostly
-     charts, tables and SQL, and those were being squeezed into a column while Deep
-     Analysis used the whole panel beside them. Full width by request (2026-08-21);
-     the knob survives, so setting a px value restores a capped column. */
+  --topbar: 48px;
   --measure-chat: 100%;
-  /* Chat gutter — the gap between the panel edge and the conversation.
-     Measured off the Databricks reference (2026-08-21): a ~1728px panel carries ~72px of
-     clear space each side, so the content covers ~92% and the gutter is ~4% — it SCALES
-     with the panel rather than sitting at a fixed padding. Clamped so a narrow split pane
-     keeps a usable 20px and an ultrawide monitor does not open a canyon. */
   --chat-gutter: clamp(20px, 4%, 88px);
 
-  /* Elevation — borders do the structural work; these are for things that
-     genuinely float (menus, dialogs, tooltips) and nothing else. */
-  --shadow-sm: 0 1px 2px rgba(0,0,0,.50);
-  --shadow-md: 0 1px 2px rgba(0,0,0,.50), 0 6px 16px rgba(0,0,0,.40);
+  /* motion — three durations, two easings; nothing over 260ms, nothing overshoots */
+  --dur-1: 90ms;            /* a state flip: hover, press, check */
+  --dur-2: 160ms;           /* a panel or row entering or leaving */
+  --dur-3: 260ms;           /* a layout change the eye must follow */
+  --ease-out: cubic-bezier(0.16, 0.84, 0.44, 1);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  /* the older names, pointed at the spec so every existing use obeys it */
+  --dur-fast: var(--dur-1);
+  --dur-norm: var(--dur-2);
+  --dur-slow: var(--dur-3);
+  --dur-breath: var(--dur-3);
+  --ease-pop: var(--ease-out);
+  --ease-flow: var(--ease-inout);
+  --ease-spring: var(--ease-out);
 
-  /* The modal scrim. ONE value, because a system has one scrim — the seven
-     hand-tuned blacks this replaces ranged .32–.70 with no rule behind the
-     spread. Deep here, because the dialog above it is barely lighter than the
-     page and needs the separation. */
-  --scrim: rgba(0, 0, 0, .65);
-
-  /* Chart palette — unchanged by this re-skin, and deliberately so. The six
-     series were CHOSEN by the validator, not by eye: re-stepped into the dark
-     lightness band (OKLCH L 0.48–0.67) and ordered by exhaustive search for
-     CVD separation. They already sit in this accent's hue family, so retinting
-     them would spend real CVD headroom for no visible gain. What DOES move is
-     the chrome below, which follows the new borders and text.
-     Mirrored in charts/echarts/palette.ts; `lint:palette` validates both and
-     fails on drift. Six slots is still the CHART ceiling — past six the chart
-     folds to "Other" (--chart-deemph), never a generated seventh series.
-     --chart-7 is NOT a seventh series and is absent from CHART_SERIES for that
-     reason. It is the role accent for surfaces that colour by KIND rather than
-     by series — the automation canvas, where every kind is on screen at once and
-     "fold the seventh into grey" would mean one step type rendering as disabled.
-     It was chosen the same way the six were (search, not eye) and is held to a
-     STRICTER bar than they are: >= 6 CVD / >= 15 normal-vision separation from
-     every one of the six, which the six do not all meet pairwise among
-     themselves. `lint:palette` enforces exactly that. */
-  --chart-1: #569BD2; --chart-2: #4BAB70; --chart-3: #9B7BD4;
-  --chart-4: #C1882B; --chart-5: #2BA8A9; --chart-6: #DD6E6E;
-  --chart-7: #9B2378;   /* kind accent only — min 17.4 CVD / 20.9 normal vs the six */
-  --chart-deemph: #4E5A6A;
-  --chart-threshold-warn:   #E0A45C;
-  --chart-threshold-crit:   #F08A9C;
-  --chart-threshold-target: #57C79A;
-  --chart-axis: #2F3D48;
-  --chart-grid: #232F39;
-  --chart-tick: #93A7B6;
-
-  --code-bg: #0D1318;   /* recessed code well — the canvas, one step under the card */
+  /* the design system's own names, so CSS written against INSTRUMENT.md pastes in */
+  --fs-11: 11px; --fs-12: 12px; --fs-13: 13px; --fs-15: 15px; --fs-18: 18px; --fs-22: 22px;
+  --r-3: var(--r1); --r-4: var(--r2); --r-6: var(--r3);
+  --shell-sidebar: var(--sidebar);
+  --shell-topbar: var(--topbar);
+  --shell-header: 44px;
+  --shell-gutter: 44px;
+  --shell-measure: 700px;
 }
 
-/* ── LIGHT ───────────────────────────────────────────────────────────────── */
+/* ── LIGHT · designed, not inverted. A shorter usable range, so b2 steps further from
+   b1 than it does in dark, and every hue darkens rather than inverting. The aliases in
+   the dark block resolve against these values on their own. ─────────────────── */
 [data-theme="light"] {
-  --bg-0: #EEF2F5;   /* canvas */
-  --bg-1: #FFFFFF;   /* chrome: sidebar, topbar */
-  --bg-2: #FFFFFF;   /* surface: cards, panels, table bodies */
-  --bg-3: #F4F7F9;   /* surface-2: table headers, insets, inputs */
-  --bg-4: #EEF2F5;   /* surface-3: pressed states, gauge tracks */
-  --bg-hover: #EEF3F7;
-  --bg-nav:   #FFFFFF;   /* already the lifted surface in light — the canvas is below it */
-  --bg-sel:   #E7F1FA;
+  --bg-0: #EDE8DF;
+  --bg-1: #FDFBF7;
+  --bg-3: #F5F1E9;
+  --bg-4: #EAE4D9;
+  --bg-sel: #E4EFF9;        /* a cool tint on warm paper, so selection reads at once */
+  --scrim: rgba(26, 24, 20, .32);
+  --code-bg: #FAF7F1;
 
-  --b0: #EDF1F4;
-  --b1: #E6EBEF;
-  --b2: #D3DAE0;
-  --b3: #BAC4CD;
-  --bfocus: #1F6CB0;
+  --b0: #EEE9E0;
+  --b1: #E1DACF;
+  --b2: #CFC6B8;
+  --b3: #B2A897;
 
-  --t1: #11171C;
-  --t2: #5F7281;
-  --t3: #6C7E8C;
-  --t4: #798B98;
+  --t1: #12171A;
+  --t2: #59636A;
+  --t3: #77828A;
+  --t4: #929BA1;
 
-  --blue1: #E7F1FA; --blue2: #BFD9F0; --blue3: #1F6CB0; --blue4: #17558B; --blue5: #0F3D64;
-  --blue-solid:       #1F6CB0;
-  --blue-solid-hover: #17558B;   /* light mode darkens on hover; dark mode lightens */
-  --vio-solid:        #6A4FB5;
+  --blue1: #E8F1F8; --blue2: #C2DAEE; --blue3: #1C6FB5; --blue4: #17558B;
+  --grn1:  #E5F3ED; --grn2:  #BCDFCF; --grn3:  #14795A; --grn4:  #106044;
+  --vio1:  #EFEBF9; --vio2:  #D2C8ED; --vio3:  #5F45A8; --vio4:  #4A3487;
+  --amb1:  #FAF0DF; --amb2:  #EFD9AE; --amb3:  #8F5A08; --amb4:  #834900;
+  --red1:  #FBEAEC; --red2:  #F1C3C9; --red3:  #B32639; --red4:  #931F32;
+  --cyn3:  #00819C; --cyn4:  #0B616C;
 
-  --grn1:  #E3F3EC; --grn2:  #B9E0CE; --grn3:  #177A56; --grn4:  #106044; --grn5:  #0A4530;
-  --amb1:  #FBEFDF; --amb2:  #F0D6AE; --amb3:  #A35B00; --amb4:  #834900; --amb5:  #5E3400;
-  --red1:  #FBE9EC; --red2:  #F2C2CA; --red3:  #B8283F; --red4:  #931F32; --red5:  #6B1624;
-  --vio1:  #EFEBFA; --vio2:  #D3C8F0; --vio3:  #6A4FB5; --vio4:  #543C93; --vio5:  #3B2A69;
-  --cyn1:  #E2F3F6; --cyn2:  #B4E0E8; --cyn3:  #0F7C8A; --cyn4:  #0B616C; --cyn5:  #07444C;
+  --blue-solid:       #1C6FB5;
+  --blue-solid-hover: #175C97;   /* light darkens on hover; dark lightens */
 
-  --shadow-sm: 0 1px 2px rgba(17,23,28,.08);
-  --shadow-md: 0 1px 2px rgba(17,23,28,.08), 0 4px 12px rgba(17,23,28,.06);
+  --chart-7: #B73BCD;       /* the KIND accent: min 6.7 CVD / 17.1 normal vs the six */
+  --chart-deemph: #AEB5BA;
 
-  /* Lighter than dark's, and deliberately so: a white dialog on a light page
-     already separates by shadow and hairline, so the scrim only has to dim.
-     The dark-mode 65% black rendered the whole page muddy grey here. */
-  --scrim: rgba(17, 23, 28, .32);
-
-  /* Categorical series — see the note in the dark block: chosen by the
-     validator, left alone by the re-skin. Chrome follows the new tokens. */
-  --chart-1: #1F77B4; --chart-2: #2CA02C; --chart-3: #9467BD;
-  --chart-4: #FF7F0E; --chart-5: #17BECF; --chart-6: #D62728;
-  --chart-7: #871E5F;   /* kind accent only — min 14.3 CVD / 19.0 normal vs the six */
-  --chart-deemph: #B9C2CE;
-  --chart-threshold-warn:   #A35B00;
-  --chart-threshold-crit:   #B8283F;
-  --chart-threshold-target: #177A56;
-  --chart-axis: #D3DAE0;
-  --chart-grid: #E6EBEF;
-  --chart-tick: #5F7281;
-
-  --code-bg: #EEF2F5;
+  /* warm-black at a third of dark's opacity; on paper a --b1 rule does more than any shadow */
+  --shadow-sm: 0 1px 2px rgba(18, 23, 26, .08);
+  --shadow-md: 0 1px 2px rgba(18, 23, 26, .08), 0 6px 16px rgba(18, 23, 26, .06);
 }

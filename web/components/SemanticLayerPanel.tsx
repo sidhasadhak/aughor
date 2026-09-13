@@ -271,7 +271,7 @@ function AnnotationsTab({ connId, scopeTable }: { connId: string; scopeTable: st
       </div>
 
       {/* List */}
-      {loading && <p style={{ color: "var(--t4)", fontSize: 12 }}>Loading…</p>}
+      {loading && <p style={{ color: "var(--t3)", fontSize: 12 }}>Loading…</p>}
       <ErrorMsg msg={err} />
       {!loading && tables.length === 0 && (
         <EmptyState text={scopeTable
@@ -433,7 +433,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
         <Btn variant="ghost" onClick={rebuildIndex} disabled={rebuilding}>{rebuilding ? "Rebuilding…" : "Rebuild Vector Index"}</Btn>
       </div>
 
-      {loading && <p style={{ fontSize: 12, color: "var(--t4)" }}>Loading…</p>}
+      {loading && <p style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</p>}
       <ErrorMsg msg={err} />
       {!loading && entries.length === 0 && (
         <EmptyState text="No knowledge entries yet. Add metric definitions, synonyms, or join rules to improve AI query quality." />
@@ -450,7 +450,7 @@ function KnowledgeTab({ connId }: { connId: string }) {
                 <p style={{ fontSize: 12, fontWeight: 600, color: "var(--t1)", margin: 0 }}>{e.title}</p>
                 <p style={{ fontSize: 11, color: "var(--t3)", margin: "3px 0 0", lineHeight: 1.5 }}>{e.body}</p>
                 {e.tags.length > 0 && (
-                  <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>{e.tags.map(t => `#${t}`).join(" ")}</p>
+                  <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{e.tags.map(t => `#${t}`).join(" ")}</p>
                 )}
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
@@ -629,7 +629,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
         </Btn>
       </div>
 
-      {loading && <p style={{ fontSize: 12, color: "var(--t4)" }}>Loading…</p>}
+      {loading && <p style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</p>}
       <ErrorMsg msg={err} />
       {!loading && cases.length === 0 && (
         <EmptyState text="No benchmark cases. Add gold questions to detect SQL regressions automatically." />
@@ -651,7 +651,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
                 )}
                 <div style={{ flex: 1 }}>
                   <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)", margin: 0 }}>{c.question}</p>
-                  {c.notes && <p style={{ fontSize: 11, color: "var(--t4)", margin: "3px 0 0" }}>{c.notes}</p>}
+                  {c.notes && <p style={{ fontSize: 11, color: "var(--t3)", margin: "3px 0 0" }}>{c.notes}</p>}
                   {/* Failure details */}
                   {res && !res.passed && (
                     <div style={{ marginTop: 6 }}>
@@ -660,7 +660,7 @@ function BenchmarksTab({ connId }: { connId: string }) {
                       ))}
                       {res.error && <p style={{ fontSize: 11, color: "#f87171", margin: "2px 0" }}>Error: {res.error}</p>}
                       <button
-                        style={{ fontSize: 11, color: "var(--t4)", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
+                        style={{ fontSize: 11, color: "var(--t3)", background: "none", border: "none", cursor: "pointer", padding: 0, marginTop: 4 }}
                         onClick={() => setExpandedResult(expandedResult === c.id ? null : c.id)}
                       >
                         {expandedResult === c.id ? "▲ hide SQL" : "▼ show generated SQL"}
@@ -838,7 +838,7 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
 
   if (!activeConn) {
     return (
-      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t4)", fontSize: 13 }}>
+      <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--t3)", fontSize: 13 }}>
         No connections yet — add one to manage its semantic layer.
       </div>
     );
@@ -853,9 +853,9 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
       <div style={{ padding: "16px 24px 0", borderBottom: "1px solid var(--b0)" }}>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 4 }}>
           <h2 style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)", margin: 0 }}>Semantic Layer</h2>
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>The shared meaning the AI uses to read your data</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>The shared meaning the AI uses to read your data</span>
         </div>
-        <p style={{ fontSize: 11, color: "var(--t4)", margin: "0 0 12px" }}>
+        <p style={{ fontSize: 11, color: "var(--t3)", margin: "0 0 12px" }}>
           Annotations, business knowledge, metric definitions, and SQL-quality benchmarks — injected directly into every AI prompt.
         </p>
 

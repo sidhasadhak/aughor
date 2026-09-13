@@ -1,70 +1,48 @@
 "use client";
 
 /**
- * WCH-15 — shared motion primitives. ONE spinner / skeleton / async-button
- * instead of the three hand-rolled spinner definitions and ten text-only
- * pending buttons the audit found. All timing comes from the motion tokens
- * (--dur-*, --ease-*); reduced-motion is handled by the aug-* classes.
+ * Motion primitives, held to the Instrument motion spec (INSTRUMENT.md §8).
+ *
+ * There are no spinners anywhere in the product. A control that is working keeps its rest
+ * state and gains the ◐ mark (<Pending/>); a region waiting on data shows a skeleton the
+ * shape of what it replaces — same row height, same column widths. Timing and each
+ * animation's reduced-motion resting frame live in the aug-* classes (app/globals.css).
  */
 import React from "react";
 
-export function Spinner({ size = 14, color = "var(--blue3)" }: { size?: number; color?: string }) {
-  return (
-    <span
-      className="aug-anim-spin"
-      style={{
-        display: "inline-block", width: size, height: size,
-        border: `2px solid color-mix(in srgb, ${color} 25%, transparent)`,
-        borderTopColor: color, borderRadius: "50%", flexShrink: 0,
-      }}
-      aria-label="loading"
-    />
-  );
-}
-
-export function Skeleton({ width = "100%", height = 12, radius = 4, style }: {
-  width?: number | string; height?: number | string; radius?: number;
+/** The pending mark: ◐ in mono at .8 opacity. Static on purpose — presence, not a spinner.
+ *  Pass `label` when nothing beside the mark says what is pending; it then announces as a
+ *  status. Without one it is decoration beside text that already says it ("Running…"). */
+export function Pending({ label, className = "", style }: {
+  label?: string;
+  className?: string;
   style?: React.CSSProperties;
 }) {
-  return <div className="aug-shimmer" style={{ width, height, borderRadius: radius, ...style }} />;
+  return label
+    ? <span role="status" aria-label={label} className={`aug-pending ${className}`} style={style}>◐</span>
+    : <span aria-hidden className={`aug-pending ${className}`} style={style}>◐</span>;
 }
 
-/** A block of skeleton rows — the "panel is fetching" placeholder. */
-export function SkeletonRows({ rows = 4, gap = 10 }: { rows?: number; gap?: number }) {
+export function Skeleton({ width = "100%", height = 11, radius = "var(--r1)", style }: {
+  width?: number | string; height?: number | string; radius?: number | string;
+  style?: React.CSSProperties;
+}) {
+  return <div className="aug-skeleton" style={{ width, height, borderRadius: radius, flexShrink: 0, ...style }} />;
+}
+
+/** The "panel is fetching" placeholder: dense 24px rows ruled in --b0 — a dot, a label
+ *  and two short figures, the shape of the list and table rows it stands in for. */
+export function SkeletonRows({ rows = 4, gap = 6 }: { rows?: number; gap?: number }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap, padding: "4px 0" }}>
+    <div aria-hidden style={{ display: "flex", flexDirection: "column", gap, padding: "4px 0" }}>
       {Array.from({ length: rows }, (_, i) => (
-        <Skeleton key={i} width={`${88 - (i % 3) * 14}%`} />
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, height: 24, borderBottom: "1px solid var(--b0)" }}>
+          <Skeleton width={7} height={7} radius="50%" />
+          <Skeleton width={`${44 - (i % 3) * 8}%`} />
+          <Skeleton width={46} />
+          <Skeleton width={30} />
+        </div>
       ))}
     </div>
-  );
-}
-
-/** Entrance wrapper — keyed remounts get a fade+rise instead of a snap. */
-export function FadeIn({ children, delayMs = 0 }: { children: React.ReactNode; delayMs?: number }) {
-  return (
-    <div className="aug-anim-up" style={delayMs ? { animationDelay: `${delayMs}ms` } : undefined}>
-      {children}
-    </div>
-  );
-}
-
-/** Button with a real pending state — spinner + disabled, not a text "…". */
-export function AsyncButton({ pending, children, disabled, style, ...rest }:
-  React.ButtonHTMLAttributes<HTMLButtonElement> & { pending?: boolean }) {
-  return (
-    <button
-      {...rest}
-      disabled={disabled || pending}
-      style={{
-        display: "inline-flex", alignItems: "center", gap: 6,
-        opacity: pending ? 0.75 : undefined,
-        transition: "opacity var(--dur-fast) var(--ease-out)",
-        ...style,
-      }}
-    >
-      {pending && <Spinner size={11} color="currentColor" />}
-      {children}
-    </button>
   );
 }

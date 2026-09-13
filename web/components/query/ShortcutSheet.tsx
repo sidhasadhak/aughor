@@ -114,7 +114,7 @@ export function ShortcutSheet() {
             }}>
             <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
               <span className="aug-fs-h2" style={{ fontWeight: 600, color: "var(--t1)" }}>Keyboard</span>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 everything this editor binds, in one place
               </span>
               <span style={{ flex: 1 }} />
