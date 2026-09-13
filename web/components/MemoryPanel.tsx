@@ -1,12 +1,18 @@
 "use client";
-/* ── Agent Workspace · Memory (native cards) ────────────────────────────────
-   The closed loop's accumulation, made visible (Wave 1 · E4): the ambiguity-
-   ledger burn-down (resolutions settled, by source, times served as priors), the
-   verdict acceptance economy, and the trusted assets injected authoritatively
-   into prompts. Reads /learning/summary + /learning/trusted (org-wide). Degrades
-   quietly when there is no data or the endpoints fail. */
+/* ── Memory — what the closed loop has learned (Aughor Intelligence · 06 Memory) ──────────────
+   Numbered sections beside a rail: §01 the remembered readings as rows (what was ambiguous → how it
+   is read, who settled it, where, how often it has been served), §02 the trusted queries and their
+   governance, §03 the training corpus; the rail is where memory comes from — resolutions by source,
+   the verdicts, and the weekly acceptance loop.
+
+   Drawn only from what the loop stores. Left out: a "retired" list and its count (Revoke DELETES a
+   reading — nothing revoked is kept), "Add lesson" (no route writes a reading; they come from
+   settled clarify questions, probes and verdicts), a lesson's "because" and kind beyond its source,
+   an export of memory itself (the export here is the training corpus, and it writes), and the
+   design's "effect on behaviour" figures (nothing measures them). Each source loads on its own, so
+   a failed summary no longer hides the readings. Org-wide; reads /learning/*. */
 import React, { useCallback, useEffect, useState } from "react";
-import { compactNumber } from "@/lib/format";
+import { compactNumber, countNoun, formatCount, formatTimestamp, pct, relTime } from "@/lib/format";
 import {
   createTrustedQuery, deleteTrustedQuery, editTrustedQuery, getConnections,
   getLearningDataset, getLearningDatasets, getLearningSummary, listRememberedReadings,
@@ -16,6 +22,8 @@ import {
 } from "@/lib/api";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { Button } from "@/components/ui/button";
+import { Sparkline } from "@/components/brief/Sparkline";
+import { SkeletonRows } from "@/components/ui/motion";
 
 /** The acting identity for governance writes — the signed-in email, else the
  *  same word the actions inbox uses. The server owns identity; this is provenance. */
@@ -35,18 +43,9 @@ function Tile({ label, value, sub }: { label: string; value: string; sub?: strin
 }
 
 const SOURCE_LABEL: Record<string, string> = { probe: "auto-probe", user: "user choice", verdict: "reviewer" };
-const plural = (n: number, noun: string) => `${n} ${n === 1 ? noun : noun === "query" ? "queries" : noun + "s"}`;
 
-const rowStyle: React.CSSProperties = {
-  display: "flex", alignItems: "center", gap: 10, padding: "8px 10px",
-  background: "var(--bg-1)", border: "1px solid var(--b1)", borderRadius: "var(--r2)",
-};
-const kindTag: React.CSSProperties = {
-  fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: 0.4, width: 58, flexShrink: 0,
-};
-const ellipsize: React.CSSProperties = {
-  flex: 1, fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-};
+/** Readings shown before "Show all" — a long list stays scannable, and the cut is never silent. */
+const READINGS_SHOWN = 30;
 
 /** "72% → 84% over N wks" from the weekly acceptance series — the product's
  *  accuracy TREND (S3). Null when fewer than two measured weeks exist: one
@@ -59,9 +58,11 @@ function trendSub(trend?: { week: string; acceptance_rate: number }[]): string |
 
 export function MemoryPanel() {
   const [summary, setSummary] = useState<LearningSummary | null>(null);
-  const [loading, setLoading] = useState(true);   // fetch runs once on mount; starts in the loading state
+  const [summaryState, setSummaryState] = useState<"loading" | "ready" | "failed">("loading");
   // S5 cited memory — the readings themselves: remembered, cited, revocable.
-  const [readings, setReadings] = useState<RememberedReading[]>([]);
+  const [readings, setReadings] = useState<RememberedReading[] | null>(null);
+  const [readingsFailed, setReadingsFailed] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
   // MI-3: the corpus those verdicts become, and the measured distance to MI-4's gates.
   const [datasets, setDatasets] = useState<LearningDatasets | null>(null);
@@ -76,9 +77,12 @@ export function MemoryPanel() {
   }, []);
 
   useEffect(() => {
-    getLearningSummary().then(setSummary).finally(() => setLoading(false));
+    // Each source on its own: a failed summary used to hide the readings with it.
+    getLearningSummary()
+      .then(s => { setSummary(s); setSummaryState(s ? "ready" : "failed"); })
+      .catch(() => setSummaryState("failed"));
     listTrustedQueries().then(setTrustedRows).catch(() => setTrustedRows([]));
-    listRememberedReadings().then(setReadings).catch(() => setReadings([]));
+    listRememberedReadings().then(setReadings).catch(() => { setReadings([]); setReadingsFailed(true); });
     getLearningDatasets().then(setDatasets).catch(() => setDatasets(null));
   }, []);
 
@@ -96,96 +100,122 @@ export function MemoryPanel() {
     setRevoking(id);
     try {
       await revokeRememberedReading(id);
-      setReadings(rs => rs.filter(r => r.id !== id));
+      setReadings(rs => (rs ?? []).filter(r => r.id !== id));
     } catch { /* row stays; the user can retry */ }
     finally { setRevoking(null); }
   };
 
   const ledger = summary?.ledger;
   const verdicts = summary?.verdicts;
-  const acc = verdicts?.acceptance_rate;
-  const bySource = ledger?.by_source ?? {};
-  const sources = Object.keys(bySource);
-  const trustedTotal = summary?.trusted.queries ?? 0;
+  const acc = verdicts?.acceptance_rate ?? null;
+  const bySource = Object.entries(ledger?.by_source ?? {}).sort((a, b) => b[1] - a[1]);
+  const sourceTotal = bySource.reduce((n, [, c]) => n + c, 0);
+  const trend = verdicts?.trend ?? [];
+  const list = readings ?? [];
+  const visible = showAll ? list : list.slice(0, READINGS_SHOWN);
+
+  const meta = [
+    readings ? `${countNoun(list.length, "reading")} remembered` : "",
+    ledger ? `served ${compactNumber(ledger.served_total)}×` : "",
+    acc != null ? `${pct(acc)} of verdicts accepted` : "",
+  ].filter(Boolean).join(" · ");
 
   return (
-    <div style={{ flex: 1, overflowY: "auto", padding: "18px 22px" }}>
-      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Memory</span>
-        <span style={{ fontSize: 12, color: "var(--t3)" }}>what the closed loop has learned</span>
-      </div>
-      <div style={{ fontSize: 12, color: "var(--t2)", marginBottom: 16, maxWidth: 640, lineHeight: 1.5 }}>
-        Every clarified ambiguity, human verdict, and verified query compounds into durable priors the agent
-        reuses on later questions — retrieved at plan time so it doesn&apos;t ask twice. This is that accumulation.
-      </div>
+    <div className="aug-profile">
+      <div className="aug-profile-main">
+        <div className="aug-brief-strip">
+          <span className="aug-brief-eyebrow">Memory</span>
+          {meta && <span className="aug-brief-meta">{meta}</span>}
+        </div>
 
-      {loading ? (
-        <div style={{ fontSize: 12, color: "var(--t3)" }}>Loading…</div>
-      ) : !summary ? (
-        <div style={{ fontSize: 12, color: "var(--t3)" }}>No learning data yet.</div>
-      ) : (
-        <>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 10, marginBottom: 18 }}>
-            <Tile label="Resolutions" value={compactNumber(ledger?.resolutions ?? 0)} sub="ambiguities settled" />
-            <Tile label="Times served" value={compactNumber(ledger?.served_total ?? 0)} sub="priors reused in answers" />
-            <Tile label="Acceptance" value={acc != null ? `${Math.round(acc * 100)}%` : "—"}
-                  sub={trendSub(verdicts?.trend) ?? `${verdicts?.total ?? 0} verdicts`} />
-            <Tile label="Trusted" value={String(trustedTotal)} sub={plural(summary.trusted.queries, "query")} />
+        <section className="aug-brief-sec">
+          <div className="aug-brief-gutter" aria-hidden>01</div>
+          <div className="aug-brief-body">
+            <div className="aug-brief-head">
+              <span className="aug-brief-eyebrow">Remembered readings</span>
+              <span className="aug-brief-meta">a prior on every matching question — cited to who settled it, and revocable</span>
+            </div>
+            {readings === null ? (
+              <SkeletonRows rows={5} />
+            ) : readingsFailed ? (
+              <p className="aug-brief-note">The remembered readings could not be read.</p>
+            ) : list.length === 0 ? (
+              <p className="aug-brief-note">
+                Nothing remembered yet. A reading is kept when an ambiguous question is settled — by a probe, by a
+                person answering a clarify question, or by a reviewer&apos;s verdict.
+              </p>
+            ) : (
+              <>
+                <div className="aug-moves-wrap">
+                  <table className="aug-dt aug-ledger-table">
+                    <thead>
+                      <tr>
+                        <th>what was ambiguous → how it is read</th>
+                        <th className="aug-memory-col-source">settled by</th>
+                        <th className="aug-memory-col-conn">connection</th>
+                        <th className="num aug-memory-col-num">served</th>
+                        <th className="num aug-memory-col-when">settled</th>
+                        <th className="aug-memory-col-door"><span className="sr-only">Revoke</span></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map(r => (
+                        <tr key={r.id}>
+                          <td className="aug-ledger-claim">
+                            <span className="aug-ledger-text">
+                              <span className="aug-memory-subject">{r.subject}</span> → {r.resolved_reading}
+                            </span>
+                            {r.resolved_sql && <span className="aug-ledger-query">{r.resolved_sql}</span>}
+                          </td>
+                          <td className="aug-memory-source">{SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}</td>
+                          <td className="aug-memory-conn" title={r.connection_id}>{r.connection_id || "—"}</td>
+                          <td className="num" title={r.last_used_at ? `last served ${formatTimestamp(r.last_used_at)}` : "not served yet"}>
+                            {compactNumber(r.use_count)}×
+                          </td>
+                          <td className="num aug-ledger-when" title={formatTimestamp(r.created_at)}>{relTime(r.created_at)}</td>
+                          <td className="aug-org-door">
+                            <Button variant="ghost" size="xs" disabled={revoking === r.id}
+                              onClick={() => { void revoke(r.id); }}
+                              title="Revoke: the reading is deleted, and the next matching question is asked again">
+                              {revoking === r.id ? "Revoking" : "Revoke"}
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <p className="aug-profile-foot">
+                  {list.length > READINGS_SHOWN && !showAll && (
+                    <>
+                      <Button variant="link" size="xs" onClick={() => setShowAll(true)}>
+                        Show all {formatCount(list.length)}
+                      </Button>{" "}
+                    </>
+                  )}
+                  Revoking deletes a reading — nothing revoked is kept, so there is no retired list — and the next
+                  matching question is asked again.
+                </p>
+              </>
+            )}
           </div>
+        </section>
 
-          {readings.length > 0 && (
-            <>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", marginBottom: 4 }}>
-                Remembered readings
-              </div>
-              <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 8, maxWidth: 640 }}>
-                Each is injected as a prior on matching questions — cited to who settled it,
-                and revocable: a revoked reading re-ambiguates instead of silently persisting.
-              </div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 1, marginBottom: 18 }}>
-                {readings.slice(0, 30).map(r => (
-                  <div key={r.id} style={{ ...rowStyle, padding: "7px 10px", alignItems: "center" }}>
-                    <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", minWidth: 0 }}>
-                      <span style={{ color: "var(--t2)" }}>{r.subject}</span>
-                      {" → "}{r.resolved_reading}
-                    </span>
-                    <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap" }}>
-                      {SOURCE_LABEL[r.resolution_source] ?? r.resolution_source}
-                      {" · served "}{compactNumber(r.use_count)}
-                    </span>
-                    <Button variant="ghost" size="xs" disabled={revoking === r.id}
-                            onClick={() => revoke(r.id)}
-                            className="h-auto px-1.5 py-0.5 aug-fs-xs font-normal text-zinc-500 hover:text-red-400 hover:bg-transparent dark:hover:bg-transparent">
-                      {revoking === r.id ? "Revoking…" : "Revoke"}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
+        <section className="aug-brief-sec">
+          <div className="aug-brief-gutter" aria-hidden>02</div>
+          <div className="aug-brief-body">
+            {/* PX-4 — the closed loop's WRITE half. The flywheel moves by grading, and
+                until this section grading had no door: the panel could show trusted
+                queries and could not author, promote, or retire one. */}
+            <TrustedGovernance rows={trustedRows} onChanged={reloadTrusted} />
+          </div>
+        </section>
 
-          {sources.length > 0 && (
-            <>
-              <div style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)", marginBottom: 8 }}>Resolutions by source</div>
-              <div style={{ display: "flex", flexDirection: "column", gap: 1, marginBottom: 18 }}>
-                {sources.map(s => (
-                  <div key={s} style={{ ...rowStyle, padding: "7px 10px" }}>
-                    <span style={{ flex: 1, fontSize: 12, color: "var(--t1)" }}>{SOURCE_LABEL[s] ?? s}</span>
-                    <span style={{ fontSize: 12, color: "var(--t2)" }}>{bySource[s]}</span>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-
-          {/* PX-4 — the closed loop's WRITE half. The flywheel moves by grading, and
-              until this section grading had no door: the panel could show trusted
-              queries and could not author, promote, or retire one. */}
-          <TrustedGovernance rows={trustedRows} onChanged={reloadTrusted} />
-
-          {datasets && (
-            <>
-              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginTop: 18, marginBottom: 4 }}>
+        {datasets && (
+          <section className="aug-brief-sec">
+            <div className="aug-brief-gutter" aria-hidden>03</div>
+            <div className="aug-brief-body">
+              <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
                 <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t2)" }}>Training corpus</span>
                 <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>graded work, exportable — and the measured distance to the MI-4 gates</span>
                 <span style={{ flex: 1 }} />
@@ -206,10 +236,79 @@ export function MemoryPanel() {
                 ))}
               </div>
               <DatasetInspector kinds={Object.keys(datasets.gates)} />
+            </div>
+          </section>
+        )}
+      </div>
+
+      <aside className="aug-profile-rail" aria-label="Where memory comes from">
+        <div className="aug-profile-rail-head">
+          <span className="aug-brief-eyebrow">Sources</span>
+          <span className="aug-brief-meta">{ledger ? countNoun(ledger.resolutions, "resolution") : ""}</span>
+        </div>
+        <div className="aug-profile-block">
+          {summaryState === "loading" ? (
+            <SkeletonRows rows={3} />
+          ) : summaryState === "failed" ? (
+            <p className="aug-brief-note">The learning summary could not be read.</p>
+          ) : bySource.length === 0 ? (
+            <p className="aug-brief-note">No ambiguity has been settled yet.</p>
+          ) : bySource.map(([src, n]) => (
+            <div key={src} className="aug-memory-share">
+              <div className="aug-memory-share-head">
+                <span>{SOURCE_LABEL[src] ?? src}</span>
+                <span className="aug-memory-share-n">{formatCount(n)}</span>
+              </div>
+              <div className="aug-memory-share-rule" aria-hidden>
+                <span style={{ width: `${sourceTotal ? (n / sourceTotal) * 100 : 0}%` }} />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="aug-profile-rail-head">
+          <span className="aug-brief-eyebrow">Verdicts</span>
+          <span className="aug-brief-meta">{verdicts ? countNoun(verdicts.total, "verdict") : ""}</span>
+        </div>
+        <div className="aug-profile-block">
+          {summaryState === "loading" ? (
+            <SkeletonRows rows={2} />
+          ) : summaryState === "failed" ? (
+            <p className="aug-brief-note">—</p>
+          ) : !verdicts || verdicts.total === 0 ? (
+            <p className="aug-brief-note">No reviewer has judged an answer yet.</p>
+          ) : (
+            <>
+              <dl className="aug-inspector-rows">
+                {Object.entries(verdicts.counts ?? {}).map(([k, n]) => (
+                  <div key={k}><dt>{k}</dt><dd>{formatCount(n)}</dd></div>
+                ))}
+              </dl>
+              {acc != null && (
+                <p className="aug-inspector-note">{pct(acc)} accepted{trendSub(trend) ? ` · ${trendSub(trend)}` : ""}</p>
+              )}
             </>
           )}
-        </>
-      )}
+        </div>
+
+        <div className="aug-profile-rail-head">
+          <span className="aug-brief-eyebrow">Loop</span>
+          <span className="aug-brief-meta">{trend.length >= 2 ? `acceptance · last ${trend.length} weeks` : ""}</span>
+        </div>
+        <div className="aug-profile-block">
+          {trend.length >= 2 ? (
+            <>
+              <Sparkline values={trend.map(t => t.acceptance_rate)} width={300} height={48} color="var(--chart-2)" />
+              <p className="aug-inspector-note">
+                The weekly share of verdicts that accepted the answer. Nothing else is measured — not how memory moved
+                confidence, nor how many clarify questions it saved.
+              </p>
+            </>
+          ) : (
+            <p className="aug-brief-note">Fewer than two measured weeks — one point is a number, not a trend.</p>
+          )}
+        </div>
+      </aside>
     </div>
   );
 }

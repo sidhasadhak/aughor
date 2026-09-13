@@ -1140,3 +1140,18 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-org-domain { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
 .aug-org-novelty { font-size: 11px; color: var(--t3); }
 .aug-org-door { text-align: right; }
+
+/* ── Memory (Aughor Intelligence · 06 Memory) — readings as rows, where memory comes from beside ── */
+.aug-memory-col-source { width: 104px; }
+.aug-memory-col-conn { width: 104px; }
+.aug-memory-col-num { width: 72px; }
+.aug-memory-col-when { width: 72px; }
+.aug-memory-col-door { width: 88px; }
+.aug-memory-subject { color: var(--t2); }
+.aug-memory-source { font-size: 11px; color: var(--t2); }
+.aug-memory-conn { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-memory-share { display: flex; flex-direction: column; gap: 4px; }
+.aug-memory-share-head { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--t2); }
+.aug-memory-share-n { font-family: var(--font-mono); font-size: 11px; color: var(--t1); font-variant-numeric: tabular-nums; }
+.aug-memory-share-rule { height: 3px; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
+.aug-memory-share-rule > span { display: block; height: 100%; background: var(--chart-1); }
