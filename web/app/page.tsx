@@ -13,6 +13,7 @@ import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
 import { runDisplayTitle } from "@/lib/runTitle";
+import { formatCount } from "@/lib/format";
 import { ExplorationBadge } from "@/components/ExplorationBadge";
 import { SchemaProvider } from "@/lib/schema-context";
 import { OpenInQueryProvider, type OpenInQueryRequest } from "@/lib/openInQuery";
@@ -22,6 +23,8 @@ import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { Icon, type IconName } from "@/components/ui/icon";
 import { SkeletonRows } from "@/components/ui/motion";
+import { ActivityStrip } from "@/components/shell/ActivityStrip";
+import { useNavCounts, type NavCounts } from "@/components/shell/useNavCounts";
 import { UpgradeModal } from "@/components/UpgradeModal";
 import { ApprovalModal } from "@/components/ApprovalModal";
 import type { IntelLayer } from "@/components/IntelligenceWorkspace";
@@ -244,6 +247,7 @@ function Topbar({
         onUpdateWorkspace={onUpdateWorkspace}
         onDeleteWorkspace={onDeleteWorkspace}
       />
+      <ActivityStrip connectionId={selectedConn || undefined} onOpen={() => onNavigate("agentic-ops")} />
 
       {/* Right: ⌘K — search, ask, or run a command — and the user menu */}
       <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
@@ -338,26 +342,41 @@ function Sidebar({
   tab,
   onNavigate,
   selectedConn,
+  counts,
 }: {
   tab: NavTab;
   onNavigate: (t: NavTab) => void;
   selectedConn: string;
+  /** Badge counts from read-only sources — see components/shell/useNavCounts.ts. */
+  counts?: NavCounts;
 }) {
-  const renderItem = (item: { id: string; icon: string; label: string }) => (
-    <button
-      key={item.id}
-      className={`aug-nav-item${tab === item.id ? " active" : ""}`}
-      onClick={() => onNavigate(item.id as NavTab)}
-      // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
-      // so every nav button read as anonymous. An explicit aria-label guarantees the name;
-      // aria-current marks the active destination for screen readers.
-      aria-label={item.label}
-      aria-current={tab === item.id ? "page" : undefined}
-    >
-      <NavIcon name={item.icon} size={14} />
-      <span>{item.label}</span>
-    </button>
-  );
+  // A badge is amber when what it counts waits on a human, neutral when it is only a count.
+  const badgeFor = (id: string): { value: number; waiting: boolean; noun: string } | null => {
+    if (id === "monitors" && counts?.unackedAlerts) return { value: counts.unackedAlerts, waiting: true, noun: "unacknowledged" };
+    if (id === "recents" && counts?.runningRuns) return { value: counts.runningRuns, waiting: false, noun: "running" };
+    return null;
+  };
+  const renderItem = (item: { id: string; icon: string; label: string }) => {
+    const badge = badgeFor(item.id);
+    return (
+      <button
+        key={item.id}
+        className={`aug-nav-item${tab === item.id ? " active" : ""}`}
+        onClick={() => onNavigate(item.id as NavTab)}
+        // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
+        // so every nav button read as anonymous. An explicit aria-label guarantees the name
+        // (and now the badge's count); aria-current marks the active destination.
+        aria-label={badge ? `${item.label}, ${badge.value} ${badge.noun}` : item.label}
+        aria-current={tab === item.id ? "page" : undefined}
+      >
+        <NavIcon name={item.icon} size={14} />
+        <span>{item.label}</span>
+        {badge && (
+          <span className={`aug-nav-badge${badge.waiting ? " aug-nav-badge-waiting" : ""}`}>{formatCount(badge.value)}</span>
+        )}
+      </button>
+    );
+  };
 
   // Four groups, each ruled off in --b0, then Settings pinned to the bottom. The active
   // item is the only coloured thing in the rail: a 2px --blue3 bar on --bg-sel.
@@ -369,7 +388,14 @@ function Sidebar({
         </div>
         {NAV_SECTIONS.map(section => (
           <div key={section.label} className="aug-nav-section">
-            <div className="aug-nav-group">{section.label}</div>
+            <div className="aug-nav-group">
+              {section.label}
+              {section.label === "Operations" && (counts?.unackedAlerts ?? 0) > 0 && (
+                <span className="aug-nav-group-badge aug-nav-group-badge-waiting" title="Waiting on a human in Operations">
+                  {formatCount(counts!.unackedAlerts)}
+                </span>
+              )}
+            </div>
             {section.items.map(renderItem)}
           </div>
         ))}
@@ -1487,6 +1513,7 @@ export default function Home() {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
   const [selectedWorkspace, setSelectedWorkspace] = useState("");
+  const navCounts = useNavCounts(selectedWorkspace || undefined);
 
   // ── Workspace-scoped connections (the tenancy boundary) ───────────────────
   // Everything below the topbar sees only the connections belonging to the
@@ -1972,7 +1999,7 @@ export default function Home() {
       <div className="aug-body">
 
         {/* Sidebar */}
-        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} />
+        <Sidebar tab={(tab === "operations" ? opsLayer : tab === "data" ? RAIL_TAB_FOR_DATA_LAYER[dataLayer] : tab) as NavTab} onNavigate={handleNavigate} selectedConn={selectedConn} counts={navCounts} />
 
         {/* Content */}
         <SchemaProvider connId={selectedConn}>
