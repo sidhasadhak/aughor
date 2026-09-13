@@ -19,10 +19,11 @@ import {
   listGovernedTags,
   type GovernedTag,
 } from "@/lib/api";
-import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { StatusChip, ChipHue } from "@/components/brief/StatusChip";
-import { formatCount } from "@/lib/format";
+import { countNoun, formatCount } from "@/lib/format";
+import { SkeletonRows } from "@/components/ui/motion";
+import { ErrorState } from "@/components/ui/states";
 import { GraphCanvas } from "@/components/GraphCanvas";
 import { GraphAuditBar, StandingChip, WarrantChip } from "@/components/graph/WarrantChip";
 
@@ -198,8 +199,19 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
   // ── render ──────────────────────────────────────────────────────────────────
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "16px 20px", borderBottom: "1px solid var(--bg-3)" }}>
-        <span style={{ fontSize: 15, fontWeight: 600, color: "var(--t1)" }}>Knowledge Graph</span>
+      <div className="aug-brief-strip">
+        <span className="aug-brief-eyebrow">Graph</span>
+        {graph && (
+          <span className="aug-brief-meta">
+            {[
+              countNoun(graph.counts.table || 0, "table"),
+              countNoun(graph.counts.edges || 0, "edge"),
+              countNoun(graph.counts.finding || 0, "finding"),
+              countNoun(graph.counts.metric || 0, "metric"),
+              countNoun(graph.counts.glossary_term || 0, "term"),
+            ].join(" · ")}
+          </span>
+        )}
         {graph && (
           // P2: a Fresh badge is about the SCHEMA only. When the content axis says the
           // graph is missing what the platform has since learned, the badge must not
@@ -215,40 +227,35 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
             {audit?.drift?.drifted ? "Rebuild owed" : STALE_LABEL[graph.staleness]}
           </StatusChip>
         )}
-        <div style={{ flex: 1 }} />
-        <Button variant="ghost" onClick={() => setMode("map")}
-                style={{ fontSize: 12, color: mode === "map" ? "var(--t1)" : "var(--t3)" }}>Map</Button>
-        <Button variant="ghost" onClick={() => setMode("cards")}
-                style={{ fontSize: 12, color: mode === "cards" ? "var(--t1)" : "var(--t3)" }}>Explore</Button>
-        <Button variant="ghost" onClick={openTour}
-                style={{ fontSize: 12, color: mode === "tour" ? "var(--t1)" : "var(--t3)" }}>Tour</Button>
-        <Button variant="ghost" onClick={() => setMode("review")}
-                style={{ fontSize: 12, color: mode === "review" ? "var(--t1)" : "var(--t3)" }}>
-          Review{review && review.total > 0 ? ` · ${review.total}` : ""}
-        </Button>
-        <Button variant="ghost" onClick={load} style={{ color: "var(--t3)", fontSize: 12 }}>↻ Refresh</Button>
+        <div role="group" aria-label="Graph view" className="aug-segmented aug-graph-modes">
+          {([["map", "Map"], ["cards", "Explore"], ["tour", "Tour"], ["review", "Review"]] as const).map(([m, label]) => (
+            <Button key={m} variant="ghost" size="xs" aria-pressed={mode === m}
+              className="aug-seg-item aug-seg-item-mono font-normal"
+              onClick={() => (m === "tour" ? openTour() : setMode(m))}>
+              {label}{m === "review" && review && review.total > 0 ? ` ${review.total}` : ""}
+            </Button>
+          ))}
+        </div>
+        <Button variant="ghost" size="xs" onClick={load}>Refresh</Button>
       </div>
 
       <div style={{ flex: 1, overflowY: "auto", padding: 20, display: "flex", flexDirection: "column" }}>
-        {loading && <p style={{ color: "var(--t3)", fontSize: 13 }}>Loading the connection knowledge graph…</p>}
-        {error && <p style={{ color: "var(--red3)", fontSize: 13 }}>{error}</p>}
+        {loading && <SkeletonRows rows={6} />}
+        {error && <ErrorState kind="Graph failed" what={error} doors={[{ label: "Try again", onClick: load, primary: true }]} />}
 
         {!loading && !error && graph && mode === "map" && (
           <>
-            <MiniStatRow>
-              <MiniStat value={formatCount(graph.counts.table || 0)} label="Tables" />
-              <MiniStat value={formatCount(graph.counts.edges || 0)} label="Edges" />
-              <MiniStat value={formatCount(graph.counts.finding || 0)} label="Findings"
-                        tone={(graph.counts.finding || 0) > 0 ? "var(--vio4)" : "var(--t1)"} />
-              <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
-              <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
-            </MiniStatRow>
             <GraphAuditBar audit={audit} />
-            <GraphCanvas
-              graph={graph}
-              onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
-              onAsk={onAsk}
-            />
+            <div className="aug-graph-map">
+              <div className="aug-graph-canvas">
+                <GraphCanvas
+                  graph={graph}
+                  onOpenTable={(tableId) => { setMode("cards"); setView({ level: "detail", tableId }); }}
+                  onAsk={onAsk}
+                />
+              </div>
+              <StructuralWarnings review={review} error={reviewError} onOpenReview={() => setMode("review")} />
+            </div>
           </>
         )}
 
@@ -262,14 +269,6 @@ export function ConnectionGraphPanel({ connectionId, schema, onInvestigate: onAs
           <TourView tour={tour} error={tourError} />
         ) : (
           <>
-            <MiniStatRow>
-              <MiniStat value={formatCount(graph.counts.table || 0)} label="Tables" />
-              <MiniStat value={formatCount(graph.counts.edges || 0)} label="Edges" />
-              <MiniStat value={formatCount(graph.counts.finding || 0)} label="Findings"
-                        tone={(graph.counts.finding || 0) > 0 ? "var(--vio4)" : "var(--t1)"} />
-              <MiniStat value={formatCount(graph.counts.metric || 0)} label="Metrics" />
-              <MiniStat value={formatCount(graph.counts.glossary_term || 0)} label="Terms" />
-            </MiniStatRow>
             <GraphAuditBar audit={audit} />
 
             {/* Breadcrumb */}
@@ -511,6 +510,70 @@ const CHECK_LABEL: Record<GraphReviewItem["check"], string> = {
   define: "Define it",
   rebuild: "Rebuild the graph",
 };
+
+/** The map's rail: what the graph cannot vouch for, most consequential first — the review queue's top
+ *  items, read off the graph's own topology and provenance. The design's rail also measures hop
+ *  reachability and declines any join past three hops; nothing measures reachability or enforces a
+ *  hop limit, so neither is drawn. */
+const WARNING_TONE: Record<GraphReviewItem["type"], string> = {
+  graph_behind: "aug-graph-warn-ask",
+  unprobed_join: "aug-graph-warn-ask",
+  contested_finding: "aug-graph-warn-ask",
+  ungrounded_finding: "aug-graph-warn-bad",
+  undocumented_hub: "",
+  isolated_table: "",
+};
+
+function StructuralWarnings({ review, error, onOpenReview }: {
+  review: GraphReview | null;
+  error: string | null;
+  onOpenReview: () => void;
+}) {
+  const top = review?.items.slice(0, 6) ?? [];
+  return (
+    <aside className="aug-graph-rail" aria-label="Structural warnings">
+      <div className="aug-profile-rail-head">
+        <span className="aug-brief-eyebrow">Structural warnings</span>
+        <span className="aug-brief-meta">{review ? formatCount(review.total_found) : ""}</span>
+      </div>
+      <div className="aug-profile-block">
+        {error ? (
+          <p className="aug-brief-note">{error}</p>
+        ) : !review ? (
+          <SkeletonRows rows={3} />
+        ) : review.total === 0 ? (
+          <p className="aug-brief-note">
+            Nothing to warn about: every join is measured, every table connected and defined, and no finding is contested.
+          </p>
+        ) : (
+          <>
+            {top.map((it) => (
+              <div key={it.id} className="aug-graph-warn">
+                <div className="aug-approval-head">
+                  <span className={`aug-graph-warn-kind ${WARNING_TONE[it.type] ?? ""}`}>
+                    {REVIEW_LABEL[it.type] || it.type.replace(/_/g, " ")}
+                  </span>
+                  <span className="aug-brief-meta" title={it.subject_label}>{it.subject_label}</span>
+                </div>
+                <span className="aug-graph-warn-why">{it.why}</span>
+                {it.depends > 0 && (
+                  <span className="aug-approval-params">
+                    {formatCount(it.depends)} {it.depends === 1 ? "thing depends" : "things depend"} on this
+                  </span>
+                )}
+              </div>
+            ))}
+            {review.total_found > top.length && (
+              <Button variant="link" size="xs" onClick={onOpenReview}>
+                All {formatCount(review.total_found)} in Review
+              </Button>
+            )}
+          </>
+        )}
+      </div>
+    </aside>
+  );
+}
 
 function ReviewView({ review, error, onAsk, isTableNode, onOpenTable }: {
   review: GraphReview | null;

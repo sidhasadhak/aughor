@@ -1182,3 +1182,15 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-kinetic-perm > div { display: flex; flex-direction: column; gap: 2px; }
 .aug-kinetic-perm dt { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
 .aug-kinetic-perm dd { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
+
+/* ── Graph (Aughor Intelligence · 04 Graph) — the map beside what it cannot vouch for ─────────── */
+.aug-graph-modes { margin-left: auto; }
+.aug-graph-map { flex: 1; display: flex; min-width: 0; min-height: 560px; overflow: hidden; border: 1px solid var(--b1); border-radius: var(--r3); }
+.aug-graph-canvas { flex: 1; min-width: 0; }
+.aug-graph-rail { width: 300px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
+.aug-graph-warn { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
+.aug-graph-warn:last-of-type { padding-bottom: 0; border-bottom: 0; }
+.aug-graph-warn-kind { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--t3); white-space: nowrap; }
+.aug-graph-warn-ask { color: var(--amb4); }
+.aug-graph-warn-bad { color: var(--red4); }
+.aug-graph-warn-why { font-size: 12px; line-height: 1.55; color: var(--t2); }
