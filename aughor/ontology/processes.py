@@ -48,8 +48,10 @@ _MAX_STAGES = 12
 _MAX_DAYS = 3650
 #: A per-day histogram wider than this is not a lag between two stages — it is a declaration read wrong.
 _MAX_LAG_VALUES = 20_000
-#: A property path: a property, or up to three links then a property.
-PATH_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,3}$")
+#: A property path: a property, or up to three links then a property. Each segment is a NAME the compiler resolves
+#: against the graph before anything is quoted, so it may hold a space (`Order Date`, as a spreadsheet names a column) —
+#: never a dot, a quote, a backtick or a semicolon.
+PATH_PATTERN = re.compile(r"^[^.;'\"`\s][^.;'\"`]{0,127}(\.[^.;'\"`\s][^.;'\"`]{0,127}){0,3}$")
 
 
 class NotMeasurable(ValueError):

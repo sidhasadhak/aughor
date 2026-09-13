@@ -491,3 +491,33 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     assert client.delete("/ontology/rules/eu_core", params=PARAMS).status_code == 200
     assert client.get("/ontology/processes", params=PARAMS).json() == {
         "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": []}
+
+
+# ── the boundary of "already past it" and the names a path may hold ─────────────────────────
+
+@pytest.mark.parametrize("as_of", ["2024-01-10 13:00:00", "2024-01-10"])
+def test_an_open_object_is_past_a_within_days_promise_exactly_when_more_than_n_calendar_days_have_gone(as_of):
+    """The overdue count compares each open object's previous moment with one cutoff date; it must agree, object by
+    object, with counting calendar days to the data's own clock — including on the boundary day itself."""
+    from aughor.ontology.processes import _cutoff
+    moments = ["2024-01-06 23:59:59", "2024-01-07 00:00:00", "2024-01-07 18:00:00", "2024-01-08 00:00:00",
+               "2024-01-08 09:30:00", "2024-01-09 23:59:59", "2024-01-10 00:00:01"]
+    values = ", ".join(f"(TIMESTAMP '{m}')" for m in moments)
+    con = duckdb.connect()
+    for days in (0, 1, 2, 3):
+        cutoff = _cutoff(as_of, days)
+        rows = con.execute(f"SELECT m, m < DATE '{cutoff}', date_diff('day', m, TIMESTAMP '{as_of[:10]} 23:00:00') > {days} "
+                           f"FROM (VALUES {values}) AS t(m)").fetchall()
+        assert all(by_cutoff == by_days for _, by_cutoff, by_days in rows), (days, cutoff, rows)
+    con.close()
+    assert _cutoff("2024-01-10", 2) == "2024-01-08"
+
+
+def test_a_stage_may_be_anchored_to_a_column_named_with_a_space_but_never_to_sql():
+    spaced = copy.deepcopy(FULFILMENT)
+    spaced["stages"][0]["timestamp"] = "Order Date"
+    assert process_spec_problem(spaced) == ""
+    for bad in ("order_date; DROP TABLE orders", "order'date", "order`date", "a.b.c.d.e"):
+        broken = copy.deepcopy(FULFILMENT)
+        broken["stages"][0]["timestamp"] = bad
+        assert "property path" in process_spec_problem(broken), bad
