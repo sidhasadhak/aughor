@@ -138,7 +138,22 @@ first; §6 item 18 holds the three open shape questions.
 in `web/`, chat-first home, tiered write-scope (personal artifacts direct, org-shared semantic
 state proposal-only).
 
-**SQL editor (SE-0…SE-5a)** — the human plane, peer to the agent's.
+**SQL editor (SE-0…SE-8)** — the human plane, peer to the agent's. SE-6/SE-7
+(2026-09-10) made it a working editor's editor: live templates, ⌥⏎ intentions,
+multi-caret, find/replace, extractors, the grid as a data editor. SE-8 (2026-09-14)
+closed the reference-console gap measured against the Databricks SQL editor docs:
+the Run split-button carries the row limit and a run-all preference (⌘⇧↵ stays
+single-statement); the output pane grew a ‹Results N of M› statement pager,
+visualization TABS (each owning its config, with rename/duplicate/remove) and a
+header tool cluster with ⤢ maximize; parameters became gear-configured widgets
+(text/number/date/dropdown/multi-select, choices typed or from a saved query,
+⚡ dynamic dates) that bind through `expand_list_params` (`IN :name` from a list,
+expanded to scalar binds pre-translate at every connector seam) and save with the
+query as `param_defs`; Schedule creates the monitor in place (`any_change` only —
+thresholds stay un-invented); a ✨ assistant pane proposes SQL as Apply/Reject
+diffs through `POST /query/assist` (coder role, run-gated buffer, never executes);
+plus open-existing search, formatter preferences, OR result-filters, Esc-H,
+⌥± font size, and CSV-for-Excel (the BOM is the feature).
 
 **Program AT · answer truthfulness** — guards key on claims and verdicts, never on vocabulary.
 
@@ -3311,7 +3326,7 @@ surface needs its capability inventory first; (c) an arc about "polish" invites 
 creep — every wave has a receipt that is a *behavior*, not an adjective, and a wave
 with no receipt left to take is done.
 
-### 3.15 · Arc ON — the ontology the agent runs ON (drafted AND adopted 2026-09-10 — §6 item 14, all four clauses YES; **ON-0 STARTED** the same day)
+### 3.15 · Arc ON — the ontology the agent runs ON (drafted AND adopted 2026-09-10 — §6 item 14, all four clauses YES; **ON-0 STARTED** the same day; rebuild delete-bug FIXED, **MERGED #499**, squash `5281e5a7`, 2026-09-13 — the route and the hourly auto-refresh deleted built ontologies and built nothing; now build-first with a strict read-back)
 
 > **Origin.** The user's 2026-09-10 challenge, verbatim: *"I feel the ontology that we have
 > is just a Fancy representation of the ERD of the schema. I don't know how our ontology
