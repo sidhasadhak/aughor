@@ -75,6 +75,15 @@ export const EXTRACTORS: Extractor[] = [
     render: (c, r) => toTsv(c, r),
   },
   {
+    // SE-8F — every export menu lists "Excel" beside CSV, and the thing Excel actually
+    // gets wrong with a plain CSV is the ENCODING: without a BOM it decodes UTF-8 as
+    // Windows-1252 and every umlaut and dash arrives mangled. The BOM is the fix, and
+    // it costs three bytes — a real .xlsx would cost a 1MB dependency with published
+    // advisories, to carry the same cells.
+    id: "csv-excel", label: "CSV for Excel", ext: "csv", mime: "text/csv;charset=utf-8;",
+    render: (c, r) => `﻿${toCsv(c, r)}`,
+  },
+  {
     id: "json", label: "JSON", ext: "json", mime: "application/json;charset=utf-8;",
     // An ARRAY OF OBJECTS, not of arrays: the column names are the reason anyone asked
     // for JSON rather than CSV. A repeated column name (`SELECT a, a`) would collapse,

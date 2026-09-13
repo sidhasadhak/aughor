@@ -1322,7 +1322,14 @@ class LocalUploadConnection(Connector):
         wave — `interrupt()` landed on `DuckDBConnection` alone and Cancel was silently
         a no-op on the connection the demo opens by default. Adding the capability here
         rather than assuming inheritance covers it.
+
+        SE-8C — list expansion happens HERE for the same reason it sits in
+        `DuckDBConnection.execute_with_params`: before any dialect rewrite can
+        re-spell `:name`, so the scan still matches (and duplicated here because of
+        exactly the asymmetry above).
         """
+        from aughor.sql.params import expand_list_params
+        sql, params = expand_list_params(sql, params or {})
         return self.execute(hypothesis_id, sql, params=params)
 
     def execute(self, hypothesis_id: str, sql: str,

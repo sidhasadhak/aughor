@@ -17,5 +17,11 @@ class SavedQuery(BaseModel):
     name: str
     sql: str = ""
     spec: Dict[str, Any] = Field(default_factory=dict)  # opaque visual-builder state
+    # SE-8C — how each `:name` parameter renders as a WIDGET (label, widget kind,
+    # options, default). Opaque to the backend for the same reason `spec` is: the
+    # editor owns its shape, the store round-trips it. A separate field, NOT part of
+    # `spec`, because a non-empty spec is what routes a query to the visual builder —
+    # parameter widgets on a SQL query must not change where it opens.
+    param_defs: Dict[str, Any] = Field(default_factory=dict)
     created_at: str = ""
     updated_at: str = ""

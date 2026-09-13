@@ -33,7 +33,8 @@ import re
 from typing import Any, Iterable
 
 __all__ = [
-    "find_params", "render_for_engine", "render_for_guards", "ParamRenderError",
+    "find_params", "render_for_engine", "render_for_guards", "expand_list_params",
+    "ParamRenderError",
 ]
 
 
@@ -158,6 +159,11 @@ def _literal(value: Any) -> str:
     Deliberately narrow: only the types a parameter chip can produce. Anything else
     raises, and the caller degrades to "not checked" — guessing at a rendering for an
     unknown type is how an analysis string becomes wrong in a way nobody notices.
+
+    SE-8C adds the one compound shape a widget produces: a LIST (a multiselect's
+    value), rendered as a parenthesised group so ``x IN :param`` reads as ``x IN
+    ('a', 'b')``. An empty selection renders ``(NULL)`` — ``IN (NULL)`` matches no
+    row, which is what selecting nothing means.
     """
     if value is None:
         return "NULL"
@@ -167,7 +173,47 @@ def _literal(value: Any) -> str:
         return repr(value)
     if isinstance(value, str):
         return "'" + value.replace("'", "''") + "'"
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return "(NULL)"
+        return "(" + ", ".join(_literal(v) for v in value) + ")"
     raise ParamRenderError(f"cannot render {type(value).__name__} as a literal")
+
+
+def expand_list_params(sql: str, params: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    """SE-8C — rewrite every ``:name`` whose value is a LIST into a parenthesised group
+    of scalar parameters, so a multiselect widget can feed ``x IN :name``.
+
+    ``IN :countries`` with ``{"countries": ["PT", "ES"]}`` becomes
+    ``IN (:countries__0, :countries__1)`` with the two scalar values — every driver
+    then binds scalars, which is all any of them can do. The parentheses come from the
+    rewrite, so the SQL is written WITHOUT them (``IN :name``, no parentheses); an empty list becomes ``(NULL)``, which matches no row.
+
+    Runs BEFORE ``render_for_engine`` at the driver call, on the same no-op principle:
+    a query with no list values passes through byte-identical.
+    """
+    params = params or {}
+    if not any(isinstance(v, (list, tuple)) for v in params.values()):
+        return sql, dict(params)
+    out_params: dict[str, Any] = {
+        k: v for k, v in params.items() if not isinstance(v, (list, tuple))
+    }
+    out, last = [], 0
+    for start, end, name in _scan(sql or ""):
+        value = params.get(name)
+        if not isinstance(value, (list, tuple)):
+            continue
+        out.append(sql[last:start])
+        if not value:
+            out.append("(NULL)")
+        else:
+            names = [f"{name}__{i}" for i in range(len(value))]
+            for scalar_name, scalar_value in zip(names, value):
+                out_params[scalar_name] = scalar_value
+            out.append("(" + ", ".join(f":{n}" for n in names) + ")")
+        last = end
+    out.append(sql[last:])
+    return "".join(out), out_params
 
 
 def render_for_guards(sql: str, params: dict[str, Any]) -> str:

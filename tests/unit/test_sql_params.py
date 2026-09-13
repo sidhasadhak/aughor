@@ -143,3 +143,47 @@ def test_guard_and_engine_renderings_agree_on_what_is_a_parameter():
         assert f"${name}" in engine
     assert "$c" not in engine and "'c'" not in guards
     assert "x::int" in engine and "x::int" in guards
+
+
+# ── SE-8C — list values: the multiselect widget's shape ───────────────────────
+
+def test_expand_list_params_rewrites_in_place():
+    from aughor.sql.params import expand_list_params
+    sql, params = expand_list_params(
+        "SELECT * FROM t WHERE country IN :c AND x = :x",
+        {"c": ["PT", "ES"], "x": 1},
+    )
+    assert sql == "SELECT * FROM t WHERE country IN (:c__0, :c__1) AND x = :x"
+    assert params == {"c__0": "PT", "c__1": "ES", "x": 1}
+
+
+def test_expand_list_params_is_identity_without_lists():
+    from aughor.sql.params import expand_list_params
+    src = "SELECT * FROM t WHERE a = :a"
+    sql, params = expand_list_params(src, {"a": "x"})
+    assert sql == src and params == {"a": "x"}
+
+
+def test_expand_empty_list_matches_no_row_rather_than_erroring():
+    from aughor.sql.params import expand_list_params
+    sql, params = expand_list_params("SELECT * FROM t WHERE c IN :c", {"c": []})
+    assert sql == "SELECT * FROM t WHERE c IN (NULL)"
+    assert params == {}
+
+
+def test_expanded_sql_renders_for_every_style():
+    from aughor.sql.params import expand_list_params, render_for_engine
+    sql, _ = expand_list_params("SELECT 1 WHERE c IN :c", {"c": ["a", "b"]})
+    assert render_for_engine(sql, "duckdb") == "SELECT 1 WHERE c IN ($c__0, $c__1)"
+    assert render_for_engine(sql, "pyformat") == "SELECT 1 WHERE c IN (%(c__0)s, %(c__1)s)"
+
+
+def test_guard_rendering_of_a_list_is_a_parenthesised_group():
+    from aughor.sql.params import render_for_guards
+    out = render_for_guards("SELECT 1 WHERE c IN :c", {"c": ["a", "o'brien"]})
+    assert out == "SELECT 1 WHERE c IN ('a', 'o''brien')"
+
+
+def test_guard_rendering_of_an_empty_list_matches_no_row():
+    from aughor.sql.params import render_for_guards
+    assert render_for_guards("SELECT 1 WHERE c IN :c", {"c": []}) == "SELECT 1 WHERE c IN (NULL)"

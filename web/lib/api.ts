@@ -2800,6 +2800,10 @@ export interface SavedQuery {
   sql: string;
   /** Opaque visual-builder state (primaryTable, joins, dims, measures, filters, orderBy, limit). */
   spec: Record<string, unknown>;
+  /** SE-8C — parameter widget definitions (`ParamDef` per `:name`), opaque here.
+   *  A separate field from `spec`: a non-empty spec routes a query to the visual
+   *  builder, and widgets on a SQL query must not change where it opens. */
+  param_defs?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -2820,6 +2824,39 @@ export interface QuickFix {
   changed: boolean;
   /** The deterministic classifier's read on the failure, independent of the model. */
   diagnosis: string;
+}
+
+// SE-8E — the editor's AI pane. Same consent model as Quick Fix, generalised: SQL
+// only ever comes back as a PROPOSAL for a diff; the server never executes it.
+export interface AssistReply {
+  reply: string;
+  proposed_sql: string;
+  changed: boolean;
+}
+
+export async function assistSql(
+  connId: string,
+  instruction: string,
+  opts: {
+    sql?: string; error?: string;
+    history?: { role: "user" | "assistant"; content: string }[];
+  } = {},
+): Promise<AssistReply> {
+  const res = await fetch(`${getApiBase()}/query/assist`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId, instruction,
+      ...(opts.sql ? { sql: opts.sql } : {}),
+      ...(opts.error ? { error: opts.error } : {}),
+      ...(opts.history?.length ? { history: opts.history } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The assistant is unavailable"));
+  }
+  return res.json();
 }
 
 /** Ask for a proposed repair. The server never executes it and never applies it. */
@@ -2889,11 +2926,15 @@ export async function restoreSavedQuery(queryId: string, version: number): Promi
 
 export async function createSavedQuery(
   connectionId: string, name: string, sql: string, spec: Record<string, unknown>,
+  paramDefs?: Record<string, unknown>,
 ): Promise<SavedQuery> {
   const res = await fetch(`${getApiBase()}/saved-queries`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connection_id: connectionId, name, sql, spec }),
+    body: JSON.stringify({
+      connection_id: connectionId, name, sql, spec,
+      ...(paramDefs && Object.keys(paramDefs).length ? { param_defs: paramDefs } : {}),
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -2903,7 +2944,11 @@ export async function createSavedQuery(
 }
 
 export async function updateSavedQuery(
-  id: string, patch: { name?: string; sql?: string; spec?: Record<string, unknown> },
+  id: string,
+  patch: {
+    name?: string; sql?: string; spec?: Record<string, unknown>;
+    param_defs?: Record<string, unknown>;
+  },
 ): Promise<SavedQuery> {
   const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(id)}`, {
     method: "PUT",

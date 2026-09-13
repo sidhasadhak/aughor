@@ -39,21 +39,30 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
         )
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_conn ON saved_queries(connection_id)")
+    # SE-8C — parameter widget definitions. An ALTER because CREATE TABLE IF NOT EXISTS
+    # never touches an existing table; probed first rather than try/except-ed, because
+    # an expected failure swallowed on every ensure call is exactly what the
+    # silent-swallow ratchet exists to refuse.
+    cols = {row[1] for row in c.execute("PRAGMA table_info(saved_queries)")}
+    if "param_defs_json" not in cols:
+        c.execute("ALTER TABLE saved_queries ADD COLUMN param_defs_json TEXT NOT NULL DEFAULT '{}'")
     c.commit()
 
 
 def _row_to_query(row: sqlite3.Row) -> SavedQuery:
-    spec = {}
-    try:
-        spec = json.loads(row["spec_json"] or "{}")
-    except Exception:
-        spec = {}
+    def _json_col(name: str) -> dict:
+        try:
+            v = json.loads(row[name] or "{}")
+            return v if isinstance(v, dict) else {}
+        except Exception:
+            return {}
     return SavedQuery(
         id=row["id"],
         connection_id=row["connection_id"],
         name=row["name"],
         sql=row["sql"] or "",
-        spec=spec if isinstance(spec, dict) else {},
+        spec=_json_col("spec_json"),
+        param_defs=_json_col("param_defs_json"),
         created_at=row["created_at"],
         updated_at=row["updated_at"],
     )
@@ -67,6 +76,7 @@ def create_saved_query(
     sql: str = "",
     spec: Optional[dict] = None,
     query_id: Optional[str] = None,
+    param_defs: Optional[dict] = None,
 ) -> SavedQuery:
     qid = query_id or uuid.uuid4().hex[:8]
     now = _now()
@@ -74,14 +84,14 @@ def create_saved_query(
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "INSERT INTO saved_queries (id, connection_id, name, sql, spec_json, created_at, updated_at) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (qid, connection_id, name, sql, spec_json, now, now),
+        "INSERT INTO saved_queries (id, connection_id, name, sql, spec_json, param_defs_json, created_at, updated_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (qid, connection_id, name, sql, spec_json, json.dumps(param_defs or {}), now, now),
     )
     c.commit()
     return SavedQuery(
         id=qid, connection_id=connection_id, name=name, sql=sql,
-        spec=spec or {}, created_at=now, updated_at=now,
+        spec=spec or {}, param_defs=param_defs or {}, created_at=now, updated_at=now,
     )
 
 
@@ -110,6 +120,7 @@ def update_saved_query(
     name: Optional[str] = None,
     sql: Optional[str] = None,
     spec: Optional[dict] = None,
+    param_defs: Optional[dict] = None,
 ) -> Optional[SavedQuery]:
     existing = get_saved_query(query_id)
     if not existing:
@@ -117,12 +128,13 @@ def update_saved_query(
     new_name = name if name is not None else existing.name
     new_sql = sql if sql is not None else existing.sql
     new_spec = spec if spec is not None else existing.spec
+    new_defs = param_defs if param_defs is not None else existing.param_defs
     now = _now()
     c = _conn()
     ensure_once(c, _ensure_schema)
     c.execute(
-        "UPDATE saved_queries SET name=?, sql=?, spec_json=?, updated_at=? WHERE id=?",
-        (new_name, new_sql, json.dumps(new_spec or {}), now, query_id),
+        "UPDATE saved_queries SET name=?, sql=?, spec_json=?, param_defs_json=?, updated_at=? WHERE id=?",
+        (new_name, new_sql, json.dumps(new_spec or {}), json.dumps(new_defs or {}), now, query_id),
     )
     c.commit()
     updated = get_saved_query(query_id)
@@ -144,7 +156,7 @@ def _record_revision(q: Optional[SavedQuery]) -> None:
 
     try:
         save_draft("savedquery", f"savedquery:{q.id}",
-                   {"name": q.name, "sql": q.sql, "spec": q.spec},
+                   {"name": q.name, "sql": q.sql, "spec": q.spec, "param_defs": q.param_defs},
                    conn_id=q.connection_id)
     except Exception as exc:
         tolerate(exc, "recording a saved-query revision is best-effort; the query itself is "

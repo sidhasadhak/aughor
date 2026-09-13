@@ -29,6 +29,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
+import { AiPane } from "@/components/query/AiPane";
 import { Icon } from "@/components/ui/icon";
 import { ParamBar } from "@/components/query/ParamBar";
 import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
@@ -38,18 +39,31 @@ import {
 import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
 import { splitStatements, statementAt, findParams } from "@/lib/query/parserClient";
 import { cmDialect, engineFamily, explainPrefix, quoteIdentifier, type EngineHint } from "@/lib/query/dialect";
-import { formatSql } from "@/lib/query/format";
+import {
+  DEFAULT_FORMAT_PREFS, formatSql, readFormatPrefs, writeFormatPrefs, type FormatPrefs,
+} from "@/lib/query/format";
+import { OpenQueryDialog } from "@/components/query/OpenQueryDialog";
+import { resolveParamValue, type ParamDef, type ParamValue } from "@/lib/query/paramDefs";
 import {
   runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { ShortcutSheet } from "@/components/query/ShortcutSheet";
 import { type JoinHint } from "@/components/query/editor/intentions";
+import { formatCount } from "@/lib/format";
 
 type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
 
 /** Stable identity — a fresh `{}` each render would re-fire every memo below it. */
-const EMPTY_PARAMS: Record<string, string> = {};
+const EMPTY_PARAMS: Record<string, ParamValue> = {};
+const EMPTY_DEFS: Record<string, ParamDef> = {};
+
+/** SE-8A — the row limits the Run menu offers. Bounded above rather than offering "no
+ *  limit": the server honours limit<=0 as uncapped, and an uncapped SELECT over a wide
+ *  fact table hands the browser a payload nobody asked to render. 50k is where a browser
+ *  grid stops being a grid, and a LIMIT clause in the SQL still
+ *  overrides everything here. */
+const LIMIT_PRESETS = [100, 500, 1000, 5000, 10000, 50000];
 
 /** SE-1's single-draft key, read once when a connection has no tabs yet. Left in place
  *  rather than deleted after reading: a user who downgrades mid-session should still
@@ -118,11 +132,18 @@ export function SqlMode({
   const [activeId, setActiveId] = useState("");
   const activeIdRef = useRef("");
   activeIdRef.current = activeId;
-  const [result, setResult] = useState<TypedQueryResult | null>(null);
+  // SE-8B — every statement's result from the last run, in order. A single run is a
+  // one-element array; "Run all" appends as statements complete, so the pager fills
+  // in live. The panel shows `results[resultIdx]`.
+  const [results, setResults] = useState<TypedQueryResult[]>([]);
+  const [resultIdx, setResultIdx] = useState(0);
+  const [maximizeResults, setMaximizeResults] = useState(false);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  // SE-8E — ONE right rail, two occupants: history, or the assistant. Mutually
+  // exclusive by construction (they share the space), sharing one persisted width.
+  const [rail, setRail] = useState<"" | "history" | "ai">("");
   const [historyKey, setHistoryKey] = useState(0);
   // SE-3 F — the in-flight run's abort handle and when it started.
   const abort = useRef<AbortController | null>(null);
@@ -139,11 +160,36 @@ export function SqlMode({
   const quoteForEngine = useCallback((name: string) => quoteIdentifier(name, engine), [engine]);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
+  // SE-8E — the assistant reads the buffer and the last error AT SEND TIME through
+  // these, so typing never re-renders the pane and a send never sees a stale closure.
+  const sqlRef = useRef("");
+  const errorRef = useRef("");
   const editorApi = useRef<EditorApi | null>(null);
   const relint = useRef<(() => void) | null>(null);
 
   const active = tabs.find(t => t.id === activeId) ?? null;
   const sqlText = active?.sql ?? "";
+  sqlRef.current = sqlText;
+  errorRef.current = error;
+
+  // SE-8A — the run settings live on the TAB (see EditorTab), read with defaults here.
+  const limit = active?.limit ?? 500;
+  const runAllPref = !!active?.runAll;
+  const [showRunMenu, setShowRunMenu] = useState(false);
+
+  // SE-8F — "+ → Open existing", and the Format button's preferences menu.
+  const [showOpenDialog, setShowOpenDialog] = useState(false);
+  const [showFormatMenu, setShowFormatMenu] = useState(false);
+  // Storage read in an EFFECT, never a useState initializer (hydration rule).
+  const [fmtPrefs, setFmtPrefs] = useState<FormatPrefs>(DEFAULT_FORMAT_PREFS);
+  useEffect(() => { setFmtPrefs(readFormatPrefs()); }, []);
+  const patchFmt = useCallback((patch: Partial<FormatPrefs>) => {
+    setFmtPrefs(prev => {
+      const next = { ...prev, ...patch };
+      writeFormatPrefs(next);
+      return next;
+    });
+  }, []);
 
   // SE-4 H — the `:name` parameters of the CURRENT document, and this tab's values.
   const paramNames = useMemo(() => findParams(sqlText), [sqlText]);
@@ -158,19 +204,26 @@ export function SqlMode({
     return () => { alive = false; };
   }, [sqlText]);
   const paramValues = active?.params ?? EMPTY_PARAMS;
+  const paramDefs = active?.paramDefs ?? EMPTY_DEFS;
   // Only the names still present in the SQL, so a value left behind by a deleted
   // parameter is not silently sent (the server would reject an unknown bind name).
+  // SE-8C — each value resolves through its widget def: defaults fill in, number
+  // widgets bind numbers, ⚡ date tokens become the date they mean today, and a
+  // multiselect binds its list.
   const boundParams = useMemo(() => {
-    const out: Record<string, string> = {};
-    for (const n of paramNames) if ((paramValues[n] ?? "").trim()) out[n] = paramValues[n];
+    const out: Record<string, unknown> = {};
+    for (const n of paramNames) {
+      const v = resolveParamValue(paramDefs[n], paramValues[n] ?? paramDefs[n]?.default);
+      if (v !== undefined) out[n] = v;
+    }
     return out;
-  }, [paramNames, paramValues]);
+  }, [paramNames, paramValues, paramDefs]);
 
   // Built ONCE and read through getters, so a connection or dialect change reaches the
   // linter without rebuilding the editor (which would drop undo history and cursor).
   const connRef = useRef(connId);
   const engineRef = useRef(engine);
-  const paramsRef = useRef<Record<string, string>>(EMPTY_PARAMS);
+  const paramsRef = useRef<Record<string, unknown>>(EMPTY_PARAMS);
   connRef.current = connId;
   engineRef.current = engine;
   paramsRef.current = boundParams;
@@ -206,7 +259,8 @@ export function SqlMode({
       setTabs([t]);
       setActiveId(t.id);
     }
-    setResult(null);
+    setResults([]);
+    setResultIdx(0);
     setError("");
   }, [connId]);
 
@@ -246,8 +300,10 @@ export function SqlMode({
 
   const setSql = useCallback((sql: string) => patchActive({ sql }), [patchActive]);
 
-  const openInNewTab = useCallback((sql: string, name = "Query") => {
-    const t = { ...newTab(name), sql };
+  const openInNewTab = useCallback((
+    sql: string, name = "Query", paramDefs?: Record<string, ParamDef>,
+  ) => {
+    const t = { ...newTab(name), sql, ...(paramDefs && Object.keys(paramDefs).length ? { paramDefs } : {}) };
     setTabs(prev => [...prev, t]);
     setActiveId(t.id);
   }, []);
@@ -277,15 +333,16 @@ export function SqlMode({
     setFailedSql("");
     setStartedAt(Date.now());
     try {
-      const res = await runWorkbenchQuery(connId, toRun, 500, boundParams, ac.signal);
-      setResult(res);
+      const res = await runWorkbenchQuery(connId, toRun, limit, boundParams, ac.signal);
+      setResults([res]);
+      setResultIdx(0);
       if (res.error) setFailedSql(toRun);
       // A query that RAN and reported an error is a value, not an exception — the
       // panel shows the engine's own message rather than a generic failure.
       setError(res.error ?? "");
       patchActive({ status: res.error ? "error" : "ok" });
     } catch (e) {
-      setResult(null);
+      setResults([]);
       // A cancellation is the user's own decision arriving back at them. Reporting it
       // as a failure would make the button they just pressed look like a malfunction,
       // so the panel returns to its resting state and says nothing.
@@ -303,7 +360,7 @@ export function SqlMode({
       // The rail reads the audit log this run just wrote to.
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, statementToRun, patchActive, boundParams]);
+  }, [connId, running, statementToRun, patchActive, boundParams, limit]);
 
   /** SE-7 — Explain plan. DataGrip puts this beside Run because the two questions —
    *  "what does it return" and "what will it cost" — are asked of the same statement a
@@ -347,6 +404,9 @@ export function SqlMode({
     setError("");
     setFailedSql("");
     setStartedAt(Date.now());
+    // SE-8B — the pager fills as statements land, so it starts empty.
+    setResults([]);
+    setResultIdx(0);
     const done: string[] = [];
     // Which statement is in flight — so a failure hands Quick Fix THAT statement rather
     // than the whole multi-statement document, which is a different query.
@@ -354,8 +414,11 @@ export function SqlMode({
     try {
       for (const [i, stmt] of statements.entries()) {
         inFlight = stmt;
-        const res = await runWorkbenchQuery(connId, stmt, 500, boundParams, ac.signal);
-        setResult(res);
+        const res = await runWorkbenchQuery(connId, stmt, limit, boundParams, ac.signal);
+        // SE-8B — EVERY statement's rows are kept now (the roadmap's per-statement
+        // results), and the pager follows the one in flight.
+        setResults(prev => [...prev, res]);
+        setResultIdx(i);
         if (res.error) {
           setError(`Statement ${i + 1} of ${statements.length} failed: ${res.error}`);
           setFailedSql(stmt);
@@ -382,7 +445,7 @@ export function SqlMode({
       setStartedAt(0);
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, sqlText, boundParams, patchActive, run]);
+  }, [connId, running, sqlText, boundParams, patchActive, run, limit]);
 
   /** Abort the in-flight fetch. Closing the socket is what reaches the server, which
    *  interrupts the engine — so this stops the QUERY, not just the waiting. */
@@ -404,10 +467,19 @@ export function SqlMode({
     return () => clearInterval(id);
   }, [startedAt]);
 
+  // SE-8A — what ⌘↵ and the Run button DO: the tab's "Run all statements" preference
+  // promotes them to the whole buffer when there is more than one statement. The
+  // single-statement verb survives as ⌘⇧↵ — a preference must not delete a verb.
+  const runPreferred = useCallback(() => {
+    if (runAllPref && statementCount > 1) void runAll(); else void run();
+  }, [runAllPref, statementCount, runAll, run]);
+
   // The run command must see the CURRENT text and cursor. `run` is rebuilt when those
   // change, and the editor calls through this ref, so ⌘↵ never fires a stale closure.
-  const runRef = useRef(run);
-  runRef.current = run;
+  const runRef = useRef(runPreferred);
+  runRef.current = runPreferred;
+  const runStatementRef = useRef(run);
+  runStatementRef.current = run;
 
   // ── The saved-query bar's binding ───────────────────────────────────────────
   //
@@ -415,11 +487,20 @@ export function SqlMode({
   // mode's query IS its text, and inventing a builder spec for it would claim the
   // composer could reproduce a statement it may not be able to decompile. The empty
   // spec is what routes the query back here when it is loaded.
-  const captureRef = useRef<() => { sql: string; spec: Record<string, unknown> } | null>(null);
-  const loadRef = useRef<(q: { sql: string; name: string }) => void>(() => {});
+  const captureRef = useRef<() => {
+    sql: string; spec: Record<string, unknown>; param_defs?: Record<string, unknown>;
+  } | null>(null);
+  const loadRef = useRef<(q: {
+    sql: string; name: string; param_defs?: Record<string, unknown>;
+  }) => void>(() => {});
   const nameRef = useRef<() => string>(() => "Untitled query");
-  captureRef.current = () => (sqlText.trim() ? { sql: sqlText, spec: {} } : null);
-  loadRef.current = q => openInNewTab(q.sql, q.name);
+  // SE-8C — widget definitions save WITH the query and come back with it: a dropdown
+  // someone configured is part of what "this saved query" means.
+  captureRef.current = () => (sqlText.trim()
+    ? { sql: sqlText, spec: {}, param_defs: active?.paramDefs ?? {} }
+    : null);
+  loadRef.current = q =>
+    openInNewTab(q.sql, q.name, (q.param_defs ?? {}) as Record<string, ParamDef>);
   // A tab the user renamed is a name they chose — better than anything derived. Only
   // an untouched tab falls back to reading the query's own FROM clause.
   nameRef.current = () => {
@@ -453,12 +534,14 @@ export function SqlMode({
           })}
           onRename={(id, name) => setTabs(prev => prev.map(t => t.id === id ? { ...t, name } : t))}
           trailing={toolbar}
+          onOpenExisting={() => setShowOpenDialog(true)}
         />
 
-        <ParamBar
-          names={paramNames}
-          values={paramValues}
-          onChange={next => patchActive({ params: next })}
+        <OpenQueryDialog
+          connId={connId}
+          open={showOpenDialog}
+          onClose={() => setShowOpenDialog(false)}
+          onOpen={(sql, name) => openInNewTab(sql, name)}
         />
 
         <div
@@ -477,11 +560,61 @@ export function SqlMode({
               Cancel{elapsed && <span style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>}
             </Button>
           ) : (
-            <Button variant="default" size="xs" className="aug-fs-ui"
-              title="Runs the selection, or the statement under the cursor (⌘↵)"
-              onClick={() => void run()} disabled={!connId}>
-              Run  ⌘↵
-            </Button>
+            // SE-8A — a split button whose label CARRIES the row limit, so
+            // "how many rows am I getting" is answered before the run, not after. The
+            // caret opens the run settings; both halves persist on the tab.
+            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
+              <Button variant="default" size="xs" className="aug-fs-ui"
+                title={runAllPref && statementCount > 1
+                  ? `Run all ${statementCount} statements in order (⌘↵) — ⌘⇧↵ runs just the statement under the cursor`
+                  : "Runs the selection, or the statement under the cursor (⌘↵)"}
+                onClick={() => runPreferred()} disabled={!connId}>
+                Run ({formatCount(limit)})
+              </Button>
+              <Button variant="default" size="xs"
+                title="Run settings — the row limit, and whether ⌘↵ runs every statement"
+                aria-label="Run settings"
+                onClick={() => setShowRunMenu(v => !v)} disabled={!connId}
+                style={{ paddingLeft: 3, paddingRight: 3 }}
+                data-testid="sql-run-menu">
+                <Icon name="chevd" size={13} />
+              </Button>
+              {showRunMenu && (
+                <>
+                  <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowRunMenu(false)} />
+                  <div className="aug-fs-ui" style={{
+                    position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                    minWidth: 230, padding: 5, background: "var(--bg-2)",
+                    border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+                  }}>
+                    <div className="aug-label" style={{ padding: "3px 7px" }}>Row limit</div>
+                    {LIMIT_PRESETS.map(n => (
+                      <Button key={n} variant="ghost" size="xs" className="aug-fs-ui"
+                        style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
+                        onClick={() => { patchActive({ limit: n }); setShowRunMenu(false); }}>
+                        <span style={{ width: 14, flexShrink: 0 }}>
+                          {n === limit && <Icon name="check" size={12} />}
+                        </span>
+                        {formatCount(n)}{n === 500 ? " — default" : n === 50000 ? " — max" : ""}
+                      </Button>
+                    ))}
+                    <div style={{ borderTop: "1px solid var(--b1)", margin: "5px 0" }} />
+                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                      style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
+                      title="When on, Run and ⌘↵ run every statement in the tab, in order, stopping at the first error"
+                      onClick={() => patchActive({ runAll: !runAllPref })}>
+                      <span style={{ width: 14, flexShrink: 0 }}>
+                        {runAllPref && <Icon name="check" size={12} />}
+                      </span>
+                      Run all statements
+                    </Button>
+                    <div className="aug-fs-xs" style={{ padding: "3px 7px", color: "var(--t3)" }}>
+                      ⌘⇧↵ always runs just the statement under the cursor
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           {/* Only offered when there IS more than one statement — a "Run all" beside a
               single statement is a second button for the thing the first one does. */}
@@ -495,28 +628,79 @@ export function SqlMode({
               Explain
             </Button>
           )}
-          {!running && statementCount > 1 && (
+          {/* Redundant while the tab preference already makes Run run everything. */}
+          {!running && statementCount > 1 && !runAllPref && (
             <Button variant="ghost" size="xs" className="aug-fs-ui"
               title={`Run all ${statementCount} statements in order, stopping at the first error`}
               onClick={() => void runAll()} disabled={!connId}>
               Run all ({statementCount})
             </Button>
           )}
+          {/* SE-8A — the schema picker sits with the run cluster: it answers "against
+              what", which is part of the same question as "run". */}
+          {schemaControl}
+          {/* SE-8F — Format grew preferences (a caret beside the verb, not a settings
+              page). Click formats; the caret decides HOW. */}
+          <div style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="aug-fs-ui"
+              title="Format the selection, or the whole query (⌘⇧F)"
+              onClick={() => setSql(formatSql(sqlText, engine, fmtPrefs))}
+              disabled={!sqlText.trim()}
+            >
+              <Icon name="sql" size={14} />
+            </Button>
+            <Button variant="ghost" size="xs" title="Formatting preferences"
+              aria-label="Formatting preferences"
+              onClick={() => setShowFormatMenu(v => !v)}
+              style={{ paddingLeft: 2, paddingRight: 2 }}>
+              <Icon name="chevd" size={12} />
+            </Button>
+            {showFormatMenu && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowFormatMenu(false)} />
+                <div className="aug-fs-ui" style={{
+                  position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                  minWidth: 250, padding: "5px 7px 7px", background: "var(--bg-2)",
+                  border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+                }}>
+                  <div className="aug-label" style={{ padding: "3px 0" }}>Formatting</div>
+                  {([
+                    ["Keywords", "keywordCase", [["upper", "UPPER"], ["lower", "lower"], ["preserve", "as written"]]],
+                    ["Functions", "functionCase", [["upper", "UPPER"], ["lower", "lower"], ["preserve", "as written"]]],
+                  ] as const).map(([label, field, opts]) => (
+                    <div key={field} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}>
+                      <span style={{ color: "var(--t3)", width: 74, flexShrink: 0 }}>{label}</span>
+                      {opts.map(([v, name]) => (
+                        <Button key={v} size="xs" className="aug-fs-ui"
+                          variant={fmtPrefs[field] === v ? "secondary" : "ghost"}
+                          onClick={() => patchFmt({ [field]: v })}>
+                          {name}
+                        </Button>
+                      ))}
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}>
+                    <span style={{ color: "var(--t3)", width: 74, flexShrink: 0 }}>Indent</span>
+                    {([2, 4] as const).map(w => (
+                      <Button key={w} size="xs" className="aug-fs-ui"
+                        variant={fmtPrefs.tabWidth === w ? "secondary" : "ghost"}
+                        onClick={() => patchFmt({ tabWidth: w })}>
+                        {w} spaces
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="xs"
-            className="aug-fs-ui"
-            title="Format the selection, or the whole query (⌘⇧F)"
-            onClick={() => setSql(formatSql(sqlText, engine))}
-            disabled={!sqlText.trim()}
-          >
-            <Icon name="sql" size={14} />
-          </Button>
-          <Button
-            variant="ghost"
-            size="xs"
-            onClick={() => setShowHistory(s => !s)}
-            title={showHistory ? "Hide recent queries" : "Recent queries run from this workbench"}
+            onClick={() => setRail(r => r === "history" ? "" : "history")}
+            title={rail === "history" ? "Hide recent queries" : "Recent queries run from this workbench"}
           >
             <Icon name="clock" size={14} />
           </Button>
@@ -524,7 +708,6 @@ export function SqlMode({
               of them says so anywhere on screen; a verb nobody can find is a verb that
               does not exist. */}
           <ShortcutSheet />
-          {schemaControl}
           {runAllSummary && !error && (
             <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
               {runAllSummary}
@@ -553,6 +736,17 @@ export function SqlMode({
                   : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
             </span>
           )}
+          {/* SE-8E — the assistant, at the toolbar's far right. Opens a pane; nothing
+              fires until a message is sent. */}
+          <Button
+            variant={rail === "ai" ? "secondary" : "ghost"}
+            size="xs"
+            onClick={() => setRail(r => r === "ai" ? "" : "ai")}
+            title={rail === "ai" ? "Close the assistant" : "Ask about this data or this SQL — proposals arrive as a diff"}
+            data-testid="sql-ai-toggle"
+          >
+            <Icon name="spark" size={14} />
+          </Button>
         </div>
 
         <ResizableSplit
@@ -561,35 +755,56 @@ export function SqlMode({
           initial={260}
           min={120}
           max={720}
+          // SE-8B — the results pane's ⤢: the editor collapses, the results take the
+          // column, and the editor keeps its document because `collapsed` hides
+          // rather than unmounts (the remount trap this file already paid for).
+          collapsed={maximizeResults}
           style={{ flex: 1, minHeight: 0 }}
           left={
-            <SqlEditorPane
-              value={sqlText}
-              onChange={setSql}
-              onRun={() => void runRef.current()}
-              onFormat={(text) => formatSql(text, engineRef.current)}
-              onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
-              onReady={api => {
-                editorApi.current = api;
-                relint.current = api.relint;
-                onInsertReady?.(api.insert);
-              }}
-              schema={schema}
-              defaultSchema={defaultSchema}
-              dialect={cmDialect(engine)}
-              quote={quoteForEngine}
-              joins={joins}
-              diagnostics={diagnostics}
-            />
+            // SE-8C — the parameter widgets sit BETWEEN editor and results: fill
+            // these, then look below, in reading order.
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <SqlEditorPane
+                value={sqlText}
+                onChange={setSql}
+                onRun={() => runRef.current()}
+                onRunStatement={() => void runStatementRef.current()}
+                onFormat={(text) => formatSql(text, engineRef.current)}
+                onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
+                onReady={api => {
+                  editorApi.current = api;
+                  relint.current = api.relint;
+                  onInsertReady?.(api.insert);
+                }}
+                schema={schema}
+                defaultSchema={defaultSchema}
+                dialect={cmDialect(engine)}
+                quote={quoteForEngine}
+                joins={joins}
+                diagnostics={diagnostics}
+              />
+              <ParamBar
+                connId={connId}
+                names={paramNames}
+                values={paramValues}
+                defs={paramDefs}
+                onChange={next => patchActive({ params: next })}
+                onDefsChange={next => patchActive({ paramDefs: next })}
+              />
+            </div>
           }
           right={
             <ResultsPanel
-              result={result}
+              results={results}
+              resultIdx={resultIdx}
+              onResultIdx={setResultIdx}
               error={error}
               running={running}
               connId={connId}
               onSchedule={onSchedule}
               onShare={onShare}
+              maximized={maximizeResults}
+              onToggleMaximize={() => setMaximizeResults(v => !v)}
               failedSql={failedSql}
               onApplyFix={(fixed) => {
                 // Into the document, never into a run. Applying is the user accepting a
@@ -621,16 +836,23 @@ export function SqlMode({
       initial={280}
       min={200}
       max={560}
-      collapsed={!showHistory}
+      collapsed={!rail}
       style={{ flex: 1, minWidth: 0, minHeight: 0 }}
       left={editorPane}
-      right={
+      right={rail === "ai" ? (
+        <AiPane
+          connId={connId}
+          getSql={() => sqlRef.current}
+          getError={() => errorRef.current}
+          onApply={fixed => setSql(fixed)}
+        />
+      ) : (
         <HistoryRail
           connId={connId}
           refreshKey={historyKey}
           onRestore={sql => openInNewTab(sql, "History")}
         />
-      }
+      )}
     />
   );
 }

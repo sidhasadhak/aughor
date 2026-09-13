@@ -1090,12 +1090,16 @@ class _SaveQueryRequest(BaseModel):
     name: str
     sql: str = ""
     spec: dict = {}
+    # SE-8C — parameter widget definitions, opaque JSON like `spec` (and a separate
+    # field for the same reason: a non-empty spec routes a query to the visual builder).
+    param_defs: dict = {}
 
 
 class _UpdateSavedQueryRequest(BaseModel):
     name: str | None = None
     sql: str | None = None
     spec: dict | None = None
+    param_defs: dict | None = None
 
 
 @router.get("/saved-queries")
@@ -1119,7 +1123,8 @@ def saved_queries_create(body: _SaveQueryRequest, request: Request):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required")
     from aughor.savedquery.store import create_saved_query
-    q = create_saved_query(body.connection_id, body.name.strip(), body.sql, body.spec)
+    q = create_saved_query(body.connection_id, body.name.strip(), body.sql, body.spec,
+                           param_defs=body.param_defs)
     return q.model_dump()
 
 
@@ -1135,7 +1140,8 @@ def saved_queries_get(query_id: str):
 @router.put("/saved-queries/{query_id}")
 def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
     from aughor.savedquery.store import update_saved_query
-    q = update_saved_query(query_id, name=body.name, sql=body.sql, spec=body.spec)
+    q = update_saved_query(query_id, name=body.name, sql=body.sql, spec=body.spec,
+                           param_defs=body.param_defs)
     if not q:
         raise HTTPException(status_code=404, detail="Saved query not found")
     return q.model_dump()
@@ -1236,6 +1242,97 @@ def query_quickfix(body: _QuickFixRequest, request: Request):
                 "diagnosis": diagnosis}
     return {"proposed_sql": proposed, "rationale": (fix.explanation or "").strip(),
             "changed": True, "diagnosis": diagnosis}
+
+
+class _AssistRequest(BaseModel):
+    conn_id: str
+    sql: str = ""
+    instruction: str
+    error: str = ""
+    # Short prior turns [{role, content}], so a follow-up ("shorter", "and by month")
+    # lands on the conversation it continues. Capped server-side; never persisted.
+    history: list[dict] = []
+
+
+@router.post("/query/assist")
+def query_assist(body: _AssistRequest, request: Request):
+    """SE-8E — the editor's AI pane. PROPOSES, never runs.
+
+    Same consent model as ``/query/quickfix``, which this generalises: any SQL the
+    model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts
+    or rejects — there is no code path from this endpoint to ``execute()``, and the
+    platform's own decision (a grant authorises PROPOSE, never EXECUTE) is the reason.
+    Called only from a user's explicit message in the pane; nothing polls it.
+    """
+    from aughor.db.connection import open_connection_for, gate_user_sql
+
+    _check_conn_org(request, body.conn_id)
+    instruction = body.instruction.strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="instruction is required")
+
+    # The buffer travels as context and may come back edited, so it passes the same
+    # gate a run would — advice about a statement we would refuse to run is advice
+    # about how to get around the refusal.
+    if body.sql.strip():
+        blocked = gate_user_sql(body.conn_id, "query_workbench", body.sql)
+        if blocked is not None:
+            raise HTTPException(status_code=400, detail=blocked.error)
+
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        dialect = getattr(db, "dialect", "duckdb")
+        schema = db.get_schema()
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "assist: db close", counter="query.assist.close")
+
+    from pydantic import BaseModel as _BM
+
+    class _Assist(_BM):
+        reply: str
+        proposed_sql: str = ""
+
+    from aughor.llm.provider import get_provider
+
+    turns = "\n".join(
+        f"{str(m.get('role', '?'))}: {str(m.get('content', ''))[:2000]}"
+        for m in (body.history or [])[-6:]
+    )
+    try:
+        out = get_provider("coder").complete(
+            system=(
+                "You are the SQL editor's assistant. Answer plainly and briefly. "
+                "When the user's ask calls for SQL (write, fix, optimise, extend), put the "
+                "complete statement in proposed_sql and keep reply to one or two sentences "
+                "about WHAT changed and why; otherwise leave proposed_sql empty. "
+                f"The engine dialect is {dialect}. You cannot run anything — never claim "
+                "you executed a query or saw its rows."
+            ),
+            user=(
+                f"Schema:\n{schema}\n\n"
+                + (f"Conversation so far:\n{turns}\n\n" if turns else "")
+                + (f"The editor currently contains:\n{body.sql}\n\n" if body.sql.strip() else "")
+                + (f"The last run failed with:\n{body.error}\n\n" if body.error.strip() else "")
+                + f"The user asks: {instruction}"
+            ),
+            response_model=_Assist,
+        )
+    except Exception as exc:
+        # 502 like quickfix: the provider being down is not a defect in the user's ask.
+        raise HTTPException(status_code=502, detail=f"The assistant is unavailable: {exc}")
+
+    proposed = (out.proposed_sql or "").strip()
+    if proposed == body.sql.strip():
+        proposed = ""   # an identical "proposal" is an empty diff wearing an Apply button
+    return {"reply": (out.reply or "").strip(), "proposed_sql": proposed,
+            "changed": bool(proposed)}
 
 
 # ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────

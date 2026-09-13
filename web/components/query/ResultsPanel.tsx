@@ -4,6 +4,10 @@
  * SE-1 — the results panel: the grid plus the facts about the run.
  * SE-4 I — plus filters over the returned rows, a chart view, and the ways out
  * (pin, schedule, share).
+ * SE-8B — restructured into the reference console's output pane: a statement pager on the left
+ * («Results N of M» — "Run all" keeps EVERY statement's rows now, not just the last),
+ * a tab strip (Table, one tab per visualization, «+»), and the grid tools as a
+ * right-aligned icon cluster on the header instead of buttons in the footer.
  *
  * Errors render INLINE here, never as a toast. A failed query is the primary content
  * of this pane at that moment — a toast would put the one thing the user needs to read
@@ -14,21 +18,24 @@
  * load-bearing one: the server's n+1 probe row is what makes it honest, so "first 500"
  * means there provably are more, not that we stopped counting.
  *
- * **The chart is `ResultChartCard`, not a new builder.** The roadmap called for "an
- * ECharts builder seeded with the result columns"; that component already exists, is
- * the chart surface for chat, deep-analysis reports, the briefing cockpit and pinned
- * cards, and already carries chart-type inference, the chart/table/pivot switch, the
- * viz editor panel, and the `/query/postproc` transforms. The workbench was the ONE
- * result surface without it. Building a second one would have split the vocabulary in
- * exactly the way PR E just finished un-splitting for highlighters and exporters.
+ * **The chart is `ResultChartCard`, not a new builder** — the one chart surface the
+ * whole platform shares. SE-8B mounts one per visualization TAB, each seeded with its
+ * own config and KEPT MOUNTED behind `hidden` on tab switch: the card captures its
+ * seed once at mount, so unmounting a tab would discard the chart the user just built.
+ * Visualization tabs describe the CURRENT rows — paging to another statement's result
+ * re-draws them over that set, and an incompatible pick degrades rather than throws
+ * (the card's own rule).
  */
 import { useDeferredValue, useMemo, useState } from "react";
 import { formatCount } from "@/lib/format";
 import { ResultsGrid } from "@/components/query/ResultsGrid";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
+import { type VizConfig } from "@/components/charts/vizConfig";
 import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
 import { QuickFixPanel } from "@/components/query/QuickFixPanel";
+import { SchedulePopover } from "@/components/query/SchedulePopover";
 import { Button } from "@/components/ui/button";
+import { Icon } from "@/components/ui/icon";
 import { csvFilename, downloadText } from "@/lib/query/csv";
 import { EXTRACTORS, extractorById, guessTableName } from "@/lib/query/extractors";
 import { applyFilters } from "@/lib/query/resultFilter";
@@ -48,8 +55,18 @@ function pinTitle(sql: string): string {
   return m ? `Query — ${m[1]}` : "Query result";
 }
 
+/** One visualization tab. The config is written back by the card's own editor, so
+ *  Duplicate copies the chart as it stands, not as it started. */
+interface VizTab { id: string; name: string; config: VizConfig }
+
+function newVizId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `viz-${Math.random().toString(36).slice(2)}`;
+}
+
 export function ResultsPanel({
-  result,
+  results,
+  resultIdx,
+  onResultIdx,
   error,
   running,
   connId,
@@ -57,8 +74,13 @@ export function ResultsPanel({
   onShare,
   failedSql,
   onApplyFix,
+  maximized,
+  onToggleMaximize,
 }: {
-  result: TypedQueryResult | null;
+  /** SE-8B — every statement's result, in run order. One entry for a single run. */
+  results: TypedQueryResult[];
+  resultIdx: number;
+  onResultIdx: (i: number) => void;
   error: string;
   running: boolean;
   connId?: string;
@@ -67,22 +89,32 @@ export function ResultsPanel({
   /** Copies a deep link back to this query. */
   onShare?: () => void;
   /** SE-5a — the statement that produced `error`. Passed separately because a failed run
-   *  leaves `result` null, so the SQL is not otherwise reachable from here. */
+   *  leaves no usable result, so the SQL is not otherwise reachable from here. */
   failedSql?: string;
   /** SE-5a — put an accepted proposal into the editor. Never called without a click. */
   onApplyFix?: (sql: string) => void;
+  /** SE-8B — the ⤢ button: the editor collapses and the results take the column. */
+  maximized?: boolean;
+  onToggleMaximize?: () => void;
 }) {
   // "" | "ok" | "fail" — a click must always produce a visible outcome.
   const [copyState, setCopyState] = useState<"" | "ok" | "fail">("");
   const [showExport, setShowExport] = useState(false);
-  const [view, setView] = useState<"grid" | "chart">("grid");
   const [filters, setFilters] = useState<ActiveFilter[]>([]);
+  const [showFilters, setShowFilters] = useState(false);
   const [pinState, setPinState] = useState<"" | "busy" | "ok" | "fail">("");
+  // SE-8B — the tab strip: "table" or a visualization's id.
+  const [vizTabs, setVizTabs] = useState<VizTab[]>([]);
+  const [activeView, setActiveView] = useState("table");
+  const [vizMenu, setVizMenu] = useState("");        // viz id whose ⌄ menu is open
+  const [renaming, setRenaming] = useState("");      // viz id being renamed
+  const [renameDraft, setRenameDraft] = useState("");
 
+  const result = results[resultIdx] ?? null;
   const columns = result?.columns ?? EMPTY_COLS;
   const rawRows = result?.rows ?? EMPTY_ROWS;
   // Filtering runs over every returned row on each keystroke. Deferred so typing stays
-  // responsive on a full 500-row result — the grid catching up a frame late is a far
+  // responsive on a full-limit result — the grid catching up a frame late is a far
   // better trade than the input stuttering.
   const deferredFilters = useDeferredValue(filters);
   const rows = useMemo(() => {
@@ -173,9 +205,180 @@ export function ResultsPanel({
     downloadText(csvFilename("result").replace(/\.csv$/, `.${x.ext}`), renderAs(id), x.mime);
   };
 
+  const addViz = () => {
+    const v: VizTab = { id: newVizId(), name: `Visualization ${vizTabs.length + 1}`, config: {} };
+    setVizTabs(prev => [...prev, v]);
+    setActiveView(v.id);
+  };
+
+  const patchViz = (id: string, patch: Partial<VizTab>) =>
+    setVizTabs(prev => prev.map(v => v.id === id ? { ...v, ...patch } : v));
+
+  const removeViz = (id: string) => {
+    setVizTabs(prev => prev.filter(v => v.id !== id));
+    if (activeView === id) setActiveView("table");
+    setVizMenu("");
+  };
+
+  const duplicateViz = (id: string) => {
+    const src = vizTabs.find(v => v.id === id);
+    if (!src) return;
+    const copy: VizTab = { id: newVizId(), name: `${src.name} copy`, config: { ...src.config } };
+    setVizTabs(prev => [...prev, copy]);
+    setActiveView(copy.id);
+    setVizMenu("");
+  };
+
+  const filtersVisible = showFilters || filters.length > 0;
+  const headerIcon = (name: Parameters<typeof Icon>[0]["name"], title: string,
+    onClick: () => void, active = false, testid?: string) => (
+    <Button variant={active ? "secondary" : "ghost"} size="xs" title={title}
+      onClick={onClick} data-testid={testid}>
+      <Icon name={name} size={14} />
+    </Button>
+  );
+
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
-      {!empty && (
+      {/* SE-8B — the output header: pager · view tabs · tool cluster — one row that
+          answers which rows, which view, and the ways out. */}
+      <div style={{
+        display: "flex", alignItems: "center", gap: 2, padding: "3px 8px",
+        borderBottom: "1px solid var(--b0)", flexShrink: 0,
+      }}>
+        {results.length > 1 && (
+          <span style={{ display: "flex", alignItems: "center", gap: 2, marginRight: 4, flexShrink: 0 }}>
+            <Button variant="ghost" size="xs" title="Previous statement's result"
+              disabled={resultIdx === 0} onClick={() => onResultIdx(resultIdx - 1)}>
+              <Icon name="chevl" size={13} />
+            </Button>
+            <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
+              Results {resultIdx + 1} of {results.length}
+            </span>
+            <Button variant="ghost" size="xs" title="Next statement's result"
+              disabled={resultIdx >= results.length - 1} onClick={() => onResultIdx(resultIdx + 1)}>
+              <Icon name="chevr" size={13} />
+            </Button>
+          </span>
+        )}
+
+        <Button variant={activeView === "table" ? "secondary" : "ghost"} size="xs"
+          className="aug-fs-ui" onClick={() => setActiveView("table")}>
+          Table
+        </Button>
+        {vizTabs.map(v => (
+          <span key={v.id} style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
+            {renaming === v.id ? (
+              <input
+                className="aug-input aug-fs-ui" autoFocus value={renameDraft}
+                onChange={e => setRenameDraft(e.target.value)}
+                onBlur={() => { if (renameDraft.trim()) patchViz(v.id, { name: renameDraft.trim() }); setRenaming(""); }}
+                onKeyDown={e => {
+                  if (e.key === "Enter") { if (renameDraft.trim()) patchViz(v.id, { name: renameDraft.trim() }); setRenaming(""); }
+                  if (e.key === "Escape") setRenaming("");
+                }}
+                style={{ width: 120 }}
+              />
+            ) : (
+              <Button variant={activeView === v.id ? "secondary" : "ghost"} size="xs"
+                className="aug-fs-ui"
+                onClick={() => setActiveView(v.id)}
+                onDoubleClick={() => { setRenaming(v.id); setRenameDraft(v.name); }}
+                title="Double-click to rename">
+                {v.name}
+              </Button>
+            )}
+            {activeView === v.id && renaming !== v.id && (
+              <Button variant="ghost" size="xs" title="Visualization options"
+                aria-label="Visualization options"
+                onClick={() => setVizMenu(m => m === v.id ? "" : v.id)}
+                style={{ paddingLeft: 2, paddingRight: 2 }}>
+                <Icon name="chevd" size={12} />
+              </Button>
+            )}
+            {vizMenu === v.id && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setVizMenu("")} />
+                <div className="aug-fs-ui" style={{
+                  position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                  minWidth: 150, padding: 5, background: "var(--bg-2)",
+                  border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+                }}>
+                  <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    style={{ width: "100%", justifyContent: "flex-start" }}
+                    onClick={() => { setRenaming(v.id); setRenameDraft(v.name); setVizMenu(""); }}>
+                    Rename
+                  </Button>
+                  <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    style={{ width: "100%", justifyContent: "flex-start" }}
+                    onClick={() => duplicateViz(v.id)}>
+                    Duplicate
+                  </Button>
+                  <Button variant="ghost" size="xs" className="aug-fs-ui"
+                    style={{ width: "100%", justifyContent: "flex-start", color: "var(--red4)" }}
+                    onClick={() => removeViz(v.id)}>
+                    Remove
+                  </Button>
+                </div>
+              </>
+            )}
+          </span>
+        ))}
+        {!empty && (
+          <Button variant="ghost" size="xs" title="Add a visualization of these rows"
+            aria-label="Add a visualization" onClick={addViz} data-testid="results-add-viz">
+            <Icon name="plus" size={13} />
+          </Button>
+        )}
+
+        <div style={{ flex: 1, minWidth: 8 }} />
+
+        {/* The tool cluster, right-aligned like the reference pane: filter · export ·
+            maximize. Find-in-results stays ⌘F inside the grid, which owns the rows. */}
+        {!empty && headerIcon("filter",
+          filtersVisible ? "Hide the filter bar" : "Filter these rows — plain phrases, chips, OR",
+          () => setShowFilters(v => !v), filtersVisible, "results-filter-toggle")}
+        {!empty && (
+          <span style={{ position: "relative" }}>
+            {headerIcon("download",
+              filters.length ? "Copy or download the FILTERED rows" : "Copy or download these rows",
+              () => setShowExport(v => !v), showExport, "results-export")}
+            {copyState && (
+              <span className="aug-fs-xs" style={{
+                position: "absolute", top: "100%", right: 0, marginTop: 2, whiteSpace: "nowrap",
+                color: copyState === "ok" ? "var(--grn4)" : "var(--red4)",
+              }}>
+                {copyState === "ok" ? "Copied" : "Copy failed"}
+              </span>
+            )}
+            {showExport && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 20 }} onClick={() => setShowExport(false)} />
+                <div className="aug-fs-sm" style={{
+                  position: "absolute", top: "100%", right: 0, zIndex: 21, marginTop: 4,
+                  minWidth: 230, padding: 5, background: "var(--bg-2)",
+                  border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+                }}>
+                  {EXTRACTORS.map(x => (
+                    <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                      <span style={{ flex: 1, padding: "3px 7px", color: "var(--t2)" }}>{x.label}</span>
+                      <Button variant="ghost" size="xs" title={`Copy as ${x.label}`}
+                        onClick={() => { copyAs(x.id); setShowExport(false); }}>Copy</Button>
+                      <Button variant="ghost" size="xs" title={`Download as ${x.label}`}
+                        onClick={() => { downloadAs(x.id); setShowExport(false); }}>File</Button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </span>
+        )}
+        {onToggleMaximize && headerIcon("expand",
+          maximized ? "Bring the editor back" : "Give the results the whole column",
+          onToggleMaximize, !!maximized, "results-maximize")}
+      </div>
+
+      {!empty && filtersVisible && (
         <ResultFilterBar
           columns={columns}
           filters={filters}
@@ -196,19 +399,34 @@ export function ResultsPanel({
           <div style={{ ...noteStyle, padding: "12px 14px" }}>
             No rows match these filters — {formatCount(rawRows.length)} returned by the query.
           </div>
-        ) : view === "chart" ? (
-          <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: "8px 12px" }}>
-            {/* No `fillHeight`: it is a PIXEL height, not a boolean, and this pane is
-                resizable — pinning a number here would fight the splitter. The wrapper
-                scrolls instead, so the chart keeps its natural size at any pane height. */}
-            <ResultChartCard columns={columns} rows={rows} />
-          </div>
         ) : (
-          <ResultsGrid
-            columns={columns}
-            columnsTyped={result.columns_typed}
-            rows={rows}
-          />
+          <>
+            <div style={{ flex: 1, minHeight: 0, display: activeView === "table" ? "flex" : "none", flexDirection: "column" }}>
+              <ResultsGrid
+                columns={columns}
+                columnsTyped={result.columns_typed}
+                rows={rows}
+              />
+            </div>
+            {/* Every viz stays MOUNTED — the card seeds its controls once, so an
+                unmounted tab would come back as a default chart. `display:none`, the
+                same trick the workbench plays with its mode panes. */}
+            {vizTabs.map(v => (
+              <div key={v.id} style={{
+                flex: 1, minHeight: 0, overflow: "auto", padding: "8px 12px",
+                display: activeView === v.id ? "block" : "none",
+              }}>
+                {/* No `fillHeight`: it is a PIXEL height, not a boolean, and this pane is
+                    resizable — pinning a number here would fight the splitter. The wrapper
+                    scrolls instead, so the chart keeps its natural size at any pane height. */}
+                <ResultChartCard
+                  columns={columns} rows={rows}
+                  config={v.config}
+                  onConfigChange={cfg => patchViz(v.id, { config: cfg })}
+                />
+              </div>
+            ))}
+          </>
         )}
       </div>
 
@@ -253,15 +471,6 @@ export function ResultsPanel({
         {result.cached && (<><span>·</span><span>cached</span></>)}
         <div style={{ flex: 1 }} />
 
-        {!empty && (
-          <Button
-            variant="ghost" size="xs" className="aug-fs-ui"
-            title={view === "grid" ? "Chart these rows" : "Back to the grid"}
-            onClick={() => setView(view === "grid" ? "chart" : "grid")}
-          >
-            {view === "grid" ? "Chart" : "Grid"}
-          </Button>
-        )}
         {!empty && connId && (
           <Button
             variant="ghost" size="xs" className="aug-fs-ui"
@@ -282,14 +491,10 @@ export function ResultsPanel({
             {pinState === "ok" ? "Pinned" : pinState === "fail" ? "Pin failed" : "Pin"}
           </Button>
         )}
-        {onSchedule && (
-          <Button
-            variant="ghost" size="xs" className="aug-fs-ui"
-            title="Watch this query on a schedule — opens a monitor prefilled with this SQL"
-            onClick={() => onSchedule(result.sql)}
-          >
-            Schedule
-          </Button>
+        {/* SE-8D — schedules are created HERE now; onSchedule survives as the
+            "Open in Monitors" path for thresholds and anomaly rules. */}
+        {connId && (
+          <SchedulePopover connId={connId} sql={result.sql} onOpenMonitors={onSchedule} />
         )}
         {onShare && (
           <Button
@@ -300,41 +505,6 @@ export function ResultsPanel({
             Share
           </Button>
         )}
-        {/* SE-7 — the extractor menu. One CSV button served a spreadsheet and nothing
-            else; a ticket wants Markdown, a script wants JSON, a fixture wants INSERTs,
-            and each of those used to mean re-running the query somewhere that could
-            export it. Copy and Export share ONE format list, because "the shape I
-            want" is the same question whichever way the rows leave. */}
-        <div style={{ position: "relative" }}>
-          <Button
-            variant="ghost" size="xs" className="aug-fs-ui"
-            title={filters.length ? "Copy or download the FILTERED rows" : "Copy or download these rows"}
-            onClick={() => setShowExport(v => !v)}
-            data-testid="results-export"
-          >
-            {copyState === "ok" ? "Copied" : copyState === "fail" ? "Copy failed" : "Export"}
-          </Button>
-          {showExport && (
-            <>
-              <div style={{ position: "fixed", inset: 0, zIndex: 20 }} onClick={() => setShowExport(false)} />
-              <div className="aug-fs-sm" style={{
-                position: "absolute", bottom: "100%", right: 0, zIndex: 21, marginBottom: 4,
-                minWidth: 230, padding: 5, background: "var(--bg-2)",
-                border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
-              }}>
-                {EXTRACTORS.map(x => (
-                  <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                    <span style={{ flex: 1, padding: "3px 7px", color: "var(--t2)" }}>{x.label}</span>
-                    <Button variant="ghost" size="xs" title={`Copy as ${x.label}`}
-                      onClick={() => { copyAs(x.id); setShowExport(false); }}>Copy</Button>
-                    <Button variant="ghost" size="xs" title={`Download as ${x.label}`}
-                      onClick={() => { downloadAs(x.id); setShowExport(false); }}>File</Button>
-                  </div>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
         {result.receipt_id && (
           <a
             href={`/receipt/${encodeURIComponent(result.receipt_id)}`}

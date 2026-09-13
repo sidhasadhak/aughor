@@ -54,6 +54,9 @@ export interface SqlEditorPaneProps {
   /** Fires on ⌘/Ctrl+Enter. Receives nothing — the workbench reads cursor/selection
    *  itself via `onCursor`, so "what runs" is decided in one place. */
   onRun?: () => void;
+  /** SE-8A — fires on ⌘⇧↵: run ONLY the selection / statement under the cursor, even
+   *  when the tab's "Run all statements" preference makes ⌘↵ run the whole buffer. */
+  onRunStatement?: () => void;
   /** Fires on ⌘⇧F. Returns the replacement text for the range it was given, or null
    *  to leave the document alone. */
   onFormat?: (sql: string) => string | null;
@@ -104,7 +107,7 @@ function sqlWithTemplates(
 }
 
 export function SqlEditorPane({
-  value, onChange, onRun, onFormat, onCursor, onReady,
+  value, onChange, onRun, onRunStatement, onFormat, onCursor, onReady,
   schema, defaultSchema, dialect, diagnostics, quote, joins,
   placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
   readOnly = false,
@@ -118,6 +121,7 @@ export function SqlEditorPane({
   // CURRENT handler. Rebuilding extensions per render would recreate the view.
   const onChangeRef = useRef(onChange);
   const onRunRef = useRef(onRun);
+  const onRunStatementRef = useRef(onRunStatement);
   const onFormatRef = useRef(onFormat);
   const onCursorRef = useRef(onCursor);
   // SE-6 — the intentions read the CURRENT schema through this ref. Rebuilding the
@@ -128,6 +132,7 @@ export function SqlEditorPane({
   const joinsRef = useRef<JoinHint[]>([]);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
+  onRunStatementRef.current = onRunStatement;
   onFormatRef.current = onFormat;
   onCursorRef.current = onCursor;
 
@@ -135,6 +140,28 @@ export function SqlEditorPane({
   // reconcile effect below, never by rebuilding the view.
   useEffect(() => {
     if (!host.current || view.current) return;
+
+    // SE-8F — ⌥+ / ⌥− editor font size. Scoped to THIS editor by
+    // overriding the `--aug-fs-ui` token on the host element — the theme sizes the
+    // content off that var, so the override reaches every piece of editor chrome and
+    // nothing outside it. Clamped at 11 (the documented legibility floor) and 24.
+    const FONT_KEY = "aug.sqledit.fontsize";
+    const fontPx = { v: 0 };
+    const applyFont = () => {
+      if (!host.current) return;
+      if (fontPx.v) host.current.style.setProperty("--aug-fs-ui", `${fontPx.v}px`);
+      else host.current.style.removeProperty("--aug-fs-ui");
+    };
+    try {
+      const stored = Number(localStorage.getItem(FONT_KEY));
+      if (stored >= 11 && stored <= 24) { fontPx.v = stored; applyFont(); }
+    } catch { /* no persistence — the default size stands */ }
+    const bumpFont = (delta: number) => {
+      fontPx.v = Math.min(24, Math.max(11, (fontPx.v || 13) + delta));
+      applyFont();
+      try { localStorage.setItem(FONT_KEY, String(fontPx.v)); } catch { /* session-only */ }
+      return true;
+    };
 
     /** Reformat: the selection if there is one, else the whole document. One dispatch,
      *  so ⌘Z puts it back in one step. */
@@ -159,6 +186,13 @@ export function SqlEditorPane({
         key: "Mod-Enter",
         preventDefault: true,
         run: () => { onRunRef.current?.(); return true; },
+      },
+      {
+        // ⌘⇧↵ — always just the selection / statement under the cursor, even when the
+        // tab's "Run all statements" preference has ⌘↵ running the whole buffer.
+        key: "Mod-Shift-Enter",
+        preventDefault: true,
+        run: () => { onRunStatementRef.current?.(); return true; },
       },
       {
         // ⌘⌥L — DataGrip's own Reformat Code. Same command as ⌘⇧F below; two keys
@@ -206,6 +240,12 @@ export function SqlEditorPane({
       { key: "Mod-l", preventDefault: true, run: gotoLine },
       { key: "Mod-f", preventDefault: true, run: openSearchPanel },
       { key: "Mod-Alt-f", preventDefault: true, run: openSearchPanel },
+      // SE-8F — font size. Both spellings of "+" because the plus key IS shift+equals
+      // on the layouts this app meets, and ⌥ may rewrite `key` — CM falls back to the
+      // physical key name, which is Equal/Minus.
+      { key: "Alt-=", preventDefault: true, run: () => bumpFont(1) },
+      { key: "Alt-+", preventDefault: true, run: () => bumpFont(1) },
+      { key: "Alt--", preventDefault: true, run: () => bumpFont(-1) },
     ]));
 
     const extensions: Extension[] = [

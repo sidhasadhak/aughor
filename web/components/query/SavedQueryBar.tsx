@@ -32,8 +32,12 @@ import { Icon } from "@/components/ui/icon";
 
 /** What one mode can contribute to, and take from, the saved surface. */
 export interface SavedQueryBinding {
-  /** The query as it stands right now, or null when there is nothing worth saving. */
-  capture: () => { sql: string; spec: Record<string, unknown> } | null;
+  /** The query as it stands right now, or null when there is nothing worth saving.
+   *  `param_defs` (SE-8C) is the SQL editor's widget configuration — optional because
+   *  the visual builder has no parameters to define. */
+  capture: () => {
+    sql: string; spec: Record<string, unknown>; param_defs?: Record<string, unknown>;
+  } | null;
   /** Put a saved query back on screen. */
   load: (q: SavedQuery) => void;
   /** A first-guess name, derived from the query's own content. */
@@ -124,7 +128,7 @@ export function SavedQueryBar({
     if (!connId || !cap || !name.trim()) return;
     setState("saving");
     try {
-      const q = await createSavedQuery(connId, name.trim(), cap.sql, cap.spec);
+      const q = await createSavedQuery(connId, name.trim(), cap.sql, cap.spec, cap.param_defs);
       setActive(q);
       setNaming(false); setDraftName("");
       settleSaved();
@@ -140,7 +144,10 @@ export function SavedQueryBar({
     if (!active || !cap) return;
     setState("saving");
     try {
-      const q = await updateSavedQuery(active.id, { name: activeName, sql: cap.sql, spec: cap.spec });
+      const q = await updateSavedQuery(active.id, {
+        name: activeName, sql: cap.sql, spec: cap.spec,
+        ...(cap.param_defs ? { param_defs: cap.param_defs } : {}),
+      });
       setActive(q);
       settleSaved();
       refresh();

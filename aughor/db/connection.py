@@ -1118,6 +1118,13 @@ class DuckDBConnection(DatabaseConnection):
         return self._run(hypothesis_id, sql, max(1, max_rows))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
+        # before the dialect translate: sqlglot re-spells `:c` as the engine's own
+        # placeholder on the way through `_run`, and an expansion scanning for `:name`
+        # after that rewrite matches nothing (measured: the list silently left the
+        # params dict and the engine asked where its value went).
+        from aughor.sql.params import expand_list_params
+        sql, params = expand_list_params(sql, params or {})
         return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
@@ -1534,6 +1541,13 @@ class PostgresConnection(DatabaseConnection):
         return self._run(hypothesis_id, sql, max(1, max_rows))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
+        # before the dialect translate: sqlglot re-spells `:c` as the engine's own
+        # placeholder on the way through `_run`, and an expansion scanning for `:name`
+        # after that rewrite matches nothing (measured: the list silently left the
+        # params dict and the engine asked where its value went).
+        from aughor.sql.params import expand_list_params
+        sql, params = expand_list_params(sql, params or {})
         return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
@@ -1566,8 +1580,9 @@ class PostgresConnection(DatabaseConnection):
                     # `%(name)s` is produced HERE, after translate/_apply_dialect_fixes:
                     # sqlglot cannot parse pyformat, so introducing it any earlier
                     # breaks validation and the dialect rewrite.
-                    from aughor.sql.params import render_for_engine
-                    cur.execute(render_for_engine(sql, "pyformat"), params)
+                    from aughor.sql.params import expand_list_params, render_for_engine
+                    exec_sql, bind_params = expand_list_params(sql, params)
+                    cur.execute(render_for_engine(exec_sql, "pyformat"), bind_params)
                 else:
                     cur.execute(sql)
                 rows = cur.fetchmany(max_rows)

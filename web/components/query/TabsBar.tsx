@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { queryTabName } from "@/lib/format";
+import type { ParamDef, ParamValue } from "@/lib/query/paramDefs";
 
 export interface EditorTab {
   id: string;
@@ -26,8 +27,20 @@ export interface EditorTab {
   status?: "ok" | "error";
   /** SE-4 H — values for this tab's `:name` parameters, persisted with the draft.
    *  Per TAB, not per editor: two tabs may both use `:region` and mean different
-   *  things, and a shared value would silently rewrite the other tab's query. */
-  params?: Record<string, string>;
+   *  things, and a shared value would silently rewrite the other tab's query.
+   *  SE-8C widened a value to `string | string[]` — the array is a multiselect. */
+  params?: Record<string, ParamValue>;
+  /** SE-8C — how each parameter renders as a widget. Rides the tab (and the saved
+   *  query, as `param_defs`) so a configured dropdown survives a reload. */
+  paramDefs?: Record<string, ParamDef>;
+  /** SE-8A — the row cap this tab runs with; absent means the 500 default. Part of
+   *  the tab, not the editor: the limit describes the QUERY ("show me everything in
+   *  this small dimension table"), and carrying it across tabs would silently cap or
+   *  uncap a different query. */
+  limit?: number;
+  /** SE-8A — when set, Run and ⌘↵ run every statement in order. ⌘⇧↵ stays the
+   *  single-statement escape hatch either way. */
+  runAll?: boolean;
   /** Epoch ms of last activity — the LRU key. */
   touched: number;
 }
@@ -78,7 +91,7 @@ export function newTab(name = queryTabName()): EditorTab {
 }
 
 export function TabsBar({
-  tabs, activeId, onSelect, onNew, onClose, onRename, trailing,
+  tabs, activeId, onSelect, onNew, onClose, onRename, trailing, onOpenExisting,
 }: {
   tabs: EditorTab[];
   activeId: string;
@@ -91,9 +104,13 @@ export function TabsBar({
    *  console has two, and the difference was rows that each carried three controls.
    *  Anything a tab does not own — the connection, the saved state — comes in here. */
   trailing?: React.ReactNode;
+  /** SE-8F — when present, "+" opens a two-option menu (new / open existing)
+   *  instead of creating immediately. */
+  onOpenExisting?: () => void;
 }) {
   const [editing, setEditing] = useState("");
   const [draftName, setDraftName] = useState("");
+  const [plusMenu, setPlusMenu] = useState(false);
 
   const commit = useCallback(() => {
     if (editing && draftName.trim()) onRename(editing, draftName.trim());
@@ -167,9 +184,39 @@ export function TabsBar({
           </div>
         );
       })}
-      <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
-        <Icon name="plus" size={13} />
-      </Button>
+      {onOpenExisting ? (
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <Button variant="ghost" size="xs" className="aug-fs-ui"
+            onClick={() => setPlusMenu(v => !v)} title="New tab" style={{ color: "var(--t3)" }}>
+            <Icon name="plus" size={13} />
+          </Button>
+          {plusMenu && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setPlusMenu(false)} />
+              <div className="aug-fs-ui" style={{
+                position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                minWidth: 170, padding: 5, background: "var(--bg-2)",
+                border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+              }}>
+                <Button variant="ghost" size="xs" className="aug-fs-ui"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => { setPlusMenu(false); onNew(); }}>
+                  New query
+                </Button>
+                <Button variant="ghost" size="xs" className="aug-fs-ui"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => { setPlusMenu(false); onOpenExisting(); }}>
+                  Open existing…
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
+          <Icon name="plus" size={13} />
+        </Button>
+      )}
       {trailing && (
         <>
           <div style={{ flex: 1, minWidth: 8 }} />
