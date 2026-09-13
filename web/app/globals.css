@@ -298,6 +298,52 @@ a:hover { color: var(--blue4); }
 .aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
 .aug-nav-foot { margin-top: auto; padding: 4px 0 8px; border-top: 1px solid var(--b1); }
 
+/* ── Shell · the LIVE activity strip ─────────────────────────────────────────
+   The only always-on motion in the app: ticks of the same feed the Agent Ops activity tail
+   reads, so the warehouse is visibly thinking from every screen. A tick's height is a count;
+   its hue, when it has one, is the series colour of the agent that dominated that bucket. */
+.aug-activity-strip {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  margin-left: 6px;
+  padding-left: 12px;
+  border-left: 1px solid var(--b1);
+}
+.aug-activity-label { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; color: var(--t3); }
+.aug-activity-ticks { display: flex; align-items: flex-end; gap: 3px; height: 16px; flex: none; }
+.aug-activity-tick { width: 3px; min-height: 2px; background: var(--b3); }
+.aug-activity-status {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--t2);
+}
+
+/* The theme toggle in the topbar: a mono segmented pair. */
+.aug-seg-item-mono { font-family: var(--font-mono); font-size: 11px; padding: 3px 8px; }
+
+/* A group header's count: amber when something inside is waiting on a human, neutral when it is
+   only a count. It resets the header's tracking and case — a figure is never letter-spaced. */
+.aug-nav-group-badge {
+  margin-left: auto;
+  padding: 0 6px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: var(--bg-3);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--t3);
+}
+.aug-nav-group-badge-waiting { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
+
 /* ── Shell · content header 44 ──────────────────────────────────────────── */
 .aug-content-header {
   height: 44px;
@@ -647,6 +693,156 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 .aug-empty-body { font-size: 12px; line-height: 1.6; color: var(--t2); }
 .aug-empty-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
 .aug-empty-inline { max-width: none; gap: 8px; padding: 12px 0; color: var(--t3); }
+
+
+/* ── Four universal states · error, partial — and the refusal ────────────────
+   Error: three sentences in order — what failed, what it means, what to do — carrying the run
+   id and the exact object so it pastes into a ticket; Retry is never the only door offered.
+   Partial: Aughor's most important state. A real answer with a named hole, the hole stated in
+   the same breath as the figure. Refusal: the proudest state — confident, specific, and
+   offering the nearest answerable question; never an apology, never a dead end. */
+.aug-error,
+.aug-partial,
+.aug-refusal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--red2);
+  border-left: 3px solid var(--red3);
+  border-radius: var(--r2);
+  background: var(--red1);
+}
+.aug-refusal { gap: 7px; }
+.aug-partial { border-color: var(--amb2); border-left-color: var(--amb3); background: var(--amb1); }
+.aug-state-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.aug-state-kind {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--red4);
+}
+.aug-partial .aug-state-kind { color: var(--amb4); }
+.aug-state-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+.aug-partial .aug-state-meta { color: var(--amb4); }
+.aug-state-claim { font-size: 13px; line-height: 1.6; color: var(--t1); }
+.aug-state-what { font-size: 12px; line-height: 1.6; color: var(--t1); }
+.aug-state-detail { font-size: 12px; line-height: 1.6; color: var(--t2); }
+.aug-state-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 2px; }
+.aug-state-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: transparent;
+  font-family: var(--font-ui);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--t2);
+  cursor: pointer;
+  transition: background var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out);
+}
+.aug-state-action:hover { background: var(--bg-3); border-color: var(--b3); color: var(--t1); }
+.aug-error .aug-state-action-primary { border-color: var(--red2); color: var(--red4); }
+.aug-refusal .aug-state-action-primary { color: var(--blue4); }
+.aug-partial .aug-state-action-primary { border-color: var(--amb2); color: var(--amb4); }
+.aug-state-ticket { font-size: 11px; line-height: 1.6; color: var(--t3); }
+.aug-state-ticket-id { font-family: var(--font-mono); color: var(--t2); }
+
+/* Beside a partial answer: one bar per attributed driver, the unattributed remainder hatched. */
+.aug-partial-bars { display: flex; flex-direction: column; gap: 5px; }
+.aug-partial-bar { display: flex; align-items: center; gap: 8px; }
+.aug-partial-bar-label { width: 52px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-partial-bar-fill { height: 7px; flex: none; background: var(--chart-deemph); }
+.aug-partial-bar-value { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; }
+.aug-partial-bar-unknown .aug-partial-bar-value { color: var(--amb4); }
+/* Unknown-not-zero: the hatch is the one grammar for a magnitude nobody could attribute. */
+.aug-hatch { background: repeating-linear-gradient(90deg, var(--amb3) 0 4px, transparent 4px 8px); }
+
+/* ── The trust system — Aughor's signature ───────────────────────────────────
+   Readable at 11px, never shouting, instantly told apart from ordinary chrome. */
+
+/* Guard verdict: three outcomes only — passed ✓, warned ◈, refused ✕. A 1px border and no fill,
+   so it reads as an instrument reading rather than a badge. */
+.aug-guard {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b2);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: var(--t2);
+}
+.aug-guard-passed  { border-color: var(--grn2); color: var(--grn4); }
+.aug-guard-warned  { border-color: var(--amb2); color: var(--amb4); }
+.aug-guard-refused { border-color: var(--red2); color: var(--red4); }
+
+/* Receipt chain: query → guard → guard → figure, one horizontal run drawn identically wherever
+   it appears. A broken link is a red segment with the chain intact — never a missing chain. */
+.aug-receipt-chain { display: inline-flex; flex-wrap: wrap; align-items: center; row-gap: 4px; }
+.aug-receipt-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: var(--r1);
+  border: 1px solid var(--b3);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: nowrap;
+  color: var(--t1);
+}
+button.aug-receipt-link { cursor: pointer; }
+button.aug-receipt-link:hover { background: var(--bg-3); }
+.aug-receipt-query  { border-color: var(--blue2); color: var(--blue4); }
+.aug-receipt-passed { border-color: var(--grn2); color: var(--grn4); }
+.aug-receipt-warned { border-color: var(--amb2); color: var(--amb4); }
+.aug-receipt-broken { border-color: var(--red2); color: var(--red4); }
+.aug-receipt-arrow { padding: 0 5px; font-family: var(--font-mono); font-size: 11px; color: var(--b3); }
+
+/* Confidence: a computed number, never a mood. The rule fills left to right and the figure is
+   always printed beside it, because a bar alone cannot be cited. At or above 0.86 green, from
+   0.5 amber, below 0.5 red — and below 0.5 Aughor does not lead with it. */
+.aug-confidence { display: inline-flex; align-items: center; gap: 9px; }
+.aug-confidence-value { min-width: 30px; font-family: var(--font-mono); font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+.aug-confidence-bar { width: 78px; height: 3px; flex: none; overflow: hidden; border-radius: var(--r1); background: var(--bg-4); }
+.aug-confidence-fill { height: 100%; transition: width var(--dur-3) var(--ease-out); }
+.aug-confidence-note { font-size: 11px; color: var(--t2); }
+.aug-confidence-high .aug-confidence-value { color: var(--grn3); }
+.aug-confidence-high .aug-confidence-fill  { background: var(--grn3); }
+.aug-confidence-mid  .aug-confidence-value { color: var(--amb3); }
+.aug-confidence-mid  .aug-confidence-fill  { background: var(--amb3); }
+.aug-confidence-low  .aug-confidence-value { color: var(--red3); }
+.aug-confidence-low  .aug-confidence-fill  { background: var(--red3); }
+
+/* Citation marker, inline in prose: the dashed underline says the figure is checkable, the
+   superscript says where. An amber superscript is a note that argues with the sentence. */
+.aug-cite { font-family: var(--font-mono); border-bottom: 1px dashed color-mix(in srgb, currentColor 50%, transparent); cursor: help; }
+.aug-cite-ref { font-family: var(--font-mono); font-size: 11px; line-height: 0; vertical-align: super; color: var(--blue4); }
+.aug-cite-ref-dissent { color: var(--amb4); }
+
+/* Why this number: every figure answers it in one click, and the affordance IS the dashed
+   underline — no icon, no button, nothing added to the layout. The popover lists claim, matched
+   cell, snapshot, rows read and cost, then the doors: open in SQL · drill · dispute. */
+.aug-why { border-bottom: 1px dashed var(--b3); cursor: help; font-variant-numeric: tabular-nums; }
+.aug-why-card { display: flex; flex-direction: column; gap: 5px; min-width: 220px; padding: 9px 11px; }
+.aug-why-row { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 11px; line-height: 1.45; }
+.aug-why-key { color: var(--t3); }
+.aug-why-value { color: var(--t1); text-align: right; font-variant-numeric: tabular-nums; }
+.aug-why-actions { display: flex; gap: 12px; margin-top: 1px; padding-top: 6px; border-top: 1px solid var(--b1); }
+.aug-why-action { padding: 0; border: none; background: none; font-family: var(--font-mono); font-size: 11px; color: var(--blue3); cursor: pointer; }
+.aug-why-action:hover { color: var(--blue4); }
 
 /* ── Motion ────────────────────────────────────────────────────────────────
    Every animation in the app, each explaining a state change. Durations are the three
