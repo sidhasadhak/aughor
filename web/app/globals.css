@@ -1036,3 +1036,61 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
   .aug-brief-cols { flex-direction: column; align-items: stretch; }
   .aug-apparatus { width: auto; position: static; max-height: none; border-left: 0; border-top: 1px solid var(--b1); }
 }
+
+/* ── The claim ledger (Aughor Intelligence · 05 Evidence) ─────────────────────────────────────
+   A claim is a row, not a card; the selected claim opens in the inspector beside the ledger. */
+.aug-ledger { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.aug-ledger-pad { flex: 1; padding: 16px 20px; }
+.aug-ledger-main { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.aug-ledger-bar { flex: none; display: flex; align-items: center; gap: 12px; padding: 7px 16px; border-bottom: 1px solid var(--b1); }
+.aug-ledger-meta { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; }
+.aug-ledger-scroll { flex: 1; min-height: 0; overflow: auto; }
+.aug-ledger-table { table-layout: fixed; }
+.aug-ledger-table tbody td { height: auto; padding: 5px 10px; vertical-align: top; }
+.aug-ledger-table tbody tr { cursor: pointer; }
+.aug-ledger-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
+/* .aug-dt's nowrap outranks a bare class; the claim column is the one that wraps. */
+.aug-ledger-table tbody td.aug-ledger-claim { white-space: normal; }
+.aug-ledger-text { display: block; font-size: 12px; line-height: 1.5; color: var(--t1); }
+.aug-ledger-query {
+  display: block; max-width: 100%; margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
+}
+.aug-ledger-when { font-size: 11px; color: var(--t3); }
+.aug-ledger-none { color: var(--t3); }
+.aug-ledger-fb-validated { color: var(--grn4); }
+.aug-ledger-fb-disputed { color: var(--red4); }
+.aug-ledger-fb-context { color: var(--amb4); }
+.aug-ledger-col-id { width: 72px; }
+.aug-ledger-col-conf { width: 118px; }
+.aug-ledger-col-fb { width: 104px; }
+.aug-ledger-col-when { width: 68px; }
+.aug-ledger-empty { margin: 0; padding: 14px 16px; font-size: 12px; color: var(--t3); }
+.aug-ledger-foot {
+  flex: none; display: flex; gap: 16px; padding: 7px 16px; border-top: 1px solid var(--b1);
+  font-family: var(--font-mono); font-size: 11px; color: var(--t3);
+}
+.aug-ledger-foot-note { margin-left: auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-inspector { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
+.aug-inspector-head { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--b1); }
+.aug-inspector-id { font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
+.aug-inspector-end { margin-left: auto; }
+.aug-inspector-sec { flex: none; display: flex; flex-direction: column; gap: 8px; padding: 11px 14px 12px; border-bottom: 1px solid var(--b1); }
+.aug-inspector-claim { margin: 0; font-size: 13px; line-height: 1.6; color: var(--t1); }
+.aug-inspector-rows { margin: 0; display: flex; flex-direction: column; gap: 4px; }
+.aug-inspector-rows > div { display: flex; justify-content: space-between; gap: 12px; font-family: var(--font-mono); font-size: 11px; }
+.aug-inspector-rows dt { color: var(--t3); }
+.aug-inspector-rows dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--t1); }
+.aug-inspector-sub { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-inspector-sql { padding-left: 0; padding-right: 0; }
+.aug-inspector-sql > .aug-inspector-sub, .aug-inspector-sql > .aug-inspector-note { padding: 0 14px; }
+.aug-inspector-pre {
+  margin: 0; padding: 9px 14px; white-space: pre-wrap; word-break: break-word; background: var(--code-bg);
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.7; color: var(--t2);
+}
+.aug-inspector-doors { display: flex; flex-wrap: wrap; gap: 6px; }
+.aug-fb-door[aria-pressed="true"] { font-weight: 600; }
+.aug-fb-door-validated[aria-pressed="true"] { background: var(--grn1); border-color: var(--grn2); color: var(--grn4); }
+.aug-fb-door-disputed[aria-pressed="true"] { background: var(--red1); border-color: var(--red2); color: var(--red4); }
+.aug-fb-door-needs_context[aria-pressed="true"] { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
+.aug-inspector-note { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t3); }
