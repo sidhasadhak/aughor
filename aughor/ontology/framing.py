@@ -125,7 +125,8 @@ class FrameTerm(BaseModel):
     #: The name resolved to: an entity id, `Entity.property`, a process id, `process.stage`, a rule id, a metric name.
     target: str
     label: str = ""
-    #: How it matched: name · display name · api name · table · synonym · promise · derived name · short name.
+    #: How it matched: name · display name · api name · table · synonym · promise · derived name · short name · its
+    #: words (a rule's name, its words in another order within one sentence).
     via: str = ""
     #: For a derived name: what it asks — `late` (the segment), `rate` (the metric) or `lag`.
     intent: str = ""
@@ -244,7 +245,14 @@ class Frame(BaseModel):
 _KIND_RANK = {"entity": 1, "segment": 2, "metric": 2, "property": 2,
               "process": 3, "stage": 3, "promise": 3, "lag": 3, "rule": 3}
 _VIA_RANK = {"derived name": 0, "name": 1, "promise": 1, "display name": 2, "api name": 3, "table": 4, "synonym": 5,
-             "short name": 6}
+             "short name": 6, "its words": 7}
+#: What follows an answer instruction's verb — "Return THE region", "Order EACH category" — and never follows a type named
+#: as the noun that heads a clause.
+_DETERMINERS = frozenset({"the", "each", "every", "a", "an", "all", "only", "both", "its", "their", "this", "these",
+                          "those", "top", "first", "last", "one", "two", "three", "four", "five", "six", "seven", "eight",
+                          "nine", "ten"})
+_SENTENCE_END = re.compile(r"[?!;]|\.(?=\s|$)")
+_CLAUSE_BREAK = re.compile(r"[?!;:,]|\.(?=\s|$)")
 
 
 @dataclass(frozen=True)
@@ -344,6 +352,18 @@ def _index(graph: OntologyGraph, synonyms: Iterable[Any]) -> _Index:
     for r in (graph.rules or {}).values():
         ix.add(r.id, "rule", r.id, r.display_name or r.id, "name")
         ix.add(r.display_name or "", "rule", r.id, r.display_name or r.id, "display name")
+        # the property a rule groups is named by its last word too: "EU markets … return the country" means the
+        # `ship_country` the rule is defined on, a word nothing else in the index gives it
+        entity = graph.entities.get(r.entity)
+        for prop in _rule_properties(r):
+            if entity is None or prop not in _readable_properties(entity):
+                continue
+            stems = list(_stems(prop))
+            while len(stems) > 1 and stems[-1] in _GENERIC_TAIL:
+                stems.pop()
+            if len(stems) > 1:
+                ix.add_stems((stems[-1],), "property", f"{entity.id}.{prop}",
+                             f"{_label(entity)} · {prop.replace('_', ' ')}", "short name")
     for mid, m in (graph.metrics or {}).items():
         ix.add(mid, "metric", mid, m.display_name or mid, "name")
         ix.add(m.display_name or "", "metric", mid, m.display_name or mid, "display name")
@@ -397,15 +417,17 @@ def _synonym_target(graph: OntologyGraph, tables: dict[str, str], kind: str,
 
 
 def _match(question: str, ix: _Index) -> tuple[list[FrameTerm], list[str], list[str]]:
-    """Every declared name the question spells, kept unless a longer match of at least its rank covers it. Returns the
+    """Every declared name the question spells, kept unless a longer match of at least its rank covers it; a rule's name
+    also with its words in another order within one sentence; never the verb of an answer instruction. Returns the
     terms, the question's words and their stems."""
     words = words_of(question)
     tokens = [stem(w) for w in words]
+    sentence, commands = _clauses(question)
     found: dict[tuple[int, int, str, str], _Name] = {}
     for name in ix.names:
         n = len(name.stems)
         for i in range(len(tokens) - n + 1):
-            if tuple(tokens[i:i + n]) != name.stems:
+            if tuple(tokens[i:i + n]) != name.stems or (n == 1 and i in commands):
                 continue
             key = (i, i + n, name.kind, name.target)
             held = found.get(key)
@@ -427,10 +449,67 @@ def _match(question: str, ix: _Index) -> tuple[list[FrameTerm], list[str], list[
     kept = [(i, j, name) for i, j, name in kept
             if not (name.kind == "property" and name.via == "short name"
                     and any(len(t) > len(name.stems) and t[-len(name.stems):] == name.stems for t in full_tails))]
+    # a rule's name with its words in another order inside one sentence ("returns that were controllable") — weaker than
+    # its spelling, and covering nothing: the words between are the question's own
+    texts: dict[tuple[int, int, str], str] = {}
+    spelled = {target for (_i, _j, kind, target) in found if kind == "rule"}
+    for name in ix.names:
+        if name.kind != "rule" or len(name.stems) < 2 or name.target in spelled:
+            continue
+        at = _in_one_sentence(name.stems, tokens, sentence, commands)
+        if at is None:
+            continue
+        spelled.add(name.target)
+        i, j = min(at), max(at) + 1
+        kept.append((i, j, _Name(name.stems, name.kind, name.target, name.label, "its words")))
+        texts[(i, j, name.target)] = " … ".join(words[p] for p in sorted(at))
     kept.sort(key=lambda m: (m[0], -(m[1] - m[0]), _VIA_RANK.get(m[2].via, 9), m[2].target))
-    terms = [FrameTerm(text=" ".join(words[i:j]), kind=name.kind, target=name.target, label=name.label, via=name.via,
-                       intent=name.intent, start=i, end=j) for i, j, name in kept]
+    terms = [FrameTerm(text=texts.get((i, j, name.target)) or " ".join(words[i:j]), kind=name.kind, target=name.target,
+                       label=name.label, via=name.via, intent=name.intent, start=i, end=j) for i, j, name in kept]
     return terms, words, tokens
+
+
+def _clauses(question: str) -> tuple[list[int], set[int]]:
+    """For each of the question's words, as `words_of` reads them, the sentence it sits in — and which words are an answer
+    instruction's verb: a clause's first word followed by a determiner ("Return the region", "Order each category"), a
+    thing the question asks the reader to DO, never a type it names. A plural is a noun ("Reviews the customers wrote")."""
+    text = _CAMEL.sub(" ", question or "")
+    found = list(_WORD.finditer(text))
+    sentence: list[int] = []
+    heads: set[int] = set()
+    at, last = 0, 0
+    for k, m in enumerate(found):
+        gap = text[last:m.start()]
+        if k and _SENTENCE_END.search(gap):
+            at += 1
+        if k == 0 or _CLAUSE_BREAK.search(gap) or found[k - 1].group().lower() in ("and", "then"):
+            heads.add(k)
+        sentence.append(at)
+        last = m.end()
+    commands: set[int] = set()
+    for k in heads:
+        word = found[k].group().lower()
+        after = found[k + 1].group().lower() if k + 1 < len(found) else ""
+        if (after in _DETERMINERS or after.isdigit()) and not (word.endswith("s") and not word.endswith("ss")):
+            commands.add(k)
+    return sentence, commands
+
+
+def _in_one_sentence(stems: tuple[str, ...], tokens: list[str], sentence: list[int],
+                     commands: set[int]) -> Optional[list[int]]:
+    """Distinct positions spelling each of ``stems`` inside a single sentence, in any order — in the first sentence that
+    holds them all — or None."""
+    for at in dict.fromkeys(sentence):
+        taken: list[int] = []
+        for s in stems:
+            p = next((k for k, t in enumerate(tokens)
+                      if t == s and sentence[k] == at and k not in taken and k not in commands), None)
+            if p is None:
+                break
+            taken.append(p)
+        else:
+            return taken
+    return None
 
 
 # ── links, from where the frame stands ──────────────────────────────────────────────────────
@@ -543,6 +622,12 @@ def _rule_words(rule: BusinessRule) -> str:
         rhs = c.get("value_path") or c.get("values") or c.get("value")
         out.append(f"{c.get('path')} {c.get('op')}" + ("" if rhs in (None, "", []) else f" {rhs}"))
     return "; ".join(out)
+
+
+def _rule_properties(rule: BusinessRule) -> list[str]:
+    """The properties of its own type a rule is defined on — a value set's property, a condition's paths — by name."""
+    paths = [rule.property] if rule.kind == "value_set" else [str(c.get("path") or "") for c in rule.conditions]
+    return [p for p in dict.fromkeys(paths) if p and "." not in p]
 
 
 def _rule_outcome(graph: OntologyGraph, rule: BusinessRule) -> FrameOutcome:
@@ -688,7 +773,6 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
         if t.kind == "property":
             entity_id, prop = t.target.split(".", 1)
             spans.setdefault((t.start, t.end), []).append((entity_id, prop))
-    named_props = {p for group in spans.values() for p in group}
     frame.outcomes = _outcomes(graph, terms, _asks(words, tokens), list(spans.values()), hops)
     frame.chosen, note = _choose(frame.outcomes, choice)
     if note:
@@ -710,7 +794,7 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
                        "key_unique": b.verified if b is not None else None}
     _frame_rules(graph, frame, terms, start, paths)
     _frame_moments(graph, frame, terms)
-    _frame_drivers(frame, named_props, start, paths)
+    _frame_drivers(frame, _said_which(graph, frame, terms, spans), start, paths)
     _frame_compiled(graph, frame, dialect)
     frame.reading = frame_reading(frame)
     return frame
@@ -718,9 +802,18 @@ def frame_question(question: str, graph: Optional[OntologyGraph], *, synonyms: I
 
 def _start_entity(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm]) -> Optional[OntologyEntity]:
     o = frame.outcome
+    if o is not None and o.kind != "rule":
+        return graph.entities.get(o.entity)
+    rules = [graph.rules[t.target] for t in terms if t.kind == "rule" and t.target in (graph.rules or {})
+             and graph.rules[t.target].verified is True]
+    if o is not None and o.name in (graph.rules or {}):
+        rules = [graph.rules[o.name], *(r for r in rules if r.id != o.name)]
+    candidates = frame.candidates()
+    if rules and (o is not None or (len(candidates) > 1 and all(c.kind == "rule" for c in candidates))):
+        return _filtered_start(graph, frame, terms, rules)
     if o is not None:
         return graph.entities.get(o.entity)
-    if len(frame.candidates()) > 1:
+    if len(candidates) > 1:
         return None                                      # several candidates: where to start follows the choice
     for t in terms:
         if t.kind == "rule" and t.target in (graph.rules or {}):
@@ -732,6 +825,47 @@ def _start_entity(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm]) ->
                 return graph.entities.get(process.entity)
     widest = max((t for t in terms if t.kind == "entity"), key=lambda t: (t.end - t.start, -t.start), default=None)
     return graph.entities.get(widest.target) if widest is not None else None
+
+
+def _filtered_start(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm],
+                    rules: list[BusinessRule]) -> Optional[OntologyEntity]:
+    """Where a reading of rules alone starts: a type the question names that reaches every rule's type by measured to-one
+    links — the objects the rules filter, so "orders placed by VIP customers" counts orders — preferring a type that is no
+    rule's own; else the first rule's type that reaches the others; else the first rule's type. (A question that counts
+    a rule's own type while naming another that reaches it — "EU core customers who placed orders" — reads from the
+    other.)"""
+    kinds = list(dict.fromkeys(r.entity for r in rules))
+
+    def reaches_all(entity: OntologyEntity) -> bool:
+        reach = {e.id for e, _chain in _to_one_paths(graph, entity, frame.hops)}
+        return all(k in reach for k in kinds)
+
+    named = sorted((t for t in terms if t.kind == "entity" and t.target in graph.entities),
+                   key=lambda t: (t.target in kinds, -(t.end - t.start), t.start))
+    for t in named:
+        if reaches_all(graph.entities[t.target]):
+            return graph.entities[t.target]
+    for kind in kinds:
+        entity = graph.entities.get(kind)
+        if entity is not None and reaches_all(entity):
+            return entity
+    return graph.entities.get(kinds[0])
+
+
+def _said_which(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm],
+                spans: dict[tuple[int, int], list[tuple[str, str]]]) -> set[tuple[str, str]]:
+    """The properties the question names. A word that fits several is narrowed only where the question says which: to the
+    property a rule in the frame is defined on ("EU markets … the country" is the ship country), else to the ones on a
+    type the question names ("the customers' state"); a bare word keeps every property it fits."""
+    anchored = {(r.entity, p) for r in frame.rules if r.usable and r.id in (graph.rules or {})
+                for p in _rule_properties(graph.rules[r.id])}
+    said: set[tuple[str, str]] = set()
+    for (start, end), group in spans.items():
+        # a type named by OTHER words: "country" is also the Country type's name, which says nothing about which country
+        # property the word means
+        named_types = {t.target for t in terms if t.kind == "entity" and (t.end <= start or end <= t.start)}
+        said.update([c for c in group if c in anchored] or [c for c in group if c[0] in named_types] or group)
+    return said
 
 
 def _frame_rules(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm], start: Optional[OntologyEntity],

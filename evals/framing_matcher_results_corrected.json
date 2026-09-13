@@ -1,0 +1,3147 @@
+{
+  "results": [
+    {
+      "id": "lux_word_order_01",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "dev",
+      "question": "On each platform, what share of returns were controllable?",
+      "expect": {
+        "definition": "controllable_returns",
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [
+          "platform"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "controllable_returns",
+        "ambiguous": false,
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [
+          "platform"
+        ],
+        "terms": [
+          [
+            "platform",
+            "property",
+            "Customer.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "CustomerService.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Order.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "OrderItem.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Product.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Return.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "ReturnLogistic.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Shipment.platform"
+          ],
+          [
+            "returns \u2026 controllable",
+            "rule",
+            "controllable_returns"
+          ],
+          [
+            "returns",
+            "property",
+            "OrderItem.returned"
+          ],
+          [
+            "returns",
+            "entity",
+            "Return"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_word_order_02",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "test",
+      "question": "How many payments were high-risk for each payment method?",
+      "expect": {
+        "definition": "high_risk_payments",
+        "rules": [
+          "high_risk_payments"
+        ],
+        "start": "Payment",
+        "named": [
+          "payment_method"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "high_risk_payments",
+        "ambiguous": false,
+        "rules": [
+          "high_risk_payments"
+        ],
+        "start": "Payment",
+        "named": [
+          "payment_method"
+        ],
+        "terms": [
+          [
+            "payments \u2026 high \u2026 risk",
+            "rule",
+            "high_risk_payments"
+          ],
+          [
+            "payments",
+            "entity",
+            "Payment"
+          ],
+          [
+            "payment method",
+            "property",
+            "Order.payment_method"
+          ],
+          [
+            "payment method",
+            "property",
+            "Payment.payment_method"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_word_order_03",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "dev",
+      "question": "How many orders placed in fiscal year 2023 count as completed?",
+      "expect": {
+        "definition": "completed_orders",
+        "rules": [
+          "completed_orders"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "completed_orders",
+        "ambiguous": false,
+        "rules": [
+          "completed_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "orders \u2026 completed",
+            "rule",
+            "completed_orders"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_shipment.placed"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_word_order_04",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "test",
+      "question": "How many customers in each region are VIP?",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Customer",
+        "named": [
+          "region"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "vip_customers",
+        "ambiguous": false,
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Customer",
+        "named": [
+          "region"
+        ],
+        "terms": [
+          [
+            "customers \u2026 VIP",
+            "rule",
+            "vip_customers"
+          ],
+          [
+            "customers",
+            "entity",
+            "Customer"
+          ],
+          [
+            "region",
+            "property",
+            "Countrie.region"
+          ],
+          [
+            "region",
+            "property",
+            "Customer.region"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_word_order_05",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "dev",
+      "question": "How many orders in fiscal year 2025 went to markets in the EU?",
+      "expect": {
+        "definition": "eu_markets",
+        "rules": [
+          "eu_markets"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "eu_markets",
+        "ambiguous": false,
+        "rules": [
+          "eu_markets"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ],
+          [
+            "markets \u2026 EU",
+            "rule",
+            "eu_markets"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_word_order_06",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "test",
+      "question": "What is the average lag for refunds, in days?",
+      "expect": {
+        "definition": "refund_lag_days",
+        "rules": [],
+        "start": "Return"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "refund_lag_days",
+        "ambiguous": false,
+        "rules": [],
+        "start": "Return",
+        "named": [],
+        "terms": [
+          [
+            "refunds",
+            "promise",
+            "return_to_refund.refunded"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_word_order_07",
+      "host": "lux",
+      "gap": "word_order",
+      "split": "dev",
+      "question": "What share of order lines in fiscal year 2024 belong to the division of accessories?",
+      "expect": {
+        "definition": "accessories_division",
+        "rules": [
+          "accessories_division"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "accessories_division",
+        "ambiguous": false,
+        "rules": [
+          "accessories_division"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_order.fiscal_year"
+        ],
+        "terms": [
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ],
+          [
+            "division \u2026 accessories",
+            "rule",
+            "accessories_division"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_imperative_01",
+      "host": "lux",
+      "gap": "imperative",
+      "split": "dev",
+      "question": "Which platforms have the most VIP customers? Return the platform and the count, largest first.",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Customer",
+        "named": [
+          "platform"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "vip_customers",
+        "ambiguous": false,
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Customer",
+        "named": [
+          "platform"
+        ],
+        "terms": [
+          [
+            "platforms",
+            "property",
+            "Customer.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "CustomerService.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "Order.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "OrderItem.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "Product.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "Return.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "ReturnLogistic.platform"
+          ],
+          [
+            "platforms",
+            "property",
+            "Shipment.platform"
+          ],
+          [
+            "VIP customers",
+            "rule",
+            "vip_customers"
+          ],
+          [
+            "platform",
+            "property",
+            "Customer.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "CustomerService.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Order.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "OrderItem.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Product.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Return.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "ReturnLogistic.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Shipment.platform"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_imperative_02",
+      "host": "lux",
+      "gap": "imperative",
+      "split": "test",
+      "question": "How many high-risk payments went through each PSP? Return the PSP and the count.",
+      "expect": {
+        "definition": "high_risk_payments",
+        "rules": [
+          "high_risk_payments"
+        ],
+        "start": "Payment",
+        "named": [
+          "psp"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "high_risk_payments",
+        "ambiguous": false,
+        "rules": [
+          "high_risk_payments"
+        ],
+        "start": "Payment",
+        "named": [
+          "psp"
+        ],
+        "terms": [
+          [
+            "high risk payments",
+            "rule",
+            "high_risk_payments"
+          ],
+          [
+            "PSP",
+            "property",
+            "Order.psp"
+          ],
+          [
+            "PSP",
+            "property",
+            "Payment.psp"
+          ],
+          [
+            "PSP",
+            "property",
+            "Order.psp"
+          ],
+          [
+            "PSP",
+            "property",
+            "Payment.psp"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_imperative_03",
+      "host": "lux",
+      "gap": "imperative",
+      "split": "dev",
+      "question": "How many completed orders came from each channel in fiscal year 2024? Return the channel and the number of orders, largest first.",
+      "expect": {
+        "definition": "completed_orders",
+        "rules": [
+          "completed_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "channel"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "completed_orders",
+        "ambiguous": false,
+        "rules": [
+          "completed_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "channel",
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "completed orders",
+            "rule",
+            "completed_orders"
+          ],
+          [
+            "channel",
+            "property",
+            "CustomerService.channel"
+          ],
+          [
+            "channel",
+            "property",
+            "Order.channel"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ],
+          [
+            "channel",
+            "property",
+            "CustomerService.channel"
+          ],
+          [
+            "channel",
+            "property",
+            "Order.channel"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_imperative_04",
+      "host": "lux",
+      "gap": "imperative",
+      "split": "test",
+      "question": "Return the number of controllable returns for each reason, largest first.",
+      "expect": {
+        "definition": "controllable_returns",
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [
+          "reason"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "controllable_returns",
+        "ambiguous": false,
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [
+          "reason"
+        ],
+        "terms": [
+          [
+            "controllable returns",
+            "rule",
+            "controllable_returns"
+          ],
+          [
+            "reason",
+            "property",
+            "Return.reason"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_imperative_05",
+      "host": "lux",
+      "gap": "imperative",
+      "split": "dev",
+      "question": "What share of each brand tier's order lines is in the accessories division? Return the tier and the share.",
+      "expect": {
+        "definition": "accessories_division",
+        "rules": [
+          "accessories_division"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "brand_tier"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "accessories_division",
+        "ambiguous": false,
+        "rules": [
+          "accessories_division"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "brand_tier",
+          "order_item_to_customer_service.customer_service_to_customer.tier"
+        ],
+        "terms": [
+          [
+            "brand tier",
+            "property",
+            "OrderItem.brand_tier"
+          ],
+          [
+            "brand tier",
+            "property",
+            "Product.brand_tier"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "accessories division",
+            "rule",
+            "accessories_division"
+          ],
+          [
+            "tier",
+            "property",
+            "Brand.tier"
+          ],
+          [
+            "tier",
+            "property",
+            "Customer.tier"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_imperative_06",
+      "host": "lux",
+      "gap": "imperative",
+      "split": "test",
+      "question": "Show the carriers that broke the refund promise most often. Return each carrier with its breach percentage.",
+      "expect": {
+        "definition": "refund_breach_rate",
+        "rules": [],
+        "start": "Return",
+        "named": [
+          "carrier",
+          "return_to_return_logistic.carrier"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "refund_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "Return",
+        "named": [
+          "carrier",
+          "return_to_return_logistic.carrier"
+        ],
+        "terms": [
+          [
+            "carriers",
+            "property",
+            "Order.carrier"
+          ],
+          [
+            "carriers",
+            "property",
+            "Return.carrier"
+          ],
+          [
+            "carriers",
+            "property",
+            "ReturnLogistic.carrier"
+          ],
+          [
+            "carriers",
+            "property",
+            "Shipment.carrier"
+          ],
+          [
+            "refund",
+            "promise",
+            "return_to_refund.refunded"
+          ],
+          [
+            "carrier",
+            "property",
+            "Order.carrier"
+          ],
+          [
+            "carrier",
+            "property",
+            "Return.carrier"
+          ],
+          [
+            "carrier",
+            "property",
+            "ReturnLogistic.carrier"
+          ],
+          [
+            "carrier",
+            "property",
+            "Shipment.carrier"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_start_via_link_01",
+      "host": "lux",
+      "gap": "start_via_link",
+      "split": "dev",
+      "question": "What was the average GMV of orders placed by VIP customers in fiscal year 2025?",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "vip_customers",
+        "ambiguous": false,
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_shipment.placed"
+          ],
+          [
+            "VIP customers",
+            "rule",
+            "vip_customers"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_start_via_link_02",
+      "host": "lux",
+      "gap": "start_via_link",
+      "split": "test",
+      "question": "How many orders did VIP customers place in fiscal year 2024?",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "vip_customers",
+        "ambiguous": false,
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "VIP customers",
+            "rule",
+            "vip_customers"
+          ],
+          [
+            "place",
+            "stage",
+            "order_to_shipment.placed"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_start_via_link_03",
+      "host": "lux",
+      "gap": "start_via_link",
+      "split": "dev",
+      "question": "How many order lines in the accessories division were bought by VIP customers?",
+      "expect": {
+        "rules": [
+          "accessories_division",
+          "vip_customers"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": true,
+        "rules": [
+          "accessories_division",
+          "vip_customers"
+        ],
+        "start": "OrderItem",
+        "named": [],
+        "terms": [
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "accessories division",
+            "rule",
+            "accessories_division"
+          ],
+          [
+            "VIP customers",
+            "rule",
+            "vip_customers"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_start_via_link_04",
+      "host": "lux",
+      "gap": "start_via_link",
+      "split": "test",
+      "question": "What share of fiscal year 2025 GMV came from orders placed by VIP customers?",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "vip_customers",
+        "ambiguous": false,
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_shipment.placed"
+          ],
+          [
+            "VIP customers",
+            "rule",
+            "vip_customers"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_short_name_01",
+      "host": "lux",
+      "gap": "short_name",
+      "split": "dev",
+      "question": "Which EU market had the most completed orders in fiscal year 2025? Return the country and the count.",
+      "expect": {
+        "rules": [
+          "completed_orders",
+          "eu_markets"
+        ],
+        "start": "Order",
+        "named": [
+          "ship_country"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": true,
+        "rules": [
+          "completed_orders",
+          "eu_markets"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year",
+          "ship_country"
+        ],
+        "terms": [
+          [
+            "EU market",
+            "rule",
+            "eu_markets"
+          ],
+          [
+            "completed orders",
+            "rule",
+            "completed_orders"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ],
+          [
+            "country",
+            "property",
+            "Brand.country"
+          ],
+          [
+            "country",
+            "property",
+            "Countrie.country"
+          ],
+          [
+            "country",
+            "property",
+            "Customer.country"
+          ],
+          [
+            "country",
+            "property",
+            "Warehouse.country"
+          ],
+          [
+            "country",
+            "entity",
+            "Countrie"
+          ],
+          [
+            "country",
+            "property",
+            "Order.ship_country"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_short_name_02",
+      "host": "lux",
+      "gap": "short_name",
+      "split": "test",
+      "question": "In which country do VIP customers live most often?",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Customer",
+        "named": [
+          "country"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "vip_customers",
+        "ambiguous": false,
+        "rules": [
+          "vip_customers"
+        ],
+        "start": "Customer",
+        "named": [
+          "country"
+        ],
+        "terms": [
+          [
+            "country",
+            "property",
+            "Brand.country"
+          ],
+          [
+            "country",
+            "property",
+            "Countrie.country"
+          ],
+          [
+            "country",
+            "property",
+            "Customer.country"
+          ],
+          [
+            "country",
+            "property",
+            "Warehouse.country"
+          ],
+          [
+            "country",
+            "entity",
+            "Countrie"
+          ],
+          [
+            "country",
+            "property",
+            "Order.ship_country"
+          ],
+          [
+            "VIP customers",
+            "rule",
+            "vip_customers"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_short_name_03",
+      "host": "lux",
+      "gap": "short_name",
+      "split": "dev",
+      "question": "Which carrier has the highest share of refunds that break the refund promise?",
+      "expect": {
+        "definition": "refund_breach_rate",
+        "rules": [],
+        "start": "Return",
+        "named": [
+          "carrier",
+          "return_to_return_logistic.carrier"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "refund_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "Return",
+        "named": [
+          "carrier",
+          "return_to_return_logistic.carrier"
+        ],
+        "terms": [
+          [
+            "carrier",
+            "property",
+            "Order.carrier"
+          ],
+          [
+            "carrier",
+            "property",
+            "Return.carrier"
+          ],
+          [
+            "carrier",
+            "property",
+            "ReturnLogistic.carrier"
+          ],
+          [
+            "carrier",
+            "property",
+            "Shipment.carrier"
+          ],
+          [
+            "refunds",
+            "promise",
+            "return_to_refund.refunded"
+          ],
+          [
+            "refund",
+            "promise",
+            "return_to_refund.refunded"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_short_name_04",
+      "host": "lux",
+      "gap": "short_name",
+      "split": "test",
+      "question": "Which platform has the most controllable returns?",
+      "expect": {
+        "definition": "controllable_returns",
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [
+          "platform"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "controllable_returns",
+        "ambiguous": false,
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [
+          "platform",
+          "return_to_return_logistic.platform"
+        ],
+        "terms": [
+          [
+            "platform",
+            "property",
+            "Customer.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "CustomerService.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Order.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "OrderItem.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Product.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Return.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "ReturnLogistic.platform"
+          ],
+          [
+            "platform",
+            "property",
+            "Shipment.platform"
+          ],
+          [
+            "controllable returns",
+            "rule",
+            "controllable_returns"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_short_name_05",
+      "host": "lux",
+      "gap": "short_name",
+      "split": "dev",
+      "question": "For completed orders in fiscal year 2024, which ship region had the most orders? Return the region and the count.",
+      "expect": {
+        "definition": "completed_orders",
+        "rules": [
+          "completed_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "ship_region"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "completed_orders",
+        "ambiguous": false,
+        "rules": [
+          "completed_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year",
+          "placed_by.region",
+          "ship_region"
+        ],
+        "terms": [
+          [
+            "completed orders",
+            "rule",
+            "completed_orders"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ],
+          [
+            "ship region",
+            "property",
+            "Order.ship_region"
+          ],
+          [
+            "ship",
+            "promise",
+            "order_to_shipment.shipped"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "region",
+            "property",
+            "Countrie.region"
+          ],
+          [
+            "region",
+            "property",
+            "Customer.region"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_baseline_01",
+      "host": "lux",
+      "gap": "baseline",
+      "split": "dev",
+      "question": "What percentage of returns broke the refund promise in fiscal year 2024?",
+      "expect": {
+        "definition": "refund_breach_rate",
+        "rules": [],
+        "start": "Return"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "refund_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "Return",
+        "named": [],
+        "terms": [
+          [
+            "returns",
+            "property",
+            "OrderItem.returned"
+          ],
+          [
+            "returns",
+            "entity",
+            "Return"
+          ],
+          [
+            "refund",
+            "promise",
+            "return_to_refund.refunded"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_baseline_02",
+      "host": "lux",
+      "gap": "baseline",
+      "split": "test",
+      "question": "What was YNAP's GMV in fiscal year 2023?",
+      "expect": {
+        "definition": "ynap_platforms",
+        "rules": [
+          "ynap_platforms"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "ynap_platforms",
+        "ambiguous": false,
+        "rules": [
+          "ynap_platforms"
+        ],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "YNAP",
+            "rule",
+            "ynap_platforms"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_baseline_03",
+      "host": "lux",
+      "gap": "baseline",
+      "split": "dev",
+      "question": "How many high-risk payments were there?",
+      "expect": {
+        "definition": "high_risk_payments",
+        "rules": [
+          "high_risk_payments"
+        ],
+        "start": "Payment"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "high_risk_payments",
+        "ambiguous": false,
+        "rules": [
+          "high_risk_payments"
+        ],
+        "start": "Payment",
+        "named": [],
+        "terms": [
+          [
+            "high risk payments",
+            "rule",
+            "high_risk_payments"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_baseline_04",
+      "host": "lux",
+      "gap": "baseline",
+      "split": "test",
+      "question": "How many refunds for controllable returns broke the refund promise?",
+      "expect": {
+        "definition": "refund_breach_rate",
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "refund_breach_rate",
+        "ambiguous": false,
+        "rules": [
+          "controllable_returns"
+        ],
+        "start": "Return",
+        "named": [],
+        "terms": [
+          [
+            "refunds",
+            "promise",
+            "return_to_refund.refunded"
+          ],
+          [
+            "controllable returns",
+            "rule",
+            "controllable_returns"
+          ],
+          [
+            "refund",
+            "promise",
+            "return_to_refund.refunded"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_baseline_05",
+      "host": "lux",
+      "gap": "baseline",
+      "split": "dev",
+      "question": "What share of orders broke the shipping promise in fiscal year 2025?",
+      "expect": {
+        "definition": "shipping_breach_rate",
+        "rules": [],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "shipping_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "Order",
+        "named": [
+          "fiscal_year"
+        ],
+        "terms": [
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "shipping",
+            "entity",
+            "Shipment"
+          ],
+          [
+            "shipping",
+            "promise",
+            "order_to_shipment.shipped"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Date.fiscal_year"
+          ],
+          [
+            "fiscal year",
+            "property",
+            "Order.fiscal_year"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_control_01",
+      "host": "lux",
+      "gap": "control",
+      "split": "dev",
+      "question": "How many support tickets were opened in each channel?",
+      "expect": {
+        "definition": null,
+        "rules": []
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "CustomerService",
+        "named": [
+          "channel"
+        ],
+        "terms": [
+          [
+            "support tickets",
+            "entity",
+            "CustomerService"
+          ],
+          [
+            "channel",
+            "property",
+            "CustomerService.channel"
+          ],
+          [
+            "channel",
+            "property",
+            "Order.channel"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_control_02",
+      "host": "lux",
+      "gap": "control",
+      "split": "test",
+      "question": "What is the average unit price of order lines by brand tier?",
+      "expect": {
+        "definition": null,
+        "rules": []
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "brand_tier",
+          "order_item_to_order.units"
+        ],
+        "terms": [
+          [
+            "unit",
+            "property",
+            "Order.units"
+          ],
+          [
+            "price",
+            "entity",
+            "Price"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "brand tier",
+            "property",
+            "OrderItem.brand_tier"
+          ],
+          [
+            "brand tier",
+            "property",
+            "Product.brand_tier"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_control_03",
+      "host": "lux",
+      "gap": "control",
+      "split": "dev",
+      "question": "Return the five brands with the most order lines.",
+      "expect": {
+        "definition": null,
+        "rules": [],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "brand"
+        ],
+        "terms": [
+          [
+            "brands",
+            "entity",
+            "Brand"
+          ],
+          [
+            "brands",
+            "property",
+            "Brand.brand"
+          ],
+          [
+            "brands",
+            "property",
+            "OrderItem.brand"
+          ],
+          [
+            "brands",
+            "property",
+            "Product.brand"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_control_04",
+      "host": "lux",
+      "gap": "control",
+      "split": "test",
+      "question": "What is the average CSAT score per support category?",
+      "expect": {
+        "definition": null,
+        "rules": []
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": null,
+        "named": [],
+        "terms": [
+          [
+            "CSAT",
+            "property",
+            "CustomerService.csat"
+          ],
+          [
+            "score",
+            "property",
+            "Payment.fraud_score"
+          ],
+          [
+            "category",
+            "property",
+            "CustomerService.category"
+          ],
+          [
+            "category",
+            "property",
+            "OrderItem.category"
+          ],
+          [
+            "category",
+            "property",
+            "Product.category"
+          ],
+          [
+            "category",
+            "property",
+            "Return.category"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_paraphrase_01",
+      "host": "lux",
+      "gap": "paraphrase",
+      "split": "dev",
+      "question": "What share of GMV comes from our best customers?",
+      "expect": {
+        "definition": "vip_customers",
+        "rules": [
+          "vip_customers"
+        ]
+      },
+      "ok": false,
+      "checks": {
+        "definition": false,
+        "rules": false
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "Customer",
+        "named": [],
+        "terms": [
+          [
+            "customers",
+            "entity",
+            "Customer"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "lux_paraphrase_02",
+      "host": "lux",
+      "gap": "paraphrase",
+      "split": "test",
+      "question": "How many risky payments did we take?",
+      "expect": {
+        "definition": "high_risk_payments",
+        "rules": [
+          "high_risk_payments"
+        ]
+      },
+      "ok": false,
+      "checks": {
+        "definition": false,
+        "rules": false
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "Payment",
+        "named": [],
+        "terms": [
+          [
+            "payments",
+            "entity",
+            "Payment"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_word_order_01",
+      "host": "olist",
+      "gap": "word_order",
+      "split": "dev",
+      "question": "What percentage of orders placed in 2018 were fulfilled?",
+      "expect": {
+        "definition": "fulfilled_orders",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "fulfilled_orders",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [],
+        "terms": [
+          [
+            "orders \u2026 fulfilled",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_delivery.placed"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_word_order_02",
+      "host": "olist",
+      "gap": "word_order",
+      "split": "test",
+      "question": "Of the orders that were fulfilled, how many were placed in 2017?",
+      "expect": {
+        "definition": "fulfilled_orders",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "fulfilled_orders",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [],
+        "terms": [
+          [
+            "orders \u2026 fulfilled",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_delivery.placed"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_word_order_03",
+      "host": "olist",
+      "gap": "word_order",
+      "split": "dev",
+      "question": "How many order lines on orders that were fulfilled were sold by Southeast sellers?",
+      "expect": {
+        "rules": [
+          "fulfilled_orders",
+          "southeast"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": true,
+        "rules": [
+          "fulfilled_orders",
+          "southeast"
+        ],
+        "start": "OrderItem",
+        "named": [],
+        "terms": [
+          [
+            "order \u2026 fulfilled",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "Southeast",
+            "rule",
+            "southeast"
+          ],
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_imperative_01",
+      "host": "olist",
+      "gap": "imperative",
+      "split": "dev",
+      "question": "How many fulfilled orders were there per customer state? Order the result by count, largest first.",
+      "expect": {
+        "definition": "fulfilled_orders",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "order_to_customer.customer_state"
+        ],
+        "absent_terms": [
+          "Order"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Order'": true
+      },
+      "frame": {
+        "outcome": "fulfilled_orders",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "order_to_customer.customer_state"
+        ],
+        "terms": [
+          [
+            "fulfilled orders",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "customer state",
+            "property",
+            "Customer.customer_state"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_imperative_02",
+      "host": "olist",
+      "gap": "imperative",
+      "split": "test",
+      "question": "Order the seller states by how often their order lines broke the dispatch promise, worst first.",
+      "expect": {
+        "definition": "dispatch_breach_rate",
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_seller.seller_state"
+        ],
+        "absent_terms": [
+          "Order"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Order'": true
+      },
+      "frame": {
+        "outcome": "dispatch_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_seller.seller_state"
+        ],
+        "terms": [
+          [
+            "seller states",
+            "property",
+            "Seller.seller_state"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "dispatch",
+            "promise",
+            "order_to_delivery.dispatched"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_imperative_03",
+      "host": "olist",
+      "gap": "imperative",
+      "split": "dev",
+      "question": "Which product categories break the dispatch promise most often? Return each category with its breach percentage.",
+      "expect": {
+        "definition": "dispatch_breach_rate",
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_product.product_category_name"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "dispatch_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_product.product_category_name"
+        ],
+        "terms": [
+          [
+            "product categories",
+            "property",
+            "Product.product_category_name"
+          ],
+          [
+            "product categories",
+            "property",
+            "ProductCategoryNameTranslation.product_category_name"
+          ],
+          [
+            "dispatch",
+            "promise",
+            "order_to_delivery.dispatched"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_start_via_link_01",
+      "host": "olist",
+      "gap": "start_via_link",
+      "split": "dev",
+      "question": "How many order lines did Southeast sellers sell in 2017?",
+      "expect": {
+        "definition": "southeast",
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "southeast",
+        "ambiguous": false,
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem",
+        "named": [],
+        "terms": [
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "Southeast",
+            "rule",
+            "southeast"
+          ],
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_start_via_link_02",
+      "host": "olist",
+      "gap": "start_via_link",
+      "split": "test",
+      "question": "What was the total freight value on order lines sold by Southeast sellers?",
+      "expect": {
+        "definition": "southeast",
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "southeast",
+        "ambiguous": false,
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "freight_value"
+        ],
+        "terms": [
+          [
+            "freight value",
+            "property",
+            "OrderItem.freight_value"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "Southeast",
+            "rule",
+            "southeast"
+          ],
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_start_via_link_03",
+      "host": "olist",
+      "gap": "start_via_link",
+      "split": "dev",
+      "question": "What was the average price of order lines on fulfilled orders?",
+      "expect": {
+        "definition": "fulfilled_orders",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "fulfilled_orders",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "price"
+        ],
+        "terms": [
+          [
+            "price",
+            "property",
+            "OrderItem.price"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "fulfilled orders",
+            "rule",
+            "fulfilled_orders"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_start_via_link_04",
+      "host": "olist",
+      "gap": "start_via_link",
+      "split": "test",
+      "question": "How many customers placed fulfilled orders in each state?",
+      "expect": {
+        "definition": "fulfilled_orders",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Customer",
+        "named": [
+          "customer_state"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "fulfilled_orders",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Customer",
+        "named": [
+          "customer_state"
+        ],
+        "terms": [
+          [
+            "customers",
+            "entity",
+            "Customer"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_delivery.placed"
+          ],
+          [
+            "fulfilled orders",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "state",
+            "property",
+            "Customer.customer_state"
+          ],
+          [
+            "state",
+            "property",
+            "Geolocation.geolocation_state"
+          ],
+          [
+            "state",
+            "property",
+            "Seller.seller_state"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_short_name_01",
+      "host": "olist",
+      "gap": "short_name",
+      "split": "dev",
+      "question": "Which state has the sellers whose order lines break the dispatch promise most often?",
+      "expect": {
+        "definition": "dispatch_breach_rate",
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_seller.seller_state"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "dispatch_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_seller.seller_state"
+        ],
+        "terms": [
+          [
+            "state",
+            "property",
+            "Customer.customer_state"
+          ],
+          [
+            "state",
+            "property",
+            "Geolocation.geolocation_state"
+          ],
+          [
+            "state",
+            "property",
+            "Seller.seller_state"
+          ],
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "dispatch",
+            "promise",
+            "order_to_delivery.dispatched"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_short_name_02",
+      "host": "olist",
+      "gap": "short_name",
+      "split": "test",
+      "question": "For fulfilled orders, which state do late deliveries happen in most? Return the state and the count.",
+      "expect": {
+        "definition": "delivery_breach_rate",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "order_to_customer.customer_state"
+        ],
+        "absent_terms": [
+          "Return"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true,
+        "absent 'Return'": true
+      },
+      "frame": {
+        "outcome": "delivery_breach_rate",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [
+          "order_to_customer.customer_state"
+        ],
+        "terms": [
+          [
+            "fulfilled orders",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "state",
+            "property",
+            "Customer.customer_state"
+          ],
+          [
+            "state",
+            "property",
+            "Geolocation.geolocation_state"
+          ],
+          [
+            "state",
+            "property",
+            "Seller.seller_state"
+          ],
+          [
+            "late deliveries",
+            "promise",
+            "order_to_delivery.delivered"
+          ],
+          [
+            "state",
+            "property",
+            "Customer.customer_state"
+          ],
+          [
+            "state",
+            "property",
+            "Geolocation.geolocation_state"
+          ],
+          [
+            "state",
+            "property",
+            "Seller.seller_state"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_short_name_03",
+      "host": "olist",
+      "gap": "short_name",
+      "split": "dev",
+      "question": "Which city do Southeast sellers ship the most order lines from?",
+      "expect": {
+        "definition": "southeast",
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_seller.seller_city"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true,
+        "named": true
+      },
+      "frame": {
+        "outcome": "southeast",
+        "ambiguous": false,
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_seller.seller_city"
+        ],
+        "terms": [
+          [
+            "city",
+            "property",
+            "Customer.customer_city"
+          ],
+          [
+            "city",
+            "property",
+            "Geolocation.geolocation_city"
+          ],
+          [
+            "city",
+            "property",
+            "Seller.seller_city"
+          ],
+          [
+            "Southeast",
+            "rule",
+            "southeast"
+          ],
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_baseline_01",
+      "host": "olist",
+      "gap": "baseline",
+      "split": "dev",
+      "question": "What share of order lines broke the dispatch promise in 2018?",
+      "expect": {
+        "definition": "dispatch_breach_rate",
+        "rules": [],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "dispatch_breach_rate",
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [],
+        "terms": [
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "dispatch",
+            "promise",
+            "order_to_delivery.dispatched"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_baseline_02",
+      "host": "olist",
+      "gap": "baseline",
+      "split": "test",
+      "question": "What is the average delivery lag in days for orders placed in 2017?",
+      "expect": {
+        "definition": "delivery_lag_days",
+        "rules": [],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "delivery_lag_days",
+        "ambiguous": false,
+        "rules": [],
+        "start": "Order",
+        "named": [],
+        "terms": [
+          [
+            "delivery",
+            "promise",
+            "order_to_delivery.delivered"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ],
+          [
+            "placed",
+            "stage",
+            "order_to_delivery.placed"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_baseline_03",
+      "host": "olist",
+      "gap": "baseline",
+      "split": "dev",
+      "question": "How many fulfilled orders were delivered late against the delivery promise in 2018?",
+      "expect": {
+        "definition": "delivery_breach_rate",
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "delivery_breach_rate",
+        "ambiguous": false,
+        "rules": [
+          "fulfilled_orders"
+        ],
+        "start": "Order",
+        "named": [],
+        "terms": [
+          [
+            "fulfilled orders",
+            "rule",
+            "fulfilled_orders"
+          ],
+          [
+            "delivered",
+            "promise",
+            "order_to_delivery.delivered"
+          ],
+          [
+            "delivery",
+            "promise",
+            "order_to_delivery.delivered"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_baseline_04",
+      "host": "olist",
+      "gap": "baseline",
+      "split": "test",
+      "question": "What percentage of order lines sold by Southeast sellers broke the dispatch promise?",
+      "expect": {
+        "definition": "dispatch_breach_rate",
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem"
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "start": true
+      },
+      "frame": {
+        "outcome": "dispatch_breach_rate",
+        "ambiguous": false,
+        "rules": [
+          "southeast"
+        ],
+        "start": "OrderItem",
+        "named": [],
+        "terms": [
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ],
+          [
+            "Southeast",
+            "rule",
+            "southeast"
+          ],
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ],
+          [
+            "dispatch",
+            "promise",
+            "order_to_delivery.dispatched"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_control_01",
+      "host": "olist",
+      "gap": "control",
+      "split": "dev",
+      "question": "How many sellers are there in each state?",
+      "expect": {
+        "definition": null,
+        "rules": []
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "Seller",
+        "named": [
+          "seller_state"
+        ],
+        "terms": [
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ],
+          [
+            "state",
+            "property",
+            "Customer.customer_state"
+          ],
+          [
+            "state",
+            "property",
+            "Geolocation.geolocation_state"
+          ],
+          [
+            "state",
+            "property",
+            "Seller.seller_state"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_control_02",
+      "host": "olist",
+      "gap": "control",
+      "split": "test",
+      "question": "What is the average review score by payment type?",
+      "expect": {
+        "definition": null,
+        "rules": []
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": null,
+        "named": [],
+        "terms": [
+          [
+            "review score",
+            "property",
+            "OrderReview.review_score"
+          ],
+          [
+            "payment type",
+            "property",
+            "OrderPayment.payment_type"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_control_03",
+      "host": "olist",
+      "gap": "control",
+      "split": "dev",
+      "question": "Order the product categories by number of order lines, largest first.",
+      "expect": {
+        "definition": null,
+        "rules": [],
+        "absent_terms": [
+          "Order"
+        ]
+      },
+      "ok": true,
+      "checks": {
+        "definition": true,
+        "rules": true,
+        "absent 'Order'": true
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "OrderItem",
+        "named": [
+          "order_item_to_product.product_category_name"
+        ],
+        "terms": [
+          [
+            "product categories",
+            "property",
+            "Product.product_category_name"
+          ],
+          [
+            "product categories",
+            "property",
+            "ProductCategoryNameTranslation.product_category_name"
+          ],
+          [
+            "order lines",
+            "entity",
+            "OrderItem"
+          ]
+        ]
+      }
+    },
+    {
+      "id": "olist_paraphrase_01",
+      "host": "olist",
+      "gap": "paraphrase",
+      "split": "dev",
+      "question": "How often do sellers hand orders to the carrier after the limit?",
+      "expect": {
+        "definition": "dispatch_breach_rate"
+      },
+      "ok": false,
+      "checks": {
+        "definition": false
+      },
+      "frame": {
+        "outcome": null,
+        "ambiguous": false,
+        "rules": [],
+        "start": "Seller",
+        "named": [],
+        "terms": [
+          [
+            "sellers",
+            "entity",
+            "Seller"
+          ],
+          [
+            "orders",
+            "entity",
+            "Order"
+          ]
+        ]
+      }
+    }
+  ],
+  "summary": {
+    "dev": {
+      "in_scope": [
+        29,
+        29
+      ],
+      "by_gap": {
+        "baseline": [
+          5,
+          5
+        ],
+        "control": [
+          4,
+          4
+        ],
+        "imperative": [
+          5,
+          5
+        ],
+        "paraphrase": [
+          0,
+          2
+        ],
+        "short_name": [
+          5,
+          5
+        ],
+        "start_via_link": [
+          4,
+          4
+        ],
+        "word_order": [
+          6,
+          6
+        ]
+      }
+    },
+    "test": {
+      "in_scope": [
+        22,
+        22
+      ],
+      "by_gap": {
+        "baseline": [
+          4,
+          4
+        ],
+        "control": [
+          3,
+          3
+        ],
+        "imperative": [
+          4,
+          4
+        ],
+        "paraphrase": [
+          0,
+          1
+        ],
+        "short_name": [
+          3,
+          3
+        ],
+        "start_via_link": [
+          4,
+          4
+        ],
+        "word_order": [
+          4,
+          4
+        ]
+      }
+    }
+  }
+}

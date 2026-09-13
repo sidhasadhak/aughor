@@ -323,6 +323,59 @@ def test_on_olist_a_dispatch_delay_reads_as_the_promise_the_business_declared():
     assert not frame_question("How many sellers are there in each state?", graph).defines
 
 
+# ── the four gaps the held-out LuxExperience run found ───────────────────────────────────────
+# Measured with no model on `evals/framing_matcher_set.jsonl`, a set committed before this code changed; these pin each
+# mechanism in words of their own.
+
+LUX = REPO / "evals" / "ablation_luxexperience_business_ontology.json"
+
+
+def lux() -> OntologyGraph:
+    return OntologyGraph.model_validate(json.loads(LUX.read_text()))
+
+
+def test_a_rule_named_in_another_order_within_one_sentence_is_the_rule_never_across_sentences(declared):
+    frame = frame_question("How many orders are still open?", declared)
+    assert (frame.outcome.kind, frame.outcome.name, frame.start["entity"]) == ("rule", "open_orders", "Order")
+    assert [(t.text, t.via) for t in frame.terms if t.kind == "rule"] == [("orders … open", "its words")]
+    assert not frame_question("Which orders shipped late? The store is open on Sundays.", declared).rules
+    spelled = frame_question("How many open orders are there?", declared)
+    assert [(t.text, t.via != "its words") for t in spelled.terms if t.kind == "rule"] == [("open orders", True)]
+
+
+def test_an_answer_instruction_s_verb_names_no_type(declared):
+    frame = frame_question("Review the orders EU core customers placed, and order each one by date.", declared)
+    assert not any(t.text.lower() in ("review", "order") for t in frame.terms)
+    assert frame.start["entity"] == "Order"
+    written = frame_question("Reviews the customers wrote in 2024: how many were five star?", declared)
+    assert any(t.text == "Reviews" and t.target == "Review" for t in written.terms)    # a plural noun, not a verb
+
+
+def test_rules_read_alone_start_from_the_type_the_question_names_that_they_filter(declared):
+    lines = frame_question("How many order lines went to EU core customers?", declared)
+    assert (lines.outcome.name, lines.start["entity"]) == ("eu_core", "OrderItem")
+    assert lines.rules[0].via == "order_item_to_order.order_to_customer"
+    assert frame_question("How many EU core customers are there?", declared).start["entity"] == "Customer"
+    # the type the rules filter is where the counting starts, even when the rule's own type is named first
+    assert frame_question("Which EU core customer wrote the most reviews?", declared).start["entity"] == "Review"
+    both = frame_question("How many open orders did EU core customers place?", declared)
+    assert both.ambiguous and both.start["entity"] == "Order"             # two rules: the named type that reaches both
+    assert [(r.id, r.via) for r in both.rules] == [("open_orders", ""), ("eu_core", "order_to_customer")]
+
+
+def test_a_word_that_fits_several_properties_is_narrowed_only_where_the_question_says_which():
+    market = frame_question("Which EU market placed the most orders in 2024? Give the country with its count.", lux())
+    assert [d.path for d in market.drivers if d.named] == ["ship_country"]          # the property the rule is defined on
+    # …even where no other word names the type that holds it: the customer's country is reachable too, and not meant
+    alone = frame_question("Which EU market had the highest GMV in 2024? Give the country.", lux())
+    assert [d.path for d in alone.drivers if d.named] == ["ship_country"]
+    whose = frame_question("In which state are the customers whose order lines broke the dispatch promise most?", olist())
+    assert [d.path for d in whose.drivers if d.named] == ["order_item_to_order.order_to_customer.customer_state"]
+    # a word that is also a type's name ("country" names the Country type) says nothing about WHICH property it means
+    shipped = frame_question("Which country are completed orders shipped to most?", lux())
+    assert {"ship_country", "placed_by.country"} <= {d.path for d in shipped.drivers if d.named}
+
+
 # ── the door ────────────────────────────────────────────────────────────────────────────────
 
 

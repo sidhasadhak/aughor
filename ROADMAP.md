@@ -126,7 +126,8 @@ the running API 15 of 18 Olist questions reached a declared definition and none 
 falsifier HELD on its run the same day: on the 12 questions whose definition is declared and not in the schema, framed
 answered 8 and raw 3, losing none raw answered and keeping all 3 controls — and HELD AGAIN on LuxExperience, where
 seven rules and a refund process were declared live for it and the matcher met questions it was never developed on:
-framed 9 of 13, raw 1, one loss, all 3 controls kept — so the framing stays) and fixed ON-7
+framed 9 of 13, raw 1, one loss, all 3 controls kept — so the framing stays; the matcher gaps that run found were then
+fixed and measured with no model on a new set of 54 questions, 51 of 51 in scope) and fixed ON-7
 first; §6 item 18 holds the three open shape questions.
 
 ---
@@ -4805,10 +4806,29 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   connection, heals the same way. With no model call the four lost statements now answer through the product's
   connection: Lux's framed refund lag 6.50, its reference; raw's 12.01, the lag counted from the request; Olist's 2.81
   in both arms, fractional days where the declared lag counts calendar days (2.71). 16 guard mutations, every one
-  caught. **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
-  misses) — measured on a NEW set, never by re-running these · the matcher: a declared name's words out of order, an
-  answer instruction's "Return" never a type, a rule reached from a named type starting there, a short name resolved
-  toward the rule's own property — each measured on a NEW set · the declare doors drop `provenance` (their request models lack the field the store
+  caught. **The matcher's four gaps fixed** (the user: *"then 'Fixing the matcher gaps needs a new question set to
+  measure' thing"*; 2026-09-13), measured with no model on a set committed BEFORE the matching code was read or changed:
+  `evals/framing_matcher_set.jsonl` — 54 natural questions over Olist and LuxExperience, each with a gold frame (the
+  definition it means, the rules that apply, the start, the breakdown it names, terms that must not appear), tagged by
+  gap and split dev/test by alternation — scored by `evals/framing_matcher_eval.py`. Baseline, in scope: dev 10/29, test
+  11/22. The fixes, in `aughor/ontology/framing.py`: a rule's name matches with its words in another order within one
+  sentence ("returns that were controllable"), weaker than its spelling and covering nothing; an answer instruction's
+  verb — a clause's first word before a determiner, "Return the region", "Order each category" — names no type (a
+  plural heading a clause is a noun); rules read alone start from a type the question names that reaches every rule's
+  type by measured to-one links ("orders placed by VIP customers" counts orders), two rules alike; and a word that fits
+  several properties is narrowed only where the question says which — to the property a rule in the frame is defined on
+  ("EU markets … the country" is `ship_country`, now also named by its last word), else to a type the question names in
+  other words — while a bare word keeps every property it fits. After: dev 29/29; the test split, measured once, 21/22 —
+  the narrowing had broken "In which country do VIP customers live most often?", because the word "country" also names
+  the Country type and narrowed to it; corrected (a type narrows only when OTHER words name it), test 22/22, that item
+  no longer held out. Paraphrases stay 0/3. On the two falsifier sets 5 of 34 frames changed, each a LuxExperience
+  defect: the VIP GMV question starts from Order, "Return the country" names `ship_country`, controllable returns and
+  high-risk payments now frame, the carrier is named once; no Olist frame moved. 12 guard mutations, every one caught.
+  **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
+  misses) — measured on a NEW set, never by re-running these · a rule read alone that counts ITS OWN type while the question names another that reaches it ("EU core customers
+  who placed orders") starts from the other type — the matcher set holds no such question · rules alone that tie still
+  send the model to choose between filters that both apply (a call that decides nothing) · a definition asked in words
+  nobody declared needs a person's synonym · the declare doors drop `provenance` (their request models lack the field the store
   keeps) · the framed arm is not guarded in the harness · a second run of either set for stability (the user's go) · a
   live deep analysis showing the frame in the web
   (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the
@@ -5211,7 +5231,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         the definition is not in the data) — ✅ FIRST SLICE 2026-09-13: framed with no model before the intake, 15 of 18
         Olist questions framed live through the door and none of the controls, the falsifier set of 15 executed, 29/29
         guard mutations caught; the falsifier HELD (framed 8 of the 12 declared-definition questions, raw 3, no control
-        lost) and HELD AGAIN on LuxExperience, held out (framed 9 of 13, raw 1, one loss, no control lost) → ON-8 one
+        lost) and HELD AGAIN on LuxExperience, held out (framed 9 of 13, raw 1, one loss, no control lost); its matcher
+        gaps fixed on a new set (51 of 51 in scope) → ON-8 one
         ontology, many sources (org-keyed, bindings name
         their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
 ```
