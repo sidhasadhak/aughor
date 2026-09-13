@@ -45,11 +45,19 @@ import {
 import { Button } from "@/components/ui/button";
 import { ShortcutSheet } from "@/components/query/ShortcutSheet";
 import { type JoinHint } from "@/components/query/editor/intentions";
+import { formatCount } from "@/lib/format";
 
 type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
 
 /** Stable identity — a fresh `{}` each render would re-fire every memo below it. */
 const EMPTY_PARAMS: Record<string, string> = {};
+
+/** SE-8A — the row limits the Run menu offers. Bounded above rather than offering "no
+ *  limit": the server honours limit<=0 as uncapped, and an uncapped SELECT over a wide
+ *  fact table hands the browser a payload nobody asked to render. 50k is Databricks'
+ *  own order of magnitude (they stop at 64k), and a LIMIT clause in the SQL still
+ *  overrides everything here. */
+const LIMIT_PRESETS = [100, 500, 1000, 5000, 10000, 50000];
 
 /** SE-1's single-draft key, read once when a connection has no tabs yet. Left in place
  *  rather than deleted after reading: a user who downgrades mid-session should still
@@ -144,6 +152,11 @@ export function SqlMode({
 
   const active = tabs.find(t => t.id === activeId) ?? null;
   const sqlText = active?.sql ?? "";
+
+  // SE-8A — the run settings live on the TAB (see EditorTab), read with defaults here.
+  const limit = active?.limit ?? 500;
+  const runAllPref = !!active?.runAll;
+  const [showRunMenu, setShowRunMenu] = useState(false);
 
   // SE-4 H — the `:name` parameters of the CURRENT document, and this tab's values.
   const paramNames = useMemo(() => findParams(sqlText), [sqlText]);
@@ -277,7 +290,7 @@ export function SqlMode({
     setFailedSql("");
     setStartedAt(Date.now());
     try {
-      const res = await runWorkbenchQuery(connId, toRun, 500, boundParams, ac.signal);
+      const res = await runWorkbenchQuery(connId, toRun, limit, boundParams, ac.signal);
       setResult(res);
       if (res.error) setFailedSql(toRun);
       // A query that RAN and reported an error is a value, not an exception — the
@@ -303,7 +316,7 @@ export function SqlMode({
       // The rail reads the audit log this run just wrote to.
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, statementToRun, patchActive, boundParams]);
+  }, [connId, running, statementToRun, patchActive, boundParams, limit]);
 
   /** SE-7 — Explain plan. DataGrip puts this beside Run because the two questions —
    *  "what does it return" and "what will it cost" — are asked of the same statement a
@@ -354,7 +367,7 @@ export function SqlMode({
     try {
       for (const [i, stmt] of statements.entries()) {
         inFlight = stmt;
-        const res = await runWorkbenchQuery(connId, stmt, 500, boundParams, ac.signal);
+        const res = await runWorkbenchQuery(connId, stmt, limit, boundParams, ac.signal);
         setResult(res);
         if (res.error) {
           setError(`Statement ${i + 1} of ${statements.length} failed: ${res.error}`);
@@ -382,7 +395,7 @@ export function SqlMode({
       setStartedAt(0);
       setHistoryKey(k => k + 1);
     }
-  }, [connId, running, sqlText, boundParams, patchActive, run]);
+  }, [connId, running, sqlText, boundParams, patchActive, run, limit]);
 
   /** Abort the in-flight fetch. Closing the socket is what reaches the server, which
    *  interrupts the engine — so this stops the QUERY, not just the waiting. */
@@ -404,10 +417,19 @@ export function SqlMode({
     return () => clearInterval(id);
   }, [startedAt]);
 
+  // SE-8A — what ⌘↵ and the Run button DO: the tab's "Run all statements" preference
+  // promotes them to the whole buffer when there is more than one statement. The
+  // single-statement verb survives as ⌘⇧↵ — a preference must not delete a verb.
+  const runPreferred = useCallback(() => {
+    if (runAllPref && statementCount > 1) void runAll(); else void run();
+  }, [runAllPref, statementCount, runAll, run]);
+
   // The run command must see the CURRENT text and cursor. `run` is rebuilt when those
   // change, and the editor calls through this ref, so ⌘↵ never fires a stale closure.
-  const runRef = useRef(run);
-  runRef.current = run;
+  const runRef = useRef(runPreferred);
+  runRef.current = runPreferred;
+  const runStatementRef = useRef(run);
+  runStatementRef.current = run;
 
   // ── The saved-query bar's binding ───────────────────────────────────────────
   //
@@ -477,11 +499,61 @@ export function SqlMode({
               Cancel{elapsed && <span style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>}
             </Button>
           ) : (
-            <Button variant="default" size="xs" className="aug-fs-ui"
-              title="Runs the selection, or the statement under the cursor (⌘↵)"
-              onClick={() => void run()} disabled={!connId}>
-              Run  ⌘↵
-            </Button>
+            // SE-8A — Databricks' split button: the label CARRIES the row limit, so
+            // "how many rows am I getting" is answered before the run, not after. The
+            // caret opens the run settings; both halves persist on the tab.
+            <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
+              <Button variant="default" size="xs" className="aug-fs-ui"
+                title={runAllPref && statementCount > 1
+                  ? `Run all ${statementCount} statements in order (⌘↵) — ⌘⇧↵ runs just the statement under the cursor`
+                  : "Runs the selection, or the statement under the cursor (⌘↵)"}
+                onClick={() => runPreferred()} disabled={!connId}>
+                Run ({formatCount(limit)})
+              </Button>
+              <Button variant="default" size="xs"
+                title="Run settings — the row limit, and whether ⌘↵ runs every statement"
+                aria-label="Run settings"
+                onClick={() => setShowRunMenu(v => !v)} disabled={!connId}
+                style={{ paddingLeft: 3, paddingRight: 3 }}
+                data-testid="sql-run-menu">
+                <Icon name="chevd" size={13} />
+              </Button>
+              {showRunMenu && (
+                <>
+                  <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowRunMenu(false)} />
+                  <div className="aug-fs-ui" style={{
+                    position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                    minWidth: 230, padding: 5, background: "var(--bg-2)",
+                    border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+                  }}>
+                    <div className="aug-label" style={{ padding: "3px 7px" }}>Row limit</div>
+                    {LIMIT_PRESETS.map(n => (
+                      <Button key={n} variant="ghost" size="xs" className="aug-fs-ui"
+                        style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
+                        onClick={() => { patchActive({ limit: n }); setShowRunMenu(false); }}>
+                        <span style={{ width: 14, flexShrink: 0 }}>
+                          {n === limit && <Icon name="check" size={12} />}
+                        </span>
+                        {formatCount(n)}{n === 500 ? " — default" : n === 50000 ? " — max" : ""}
+                      </Button>
+                    ))}
+                    <div style={{ borderTop: "1px solid var(--b1)", margin: "5px 0" }} />
+                    <Button variant="ghost" size="xs" className="aug-fs-ui"
+                      style={{ width: "100%", justifyContent: "flex-start", gap: 6 }}
+                      title="When on, Run and ⌘↵ run every statement in the tab, in order, stopping at the first error"
+                      onClick={() => patchActive({ runAll: !runAllPref })}>
+                      <span style={{ width: 14, flexShrink: 0 }}>
+                        {runAllPref && <Icon name="check" size={12} />}
+                      </span>
+                      Run all statements
+                    </Button>
+                    <div className="aug-fs-xs" style={{ padding: "3px 7px", color: "var(--t3)" }}>
+                      ⌘⇧↵ always runs just the statement under the cursor
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
           )}
           {/* Only offered when there IS more than one statement — a "Run all" beside a
               single statement is a second button for the thing the first one does. */}
@@ -495,13 +567,18 @@ export function SqlMode({
               Explain
             </Button>
           )}
-          {!running && statementCount > 1 && (
+          {/* Redundant while the tab preference already makes Run run everything. */}
+          {!running && statementCount > 1 && !runAllPref && (
             <Button variant="ghost" size="xs" className="aug-fs-ui"
               title={`Run all ${statementCount} statements in order, stopping at the first error`}
               onClick={() => void runAll()} disabled={!connId}>
               Run all ({statementCount})
             </Button>
           )}
+          {/* SE-8A — the schema picker sits with the run cluster, where Databricks puts
+              its catalog.schema selectors: it answers "against what", which is part of
+              the same question as "run". */}
+          {schemaControl}
           <Button
             variant="ghost"
             size="xs"
@@ -524,7 +601,6 @@ export function SqlMode({
               of them says so anywhere on screen; a verb nobody can find is a verb that
               does not exist. */}
           <ShortcutSheet />
-          {schemaControl}
           {runAllSummary && !error && (
             <span className="aug-fs-ui" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
               {runAllSummary}
@@ -566,7 +642,8 @@ export function SqlMode({
             <SqlEditorPane
               value={sqlText}
               onChange={setSql}
-              onRun={() => void runRef.current()}
+              onRun={() => runRef.current()}
+              onRunStatement={() => void runStatementRef.current()}
               onFormat={(text) => formatSql(text, engineRef.current)}
               onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
               onReady={api => {

@@ -32,7 +32,8 @@ function groups(mod: string): Group[] {
     {
       title: "Run",
       keys: [
-        [`${mod}↵`, "Run the selection, else the statement under the cursor"],
+        [`${mod}↵`, "Run the selection, else the statement under the cursor — or every statement, when the Run menu says so"],
+        [`${mod}⇧↵`, "Run just the selection / statement under the cursor, whatever the Run menu says"],
         ["Explain", "The engine's own plan for exactly what Run would execute"],
         [`${mod}⌥L`, "Reformat — the selection, else the whole query"],
         [`${mod}⇧F`, "Reformat, the other key for it"],

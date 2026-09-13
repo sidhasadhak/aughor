@@ -54,6 +54,10 @@ export interface SqlEditorPaneProps {
   /** Fires on ⌘/Ctrl+Enter. Receives nothing — the workbench reads cursor/selection
    *  itself via `onCursor`, so "what runs" is decided in one place. */
   onRun?: () => void;
+  /** SE-8A — fires on ⌘⇧↵: run ONLY the selection / statement under the cursor, even
+   *  when the tab's "Run all statements" preference makes ⌘↵ run the whole buffer.
+   *  Databricks binds the same pair, with the same meaning. */
+  onRunStatement?: () => void;
   /** Fires on ⌘⇧F. Returns the replacement text for the range it was given, or null
    *  to leave the document alone. */
   onFormat?: (sql: string) => string | null;
@@ -104,7 +108,7 @@ function sqlWithTemplates(
 }
 
 export function SqlEditorPane({
-  value, onChange, onRun, onFormat, onCursor, onReady,
+  value, onChange, onRun, onRunStatement, onFormat, onCursor, onReady,
   schema, defaultSchema, dialect, diagnostics, quote, joins,
   placeholder = "SELECT … — ⌘↵ runs the statement under the cursor",
   readOnly = false,
@@ -118,6 +122,7 @@ export function SqlEditorPane({
   // CURRENT handler. Rebuilding extensions per render would recreate the view.
   const onChangeRef = useRef(onChange);
   const onRunRef = useRef(onRun);
+  const onRunStatementRef = useRef(onRunStatement);
   const onFormatRef = useRef(onFormat);
   const onCursorRef = useRef(onCursor);
   // SE-6 — the intentions read the CURRENT schema through this ref. Rebuilding the
@@ -128,6 +133,7 @@ export function SqlEditorPane({
   const joinsRef = useRef<JoinHint[]>([]);
   onChangeRef.current = onChange;
   onRunRef.current = onRun;
+  onRunStatementRef.current = onRunStatement;
   onFormatRef.current = onFormat;
   onCursorRef.current = onCursor;
 
@@ -159,6 +165,13 @@ export function SqlEditorPane({
         key: "Mod-Enter",
         preventDefault: true,
         run: () => { onRunRef.current?.(); return true; },
+      },
+      {
+        // ⌘⇧↵ — always just the selection / statement under the cursor, even when the
+        // tab's "Run all statements" preference has ⌘↵ running the whole buffer.
+        key: "Mod-Shift-Enter",
+        preventDefault: true,
+        run: () => { onRunStatementRef.current?.(); return true; },
       },
       {
         // ⌘⌥L — DataGrip's own Reformat Code. Same command as ⌘⇧F below; two keys

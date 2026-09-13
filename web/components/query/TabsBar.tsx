@@ -28,6 +28,14 @@ export interface EditorTab {
    *  Per TAB, not per editor: two tabs may both use `:region` and mean different
    *  things, and a shared value would silently rewrite the other tab's query. */
   params?: Record<string, string>;
+  /** SE-8A — the row cap this tab runs with; absent means the 500 default. Part of
+   *  the tab, not the editor: the limit describes the QUERY ("show me everything in
+   *  this small dimension table"), and carrying it across tabs would silently cap or
+   *  uncap a different query. */
+  limit?: number;
+  /** SE-8A — when set, Run and ⌘↵ run every statement in order (Databricks' "Run all
+   *  statements"). ⌘⇧↵ stays the single-statement escape hatch either way. */
+  runAll?: boolean;
   /** Epoch ms of last activity — the LRU key. */
   touched: number;
 }
