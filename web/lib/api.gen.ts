@@ -8536,6 +8536,57 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/processes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ontology Processes
+         * @description Every declared process (ON-9) with what its measurement counted — each stage and how many objects reach it,
+         *     each transition timed, each promise with its breaches and the names it derives — and every declared rule.
+         */
+        get: operations["list_ontology_processes_ontology_processes_get"];
+        put?: never;
+        /**
+         * Declare Ontology Process
+         * @description Declare a process (ON-9): the type that goes through it, its stages in order — each anchored to the moment an
+         *     object reaches it or to the states that place it there — and on a stage the promise about reaching it: within N
+         *     calendar days of the previous stage, or by a deadline property of the object that carries it. Every anchor is
+         *     resolved by the object door's own path law and the whole declaration is COUNTED through its compiler before
+         *     anything is written (400 with the reason when it cannot be); the count rides the override file and is taken again
+         *     on every measure pass. The door then compiles what each promise derives — `late_<name>`, `<name>_breach_rate`,
+         *     `<name>_lag_days`. No model call.
+         */
+        post: operations["declare_ontology_process_ontology_processes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/processes/{process_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Declared Process
+         * @description Withdraw a declared process (ON-9) — its override file, and with it every name it derived.
+         */
+        delete: operations["delete_declared_process_ontology_processes__process_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/rebuild": {
         parameters: {
             query?: never;
@@ -8655,6 +8706,49 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/rules": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Declare Ontology Rule
+         * @description Declare a named business rule (ON-9): a value set — the values of one property the business groups under one
+         *     name, "DACH is DE, AT and CH" — or conditions in the object door's shape. Compiled and COUNTED before it is
+         *     written: how many objects it admits, and for a value set the rows per value, a value no row holds flagged. The
+         *     object door reads it as a segment named by its id. No model call.
+         */
+        post: operations["declare_ontology_rule_ontology_rules_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/rules/{rule_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Declared Rule
+         * @description Withdraw a declared rule (ON-9) — its override file, and with it the segment it named.
+         */
+        delete: operations["delete_declared_rule_ontology_rules__rule_id__delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -12443,6 +12537,11 @@ export interface components {
             path: string;
             /** Value */
             value?: unknown;
+            /**
+             * Value Path
+             * @default
+             */
+            value_path: string;
             /** Values */
             values?: unknown[];
         };
@@ -13978,6 +14077,94 @@ export interface components {
             to_column: string;
             /** To Entity */
             to_entity: string;
+        };
+        /**
+         * _DeclaredProcess
+         * @description ON-9 — a process one object type goes through: its stages in order.
+         */
+        _DeclaredProcess: {
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Entity */
+            entity: string;
+            /** Id */
+            id: string;
+            /** Origin */
+            origin?: ("human" | "model" | "pack") | null;
+            /** Owner */
+            owner?: string | null;
+            /** Stages */
+            stages: components["schemas"]["_DeclaredStage"][];
+        };
+        /**
+         * _DeclaredPromise
+         * @description ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, or by
+         *     a deadline property of the object that carries it (`grain`, reached from it through `via`).
+         */
+        _DeclaredPromise: {
+            /** Deadline */
+            deadline?: string | null;
+            /** Grain */
+            grain?: string | null;
+            /** Name */
+            name?: string | null;
+            /** Target */
+            target?: number | null;
+            /** Via */
+            via?: string | null;
+            /** Within Days */
+            within_days?: number | null;
+        };
+        /**
+         * _DeclaredRule
+         * @description ON-9 — a named, owned definition over one type: a value set, or conditions in the object door's shape.
+         */
+        _DeclaredRule: {
+            /** Conditions */
+            conditions?: {
+                [key: string]: unknown;
+            }[] | null;
+            /** Description */
+            description?: string | null;
+            /** Display Name */
+            display_name?: string | null;
+            /** Entity */
+            entity: string;
+            /** Id */
+            id: string;
+            /**
+             * Kind
+             * @default condition
+             * @enum {string}
+             */
+            kind: "value_set" | "condition";
+            /** Origin */
+            origin?: ("human" | "model" | "pack") | null;
+            /** Owner */
+            owner?: string | null;
+            /** Property */
+            property?: string | null;
+            /** Values */
+            values?: unknown[] | null;
+        };
+        /**
+         * _DeclaredStage
+         * @description ON-9 — one stage, anchored to the moment an object reaches it or to the states that place it there.
+         */
+        _DeclaredStage: {
+            /** Display Name */
+            display_name?: string | null;
+            /** Name */
+            name: string;
+            promise?: components["schemas"]["_DeclaredPromise"] | null;
+            /** Property */
+            property?: string | null;
+            /** State */
+            state?: string[] | null;
+            /** Timestamp */
+            timestamp?: string | null;
         };
         /** _DecompileRequest */
         _DecompileRequest: {
@@ -29219,6 +29406,108 @@ export interface operations {
             };
         };
     };
+    list_ontology_processes_ontology_processes_get: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_ontology_process_ontology_processes_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredProcess"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_declared_process_ontology_processes__process_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                process_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     rebuild_ontology_ontology_rebuild_post: {
         parameters: {
             query?: {
@@ -29392,6 +29681,76 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    declare_ontology_rule_ontology_rules_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_DeclaredRule"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_declared_rule_ontology_rules__rule_id__delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                rule_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;
