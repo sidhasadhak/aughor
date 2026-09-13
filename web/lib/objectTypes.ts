@@ -78,6 +78,9 @@ export interface TypeMap {
   generated_at: string;
   object_types: TypeMapRow[];
   links: TypeMapLink[];
+  /** ON-9 — every declared process and rule, one short row each. Absent on an API older than ON-9. */
+  processes?: ProcessRow[];
+  rules?: RuleRow[];
 }
 
 /** What titles one object of a type, and on what warrant. `source` "key" means nothing else names it — or a
@@ -277,6 +280,9 @@ export interface ObjectTypeDetail {
   metrics: TypeMetric[];
   unverified_metrics: string[];
   segments: string[];
+  /** ON-9 — the processes this type takes part in, and what declared processes and rules derive on it. */
+  processes?: TypeProcessRole[];
+  derived?: DerivedRows;
   lifecycle: { property: string; states: string[]; terminal: string[]; verified: boolean | null; note: string } | null;
   counts: {
     properties: number; bindings: number; proposed_bindings: number; links: number; traversable_links: number;
@@ -587,4 +593,213 @@ export async function confirmProposals(
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(request) });
   if (!res.ok) throw new Error(await detailOf(res));
   return res.json();
+}
+
+
+// ── ON-9: processes, promises and rules ────────────────────────────────────────────────────
+
+export type DeclarationOrigin = "human" | "model" | "pack";
+
+/** ON-9 — one declared process as the map's rail lists it. */
+export interface ProcessRow {
+  id: string;
+  display_name: string;
+  /** The api name of the type that goes through it. */
+  entity: string;
+  origin: DeclarationOrigin;
+  verified: boolean | null;
+  objects: number | null;
+  stages: string[];
+  promises: { stage: string; name: string; breach_rate: number | null; verified: boolean | null; flags: number }[];
+}
+
+/** ON-9 — one declared rule as the map's rail lists it. */
+export interface RuleRow {
+  id: string;
+  display_name: string;
+  entity: string;
+  kind: "value_set" | "condition";
+  origin: DeclarationOrigin;
+  verified: boolean | null;
+  admitted: number | null;
+  objects: number | null;
+  flags: number;
+}
+
+/** ON-9 — a name a declared process or rule derives on a type, and whether the compiler reads it yet. */
+export interface DerivedRow {
+  name: string;
+  kind: "segment" | "property" | "metric";
+  source: string;
+  description: string;
+  usable: boolean;
+  why_not?: string;
+  caveats?: string[];
+  target_value?: number;
+}
+
+export interface DerivedRows {
+  segments: DerivedRow[];
+  properties: DerivedRow[];
+  metrics: DerivedRow[];
+}
+
+/** ON-9 — a process a type takes part in: as the type that goes through it, or as the type a promise is kept per. */
+export interface TypeProcessRole {
+  id: string;
+  display_name: string;
+  roles: string[];
+  verified: boolean | null;
+  stages: string[];
+}
+
+/** The move from the previous stage, timed in calendar days. */
+export interface ProcessTransition {
+  from: string;
+  both: number | null;
+  skipped: number | null;
+  out_of_order: number | null;
+  p50_days: number | null;
+  p90_days: number | null;
+  p95_days: number | null;
+  /** The derived property that holds the lag, per object. */
+  lag: string;
+}
+
+/** A promise about reaching a stage, with what the data counted and the names it derives. */
+export interface ProcessPromise {
+  name: string;
+  kind: "deadline" | "within_days";
+  deadline: string;
+  within_days: number | null;
+  /** The api name of the type the promise is kept per, and its id. */
+  grain: string;
+  grain_id: string;
+  via: string;
+  target: number | null;
+  objects: number | null;
+  reached: number | null;
+  breached: number | null;
+  kept: number | null;
+  open: number | null;
+  open_overdue: number | null;
+  breach_rate: number | null;
+  as_of: string;
+  verified: boolean | null;
+  flags: string[];
+  note: string;
+  segment: string;
+  metric: string;
+}
+
+export interface ProcessStageDetail {
+  name: string;
+  display_name: string;
+  anchor: { timestamp: string } | { state: string[]; property: string };
+  reached: number | null;
+  share: number | null;
+  verified: boolean | null;
+  note: string;
+  transition: ProcessTransition | null;
+  promise: ProcessPromise | null;
+}
+
+/** ON-9 — one declared process, as `GET /ontology/processes` describes it. */
+export interface ProcessDetail {
+  id: string;
+  display_name: string;
+  description: string;
+  entity: string;
+  entity_id: string;
+  owner: string;
+  origin: DeclarationOrigin;
+  provenance: string;
+  objects: number | null;
+  verified: boolean | null;
+  note: string;
+  measured_at: string;
+  stages: ProcessStageDetail[];
+  derived: DerivedRows;
+}
+
+/** ON-9 — one declared rule, as `GET /ontology/processes` describes it. */
+export interface RuleDetail {
+  id: string;
+  display_name: string;
+  description: string;
+  owner: string;
+  entity: string;
+  entity_id: string;
+  kind: "value_set" | "condition";
+  property: string;
+  values: string[];
+  conditions: Record<string, unknown>[];
+  origin: DeclarationOrigin;
+  provenance: string;
+  objects: number | null;
+  admitted: number | null;
+  observed: Record<string, number>;
+  missing: string[];
+  verified: boolean | null;
+  flags: string[];
+  note: string;
+  segment: string;
+}
+
+export interface ProcessesAndRules {
+  connection_id: string;
+  schema_name: string;
+  processes: ProcessDetail[];
+  rules: RuleDetail[];
+}
+
+/** ON-9 — a process a person declares: the type that goes through it and its stages in order. */
+export interface DeclaredProcessSpec {
+  id: string;
+  display_name?: string;
+  description?: string;
+  entity: string;
+  owner?: string;
+  stages: {
+    name: string;
+    display_name?: string;
+    timestamp?: string;
+    state?: string[];
+    property?: string;
+    promise?: { name?: string; within_days?: number; deadline?: string; grain?: string; via?: string; target?: number };
+  }[];
+}
+
+/** ON-9 — every declared process and rule on the scope, with what their measurement counted. */
+export async function getProcesses(connectionId: string, schemaName?: string): Promise<ProcessesAndRules> {
+  const res = await fetch(`${getApiBase()}/ontology/processes?${scope(connectionId, schemaName)}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** ON-9 — declare a process. Every anchor is resolved and the whole declaration is counted before anything is written;
+ *  a declaration the data cannot hold is refused with the reason. Returns the process as the panel shows it. */
+export async function declareProcess(
+  connectionId: string, spec: DeclaredProcessSpec, schemaName?: string,
+): Promise<ProcessDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/processes?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).process;
+}
+
+/** ON-9 — withdraw a declared process; every name it derives stops resolving on the next read. */
+export async function deleteProcess(connectionId: string, processId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/processes/${encodeURIComponent(processId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** ON-9 — withdraw a declared rule; the segment it named stops resolving on the next read. */
+export async function deleteRule(connectionId: string, ruleId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/rules/${encodeURIComponent(ruleId)}?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
 }

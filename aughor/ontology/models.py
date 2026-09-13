@@ -567,6 +567,139 @@ class OntologyMetric(BaseModel):
     definitions: list[DefinitionSource] = Field(default_factory=list)
 
 
+#: ON-9 — a process, a stage, a promise or a rule is named by a path segment: snake_case, bounded.
+PROCESS_NAME_PATTERN = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+
+
+class Promise(BaseModel):
+    """ON-9 — what the business promises about reaching one stage of a process (ROADMAP §3.15, the second movement).
+
+    Two shapes. A FIXED duration — `within_days`: the stage is reached within N calendar days of the previous one
+    ("dispatched within two days"). A per-object DEADLINE — `deadline`: a date or timestamp property of the object
+    that carries it (an order line's `shipping_limit_date`, an order's `order_estimated_delivery_date`), broken when
+    the stage's moment falls after it. A deadline promise is kept per object of its `grain` — the type the deadline
+    is a property of — which reaches the process's type through measured to-one links (`via`), so a marketplace's
+    per-line limit is measured per line, with each line's seller and product one hop away.
+
+    Measured, never assumed (`aughor.ontology.processes`): the objects that reached the stage with the promise in
+    force, how many broke it, how many have not reached the stage and how many of those are already past it. A
+    promise the data never breaks, or always breaks, is FLAGGED — a deadline read from the wrong column breaks
+    nothing or everything. From a measured promise the object door derives, by construction, a segment
+    (`late_<name>`), a computed property (`<name>_lag_days`) and a metric (`<name>_breach_rate`), so what "late"
+    means is declared once and executed the same way everywhere.
+    """
+    #: The promise's own name — the noun the derived names are built from (`dispatch` → `late_dispatch`). Defaults to
+    #: the stage's name.
+    name: str = ""
+    within_days: Optional[int] = None
+    deadline: str = ""
+    #: The type the promise is kept per — the one its deadline is a property of. Empty: the process's own type.
+    grain: str = ""
+    #: The link path from `grain` to the process's type, every hop to-one and measured (`order_item_to_order`). Resolved
+    #: and recorded when the promise is declared; empty when `grain` is the process's type.
+    via: str = ""
+    #: The share of objects the business expects to keep the promise (0–1). The derived breach-rate metric's target is
+    #: its complement; empty means no tolerance was declared, and none is invented.
+    target: Optional[float] = None
+    #: Measured — None until counted: the promise's objects, those that reached the stage with the promise in force,
+    #: those that broke it and kept it, those that have not reached the stage, and those of them already past the
+    #: deadline as of `as_of` (the latest moment of the stage in the data — the data's own clock, never the server's).
+    objects: Optional[int] = None
+    reached: Optional[int] = None
+    breached: Optional[int] = None
+    kept: Optional[int] = None
+    open: Optional[int] = None
+    open_overdue: Optional[int] = None
+    breach_rate: Optional[float] = None
+    as_of: str = ""
+    verified: Optional[bool] = None
+    #: What the measurement found worth a person's eye without refuting the promise: never broken, always broken.
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
+class ProcessStage(BaseModel):
+    """ON-9 — one stage of a process, anchored to the moment an object reaches it (`timestamp`: a date or timestamp
+    property path from the process's type, through to-one links only) or to the lifecycle state(s) that place an
+    object in it (`state`, read from `property`, default the type's lifecycle column). A state has no clock, so a
+    stage anchored to one is counted but never timed, and carries no promise."""
+    name: str
+    display_name: str = ""
+    timestamp: str = ""
+    state: list[str] = Field(default_factory=list)
+    property: str = ""
+    promise: Optional[Promise] = None
+    #: Measured — the stage: how many of the process's objects reached it (a set moment, or a listed state).
+    reached: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+    #: Measured — the transition from the previous stage, when both carry a moment: objects holding both, objects that
+    #: reached this stage with no moment for the previous one, objects whose moment here comes BEFORE the previous
+    #: one, and the calendar days between the two moments at the 50th, 90th and 95th percentile.
+    both: Optional[int] = None
+    skipped: Optional[int] = None
+    out_of_order: Optional[int] = None
+    p50_days: Optional[float] = None
+    p90_days: Optional[float] = None
+    p95_days: Optional[float] = None
+
+
+class Process(BaseModel):
+    """ON-9 — a business process one object type goes through, end to end: ordered stages (see ProcessStage), and
+    on a stage the promise the business makes about reaching it (see Promise). DECLARED — by a person, a pack or an
+    explorer's proposal — and MEASURED like every other claim since ON-0a: a stage no object reaches, a promise the
+    data never breaks, a stage whose moment precedes the one before it are reported with the numbers, never hidden.
+    Lives in the overrides tree (`process/<id>.yaml`) with what its measurement recorded, and is rebuilt at read time
+    with no database in hand. None of it is rendered into a prompt: it reaches an answer through the object door,
+    which compiles what it derives."""
+    id: str
+    display_name: str = ""
+    description: str = ""
+    #: The object type that goes through the process — an entity id.
+    entity: str
+    stages: list[ProcessStage] = Field(default_factory=list)
+    #: Who stands behind the definition. Empty is honest.
+    owner: str = ""
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Measured: the process's objects, the verdict over every stage and promise, and when it was counted.
+    objects: Optional[int] = None
+    verified: Optional[bool] = None
+    note: str = ""
+    measured_at: str = ""
+
+
+class BusinessRule(BaseModel):
+    """ON-9 — a named, owned definition a business holds that its data does not: "DACH is DE, AT and CH" (a
+    `value_set` — the values of one property the business groups under one name, which the packs' `aliases` declare
+    and leave empty) or "a fulfilled order excludes the cancelled and the unavailable" (a `condition` — the object
+    door's own filters, named). Measured on declaration and on every measure pass: how many objects it admits, and
+    for a value set how many rows hold each value, a value no row holds FLAGGED (a spelling the data does not use).
+    The object door reads it as a segment of its type named by the rule's id."""
+    id: str
+    display_name: str = ""
+    description: str = ""
+    owner: str = ""
+    #: The object type the rule is about — an entity id.
+    entity: str
+    kind: Literal["value_set", "condition"] = "condition"
+    #: value_set: the property the values are read from, and the values.
+    property: str = ""
+    values: list[str] = Field(default_factory=list)
+    #: condition: filters in the object door's shape (`{path, op, value | values | value_path}`), all of which hold.
+    conditions: list[dict] = Field(default_factory=list)
+    origin: Literal["human", "model", "pack"] = "human"
+    provenance: str = ""
+    #: Measured: the type's objects, those the rule admits, rows per declared value, declared values no row holds.
+    objects: Optional[int] = None
+    admitted: Optional[int] = None
+    observed: dict[str, int] = Field(default_factory=dict)
+    missing: list[str] = Field(default_factory=list)
+    verified: Optional[bool] = None
+    flags: list[str] = Field(default_factory=list)
+    note: str = ""
+
+
 class ActionParameter(BaseModel):
     """A typed, named input to a QueryTemplate *or* to a declared, governed write action.
 
@@ -801,7 +934,9 @@ class CoreClaim(BaseModel):
     `measured-true`, `measured-false` (the data contradicts the core — the data wins),
     `human` (an override settled it). Never rendered into a prompt: what reaches the model
     is the measured label on the relationship or entity itself."""
-    kind: Literal["object", "link", "lifecycle", "alias"]
+    #: ON-9 adds `process` (a process the core expects the type to go through) and `rule` (a definition the core
+    #: expects the business to hold — its values left for the business to fill).
+    kind: Literal["object", "link", "lifecycle", "alias", "process", "rule"]
     subject: str
     expected: str
     measured: Optional[str] = None
@@ -836,6 +971,11 @@ class OntologyGraph(BaseModel):
     # defaults empty, so an old JSON-cached graph deserialises unchanged.
     kinetic_actions: dict[str, KineticAction] = Field(default_factory=dict)
     interfaces: dict[str, OntologyInterface] = Field(default_factory=dict)
+    #: ON-9 — the processes the business declared over this graph's types (see Process) and its named rules (see
+    #: BusinessRule), overlaid at read time from the overrides tree with what their measurement recorded. Additive —
+    #: an old cached graph deserialises with both empty.
+    processes: dict[str, Process] = Field(default_factory=dict)
+    rules: dict[str, BusinessRule] = Field(default_factory=dict)
 
     # Fast-lookup reverse maps
     entity_to_tables: dict[str, list[str]] = Field(default_factory=dict)

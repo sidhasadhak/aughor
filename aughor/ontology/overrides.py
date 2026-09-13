@@ -67,7 +67,7 @@ def overrides_root() -> Path:
 # human has already authored and every one committed to a repo. The display word is mapped
 # at the HTTP boundary (routers/ontology.py), not here. `link` (ON-3b) is a NEW kind — a relationship's
 # business-verb name — so it adds a directory and renames none.
-TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action", "link"]
+TargetKind = Literal["entity", "object_set", "computed_property", "metric", "action", "link", "process", "rule"]
 
 # Whitelist of fields a human may override, per target kind. Anything outside
 # these sets is ignored on write *and* on apply, so an override file can never
@@ -128,6 +128,13 @@ _EDITABLE: dict[str, set[str]] = {
     # joins on, the expected cardinality, a reverse name, and who declared it.
     "link": {"name", "declared", "from_entity", "to_entity", "from_column", "to_column", "cardinality",
              "reverse_name", "origin", "provenance"},
+    # ON-9: a DECLARED process (POST /ontology/processes) — the type that goes through it and its stages in order, each
+    # anchored to a moment or a state, with the promise about reaching it — and a DECLARED rule (POST /ontology/rules):
+    # a value set or named conditions over one type. Both are the target's whole existence; what their measurement
+    # counted rides the binding (`process` / `rule`), so the overlay rebuilds them with no database.
+    "process": {"declared", "display_name", "description", "entity", "stages", "owner", "origin", "provenance"},
+    "rule": {"declared", "display_name", "description", "entity", "kind", "property", "values", "conditions",
+             "owner", "origin", "provenance"},
 }
 
 # Fields whose value is SQL and must EXPLAIN-bind before they earn `verified`.
@@ -478,6 +485,27 @@ def _apply_link(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
     return [*touched, "name"]
 
 
+def _apply_process(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """ON-9 — a declared process, rebuilt from its fields and what its measurement recorded; nothing when its type is
+    not in the graph (reported skipped)."""
+    from aughor.ontology.processes import declared_process
+    process = declared_process(ov, graph)
+    if process is None:
+        return []
+    graph.processes[process.id] = process
+    return ["<declared>"]
+
+
+def _apply_rule(graph: OntologyGraph, ov: OntologyOverride) -> list[str]:
+    """ON-9 — a declared rule, rebuilt the same way."""
+    from aughor.ontology.business_rules import declared_rule
+    rule = declared_rule(ov, graph)
+    if rule is None:
+        return []
+    graph.rules[rule.id] = rule
+    return ["<declared>"]
+
+
 def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> tuple[Optional[OntologyGraph], OverlayReport]:
     """Overlay all human overrides for {conn}/{schema} onto ``graph`` in place.
 
@@ -514,6 +542,10 @@ def apply_overrides(graph: Optional[OntologyGraph], conn: str, schema: str) -> t
                 touched = _apply_metric(graph, ov)
             elif ov.target_kind == "link":
                 touched = _apply_link(graph, ov)
+            elif ov.target_kind == "process":
+                touched = _apply_process(graph, ov)
+            elif ov.target_kind == "rule":
+                touched = _apply_rule(graph, ov)
             elif ov.target_kind == "action":
                 # Wave K substrate — only human-DECLARED actions exist to overlay.
                 touched = _apply_action(graph, ov)

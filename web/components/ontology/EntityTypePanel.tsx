@@ -14,6 +14,7 @@
 import React, { useEffect, useState } from "react";
 import Link from "next/link";
 
+import { DerivedList } from "@/components/ontology/ProcessPanel";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
@@ -84,7 +85,7 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   );
 }
 
-export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onChanged }: {
+export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onOpenProcess, onChanged }: {
   connectionId: string;
   schema?: string;
   objectType: string;
@@ -92,6 +93,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   /** Bumped when the map re-reads, so the panel re-reads with it. */
   version: number;
   onOpen: (objectType: string) => void;
+  /** ON-9 — open a declared process this type takes part in. */
+  onOpenProcess?: (processId: string) => void;
   /** A write here (a declaration, a measurement) changes what the map shows. */
   onChanged: () => void;
 }) {
@@ -115,7 +118,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     body = <EmptyState icon="info" title={`No object type “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
-      onOpen={onOpen} onChanged={onChanged} />;
+      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} />;
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
@@ -126,12 +129,13 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: {
+function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
   types: TypeMapRow[];
   onOpen: (objectType: string) => void;
+  onOpenProcess?: (processId: string) => void;
   onChanged: () => void;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
@@ -172,8 +176,36 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onChanged }: 
       <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
       <ActionsSection detail={detail} connectionId={connectionId} />
       <MetricsSection detail={detail} />
+      <ProcessesSection detail={detail} onOpenProcess={onOpenProcess} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
     </>
+  );
+}
+
+/** ON-9 — the processes this type takes part in, and every name a declared process or rule derives on it: a segment,
+ *  a lag, a breach rate — each read by the compiler once its declaration is measured, and refused with the reason
+ *  until then. Nothing shows for a type no declaration touches. */
+function ProcessesSection({ detail, onOpenProcess }: {
+  detail: ObjectTypeDetail;
+  onOpenProcess?: (processId: string) => void;
+}) {
+  const processes = detail.processes ?? [];
+  const derived = detail.derived ? [...detail.derived.segments, ...detail.derived.metrics, ...detail.derived.properties] : [];
+  if (!processes.length && !derived.length) return null;
+  return (
+    <Section title="Processes and rules" aside="what declarations derive here">
+      {processes.map((p) => (
+        <div key={p.id} style={{ display: "flex", alignItems: "baseline", gap: 6, flexWrap: "wrap", marginBottom: 4 }}
+          data-testid="type-process">
+          <Button variant="minimal" size="xs" disabled={!onOpenProcess} onClick={() => onOpenProcess?.(p.id)}>
+            {p.display_name}
+          </Button>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{p.roles.join(" · ")}</span>
+          {p.verified === false && <span className="aug-tag aug-tag-red">measured false</span>}
+        </div>
+      ))}
+      {derived.length > 0 && <DerivedList rows={derived} />}
+    </Section>
   );
 }
 

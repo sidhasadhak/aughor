@@ -18,7 +18,9 @@ from __future__ import annotations
 from typing import Optional, Union
 
 from aughor.ontology.bindings import binding_problem, binding_spec, column_of
+from aughor.ontology.derived import derived_rows, promise_noun
 from aughor.ontology.display import display_of, key_of
+from aughor.ontology.processes import processes_of
 from aughor.ontology.models import LINK_NAME_PATTERN, Binding, OntologyEntity, OntologyGraph
 from aughor.ontology.parts import absorb_problem, part_of, parts_of
 from aughor.semantic.object_query import (
@@ -282,6 +284,9 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
                        "terminal": list(entity.terminal_states), "verified": entity.lifecycle_verified,
                        "note": entity.lifecycle_note}
                       if entity.has_lifecycle and entity.lifecycle_column else None),
+        # ON-9 — the processes this type takes part in, and what declared processes and rules derive on it.
+        "processes": processes_of(graph, entity),
+        "derived": derived_rows(graph, entity),
         "counts": {"properties": len(properties), "bindings": 1 + len(further),
                    "proposed_bindings": len(proposals), "links": len(links),
                    "traversable_links": sum(1 for link in links if link["traversable"]),
@@ -337,8 +342,21 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
                       "verb": r.verb, "cardinality": r.measured_cardinality or r.cardinality,
                       "measured": r.measured_cardinality is not None, "traversable": not problem,
                       **({"why_not": problem} if problem else {})})
+    api = (lambda eid: graph.entities[eid].api_name if eid in graph.entities else eid)  # noqa: E731
+    # ON-9 — every declared process and rule, one short row each: what the map's rail lists.
+    processes = [{"id": p.id, "display_name": p.display_name or p.id, "entity": api(p.entity), "origin": p.origin,
+                  "verified": p.verified, "objects": p.objects, "stages": [s.name for s in p.stages],
+                  "promises": [{"stage": s.name, "name": promise_noun(s), "breach_rate": s.promise.breach_rate,
+                                "verified": s.promise.verified, "flags": len(s.promise.flags)}
+                               for s in p.stages if s.promise is not None]}
+                 for p in sorted((graph.processes or {}).values(), key=lambda x: x.id)]
+    rules = [{"id": r.id, "display_name": r.display_name or r.id, "entity": api(r.entity), "kind": r.kind,
+              "origin": r.origin, "verified": r.verified, "admitted": r.admitted, "objects": r.objects,
+              "flags": len(r.flags)}
+             for r in sorted((graph.rules or {}).values(), key=lambda x: x.id)]
     return {"connection_id": graph.connection_id, "schema_name": graph.schema_name,
-            "generated_at": graph.generated_at, "object_types": types, "links": edges}
+            "generated_at": graph.generated_at, "object_types": types, "links": edges,
+            "processes": processes, "rules": rules}
 
 
 def _hop_row(h: ObjectLink) -> dict:

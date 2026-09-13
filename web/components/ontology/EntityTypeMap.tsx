@@ -33,12 +33,14 @@ import {
 import "@xyflow/react/dist/style.css";
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
+import { ProcessPanel } from "@/components/ontology/ProcessPanel";
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
 import { getMyPreferences, putMyPreference } from "@/lib/api";
+import { formatCount } from "@/lib/format";
 import { CARD, collapseParts, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
 import {
   confirmProposals,
@@ -50,7 +52,9 @@ import {
   type DeclaredEntitySpec,
   type DraftProposal,
   type OntologyDraft,
+  type ProcessRow,
   type ProposalTier,
+  type RuleRow,
   type TypeMap,
   type TypeMapRow,
 } from "@/lib/objectTypes";
@@ -127,6 +131,12 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   // Bumped by a write in the panel (a declared display property, a measurement) so the map and the panel re-read.
   const [version, setVersion] = useState(0);
   const [draft, setDraft] = useState<OntologyDraft | null>(null);
+  // ON-9 — a declared process opened from the rail takes the panel's place; opening a type gives it back.
+  const [openProcess, setOpenProcess] = useState<string | null>(null);
+  const openType = (objectType: string) => {
+    setOpenProcess(null);
+    setSelected(objectType);
+  };
 
   useEffect(() => {
     let live = true;
@@ -175,7 +185,12 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   return (
     <div style={{ flex: 1, display: "flex", minWidth: 0, minHeight: 0 }} data-testid="entity-type-map">
       <TypeRail types={drawn.object_types} parts={map.object_types.filter((t) => t.absorbed_into)} selected={selected}
-        query={query} onQuery={setQuery} onPick={setSelected}
+        query={query} onQuery={setQuery} onPick={openType}
+        processes={map.processes ?? []} rules={map.rules ?? []} openProcess={openProcess}
+        onPickProcess={(p) => {
+          setSelected(p.entity);
+          setOpenProcess(p.id);
+        }}
         declare={(spec) => declareEntity(connectionId, spec, schema).then((made) => {
           setVersion((v) => v + 1);
           setSelected(made.object_type);
@@ -190,9 +205,14 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
           setVersion((v) => v + 1);
           if (next.refused.length) throw new Error(next.refused.map((r) => r.why).join("; "));
         })} />
-      <MapCanvas map={drawn} selected={standing} onSelect={setSelected} scope={scopeOf(connectionId, schema)} />
-      <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
-        version={version} onOpen={setSelected} onChanged={() => setVersion((v) => v + 1)} />
+      <MapCanvas map={drawn} selected={standing} onSelect={openType} scope={scopeOf(connectionId, schema)} />
+      {openProcess ? (
+        <ProcessPanel connectionId={connectionId} schema={schema} processId={openProcess} version={version}
+          onOpenType={openType} onClose={() => setOpenProcess(null)} onChanged={() => setVersion((v) => v + 1)} />
+      ) : (
+        <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
+          version={version} onOpen={openType} onOpenProcess={setOpenProcess} onChanged={() => setVersion((v) => v + 1)} />
+      )}
     </div>
   );
 }
@@ -201,7 +221,8 @@ function matches(t: TypeMapRow, wanted: string): boolean {
   return [t.display_name, t.object_type, t.id, t.table].some((s) => s.toLowerCase().includes(wanted));
 }
 
-function TypeRail({ types, parts, selected, query, onQuery, onPick, declare, draft, explore, confirm }: {
+function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, rules, openProcess, onPickProcess, declare,
+  draft, explore, confirm }: {
   types: TypeMapRow[];
   /** ON-7 — the types folded into a parent: listed under the cards, still openable by name. */
   parts: TypeMapRow[];
@@ -209,6 +230,11 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, declare, dra
   query: string;
   onQuery: (q: string) => void;
   onPick: (objectType: string) => void;
+  /** ON-9 — the declared processes and rules, and the process open in the panel. */
+  processes: ProcessRow[];
+  rules: RuleRow[];
+  openProcess: string | null;
+  onPickProcess: (process: ProcessRow) => void;
   declare: (spec: DeclaredEntitySpec) => Promise<void>;
   /** ON-7b — the explorer's draft, and the two doors it offers: a draft, and a confirmation. */
   draft: OntologyDraft | null;
@@ -261,10 +287,67 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, declare, dra
           </div>
         )}
         {shownParts.map((t) => row(t, true))}
+        <DeclarationRows processes={processes} rules={rules} openProcess={openProcess} onPickProcess={onPickProcess}
+          onPickType={onPick} />
       </div>
       <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} />
       <DeclareEntity declare={declare} />
     </nav>
+  );
+}
+
+const RAIL_HEADING: React.CSSProperties = {
+  color: "var(--t3)", padding: "8px 8px 2px", textTransform: "uppercase", letterSpacing: ".06em", fontWeight: 600,
+};
+
+function breachWords(rate: number | null): string {
+  return rate == null ? "not counted" : `${(rate * 100).toFixed(2)}% broken`;
+}
+
+/** ON-9 — the declared processes and rules under the types: a process opens in the panel, with its type lit on the
+ *  map; a rule opens the type it is a segment of. Each row says what the data counted, not what was declared. */
+function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickType }: {
+  processes: ProcessRow[];
+  rules: RuleRow[];
+  openProcess: string | null;
+  onPickProcess: (process: ProcessRow) => void;
+  onPickType: (objectType: string) => void;
+}) {
+  if (!processes.length && !rules.length) return null;
+  return (
+    <>
+      {processes.length > 0 && <div className="aug-fs-xs" style={RAIL_HEADING}>Processes</div>}
+      {processes.map((p) => {
+        const current = p.id === openProcess;
+        return (
+          <Button key={p.id} variant="ghost" size="sm" onClick={() => onPickProcess(p)} data-testid="entity-rail-process"
+            aria-current={current ? "true" : undefined} className="h-auto w-full justify-start py-1.5"
+            title={`Open the ${p.display_name} process — its stages, timings and promises`}
+            style={current ? { background: "var(--bg-hover)" } : undefined}>
+            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, gap: 1 }}>
+              <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500 }}>{p.display_name}</span>
+              <span className="aug-fs-xs" style={{ color: p.verified === false ? "var(--red5)" : "var(--t3)" }}>
+                {p.entity} · {p.stages.length} stages
+                {p.promises.map((promise) => ` · ${promise.name} ${breachWords(promise.breach_rate)}`).join("")}
+              </span>
+            </span>
+          </Button>
+        );
+      })}
+      {rules.length > 0 && <div className="aug-fs-xs" style={RAIL_HEADING}>Rules</div>}
+      {rules.map((r) => (
+        <Button key={r.id} variant="ghost" size="sm" onClick={() => onPickType(r.entity)} data-testid="entity-rail-rule"
+          className="h-auto w-full justify-start py-1.5" title={`Open ${r.entity}, where ${r.display_name} reads as a segment`}>
+          <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start", minWidth: 0, gap: 1 }}>
+            <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>{r.display_name}</span>
+            <span className="aug-fs-xs" style={{ color: r.verified === false ? "var(--red5)" : "var(--t3)" }}>
+              {r.entity} · {r.admitted == null ? "not counted" : `admits ${formatCount(r.admitted)}`}
+              {r.flags ? ` · ${r.flags} flagged` : ""}
+            </span>
+          </span>
+        </Button>
+      ))}
+    </>
   );
 }
 
