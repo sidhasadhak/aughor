@@ -38,8 +38,8 @@ export interface EditorTab {
    *  this small dimension table"), and carrying it across tabs would silently cap or
    *  uncap a different query. */
   limit?: number;
-  /** SE-8A — when set, Run and ⌘↵ run every statement in order (Databricks' "Run all
-   *  statements"). ⌘⇧↵ stays the single-statement escape hatch either way. */
+  /** SE-8A — when set, Run and ⌘↵ run every statement in order. ⌘⇧↵ stays the
+   *  single-statement escape hatch either way. */
   runAll?: boolean;
   /** Epoch ms of last activity — the LRU key. */
   touched: number;
@@ -104,7 +104,7 @@ export function TabsBar({
    *  console has two, and the difference was rows that each carried three controls.
    *  Anything a tab does not own — the connection, the saved state — comes in here. */
   trailing?: React.ReactNode;
-  /** SE-8F — when present, "+" opens Databricks' two-option menu (new / open existing)
+  /** SE-8F — when present, "+" opens a two-option menu (new / open existing)
    *  instead of creating immediately. */
   onOpenExisting?: () => void;
 }) {

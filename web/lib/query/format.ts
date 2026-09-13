@@ -20,8 +20,7 @@ const SUPPORTED = new Set<string>(supportedDialects);
 
 // ── SE-8F — formatting preferences ────────────────────────────────────────────
 //
-// Databricks exposes these through a JSON file in the workspace home; ours live in
-// localStorage behind a small menu on the Format button. Same idea either way: the
+// These live in localStorage behind a small menu on the Format button. The point: the
 // formatter's OPINIONS are the user's, not the app's — a team that writes lowercase
 // keywords should not have ⌘⇧F shouting at them.
 

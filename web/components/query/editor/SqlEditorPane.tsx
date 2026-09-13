@@ -55,8 +55,7 @@ export interface SqlEditorPaneProps {
    *  itself via `onCursor`, so "what runs" is decided in one place. */
   onRun?: () => void;
   /** SE-8A — fires on ⌘⇧↵: run ONLY the selection / statement under the cursor, even
-   *  when the tab's "Run all statements" preference makes ⌘↵ run the whole buffer.
-   *  Databricks binds the same pair, with the same meaning. */
+   *  when the tab's "Run all statements" preference makes ⌘↵ run the whole buffer. */
   onRunStatement?: () => void;
   /** Fires on ⌘⇧F. Returns the replacement text for the range it was given, or null
    *  to leave the document alone. */
@@ -142,7 +141,7 @@ export function SqlEditorPane({
   useEffect(() => {
     if (!host.current || view.current) return;
 
-    // SE-8F — ⌥+ / ⌥− editor font size (Databricks' pair). Scoped to THIS editor by
+    // SE-8F — ⌥+ / ⌥− editor font size. Scoped to THIS editor by
     // overriding the `--aug-fs-ui` token on the host element — the theme sizes the
     // content off that var, so the override reaches every piece of editor chrome and
     // nothing outside it. Clamped at 11 (the documented legibility floor) and 24.

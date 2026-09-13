@@ -2,14 +2,14 @@
 
 /**
  * SE-4 H — the parameter bar: one control per `:name` in the current statement.
- * SE-8C — those controls became WIDGETS (Databricks' parameter widgets): a gear beside
+ * SE-8C — those controls became WIDGETS: a gear beside
  * each one configures label, widget kind, choices and default; a date widget carries
  * the ⚡ dynamic-value menu; a multiselect binds a list (`x IN :name` — the server
  * expands it to scalar binds); a dropdown's choices can come from a saved query.
  *
  * Appears only when the SQL actually has parameters, so a plain query is not paying
  * for a row of chrome it never uses. It sits BETWEEN the editor and the results now —
- * where Databricks puts it, and where "fill these, then look below" reads in order.
+ * where "fill these, then look below" reads in order.
  *
  * **Values are never substituted into the SQL here.** They travel to the server as a
  * separate field and are executed as real bind values. Doing the substitution

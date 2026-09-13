@@ -9324,7 +9324,7 @@ export interface paths {
         put?: never;
         /**
          * Query Assist
-         * @description SE-8E — the editor's AI pane (the Genie-shaped surface). PROPOSES, never runs.
+         * @description SE-8E — the editor's AI pane. PROPOSES, never runs.
          *
          *     Same consent model as ``/query/quickfix``, which this generalises: any SQL the
          *     model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts

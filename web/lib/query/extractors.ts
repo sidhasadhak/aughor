@@ -75,7 +75,7 @@ export const EXTRACTORS: Extractor[] = [
     render: (c, r) => toTsv(c, r),
   },
   {
-    // SE-8F — the Databricks docs list "Excel" beside CSV, and the thing Excel actually
+    // SE-8F — every export menu lists "Excel" beside CSV, and the thing Excel actually
     // gets wrong with a plain CSV is the ENCODING: without a BOM it decodes UTF-8 as
     // Windows-1252 and every umlaut and dash arrives mangled. The BOM is the fix, and
     // it costs three bytes — a real .xlsx would cost a 1MB dependency with published

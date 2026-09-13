@@ -176,8 +176,7 @@ export function parseFilter(phrase: string, columns: string[]): ParsedFilter {
   const text = phrase.trim();
   if (!text) return { clause: null, rank: null };
 
-  // SE-8F — OR between clauses, Databricks' "Add OR condition" as grammar rather than
-  // a second UI. Strict on purpose: the split only stands when EVERY part binds to a
+  // SE-8F — OR between clauses, as grammar rather than a second UI. Strict on purpose: the split only stands when EVERY part binds to a
   // real column — `status = active or status = pending` is two clauses, while
   // `notes contains now or never` has a second part that binds nowhere, so the whole
   // phrase falls through to a single clause and "now or never" stays one value.

@@ -3,9 +3,8 @@
 /**
  * SE-8F — "+ → Open existing": one searchable place to resume work.
  *
- * Databricks' new-tab menu offers "Create new query" or "Open existing query", and the
- * open dialog searches everything with a Recent tab. This is that dialog for our
- * editor: SAVED queries (the named record) and RECENT runs (the audit log the history
+ * The reference console's new-tab menu offers create-new or open-existing, with one
+ * searchable dialog behind the latter. This is that dialog for our editor: SAVED queries (the named record) and RECENT runs (the audit log the history
  * rail already reads), behind one search box.
  *
  * **Everything opens as a COPY — a new tab with the text, linked to nothing.** Linking

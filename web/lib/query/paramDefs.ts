@@ -1,7 +1,7 @@
 /**
  * SE-8C — parameter WIDGET definitions: how a `:name` renders as a control.
  *
- * Databricks materialises a widget per parameter marker, configured by a gear icon.
+ * A parameter marker materialises a widget, configured by a gear icon.
  * This module is that model, kept pure so the resolution rules — the part that decides
  * what actually reaches the engine — are testable without a DOM.
  *
@@ -19,8 +19,8 @@ export interface ParamDef {
   widget: "text" | "number" | "date" | "dropdown" | "multiselect";
   /** Static choices for dropdown/multiselect; suggestions for text (a combobox). */
   options?: string[];
-  /** A saved query whose FIRST column supplies the choices (capped at 1024) —
-   *  Databricks' query-based dropdown. Loaded lazily by the bar, never here. */
+  /** A saved query whose FIRST column supplies the choices (capped at 1024).
+   *  Loaded lazily by the bar, never here. */
   optionsQueryId?: string;
   /** Prefill for a tab that has no value yet. */
   default?: ParamValue;
@@ -28,12 +28,12 @@ export interface ParamDef {
 
 export const DEFAULT_PARAM_DEF: ParamDef = { widget: "text" };
 
-/** How many choices a query-sourced dropdown may offer — Databricks' own cap. */
+/** How many choices a query-sourced dropdown may offer before it stops being one. */
 export const OPTIONS_QUERY_CAP = 1024;
 
 // ── dynamic date values ───────────────────────────────────────────────────────
 //
-// Databricks' ⚡ menu. The TOKEN is what the tab stores, so the query stays dynamic —
+// The ⚡ menu. The TOKEN is what the tab stores, so the query stays dynamic —
 // "today" run tomorrow means tomorrow. Resolution happens once, at bind time.
 
 export const DYNAMIC_DATE_TOKENS = [

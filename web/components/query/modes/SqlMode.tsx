@@ -60,8 +60,8 @@ const EMPTY_DEFS: Record<string, ParamDef> = {};
 
 /** SE-8A — the row limits the Run menu offers. Bounded above rather than offering "no
  *  limit": the server honours limit<=0 as uncapped, and an uncapped SELECT over a wide
- *  fact table hands the browser a payload nobody asked to render. 50k is Databricks'
- *  own order of magnitude (they stop at 64k), and a LIMIT clause in the SQL still
+ *  fact table hands the browser a payload nobody asked to render. 50k is where a browser
+ *  grid stops being a grid, and a LIMIT clause in the SQL still
  *  overrides everything here. */
 const LIMIT_PRESETS = [100, 500, 1000, 5000, 10000, 50000];
 
@@ -560,7 +560,7 @@ export function SqlMode({
               Cancel{elapsed && <span style={{ marginLeft: 6, fontVariantNumeric: "tabular-nums" }}>{elapsed}</span>}
             </Button>
           ) : (
-            // SE-8A — Databricks' split button: the label CARRIES the row limit, so
+            // SE-8A — a split button whose label CARRIES the row limit, so
             // "how many rows am I getting" is answered before the run, not after. The
             // caret opens the run settings; both halves persist on the tab.
             <div style={{ position: "relative", display: "flex", alignItems: "center", gap: 1, flexShrink: 0 }}>
@@ -636,13 +636,11 @@ export function SqlMode({
               Run all ({statementCount})
             </Button>
           )}
-          {/* SE-8A — the schema picker sits with the run cluster, where Databricks puts
-              its catalog.schema selectors: it answers "against what", which is part of
-              the same question as "run". */}
+          {/* SE-8A — the schema picker sits with the run cluster: it answers "against
+              what", which is part of the same question as "run". */}
           {schemaControl}
-          {/* SE-8F — Format grew Databricks' formatter preferences (theirs live in a
-              JSON file in the workspace home; ours behind this caret). Click formats;
-              the caret decides HOW. */}
+          {/* SE-8F — Format grew preferences (a caret beside the verb, not a settings
+              page). Click formats; the caret decides HOW. */}
           <div style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
             <Button
               variant="ghost"
@@ -738,8 +736,8 @@ export function SqlMode({
                   : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
             </span>
           )}
-          {/* SE-8E — the assistant, at the toolbar's far right where Databricks puts
-              its sparkle. Opens a pane; nothing fires until a message is sent. */}
+          {/* SE-8E — the assistant, at the toolbar's far right. Opens a pane; nothing
+              fires until a message is sent. */}
           <Button
             variant={rail === "ai" ? "secondary" : "ghost"}
             size="xs"
@@ -763,8 +761,8 @@ export function SqlMode({
           collapsed={maximizeResults}
           style={{ flex: 1, minHeight: 0 }}
           left={
-            // SE-8C — the parameter widgets sit BETWEEN editor and results,
-            // Databricks' own position for them.
+            // SE-8C — the parameter widgets sit BETWEEN editor and results: fill
+            // these, then look below, in reading order.
             <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
               <SqlEditorPane
                 value={sqlText}

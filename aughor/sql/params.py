@@ -187,8 +187,7 @@ def expand_list_params(sql: str, params: dict[str, Any]) -> tuple[str, dict[str,
     ``IN :countries`` with ``{"countries": ["PT", "ES"]}`` becomes
     ``IN (:countries__0, :countries__1)`` with the two scalar values — every driver
     then binds scalars, which is all any of them can do. The parentheses come from the
-    rewrite, so the SQL is written WITHOUT them (``IN :name``, Databricks' own
-    convention); an empty list becomes ``(NULL)``, which matches no row.
+    rewrite, so the SQL is written WITHOUT them (``IN :name``, no parentheses); an empty list becomes ``(NULL)``, which matches no row.
 
     Runs BEFORE ``render_for_engine`` at the driver call, on the same no-op principle:
     a query with no list values passes through byte-identical.

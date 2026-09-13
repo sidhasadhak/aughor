@@ -1256,7 +1256,7 @@ class _AssistRequest(BaseModel):
 
 @router.post("/query/assist")
 def query_assist(body: _AssistRequest, request: Request):
-    """SE-8E — the editor's AI pane (the Genie-shaped surface). PROPOSES, never runs.
+    """SE-8E — the editor's AI pane. PROPOSES, never runs.
 
     Same consent model as ``/query/quickfix``, which this generalises: any SQL the
     model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts

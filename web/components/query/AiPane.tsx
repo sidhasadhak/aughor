@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * SE-8E — the AI pane: Databricks' Genie Code seat, on our consent rules.
+ * SE-8E — the AI pane: the ask-the-assistant seat, on our consent rules.
  *
  * A right-rail conversation scoped to the ACTIVE connection and the ACTIVE tab's SQL.
  * The model can talk, and it can PROPOSE SQL — the proposal always arrives as a merge

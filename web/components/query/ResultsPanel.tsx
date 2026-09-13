@@ -4,7 +4,7 @@
  * SE-1 — the results panel: the grid plus the facts about the run.
  * SE-4 I — plus filters over the returned rows, a chart view, and the ways out
  * (pin, schedule, share).
- * SE-8B — restructured into Databricks' output pane: a statement pager on the left
+ * SE-8B — restructured into the reference console's output pane: a statement pager on the left
  * («Results N of M» — "Run all" keeps EVERY statement's rows now, not just the last),
  * a tab strip (Table, one tab per visualization, «+»), and the grid tools as a
  * right-aligned icon cluster on the header instead of buttons in the footer.
@@ -240,8 +240,8 @@ export function ResultsPanel({
 
   return (
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
-      {/* SE-8B — the output header: pager · view tabs · tool cluster, Databricks'
-          own top row of the results pane. */}
+      {/* SE-8B — the output header: pager · view tabs · tool cluster — one row that
+          answers which rows, which view, and the ways out. */}
       <div style={{
         display: "flex", alignItems: "center", gap: 2, padding: "3px 8px",
         borderBottom: "1px solid var(--b0)", flexShrink: 0,

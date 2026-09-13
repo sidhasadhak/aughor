@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * SE-8D — Schedule, in place. Databricks' editor schedules a query from a small
- * "Add schedule" menu on the button itself; ours used to stash the SQL and navigate
+ * SE-8D — Schedule, in place. A query should be schedulable from the button that
+ * says so; ours used to stash the SQL and navigate
  * to Monitors, which is a page away from the result the user is looking at.
  *
  * This popover creates the monitor RIGHT HERE: a name, a cadence (the same presets
@@ -13,8 +13,8 @@
  * and it SAYS that on the popover; anything smarter (thresholds, anomaly, drift)
  * goes through "Open in Monitors", which arrives with the SQL already filled.
  *
- * The button reads Schedule (n) once the schedules for THIS statement are known —
- * Databricks' own label. Matching is on the monitor's SQL, whitespace-normalised:
+ * The button reads Schedule (n) once the schedules for THIS statement are known.
+ * Matching is on the monitor's SQL, whitespace-normalised:
  * a schedule belongs to a statement, not to a tab.
  */
 import { useEffect, useMemo, useState } from "react";

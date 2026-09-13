@@ -98,8 +98,8 @@ export function ShortcutSheet() {
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
 
-  // SE-8F — Esc then H, Databricks' own chord for this sheet. Only OUTSIDE an editing
-  // context: their editor opens the sheet mid-typing too, but "Esc to dismiss
+  // SE-8F — Esc then H, the classic chord for this sheet. Only OUTSIDE an editing
+  // context, because "Esc to dismiss
   // completion, then type HAVING" would open ours on the H, and a reference card that
   // interrupts writing teaches people to fear Esc.
   useEffect(() => {
