@@ -40,12 +40,12 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
     """)
     c.execute("CREATE INDEX IF NOT EXISTS idx_saved_queries_conn ON saved_queries(connection_id)")
     # SE-8C — parameter widget definitions. An ALTER because CREATE TABLE IF NOT EXISTS
-    # never touches an existing table; the failed ALTER on a table that already has the
-    # column IS this store's idempotence, same per-operation pattern as the rest.
-    try:
+    # never touches an existing table; probed first rather than try/except-ed, because
+    # an expected failure swallowed on every ensure call is exactly what the
+    # silent-swallow ratchet exists to refuse.
+    cols = {row[1] for row in c.execute("PRAGMA table_info(saved_queries)")}
+    if "param_defs_json" not in cols:
         c.execute("ALTER TABLE saved_queries ADD COLUMN param_defs_json TEXT NOT NULL DEFAULT '{}'")
-    except sqlite3.OperationalError:
-        pass
     c.commit()
 
 
