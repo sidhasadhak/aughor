@@ -119,7 +119,11 @@ Order — so the explorer stays on demand), ON-8 (one ontology, many sources), O
 promises — first slice built and its receipt met 2026-09-13: Olist's order-to-delivery declared and counted
 THROUGH the object door's compiler, 9.35% of lines broke the dispatch promise and 8.11% of orders the delivery
 one, every number equal to its hand-written reference, and the late segment, the breach rate and the lag each
-promise derives compile by construction), ON-10 (the investigation starts from the ontology) and fixed ON-7
+promise derives compile by construction), ON-10 (the investigation starts from the ontology — first slice built
+2026-09-13: a question's business terms are resolved against the DECLARED ontology, with no model, before the deep
+analysis's intake reads them, each definition compiled by the object door and the frame shown with the answer; through
+the running API 15 of 18 Olist questions reached a declared definition and none of the 3 controls did; the falsifier set
+is written and every reference executed, and its RUN — which spends model calls — awaits the user's go) and fixed ON-7
 first; §6 item 18 holds the three open shape questions.
 
 ---
@@ -4692,7 +4696,59 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   placed → approved → dispatched (promise `≤ shipping_limit_date`) → delivered (promise
   `≤ order_estimated_delivery_date`); the measured breach rates equal the table above; the
   derived segment and metric compile and equal their references.
-- **ON-10 · The investigation starts from the ontology.** A `frame_question` step BEFORE the
+- ✅ **ON-10 · The investigation starts from the ontology — FIRST SLICE BUILT + LIVE FRAME RECEIPT 2026-09-13; THE
+  FALSIFIER RUN AWAITS THE USER'S GO** (the user: *"Take whats next on the ontology roadmap"*; branch
+  `claude/on-10-framing`). **What exists:** `aughor.ontology.framing` — pure: no model, no store, no warehouse.
+  `frame_question(question, graph, synonyms, hops)` matches the question's words (a small deterministic stemmer; a longer
+  declared name wins its words over a shorter one of no higher rank) against what was declared — types by id, display
+  name, api name and backing table; readable properties with a generic tail dropped, and a short name without the type's
+  own words; a person's synonyms (the human tier only); processes, stages, promise nouns, what each promise derives, and
+  rules — and returns the FRAME: the OUTCOME (a promise — its late segment and breach rate —, a lag, or a rule) in the
+  declaration's own words with its measured note; where to START (the type the promise is kept per, its backing, whether
+  its key is unique); the RULES applied from the start through the measured to-one link path (a rule on a type the start
+  cannot reach is said and never applied); the stage MOMENTS named ("placed in 2017" → `order_purchase_timestamp`); the
+  candidate DRIVERS — dimensions reachable by measured to-one links within N hops (default 2, at most the compiler's 3),
+  the ones the question names first; and each definition COMPILED by the object door, schema-qualified. What the words ask
+  decides between a stage's promise and its lag ("late", "breach", "on time", "worst record" → the promise; "how long",
+  "lag" → the lag; "delay" by what stands beside it). "Late" with no stage named makes every promise a candidate, ranked
+  by the grain the question names and by whether the promise's type reaches what it names — so Olist's *"which
+  categories are always late"* reads as the dispatch promise, because the delivery promise is kept per Order and an Order
+  reaches no category by a to-one link; words that fit two promises equally choose neither. A short name repeating the
+  tail of a property named in full is that property again, and a homonym no type reaches (Olist's translation table's
+  category column) never vetoes the property a promise's type does reach. Builder-made segments and metrics are terms that define
+  nothing: the validator proves a guessed filter executes, not that the business means it. `aughor.agent.framing` reads
+  the served graph under the ontology doors' scope law and, only when the words fit several declared definitions
+  equally, asks the fast model to choose — a name that is not listed chooses nothing. **Wiring:** `/investigate` frames
+  the question before the graph starts and emits a `frame` event (declared in the web's part vocabulary); the deep
+  analysis's intake prompt, the filtered schema every phase planner reads, and the explore chain planner carry the frame
+  block; the named drivers lead the intake's dimensions; the reading joins the Investigation Specification; the answer
+  report carries `frame`. **A question that reaches nothing declared leaves the intake prompt byte-identical** — a test
+  compares it with the prompt the intake wrote before ON-10. Door `POST /ontology/frame` (no model, no warehouse). Web:
+  `QuestionFrame` — "Read as", with the definition, rules, start and drivers in a fold — on deep and explore answers and
+  while one streams. Harness: the `framed` arm (dropped where nothing is declared; no call spent on a question that
+  reaches nothing, which is scored as raw; one extra call only for an ambiguous frame) and the falsifier by `definition`
+  label; `evals/ablation_olist_business.jsonl` — 12 questions whose definition is declared, 3 controls, every reference
+  executed through the API and again through the harness (15 of 15), the served graph frozen beside it. The prompt-reach
+  audit registers the frame block: its fixture gains a process with two promises and a rule — 317 fields walked, 43
+  reach the frame. **Tests:** `test_ontology_framing.py` (every compiled definition held to a hand-written query over
+  the samples warehouse, the door end to end) · `test_agent_framing.py` · `test_ablation_framed_arm.py` ·
+  `test_intake_frame.py` · web `QuestionFrame.test.tsx` and a turn projection test; the vocabulary, prompt-reach and
+  SSE-parity ratchets updated; **29 guard mutations, every one caught** — the first run let three survive: named drivers
+  were put first twice over (the sort half was dead), the chooser's own no-call guard hid behind its callers', and the
+  byte-identical intake test compared two runs of the SAME mutated line (it now compares with the prompt written before).
+  **Live receipt — through the running API, no model call:** on Olist 15 of 18 questions reach a declared definition —
+  the 12 declared-definition questions of the set, the critique's *"What is causing a delay in warehouse dispatch?"*,
+  *"Which categories are always late?"* and an ambiguous *"What was late last month?"* — and none of the 3 controls; the
+  compiler refused no definition. The dispatch question reads as the dispatch promise (10,423 of 111,456 lines, 9.35%),
+  starting from Order Line (`order_items`, whose key is not unique), testing product category, seller state and order
+  status; the ambiguous one lists both promises and chooses neither. On LuxExperience the same dispatch question reads
+  as the shipping promise and carries its "never broken" flag — the frame itself says the synthetic data cannot answer
+  it. **Open on this wave:** the falsifier RUN (`--arms raw,guarded,framed`: 15 raw calls + 12 framed, the controls
+  reuse raw, no question of the set is ambiguous — about 27 calls) · a live deep analysis showing the frame in the web
+  (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the
+  prompts; that phase is the next slice) · the model does not word the frame (the reading is the deterministic
+  template) · the explorer proposes no processes (ON-9's open item), so an undeclared connection frames nothing · the
+  conversational agent does not frame. The wave as drafted: A `frame_question` step BEFORE the
   investigation's and the deep analysis's intake parse — today the ontology is consulted only
   after (the table above): resolve the question's terms (entity names, aliases, stage names,
   rule and metric names) → the frame: entity, process + stage, the rule or promise that defines
@@ -5085,7 +5141,9 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         orders, every count equal to its reference), the late segment, breach rate and lag derived by construction, 16/16
         guard mutations caught → ON-10 the investigation starts from the
         ontology (frame_question before the intake parse; the falsifier is a set where raw FAILS because
-        the definition is not in the data) → ON-8 one ontology, many sources (org-keyed, bindings name
+        the definition is not in the data) — ✅ FIRST SLICE 2026-09-13: framed with no model before the intake, 15 of 18
+        Olist questions framed live through the door and none of the controls, the falsifier set of 15 executed, 29/29
+        guard mutations caught; the run awaits the user's go → ON-8 one ontology, many sources (org-keyed, bindings name
         their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
 ```
 
@@ -5577,7 +5635,9 @@ the browser** · **measure the premise before building.**
     payment and an order's shipment; a shipment becomes an entity only where the business ships across
     orders (consolidated freight), which a measured N:N key would show.*
     **(c) The host for ON-9/ON-10's receipts** — *(2026-09-13: ON-9's receipt was taken on Olist, as recommended;
-    LuxExperience hosted the never-broken flag instead. The question stays open for ON-10 and the pack enrichment.)* —
+    LuxExperience hosted the never-broken flag instead. The question stays open for ON-10 and the pack enrichment.
+    ON-10's falsifier set was written on Olist too; framed on LuxExperience, the dispatch question reads as a shipping
+    promise the data never breaks — the case for the pack enrichment, now visible on every framed answer.)* —
     Olist (`baef6c3e/ecommerce`, real delays: 9.35% late
     dispatch, 8.11% late delivery) first, or enrich the LuxExperience pack's generator with realistic
     dispatch lags so the demo pack can host the question. *Recommended: Olist first — no generator change,
