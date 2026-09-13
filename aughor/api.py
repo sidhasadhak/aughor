@@ -89,7 +89,6 @@ from fastapi import Depends, FastAPI, HTTPException, Request, Security
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import APIKeyHeader
 
-from aughor.db.connection import open_connection_for
 from aughor.db.registry import list_connections, get_connection_settings
 from aughor.llm.provider import NoModelConfigured
 
@@ -147,7 +146,6 @@ async def _lifespan(app: "FastAPI"):
     await _sync_metastore()
     await _validate_connections()
     await _start_explorers()
-    await _start_ontology_refresh_loop()
     await _seed_playbook()
     # On Vercel the clock belongs to Cron (routers/cron.py — /cron/tick runs one
     # engine tick; monitors and briefs ride it as virtual automations). Starting
@@ -165,8 +163,11 @@ async def _lifespan(app: "FastAPI"):
         # set somewhere real, the log has to be the thing that says so.
         logger.warning("AUGHOR_DISABLE_SCHEDULERS is set — in-process clocks are OFF: "
                        "no monitor evaluation, no automation heartbeat, no continuous "
-                       "exploration. Intended for TEST processes only.")
+                       "exploration, no ontology auto-refresh. Intended for TEST processes only.")
     else:
+        # The ontology auto-refresh is a clock too, and it now really rebuilds (profiles, extraction, a model
+        # call to enrich), so it runs only where the other clocks do.
+        await _start_ontology_refresh_loop()
         await _start_continuous_exploration_loop()
         await _start_monitor_scheduler()
         await _start_automation_heartbeat()
@@ -669,33 +670,66 @@ async def _start_explorers() -> None:
     asyncio.create_task(kernel().supervise_forever(), name="kernel-supervisor")
 
 
-async def _ontology_refresh_loop() -> None:
-    from datetime import datetime, timezone
-    from aughor.ontology.store import load_latest_ontology, invalidate as invalidate_ontology
+def _ontology_refreshes_due(now=None) -> list[tuple[str, str]]:
+    """Every {connection, schema} whose cached ontology is older than its connection's auto-refresh interval.
 
+    Only schemas that HAVE an ontology: the interval renews a built one; it does not start building, and paying a
+    model call for, one nobody asked for.
+    """
+    from datetime import datetime, timezone
+
+    from aughor.ontology.store import list_schemas, load_latest_ontology
+
+    now = now or datetime.now(timezone.utc)
+    due: list[tuple[str, str]] = []
+    for conn_info in list_connections():
+        conn_id = conn_info["id"]
+        refresh_hours = get_connection_settings(conn_id).get("ontology_refresh_hours")
+        if not refresh_hours:
+            continue
+        for schema in list_schemas(conn_id):
+            graph = load_latest_ontology(conn_id, schema)
+            if graph is None:
+                continue
+            try:
+                generated_at = datetime.fromisoformat(graph.generated_at)
+            except (TypeError, ValueError):
+                due.append((conn_id, schema))     # a stamp that cannot be read cannot prove the graph is fresh
+                continue
+            if generated_at.tzinfo is None:
+                generated_at = generated_at.replace(tzinfo=timezone.utc)
+            if (now - generated_at).total_seconds() / 3600 >= refresh_hours:
+                due.append((conn_id, schema))
+    return due
+
+
+async def _refresh_ontologies_once() -> None:
+    """One pass of the auto-refresh: rebuild every due ontology, each the way `POST /ontology/rebuild` does."""
+    from aughor.routers.ontology import rebuild_ontology_graph
+
+    loop = asyncio.get_running_loop()
+    due = await loop.run_in_executor(None, _ontology_refreshes_due)
+    for conn_id, schema in due:
+        try:
+            await loop.run_in_executor(None, rebuild_ontology_graph, conn_id, schema)
+            logger.info("Ontology refreshed for connection %s, schema %s", conn_id, schema)
+        except Exception as exc:
+            logger.warning("Ontology refresh failed for %s/%s; the previous ontology is kept: %s",
+                           conn_id, schema, exc)
+
+
+async def _ontology_refresh_loop() -> None:
+    """Hourly: renew each ontology whose auto-refresh interval has elapsed.
+
+    🔴 This used to invalidate EVERY cached ontology on the connection and then call `db.get_schema()`, which has
+    built nothing since the heavy build moved off the read path. So an interval set in Ontology settings deleted
+    that connection's ontologies each time it elapsed. Each due schema is now rebuilt by `rebuild_ontology_graph`:
+    nothing is deleted first, and a failed rebuild keeps the ontology it meant to replace.
+    """
     while True:
         await asyncio.sleep(3600)
         try:
-            for conn_info in list_connections():
-                conn_id = conn_info["id"]
-                settings = get_connection_settings(conn_id)
-                refresh_hours = settings.get("ontology_refresh_hours")
-                if not refresh_hours:
-                    continue
-                try:
-                    graph = load_latest_ontology(conn_id)
-                    if graph is not None:
-                        generated_at = datetime.fromisoformat(graph.generated_at)
-                        age_hours = (datetime.now(timezone.utc) - generated_at).total_seconds() / 3600
-                        if age_hours < refresh_hours:
-                            continue
-                    invalidate_ontology(conn_id)
-                    db = open_connection_for(conn_id)
-                    db.get_schema()
-                    db.close()
-                    logger.info("Ontology refreshed for connection %s", conn_id)
-                except Exception as exc:
-                    logger.warning("Ontology refresh failed for %s: %s", conn_id, exc)
+            await _refresh_ontologies_once()
         except Exception as exc:
             logger.warning("Ontology refresh loop error: %s", exc)
 

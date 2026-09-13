@@ -1135,11 +1135,17 @@ export async function updateConnectionSettings(
   return res.json();
 }
 
-export async function rebuildOntology(connectionId: string, schemaName?: string): Promise<{ ok: boolean; generated_at: string; entities: number }> {
+export async function rebuildOntology(connectionId: string, schemaName?: string): Promise<{ ok: boolean; generated_at: string; entities: number; warning?: string }> {
   const qs = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) qs.set("schema_name", schemaName);
   const res = await fetch(`${getApiBase()}/ontology/rebuild?${qs}`, { method: "POST" });
-  if (!res.ok) throw new Error("Ontology rebuild failed");
+  if (!res.ok) {
+    // The server says why the build failed and whether the previous ontology is unchanged; a bare
+    // "Ontology rebuild failed" said neither.
+    let detail = "";
+    try { detail = (await res.json())?.detail ?? ""; } catch { /* not JSON */ }
+    throw new Error(detail || "Ontology rebuild failed");
+  }
   return res.json();
 }
 

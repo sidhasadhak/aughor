@@ -84,7 +84,9 @@ function OntologySettings({
     setRebuildMsg(null);
     try {
       const result = await rebuildOntology(connectionId, schema);
-      setRebuildMsg(`Rebuilt — ${result.entities} entities`);
+      setRebuildMsg(result.warning
+        ? `Rebuilt — ${result.entities} entities. ${result.warning}`
+        : `Rebuilt — ${result.entities} entities`);
       const fresh = await import("@/lib/api").then(m => m.getOntology(connectionId, schema));
       onRebuilt(fresh);
     } catch (e: unknown) {
@@ -110,8 +112,8 @@ function OntologySettings({
             Auto-refresh interval
           </p>
           <p className="aug-fs-xs text-zinc-500 mb-3 leading-relaxed">
-            Automatically invalidate and rebuild the ontology on a schedule.
-            The rebuild runs in the background when the interval elapses.
+            Rebuild the ontology on a schedule. The rebuild runs in the background
+            when the interval elapses; if it fails, the current ontology is kept.
           </p>
           <div className="grid grid-cols-2 gap-1.5">
             {REFRESH_OPTIONS.map(opt => (

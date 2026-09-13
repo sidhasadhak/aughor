@@ -2403,21 +2403,91 @@ async def get_entity_lifecycle_counts(
 
 # ── Rebuild ────────────────────────────────────────────────────────────────────
 
+class OntologyRebuildError(RuntimeError):
+    """A rebuild that saved no new graph. The message says why; ``kept`` says whether the schema still has the
+    ontology it had before, and ``journaled`` whether the build got far enough to journal its own outcome."""
+
+    def __init__(self, message: str, *, kept: bool, journaled: bool = False):
+        super().__init__(message)
+        self.kept = kept
+        self.journaled = journaled
+
+
+def rebuild_ontology_graph(connection_id: str, schema_name: str):
+    """Build the ontology for one {connection, schema}; return ``(graph, last_build)``.
+
+    🔴🔴 **This used to delete first and build never.** `POST /ontology/rebuild` invalidated the cached graph, then
+    read it back through `_get_ontology_graph`, which by design never builds. "Rebuild ontology now" on a working
+    ontology destroyed it and answered 422, or, on a connection with exactly one OTHER schema cached, answered 200
+    with that schema's graph under the requested name. The hourly auto-refresh deleted the same way.
+
+    Now it builds, through the `build_intelligence()` the birth job runs, inside `forced_rebuild` so unchanged data
+    is re-extracted instead of answered by the fingerprint cache. Nothing is deleted: the builder saves over the
+    cached entry only once it has a graph, so a failed build leaves the previous ontology where it was. Success is
+    read back strictly, under the schema the build saved to (never through the read's one-cached-schema
+    substitution), and must be a newer graph than the one that was there.
+
+    Raises `OntologyRebuildError` for every failure. Heavy and blocking (profiles, extraction, a model call to
+    enrich), so call it from a request thread or an executor, never on an event loop.
+    """
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.store import forced_rebuild, load_latest_ontology
+
+    _invalidate_schema_cache(connection_id)
+    # "default" is how this router and the builder spell NO schema, not a schema to scope the connection to.
+    scope = None if schema_name == "default" else schema_name
+    try:
+        db = open_connection_for_with_schema(connection_id, scope)
+    except Exception as exc:
+        raise OntologyRebuildError(f"The connection could not be opened: {str(exc)[:300]}",
+                                   kept=load_latest_ontology(connection_id, schema_name) is not None) from exc
+    try:
+        # The builder saves under the connection's own schema label, so read back under the same one.
+        label = getattr(db, "_schema_name", None) or "default"
+        before = load_latest_ontology(connection_id, label)
+        if not hasattr(db, "build_intelligence"):
+            raise OntologyRebuildError("This connection type has no ontology build.", kept=before is not None)
+        try:
+            with forced_rebuild(connection_id):
+                db.build_intelligence()
+        except Exception as exc:
+            raise OntologyRebuildError(f"The build failed: {str(exc)[:300]}", kept=before is not None) from exc
+        last_build = getattr(db, "last_build", None)
+        last_build = last_build if isinstance(last_build, dict) else {}
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "closing the rebuild's connection is best-effort",
+                     counter="ontology.rebuild_close", conn_id=connection_id)
+
+    if last_build and not last_build.get("ok", True):
+        raise OntologyRebuildError(
+            f"The build stopped at {last_build.get('stage') or 'an unrecorded stage'}: "
+            f"{last_build.get('error') or 'no reason was recorded'}",
+            kept=before is not None, journaled=True)
+    graph = load_latest_ontology(connection_id, label)
+    if graph is None or (before is not None and graph.generated_at == before.generated_at):
+        raise OntologyRebuildError("The build finished without saving a new graph for this schema.",
+                                   kept=before is not None, journaled=bool(last_build))
+    return graph, last_build
+
+
+# Rebuild one schema's ontology from the data (see `rebuild_ontology_graph`). A failure answers 422 with the reason
+# and whether the previous ontology is unchanged. A comment, not a docstring: the docstring would become the
+# operation's OpenAPI description and move the generated client.
 @router.post("/ontology/rebuild", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def rebuild_ontology(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    from aughor.ontology.store import invalidate as invalidate_ontology
     effective = _resolve_schema(connection_id, schema_name)
-    invalidate_ontology(connection_id, effective)
-    _invalidate_schema_cache(connection_id)
-    graph = _get_ontology_graph(connection_id, effective)
-    if graph is None:
-        # The build re-opens the connection; in-memory file uploads (local_upload,
-        # dsn local://…) are empty on re-open, so no graph is produced. That's a
-        # client-actionable condition, not a server fault — return a clear 422
-        # rather than a confusing 500.
+    try:
+        graph, last_build = rebuild_ontology_graph(connection_id, effective)
+    except OntologyRebuildError as exc:
+        # In-memory file uploads (local_upload, dsn local://…) are empty on re-open, so their build produces no
+        # graph. That is client-actionable, not a server fault: name it rather than repeat the build's words.
         from aughor.db.registry import get_dsn
         try:
             conn_type, dsn = get_dsn(connection_id)
@@ -2425,28 +2495,31 @@ def rebuild_ontology(
             conn_type, dsn = "", ""
         in_memory = conn_type == "local_upload" or str(dsn).startswith("local://")
         detail = (
-            "Ontology can't be rebuilt for an in-memory file upload — its data isn't "
-            "re-readable on rebuild. Re-upload the data to refresh."
-            if in_memory else
-            "Ontology could not be built for this connection (no schema returned)."
+            "Ontology can't be rebuilt for an in-memory file upload — its data isn't re-readable on rebuild. "
+            "Re-upload the data to refresh."
+            if in_memory else f"Ontology could not be rebuilt. {exc}"
         )
-        # Journal the failure (the build raised before its own emit could fire) —
-        # the original "ontology silently doesn't build" becomes a queryable event.
-        try:
-            from aughor.kernel.ledger import Ledger
-            Ledger.default().emit(
-                "ontology.build",
-                {"ok": False, "entities": 0, "stage": "rebuild",
-                 "error": detail, "in_memory": in_memory},
-                conn_id=connection_id,
-            )
-        except Exception:
-            import logging
-            logging.getLogger(__name__).debug("ontology.build failure-emit skipped", exc_info=True)
-        raise HTTPException(status_code=422, detail=detail)
+        if exc.kept:
+            detail += " The previous ontology is unchanged."
+        if not exc.journaled:
+            # The build never reached the step that journals its own outcome; journal the failure here, so
+            # "the ontology silently doesn't build" stays a queryable event.
+            try:
+                from aughor.kernel.ledger import Ledger
+                Ledger.default().emit(
+                    "ontology.build",
+                    {"ok": False, "entities": 0, "stage": "rebuild", "error": detail, "in_memory": in_memory},
+                    conn_id=connection_id,
+                )
+            except Exception as emit_exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(emit_exc, "the rebuild's failure journal is best-effort",
+                         counter="ontology.rebuild_journal", conn_id=connection_id)
+        raise HTTPException(status_code=422, detail=detail) from exc
     # Industry-aware intelligence keystone: (re)infer the Business Profile whenever
     # the ontology is rebuilt, so the explorer's industry-specific angles are ready
     # before exploration. Best-effort — a profile failure must not fail the rebuild.
+    # Only after a graph was really built: the inference is a model call.
     profile_industry = None
     try:
         from aughor.business_profile.infer import infer_business_profile
@@ -2457,13 +2530,18 @@ def rebuild_ontology(
         import logging
         logging.getLogger(__name__).warning(
             "Business-profile inference after ontology rebuild failed (non-fatal): %s", exc)
-    return {
+    out = {
         "ok": True,
         "schema_name": graph.schema_name,
         "generated_at": graph.generated_at,
         "entities": len(graph.entities),
         "industry": profile_industry,
     }
+    if last_build.get("error"):
+        # Built, but a best-effort stage did not finish (semantic enrichment): the graph is usable, and the
+        # person who clicked should know what it lacks.
+        out["warning"] = last_build["error"]
+    return out
 
 
 @router.get("/ontology/build-status")

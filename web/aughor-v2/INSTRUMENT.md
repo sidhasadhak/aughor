@@ -280,8 +280,8 @@ said "Building ontology…" over a read that never builds; it now says what is h
 - Ontology on a warehouse that has just connected (artboard 09): the design's crawl progress, ghost
   nodes and "forming" list have nothing behind them — the build's inner stages land only at its end and
   nothing partial is saved — so the empty state keeps its existing doors. Its build door calls
-  `POST /ontology/rebuild`, which today deletes a built ontology and builds nothing (flagged
-  separately, not fixed here).
+  `POST /ontology/rebuild`, which builds the ontology and, when a build fails, keeps the one that was
+  there (it used to delete a built ontology and build nothing).
 
 ## 10. Self-check before a screen ships
 

@@ -16,8 +16,10 @@ tell which fields were user-provided vs auto-extracted.
 from __future__ import annotations
 
 import hashlib
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 
 from aughor.ontology.models import OntologyGraph
 from aughor.util.json_store import KeyedJsonStore
@@ -327,6 +329,37 @@ def compute_ontology_fingerprint(table_profiles: dict) -> str:
     return hashlib.md5("|".join(parts).encode()).hexdigest()[:16]
 
 
+# ── Forced rebuild ────────────────────────────────────────────────────────────
+
+#: Connections whose builds, in THIS context, must extract a fresh graph rather than serve the fingerprint cache.
+#: Set only by `forced_rebuild`. A context variable and not a flag on the connection object, because
+#: `open_connection_for_with_schema` hands out POOLED objects: a flag there would reach every other request holding
+#: the same connection, while this reaches only the build inside the `with` block (the heavy annotators run on the
+#: caller's thread).
+_forced_rebuilds: ContextVar[frozenset[str]] = ContextVar("ontology_forced_rebuilds", default=frozenset())
+
+
+@contextmanager
+def forced_rebuild(connection_id: str) -> Iterator[None]:
+    """Inside this block, every `get_or_build_ontology` for ``connection_id`` builds instead of reading the cache.
+
+    The cache is keyed by a fingerprint of table names, row counts and grain columns, so a deliberate rebuild of
+    unchanged data would be answered by the very graph it means to replace. That is why `POST /ontology/rebuild`
+    used to delete the cached graph first, and why a rebuild whose build then failed left the connection with no
+    ontology at all. Forcing the build instead leaves the cached graph readable until a new one is saved over it.
+    """
+    token = _forced_rebuilds.set(_forced_rebuilds.get() | {connection_id})
+    try:
+        yield
+    finally:
+        _forced_rebuilds.reset(token)
+
+
+def rebuild_forced(connection_id: str) -> bool:
+    """Whether a build for ``connection_id`` in this context must skip the fingerprint cache."""
+    return connection_id in _forced_rebuilds.get()
+
+
 def get_or_build_ontology(
     connection_id: str,
     schema_name: str,
@@ -339,7 +372,8 @@ def get_or_build_ontology(
     Main entry point called at schema-load time.
 
     Computes a stable fingerprint from table_profiles (table names + row counts
-    + grain columns), then either returns the cached graph or builds a fresh one.
+    + grain columns), then either returns the cached graph or builds a fresh one —
+    always the latter inside `forced_rebuild` for this connection.
     The graph is scoped to the given schema_name so multiple schemas on the same
     connection each get an independent ontology.
 
@@ -350,7 +384,9 @@ def get_or_build_ontology(
     try:
         fingerprint = compute_ontology_fingerprint(table_profiles)
 
-        cached = load_ontology(connection_id, schema_name, fingerprint)
+        # A deliberate rebuild skips the cache it is replacing. The save below writes over the same key, so the
+        # previous graph stays readable until the new one lands, and a failed extraction leaves it alone.
+        cached = None if rebuild_forced(connection_id) else load_ontology(connection_id, schema_name, fingerprint)
         if cached is not None:
             return _overlay_learned_actions(cached, connection_id, schema_name)
 
