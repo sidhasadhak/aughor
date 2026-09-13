@@ -210,6 +210,8 @@ function Topbar({
   onCreateWorkspace,
   onUpdateWorkspace,
   onDeleteWorkspace,
+  theme,
+  onThemeChange,
 }: {
   onSearchOpen: () => void;
   onNavigate: (t: NavTab) => void;
@@ -224,6 +226,9 @@ function Topbar({
   onCreateWorkspace: (name: string) => Promise<Workspace>;
   onUpdateWorkspace: (id: string, connectionIds: string[]) => Promise<void>;
   onDeleteWorkspace: (id: string) => Promise<void>;
+  /** The active theme and the setter Settings uses — a click here persists exactly as a click there. */
+  theme: Theme;
+  onThemeChange: (t: Theme) => void;
 }) {
   return (
     <div className="aug-topbar">
@@ -248,6 +253,15 @@ function Topbar({
           </span>
           <kbd>⌘K</kbd>
         </button>
+        {/* The theme toggle: a mono segmented pair, one click from every screen. */}
+        <div className="aug-segmented" role="group" aria-label="Theme">
+          {(["dark", "light"] as const).map(t => (
+            <Button key={t} variant="ghost" size="xs" aria-pressed={theme === t}
+              onClick={() => onThemeChange(t)} className="aug-seg-item aug-seg-item-mono font-normal">
+              {t}
+            </Button>
+          ))}
+        </div>
         <AuthControl />
       </div>
     </div>
@@ -1923,6 +1937,8 @@ export default function Home() {
 
       {/* Topbar */}
       <Topbar
+        theme={theme}
+        onThemeChange={setTheme}
         onSearchOpen={() => setShowSearch(true)}
         onNavigate={handleNavigate}
         connections={wsConnections}
