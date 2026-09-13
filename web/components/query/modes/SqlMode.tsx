@@ -29,6 +29,7 @@ import { ResizableSplit } from "@/components/ResizableSplit";
 import { SqlEditorPane } from "@/components/query/editor/SqlEditorPane";
 import { ResultsPanel } from "@/components/query/ResultsPanel";
 import { HistoryRail } from "@/components/query/HistoryRail";
+import { AiPane } from "@/components/query/AiPane";
 import { Icon } from "@/components/ui/icon";
 import { ParamBar } from "@/components/query/ParamBar";
 import { type SavedQueryBinding } from "@/components/query/SavedQueryBar";
@@ -140,7 +141,9 @@ export function SqlMode({
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
-  const [showHistory, setShowHistory] = useState(false);
+  // SE-8E — ONE right rail, two occupants: history, or the assistant. Mutually
+  // exclusive by construction (they share the space), sharing one persisted width.
+  const [rail, setRail] = useState<"" | "history" | "ai">("");
   const [historyKey, setHistoryKey] = useState(0);
   // SE-3 F — the in-flight run's abort handle and when it started.
   const abort = useRef<AbortController | null>(null);
@@ -157,11 +160,17 @@ export function SqlMode({
   const quoteForEngine = useCallback((name: string) => quoteIdentifier(name, engine), [engine]);
   const cursor = useRef(0);
   const selection = useRef<{ from: number; to: number } | null>(null);
+  // SE-8E — the assistant reads the buffer and the last error AT SEND TIME through
+  // these, so typing never re-renders the pane and a send never sees a stale closure.
+  const sqlRef = useRef("");
+  const errorRef = useRef("");
   const editorApi = useRef<EditorApi | null>(null);
   const relint = useRef<(() => void) | null>(null);
 
   const active = tabs.find(t => t.id === activeId) ?? null;
   const sqlText = active?.sql ?? "";
+  sqlRef.current = sqlText;
+  errorRef.current = error;
 
   // SE-8A — the run settings live on the TAB (see EditorTab), read with defaults here.
   const limit = active?.limit ?? 500;
@@ -692,8 +701,8 @@ export function SqlMode({
           <Button
             variant="ghost"
             size="xs"
-            onClick={() => setShowHistory(s => !s)}
-            title={showHistory ? "Hide recent queries" : "Recent queries run from this workbench"}
+            onClick={() => setRail(r => r === "history" ? "" : "history")}
+            title={rail === "history" ? "Hide recent queries" : "Recent queries run from this workbench"}
           >
             <Icon name="clock" size={14} />
           </Button>
@@ -729,6 +738,17 @@ export function SqlMode({
                   : `Checked — ${verdict.issue_count} ${verdict.issue_count === 1 ? "note" : "notes"}`}
             </span>
           )}
+          {/* SE-8E — the assistant, at the toolbar's far right where Databricks puts
+              its sparkle. Opens a pane; nothing fires until a message is sent. */}
+          <Button
+            variant={rail === "ai" ? "secondary" : "ghost"}
+            size="xs"
+            onClick={() => setRail(r => r === "ai" ? "" : "ai")}
+            title={rail === "ai" ? "Close the assistant" : "Ask about this data or this SQL — proposals arrive as a diff"}
+            data-testid="sql-ai-toggle"
+          >
+            <Icon name="spark" size={14} />
+          </Button>
         </div>
 
         <ResizableSplit
@@ -818,16 +838,23 @@ export function SqlMode({
       initial={280}
       min={200}
       max={560}
-      collapsed={!showHistory}
+      collapsed={!rail}
       style={{ flex: 1, minWidth: 0, minHeight: 0 }}
       left={editorPane}
-      right={
+      right={rail === "ai" ? (
+        <AiPane
+          connId={connId}
+          getSql={() => sqlRef.current}
+          getError={() => errorRef.current}
+          onApply={fixed => setSql(fixed)}
+        />
+      ) : (
         <HistoryRail
           connId={connId}
           refreshKey={historyKey}
           onRestore={sql => openInNewTab(sql, "History")}
         />
-      }
+      )}
     />
   );
 }

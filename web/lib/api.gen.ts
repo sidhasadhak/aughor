@@ -9313,6 +9313,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/query/assist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Query Assist
+         * @description SE-8E — the editor's AI pane (the Genie-shaped surface). PROPOSES, never runs.
+         *
+         *     Same consent model as ``/query/quickfix``, which this generalises: any SQL the
+         *     model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts
+         *     or rejects — there is no code path from this endpoint to ``execute()``, and the
+         *     platform's own decision (a grant authorises PROPOSE, never EXECUTE) is the reason.
+         *     Called only from a user's explicit message in the pane; nothing polls it.
+         */
+        post: operations["query_assist_query_assist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/query/auto-federated-answer": {
         parameters: {
             query?: never;
@@ -13814,6 +13840,30 @@ export interface components {
             /** New Type */
             new_type: string;
         };
+        /** _AssistRequest */
+        _AssistRequest: {
+            /** Conn Id */
+            conn_id: string;
+            /**
+             * Error
+             * @default
+             */
+            error: string;
+            /**
+             * History
+             * @default []
+             */
+            history: {
+                [key: string]: unknown;
+            }[];
+            /** Instruction */
+            instruction: string;
+            /**
+             * Sql
+             * @default
+             */
+            sql: string;
+        };
         /** _AutoFederatedRequest */
         _AutoFederatedRequest: {
             /** Conn Ids */
@@ -14549,6 +14599,13 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Param Defs
+             * @default {}
+             */
+            param_defs: {
+                [key: string]: unknown;
+            };
+            /**
              * Spec
              * @default {}
              */
@@ -14748,6 +14805,10 @@ export interface components {
         _UpdateSavedQueryRequest: {
             /** Name */
             name?: string | null;
+            /** Param Defs */
+            param_defs?: {
+                [key: string]: unknown;
+            } | null;
             /** Spec */
             spec?: {
                 [key: string]: unknown;
@@ -30788,6 +30849,39 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    query_assist_query_assist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_AssistRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

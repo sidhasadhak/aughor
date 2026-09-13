@@ -2826,6 +2826,39 @@ export interface QuickFix {
   diagnosis: string;
 }
 
+// SE-8E — the editor's AI pane. Same consent model as Quick Fix, generalised: SQL
+// only ever comes back as a PROPOSAL for a diff; the server never executes it.
+export interface AssistReply {
+  reply: string;
+  proposed_sql: string;
+  changed: boolean;
+}
+
+export async function assistSql(
+  connId: string,
+  instruction: string,
+  opts: {
+    sql?: string; error?: string;
+    history?: { role: "user" | "assistant"; content: string }[];
+  } = {},
+): Promise<AssistReply> {
+  const res = await fetch(`${getApiBase()}/query/assist`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      conn_id: connId, instruction,
+      ...(opts.sql ? { sql: opts.sql } : {}),
+      ...(opts.error ? { error: opts.error } : {}),
+      ...(opts.history?.length ? { history: opts.history } : {}),
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(fastApiError(err, "The assistant is unavailable"));
+  }
+  return res.json();
+}
+
 /** Ask for a proposed repair. The server never executes it and never applies it. */
 export async function quickFixSql(connId: string, sql: string, error: string): Promise<QuickFix> {
   const res = await fetch(`${getApiBase()}/query/quickfix`, {

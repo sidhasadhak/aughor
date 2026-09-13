@@ -1244,6 +1244,97 @@ def query_quickfix(body: _QuickFixRequest, request: Request):
             "changed": True, "diagnosis": diagnosis}
 
 
+class _AssistRequest(BaseModel):
+    conn_id: str
+    sql: str = ""
+    instruction: str
+    error: str = ""
+    # Short prior turns [{role, content}], so a follow-up ("shorter", "and by month")
+    # lands on the conversation it continues. Capped server-side; never persisted.
+    history: list[dict] = []
+
+
+@router.post("/query/assist")
+def query_assist(body: _AssistRequest, request: Request):
+    """SE-8E — the editor's AI pane (the Genie-shaped surface). PROPOSES, never runs.
+
+    Same consent model as ``/query/quickfix``, which this generalises: any SQL the
+    model suggests comes back in ``proposed_sql`` and lands in a diff the user accepts
+    or rejects — there is no code path from this endpoint to ``execute()``, and the
+    platform's own decision (a grant authorises PROPOSE, never EXECUTE) is the reason.
+    Called only from a user's explicit message in the pane; nothing polls it.
+    """
+    from aughor.db.connection import open_connection_for, gate_user_sql
+
+    _check_conn_org(request, body.conn_id)
+    instruction = body.instruction.strip()
+    if not instruction:
+        raise HTTPException(status_code=400, detail="instruction is required")
+
+    # The buffer travels as context and may come back edited, so it passes the same
+    # gate a run would — advice about a statement we would refuse to run is advice
+    # about how to get around the refusal.
+    if body.sql.strip():
+        blocked = gate_user_sql(body.conn_id, "query_workbench", body.sql)
+        if blocked is not None:
+            raise HTTPException(status_code=400, detail=blocked.error)
+
+    try:
+        db = open_connection_for(body.conn_id)
+    except KeyError:
+        raise HTTPException(status_code=404, detail="Connection not found")
+    try:
+        dialect = getattr(db, "dialect", "duckdb")
+        schema = db.get_schema()
+    finally:
+        try:
+            db.close()
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "assist: db close", counter="query.assist.close")
+
+    from pydantic import BaseModel as _BM
+
+    class _Assist(_BM):
+        reply: str
+        proposed_sql: str = ""
+
+    from aughor.llm.provider import get_provider
+
+    turns = "\n".join(
+        f"{str(m.get('role', '?'))}: {str(m.get('content', ''))[:2000]}"
+        for m in (body.history or [])[-6:]
+    )
+    try:
+        out = get_provider("coder").complete(
+            system=(
+                "You are the SQL editor's assistant. Answer plainly and briefly. "
+                "When the user's ask calls for SQL (write, fix, optimise, extend), put the "
+                "complete statement in proposed_sql and keep reply to one or two sentences "
+                "about WHAT changed and why; otherwise leave proposed_sql empty. "
+                f"The engine dialect is {dialect}. You cannot run anything — never claim "
+                "you executed a query or saw its rows."
+            ),
+            user=(
+                f"Schema:\n{schema}\n\n"
+                + (f"Conversation so far:\n{turns}\n\n" if turns else "")
+                + (f"The editor currently contains:\n{body.sql}\n\n" if body.sql.strip() else "")
+                + (f"The last run failed with:\n{body.error}\n\n" if body.error.strip() else "")
+                + f"The user asks: {instruction}"
+            ),
+            response_model=_Assist,
+        )
+    except Exception as exc:
+        # 502 like quickfix: the provider being down is not a defect in the user's ask.
+        raise HTTPException(status_code=502, detail=f"The assistant is unavailable: {exc}")
+
+    proposed = (out.proposed_sql or "").strip()
+    if proposed == body.sql.strip():
+        proposed = ""   # an identical "proposal" is an empty diff wearing an Apply button
+    return {"reply": (out.reply or "").strip(), "proposed_sql": proposed,
+            "changed": bool(proposed)}
+
+
 # ── Saved-query versions (SE-4 J) ─────────────────────────────────────────────
 # `update_saved_query` overwrites the only row, and has recorded a lifecycle revision
 # beside it since Wave V3 — but nothing could READ that history, so a saved query had a
