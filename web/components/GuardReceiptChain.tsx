@@ -84,13 +84,13 @@ export function GuardReceiptChain({
               <ChainOfThoughtSearchResults>
                 {r.before && (
                   <ChainOfThoughtSearchResult>
-                    <span style={{ color: "var(--t4)" }}>before</span>
+                    <span style={{ color: "var(--t3)" }}>before</span>
                     <span className="font-mono">{truncate(r.before)}</span>
                   </ChainOfThoughtSearchResult>
                 )}
                 {r.after && (
                   <ChainOfThoughtSearchResult>
-                    <span style={{ color: "var(--t4)" }}>after</span>
+                    <span style={{ color: "var(--t3)" }}>after</span>
                     <span className="font-mono">{truncate(r.after)}</span>
                   </ChainOfThoughtSearchResult>
                 )}

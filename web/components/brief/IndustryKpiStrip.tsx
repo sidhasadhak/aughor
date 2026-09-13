@@ -214,8 +214,8 @@ export function KpiStripView({ industry, period, kpis, scopeKey }: {
     <div>
       <div className="aug-label" style={{ marginBottom: 8 }}>
         Key Metrics
-        {industry ? <span style={{ fontWeight: 400, color: "var(--t4)" }}>{` · ${industry}`}</span> : null}
-        {period ? <span style={{ fontWeight: 400, color: "var(--t4)" }}>{` · vs ${periodWord(period)}`}</span> : null}
+        {industry ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · ${industry}`}</span> : null}
+        {period ? <span style={{ fontWeight: 400, color: "var(--t3)" }}>{` · vs ${periodWord(period)}`}</span> : null}
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
         {kpis.map(k => {

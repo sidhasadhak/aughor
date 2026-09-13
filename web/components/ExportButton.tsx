@@ -96,10 +96,6 @@ export function ExportButton({ invId }: { invId: string }) {
 
 function Spin() {
   return (
-    <span style={{
-      width: 11, height: 11, border: "1.5px solid var(--b2)",
-      borderTop: "1.5px solid var(--blue4)", borderRadius: "50%",
-      animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-    }} />
+    <span aria-hidden className="aug-pending">◐</span>
   );
 }

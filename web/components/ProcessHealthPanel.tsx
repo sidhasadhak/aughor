@@ -47,7 +47,7 @@ function MetricHealthCard({
         </div>
         {item.target_period && (
           <span className="aug-fs-xs font-mono px-1.5 py-0.5 rounded-[3px]"
-            style={{ background: "var(--bg-0)", border: "0.5px solid var(--b0)", color: "var(--t4)" }}>
+            style={{ background: "var(--bg-0)", border: "0.5px solid var(--b0)", color: "var(--t3)" }}>
             {item.target_period}
           </span>
         )}
@@ -57,7 +57,7 @@ function MetricHealthCard({
       <div>
         <p className="aug-fs-ui font-medium text-[var(--t1)]">{item.label}</p>
         {item.benchmark_source && (
-          <p className="aug-fs-xs mt-0.5 text-[var(--t4)]">{item.benchmark_source}</p>
+          <p className="aug-fs-xs mt-0.5 text-[var(--t3)]">{item.benchmark_source}</p>
         )}
       </div>
 

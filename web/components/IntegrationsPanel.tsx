@@ -204,7 +204,7 @@ export function IntegrationsPanel() {
 
       {categories.map(([category, rows]) => (
         <div key={category} style={{ marginBottom: 18 }}>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.06em",
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.06em",
             textTransform: "uppercase", marginBottom: 8 }}>{category}</div>
           <div style={{ display: "grid", gap: 10,
             gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))" }}>
@@ -274,7 +274,7 @@ export function IntegrationsPanel() {
                     because "Add Slack app" beside Google's "Connect" is otherwise an
                     inconsistency a reader has to explain to themselves. */}
                 {!p.oauth_ready && p.alt_door === "slack_app" && (
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 6,
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6,
                     lineHeight: 1.5 }}>
                     {p.name}&apos;s OAuth needs an HTTPS callback and this deployment is
                     reached at <code>{redirectUri}</code>. A Slack <strong>app</strong>
@@ -338,7 +338,7 @@ export function IntegrationsPanel() {
                     paddingTop: 12 }}>
                     {agents.length > 0 && (
                       <div style={{ marginBottom: 12 }}>
-                        <div className="aug-fs-xs" style={{ color: "var(--t4)",
+                        <div className="aug-fs-xs" style={{ color: "var(--t3)",
                           marginBottom: 4 }}>
                           Answer as (optional) — an app with no agent can still post; it
                           just cannot answer an @mention as anybody.
@@ -370,7 +370,7 @@ export function IntegrationsPanel() {
                 {p.connection?.status === "active" && p.connection.scopes && (
                   // What the provider says was GRANTED — read back from the token
                   // response, so a scope the user declined is never listed.
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 6,
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6,
                     overflowWrap: "anywhere" }}>
                     granted: {p.connection.scopes}
                   </div>
@@ -397,7 +397,7 @@ export function IntegrationsPanel() {
                         "the redirect URI" beside a {p.name} console link, a reasonable
                         person pastes their {p.name} address. It is the opposite — the
                         address {p.name} comes BACK to. */}
-                    <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                       Redirect URI — where {p.name} sends the browser <strong>back to
                       Aughor</strong>. It must reach THIS API
                       {p.https_only ? " over HTTPS (a tunnel is enough)" : ""}, and be
@@ -410,7 +410,7 @@ export function IntegrationsPanel() {
                       placeholder={redirectUri}
                       onChange={e => setCallback(e.target.value)} />
                     {callback.trim() && callback.trim() !== redirectUri.trim() && (
-                      <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                      <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                         Overrides the derived address ({redirectUri}) — the provider will
                         be sent this one, and the exchange will use the same string.
                       </div>
@@ -453,7 +453,7 @@ export function IntegrationsPanel() {
                         Cancel
                       </Button>
                     </div>
-                    <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+                    <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                       <Icon name="lock" size={11} /> Stored encrypted; the secret comes back
                       masked and is never shown again.
                     </div>

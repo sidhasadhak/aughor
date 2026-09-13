@@ -4701,7 +4701,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   `≤ order_estimated_delivery_date`); the measured breach rates equal the table above; the
   derived segment and metric compile and equal their references.
 - ✅ **ON-10 · The investigation starts from the ontology — FIRST SLICE BUILT + LIVE FRAME RECEIPT 2026-09-13; THE
-  FALSIFIER HELD TWICE 2026-09-13 — OLIST FRAMED 8 OF 12, RAW 3; LUXEXPERIENCE FRAMED 9 OF 13, RAW 1** (the
+  FALSIFIER HELD TWICE 2026-09-13 — OLIST FRAMED 8 OF 12, RAW 3; LUXEXPERIENCE FRAMED 9 OF 13, RAW 1 · MERGED #497, squash `73a61047`, 2026-09-13** (the
   user: *"Take whats next on the ontology roadmap"*; branch
   `claude/on-10-framing`). **What exists:** `aughor.ontology.framing` — pure: no model, no store, no warehouse.
   `frame_question(question, graph, synonyms, hops)` matches the question's words (a small deterministic stemmer; a longer
@@ -4860,6 +4860,38 @@ generator may later grow realistic dispatch lags so the demo pack can host the q
 item 18). **Open for the user — §6 item 18:** the scope key for ON-8; whether Shipment and
 Payment are PARTS of Order (today bound as static 1:1 sources) or entities with a link; Olist
 first against enriching the Lux generator.
+
+
+### 3.16 · Arc UI — Instrument, the design system (adopted 2026-09-13 — §6 item 19; **FIRST PASS BUILT** the same day)
+
+> **Origin.** The user, 2026-09-13: *"Lets scoop up a UI overhaul.."*, handing off the Claude Design project
+> "Aughor Design System" (`Aughor Design System.dc.html`: tokens dark and light, type, components, the shell dark
+> and light, the four universal states, the trust system, motion, icons and density). The spec in this codebase's
+> names, with everything adoption decided, is **`web/aughor-v2/INSTRUMENT.md`** — read that, not this summary.
+
+**The thesis.** Aughor's product is a claim about a number, and the interface's whole job is to make that claim
+checkable at a glance: one warm monochrome plane, hairlines for structure, colour as a data type, three things
+that float (popover, toast, dialog), no spinners, and motion only where it explains a state change.
+
+**First pass — built on branch `claude/instrument-overhaul`, 2026-09-13.** The scope was the user's call before a
+line was written (§6 item 19a): tokens, type, motion, the primitives and the shell chrome — no new features.
+- **Tokens.** `aughor-v2/theme/tokens-v2.css` is the Instrument set: 41 values per theme, aliases as real `var()`s,
+  motion `--dur-1/2/3` with the older names pointed at them. The v2 `elevation-motion.css` (glass, lift, spring) and
+  `components-v2.css` (a second component layer) were folded into `app/globals.css` and deleted.
+- **Components.** The `.aug-*` layer rewritten to the component sheet; `components/ui/*` redrawn (button, badge,
+  input, textarea, select, tabs, tooltip, dialog, card, table, progress, scroll-area, separator, empty-state,
+  motion, toast, MiniStat) and `StatusChip` with them.
+- **Shell.** Wordmark, workspace switcher, ⌘K field and user menu in the 48px topbar; a 248px rail of 22px items
+  with one `--blue3` active bar; 44px content headers; every workspace layer switcher segmented.
+- **Sweeps.** 22 spinners became the ◐ pending mark or skeleton rows; card and node shadows removed (floats keep
+  the token shadow); 491 text colours moved `--t4 → --t3` (§6 item 19c).
+- **Palette.** `lint:palette` learned to resolve `var()` aliases; the charts are the intent hues, four of them
+  moved the minimum the validator needed (§6 item 19b); the chart SSR bundle was rebuilt.
+
+**Not built yet — the rest of the spec** (INSTRUMENT.md §9): the topbar LIVE activity strip, the topbar theme
+toggle, the Human / Agent / Substrate switcher and nav badge counts; the trust system as shared primitives (guard
+chip, receipt chain, confidence, citation, why-this-number, refusal); error and partial as primitives; and the
+~30 components that still carry raw hexes.
 
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
@@ -5529,6 +5561,8 @@ the browser** · **measure the premise before building.**
 > arrived and was decided in the user's own sentence. Item 16 is still the only one open.
 > **Amended 2026-09-12 (later):** item 18 (the second movement's three shape questions) arrived with
 > the movement's adoption and is **OPEN, with recommendations** — none blocks ON-7. Two open: 16, 18.
+> **Amended 2026-09-13:** item 19 (Instrument, the design system) arrived with the Claude Design handoff; its
+> three questions were asked before the build began and decided the same turn. Still two open: 16, 18.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -5735,6 +5769,21 @@ the browser** · **measure the premise before building.**
     dispatch lags so the demo pack can host the question. *Recommended: Olist first — no generator change,
     real data; the pack enrichment follows as its own small, deterministic change so the demo can tell the
     story.*
+
+
+19. ✅ **DECIDED 2026-09-13 — Instrument (§3.16): what the first pass covers, and the two places the design met a
+    measurement.** Asked before a line was written, because each answer changed the build.
+    **(a) Scope** — tokens, type, motion, the primitives and the shell chrome; no new features (not the activity
+    strip or the Human / Agent / Substrate switcher, not the trust system as primitives).
+    **(b) The design's chart hues failed `lint:palette`** — dark: the lightness band on three hues, the chroma floor,
+    and the normal-vision floor at ΔE 15.0 between green and blue; light: the chroma floor; and `--chart-7 =
+    --chart-3` fails the separation that keeps the automation canvas's seven kinds apart. *Adjust the hues to pass*:
+    charts stay the intent hues, each failing hue moves the minimum the validator needs (the largest, dark amber,
+    ΔE 4.3), and `--chart-7` stays a separately validated accent.
+    **(c) The design's `--t3`/`--t4` are dimmer than the ramp they replace** (dark t4 from about 3.7:1 to 2.8:1) while
+    `--t4` was a text colour in 425 places. *Take the design's ramp and move every text colour off `--t4` to `--t3`*;
+    `--t4` keeps ticks and rules. The content-side fix the user chose for Agent Ops on 2026-08-22, made platform-wide.
+    All three recommendations were taken as written.
 
 ---
 

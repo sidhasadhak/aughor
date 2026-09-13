@@ -217,12 +217,12 @@ export function MemoryPanel() {
 // ── PX-4 · trusted-query governance (the write half) ─────────────────────────
 
 const STATUS_COLOR: Record<string, string> = {
-  draft: "var(--t4)", proposed: "var(--blue4)", approved: "var(--grn4)",
-  rejected: "var(--t4)", deprecated: "var(--t4)",
+  draft: "var(--t3)", proposed: "var(--blue4)", approved: "var(--grn4)",
+  rejected: "var(--t3)", deprecated: "var(--t3)",
 };
 
 function StatusChip({ status }: { status: string }) {
-  const color = STATUS_COLOR[status] ?? "var(--t4)";
+  const color = STATUS_COLOR[status] ?? "var(--t3)";
   return (
     <span className="aug-fs-xs" style={{ color,
       border: `1px solid color-mix(in srgb, ${color} 45%, transparent)`,
@@ -283,7 +283,7 @@ function TrustedGovernance({ rows, onChanged }: {
                 overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                 {q.question}
               </span>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", whiteSpace: "nowrap" }}>
                 {q.connection_id} · v{q.version}
               </span>
               <Button variant="ghost" size="xs" className="h-auto px-1 py-0.5 aug-fs-xs font-normal"
@@ -397,7 +397,7 @@ function SeedTrustedForm({ onDone }: { onDone: () => void }) {
           onClick={seed} data-testid="tq-seed-submit">
           {busy ? "Verifying…" : "Seed — it is executed and guarded now"}
         </Button>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           Passing lands it <em>proposed</em>; failing lands a draft with the report. Nothing
           reaches a prompt until a person approves.
         </span>
@@ -454,7 +454,7 @@ function DatasetInspector({ kinds }: { kinds: string[] }) {
   return (
     <div style={{ marginTop: 10 }}>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>Inspect a corpus:</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>Inspect a corpus:</span>
         {kinds.map(k => (
           <Button key={k} size="xs" variant={name === k ? "secondary" : "ghost"} onClick={() => inspect(k)}>
             {k}
@@ -462,7 +462,7 @@ function DatasetInspector({ kinds }: { kinds: string[] }) {
         ))}
       </div>
       {name && state === "missing" && (
-        <p className="aug-fs-xs" style={{ color: "var(--t4)", margin: "6px 0 0" }}>
+        <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "6px 0 0" }}>
           No exported version of “{name}” yet — press “Export now” above once the corpus has rows.
         </p>
       )}
@@ -472,12 +472,12 @@ function DatasetInspector({ kinds }: { kinds: string[] }) {
           <div style={{ display: "grid", gridTemplateColumns: "auto 1fr", gap: "3px 12px" }}>
             {Object.entries(detail).filter(([, v]) => typeof v !== "object" || v === null).map(([k, v]) => (
               <React.Fragment key={k}>
-                <span style={{ color: "var(--t4)" }}>{k}</span>
+                <span style={{ color: "var(--t3)" }}>{k}</span>
                 <span style={{ color: "var(--t2)", fontFamily: "var(--font-mono)", wordBreak: "break-all" }}>{String(v)}</span>
               </React.Fragment>
             ))}
           </div>
-          <p style={{ color: "var(--t4)", margin: "6px 0 0" }}>
+          <p style={{ color: "var(--t3)", margin: "6px 0 0" }}>
             Provenance: {compactNumber(lineage.length)} lineage record{lineage.length === 1 ? "" : "s"} —
             the verdicts that fed this version, the question MI-4 owes about any adapter it promotes.
           </p>

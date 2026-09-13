@@ -235,10 +235,10 @@ export function ActionHubPanel() {
             }}>
               {v.charAt(0).toUpperCase() + v.slice(1)}
               {v === "triggers" && triggers.length > 0 && (
-                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t4)" }}>{triggers.length}</span>
+                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t3)" }}>{triggers.length}</span>
               )}
               {v === "logs" && logs.length > 0 && (
-                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t4)" }}>{logs.length}</span>
+                <span style={{ marginLeft: 5, fontSize: 11, color: "var(--t3)" }}>{logs.length}</span>
               )}
             </button>
           ))}
@@ -276,7 +276,7 @@ export function ActionHubPanel() {
           triggers.length === 0 && !showForm ? (
             <div style={{ padding: "48px 0", textAlign: "center" }}>
               <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 8 }}>No action triggers configured.</div>
-              <div style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.6, maxWidth: 340, margin: "0 auto" }}>
+              <div style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.6, maxWidth: 340, margin: "0 auto" }}>
                 Create a trigger to fire webhooks, Slack messages, or Jira tickets when you action a deep analysis recommendation.
               </div>
             </div>
@@ -301,7 +301,7 @@ export function ActionHubPanel() {
                   {/* Name + URL */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>{t.name}</div>
-                    <div style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {t.url.slice(0, 60)}{t.url.length > 60 ? "…" : ""}
                     </div>
                   </div>

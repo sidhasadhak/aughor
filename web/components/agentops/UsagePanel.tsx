@@ -121,7 +121,7 @@ export function UsagePanel({ range, onBrush, onOpenEvents }: {
                 title={off ? `Show ${s.label}` : `Hide ${s.label}`}
                 style={{
                   display: "inline-flex", alignItems: "center", gap: 6, height: "auto",
-                  padding: "3px 8px", borderRadius: "var(--r-pill)",
+                  padding: "3px 8px", borderRadius: "var(--r-chip)",
                   border: "1px solid var(--b2)", background: "var(--bg-3)",
                   color: "var(--t1)", fontSize: 12, opacity: off ? 0.45 : 1,
                   textDecoration: off ? "line-through" : "none",

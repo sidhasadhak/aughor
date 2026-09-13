@@ -191,7 +191,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
               border: "1px solid var(--b2)", borderRadius: "var(--r2)",
               padding: "0 12px", height: 40, background: "var(--bg-0)",
             }}>
-              <Icon name={SEARCH_ICON} size={14} color="var(--t4)" />
+              <Icon name={SEARCH_ICON} size={14} color="var(--t3)" />
               <input
                 placeholder="Search"
                 value={search}
@@ -228,7 +228,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
             </button>
             {selectedConn && (
               <>
-                <span style={{ color: "var(--t4)" }}>›</span>
+                <span style={{ color: "var(--t3)" }}>›</span>
                 <span style={{ color: "var(--t1)", fontWeight: 600 }}>{selectedConn.name}</span>
               </>
             )}
@@ -240,7 +240,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
           {!connId ? (
             // ── Catalog: choose a connection ──
             connections.length === 0 ? (
-              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
+              <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t3)" }}>
                 No connections available.
               </div>
             ) : (
@@ -258,13 +258,13 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                 >
                   <Icon name={DB_ICON} size={17} color="var(--blue4)" />
                   <span style={{ flex: 1, fontSize: 15, color: "var(--t1)" }}>{c.name}</span>
-                  <span style={{ fontSize: 11, color: "var(--t4)" }}>{connLabel(c)}</span>
-                  <Icon name={CHEVR_ICON} size={14} color="var(--t4)" />
+                  <span style={{ fontSize: 11, color: "var(--t3)" }}>{connLabel(c)}</span>
+                  <Icon name={CHEVR_ICON} size={14} color="var(--t3)" />
                 </button>
               ))
             )
           ) : loadingTables ? (
-            <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
+            <div style={{ padding: "32px 0", textAlign: "center", fontSize: 13, color: "var(--t3)" }}>
               Loading tables…
             </div>
           ) : (
@@ -285,11 +285,11 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
                 <Checkbox checked={selection?.kind === "all"} />
                 <Icon name={TABLE_ICON} size={15} color="var(--grn4)" />
                 <span style={{ flex: 1, fontSize: 15, color: "var(--t1)", fontWeight: 500 }}>All tables</span>
-                <span style={{ fontSize: 11, color: "var(--t4)" }}>auto-includes new tables</span>
+                <span style={{ fontSize: 11, color: "var(--t3)" }}>auto-includes new tables</span>
               </button>
 
               {filteredTables.length === 0 ? (
-                <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: "var(--t4)" }}>
+                <div style={{ padding: "24px 0", textAlign: "center", fontSize: 13, color: "var(--t3)" }}>
                   {search ? "No matching tables" : "No tables found"}
                 </div>
               ) : (
@@ -337,7 +337,7 @@ export function CanvasCreator({ connections, onCreated, onCancel }: Props) {
               <Chip key={t} label={t} mono onRemove={() => toggleTable(t)} />
             ))}
             {selection?.kind === "tables" && selectedTablesList.length > 4 && (
-              <span style={{ fontSize: 12, color: "var(--t4)" }}>+{selectedTablesList.length - 4} more</span>
+              <span style={{ fontSize: 12, color: "var(--t3)" }}>+{selectedTablesList.length - 4} more</span>
             )}
           </div>
 

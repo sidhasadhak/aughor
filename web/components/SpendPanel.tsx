@@ -38,7 +38,7 @@ function SectionTitle({ children, sub }: { children: React.ReactNode; sub?: stri
   return (
     <div style={{ display: "flex", alignItems: "baseline", gap: 10, margin: "22px 0 8px" }}>
       <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t1)" }}>{children}</span>
-      {sub && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{sub}</span>}
+      {sub && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{sub}</span>}
     </div>
   );
 }
@@ -141,7 +141,7 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
               </span>
               <span style={{ flex: 1 }} />
               <CapMeter cap={c} />
-              {c.set_by && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>set by {c.set_by}</span>}
+              {c.set_by && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>set by {c.set_by}</span>}
               <Button size="xs" variant="ghost" disabled={busy} onClick={() => remove(c)}
                 data-testid={`cap-remove-${c.scope}-${c.metric}`}>
                 <Icon name="trash" size={12} /> Remove
@@ -179,7 +179,7 @@ function CapsSection({ onCount }: { onCount: (n: number) => void }) {
           Declare the cap
         </Button>
         {loaded && caps.length === 0 && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", flexBasis: "100%" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", flexBasis: "100%" }}>
             “alert” records a breach in the governance feed; “block” refuses new work with
             a sentence that names the number.
           </span>
@@ -200,7 +200,7 @@ function UsageSection({ report, models }: { report: UsageReport | null; models: 
       .catch(() => setShare(undefined));
   }, []);
 
-  if (!report) return <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Reading the usage rollup…</p>;
+  if (!report) return <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the usage rollup…</p>;
 
   const rows = [...report.rows].sort((a, b) => b.total_tokens - a.total_tokens).slice(0, 20);
   return (
@@ -211,7 +211,7 @@ function UsageSection({ report, models }: { report: UsageReport | null; models: 
         Usage by provider &amp; model
       </SectionTitle>
       {typeof share === "number" && (
-        <p className="aug-fs-xs" style={{ color: "var(--t4)", margin: "0 0 8px" }}>
+        <p className="aug-fs-xs" style={{ color: "var(--t3)", margin: "0 0 8px" }}>
           Route mix: {pct(share)} of finished ask turns were served conversationally.
         </p>
       )}
@@ -302,7 +302,7 @@ function FeedRow({ ev }: { ev: AuditFeedEvent }) {
       <tr style={{ borderBottom: "1px solid var(--b0)", cursor: hasDetail ? "pointer" : "default" }}
         onClick={() => hasDetail && setOpen(o => !o)}
         data-testid="governance-feed-row">
-        <td style={{ ...cell, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+        <td style={{ ...cell, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
           {formatTimestamp(ev.at, "short")}
         </td>
         <td style={cell}>
@@ -315,7 +315,7 @@ function FeedRow({ ev }: { ev: AuditFeedEvent }) {
         <td style={{ ...cell, color: "var(--t3)" }}>{ev.actor || "—"}</td>
         <td style={{ ...cell, color: "var(--t2)", whiteSpace: "normal" }}>
           <span style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-            <span style={{ color: "var(--t4)", width: 11, flexShrink: 0 }}>
+            <span style={{ color: "var(--t3)", width: 11, flexShrink: 0 }}>
               {hasDetail && <Icon name={open ? "chevd" : "chevr"} size={11} />}
             </span>
             {ev.summary || ev.kind}
@@ -433,7 +433,7 @@ function FeedSection() {
           </Button>
         )}
         <span style={{ flex: 1 }} />
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }} data-testid="feed-count">
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }} data-testid="feed-count">
           {filtered
             ? `${compactNumber(rows.length)} of ${compactNumber(events.length)} events`
             : countNoun(rows.length, "event")}
@@ -444,7 +444,7 @@ function FeedSection() {
       </div>
 
       {err && <p className="aug-fs-sm" style={{ color: "var(--red4)" }}>{err}</p>}
-      {!err && loading && <p className="aug-fs-sm" style={{ color: "var(--t4)" }}>Reading the audit sinks…</p>}
+      {!err && loading && <p className="aug-fs-sm" style={{ color: "var(--t3)" }}>Reading the audit sinks…</p>}
       {!err && !loading && rows.length === 0 && (
         <EmptyState variant="inline"
           title={events.length === 0
@@ -508,7 +508,7 @@ function Headline({ value, label, tone }: { value: string; label: string; tone?:
     <div style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
       <span className="aug-fs-h1" style={{ fontWeight: 600, color: tone ?? "var(--t1)",
         fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" }}>{value}</span>
-      <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>{label}</span>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{label}</span>
     </div>
   );
 }

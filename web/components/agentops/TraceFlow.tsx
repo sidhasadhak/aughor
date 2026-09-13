@@ -470,7 +470,7 @@ function clockOf(at: string | null | undefined): string {
 function DetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-      <span style={{ color: "var(--t4)", flexShrink: 0 }}>{label}</span>
+      <span style={{ color: "var(--t3)", flexShrink: 0 }}>{label}</span>
       <span style={{ color: "var(--t2)", textAlign: "right", overflowWrap: "anywhere" }}>{value}</span>
     </div>
   );
@@ -628,7 +628,6 @@ function NodeCard({ data }: { data: CardData }) {
         borderRadius: "var(--r-chip)",
         overflow: "hidden",
         opacity: quiet ? 0.82 : 1,
-        boxShadow: selected ? "var(--shadow-md)" : undefined,
       }}
     >
       {/* A custom node needs handles or its edges have nothing to anchor to and simply
@@ -704,14 +703,14 @@ function NodeCard({ data }: { data: CardData }) {
 
               {payload ? (
                 <>
-                  <span style={{ color: "var(--t4)", marginTop: 4 }}>Payload</span>
+                  <span style={{ color: "var(--t3)", marginTop: 4 }}>Payload</span>
                   <pre style={{
                     margin: 0, whiteSpace: "pre-wrap", overflowWrap: "anywhere",
                     color: "var(--t2)", fontFamily: "var(--font-mono)",
                   }}>{payload}</pre>
                 </>
               ) : (
-                <span style={{ color: "var(--t4)", marginTop: 4 }}>
+                <span style={{ color: "var(--t3)", marginTop: 4 }}>
                   This row carries no payload.
                 </span>
               )}
@@ -719,13 +718,13 @@ function NodeCard({ data }: { data: CardData }) {
               {event.content_captured === false && (
                 // Absence with a reason. "No prompt here" and "prompt capture was off"
                 // call for different responses, and only one of them is a bug.
-                <span style={{ color: "var(--t4)" }}>
+                <span style={{ color: "var(--t3)" }}>
                   Prompt content was not captured for this run (obs.prompt_capture was off).
                 </span>
               )}
             </div>
           ) : (
-            <span style={{ color: "var(--t4)" }}>
+            <span style={{ color: "var(--t3)" }}>
               No stored row matched this node, so there is nothing further to show.
             </span>
           )}
@@ -787,7 +786,7 @@ function BandCard({ data }: { data: BandData }) {
           aria-hidden
           style={{
             position: "absolute", top: -7, right: -7,
-            padding: "1px 7px", borderRadius: "var(--r-pill)",
+            padding: "1px 7px", borderRadius: "var(--r-chip)",
             background: "var(--bg-1)", border: `1px solid ${accent}`, color: accent,
           }}
           className="aug-fs-xs">
@@ -805,7 +804,7 @@ const NODE_TYPES = { traceNode: NodeCard, bandNode: BandCard };
 function RailSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ borderTop: "1px solid var(--b1)", padding: "7px 10px" }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", letterSpacing: "0.06em",
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", letterSpacing: "0.06em",
         textTransform: "uppercase", marginBottom: 3 }}>{title}</div>
       {children}
     </div>
@@ -897,7 +896,7 @@ function TimelineRail({ timeline, nodes, origin, selectedId, onSelect }: {
               <span style={{ flex: 1, minWidth: 0, overflow: "hidden",
                 textOverflow: "ellipsis", whiteSpace: "nowrap",
                 color: active ? "var(--t1)" : "var(--t2)" }}>{n.name}</span>
-              <span style={{ color: "var(--t4)", flexShrink: 0,
+              <span style={{ color: "var(--t3)", flexShrink: 0,
                 fontVariantNumeric: "tabular-nums" }}>
                 {n.duration_ms == null ? "" : ms(n.duration_ms)}
               </span>
@@ -1225,7 +1224,7 @@ export function TraceFlow({
           <div style={{ display: "flex", alignItems: "center", gap: 4,
             marginLeft: hiddenGuardrails > 0 || showGuardrails ? undefined : "auto" }}>
             {grouped && foldedAway > 0 && (
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 {formatCount(foldedAway)} repeats folded
               </span>
             )}

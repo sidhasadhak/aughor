@@ -667,7 +667,7 @@ function Section({
 function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onDeeper?: () => void }) {
   return (
     <div style={{ display: "flex", flexDirection: "column" as const, gap: 14 }}>
-      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
+      <div style={{ display: "inline-flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t3)", textTransform: "uppercase" as const, letterSpacing: ".06em" }}>
         <span>Trace · derived during exploration — instant, no re-run</span>
       </div>
       {dossier.finding && (
@@ -676,14 +676,14 @@ function DossierReportView({ dossier, onDeeper }: { dossier: FindingDossier; onD
       <DossierTrace dossier={dossier} />
       {dossier.sql && (
         <div>
-          <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
+          <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase" as const, letterSpacing: ".06em", marginBottom: 6 }}>Source query</div>
           <pre style={{ margin: 0, padding: "12px 14px", borderRadius: "var(--r2)", background: "var(--bg-2)", border: "1px solid var(--b1)", fontSize: 12, fontFamily: "var(--font-code)", color: "var(--t2)", whiteSpace: "pre-wrap" as const, wordBreak: "break-word" as const, lineHeight: 1.55 }}>{dossier.sql}</pre>
         </div>
       )}
       {onDeeper && (
         <div style={{ display: "flex", alignItems: "center", gap: 10, paddingTop: 2 }}>
           <Button variant="secondary" size="sm" onClick={onDeeper} className="aug-fs-sm border-[var(--b2)]">Investigate deeper →</Button>
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>Runs a fresh analysis, seeded with this trace.</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>Runs a fresh analysis, seeded with this trace.</span>
         </div>
       )}
     </div>

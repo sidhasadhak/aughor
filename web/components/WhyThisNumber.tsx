@@ -65,11 +65,11 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
     <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
       {groups.map((g) => (
         <div key={g.reason} style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>{REASON_TITLE[g.reason]}</div>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{REASON_TITLE[g.reason]}</div>
           {g.nodes.map((n) => (
             <div key={n.id} style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
               <span className="aug-fs-xs" style={{
-                color: n.present ? "var(--t1)" : "var(--t4)",
+                color: n.present ? "var(--t1)" : "var(--t3)",
                 textDecoration: n.present ? "none" : "line-through",
               }}>
                 {n.label}
@@ -87,7 +87,7 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
 
       {trace.edges.length > 0 && (
         <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-          <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>How they connect</div>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>How they connect</div>
           {trace.edges.map((e) => {
             const from = trace.nodes.find((n) => n.id === e.from_id);
             const to = trace.nodes.find((n) => n.id === e.to_id);
@@ -96,7 +96,7 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
                 <span className="aug-fs-xs" style={{ color: "var(--t2)" }}>
                   {from?.label ?? e.from_id} → {to?.label ?? e.to_id}
                 </span>
-                <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{e.label || e.kind.replace(/_/g, " ")}</span>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{e.label || e.kind.replace(/_/g, " ")}</span>
                 <WarrantChip warrant={e.warrant} showDetail />
               </div>
             );
@@ -110,7 +110,7 @@ function GroundingWalk({ trace }: { trace: AnswerTrace }) {
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>{title}</div>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>{title}</div>
       {children}
     </div>
   );
@@ -246,7 +246,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
                         <div key={`g:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                             <StatusChip hue={t.hue} strength="soft">{g.name.replace(/_/g, " ")}</StatusChip>
-                            <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{t.verb}</span>
+                            <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{t.verb}</span>
                           </div>
                           {g.caveat && <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{g.caveat}</div>}
                         </div>
@@ -258,7 +258,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
 
               {trusted.length > 0 && (
                 <Section title={`Trusted patterns in scope (${trusted.length})`}>
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
                     Verified query patterns for this connection were put in front of the model
                     for this question. That is what the model was shown — not proof that this
                     answer reused one.
@@ -272,7 +272,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
                         {/* The promoter's own warrant sentence, verbatim — it is what
                             separates consistency-verified from human-checked. */}
                         {t.caveat && (
-                          <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                          <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
                             {t.caveat}
                           </div>
                         )}
@@ -284,7 +284,7 @@ function Drawer({ receiptId, preloaded, onClose }: {
 
               {rec.resolved_readings.length > 0 && (
                 <Section title="Readings this connection already settled">
-                  <div className="aug-fs-xs" style={{ color: "var(--t4)", lineHeight: 1.5 }}>
+                  <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
                     Applied so this question does not re-ask what was decided before.
                   </div>
                   {rec.resolved_readings.map((r, i) => (
@@ -392,8 +392,8 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 )}
                 {rec.model.id && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Model: {rec.model.id} ({rec.model.role})</div>}
                 {costSummary(rec.cost) && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Cost: {costSummary(rec.cost)}</div>}
-                {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
-                <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
+                {rec.created_at && <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Recorded {formatTimestamp(rec.created_at)}</div>}
+                <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Receipt {rec.id} · server-signed (HMAC)</div>
                 {/* E6 — capture this exact question + executed SQL as an eval case. Moved
                     here from the older per-mode panel, which was the only place it lived. */}
                 {rec.connection.id && rec.executed_sql[0]?.sql && (
@@ -488,7 +488,7 @@ export function WhyThisNumber({ receiptId }: { receiptId: string }) {
   return (
     <>
       <div style={{ display: "flex", alignItems: "center", gap: 5, flexWrap: "wrap", marginTop: 6 }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>receipt</span>
         {rec && <GlanceChips rec={rec} />}
         <Button size="xs" variant="ghost" onClick={() => setOpen(true)}
           style={{ color: "var(--t3)" }} aria-label="Why this number — open the Trust Receipt">

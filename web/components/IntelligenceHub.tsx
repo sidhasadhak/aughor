@@ -99,7 +99,7 @@ function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: Actio
               {insight.entities_involved?.map(e => (
                 <span key={e} style={{ fontSize: 11, color: "var(--blue4)", background: "color-mix(in srgb, var(--blue4) 10%, transparent)", borderRadius: 3, padding: "1px 6px" }}>{e}</span>
               ))}
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>
                 confidence {Math.round((insight.confidence ?? 0) * 100)}% · {fmtDate(insight.generated_at)}
               </span>
             </div>
@@ -113,7 +113,7 @@ function InsightRow({ insight, ctx }: { insight: ExplorationInsight; ctx?: Actio
             </div>
           )}
         </div>
-        <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0 }}>
           {expanded ? "▲" : "▼"}
         </span>
       </div>
@@ -180,14 +180,14 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
             novelty {pattern.novelty}
           </span>
         </div>
-        <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0, marginTop: 1 }}>{expanded ? "▲" : "▼"}</span>
+        <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0, marginTop: 1 }}>{expanded ? "▲" : "▼"}</span>
       </button>
 
       {expanded && (
         <div style={{ borderTop: "1px solid var(--b0)", padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
           {/* Domains */}
           <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: "var(--t4)" }}>Domains:</span>
+            <span style={{ fontSize: 11, color: "var(--t3)" }}>Domains:</span>
             {pattern.domains.map(d => (
               <span key={d} style={{
                 fontSize: 11, padding: "1px 7px", borderRadius: 3,
@@ -203,7 +203,7 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
           {/* Entities */}
           {pattern.entities.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>Entities:</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>Entities:</span>
               {pattern.entities.slice(0, 8).map(e => (
                 <span key={e} style={{
                   fontSize: 11, padding: "1px 6px", borderRadius: 3,
@@ -217,7 +217,7 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
           {/* Angles (for entity patterns) */}
           {pattern.angles && pattern.angles.length > 0 && (
             <div style={{ display: "flex", flexWrap: "wrap", gap: 5, alignItems: "center" }}>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>Angles:</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>Angles:</span>
               {pattern.angles.map(a => (
                 <span key={a} style={{ fontSize: 11, padding: "1px 6px", borderRadius: 3, background: "color-mix(in srgb, var(--blue3) 10%, transparent)", color: "var(--blue4)" }}>{a}</span>
               ))}
@@ -226,7 +226,7 @@ function PatternCard({ pattern, domainFilter }: { pattern: Pattern; domainFilter
 
           {/* Example findings */}
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
-            <span style={{ fontSize: 11, color: "var(--t4)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Example findings</span>
+            <span style={{ fontSize: 11, color: "var(--t3)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.06em" }}>Example findings</span>
             {pattern.example_findings.filter(Boolean).map((f, i) => (
               <div key={i} style={{
                 fontSize: 11, color: "var(--t2)", lineHeight: 1.55,
@@ -308,7 +308,7 @@ function PatternsTab({
           onClick={() => load(true)}
           disabled={refreshing}
           style={{
-            fontSize: 11, color: refreshing ? "var(--t4)" : "var(--t3)",
+            fontSize: 11, color: refreshing ? "var(--t3)" : "var(--t3)",
             background: "none", border: "1px solid var(--b1)", borderRadius: 4,
             padding: "3px 8px", cursor: refreshing ? "default" : "pointer",
           }}
@@ -521,7 +521,7 @@ function DomainProfile({
                     <span style={{ marginLeft: "auto", fontSize: 11, color: nov.color, fontWeight: 600 }}>{nov.label} novelty</span>
                   </div>
                   <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{o.text}</p>
-                  <span style={{ fontSize: 11, color: "var(--t4)" }}>Promoted {fmtDate(o.promoted_at)}</span>
+                  <span style={{ fontSize: 11, color: "var(--t3)" }}>Promoted {fmtDate(o.promoted_at)}</span>
                 </div>
               );
             })}
@@ -624,7 +624,7 @@ function SectionHead({ title, count, action }: { title: string; count?: number |
         {title}
       </span>
       {count != null && (
-        <span style={{ fontSize: 11, color: "var(--t4)" }}>{count}</span>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>{count}</span>
       )}
       {action && <span style={{ marginLeft: "auto" }}>{action}</span>}
     </div>
@@ -656,7 +656,7 @@ function HeadlineFinding({ insight, onOpen }: { insight: ExplorationInsight; onO
         {insight.promoted_to_org && (
           <span title="Promoted to org knowledge" style={{ fontSize: 11, color: "var(--vio3)" }}>◈</span>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>{fmtDate(insight.generated_at)}</span>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>{fmtDate(insight.generated_at)}</span>
       </div>
       <p style={{
         margin: 0, fontSize: 12, color: "var(--t1)", lineHeight: 1.55,
@@ -794,7 +794,7 @@ function SynthesisHome({
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     {o.domain && <span style={{ fontSize: 11, fontWeight: 600, color: "var(--vio3)", textTransform: "capitalize" }}>{o.domain}</span>}
-                    {o.angle && <span style={{ fontSize: 11, color: "var(--t4)" }}>· {o.angle}</span>}
+                    {o.angle && <span style={{ fontSize: 11, color: "var(--t3)" }}>· {o.angle}</span>}
                     <span style={{ marginLeft: "auto", fontSize: 11, color: nov.color, fontWeight: 600 }}>{nov.label}</span>
                   </div>
                   <p style={{ margin: 0, fontSize: 12, color: "var(--t2)", lineHeight: 1.55 }}>{o.text}</p>
@@ -953,7 +953,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
           >
             <span style={{ fontSize: 11 }}>◈</span>
             <span>Hub Home</span>
-            <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>{Object.keys(domainData).length}</span>
+            <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>{Object.keys(domainData).length}</span>
           </button>
           ); })()}
 
@@ -1002,7 +1002,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
                 onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = "transparent"; }}
               >
                 <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: "capitalize" }}>{domain}</span>
-                <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>{d.insights.length}</span>
+                <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0 }}>{d.insights.length}</span>
                 {orgCount > 0 && (
                   <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--vio3)", flexShrink: 0 }} />
                 )}

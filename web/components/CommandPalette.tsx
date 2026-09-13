@@ -549,7 +549,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
           <>
             <div ref={spotScrollRef} style={{ maxHeight: 400, minHeight: 140, overflowY: "auto", padding: "12px 14px" }}>
               {spotTurns.length === 0 ? (
-                <div className="aug-fs-sm" style={{ color: "var(--t4)", lineHeight: 1.6 }}>
+                <div className="aug-fs-sm" style={{ color: "var(--t3)", lineHeight: 1.6 }}>
                   Asking Spotlight…
                 </div>
               ) : (
@@ -605,7 +605,7 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
             grouped.map(({ type, items }) => (
               <div key={type}>
                 {/* Section header */}
-                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t4)", borderTop: "1px solid var(--b0)" }}>
+                <div style={{ padding: "8px 14px 4px", fontSize: 11, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--t3)", borderTop: "1px solid var(--b0)" }}>
                   {SECTION_LABELS[type]}
                 </div>
 
@@ -678,10 +678,10 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
           ).map(([k, l]) => (
             <span key={k} style={{ display: "flex", alignItems: "center", gap: 4 }}>
               <kbd style={{ fontSize: 11, padding: "1px 5px", background: "var(--bg-3)", border: "1px solid var(--b2)", borderRadius: 2, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>{k}</kbd>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>{l}</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>{l}</span>
             </span>
           ))}
-          <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>
+          <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>
             {mode === "spotlight"
               ? (streaming ? "answering…" : "grounded by tool calls")
               : `${shownResults.length} result${shownResults.length !== 1 ? "s" : ""}`}

@@ -1,4 +1,5 @@
 "use client";
+import { Pending } from "@/components/ui/motion";
 
 /**
  * FL-5 — the deep run's wait, composed as ONE in-place progress card.
@@ -45,10 +46,7 @@ export function RunProgressCard({ turn, children }: { turn: ChatTurn; children?:
   return (
     <div className="my-1 max-w-[460px] rounded-[var(--r3)] border border-zinc-800 bg-zinc-900/60 px-3.5 py-3">
       <div className="flex items-center gap-2.5 aug-fs-sm text-zinc-400">
-        <span
-          aria-hidden="true"
-          className="h-3 w-3 flex-none rounded-[var(--r-pill)] border-[1.5px] border-zinc-700 border-t-[var(--blue3)] animate-spin motion-reduce:animate-none"
-        />
+        <Pending />
         <span>{turn.statusText || "Working…"}</span>
       </div>
       {bar && bar.total > 0 && (

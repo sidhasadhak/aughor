@@ -130,7 +130,7 @@ function AgentCell({ hypothesisId }: { hypothesisId: string }) {
   return (
     <span title={hypothesisId} style={{ whiteSpace: "nowrap" }}>
       <span style={{ color: "var(--t2)", fontWeight: 500 }}>{agent}</span>
-      {detail && <span style={{ fontSize: 11, color: "var(--t4)", marginLeft: 5 }}>{detail}</span>}
+      {detail && <span style={{ fontSize: 11, color: "var(--t3)", marginLeft: 5 }}>{detail}</span>}
     </span>
   );
 }
@@ -411,8 +411,8 @@ function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => v
 
 // ── Action approvals (P4) — the graduated-approval audit trail + allowlist ──────
 const _DECISION_COLOR: Record<string, string> = {
-  blocked: "#f87171", approved: "#60a5fa", auto: "var(--t4)",
-  allowlisted: "#4ade80", revoked: "#fbbf24",
+  blocked: "var(--red4)", approved: "var(--blue4)", auto: "var(--t3)",
+  allowlisted: "var(--grn4)", revoked: "var(--amb4)",
 };
 
 function ActionApprovalsSection() {
@@ -446,7 +446,7 @@ function ActionApprovalsSection() {
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--bg-3)", borderRadius: 6, padding: "14px 16px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
         <span style={{ fontSize: 12, fontWeight: 600, color: "var(--t2)" }}>Action approvals</span>
-        <span style={{ fontSize: 11, color: "var(--t4)" }}>graduated approval + audit</span>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>graduated approval + audit</span>
         <div style={{ flex: 1 }} />
         <button onClick={load} style={{ fontSize: 11, color: "var(--t3)", background: "none",
           border: "1px solid var(--bg-3)", borderRadius: 4, padding: "3px 8px", cursor: "pointer" }}>
@@ -461,17 +461,17 @@ function ActionApprovalsSection() {
       )}
 
       {/* Allowlist — pre-approved high-risk actions (revocable) */}
-      <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
         Allowlist ({allow.length})
       </div>
       {allow.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--t4)", marginBottom: 12 }}>No actions pre-approved.</div>
+        <div style={{ fontSize: 12, color: "var(--t3)", marginBottom: 12 }}>No actions pre-approved.</div>
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 4, marginBottom: 12 }}>
           {allow.map((e, i) => (
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12 }}>
               <code style={{ color: "var(--t2)" }}>{e.action}</code>
-              <span style={{ color: "var(--t4)" }}>@ {e.scope || "*"}</span>
+              <span style={{ color: "var(--t3)" }}>@ {e.scope || "*"}</span>
               <div style={{ flex: 1 }} />
               <button onClick={() => handleRevoke(e)}
                 style={{ fontSize: 11, color: "#fbbf24", background: "none", border: "1px solid var(--bg-3)",
@@ -484,11 +484,11 @@ function ActionApprovalsSection() {
       )}
 
       {/* Audit trail — every high-risk decision, attributed */}
-      <div style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
+      <div style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>
         Audit trail ({audit.length})
       </div>
       {audit.length === 0 ? (
-        <div style={{ fontSize: 12, color: "var(--t4)" }}>
+        <div style={{ fontSize: 12, color: "var(--t3)" }}>
           No high-risk action attempts recorded. (Enable with AUGHOR_ACTION_APPROVAL.)
         </div>
       ) : (
@@ -499,10 +499,10 @@ function ActionApprovalsSection() {
                 {e.decision}
               </span>
               <code style={{ color: "var(--t2)" }}>{e.action}</code>
-              {e.scope && <span style={{ color: "var(--t4)" }}>@ {e.scope}</span>}
+              {e.scope && <span style={{ color: "var(--t3)" }}>@ {e.scope}</span>}
               <div style={{ flex: 1 }} />
-              <span style={{ color: "var(--t4)", fontSize: 11 }}>{e.actor}</span>
-              {e.at && <span style={{ color: "var(--t4)", fontSize: 11 }}>{e.at.slice(0, 19).replace("T", " ")}</span>}
+              <span style={{ color: "var(--t3)", fontSize: 11 }}>{e.actor}</span>
+              {e.at && <span style={{ color: "var(--t3)", fontSize: 11 }}>{e.at.slice(0, 19).replace("T", " ")}</span>}
             </div>
           ))}
         </div>

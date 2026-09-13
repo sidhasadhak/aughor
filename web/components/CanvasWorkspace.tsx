@@ -91,7 +91,7 @@ function CanvasHistory({
 
   if (loading) {
     return (
-      <div style={{ padding: "40px 32px", color: "var(--t4)", fontSize: 12 }}>
+      <div style={{ padding: "40px 32px", color: "var(--t3)", fontSize: 12 }}>
         Loading history…
       </div>
     );
@@ -100,7 +100,7 @@ function CanvasHistory({
   if (items.length === 0) {
     return (
       <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <Icon name="clock" size={28} color="var(--t4)" />
+        <Icon name="clock" size={28} color="var(--t3)" />
         <div style={{ fontSize: 13, color: "var(--t3)" }}>No deep analyses yet in this Data Canvas.</div>
       </div>
     );
@@ -143,12 +143,12 @@ function CanvasHistory({
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
             padding: "1px 6px", borderRadius: 3, fontSize: 11,
-            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
+            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)",
           }}>
-            <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t4)" />
+            <Icon name={kind === "chat" ? "chat" : "process"} size={9} color="var(--t3)" />
             {kind === "chat" ? "Chat" : "Agent"}
           </span>
-          <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {timeAgo(item.started_at)}
           </span>
           <button
@@ -159,11 +159,11 @@ function CanvasHistory({
             style={{
               flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
               alignItems: "center", justifyContent: "center",
-              background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
+              background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)",
               cursor: isRemoving ? "default" : "pointer",
             }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
             <Glyph name="trash" size={13} />
           </button>
@@ -205,7 +205,7 @@ function CanvasCatalog({
         <span style={{ color: "var(--t2)" }}>
           {connection
             ? <><strong style={{ color: "var(--t1)" }}>{connection.name}</strong> {connection.conn_type === "duckdb" ? "· DuckDB" : connection.conn_type === "postgres" ? "· PostgreSQL" : ""}</>
-            : <span style={{ color: "var(--t4)" }}>Unknown connection</span>
+            : <span style={{ color: "var(--t3)" }}>Unknown connection</span>
           }
         </span>
         <span style={{ marginLeft: "auto", color: isFullSchema ? "var(--grn4)" : "var(--blue4)", fontWeight: 500 }}>
@@ -226,7 +226,7 @@ function CanvasCatalog({
               background: "var(--bg-2)", border: "1px solid var(--b1)",
               borderRadius: "var(--r2)",
             }}>
-              <Icon name="table" size={13} color="var(--t4)" />
+              <Icon name="table" size={13} color="var(--t3)" />
               <span style={{ fontSize: 12, color: "var(--t1)", fontFamily: "var(--font-mono)" }}>
                 {table}
               </span>
@@ -284,7 +284,7 @@ function CanvasDocuments({ canvas, onSaved }: {
       <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>Documents</div>
 
       {pinned.length === 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           None pinned. Pinned documents are always in reach here; the rest of the
           library stays searchable.
         </div>
@@ -297,7 +297,7 @@ function CanvasDocuments({ canvas, onSaved }: {
           borderRadius: "var(--r2)", padding: "5px 8px",
         }}>
           <span className="aug-fs-xs" style={{
-            color: doc.missing ? "var(--t4)" : "var(--t2)",
+            color: doc.missing ? "var(--t3)" : "var(--t2)",
             flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
           }}>
             {/* A binding whose document was deleted is SHOWN, not hidden — otherwise a
@@ -311,7 +311,7 @@ function CanvasDocuments({ canvas, onSaved }: {
             className="aug-fs-xs"
             style={{
               background: "none", border: "none", cursor: "pointer",
-              color: "var(--t4)", padding: 0,
+              color: "var(--t3)", padding: 0,
             }}
           >
             Unpin
@@ -340,7 +340,7 @@ function CanvasDocuments({ canvas, onSaved }: {
       )}
 
       {all.length === 0 && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           No documents uploaded yet — add them on the Documents surface.
         </div>
       )}
@@ -468,7 +468,7 @@ function TabPill({
         cursor: "pointer", transition: "all .1s",
       }}
     >
-      <Icon name={icon} size={12} color={active ? "var(--blue4)" : "var(--t4)"} />
+      <Icon name={icon} size={12} color={active ? "var(--blue4)" : "var(--t3)"} />
       {label}
     </button>
   );
@@ -565,7 +565,7 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
 
   if (loading) {
     return (
-      <div style={{ padding: "40px 32px", color: "var(--t4)", fontSize: 12 }}>
+      <div style={{ padding: "40px 32px", color: "var(--t3)", fontSize: 12 }}>
         Loading artifacts…
       </div>
     );
@@ -574,7 +574,7 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
   if (items.length === 0) {
     return (
       <div style={{ padding: "72px 0", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
-        <Icon name="table" size={28} color="var(--t4)" />
+        <Icon name="table" size={28} color="var(--t3)" />
         <div style={{ fontSize: 13, color: "var(--t3)" }}>No artifacts saved yet in this Data Canvas.</div>
       </div>
     );
@@ -599,14 +599,14 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
           <span style={{
             display: "inline-flex", alignItems: "center", gap: 4, flexShrink: 0,
             padding: "1px 6px", borderRadius: 3, fontSize: 11,
-            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t4)",
+            background: "var(--bg-3)", border: "1px solid var(--b1)", color: "var(--t3)",
           }}>
             {item.kind}
           </span>
           <span style={{ flex: 1, fontSize: 12, color: "var(--t1)", lineHeight: 1.4, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
             {item.title}
           </span>
-          <span style={{ fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", flexShrink: 0 }}>
+          <span style={{ fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", flexShrink: 0 }}>
             {item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}
           </span>
           <button
@@ -616,11 +616,11 @@ function ArtifactsPanel({ canvasId }: { canvasId: string }) {
             style={{
               flexShrink: 0, width: 24, height: 24, borderRadius: 4, display: "flex",
               alignItems: "center", justifyContent: "center",
-              background: "transparent", border: "1px solid var(--b1)", color: "var(--t4)",
+              background: "transparent", border: "1px solid var(--b1)", color: "var(--t3)",
               cursor: removing === item.id ? "default" : "pointer",
             }}
             onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--red4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--red4)"; }}
-            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t4)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
+            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"; (e.currentTarget as HTMLButtonElement).style.borderColor = "var(--b1)"; }}
           >
             <Glyph name="trash" size={13} />
           </button>
@@ -739,7 +739,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
           Canvases
         </button>
 
-        <span style={{ color: "var(--t4)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
+        <span style={{ color: "var(--t3)", fontSize: 15, lineHeight: 1, userSelect: "none" }}>/</span>
 
         {/* Canvas icon + name */}
         <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
@@ -751,7 +751,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             border: `1px solid ${canvas.is_legacy ? "var(--b2)" : "color-mix(in srgb, var(--blue3) 35%, transparent)"}`,
             display: "flex", alignItems: "center", justifyContent: "center",
           }}>
-            <Icon name="canvas" size={11} color={canvas.is_legacy ? "var(--t4)" : "var(--blue4)"} />
+            <Icon name="canvas" size={11} color={canvas.is_legacy ? "var(--t3)" : "var(--blue4)"} />
           </div>
           <span style={{ fontSize: 13, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap" }}>{canvas.name}</span>
         </div>
@@ -780,9 +780,9 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             background: "var(--bg-3)", border: "1px solid var(--b1)",
             fontSize: 11, color: "var(--t3)",
           }}>
-            <Icon name="db" size={10} color="var(--t4)" />
+            <Icon name="db" size={10} color="var(--t3)" />
             {connection.name}
-            {connLabel && <span style={{ color: "var(--t4)" }}>{connLabel}</span>}
+            {connLabel && <span style={{ color: "var(--t3)" }}>{connLabel}</span>}
           </span>
         )}
 
@@ -909,7 +909,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
                   Recent deep analyses
                   {/* Scope label — this list is canvas-scoped by design; without saying so,
                       runs launched elsewhere look like they vanished (live confusion). */}
-                  <span style={{ fontWeight: 400, color: "var(--t4)", marginLeft: 8, fontSize: 11 }}>
+                  <span style={{ fontWeight: 400, color: "var(--t3)", marginLeft: 8, fontSize: 11 }}>
                     on this canvas · all runs live under Deep analyses in the sidebar
                   </span>
                 </div>

@@ -159,7 +159,7 @@ export function ObjectView({ objectType, pk, connectionId, schemaName }: {
         )}
         <div style={{ flex: 1 }} />
         {loaded && loaded.path !== "missing" && loaded.schema_name && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>{loaded.schema_name}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{loaded.schema_name}</span>
         )}
       </div>
       <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>{body}</div>
@@ -269,7 +269,7 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                 {p.display_name}
               </dt>
               <dd className="aug-fs-sm"
-                style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t4)" : "var(--t1)",
+                style={{ margin: 0, overflowWrap: "anywhere", color: p.value == null ? "var(--t3)" : "var(--t1)",
                          ...(isKey ? MONO : {}) }}>
                 {named ? (
                   <Link href={objectHref(named, String(p.value), scope.connectionId, scope.schemaName)}
@@ -277,10 +277,10 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                     {String(p.value)}
                   </Link>
                 ) : cellText(p.value)}
-                {p.unit && p.value != null && <span style={{ color: "var(--t4)" }}> {p.unit}</span>}
+                {p.unit && p.value != null && <span style={{ color: "var(--t3)" }}> {p.unit}</span>}
                 {p.overlay && (
                   <span className="aug-fs-xs"
-                    style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t4)" }}>
+                    style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", color: "var(--t3)" }}>
                     {p.overlay.provenance}{p.overlay.note ? ` — ${p.overlay.note}` : ""}
                     <Withdraw editId={p.overlay.id} what={`${p.display_name} on this ${page.type_name}`}
                       scope={scope} reload={reload} />
@@ -299,7 +299,7 @@ function PropertiesCard({ page, scope, reload }: { page: ObjectPage; scope: Scop
                   </span>
                 )}
                 {p.binding && (
-                  <span className="aug-fs-xs" style={{ ...MONO, display: "block", color: "var(--t4)" }}
+                  <span className="aug-fs-xs" style={{ ...MONO, display: "block", color: "var(--t3)" }}
                     title={p.binding.kind === "timeseries"
                       ? `${p.binding.note ?? ""} — through the binding ${p.binding.name}, on the ${page.type_name} key`
                       : `Read through the ${p.binding.kind} binding ${p.binding.name}, on the ${page.type_name} key`}>
@@ -394,7 +394,7 @@ function LinkRow({ link, scope, open, onToggle, titles }: {
 }) {
   let value: React.ReactNode;
   if (!link.usable) {
-    value = <span className="aug-fs-xs" style={{ color: "var(--t4)", textAlign: "right" }}>{link.why_not}</span>;
+    value = <span className="aug-fs-xs" style={{ color: "var(--t3)", textAlign: "right" }}>{link.why_not}</span>;
   } else if (link.kind === "to-one") {
     const named = link.pk ? titles.get(`${link.to}\u0000${link.pk}`) : undefined;
     value = link.pk ? (
@@ -403,7 +403,7 @@ function LinkRow({ link, scope, open, onToggle, titles }: {
         title={named ? `Open ${link.to_type} ${link.pk} — ${named}` : `Open ${link.to_type} ${link.pk}`}>
         {named ?? link.pk}
       </Link>
-    ) : <span className="aug-fs-sm" style={{ color: "var(--t4)" }}>none</span>;
+    ) : <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>none</span>;
   } else if ((link.count ?? 0) > 0) {
     const count = link.count ?? 0;
     value = (
@@ -413,13 +413,13 @@ function LinkRow({ link, scope, open, onToggle, titles }: {
       </Button>
     );
   } else {
-    value = <span className="aug-fs-sm" style={{ color: "var(--t4)" }}>none</span>;
+    value = <span className="aug-fs-sm" style={{ color: "var(--t3)" }}>none</span>;
   }
   return (
     <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-      <span style={{ color: link.usable ? "var(--t3)" : "var(--t4)", display: "inline-flex" }}><Icon name="link" size={14} /></span>
+      <span style={{ color: link.usable ? "var(--t3)" : "var(--t3)", display: "inline-flex" }}><Icon name="link" size={14} /></span>
       <span className="aug-fs-sm" style={{ color: link.usable ? "var(--t1)" : "var(--t3)", fontWeight: 500 }}>{link.to_type}</span>
-      <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t4)", whiteSpace: "nowrap" }} title={link.on}>
+      <span className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", whiteSpace: "nowrap" }} title={link.on}>
         {link.name} · {link.cardinality}
       </span>
       <div style={{ flex: 1 }} />
@@ -484,10 +484,10 @@ function CitationsCard({ page, citations }: { page: ObjectPage; citations: Objec
         <div key={`${c.kind}:${c.id}`} style={{ padding: "8px 0", borderTop: i ? ROW_RULE : undefined }}>
           <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
             <span className={`aug-tag ${c.kind === "answer" ? "aug-tag-blue" : "aug-tag-violet"}`}>{c.kind}</span>
-            {typeof c.at === "string" && <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{relTime(c.at)}</span>}
+            {typeof c.at === "string" && <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{relTime(c.at)}</span>}
             <div style={{ flex: 1 }} />
             <span className="aug-fs-xs"
-              style={{ ...MONO, color: "var(--t4)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              style={{ ...MONO, color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
               {c.matched}
             </span>
           </div>
@@ -508,7 +508,7 @@ function MetricsCard({ page, metrics }: { page: ObjectPage; metrics: ObjectMetri
           style={{ display: "flex", alignItems: "baseline", gap: 10, padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div className="aug-fs-sm" style={{ color: "var(--t1)" }}>{m.display_name}</div>
-            <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>{m.via ? `across ${m.on} · ${m.via}` : `on this ${m.on}`}</div>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>{m.via ? `across ${m.on} · ${m.via}` : `on this ${m.on}`}</div>
           </div>
           <MetricValue metric={m} />
         </div>
@@ -521,7 +521,7 @@ function MetricValue({ metric }: { metric: ObjectMetric }) {
   if (metric.refused || metric.error) {
     return (
       <span className="aug-fs-xs"
-        style={{ color: metric.error ? "var(--red5)" : "var(--t4)", maxWidth: 200, textAlign: "right" }}>
+        style={{ color: metric.error ? "var(--red5)" : "var(--t3)", maxWidth: 200, textAlign: "right" }}>
         {metric.refused || metric.error}
       </span>
     );
@@ -531,7 +531,7 @@ function MetricValue({ metric }: { metric: ObjectMetric }) {
   return (
     <span className="aug-fs-ui" style={{ ...MONO, color: "var(--t1)", fontWeight: 600, whiteSpace: "nowrap" }}>
       {text}
-      {metric.unit && <span className="aug-fs-xs" style={{ color: "var(--t4)", fontWeight: 400 }}> {metric.unit}</span>}
+      {metric.unit && <span className="aug-fs-xs" style={{ color: "var(--t3)", fontWeight: 400 }}> {metric.unit}</span>}
     </span>
   );
 }
@@ -563,7 +563,7 @@ function ActionOffer({ action, href, page }: { action: ObjectAction; href: strin
         {action.risk && <span className={`aug-tag ${RISK_TAG[action.risk] ?? "aug-tag-gray"}`}>{action.risk}</span>}
         {action.kind && <span className="aug-tag aug-tag-gray">{action.kind}</span>}
         <div style={{ flex: 1 }} />
-        <span className="aug-fs-xs" style={{ color: "var(--t4)", whiteSpace: "nowrap" }}>{action.why}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>{action.why}</span>
       </div>
       {action.description && (
         <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4, lineHeight: 1.5 }}>{action.description}</div>
@@ -579,7 +579,7 @@ function ActionOffer({ action, href, page }: { action: ObjectAction; href: strin
                 </dt>
                 <dd className="aug-fs-xs"
                   style={{ ...MONO, margin: 0, display: "flex", alignItems: "center", gap: 4, overflowWrap: "anywhere",
-                           color: filled ? "var(--blue5)" : p.value == null ? "var(--t4)" : "var(--t1)" }}>
+                           color: filled ? "var(--blue5)" : p.value == null ? "var(--t3)" : "var(--t1)" }}>
                   {filled && <Icon name="check" size={12} label="Filled from this object" />}
                   {p.value == null ? "to be filled" : objectParamText(p, page)}
                 </dd>
@@ -615,7 +615,7 @@ function NotesCard({ notes, scope, reload }: { notes: ObjectNote[]; scope: Scope
         <div key={`${n.column}:${n.at}:${i}`} style={{ padding: "7px 0", borderTop: i ? ROW_RULE : undefined }}>
           <div className="aug-fs-sm" style={{ color: "var(--t1)", lineHeight: 1.5 }}>{n.body}</div>
           <div className="aug-fs-xs"
-            style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t4)", marginTop: 2 }}>
+            style={{ display: "flex", alignItems: "center", gap: 6, color: "var(--t3)", marginTop: 2 }}>
             {[n.column, n.kind, n.source, typeof n.at === "string" ? relTime(n.at) : ""].filter(Boolean).join(" · ")}
             {n.id && <Withdraw editId={n.id} what="this note" scope={scope} reload={reload} />}
           </div>

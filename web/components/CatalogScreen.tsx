@@ -1,4 +1,5 @@
 "use client";
+import { Pending, SkeletonRows } from "@/components/ui/motion";
 
 /**
  * CatalogScreen — Unity Catalog-style 4-level hierarchy
@@ -306,7 +307,7 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
           <Button variant="ghost" className="h-auto p-0 font-normal" style={BtnStyle} onClick={handleSync} disabled={syncing}>
             {syncing ? "⏳ Syncing…" : isKnowledge ? "📚 Knowledge Sync" : "🔄 Sync Now"}
           </Button>
-          {status && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>{status}</p>}
+          {status && <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>{status}</p>}
         </div>
       )}
       {isFileUpload && (
@@ -326,19 +327,19 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
               {files.map(f => (
                 <div key={f.filename} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t2)" }}>
                   <span style={{ fontFamily: "var(--font-mono, monospace)", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.filename}</span>
-                  <span style={{ color: "var(--t4)", fontSize: 11 }}>{Math.round(f.size_bytes / 1024)}KB</span>
-                  <Button variant="ghost" onClick={() => handleDelete(f.filename)} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 12 }} title="Remove">✕</Button>
+                  <span style={{ color: "var(--t3)", fontSize: 11 }}>{Math.round(f.size_bytes / 1024)}KB</span>
+                  <Button variant="ghost" onClick={() => handleDelete(f.filename)} className="h-auto p-0 font-normal" style={{ background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0, fontSize: 12 }} title="Remove">✕</Button>
                 </div>
               ))}
             </div>
           )}
           <Button variant="ghost" onClick={handleRestoreSamples}
             className="h-auto p-0 font-normal"
-            style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: "var(--t4)", padding: 0, fontSize: 11, textDecoration: "underline" }}
+            style={{ marginTop: 10, background: "none", border: "none", cursor: "pointer", color: "var(--t3)", padding: 0, fontSize: 11, textDecoration: "underline" }}
             title="Re-add the bundled sample schemas you previously removed">
             Restore sample data
           </Button>
-          {restoreMsg && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 6 }}>{restoreMsg}</p>}
+          {restoreMsg && <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 6 }}>{restoreMsg}</p>}
         </div>
       )}
     </div>
@@ -369,7 +370,7 @@ function DetailHeader({
   return (
     <div style={{ padding: "16px 20px 12px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)" }}>
       {breadcrumb && (
-        <p style={{ fontSize: 11, color: "var(--t4)", marginBottom: 6 }}>
+        <p style={{ fontSize: 11, color: "var(--t3)", marginBottom: 6 }}>
           {breadcrumb}
         </p>
       )}
@@ -380,7 +381,7 @@ function DetailHeader({
         </span>
         {tag}
       </div>
-      {meta && <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 4 }}>{meta}</p>}
+      {meta && <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>{meta}</p>}
     </div>
   );
 }
@@ -402,7 +403,7 @@ function TabBar({ tabs, active, onChange }: {
           style={{
             fontSize: 12, padding: "8px 12px", cursor: "pointer", border: "none",
             background: "transparent", fontFamily: "inherit",
-            color: active === t.id ? "var(--t1)" : "var(--t4)",
+            color: active === t.id ? "var(--t1)" : "var(--t3)",
             borderBottom: `2px solid ${active === t.id ? "var(--blue4)" : "transparent"}`,
             transition: "color .1s",
             marginBottom: -1,
@@ -431,7 +432,7 @@ function AboutSidebar({ title, rows }: {
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         {rows.map(r => (
           <div key={String(r.label)}>
-            <p style={{ fontSize: 11, color: "var(--t4)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.label}</p>
+            <p style={{ fontSize: 11, color: "var(--t3)", marginBottom: 3, textTransform: "uppercase", letterSpacing: "0.06em" }}>{r.label}</p>
             <div style={{ fontSize: 11, color: "var(--t2)" }}>{r.value}</div>
           </div>
         ))}
@@ -444,7 +445,7 @@ function AboutSidebar({ title, rows }: {
 function FilterBox({ value, onChange, placeholder }: { value: string; onChange:(v:string)=>void; placeholder?: string }) {
   return (
     <div style={{ position: "relative", flexShrink: 0 }}>
-      <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none", display: "inline-flex" }}>
+      <span style={{ position: "absolute", left: 9, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
         <Icon name="search" size={11} />
       </span>
       <input
@@ -470,7 +471,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
   const [loading, setLoad]  = useState(false);
 
   const S: React.CSSProperties = { width: "100%", fontSize: 11, padding: "5px 8px", borderRadius: 4, background: "var(--bg-0)", border: "0.5px solid var(--b2)", color: "var(--t1)", outline: "none", fontFamily: "inherit" };
-  const L: React.CSSProperties = { fontSize: 11, color: "var(--t4)", marginBottom: 3, display: "block" };
+  const L: React.CSSProperties = { fontSize: 11, color: "var(--t3)", marginBottom: 3, display: "block" };
 
   const handle = async (e: React.FormEvent) => {
     e.preventDefault(); setErr(""); setLoad(true);
@@ -495,7 +496,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "postgresql://user:pass@host/db" : "/path/to/file.duckdb"} value={dsn} onChange={e => setDsn(e.target.value)} required />
       </div>
       <div>
-        <label style={L}>Schema <span style={{ color: "var(--t4)" }}>(optional)</span></label>
+        <label style={L}>Schema <span style={{ color: "var(--t3)" }}>(optional)</span></label>
         <input style={{ ...S, fontFamily: "var(--font-mono)" }} placeholder={type === "postgres" ? "public" : "main"} value={schema} onChange={e => setSchema(e.target.value)} />
       </div>
       {err && <p style={{ fontSize: 11, color: "var(--red4)" }}>{err}</p>}
@@ -503,7 +504,7 @@ function AddConnForm({ onSave, onCancel }: { onSave: () => void; onCancel: () =>
         <Button variant="ghost" type="submit" disabled={loading} className="h-auto p-0 font-normal" style={{ flex: 1, fontSize: 11, padding: "5px 0", borderRadius: 4, cursor: "pointer", background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)", opacity: loading ? .5 : 1 }}>
           {loading ? "Saving…" : "Save"}
         </Button>
-        <Button variant="ghost" type="button" onClick={onCancel} className="h-auto p-0 font-normal" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
+        <Button variant="ghost" type="button" onClick={onCancel} className="h-auto p-0 font-normal" style={{ fontSize: 11, padding: "5px 10px", borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}>Cancel</Button>
       </div>
     </form>
   );
@@ -533,9 +534,8 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
   }, [connId, tableName, schemaName]);
 
   if (loading) return (
-    <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column", gap: 8 }}>
-      <div style={{ width: 16, height: 16, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-      <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading sample data…</span>
+    <div style={{ flex: 1, padding: 16 }} aria-label="Loading sample data">
+      <SkeletonRows rows={8} />
     </div>
   );
   if (error) return (
@@ -548,14 +548,14 @@ function SampleGrid({ connId, tableName, schemaName }: { connId: string; tableNa
   );
   if (!data || data.rows.length === 0) return (
     <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center" }}>
-      <span style={{ fontSize: 11, color: "var(--t4)" }}>Table is empty — no rows to display.</span>
+      <span style={{ fontSize: 11, color: "var(--t3)" }}>Table is empty — no rows to display.</span>
     </div>
   );
 
   return (
     <div style={{ flex: 1, overflow: "auto", padding: 12 }}>
       <SqlResultTable columns={data.columns} rows={data.rows as unknown[][]} maxHeight={520} />
-      <div style={{ padding: "5px 4px", fontSize: 11, color: "var(--t4)" }}>
+      <div style={{ padding: "5px 4px", fontSize: 11, color: "var(--t3)" }}>
         {data.rows.length} row{data.rows.length !== 1 ? "s" : ""}
       </div>
     </div>
@@ -714,7 +714,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
             <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
               <FilterBox value={colFilter} onChange={setColFilter} placeholder="Filter columns…" />
               {distCount > 0 && (
-                <span style={{ fontSize: 11, color: "var(--t4)" }}>{distCount} profiled · click a column for its distribution</span>
+                <span style={{ fontSize: 11, color: "var(--t3)" }}>{distCount} profiled · click a column for its distribution</span>
               )}
               {onAsk && (
                 <Button variant="ghost" onClick={() => onAsk(sel.table.name, sel.connId)}
@@ -739,20 +739,19 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
             {/* Column header */}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 110px 40px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
               {["Column", "Type", ""].map(h => (
-                <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
+                <span key={h} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600 }}>{h}</span>
               ))}
             </div>
 
             {/* Column rows */}
             <div style={{ flex: 1, overflowY: "auto" }}>
               {loading && (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 32, gap: 8 }}>
-                  <div style={{ width: 14, height: 14, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-                  <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading columns…</span>
+                <div style={{ padding: "8px 12px" }} aria-label="Loading columns">
+                  <SkeletonRows rows={6} />
                 </div>
               )}
               {!loading && filteredCols.length === 0 && (
-                <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t4)" }}>
+                <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t3)" }}>
                   {q ? "No columns match." : "Column details unavailable."}
                 </p>
               )}
@@ -821,7 +820,7 @@ function TableDetailPanel({ sel, onAsk, onRemoved }: {
       {tab === "sample" && (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div style={{ padding: "10px 16px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, background: "var(--bg-0)", display: "flex", alignItems: "center", gap: 10 }}>
-            <span style={{ fontSize: 11, color: "var(--t4)" }}>First 200 rows</span>
+            <span style={{ fontSize: 11, color: "var(--t3)" }}>First 200 rows</span>
           </div>
           <SampleGrid connId={sel.connId} tableName={sel.table.name} schemaName={sel.schemaName} />
         </div>
@@ -913,12 +912,12 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
         <div style={{ flex: 1, overflow: "hidden", minWidth: 0 }}>
           {erdLoading ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%", gap: 8 }}>
-              <div style={{ width: 14, height: 14, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading diagram…</span>
+              <Pending />
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>Loading diagram…</span>
             </div>
           ) : erdError ? (
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", height: "100%" }}>
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>{erdError}</span>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>{erdError}</span>
             </div>
           ) : erdSchema ? (
             <ERDiagram schema={erdSchema} />
@@ -947,13 +946,13 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
           {/* Table header */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 80px 60px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
             {["Name", "Rows", ""].map(h => (
-              <span key={h} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
+              <span key={h} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Rows" ? "right" as const : "left" as const }}>{h}</span>
             ))}
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {tables.length === 0 && (
-              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t4)" }}>{q ? "No tables match." : "No tables found."}</p>
+              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t3)" }}>{q ? "No tables match." : "No tables found."}</p>
             )}
             {tables.map((t, i) => (
               <div key={t.name}
@@ -966,15 +965,15 @@ function SchemaDetailPanel({ sel, onSelectTable, onAsk, connName, onRemoved }: {
                   <IcoTable size={12} />
                   <span style={{ fontSize: 12, color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                 </div>
-                <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
+                <span style={{ fontSize: 11, color: "var(--t3)", textAlign: "right" }}>{fmtRows(t.row_count)}</span>
                 {onAsk && (
                   <Button
                     variant="ghost"
                     onClick={e => { e.stopPropagation(); onAsk(t.name, sel.connId); }}
                     className="h-auto p-0 font-normal"
-                    style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
+                    style={{ fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)", justifySelf: "end" as const }}
                     onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--blue4)"; (e.currentTarget as HTMLElement).style.background = "var(--blue1)"; }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t3)"; (e.currentTarget as HTMLElement).style.background = "transparent"; }}
                   >Ask →</Button>
                 )}
               </div>
@@ -1066,13 +1065,13 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
           {/* Schema header */}
           <div style={{ display: "grid", gridTemplateColumns: "1fr 60px 60px", padding: "5px 16px", borderBottom: "0.5px solid var(--b1)", background: "var(--bg-0)", flexShrink: 0 }}>
             {["Name", "Tables", ""].map((h, i) => (
-              <span key={h + i} style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
+              <span key={h + i} style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.07em", fontWeight: 600, textAlign: h === "Tables" ? "right" as const : "left" as const }}>{h}</span>
             ))}
           </div>
 
           <div style={{ flex: 1, overflowY: "auto" }}>
             {schemas.length === 0 && (
-              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t4)" }}>{q ? "No schemas match." : "No schemas found."}</p>
+              <p style={{ padding: "20px 16px", fontSize: 11, color: "var(--t3)" }}>{q ? "No schemas match." : "No schemas found."}</p>
             )}
             {schemas.map((sc, i) => {
               const schRows = sc.tables.reduce((s, t) => s + (Number(t.row_count) || 0), 0);
@@ -1087,11 +1086,11 @@ function CatalogDetailPanel({ sel, onSelectSchema, conn, onTest, onDelete, testi
                     <IcoSchema color="var(--blue3)" size={14} />
                     <div>
                       <p style={{ fontSize: 12, fontWeight: 500, color: "var(--t1)" }}>{sc.name}</p>
-                      <p style={{ fontSize: 11, color: "var(--t4)", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
+                      <p style={{ fontSize: 11, color: "var(--t3)", marginTop: 1 }}>{schRows > 0 ? fmtRows(schRows) + " rows" : ""}</p>
                     </div>
                   </div>
-                  <span style={{ fontSize: 11, color: "var(--t4)", textAlign: "right" }}>{sc.tables.length}</span>
-                  <span style={{ color: "var(--t4)", justifySelf: "end" as const, display: "inline-flex" }}>
+                  <span style={{ fontSize: 11, color: "var(--t3)", textAlign: "right" }}>{sc.tables.length}</span>
+                  <span style={{ color: "var(--t3)", justifySelf: "end" as const, display: "inline-flex" }}>
                     <Icon name="chevr" size={12} />
                   </span>
                 </div>
@@ -1322,9 +1321,9 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
                 <span style={{ fontSize: 13, color: "var(--t2)" }}>{it.type}</span>
                 <Button variant="ghost" onClick={e => { e.stopPropagation(); toggleFav(it.key); }} title={fav ? "Unfavorite" : "Favorite"}
                   className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-                  style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: fav ? "var(--amb4)" : "var(--t4)", display: "flex" }}
+                  style={{ background: "none", border: "none", cursor: "pointer", padding: 2, color: fav ? "var(--amb4)" : "var(--t3)", display: "flex" }}
                   onMouseEnter={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
-                  onMouseLeave={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
+                  onMouseLeave={e => { if (!fav) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
                 >
                   <Icon name="star" size={13} className={fav ? "aug-icon-filled" : undefined} />
                 </Button>
@@ -1342,12 +1341,12 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
 function EmptyDetail() {
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, padding: 40 }}>
-      <span style={{ color: "var(--t4)", display: "inline-flex" }}>
+      <span style={{ color: "var(--t3)", display: "inline-flex" }}>
         <Icon name="db" size={48} />
       </span>
       <div style={{ textAlign: "center" }}>
-        <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t4)", marginBottom: 6 }}>Select an item to view details</p>
-        <p style={{ fontSize: 12, color: "var(--t4)", lineHeight: 1.6 }}>
+        <p style={{ fontSize: 15, fontWeight: 500, color: "var(--t3)", marginBottom: 6 }}>Select an item to view details</p>
+        <p style={{ fontSize: 12, color: "var(--t3)", lineHeight: 1.6 }}>
           Click a catalog, schema, or table<br />in the tree to explore it
         </p>
       </div>
@@ -1404,7 +1403,7 @@ function TreeRow({
       {badge}
 
       {count != null && (
-        <span style={{ fontSize: 11, color: "var(--t4)", flexShrink: 0 }}>
+        <span style={{ fontSize: 11, color: "var(--t3)", flexShrink: 0 }}>
           {count}
         </span>
       )}
@@ -1600,9 +1599,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           {section.id === "connections" && (
             <Button variant="ghost" onClick={() => setShowAddData(true)}
               className={`h-auto p-0 font-normal ${SVG_SIZE_AUTO}`}
-              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)" }}
+              style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 11, padding: "2px 6px", borderRadius: 3, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)" }}
               onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t4)"; }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
             >
               <Icon name="plus" size={11} />
               Add
@@ -1612,7 +1611,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
       );
 
       if (section.entries.length === 0 && section.id === "connections") {
-        nodes.push(<p key="empty" style={{ fontSize: 11, color: "var(--t4)", padding: "6px 12px 10px" }}>No connections yet.</p>);
+        nodes.push(<p key="empty" style={{ fontSize: 11, color: "var(--t3)", padding: "6px 12px 10px" }}>No connections yet.</p>);
       }
 
       section.entries.forEach(entry => {
@@ -1773,9 +1772,9 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
           </Button>
           <Button variant="ghost" onClick={() => { loadTree(); refreshSchema(); }} title="Refresh schema"
             className={`h-auto p-0 ${SVG_SIZE_AUTO}`}
-            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t4)", border: "0.5px solid var(--b1)", padding: 0 }}
+            style={{ display: "flex", alignItems: "center", justifyContent: "center", width: 22, height: 22, borderRadius: 4, cursor: "pointer", background: "transparent", color: "var(--t3)", border: "0.5px solid var(--b1)", padding: 0 }}
             onMouseEnter={e => (e.currentTarget as HTMLElement).style.color = "var(--t2)"}
-            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t4)"}
+            onMouseLeave={e => (e.currentTarget as HTMLElement).style.color = "var(--t3)"}
           >
             <Icon name="refresh" size={12} />
           </Button>
@@ -1783,7 +1782,7 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
 
         {/* Search */}
         <div style={{ padding: "8px 10px", borderBottom: "0.5px solid var(--b1)", flexShrink: 0, position: "relative" }}>
-          <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t4)", pointerEvents: "none", display: "inline-flex" }}>
+          <span style={{ position: "absolute", left: 18, top: "50%", transform: "translateY(-50%)", color: "var(--t3)", pointerEvents: "none", display: "inline-flex" }}>
             <Icon name="search" size={11} />
           </span>
           <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search catalog…"
@@ -1793,9 +1792,8 @@ export function CatalogScreen({ connections, selectedConn, onSelect, onDeleteCon
         {/* Tree body */}
         <div style={{ flex: 1, overflowY: "auto", padding: "4px 0 12px" }}>
           {treeLoading && (
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24, gap: 8 }}>
-              <div style={{ width: 14, height: 14, border: "2px solid var(--b2)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>Loading catalog…</span>
+            <div style={{ padding: "4px 12px" }} aria-label="Loading catalog">
+              <SkeletonRows rows={6} />
             </div>
           )}
           {!treeLoading && renderTree()}

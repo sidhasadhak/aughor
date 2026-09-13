@@ -68,11 +68,7 @@ export function BriefHeadline({
           {revealing && (
             <span
               aria-hidden
-              className="aug-anim-blink"
-              style={{
-                display: "inline-block", width: 2, height: "0.9em",
-                marginLeft: 3, verticalAlign: "text-bottom", background: "currentColor",
-              }}
+              className="aug-caret"
             />
           )}
         </>

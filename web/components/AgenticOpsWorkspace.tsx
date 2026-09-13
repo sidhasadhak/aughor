@@ -1,4 +1,5 @@
 "use client";
+import { SkeletonRows } from "@/components/ui/motion";
 
 import { useCallback, useEffect, useState } from "react";
 import dynamic from "next/dynamic";
@@ -13,8 +14,8 @@ import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 // ── Lazy panels — load on first open, then keep mounted (Workspace keep-alive),
 // so the activity tail, a selected trace and an agent detail survive switches.
 const loading = () => (
-  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-    <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+  <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+    <SkeletonRows rows={6} />
   </div>
 );
 

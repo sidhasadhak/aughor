@@ -70,7 +70,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
       {open && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-20 min-w-[160px] rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
             {triggers.length === 0
               ? <p className="aug-fs-xs text-zinc-500 px-3 py-2">No triggers configured.<br/>Set up one in Notifications.</p>
               : triggers.map(t => (
@@ -178,7 +178,7 @@ function ActionRow({
           </button>
         )}
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
             {(["accepted", "implemented", "verified", "rejected", "dismissed"] as RecStatus[]).map(s => (
               <button
                 key={s}

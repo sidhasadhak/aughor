@@ -138,7 +138,7 @@ function ReceiptPopover({
     if (!receipt || receipt.error) return null;
     if (receipt.grounded === true) return { label: "✓ Grounded in results", color: "var(--grn3, #4ade80)" };
     if (receipt.grounded === false) return { label: "⚠ Not found in results", color: "var(--amb3, #f5a623)" };
-    return { label: "Derived — not enforced against a single cell", color: "var(--t4)" };
+    return { label: "Derived — not enforced against a single cell", color: "var(--t3)" };
   })();
 
   return (

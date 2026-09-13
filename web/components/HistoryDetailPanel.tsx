@@ -230,7 +230,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
           {!evidenceLoading && evidence.length === 0 && (
             <div style={{ padding: "40px 0", textAlign: "center" }}>
               <p style={{ fontSize: 13, color: "var(--t3)", marginBottom: 6 }}>No evidence claims yet.</p>
-              <p style={{ fontSize: 11, color: "var(--t4)", lineHeight: 1.5 }}>
+              <p style={{ fontSize: 11, color: "var(--t3)", lineHeight: 1.5 }}>
                 Claims are extracted automatically when a deep analysis completes.
               </p>
             </div>
@@ -282,7 +282,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 {localizeCurrency(inv.question)}
               </div>
             </div>
-            <p style={{ marginTop: 4, fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", textAlign: "right" }}>{inv.connection_id}</p>
+            <p style={{ marginTop: 4, fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", textAlign: "right" }}>{inv.connection_id}</p>
           </div>
 
           {/* Agent trace — the run's thinking, reconstructed from the stored phases so it is
@@ -374,9 +374,8 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
             <div
               className="rounded-md flex flex-col overflow-hidden"
               style={{
-                background: "var(--bg-0)",
-                border: "1px solid rgba(255,255,255,0.09)",
-                boxShadow: "var(--shadow-lg), 0 1px 0 rgba(255,255,255,0.04) inset",
+                background: "var(--bg-3)",
+                border: "1px solid var(--b2)",
               }}
             >
               <textarea
@@ -434,7 +433,7 @@ export function HistoryDetailPanel({ invId, onBack, onContinue }: Props) {
                 </button>
               </div>
             </div>
-            <p className="aug-fs-sm text-center" style={{ color: "var(--t4)" }}>Always review the accuracy of responses.</p>
+            <p className="aug-fs-sm text-center" style={{ color: "var(--t3)" }}>Always review the accuracy of responses.</p>
           </div>
         </div>
       )}
@@ -522,7 +521,7 @@ function EvidenceClaimCard({
       {/* Meta row */}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "center" }}>
         {claim.hypothesis_id && (
-          <span style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)" }}>
+          <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)" }}>
             phase: {claim.hypothesis_id}
           </span>
         )}
@@ -532,7 +531,7 @@ function EvidenceClaimCard({
           </span>
         )}
         {claim.data_freshness && (
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>
             data as of {formatTimestamp(claim.data_freshness, "short")}
           </span>
         )}

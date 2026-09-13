@@ -60,7 +60,7 @@ import {
   type RevalidateResult,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
-import { Spinner } from "@/components/ui/motion";
+import { Pending } from "@/components/ui/motion";
 import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { StatTile } from "@/components/brief/StatTile";
@@ -298,7 +298,7 @@ function NarrativeCard({
           </span>
         )}
         {narrative.generated_at && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: "auto" }}>
             {timeAgo(narrative.generated_at)}
           </span>
         )}
@@ -506,11 +506,7 @@ function GenerateBriefButton({
     >
       {loading ? (
         <>
-          <span style={{
-            width: 12, height: 12, border: "2px solid var(--b2)",
-            borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-            animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0,
-          }} />
+          <Pending />
           Generating…
         </>
       ) : (
@@ -529,7 +525,7 @@ function noveltyColor(n: number): string {
   if (n >= 7) return "var(--grn3)";
   if (n >= 5) return "var(--blue4)";
   if (n >= 3) return "var(--amb3)";
-  return "var(--t4)";
+  return "var(--t3)";
 }
 
 function noveltyLabel(n: number): string {
@@ -700,7 +696,7 @@ function DomainCoverageChart({ domains }: { domains: DomainStat[] }) {
           <div key={d.name} style={{ display: "flex", flexDirection: "column" as const, gap: 3 }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
               <span style={{ fontSize: 11, color: "var(--t2)", textTransform: "capitalize" as const, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" as const }}>{d.name}</span>
-              <span className="aug-fs-xs" style={{ color: "var(--t4)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)", fontFamily: "var(--font-mono)", flexShrink: 0 }}>{d.count}</span>
             </div>
             <div style={{ height: 6, borderRadius: 3, background: "var(--bg-3)", overflow: "hidden" }}>
               <div style={{
@@ -758,7 +754,7 @@ function ScopeChip({ label, dot, count, active, onClick }: {
       variant="ghost" size="xs" onClick={onClick} className="px-3"
       aria-pressed={active}
       style={{
-        borderRadius: "var(--r-pill)", gap: 6, height: 26,
+        borderRadius: "var(--r-chip)", gap: 6, height: 26,
         background: active ? "color-mix(in srgb, var(--blue4) 12%, var(--bg-2))" : "var(--bg-2)",
         border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
         color: active ? "var(--blue4)" : "var(--t2)",
@@ -767,7 +763,7 @@ function ScopeChip({ label, dot, count, active, onClick }: {
     >
       {dot && <span style={{ width: 7, height: 7, borderRadius: "var(--r-pill)", background: dot, flexShrink: 0 }} />}
       {label}
-      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: active ? "var(--blue4)" : "var(--t4)", opacity: 0.85 }}>{count}</span>
+      <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: active ? "var(--blue4)" : "var(--t3)", opacity: 0.85 }}>{count}</span>
     </Button>
   );
 }
@@ -872,7 +868,7 @@ function ActionButton({ label, title, status, color, onClick, disabled }: {
       onMouseEnter={e => { if (!disabled && status === "idle") { e.currentTarget.style.borderColor = c; } }}
       onMouseLeave={e => { if (status === "idle") { e.currentTarget.style.borderColor = "var(--b2)"; } }}
     >
-      {status === "busy" && <Spinner size={10} color="currentColor" />}
+      {status === "busy" && <Pending />}
       {status === "done" ? `${label} ${txt}` : label}
     </button>
   );
@@ -979,7 +975,7 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
 
   if (dismissed) {
     return (
-      <span style={{ fontSize: 11, color: "var(--t4)", fontStyle: "italic" as const }}>
+      <span style={{ fontSize: 11, color: "var(--t3)", fontStyle: "italic" as const }}>
         Dismissed ✓ — hidden from intelligence (kept for review)
       </span>
     );
@@ -1001,13 +997,13 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
             <div style={{ position: "absolute", top: "calc(100% + 4px)", right: 0, zIndex: 30, background: "var(--bg-1)", border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-lg)", minWidth: 150, padding: 4, display: "flex", flexDirection: "column" as const, gap: 2 }}>
               <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                 onClick={() => { setMoreOpen(false); handlePromote(); }}
-                style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t4)" : "var(--t2)" }}>
+                style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
                 {promStatus === "done" ? "Promoted ✓" : "Promote"}
               </Button>
               <div style={{ position: "relative" }}>
                 <Button variant="ghost" size="xs" className="w-full justify-start h-auto" disabled={degenerate}
                   onClick={() => { if (triggers.length === 0) { setMoreOpen(false); onTriggersHint(); } else { setShareOpen(v => !v); } }}
-                  style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t4)" : "var(--t2)" }}>
+                  style={{ padding: "7px 10px", fontSize: 12, color: degenerate ? "var(--t3)" : "var(--t2)" }}>
                   Share
                 </Button>
                 {shareOpen && triggers.length > 0 && (
@@ -1015,8 +1011,8 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                     {triggers.map(t => (
                       <Button key={t.id} variant="ghost" size="xs" className="w-full justify-start h-auto"
                         onClick={() => { handleShareTo(t); setMoreOpen(false); }}
-                        style={{ padding: "7px 10px", fontSize: 12, color: t.enabled ? "var(--t2)" : "var(--t4)" }}>
-                        <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t4)", marginRight: 6 }}>{t.type}</span>{t.name}{!t.enabled && " (disabled)"}
+                        style={{ padding: "7px 10px", fontSize: 12, color: t.enabled ? "var(--t2)" : "var(--t3)" }}>
+                        <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>{t.name}{!t.enabled && " (disabled)"}
                       </Button>
                     ))}
                   </div>
@@ -1036,10 +1032,10 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
           )}
         </div>
         {degenerate && (
-          <span title={noData} className="aug-label" style={{ padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)", background: "var(--bg-3)", border: "1px solid var(--b1)" }}>no data</span>
+          <span title={noData} className="aug-label" style={{ padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t3)", background: "var(--bg-3)", border: "1px solid var(--b1)" }}>no data</span>
         )}
         {shareMsg && (
-          <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
+          <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t3)" }}>{shareMsg}</span>
         )}
       </div>
     );
@@ -1074,11 +1070,11 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
                 style={{
                   display: "block", width: "100%", textAlign: "left" as const,
                   padding: "7px 10px", fontSize: 12, background: "transparent", border: "none",
-                  color: t.enabled ? "var(--t2)" : "var(--t4)", cursor: "pointer",
+                  color: t.enabled ? "var(--t2)" : "var(--t3)", cursor: "pointer",
                 }}
                 onMouseEnter={e => { e.currentTarget.style.background = "var(--bg-3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.background = "transparent"; }}>
-                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t4)", marginRight: 6 }}>{t.type}</span>
+                <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono)", color: "var(--t3)", marginRight: 6 }}>{t.type}</span>
                 {t.name}{!t.enabled && " (disabled)"}
               </button>
             ))}
@@ -1092,12 +1088,12 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
         status="idle" color={btnColor} onClick={handleDismiss} />
       {degenerate && (
         <span title={noData} className="aug-label" style={{
-          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t4)",
+          padding: "2px 6px", borderRadius: "var(--r1)", color: "var(--t3)",
           background: "var(--bg-3)", border: "1px solid var(--b1)",
         }}>no data</span>
       )}
       {shareMsg && (
-        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t4)" }}>{shareMsg}</span>
+        <span className="aug-fs-xs" style={{ color: shareMsg.includes("✓") ? "var(--grn4)" : "var(--t3)" }}>{shareMsg}</span>
       )}
     </div>
   );
@@ -1233,7 +1229,7 @@ function RevalidateRow({ dossier, connectionId, insightId }: {
           }}
           style={{ padding: "5px 11px", borderRadius: "var(--r1)", background: "var(--bg-3)", border: "1px solid var(--b2)", color: "var(--t1)", fontSize: 12, fontWeight: 500, cursor: busy ? "default" : "pointer", opacity: busy ? 0.6 : 1 }}
         >{busy ? "Re-validating…" : "Re-validate"}</button>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>as of {asOfText}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>as of {asOfText}</span>
       </div>
       {badge && (
         <div style={{ fontSize: 11, color: badge.c, lineHeight: 1.5 }}>
@@ -1386,7 +1382,7 @@ function HeadlineCard({ signal, onInvestigate, actions }: {
         <span className="aug-label">{noveltyLabel(insight.novelty)}</span>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle}</span>
         )}
         <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={64} /></span>
       </div>
@@ -1436,7 +1432,7 @@ function HeroStatPill({ value, label }: { value: number; label: string }) {
   return (
     <span className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "baseline", gap: 5 }}>
       <span style={{ fontWeight: 600, color: "var(--t2)", fontFamily: "var(--font-mono)", fontVariantNumeric: "tabular-nums" as const }}>{value}</span>
-      <span style={{ color: "var(--t4)" }}>{label}</span>
+      <span style={{ color: "var(--t3)" }}>{label}</span>
     </span>
   );
 }
@@ -1505,7 +1501,7 @@ function VerdictHero({
         {/* eyebrow (context) + controls */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
           <span className="aug-label">
-            Intelligence briefing{scope ? <span style={{ color: "var(--t4)" }}>{"  ·  "}{scope}</span> : null}
+            Intelligence briefing{scope ? <span style={{ color: "var(--t3)" }}>{"  ·  "}{scope}</span> : null}
           </span>
           {controls && <span style={{ marginLeft: "auto", display: "flex", gap: 8, alignItems: "center" }}>{controls}</span>}
         </div>
@@ -1556,7 +1552,7 @@ function VerdictHero({
               <HeroDivider />
               <HeroStatPill value={totalInsights} label={totalInsights === 1 ? "finding" : "findings"} />
               <HeroDivider />
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{timeAgo(synthesizedAt)}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{timeAgo(synthesizedAt)}</span>
             </span>
           </div>
         </div>
@@ -1575,7 +1571,7 @@ function VerdictHero({
                   accentBar
                   labelLines={2}
                   label={d.label}
-                  value={<span>{d.value}{d.secondary && <span style={{ color: "var(--t4)", fontSize: 15 }}>{d.secondary}</span>}</span>}
+                  value={<span>{d.value}{d.secondary && <span style={{ color: "var(--t3)", fontSize: 15 }}>{d.secondary}</span>}</span>}
                   expandable={!!connectionId}
                   open={openIdent === d.ident}
                   onClick={connectionId ? () => setOpenIdent(id => (id === d.ident ? null : d.ident)) : undefined}
@@ -1712,7 +1708,7 @@ function FindingDetail({
     <div style={{ background: "var(--bg-1)", border: "1px solid var(--b0)", borderRadius: "var(--r2)", padding: 12 }}>
       {phase === "loading" && <Shimmer h={chartHeight} r="var(--r2)" />}
       {phase === "text" && (
-        <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "8px 2px" }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "8px 2px" }}>
           No chartable result for this finding — the statement above is the finding.
         </div>
       )}
@@ -1730,7 +1726,7 @@ function FindingDetail({
         </div>
       ))}
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginTop: 10 }}>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle || "The finding's grounded query"}</span>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle || "The finding's grounded query"}</span>
         <span style={{ marginLeft: "auto", display: "flex", gap: 12 }}>
           <Button variant="ghost" size="xs" onClick={() => onEvidence(insight, domain)}
             title="See the query + provenance behind this finding"
@@ -1784,13 +1780,13 @@ function LedgerRow({ signal, connectionId, expanded, onToggle, onInvestigate, on
         <div style={{ textAlign: "right", minWidth: 0 }}>
           {fig && (<>
             <div style={{ fontFamily: "var(--font-mono)", fontSize: 15, fontWeight: 600, color: "var(--t1)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-              {fig.value}{fig.secondary && <span style={{ color: "var(--t4)", fontSize: 12 }}>{fig.secondary}</span>}
+              {fig.value}{fig.secondary && <span style={{ color: "var(--t3)", fontSize: 12 }}>{fig.secondary}</span>}
             </div>
-            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t4)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
+            {fig.sublabel && <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{fig.sublabel}</div>}
           </>)}
         </div>
         {/* chevron */}
-        <span aria-hidden style={{ color: "var(--t4)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
+        <span aria-hidden style={{ color: "var(--t3)", fontSize: 12, textAlign: "center" }}>{expanded ? "▴" : "▾"}</span>
       </div>
 
       {expanded && (
@@ -1860,7 +1856,7 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
     <div>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 10 }}>
         <span className="aug-label" style={{ color: "var(--t2)" }}>Findings</span>
-        <span className="aug-fs-xs" style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", color: "var(--t4)" }}>
+        <span className="aug-fs-xs" style={{ marginLeft: "auto", fontFamily: "var(--font-mono)", color: "var(--t3)" }}>
           {Math.min(shown, signals.length)} of {signals.length} shown · ranked by novelty
         </span>
       </div>
@@ -1884,8 +1880,8 @@ function FindingsLedger({ signals, connectionId, onInvestigate, onEvidence, scro
               style={{ color: "var(--t2)", fontWeight: 500, fontSize: 12, padding: "2px 6px" }}>
               Show next {Math.min(LEDGER_STEP, remaining)}
             </Button>
-          ) : <span style={{ color: "var(--t4)" }}>All findings shown</span>}
-          <span style={{ color: "var(--t4)" }}>· {Math.min(shown, signals.length)} of {signals.length}</span>
+          ) : <span style={{ color: "var(--t3)" }}>All findings shown</span>}
+          <span style={{ color: "var(--t3)" }}>· {Math.min(shown, signals.length)} of {signals.length}</span>
           <div style={{ marginLeft: "auto", position: "relative" }}>
             <Button variant="ghost" size="xs" onClick={() => setJumpOpen(o => !o)}
               style={{ color: "var(--t3)", fontSize: 12, padding: "2px 6px" }}>
@@ -1927,7 +1923,7 @@ function SignalCard({ signal, onInvestigate, actions }: {
       <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" as const }}>
         <DomainTag domain={domain} />
         {insight.angle && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{insight.angle}</span>
         )}
         <span style={{ marginLeft: "auto" }}><NoveltyMeter novelty={insight.novelty} width={40} /></span>
       </div>
@@ -2001,7 +1997,7 @@ function OrgSignalRow({ insight }: { insight: OrgInsight }) {
       <div style={{ display: "flex", gap: 6, marginBottom: 6, alignItems: "center", flexWrap: "wrap" as const }}>
         <DomainTag domain={insight.domain} />
         {insight.angle && (
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", marginLeft: "auto" }}>{insight.angle}</span>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)", marginLeft: "auto" }}>{insight.angle}</span>
         )}
       </div>
       <div className="aug-fs-xs" style={{ color: "var(--t2)", lineHeight: 1.5 }}>
@@ -2140,13 +2136,9 @@ function BriefingEmpty({
         display: "flex", alignItems: "center", justifyContent: "center",
       }}>
         {spinning ? (
-          <div style={{
-            width: 22, height: 22, border: "2px solid var(--b2)",
-            borderTop: "2px solid var(--blue4)", borderRadius: "50%",
-            animation: "aug-spin var(--dur-breath) linear infinite",
-          }} />
+          <Pending label="Generating the briefing" className="aug-fs-h1" style={{ color: "var(--t3)" }} />
         ) : (
-          <span style={{ color: "var(--t4)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
+          <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="brief" size={22} /></span>
         )}
       </div>
       <div style={{ textAlign: "center" as const, maxWidth: 400 }}>
@@ -2174,7 +2166,7 @@ function BriefingEmpty({
         >
           {busy ? (
             <>
-              <span style={{ width: 12, height: 12, border: "2px solid var(--b2)", borderTop: "2px solid var(--blue4)", borderRadius: "50%", animation: "aug-spin var(--dur-breath) linear infinite", flexShrink: 0 }} />
+              <Pending />
               Working…
             </>
           ) : (
@@ -2234,7 +2226,7 @@ function BriefingLoading() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 14, marginTop: 10 }}>
           {[0, 1, 2].map(i => (
             <div key={i} style={{ ...skelCard, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 10 }}>
-              <Shimmer w={80} h={20} r="var(--r-pill)" />
+              <Shimmer w={80} h={20} r="var(--r-chip)" />
               <Shimmer w="100%" h={12} mt={4} />
               <Shimmer w="92%" h={12} />
               <Shimmer w="70%" h={12} />
@@ -2734,7 +2726,7 @@ export function BriefingPanel({
       {/* ── Explorer control bar ── demoted to a thin machinery strip: it explains where the
           brief comes from, but it isn't content. Single hairline row, mono --t4. */}
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16, padding: "9px 2px", borderBottom: "1px solid var(--b0)" }}>
-        <span style={{ fontSize: 11, color: "var(--t4)", fontFamily: "var(--font-mono)", letterSpacing: ".08em", textTransform: "uppercase" }}>
+        <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--font-mono)", letterSpacing: ".08em", textTransform: "uppercase" }}>
           Explorer
         </span>
         {explorerStatus ? (
@@ -2759,7 +2751,7 @@ export function BriefingPanel({
                 figure counts something slightly different, so a second number here would
                 invite the reader to reconcile two things that were never the same. */}
             {explorerStatus.phase === "failed" && hasFindings && (
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
                 · the last run stopped short; earlier findings are kept
               </span>
             )}
@@ -2768,7 +2760,7 @@ export function BriefingPanel({
                 and either way it is machinery, not business content. */}
           </>
         ) : (
-          <span style={{ fontSize: 11, color: "var(--t4)" }}>unknown</span>
+          <span style={{ fontSize: 11, color: "var(--t3)" }}>unknown</span>
         )}
         {explorerError && (
           <span style={{ fontSize: 11, color: "var(--red5, #f87171)" }} title={explorerError}>
@@ -2920,7 +2912,7 @@ export function BriefingPanel({
             style={{ padding: "9px 16px", height: "auto" }}>
             Ask this briefing →
           </Button>
-          <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             quick answers, scoped to this brief and its schema
           </span>
         </div>
@@ -3011,7 +3003,6 @@ export function BriefingPanel({
     </>
   )}
 
-      {/* Spinner keyframe */}
           </div>
 
       {askOpen && (

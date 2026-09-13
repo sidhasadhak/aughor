@@ -486,7 +486,7 @@ function RecommendationCard({
           </button>
         )}
         {menuOpen && (
-          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-xl overflow-hidden">
+          <div className="absolute right-0 top-full mt-1 z-20 w-36 rounded-[var(--r3)] border border-zinc-600 bg-zinc-900 shadow-[var(--shadow-sm)] overflow-hidden">
             {(["accepted", "implemented", "verified", "rejected", "dismissed"] as RecStatus[]).map(s => (
               <button
                 key={s}

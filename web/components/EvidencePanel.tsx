@@ -68,7 +68,7 @@ function ClaimCard({ claim, onInvestigate, onFeedback }: {
             ● {FEEDBACK_META[fb].label}
           </span>
         )}
-        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t4)" }}>
+        <span style={{ marginLeft: "auto", fontSize: 11, color: "var(--t3)" }}>
           {fmtWhen(claim.created_at)}
         </span>
       </div>
@@ -77,7 +77,7 @@ function ClaimCard({ claim, onInvestigate, onFeedback }: {
       <div style={{ fontSize: 13, color: "var(--t1)", lineHeight: 1.6 }}>{claim.claim_text}</div>
 
       {/* Meta row */}
-      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const, fontSize: 11, color: "var(--t4)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap" as const, fontSize: 11, color: "var(--t3)" }}>
         {claim.data_freshness && <span>data as of {fmtWhen(claim.data_freshness)}</span>}
         {claim.sql_source && (
           <button onClick={() => setShowSql(s => !s)} style={{
@@ -162,7 +162,7 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
     <div style={{ flex: 1, overflowY: "auto", padding: "20px 28px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, marginBottom: 16 }}>
         <span className="aug-label">Evidence Ledger</span>
-        <span style={{ fontSize: 11, color: "var(--t4)" }}>
+        <span style={{ fontSize: 11, color: "var(--t3)" }}>
           {claims.length} recent claim{claims.length === 1 ? "" : "s"}
           {validated ? ` · ${validated} validated` : ""}{disputed ? ` · ${disputed} disputed` : ""}
         </span>

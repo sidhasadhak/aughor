@@ -95,7 +95,7 @@ export function StatTile({
         </div>
       )}
       {expandable && (
-        <span aria-hidden style={{ position: "absolute", top: 9, right: 10, fontSize: 11, lineHeight: 1, color: open ? accent : "var(--t4)" }}>
+        <span aria-hidden style={{ position: "absolute", top: 9, right: 10, fontSize: 11, lineHeight: 1, color: open ? accent : "var(--t3)" }}>
           {open ? "×" : "⤢"}
         </span>
       )}

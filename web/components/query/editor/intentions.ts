@@ -412,7 +412,7 @@ export function sqlIntentions(
       ".cm-aug-intention-active": { background: "var(--bg-sel)", color: "var(--t1)" },
       ".cm-aug-intention-label": { fontSize: "var(--aug-fs-sm)", whiteSpace: "nowrap" },
       ".cm-aug-intention-detail": {
-        fontSize: "var(--aug-fs-xs)", color: "var(--t4)", overflow: "hidden", textOverflow: "ellipsis",
+        fontSize: "var(--aug-fs-xs)", color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis",
       },
     }),
   ];

@@ -1,4 +1,5 @@
 "use client";
+import { Pending } from "@/components/ui/motion";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
@@ -678,7 +679,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         {headerBar}
         <div className="flex-1 flex items-center justify-center">
           <div className="text-center space-y-3">
-            <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-[var(--r-pill)] animate-spin mx-auto" />
+            <Pending label="Building ontology" className="aug-fs-h1 text-[var(--t3)]" />
             <p className="text-sm text-zinc-500">Building ontology…</p>
           </div>
         </div>

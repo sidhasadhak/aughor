@@ -573,7 +573,7 @@ function ReviewView({ review, error, onAsk, isTableNode, onOpenTable }: {
               </Button>
             )}
             {it.depends > 0 && (
-              <span style={{ fontSize: 11, color: "var(--t4)" }}>
+              <span style={{ fontSize: 11, color: "var(--t3)" }}>
                 {formatCount(it.depends)} thing{it.depends !== 1 ? "s" : ""} depend on this
               </span>
             )}

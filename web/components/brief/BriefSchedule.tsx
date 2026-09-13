@@ -68,7 +68,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
       background: "var(--bg-2)", padding: 12, margin: "0 0 16px" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8 }}>
         <span style={{ fontWeight: 600, color: "var(--t1)" }}>Scheduled delivery</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           this briefing, pushed to a Notifications trigger on a cron
         </span>
       </div>
@@ -91,7 +91,7 @@ export function BriefSchedule({ connId }: { connId: string }) {
             <span style={{ fontFamily: "var(--font-mono)" }}>{s.send_cron}</span>
           </span>
           <span className="aug-fs-xs" style={{ color: s.last_status === "ok" ? "var(--grn4)"
-            : s.last_status ? "var(--red4)" : "var(--t4)" }}>
+            : s.last_status ? "var(--red4)" : "var(--t3)" }}>
             {s.last_sent_at
               ? `last sent ${formatTimestamp(s.last_sent_at, "short")} · ${s.last_status}`
               : "never sent yet"}

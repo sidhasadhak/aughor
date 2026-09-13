@@ -101,18 +101,14 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
     <div
       className="flex flex-col overflow-hidden"
       style={{
-        // A generous composer pill (CK-grade): soft corners, a surface one step up
-        // from the page, and shadow-only elevation — the border stays a whisper
-        // until focus lights the v2 accent ring.
+        // The composer is a field: radius 4, --bg-3 and a --b2 hairline, with no shadow.
+        // Focus draws the one ring (2px --bfocus at 2px offset) on the frame, so the
+        // textarea inside keeps no outline of its own (aug-focus-frame).
         borderRadius: "var(--r-composer)",
-        background: "var(--bg-2)",
-        border: focused
-          ? "1px solid var(--bfocus)"
-          : "1px solid var(--b1)",
-        boxShadow: focused
-          ? "0 0 0 3px var(--acc-dim), var(--shadow-md), 0 1px 0 rgba(255,255,255,0.04) inset"
-          : "var(--shadow-md), 0 1px 0 rgba(255,255,255,0.04) inset",
-        transition: "border-color .15s, box-shadow .15s",
+        background: "var(--bg-3)",
+        border: "1px solid var(--b2)",
+        outline: focused ? "2px solid var(--bfocus)" : "none",
+        outlineOffset: 2,
       }}
     >
       {/* Attached file chip */}
@@ -150,7 +146,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
            at its next checkpoint). Disabling here made the product argue with the user
            about whose turn it was. */
         placeholder={multiline ? "Ask anything about your data…" : "Ask your question…"}
-        className="w-full bg-transparent aug-fs-sm text-zinc-100 placeholder:text-zinc-500 px-4 pt-3 pb-2 resize-none focus:outline-none disabled:opacity-50"
+        className="aug-focus-frame w-full bg-transparent aug-fs-sm text-zinc-100 placeholder:text-[var(--t3)] px-4 pt-3 pb-2 resize-none focus:outline-none disabled:opacity-50"
       />
 
       {/* Toggle row — mode buttons left, actions right */}
@@ -242,7 +238,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             style={{
               width: 30, height: 30,
               color: attachedFile ? "var(--blue4)" : "var(--t3)",
-              background: attachedFile ? "var(--acc-dim)" : "transparent",
+              background: attachedFile ? "var(--blue1)" : "transparent",
             }}
             onMouseEnter={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t1)"; }}
             onMouseLeave={e => { if (!attachedFile) (e.currentTarget as HTMLElement).style.color = "var(--t3)"; }}
@@ -326,7 +322,7 @@ function DebugLogDrawer({ eventLogRef, onClose }: { eventLogRef: React.RefObject
   };
 
   return (
-    <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-[var(--r3)] shadow-2xl" style={{ width: 520, height: 380 }}>
+    <div className="fixed bottom-0 right-0 z-50 flex flex-col bg-zinc-950 border border-zinc-700/80 rounded-tl-[var(--r3)] shadow-[var(--shadow-md)]" style={{ width: 520, height: 380 }}>
       <div className="flex items-center gap-2 px-3 py-2 border-b border-zinc-800 shrink-0">
         <span className="text-emerald-400"><Icon name="sql" size={16} label="Debug log" /></span>
         <span className="aug-fs-xs font-mono text-zinc-300 flex-1">SSE Event Log · {events.length} events</span>
@@ -1337,12 +1333,11 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
                   size="sm"
                   onClick={() => scrollToBottom()}
                   title="Jump to latest"
-                  className="aug-pressable aug-anim-fade gap-1.5 rounded-[var(--r-pill)] h-auto"
+                  className="aug-pressable aug-anim-fade gap-1.5 rounded-[var(--r1)] h-auto"
                   style={{
                     pointerEvents: "all", padding: "5px 12px 5px 9px",
                     fontSize: 12, fontWeight: 500, fontFamily: "var(--font-ui)",
                     color: "var(--t2)", background: "var(--bg-3)", border: "1px solid var(--b2)",
-                    boxShadow: "var(--shadow-lg)",
                   }}
                   onMouseEnter={e => { (e.currentTarget as HTMLElement).style.color = "var(--t1)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b3)"; }}
                   onMouseLeave={e => { (e.currentTarget as HTMLElement).style.color = "var(--t2)"; (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}

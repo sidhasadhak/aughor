@@ -258,7 +258,7 @@ const TableNode = memo(function TableNode({ data }: { data: TableNodeData }) {
         Table
       </span>
 
-      <div className="rounded-[var(--r3)] border border-zinc-600 overflow-hidden shadow-lg shadow-black/40">
+      <div className="rounded-[var(--r3)] border border-zinc-600 overflow-hidden">
         {/* Header */}
         <div
           className="flex items-center gap-2.5 px-3 bg-zinc-900 border-b border-zinc-700/80"

@@ -44,7 +44,7 @@ export function ContextRibbon({
 
   return (
     <div className="flex flex-col gap-1.5">
-      <div className="flex items-center gap-2 aug-text-xs" style={{ color: "var(--t4)" }}>
+      <div className="flex items-center gap-2 aug-text-xs" style={{ color: "var(--t3)" }}>
         <span className="uppercase tracking-wide">Context</span>
         <span style={{ color: "var(--t3)" }}>
           {kept.length} table{kept.length === 1 ? "" : "s"} · ~{formatCount(tokens)} tokens
@@ -54,7 +54,7 @@ export function ContextRibbon({
             −{formatCount(delta)} tok
           </span>
         )}
-        {busy && <span style={{ color: "var(--t4)" }}>…</span>}
+        {busy && <span style={{ color: "var(--t3)" }}>…</span>}
       </div>
 
       <div className="flex flex-wrap gap-1">
@@ -75,7 +75,7 @@ export function ContextRibbon({
       </div>
 
       {removed.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1 aug-text-xs" style={{ color: "var(--t4)" }}>
+        <div className="flex flex-wrap items-center gap-1 aug-text-xs" style={{ color: "var(--t3)" }}>
           <span>add back:</span>
           {removed.map((t) => (
             <button

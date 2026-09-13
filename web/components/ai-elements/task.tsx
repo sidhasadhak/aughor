@@ -17,6 +17,7 @@ import { Collapsible } from "@base-ui/react/collapsible";
 import { cn } from "@/lib/utils";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import { Icon } from "@/components/ui/icon";
+import { Pending } from "@/components/ui/motion";
 
 export type TaskStatus = "pending" | "in_progress" | "completed" | "error";
 
@@ -34,7 +35,7 @@ function StatusGlyph({ status }: { status: TaskStatus }) {
   if (status === "in_progress") {
     return (
       <span className="shrink-0 inline-flex" style={{ color: "var(--t3)" }}>
-        <Icon name="spinner" size={12} className="aug-anim-spin" />
+        <Pending label="In progress" className="aug-fs-xs" />
       </span>
     );
   }
@@ -81,7 +82,7 @@ export function TaskTrigger({
     >
       <StatusGlyph status={status} />
       {status === "in_progress" ? <Shimmer>{title}</Shimmer> : <span className="truncate">{title}</span>}
-      <span className="ml-auto shrink-0 inline-flex" style={{ color: "var(--t4)" }}>
+      <span className="ml-auto shrink-0 inline-flex" style={{ color: "var(--t3)" }}>
         <Icon name="chevd" size={12}
           className="transition-transform group-data-[panel-open]/task:rotate-180" />
       </span>
@@ -116,7 +117,7 @@ export function TaskItem({
   children: React.ReactNode;
 }) {
   return (
-    <div className={cn("aug-fs-xs leading-snug aug-anim-fade", className)} style={{ color: "var(--t4)" }}>
+    <div className={cn("aug-fs-xs leading-snug aug-anim-fade", className)} style={{ color: "var(--t3)" }}>
       {children}
     </div>
   );

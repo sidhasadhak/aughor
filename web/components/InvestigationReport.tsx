@@ -1,4 +1,5 @@
 "use client";
+import { Pending } from "@/components/ui/motion";
 
 /**
  * Deep Analysis report, rendered as a clean Brief.
@@ -326,9 +327,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       <div className="flex items-center gap-2">
         <span className="text-base leading-none">{phase.phase_icon}</span>
         {isRunning && (
-          <span className="text-sky-400 animate-spin inline-block">
-            <Icon name="refresh" size={16} label="Loading" />
-          </span>
+          <Pending label="Loading" className="aug-fs-xs text-zinc-400" />
         )}
         <span className={`aug-fs-xs font-medium uppercase tracking-wide ${isSkipped ? "text-zinc-500" : "text-zinc-400"}`}>
           {phase.phase_name}

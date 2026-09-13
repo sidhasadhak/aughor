@@ -179,7 +179,7 @@ function CatalogFooter({ catalog, busy, error, onRefresh, onRemove }: {
         ))}
       </datalist>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t4)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11, color: "var(--t3)" }}>
         <span>
           {catalog.live
             ? `${catalog.live_count} models from ${BACKEND_LABEL[catalog.backend] ?? catalog.backend}`
@@ -475,7 +475,7 @@ export function InferencePanel() {
               : "paste API key"}
             style={inputStyle}
           />
-          <div style={{ fontSize: 11, color: keyUnreadable ? "var(--red4)" : "var(--t4)", marginTop: 4 }}>
+          <div style={{ fontSize: 11, color: keyUnreadable ? "var(--red4)" : "var(--t3)", marginTop: 4 }}>
             {keyUnreadable
               ? "A key is stored but cannot be decrypted — AUGHOR_SECRET_KEY is missing or has changed since it was saved. The key itself may be perfectly good; the provider will reject it either way."
               : "Stored encrypted on the server (secretvault). Save before testing a new key."}
@@ -529,7 +529,7 @@ export function InferencePanel() {
           onRemove={removeModel}
         />
 
-        <div style={{ fontSize: 11, color: "var(--t4)" }}>
+        <div style={{ fontSize: 11, color: "var(--t3)" }}>
           Every role needs a model — nothing is assumed, and a blank role fails its calls
           with a message saying so. Any model id works: the list is what this provider
           reports serving, not a restriction.
@@ -636,14 +636,14 @@ export function InferencePanel() {
               onKeep={() => {}}
               busy={false}
             />
-            <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 4 }}>
+            <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 4 }}>
               One model, every role. Without one this link is SKIPPED — which is the honest
               outcome, but it means the fallback does nothing.
             </div>
           </div>
         )}
 
-        <div className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           {cfg.fallback?.chain?.length
             ? <>Tried in order: {cfg.fallback.chain.join(" → ")}.</>
             : <>No fallback — a failing primary fails the call.</>}

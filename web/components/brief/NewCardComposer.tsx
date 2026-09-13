@@ -226,7 +226,7 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
                   style={{
                     padding: "4px 9px", height: "auto", borderRadius: 0, cursor: avail ? "pointer" : "not-allowed",
                     background: shape === s ? "var(--bg-1)" : "transparent",
-                    color: !avail ? "var(--t4)" : shape === s ? "var(--vio4)" : "var(--t3)",
+                    color: !avail ? "var(--t3)" : shape === s ? "var(--vio4)" : "var(--t3)",
                   }}>{label}</Button>
               ))}
             </div>
@@ -285,10 +285,10 @@ export function NewCardComposer({ connectionId, schema, onCreated }: {
           ) : vals.length ? (
             <>
               <Sparkline values={vals} width={200} height={30} color="var(--vio4)" />
-              <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>{vals.length} {bDim && mode === "build" ? "groups" : "points"}</span>
+              <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{vals.length} {bDim && mode === "build" ? "groups" : "points"}</span>
             </>
           ) : (
-            <span style={{ fontSize: 11, color: "var(--t4)" }}>No preview</span>
+            <span style={{ fontSize: 11, color: "var(--t3)" }}>No preview</span>
           )}
         </div>
       )}

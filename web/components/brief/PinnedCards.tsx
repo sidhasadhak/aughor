@@ -147,7 +147,7 @@ export function PinnedCards({ connectionId, schema, refreshKey, suggestions, onP
     <div style={{ marginBottom: 20 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
         <span className="aug-tag aug-tag-green">Guarded</span>
-        <span className="aug-fs-xs" style={{ color: "var(--t4)" }}>
+        <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           {arrangeMode === "tidy"
             ? "your pinned cards · drag to reorder by priority"
             : "your pinned cards · drag the title to arrange · select to resize · snaps to grid, never overlaps"}

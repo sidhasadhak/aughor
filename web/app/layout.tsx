@@ -3,9 +3,6 @@ import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { Providers } from "./providers";
 import "./globals.css";
-// v2 Tier 2: .aug-* component overrides — loaded after globals.css so it wins the
-// cascade over the inline base rules (CSS @import can't sit below them). Revert: delete this line.
-import "../aughor-v2/theme/components-v2.css";
 
 // Two families, both self-hosted by next/font at build time (no runtime request
 // to a font CDN, so nothing here depends on the network at page load).
@@ -20,7 +17,7 @@ const inter = Inter({
 const jetbrainsMono = JetBrains_Mono({
   variable: "--font-jetbrains-mono",
   subsets: ["latin"],
-  weight: ["400", "500", "600"],
+  weight: ["400", "500", "600", "700"],
   display: "swap",
 });
 

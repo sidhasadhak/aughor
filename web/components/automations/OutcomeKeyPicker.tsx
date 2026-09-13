@@ -94,7 +94,7 @@ export function OutcomeKeyPicker({
         <Button variant="ghost" size="xs" onClick={onCancel}>Cancel</Button>
       </div>
 
-      <div className="aug-fs-xs" style={{ color: "var(--t4)", marginTop: 6 }}>
+      <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 6 }}>
         {candidates === null
           ? "looking up what this step has published…"
           : offered.length

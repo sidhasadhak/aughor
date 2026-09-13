@@ -379,7 +379,7 @@ function EntityNode({
 
   // Entity-type colour palette
   const typeTheme = isSelected
-    ? { ring: "bg-violet-600/30 text-violet-200 ring-1 ring-violet-500/30", border: "border-violet-400/60 bg-[#1a1f2e] shadow-xl shadow-violet-500/10 ring-1 ring-violet-500/15" }
+    ? { ring: "bg-violet-600/30 text-violet-200 ring-1 ring-violet-500/30", border: "border-violet-400/60 bg-[#1a1f2e] ring-1 ring-violet-500/15" }
     : entity.entity_type === "reference_data"
     ? { ring: "bg-emerald-700/20 text-emerald-300 ring-1 ring-emerald-600/25", border: "border-zinc-700/50 bg-zinc-900/80 hover:border-emerald-600/40 hover:bg-zinc-900" }
     : entity.entity_type === "event"

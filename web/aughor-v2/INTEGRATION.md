@@ -1,5 +1,8 @@
 # INTEGRATION — for Claude Code
 
+> **Historical.** These are the v2 handoff's integration steps. Two of the files they import (`elevation-motion.css`, `components-v2.css`) were deleted when Instrument landed on 2026-09-13 — see [`INSTRUMENT.md`](INSTRUMENT.md).
+
+
 Apply in tiers, verifying after each. Everything is additive and revertible.
 
 ---

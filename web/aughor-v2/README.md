@@ -1,5 +1,8 @@
 # Aughor Design Language v2 — Handoff Package
 
+> **Superseded 2026-09-13 by Instrument — see [`INSTRUMENT.md`](INSTRUMENT.md).** `theme/tokens-v2.css` now holds the Instrument token set; `elevation-motion.css` and `components-v2.css` were folded into `app/globals.css` and deleted. This README records the original v2 handoff.
+
+
 A drop-in elevation of the existing Aughor system (primary-blue accent on
 near-black charcoal surfaces, DM Sans, token-driven dark/light). Same DNA — deeper
 surfaces, real elevation, rounded bars, smooth gated motion, a unified component

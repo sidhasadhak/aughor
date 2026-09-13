@@ -68,7 +68,7 @@ export function CatalogRail({
       {hint && (
         <p
           className="aug-fs-ui"
-          style={{ padding: "8px 10px 0", color: "var(--t4)", flexShrink: 0 }}
+          style={{ padding: "8px 10px 0", color: "var(--t3)", flexShrink: 0 }}
         >
           {hint}
         </p>

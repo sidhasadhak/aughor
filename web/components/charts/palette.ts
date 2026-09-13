@@ -1,24 +1,27 @@
 /**
  * palette.ts — the chart palette's single TypeScript source (CA-4).
  *
- * These literals are the SAME values as the CSS tokens in
- * web/aughor-v2/theme/tokens-v2.css (--chart-1..6, --chart-deemph, --bg-2); the
- * `lint:palette` CI gate parses both files and fails on any drift, then runs the
- * six-check palette validator (lightness band, chroma floor, CVD separation,
- * normal-vision floor, contrast vs surface) on each mode. Change a color HERE
- * and in the CSS together, and let the gate arbitrate — never eyeball a palette.
+ * These literals are the SAME values the CSS tokens in web/aughor-v2/theme/tokens-v2.css
+ * resolve to (--chart-1..6, --chart-7, --chart-deemph, --bg-2); the `lint:palette` CI gate
+ * resolves the CSS aliases, compares both files and fails on any drift, then runs the
+ * six-check palette validator (lightness band, chroma floor, CVD separation, normal-vision
+ * floor, contrast vs surface) on each mode. Change a colour HERE and in the CSS together,
+ * and let the gate arbitrate — never eyeball a palette.
  *
- * CHART_KIND_ACCENT (--chart-7) is deliberately NOT part of CHART_SERIES: adding
- * it there would raise every chart's series count and stop the "Other" fold at
- * seven instead of six. It exists for surfaces that colour by KIND.
+ * Instrument (2026-09-13): the six series ARE the six intent hues — blue interactive,
+ * green passed, violet analysis, amber waiting, cyan no-state, red adverse — so a red line
+ * and an adverse figure are the same red. Three of the design's dark hues and one light
+ * hue were moved the minimum the validator needed (see the tokens-v2.css header); the
+ * rest are the design's hexes.
  *
- * Both modes carry the same hue ORDER (blue, green, violet, orange/amber, cyan,
- * red) so a series keeps its hue family when the theme flips. The order is the
- * CVD-safety mechanism: it was chosen by exhaustive search as the passing
- * ordering closest to the previous tokens (the old light order put orange
- * beside green — ΔE 0.7 under protanopia, indistinguishable; this order's worst
- * adjacent pair measures ΔE 20.7 light / 9.9 dark). Six slots is the ceiling:
- * there is no overflow ramp — past six series the data folds into "Other"
+ * CHART_KIND_ACCENT (--chart-7) is deliberately NOT part of CHART_SERIES: adding it there
+ * would raise every chart's series count and stop the "Other" fold at seven instead of six.
+ * It exists for surfaces that colour by KIND.
+ *
+ * Both modes carry the same hue ORDER (blue, green, violet, amber, cyan, red) so a series
+ * keeps its hue family when the theme flips. The order is the CVD-safety mechanism: its
+ * worst adjacent pair measures ΔE 14.7 light / 10.5 dark under deuteranopia. Six slots is
+ * the ceiling: there is no overflow ramp — past six series the data folds into "Other"
  * (the de-emphasis gray), never a generated seventh hue.
  */
 
@@ -26,47 +29,46 @@ export type ChartMode = "light" | "dark";
 
 /** The six categorical series slots, per mode — mirrors --chart-1..6. */
 export const CHART_SERIES: Record<ChartMode, string[]> = {
-  light: ["#1F77B4", "#2CA02C", "#9467BD", "#FF7F0E", "#17BECF", "#D62728"],
-  dark: ["#569BD2", "#4BAB70", "#9B7BD4", "#C1882B", "#2BA8A9", "#DD6E6E"],
+  light: ["#1C6FB5", "#14795A", "#5F45A8", "#8F5A08", "#00819C", "#B32639"],
+  dark: ["#4C9AD6", "#3EAB82", "#8B7DC8", "#B88D30", "#32A6B2", "#D45B6A"],
 };
 
 /**
  * The kind accent — NOT a seventh series. Mirrors --chart-7.
  *
- * The automation canvas colours a step by its KIND, and a seventh effect kind
- * shipped (VA-11's `connection_call`) with the series exhausted. Folding it into
- * the de-emphasis gray was the chart rule's answer and the wrong one here: on a
- * canvas every kind is visible at once, and grey reads as disabled, not as
- * "seventh". So this is one more validated hue in the palette's one remaining
- * gap, held to a stricter separation bar than the six carry among themselves —
+ * The automation canvas colours a step by its KIND, and a seventh effect kind shipped
+ * (VA-11's `connection_call`) with the series exhausted. Folding it into the de-emphasis
+ * gray was the chart rule's answer and the wrong one here: on a canvas every kind is
+ * visible at once, and grey reads as disabled, not as "seventh". So this is one more
+ * validated hue, held to a stricter separation bar than the six carry among themselves —
  * see the note in tokens-v2.css and the gate that enforces it.
  */
 export const CHART_KIND_ACCENT: Record<ChartMode, string> = {
-  light: "#871E5F",
+  light: "#B73BCD",
   dark: "#9B2378",
 };
 
-/** The de-emphasis gray — the "Other" fold and the emphasis form's context
- *  series. Deliberately below the chroma floor so it can never read as a
- *  seventh series. Mirrors --chart-deemph. */
+/** The de-emphasis gray — the "Other" fold and the emphasis form's context series.
+ *  Deliberately below the chroma floor so it can never read as a seventh series.
+ *  Mirrors --chart-deemph. */
 export const CHART_DEEMPH: Record<ChartMode, string> = {
-  light: "#B9C2CE",
+  light: "#AEB5BA",
   dark: "#4E5A6A",
 };
 
-/** The card surface charts render on — the validator's contrast reference.
- *  Mirrors --bg-2. */
+/** The surface charts render on — the validator's contrast reference. Mirrors --bg-2,
+ *  which is --bg-1: there are no cards, so a chart sits on the page's own plane. */
 export const CHART_SURFACE: Record<ChartMode, string> = {
-  light: "#FFFFFF",
-  dark: "#12191F",
+  light: "#FDFBF7",
+  dark: "#141312",
 };
 
-/** Sign-diverging pair (change metrics: positive/negative). Wears the status
- *  threshold tokens — sign is a good/bad meaning, not a series identity.
- *  Mirrors --chart-threshold-target / --chart-threshold-crit. */
+/** Sign-diverging pair (change metrics: positive/negative). Sign is a good/bad meaning,
+ *  not a series identity, so it wears the intent hues that carry those meanings: green
+ *  for passed, red for adverse. Mirrors --grn3 / --chart-threshold-crit (= --red3). */
 export const CHART_SIGN: Record<ChartMode, { pos: string; neg: string }> = {
-  light: { pos: "#177A56", neg: "#B8283F" },
-  dark: { pos: "#57C79A", neg: "#F08A9C" },
+  light: { pos: "#14795A", neg: "#B32639" },
+  dark: { pos: "#3EAB82", neg: "#D45B6A" },
 };
 
 const cssVar = (name: string): string =>
@@ -90,12 +92,12 @@ export function resolveDeemph(mode?: ChartMode): string {
   return cssVar("--chart-deemph") || CHART_DEEMPH[mode ?? activeMode()];
 }
 
-/** The active sign-diverging pair, live from the threshold tokens when a
- *  document exists, else the literals for the given mode. */
+/** The active sign-diverging pair, live from the intent tokens when a document exists,
+ *  else the literals for the given mode. */
 export function resolveSign(mode?: ChartMode): { pos: string; neg: string } {
   const m = mode ?? activeMode();
   return {
-    pos: cssVar("--chart-threshold-target") || CHART_SIGN[m].pos,
+    pos: cssVar("--grn3") || CHART_SIGN[m].pos,
     neg: cssVar("--chart-threshold-crit") || CHART_SIGN[m].neg,
   };
 }

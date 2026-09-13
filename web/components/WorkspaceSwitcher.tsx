@@ -143,38 +143,25 @@ export function WorkspaceSwitcher({
         onClick={() => setOpen(v => !v)}
         title="Switch workspace"
         aria-label="Switch workspace"
+        aria-expanded={open}
         variant="ghost"
         size="sm"
-        /* `h-auto`: the size variants are single-line boxes (`sm` is 28px) and this
-           trigger stacks a label over a name. Constrained, the two lines overlap. */
-        className="h-auto font-normal"
-        style={{
-          display: "flex", alignItems: "center", gap: 8,
-          padding: "5px 10px", borderRadius: "var(--r2)",
-          background: open ? "var(--bg-sel)" : "var(--bg-2)",
-          border: `1px solid ${open ? "var(--blue2)" : "var(--b1)"}`,
-          color: "var(--t1)", maxWidth: 220,
-        }}
+        /* The design's pill: the workspace's name in mono on --bg-3 and a caret. No status
+           dot — the switcher has no health signal to report, and a hue that encodes
+           nothing is decoration. */
+        className="aug-workspace-switcher h-auto font-normal"
       >
-        <Glyph name="layers" size={14} color="var(--blue4)" />
-        <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start",
-          minWidth: 0, gap: 1 }}>
-          <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase",
-            letterSpacing: ".06em", lineHeight: 1.2 }}>Workspace</span>
-          <span className="aug-fs-sm" style={{ fontWeight: 500, color: "var(--t1)",
-            lineHeight: 1.3, whiteSpace: "nowrap", overflow: "hidden",
-            textOverflow: "ellipsis", maxWidth: 150 }}>
-            {active?.name ?? "—"}
-          </span>
+        <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", maxWidth: 200 }}>
+          {active?.name ?? "—"}
         </span>
-        <Glyph name="chevd" size={13} color="var(--t3)" />
+        <span aria-hidden style={{ color: "var(--t3)" }}>▾</span>
       </Button>
 
       {open && (
         <div style={{
-          position: "absolute", top: "calc(100% + 6px)", right: 0, zIndex: 100,
-          minWidth: 280, background: "var(--bg-1)", border: "1px solid var(--b2)",
-          borderRadius: "var(--r3)", boxShadow: "var(--shadow-lg, 0 8px 28px rgba(0,0,0,.4))",
+          position: "absolute", top: "calc(100% + 6px)", left: 0, zIndex: 100,
+          minWidth: 280, background: "var(--bg-3)", border: "1px solid var(--b2)",
+          borderRadius: "var(--r2)", boxShadow: "var(--shadow-sm)",
           padding: 6,
         }}>
           {error && (
@@ -185,7 +172,7 @@ export function WorkspaceSwitcher({
             /* ── membership editor ── */
             <>
               <div style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px 4px" }}>
-                <span className="aug-fs-xs" style={{ color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                <span className="aug-fs-xs" style={{ color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em", flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {managed.name} · connections
                 </span>
                 <Button variant="ghost" size="xs" disabled={busy}
@@ -210,7 +197,7 @@ export function WorkspaceSwitcher({
                   ))}
                 </div>
               )}
-              <div className="aug-fs-xs" style={{ color: "var(--t4)", padding: "4px 8px 7px",
+              <div className="aug-fs-xs" style={{ color: "var(--t3)", padding: "4px 8px 7px",
                 lineHeight: 1.4 }}>
                 Checked connections belong to this workspace — every panel scopes to them.
               </div>
@@ -231,7 +218,7 @@ export function WorkspaceSwitcher({
           ) : (
             /* ── workspace list ── */
             <>
-              <div className="aug-fs-xs" style={{ color: "var(--t4)",
+              <div className="aug-fs-xs" style={{ color: "var(--t3)",
                 textTransform: "uppercase", letterSpacing: ".06em", padding: "6px 8px 5px" }}>
                 Workspaces
               </div>
@@ -274,7 +261,7 @@ export function WorkspaceSwitcher({
                           overflow: "hidden", textOverflow: "ellipsis" }}>
                           {w.name}
                         </span>
-                        <span className="aug-fs-xs" style={{ color: "var(--t4)",
+                        <span className="aug-fs-xs" style={{ color: "var(--t3)",
                           lineHeight: 1.35, whiteSpace: "nowrap", overflow: "hidden",
                           textOverflow: "ellipsis" }}>
                           {(() => {
@@ -303,7 +290,7 @@ export function WorkspaceSwitcher({
                       /* Dimmer than the name it sits beside: three pencils at full
                          strength in a 280px popover read as three competing actions,
                          when the row's own job is switching. */
-                      style={{ color: "var(--t4)", flexShrink: 0, marginRight: 2 }}
+                      style={{ color: "var(--t3)", flexShrink: 0, marginRight: 2 }}
                     >
                       <Glyph name="edit" size={13} />
                     </Button>

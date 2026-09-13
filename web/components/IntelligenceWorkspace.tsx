@@ -1,4 +1,5 @@
 "use client";
+import { SkeletonRows } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
@@ -11,8 +12,8 @@ import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
 // The four perspectives are heavy graph/data views — load each only when its
 // layer is first opened, then keep it mounted (see keep-alive note below).
 const loading = () => (
-  <div style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", background: "var(--bg-0)" }}>
-    <div style={{ width: 20, height: 20, border: "2px solid var(--bg-3)", borderTopColor: "var(--blue3)", borderRadius: "50%", animation: "aug-spin 0.7s linear infinite" }} />
+  <div style={{ flex: 1, background: "var(--bg-0)", padding: 16 }}>
+    <SkeletonRows rows={6} />
   </div>
 );
 
@@ -154,7 +155,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       {/* Connection picker — lists only briefings-enabled connections (Catalog opt-in). */}
       {showConnPicker && (
         <label style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
+          <span style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Connection</span>
           <select
             value={connectionId}
             onChange={e => onConnectionChange?.(e.target.value)}
@@ -174,7 +175,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           when the connection exposes more than one schema (and never for a canvas). */}
       {showSchema && (
         <label style={{ marginLeft: showConnPicker ? 0 : "auto", display: "flex", alignItems: "center", gap: 6 }}>
-          <span style={{ fontSize: 11, color: "var(--t4)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
+          <span style={{ fontSize: 11, color: "var(--t3)", textTransform: "uppercase", letterSpacing: ".06em" }}>Schema</span>
           <select
             value={selectedSchema ?? ""}
             onChange={e => setSelectedSchema(e.target.value || null)}

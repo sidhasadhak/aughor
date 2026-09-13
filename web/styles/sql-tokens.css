@@ -25,7 +25,7 @@
 
 .tok-comment,
 .tok-lineComment,
-.tok-blockComment       { color: var(--t4); font-style: italic; }
+.tok-blockComment       { color: var(--t3); font-style: italic; }
 
 .tok-function,
 .tok-standard           { color: var(--blue4); }

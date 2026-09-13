@@ -144,7 +144,7 @@ export function objectLinkRender(
   scope: { connectionId?: string; schemaName?: string; newTab?: boolean; titles?: Map<string, string> } = {},
 ) {
   const ObjectLinkCell = (value: unknown) => {
-    if (value == null || value === "") return <span style={{ color: "var(--t4)" }}>—</span>;
+    if (value == null || value === "") return <span style={{ color: "var(--t3)" }}>—</span>;
     const pk = String(value);
     const named = scope.titles?.get(titleKey(objectType, pk));
     const href = objectHref(objectType, pk, scope.connectionId, scope.schemaName);

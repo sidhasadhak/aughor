@@ -9,7 +9,7 @@ import {
   type ExplorationFindings,
 } from "@/lib/api";
 import { subscribeKernelEvents } from "@/lib/events";
-import { Spinner, SkeletonRows } from "@/components/ui/motion";
+import { Pending, SkeletonRows } from "@/components/ui/motion";
 
 // ── Phase progress bar ────────────────────────────────────────────────────────
 
@@ -244,7 +244,7 @@ export function ExplorationPanel({ connectionId, initialSection, schema }: Props
     return (
       <div className="p-5 max-w-xl">
         <div className="flex items-center gap-2 mb-4 text-zinc-500 text-sm">
-          <Spinner size={13} /> Loading exploration data…
+          <Pending /> Loading exploration data…
         </div>
         <SkeletonRows rows={6} />
       </div>

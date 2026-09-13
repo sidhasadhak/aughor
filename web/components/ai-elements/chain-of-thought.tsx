@@ -69,7 +69,7 @@ export function ChainOfThoughtHeader({
       )}
       style={{ color: "var(--t3)" }}
     >
-      <span className="shrink-0 inline-flex" style={{ color: "var(--t4)" }}>
+      <span className="shrink-0 inline-flex" style={{ color: "var(--t3)" }}>
         <Icon name="chevr" size={12}
           className="transition-transform group-data-[panel-open]/cot:rotate-90" />
       </span>
@@ -127,7 +127,7 @@ export function ChainOfThoughtStep({
         {icon ?? (
           <span
             className={cn("block h-1.5 w-1.5 rounded-[var(--r-pill)]",
-                          status === "active" && "aug-anim-blink")}
+                          status === "active" && "aug-pulse-dot")}
             style={{
               background: status === "complete" ? "var(--grn2)"
                 : status === "active" ? "var(--t2)" : "var(--bg-3)",
@@ -137,11 +137,11 @@ export function ChainOfThoughtStep({
       </span>
       <div className="min-w-0 flex-1">
         <div className="aug-fs-xs leading-snug"
-             style={{ color: status === "pending" ? "var(--t4)" : "var(--t2)" }}>
+             style={{ color: status === "pending" ? "var(--t3)" : "var(--t2)" }}>
           {status === "active" ? <Shimmer>{label}</Shimmer> : label}
         </div>
         {description && (
-          <div className="aug-fs-xs leading-snug" style={{ color: "var(--t4)" }}>
+          <div className="aug-fs-xs leading-snug" style={{ color: "var(--t3)" }}>
             {description}
           </div>
         )}

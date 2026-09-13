@@ -57,7 +57,7 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, renderIcon, headerControls, headerTrailing,
+  layers, layer, onLayerChange, ariaLabel, headerControls, headerTrailing,
   renderLayer, badges, headerless,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
@@ -72,40 +72,25 @@ export function Workspace<L extends string>({
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", background: "var(--bg-0)" }}>
       {/* Workspace header — title + optional controls + perspective switcher */}
       {!headerless && (
-      <div className="aug-content-header" style={{ gap: 14, flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
-        {renderIcon(active.icon, 14, "var(--t3)")}
-        <span style={{ fontSize: 13, fontWeight: 500, flexShrink: 0 }}>{active.label}</span>
-        {/* The blurb repeats what the switcher chip beside it already says — "SQL
-            Editor · Write SQL, or compose visually" next to a chip reading "SQL
-            Editor". It survives as the switcher's tooltip, where it answers a
-            question someone is actually asking. */}
-        <span
-          hidden
-          style={{
-            fontSize: 13, color: "var(--t3)",
-            minWidth: 0, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
-          }}
-        >
-          · {active.blurb}
-        </span>
+      <div className="aug-content-header" style={{ flexWrap: "nowrap", minWidth: 0, overflow: "hidden" }}>
+        {/* The screen title. The layer's blurb survives as the switcher's tooltip, where it
+            answers a question someone is actually asking; beside the title it only repeated
+            the chip next to it. */}
+        <span className="aug-content-title" style={{ flexShrink: 0 }}>{active.label}</span>
 
         {headerControls}
 
-        {/* Layer switcher — segmented control */}
+        {/* Layer switcher — segmented: --bg-4 fills the selected layer and --b2 hairlines
+            divide them. Labels only: an icon that repeats its word is decoration. */}
         <div
           role="tablist"
           aria-label={ariaLabel}
+          className="aug-segmented"
           style={{
             marginLeft: headerControls ? 0 : "auto",
-            display: "flex",
             minWidth: 0,
             overflowX: "auto",
             scrollbarWidth: "none",
-            gap: 2,
-            padding: 2,
-            background: "var(--bg-2)",
-            border: "1px solid var(--b1)",
-            borderRadius: "var(--r3)",
           }}
         >
           {layers.map(l => {
@@ -119,26 +104,12 @@ export function Workspace<L extends string>({
                 title={l.blurb}
                 variant="ghost"
                 size="sm"
-                style={{
-                  fontSize: 13,
-                  flexShrink: 0,
-                  padding: "4px 11px",
-                  borderRadius: "var(--r2)",
-                  border: "1px solid transparent",
-                  background: on ? "var(--bg-sel)" : "transparent",
-                  color: on ? "var(--blue5)" : "var(--t2)",
-                  fontWeight: on ? 500 : 400,
-                }}
+                className="aug-seg-item"
               >
-                {renderIcon(l.icon, 13, on ? "var(--blue4)" : "currentColor")}
                 {l.label}
                 {(badges?.[l.id] ?? 0) > 0 && (
-                  <span style={{
-                    fontSize: 11, fontWeight: 600, lineHeight: 1,
-                    padding: "2px 5px", borderRadius: "var(--r-chip)",
-                    background: "var(--amb1)", border: "1px solid var(--amb2)",
-                    color: "var(--amb5)", fontVariantNumeric: "tabular-nums",
-                  }}>
+                  // Amber: something in this layer is waiting on a human.
+                  <span className="aug-tab-badge aug-tab-badge-waiting">
                     {badges![l.id]}
                   </span>
                 )}

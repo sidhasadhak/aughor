@@ -101,7 +101,7 @@ function placeOf(t: CatalogTable): { schema: string; bare: string } {
 /** The drag-handle dots, shown only on a column the caller made draggable — an
  *  affordance with no drag behind it is a promise the surface cannot keep. */
 const GrabDots = () => (
-  <span style={{ flexShrink: 0, color: "var(--t4)", display: "inline-flex" }}>
+  <span style={{ flexShrink: 0, color: "var(--t3)", display: "inline-flex" }}>
     <Icon name="grip" size={12} />
   </span>
 );
@@ -244,7 +244,7 @@ export function CatalogTree({
     <div style={{ display: "flex", flexDirection: "column", minHeight: 0, flex: 1 }}>
       <div style={{ padding: "8px 10px 6px", flexShrink: 0 }}>
         <div className="flex items-center gap-2 rounded-md px-3 py-2" style={{ border: "1px solid var(--b1)", background: "var(--bg-2)" }}>
-          <span style={{ color: "var(--t4)", display: "inline-flex" }}><Icon name="search" size={12} /></span>
+          <span style={{ color: "var(--t3)", display: "inline-flex" }}><Icon name="search" size={12} /></span>
           <input
             placeholder="Search tables &amp; columns…"
             value={search}
@@ -254,7 +254,7 @@ export function CatalogTree({
           {search && (
             <Button
               variant="ghost" size="xs" onClick={() => setSearch("")}
-              className="h-auto p-0 font-normal leading-none hover:bg-transparent dark:hover:bg-transparent" style={{ color: "var(--t4)" }}
+              className="h-auto p-0 font-normal leading-none hover:bg-transparent dark:hover:bg-transparent" style={{ color: "var(--t3)" }}
             >
               ✕
             </Button>
@@ -263,7 +263,7 @@ export function CatalogTree({
         {/* The same legend the builder shows, so a dot means one thing product-wide. */}
         <div className="mt-2.5 flex items-center gap-3">
           {([["bg-emerald-500", "num"], ["bg-blue-400", "date"], ["bg-zinc-500", "text"]] as const).map(([d, l]) => (
-            <span key={l} className="aug-fs-ui flex items-center gap-1.5" style={{ color: "var(--t4)" }}>
+            <span key={l} className="aug-fs-ui flex items-center gap-1.5" style={{ color: "var(--t3)" }}>
               <span className={`h-2 w-2 rounded-[var(--r-pill)] ${d}`} />{l}
             </span>
           ))}
@@ -272,13 +272,13 @@ export function CatalogTree({
 
       <div className="flex-1 overflow-y-auto py-1">
         {loading && tables.length === 0 && (
-          <p className="aug-fs-ui animate-pulse px-4 py-4" style={{ color: "var(--t4)" }}>Loading catalog…</p>
+          <p className="aug-fs-ui animate-pulse px-4 py-4" style={{ color: "var(--t3)" }}>Loading catalog…</p>
         )}
         {!loading && tables.length === 0 && (
-          <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t4)" }}>{emptyLabel}</p>
+          <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t3)" }}>{emptyLabel}</p>
         )}
         {tables.length > 0 && visible.length === 0 && (
-          <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t4)" }}>No match.</p>
+          <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t3)" }}>No match.</p>
         )}
 
         {/* The connection-name root is the ONE-connection form of the connection tier.
@@ -295,7 +295,7 @@ export function CatalogTree({
             <span className="aug-fs-ui truncate font-medium" style={{ color: "var(--t1)" }}>
               {catalogName}
             </span>
-            <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t4)" }}>
+            <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t3)" }}>
               {tables.length}
             </span>
           </Button>
@@ -322,7 +322,7 @@ export function CatalogTree({
             <IcoCatalog color={cHasActive ? "var(--blue4)" : "var(--t2)"} size={14} />
             <span className="aug-fs-ui truncate font-medium"
               style={{ color: cHasActive ? "var(--t1)" : "var(--t2)" }}>{conn.label}</span>
-            <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t4)" }}>{conn.count}</span>
+            <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t3)" }}>{conn.count}</span>
           </Button>
         )}
         {cOpen && conn.schemas.map(([schema, schemaTables]) => {
@@ -346,7 +346,7 @@ export function CatalogTree({
                   <span className="aug-fs-ui truncate font-mono" style={{ color: "var(--t2)" }}>
                     {schema}
                   </span>
-                  <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t4)" }}>
+                  <span className="aug-fs-ui ml-auto shrink-0" style={{ color: "var(--t3)" }}>
                     {schemaTables.length}
                   </span>
                 </Button>
@@ -381,7 +381,7 @@ export function CatalogTree({
                         >
                           {bare}
                         </span>
-                        {rc && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>{rc}</span>}
+                        {rc && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t3)" }}>{rc}</span>}
                       </Button>
                       {/* The insert affordance. Hidden until the row is hovered or
                           focused, because a button on every one of 60 rows is
@@ -403,7 +403,7 @@ export function CatalogTree({
                       {(t.joinDegree ?? 0) > 0 && (
                         <span
                           title={`${t.joinDegree} related table${(t.joinDegree ?? 0) > 1 ? "s" : ""}`}
-                          className="aug-fs-ui hidden shrink-0 items-center gap-0.5 sm:flex" style={{ color: "var(--t4)" }}
+                          className="aug-fs-ui hidden shrink-0 items-center gap-0.5 sm:flex" style={{ color: "var(--t3)" }}
                         >
                           ⋈{t.joinDegree}
                         </span>
@@ -411,7 +411,7 @@ export function CatalogTree({
                       {renderTableActions
                         ? renderTableActions(t)
                         : t.isolated && (
-                          <span title="No detected joins to other tables" className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>
+                          <span title="No detected joins to other tables" className="aug-fs-ui shrink-0" style={{ color: "var(--t3)" }}>
                             isolated
                           </span>
                         )}
@@ -419,7 +419,7 @@ export function CatalogTree({
 
                     {tOpen && t.columns.length === 0 && (
                       <div className={`py-1.5 ${multiConn ? "pl-16" : catalogName ? "pl-14" : "pl-9"}`}>
-                        <span className="aug-fs-ui" style={{ color: "var(--t4)" }}>
+                        <span className="aug-fs-ui" style={{ color: "var(--t3)" }}>
                           No columns available — the schema may need a refresh.
                         </span>
                       </div>
@@ -445,11 +445,11 @@ export function CatalogTree({
                           <span className={`h-2 w-2 shrink-0 rounded-[var(--r-pill)] ${dot(c.type ?? "")}`} />
                           <span className="aug-fs-ui flex-1 truncate text-left font-mono" style={{ color: "var(--t2)" }}>{c.name}</span>
                           {c.type && (
-                            <span className="aug-fs-ui hidden shrink-0 font-mono uppercase group-hover/col:inline" style={{ color: "var(--t4)" }}>
+                            <span className="aug-fs-ui hidden shrink-0 font-mono uppercase group-hover/col:inline" style={{ color: "var(--t3)" }}>
                               {c.type.split(" ")[0].slice(0, 6)}
                             </span>
                           )}
-                          {c.is_fk && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t4)" }}>FK</span>}
+                          {c.is_fk && <span className="aug-fs-ui shrink-0" style={{ color: "var(--t3)" }}>FK</span>}
                         </Button>
                         {renderColumnActions?.(c, t)}
                       </div>

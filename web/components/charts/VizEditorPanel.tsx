@@ -151,12 +151,12 @@ function Channel({ title, onRemove, more, children }: {
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 1 }}>
           {more && (
             <Button variant="ghost" size="icon-sm" onClick={() => setOpen((o) => !o)} title="More options"
-              style={{ color: open ? "var(--accent)" : "var(--t4)" }}>
+              style={{ color: open ? "var(--accent)" : "var(--t3)" }}>
               <Icon name="sliders" size={13} />
             </Button>
           )}
           {onRemove && (
-            <Button variant="ghost" size="icon-sm" onClick={onRemove} title="Remove" style={{ color: "var(--t4)" }}>
+            <Button variant="ghost" size="icon-sm" onClick={onRemove} title="Remove" style={{ color: "var(--t3)" }}>
               <Icon name="minus" size={14} />
             </Button>
           )}
@@ -248,14 +248,14 @@ function AnnotationSection({ model }: { model: VizEditorModel }) {
             <div key={i} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--t2)" }}>
               <span style={{ width: 12, borderTop: "1.5px dashed var(--t3)" }} />
               <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{l.label} · {l.value}</span>
-              <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t4)" }}>
+              <Button variant="ghost" size="icon-sm" onClick={() => model.removeRefLine(i)} title="Remove" style={{ color: "var(--t3)" }}>
                 <Icon name="close" size={13} />
               </Button>
             </div>
           ))}
         </div>
       ) : (
-        <div style={{ fontSize: 12, color: "var(--t4)" }}>No reference lines yet — open options to add one.</div>
+        <div style={{ fontSize: 12, color: "var(--t3)" }}>No reference lines yet — open options to add one.</div>
       )}
     </Channel>
   );

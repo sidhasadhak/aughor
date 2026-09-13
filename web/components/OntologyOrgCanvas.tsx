@@ -1,4 +1,5 @@
 "use client";
+import { Pending } from "@/components/ui/motion";
 
 /**
  * OntologyOrgCanvas — the org-level board.
@@ -127,7 +128,7 @@ function ClusterTile({
       <div style={{ width: SHELL_W }}>
         {label}
         <div className="flex items-center justify-center" style={{ height: SHELL_H }}>
-          <div className="w-5 h-5 border-2 border-violet-500/60 border-t-transparent rounded-[var(--r-pill)] animate-spin" />
+          <Pending label="Loading" className="aug-fs-h2 text-[var(--t3)]" />
         </div>
       </div>
     );
@@ -259,7 +260,7 @@ export function OntologyOrgCanvas({
 
       {loading ? (
         <div className="w-full h-full flex items-center justify-center">
-          <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-[var(--r-pill)] animate-spin" />
+          <Pending label="Loading" className="aug-fs-h1 text-[var(--t3)]" />
         </div>
       ) : (
         <div ref={scrollRef} className="w-full h-full overflow-auto" style={DOTS}>

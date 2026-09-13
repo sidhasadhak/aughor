@@ -66,7 +66,7 @@ export function HistoryRail({
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: "0 6px 8px" }}>
         {loaded && rows.length === 0 && (
-          <div style={{ fontSize: 13, color: "var(--t4)", padding: "6px 4px", lineHeight: 1.5 }}>
+          <div style={{ fontSize: 13, color: "var(--t3)", padding: "6px 4px", lineHeight: 1.5 }}>
             Queries you run here appear in this list.
           </div>
         )}
@@ -87,8 +87,8 @@ export function HistoryRail({
             >
               {preview(r.sql_full || r.sql_digest)}
             </span>
-            <span style={{ display: "block", fontSize: 13, color: "var(--t4)", marginTop: 2 }}>
-              <span style={{ color: VERDICT_COLOR[r.verdict] ?? "var(--t4)" }}>{r.verdict}</span>
+            <span style={{ display: "block", fontSize: 13, color: "var(--t3)", marginTop: 2 }}>
+              <span style={{ color: VERDICT_COLOR[r.verdict] ?? "var(--t3)" }}>{r.verdict}</span>
               {r.row_count != null && ` · ${r.row_count} rows`}
               {r.duration_ms != null && ` · ${Math.round(r.duration_ms)} ms`}
               {r.ts && ` · ${relTime(r.ts)} ago`}
