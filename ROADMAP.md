@@ -122,8 +122,9 @@ one, every number equal to its hand-written reference, and the late segment, the
 promise derives compile by construction), ON-10 (the investigation starts from the ontology — first slice built
 2026-09-13: a question's business terms are resolved against the DECLARED ontology, with no model, before the deep
 analysis's intake reads them, each definition compiled by the object door and the frame shown with the answer; through
-the running API 15 of 18 Olist questions reached a declared definition and none of the 3 controls did; the falsifier set
-is written and every reference executed, and its RUN — which spends model calls — awaits the user's go) and fixed ON-7
+the running API 15 of 18 Olist questions reached a declared definition and none of the 3 controls did; and the
+falsifier HELD on its run the same day: on the 12 questions whose definition is declared and not in the schema, framed
+answered 8 and raw 3, losing none raw answered and keeping all 3 controls, so the framing stays) and fixed ON-7
 first; §6 item 18 holds the three open shape questions.
 
 ---
@@ -4697,7 +4698,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   `≤ order_estimated_delivery_date`); the measured breach rates equal the table above; the
   derived segment and metric compile and equal their references.
 - ✅ **ON-10 · The investigation starts from the ontology — FIRST SLICE BUILT + LIVE FRAME RECEIPT 2026-09-13; THE
-  FALSIFIER RUN AWAITS THE USER'S GO** (the user: *"Take whats next on the ontology roadmap"*; branch
+  FALSIFIER HELD 2026-09-13 — FRAMED 8 OF 12, RAW 3** (the user: *"Take whats next on the ontology roadmap"*; branch
   `claude/on-10-framing`). **What exists:** `aughor.ontology.framing` — pure: no model, no store, no warehouse.
   `frame_question(question, graph, synonyms, hops)` matches the question's words (a small deterministic stemmer; a longer
   declared name wins its words over a shorter one of no higher rank) against what was declared — types by id, display
@@ -4743,8 +4744,26 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   starting from Order Line (`order_items`, whose key is not unique), testing product category, seller state and order
   status; the ambiguous one lists both promises and chooses neither. On LuxExperience the same dispatch question reads
   as the shipping promise and carries its "never broken" flag — the frame itself says the synthetic data cannot answer
-  it. **Open on this wave:** the falsifier RUN (`--arms raw,guarded,framed`: 15 raw calls + 12 framed, the controls
-  reuse raw, no question of the set is ambiguous — about 27 calls) · a live deep analysis showing the frame in the web
+  it. **The falsifier run** (the user: *"continue with Falsifier run"*; 2026-09-13; `gemini-3.1-flash-lite`, fallback
+  none; 27 SQL calls, two transient errors each retried once, none spent choosing — no question of the set was
+  ambiguous; the graph frozen beside the set hash-equal to the one the API served that day; results in
+  `evals/ablation_on10_olist_business_results.json`): **THE FALSIFIER HELD — on the 12 questions whose definition is
+  declared, framed answered 8 and raw 3 (guarded made 5 safe); framed lost none raw answered and kept all 3 controls.**
+  The five gained are definitions raw guessed from column names: the dispatch promise read as delivery to the customer
+  after the shipping limit (79.12% where the business measures 9.35%) or as late delivery (Southeast 8.03% where the
+  promise reads 9.16%), and "fulfilled" read as `order_status = 'delivered'` (43,428 orders placed in 2017 where
+  finance's rule counts 44,379; every year's line total low; 98.24% delivered where the rule's population reads 98.23%
+  — the thinnest of the five). The three framed still missed are dispatch BREAKDOWNS on which framed named the
+  reference's categories, states and month in the reference's order while raw, reading the promise as late delivery,
+  named others: twice the model rounded the compiled rate — a fraction — without ×100 where the question asked for a
+  percentage (PR 0.11 for 11.09, February 0.13 for 13.25), and once it rebuilt the grouped rate over every line instead
+  of the lines that reached dispatch (28.15 for 28.37). The lag question failed in every arm alike: the model wrote
+  SQLite's `JULIANDAY` against DuckDB with the frame's compiled `DATE_DIFF` in front of it. **What the run does not
+  show:** it is one run of one model on 12 questions, and the matcher's reading of these 12 was developed on these very
+  questions (the live receipt framed them) — the model half is out of sample, the matcher half is not; a held-out set on
+  another host measures that. **Open on this wave:** a frame that states its rate's unit (the two ×100 misses) —
+  measured on a NEW set, never by re-running this one · a second run for stability (about 27 calls, the user's go) · a
+  live deep analysis showing the frame in the web
   (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the
   prompts; that phase is the next slice) · the model does not word the frame (the reading is the deterministic
   template) · the explorer proposes no processes (ON-9's open item), so an undeclared connection frames nothing · the
@@ -5143,7 +5162,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         ontology (frame_question before the intake parse; the falsifier is a set where raw FAILS because
         the definition is not in the data) — ✅ FIRST SLICE 2026-09-13: framed with no model before the intake, 15 of 18
         Olist questions framed live through the door and none of the controls, the falsifier set of 15 executed, 29/29
-        guard mutations caught; the run awaits the user's go → ON-8 one ontology, many sources (org-keyed, bindings name
+        guard mutations caught; the falsifier HELD (framed 8 of the 12 declared-definition questions, raw 3, no control
+        lost) → ON-8 one ontology, many sources (org-keyed, bindings name
         their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
 ```
 
@@ -5635,8 +5655,9 @@ the browser** · **measure the premise before building.**
     payment and an order's shipment; a shipment becomes an entity only where the business ships across
     orders (consolidated freight), which a measured N:N key would show.*
     **(c) The host for ON-9/ON-10's receipts** — *(2026-09-13: ON-9's receipt was taken on Olist, as recommended;
-    LuxExperience hosted the never-broken flag instead. The question stays open for ON-10 and the pack enrichment.
-    ON-10's falsifier set was written on Olist too; framed on LuxExperience, the dispatch question reads as a shipping
+    LuxExperience hosted the never-broken flag instead. ON-10's falsifier was written and run on Olist too and held
+    (2026-09-13), so the question stays open for the pack enrichment only; framed on LuxExperience, the dispatch
+    question reads as a shipping
     promise the data never breaks — the case for the pack enrichment, now visible on every framed answer.)* —
     Olist (`baef6c3e/ecommerce`, real delays: 9.35% late
     dispatch, 8.11% late delivery) first, or enrich the LuxExperience pack's generator with realistic
