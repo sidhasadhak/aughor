@@ -54,6 +54,10 @@ _SKIP_FILES = {
     # …and the same graphs after `aughor.ontology.cardinality` measured their joins (ON-0a).
     "evals/ablation_samples_ecommerce_ontology_measured.json",
     "evals/ablation_luxexperience_ontology_measured.json",
+    # ON-10's falsifier fixture: the served Olist graph (`baef6c3e/ecommerce`) with its declared process and rules —
+    # the same wire format, the same model field names.
+    "evals/ablation_olist_business_ontology.json",
+    "evals/ablation_luxexperience_business_ontology.json",
 }
 _EXTS = {".py", ".ts", ".tsx", ".css", ".yaml", ".yml", ".json"}
 

@@ -189,6 +189,21 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
         tolerate(_exc, "specialist-pack intake best-effort; run proceeds ungrounded",
                  counter="packs.intake")
 
+    # ON-10 — the question framed against the declared ontology before the chain is planned: the definitions it
+    # reaches (with the SQL the object door compiles), where to start and the drivers lead the planner's context.
+    _frame = None
+    try:
+        from aughor.agent.framing import frame_from_state
+        from aughor.ontology.framing import render_frame_block
+        _frame = frame_from_state(state)
+        _frame_block = render_frame_block(_frame) if _frame is not None else ""
+        if _frame_block:
+            scan_section = _frame_block + "\n\n" + scan_section
+    except Exception as _exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_exc, "framing the question is best-effort; the chain is planned from the question as written",
+                 counter="explore.frame")
+
     # Pin canonical definitions for the whole run before planning any sub-questions.
     analysis_ledger = build_analysis_ledger(state)
 
@@ -234,6 +249,7 @@ def decompose_exploration(state: AgentState) -> dict[str, Any]:
 
     return {
         "sub_questions": sub_questions,
+        "ontology_frame": (_frame.model_dump(mode="json") if _frame is not None and _frame.defines else None),
         "current_subq_idx": 0,
         "subq_answers": [],
         "pitfalls": [],

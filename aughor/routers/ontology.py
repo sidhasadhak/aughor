@@ -1374,6 +1374,55 @@ def list_ontology_processes(
             "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())]}
 
 
+class _FrameQuestion(BaseModel):
+    """ON-10 — a question to frame against the declared ontology."""
+    question: str
+    #: How many measured to-one links a candidate driver may sit from where the frame starts (1–3).
+    hops: Optional[int] = None
+
+
+def _frame_dialect(connection_id: str) -> str:
+    """The dialect the object door compiles in for this connection — the connector's own when it writes native SQL,
+    else DuckDB's (the rule `aughor.db.connection` executes by). No connection is opened."""
+    try:
+        from aughor.db.connection import connection_traits
+        from aughor.db.registry import get_conn_type
+        traits = connection_traits(get_conn_type(connection_id))
+        return (traits.get("dialect") or "duckdb") if traits.get("writes_native_sql") else "duckdb"
+    except Exception:  # noqa: BLE001 — an unknown connection compiles as the platform's own engine does
+        return "duckdb"
+
+
+@router.post("/ontology/frame")
+def frame_ontology_question(
+    body: _FrameQuestion,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Frame a question against the declared ontology (ON-10): its business terms resolved — deterministically,
+    against the declared names, a person's synonyms, the processes with their stages and promises, what each promise
+    derives, and the rules — to the outcome's definition in the declaration's own words with its measured numbers,
+    where to start, the rules and stage moments it names, and the drivers reachable from the start by measured
+    to-one links, each definition compiled by the object door. When the words fit several declared definitions
+    equally they are all returned and none is chosen. No model call, no warehouse: the investigation frames every
+    question this way before its intake reads it, and this door shows the same frame."""
+    from aughor.ontology.framing import DEFAULT_HOPS, frame_question
+    question = (body.question or "").strip()
+    if not question:
+        raise HTTPException(status_code=400, detail="a question is required")
+    graph = _get_ontology_graph(connection_id, schema_name)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    try:
+        from aughor.ontology.vocabulary import synonyms_for
+        synonyms = [s for s in synonyms_for(connection_id) if s.source == "human"]
+    except Exception:  # noqa: BLE001 — synonyms widen what a question may name; the declared names still resolve
+        synonyms = []
+    frame = frame_question(question[:2000], graph, synonyms=synonyms, hops=body.hops or DEFAULT_HOPS,
+                           dialect=_frame_dialect(connection_id))
+    return {"connection_id": connection_id, "schema_name": graph.schema_name, "frame": frame.model_dump(mode="json")}
+
+
 @router.post("/ontology/processes", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def declare_ontology_process(
     body: _DeclaredProcess,

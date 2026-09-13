@@ -162,6 +162,8 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
         from aughor.db.connection import open_connection_for
         db = open_connection_for(args.connection)
     schema = db.get_schema() if args.mode == "raw" else ""
+    from aughor.db.dialects import writer_rules
+    dialect_rules = writer_rules(db)
 
     out_dir = Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -186,7 +188,8 @@ def run_arm(args: argparse.Namespace, db=None) -> dict:
                     question, args.connection, db, temperature=args.temperature)
             else:
                 sql = run_golden.generate_sql_chat(
-                    question, args.connection, schema, temperature=args.temperature)
+                    question, args.connection, schema, temperature=args.temperature,
+                    dialect_rules=dialect_rules)
             ok, _cols, _rows, err = _safe_exec(db, sql)
         except Exception as e:  # a generation failure is a scored outcome, not a crash
             sql, ok, err = "", False, f"generation failed: {e}"

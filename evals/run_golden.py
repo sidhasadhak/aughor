@@ -61,8 +61,14 @@ def _safe_exec(db, sql: str) -> tuple[bool, list[str], list[list], str | None]:
         return False, [], [], str(e)
 
 
-def generate_sql_chat(question: str, connection_id: str, schema: str, temperature: float = 0.0) -> str:
-    """Generate SQL using the same chat pipeline as the UI."""
+def generate_sql_chat(question: str, connection_id: str, schema: str, temperature: float = 0.0,
+                      dialect_rules: str = "") -> str:
+    """Generate SQL using the same chat pipeline as the UI.
+
+    ``dialect_rules`` is the engine's rule block (`aughor.db.dialects.writer_rules(db)`), led the way the quick
+    path leads it, and every caller passes it: without it this generator wrote SQL blind to the engine where the
+    product does not — on 2026-09-13 both ON-10 falsifier runs got SQLite's JULIANDAY on DuckDB, a function the
+    DuckDB rules forbid by name."""
     from aughor.llm.provider import get_provider
     from aughor.agent.prompts import CHAT_SQL_SYSTEM, CHAT_PROMPT
 
@@ -80,6 +86,8 @@ def generate_sql_chat(question: str, connection_id: str, schema: str, temperatur
         causal_section="",
         document_section="",
     )
+    if dialect_rules:
+        prompt = dialect_rules + "\n\n" + prompt
 
     class _ChatAnswer:
         sql: str = ""
@@ -252,6 +260,11 @@ def generate_sql_full_pipeline(question: str, connection_id: str, db, temperatur
     )
     if rules_block:
         prompt = rules_block + prompt
+    # The engine's dialect rules, where the quick path puts them (`routers/investigations.py`).
+    from aughor.db.dialects import writer_rules
+    _dialect_block = _safe_str(lambda: writer_rules(db))
+    if _dialect_block:
+        prompt = _dialect_block + "\n\n" + prompt
     if pb_entries:
         try:
             from aughor.playbook.retriever import build_playbook_prompt_section
@@ -422,7 +435,10 @@ def run_eval(record: dict, db, live: bool = False, schema: str = "", mode: str |
             if mode == "full":
                 generated_sql = generate_sql_full_pipeline(question, conn_id, db, temperature=temperature)
             else:
-                generated_sql = generate_sql_chat(question, conn_id, schema, temperature=temperature)
+                from aughor.db.dialects import writer_rules
+                rules = writer_rules(db) if db is not None else ""
+                generated_sql = generate_sql_chat(question, conn_id, schema, temperature=temperature,
+                                                  dialect_rules=rules)
         except Exception as e:
             return {
                 "id": record["id"],

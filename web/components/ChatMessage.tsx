@@ -731,6 +731,7 @@ export const TURN_RENDERERS: TurnRenderer[] = [
         streamingPhases={t.deepReport ? undefined : t.phases}
         streamingReport={t.deepReport ? undefined : (t.reportStream ?? undefined)}
         onShowSource={p.onShowSource}
+        frame={t.frame}
       />
     ),
   },
@@ -745,6 +746,7 @@ export const TURN_RENDERERS: TurnRenderer[] = [
         queryCount={t.subqAnswers.length}
         connectionId={p.connectionId}
         investigationId={t.investigationId ?? undefined}
+        frame={t.frame}
       />
     ),
   },

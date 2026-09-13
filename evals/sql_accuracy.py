@@ -20,7 +20,11 @@ from aughor.db.connection import open_connection_for
 
 
 def _safe_exec(db, sql: str) -> tuple[bool, list[str], list[list], str | None]:
-    """Execute SQL via raw DuckDB cursor to bypass _validate/_normalize_to_duckdb."""
+    """Execute SQL via raw DuckDB cursor to bypass _validate/_normalize_to_duckdb.
+
+    One thing the connection does is kept: a JULIANDAY refusal is healed once, exactly as `DuckDBConnection` heals it
+    (`aughor.db.connection.heal_duckdb_refusal`). Every product path runs the statement that way, so scoring the
+    refusal would score an error no user sees; a heal that still fails scores the original error."""
     try:
         conn = getattr(db, "_conn", None)
         if conn is None:
@@ -28,7 +32,17 @@ def _safe_exec(db, sql: str) -> tuple[bool, list[str], list[list], str | None]:
             if result.error is not None and result.error != "":
                 return False, result.columns, result.rows, result.error
             return True, result.columns, result.rows, None
-        conn.execute(sql)
+        try:
+            conn.execute(sql)
+        except Exception as refused:
+            from aughor.db.connection import is_julianday_refusal, rewrite_julianday
+            rewritten = rewrite_julianday(sql) if is_julianday_refusal(str(refused)) else ""
+            if not rewritten:
+                raise
+            try:
+                conn.execute(rewritten)
+            except Exception:
+                raise refused from None
         rows = conn.fetchall()
         columns = [d[0] for d in conn.description] if conn.description else []
         rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows]

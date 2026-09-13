@@ -72,6 +72,8 @@ export type AughorEvidenceData = {
   "guard_receipt": unknown;
   "chain_state": unknown;
   "playbook_refs": unknown;
+  // ON-10 — the question's frame: its business terms read against the declared ontology before the run started.
+  "frame": unknown;
   "hypotheses": unknown;
   "score": unknown;
   "analysis": unknown;
@@ -163,7 +165,7 @@ const DECLARED = [
   "route", "headline", "narrative", "answer", "sql", "columns", "rows", "chart_type",
   "chart_config", "tables_used",
   "queries_executed", "figure", "receipt_id", "context_assembled", "guard_receipt",
-  "playbook_refs", "hypotheses", "score", "analysis",
+  "playbook_refs", "frame", "hypotheses", "score", "analysis",
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",

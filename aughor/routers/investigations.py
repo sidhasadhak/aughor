@@ -3997,6 +3997,22 @@ async def _stream_investigation(
                                               scope_schema=scope_schema or None,
                                               schema_text=schema_for_agent or "")
 
+        # ON-10 — frame the question against the declared ontology before the graph starts: no model, no warehouse
+        # (a model chooses among equally-fitting definitions later, inside the run). Shown at once when it reached a
+        # declared definition, and handed to the run so the intake and the explore planner read the same frame.
+        _frame_dump = None
+        try:
+            from aughor.agent.framing import resolve_frame
+            _frame = await asyncio.to_thread(resolve_frame, question, connection_id, scope_schema or None,
+                                             dialect=getattr(db, "dialect", "") or "duckdb", choose=False)
+            if _frame is not None and _frame.defines:
+                _frame_dump = _frame.model_dump(mode="json")
+                yield _sse("frame", {"frame": _frame_dump, "investigation_id": inv_id})
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "framing the question is best-effort; the investigation reads it as written",
+                     counter="investigation.frame", conn_id=connection_id)
+
         initial_state: AgentState = {
             "question": question, "connection_id": connection_id, "investigation_id": inv_id,
             "trace_id": trace_id,
@@ -4021,6 +4037,7 @@ async def _stream_investigation(
             "requested_mode": requested_mode,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
             "investigation_phases": [], "answer_report": None, "_ada_intake": None,
+            "ontology_frame": _frame_dump,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
             "scope_schema": scope_schema or "",
             "data_catalog": data_catalog or "",
@@ -4233,7 +4250,7 @@ async def _stream_investigation(
                 sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
                 sa_raw = [a.model_dump() for a in answers]
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
-                yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
+                yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore", "frame": merged.get("ontology_frame")})
                 try:
                     from aughor.agent.followups import (
                         artifact_from_history, followup_system, followup_user)
@@ -4503,7 +4520,7 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
                 sq_raw = [sq.model_dump() for sq in merged.get("sub_questions", [])]
                 sa_raw = [a.model_dump() for a in answers]
                 yield _sse("tables_used", {"tables": _extract_tables(" ".join(r.sql for r in qh if r.sql))})
-                yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore"})
+                yield _sse("explore_report", {"explore_report": er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw, "query_count": len(qh), "investigation_id": inv_id, "query_mode": "explore", "frame": merged.get("ontology_frame")})
                 explore_save = {"_report_type": "explore", **er.model_dump(), "sub_questions": sq_raw, "subq_answers": sa_raw}
                 complete_investigation(inv_id, report=explore_save, hypotheses=[], query_history=qh, question=inv["question"], connection_id=inv.get("connection_id", ""))
                 _record_memory(inv_id, inv.get("connection_id", ""), inv["question"], merged)

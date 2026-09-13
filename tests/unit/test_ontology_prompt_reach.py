@@ -25,8 +25,8 @@ from aughor.ontology import prompt_reach as pr
 #: field path → the blocks it reached on 2026-09-10. A block may be ADDED to a field
 #: (reach grew); removing one needs the renderer change that justifies it, in the same PR.
 REACH_BASELINE: dict[str, set[str]] = {
-    "entities.*.id": {'entity_model'},
-    "entities.*.display_name": {'entity_model', 'semantic_layer'},
+    "entities.*.id": {'entity_model', 'question_frame'},
+    "entities.*.display_name": {'entity_model', 'question_frame', 'semantic_layer'},
     "entities.*.identity_key": {'entity_model'},
     "entities.*.grain_verified": {'entity_model'},
     "entities.*.entity_type": {'entity_model'},
@@ -47,8 +47,8 @@ REACH_BASELINE: dict[str, set[str]] = {
     "entities.*.computed_properties[].formula_sql": {'semantic_layer'},
     "entities.*.computed_properties[].unit": {'semantic_layer'},
     "entities.*.computed_properties[].verified": {'semantic_layer'},
-    "relationships.*.from_entity": {'relationships'},
-    "relationships.*.to_entity": {'relationships'},
+    "relationships.*.from_entity": {'question_frame', 'relationships'},
+    "relationships.*.to_entity": {'question_frame', 'relationships'},
     "relationships.*.verb": {'relationships'},
     "relationships.*.cardinality": {'relationships'},
     "relationships.*.from_table": {'relationships'},
@@ -92,11 +92,55 @@ REACH_BASELINE: dict[str, set[str]] = {
     "kinetic_actions.*.edits[].object": {'actions_declared'},
     "kinetic_actions.*.edits[].property": {'actions_declared'},
     "kinetic_actions.*.edits[].value": {'actions_declared'},
+    # ON-10 (2026-09-13): the question frame — a declared process, promise and rule reach the deep analysis's intake and
+    # every phase planner, with what the frame reads of the types, links and backings to start from and compile over.
+    "schema_name": {'question_frame'},
+    "entities.*.backing.kind": {'question_frame'},
+    "entities.*.backing.table": {'question_frame'},
+    "entities.*.backing.primary_key": {'question_frame'},
+    "entities.*.backing.verified": {'question_frame'},
+    "entities.*.bindings[].properties.*.semantic_type": {'question_frame'},
+    "entities.*.bindings[].verified": {'question_frame'},
+    "entities.*.properties.*.name": {'question_frame'},
+    "entities.*.properties.*.semantic_type": {'question_frame'},
+    "relationships.*.measured_cardinality": {'question_frame'},
+    "relationships.*.api_name": {'question_frame'},
+    "processes.*.id": {'question_frame'},
+    "processes.*.display_name": {'question_frame'},
+    "processes.*.entity": {'question_frame'},
+    "processes.*.stages[].name": {'question_frame'},
+    "processes.*.stages[].timestamp": {'question_frame'},
+    "processes.*.stages[].promise.name": {'question_frame'},
+    "processes.*.stages[].promise.within_days": {'question_frame'},
+    "processes.*.stages[].promise.deadline": {'question_frame'},
+    "processes.*.stages[].promise.grain": {'question_frame'},
+    "processes.*.stages[].promise.via": {'question_frame'},
+    "processes.*.stages[].promise.verified": {'question_frame'},
+    "processes.*.stages[].promise.flags": {'question_frame'},
+    "processes.*.stages[].promise.note": {'question_frame'},
+    "processes.*.stages[].verified": {'question_frame'},
+    "processes.*.stages[].both": {'question_frame'},
+    "processes.*.stages[].p50_days": {'question_frame'},
+    "processes.*.stages[].p90_days": {'question_frame'},
+    "processes.*.stages[].p95_days": {'question_frame'},
+    "rules.*.id": {'question_frame'},
+    "rules.*.description": {'question_frame'},
+    "rules.*.owner": {'question_frame'},
+    "rules.*.entity": {'question_frame'},
+    "rules.*.kind": {'question_frame'},
+    "rules.*.property": {'question_frame'},
+    "rules.*.values": {'question_frame'},
+    "rules.*.verified": {'question_frame'},
+    "rules.*.flags": {'question_frame'},
+    "rules.*.note": {'question_frame'},
 }
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 246   # 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design; +9 ON-4 (object params, the action's object type, declared edits); +9 ON-3b (the display property's name, source and measurement, the backing's rows, a link's business-verb name) — unreached by design: the map and describe_entity read them as tools, never as prompt text; +72 ON-1b (a further binding and a proposed one: source, key, kind, time column, the properties each supplies with their renames and skips, the counts and the verdict) — unreached by design: the compiler, the pages and describe_entity read bindings, no prompt renders one
+FIELDS_WALKED = 317   # +71 ON-10 (2026-09-13): a declared process with two promises and a rule on the fixture, and the
+#   timestamps and dimension they anchor to — 43 of those fields reach the question frame, the rest (a process's owner and
+#   description, a promise's target and counts, a rule's observed values) are read by the map and the doors, never by
+#   the frame; 246 before — 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design; +9 ON-4 (object params, the action's object type, declared edits); +9 ON-3b (the display property's name, source and measurement, the backing's rows, a link's business-verb name) — unreached by design: the map and describe_entity read them as tools, never as prompt text; +72 ON-1b (a further binding and a proposed one: source, key, kind, time column, the properties each supplies with their renames and skips, the counts and the verdict) — unreached by design: the compiler, the pages and describe_entity read bindings, no prompt renders one
 
 
 @pytest.fixture(scope="module")

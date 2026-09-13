@@ -432,6 +432,9 @@ class AnswerReport(TypedDict):
     # confident-looking document — the reader must know at the TOP that the framing is
     # machine-stitched. Absent (falsy) on every synthesized report.
     degraded: NotRequired[bool]
+    # ON-10 — the question's frame: its business terms resolved against the DECLARED ontology before the intake read it
+    # (`aughor.ontology.framing.Frame`, dumped). Shown with the answer. Absent when nothing declared was reached.
+    frame: NotRequired[Optional[dict]]
 
 
 class AgentState(TypedDict):
@@ -549,6 +552,9 @@ class AgentState(TypedDict):
     investigation_phases: list[InvestigationPhaseResult]
     answer_report: Optional[AnswerReport]
     _ada_intake: Optional[dict]      # intake spec passed between deep-analysis phase nodes
+    # ON-10 — the frame the investigation door resolved before the graph started (a dumped
+    # `aughor.ontology.framing.Frame`); the intake completes it with a model's choice when ambiguous.
+    ontology_frame: Optional[dict]
     _clarify_pending: Optional[dict]  # P4 clarify gate: a material metric ambiguity awaiting the user's choice
     _allow_clarify: Optional[bool]    # request posture: may this run PAUSE to ask? (replaces the clarify flag)
     _suppressed_ratio: Optional[dict]  # a ratio metric proven corrupt (conditioned denom / fan-out): {metric_label, caveat, true_global_str} — synthesis scrubs it from every phase + cites the true level

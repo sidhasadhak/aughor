@@ -209,6 +209,85 @@ export interface AnswerRecommendation {
   timeline: string;
 }
 
+/** ON-10 — one declared definition a question's words reached (`aughor/ontology/framing.py` FrameOutcome). */
+export interface FrameOutcome {
+  kind: "promise" | "lag" | "rule";
+  name: string;
+  label: string;
+  entity: string;
+  object_type: string;
+  process: string;
+  stage: string;
+  promise: string;
+  segment: string;
+  metric: string;
+  lag: string;
+  definition: string;
+  measured: string;
+  rate: number | null;
+  usable: boolean;
+  why_not: string;
+  caveats: string[];
+  matched: string[];
+  score: number;
+  note: string;
+}
+
+export interface FrameRule {
+  id: string;
+  label: string;
+  entity: string;
+  words: string;
+  owner: string;
+  matched: string;
+  via: string;
+  filters: Record<string, unknown>[];
+  measured: string;
+  usable: boolean;
+  why_not: string;
+}
+
+export interface FrameMoment {
+  text: string;
+  process: string;
+  process_label: string;
+  stage: string;
+  entity: string;
+  timestamp: string;
+}
+
+export interface FrameDriver {
+  path: string;
+  label: string;
+  entity: string;
+  object_type: string;
+  property: string;
+  table: string;
+  links: string[];
+  named: boolean;
+}
+
+/** ON-10 — a question's business terms resolved against the DECLARED ontology before the analysis read it. */
+export interface OntologyFrame {
+  question: string;
+  connection_id: string;
+  schema_name: string;
+  hops: number;
+  terms: { text: string; kind: string; target: string; label: string; via: string; intent: string; start: number; end: number }[];
+  outcomes: FrameOutcome[];
+  chosen: number | null;
+  chosen_by: string;
+  start: { object_type: string; entity: string; name: string; table: string; key: string; key_unique: boolean | null } | null;
+  rules: FrameRule[];
+  moments: FrameMoment[];
+  drivers: FrameDriver[];
+  compiled: Record<string, { query: Record<string, unknown>; sql?: string; plan?: string[]; caveats?: string[]; refused?: string }>;
+  notes: string[];
+  reading: string;
+  defines: boolean;
+  ambiguous: boolean;
+}
+
 export interface AnswerReport {
   headline: string;
   executive_summary: string;
@@ -234,6 +313,8 @@ export interface AnswerReport {
   plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
   // T4-1 — plain-language receipt of how the metric was computed (formula + interpretation).
   metric_definition?: string | null;
+  // ON-10 — the frame the question was read through; absent when it reached nothing declared.
+  frame?: OntologyFrame | null;
 }
 
 // SSE event shapes

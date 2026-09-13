@@ -8255,6 +8255,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/frame": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Frame Ontology Question
+         * @description Frame a question against the declared ontology (ON-10): its business terms resolved — deterministically,
+         *     against the declared names, a person's synonyms, the processes with their stages and promises, what each promise
+         *     derives, and the rules — to the outcome's definition in the declaration's own words with its measured numbers,
+         *     where to start, the rules and stage moments it names, and the drivers reachable from the start by measured
+         *     to-one links, each definition compiled by the object door. When the words fit several declared definitions
+         *     equally they are all returned and none is chosen. No model call, no warehouse: the investigation frames every
+         *     question this way before its intake reads it, and this door shows the same frame.
+         */
+        post: operations["frame_ontology_question_ontology_frame_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/import": {
         parameters: {
             query?: never;
@@ -14241,6 +14267,16 @@ export interface components {
             state?: string | null;
             /** Value */
             value?: boolean | null;
+        };
+        /**
+         * _FrameQuestion
+         * @description ON-10 — a question to frame against the declared ontology.
+         */
+        _FrameQuestion: {
+            /** Hops */
+            hops?: number | null;
+            /** Question */
+            question: string;
         };
         /**
          * _KineticActionBody
@@ -28938,6 +28974,42 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    frame_ontology_question_ontology_frame_post: {
+        parameters: {
+            query?: {
+                connection_id?: string;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_FrameQuestion"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

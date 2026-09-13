@@ -1337,35 +1337,42 @@ class LocalUploadConnection(Connector):
             return _rp
 
         _t0 = time.monotonic()
-        try:
-            if params:
-                from aughor.sql.params import render_for_engine
-                self._duckdb.execute(render_for_engine(sql, "duckdb"), params)
-            else:
-                self._duckdb.execute(sql)
-            rows_raw = self._duckdb.fetchall()
-            columns = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
-            from aughor.db.connection import offer_typed_rows
-            offer_typed_rows(
-                rows_raw[:MAX_ROWS],
-                truncated=len(rows_raw) > MAX_ROWS,
-                types=[str(d[1]) for d in self._duckdb.description] if self._duckdb.description else [],
-            )
-            rows = [
-                [str(v) if v is not None else "NULL" for v in row]
-                for row in rows_raw[:MAX_ROWS]
-            ]
-            result = QueryResult(
-                hypothesis_id=hypothesis_id, sql=sql,
-                columns=columns, rows=rows, row_count=len(rows_raw),
-            )
-        except Exception as e:
-            result = QueryResult(
-                hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
-            )
+
+        def _attempt(statement: str) -> QueryResult:
+            try:
+                if params:
+                    from aughor.sql.params import render_for_engine
+                    self._duckdb.execute(render_for_engine(statement, "duckdb"), params)
+                else:
+                    self._duckdb.execute(statement)
+                rows_raw = self._duckdb.fetchall()
+                columns = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
+                from aughor.db.connection import offer_typed_rows
+                offer_typed_rows(
+                    rows_raw[:MAX_ROWS],
+                    truncated=len(rows_raw) > MAX_ROWS,
+                    types=[str(d[1]) for d in self._duckdb.description] if self._duckdb.description else [],
+                )
+                rows = [
+                    [str(v) if v is not None else "NULL" for v in row]
+                    for row in rows_raw[:MAX_ROWS]
+                ]
+                return QueryResult(
+                    hypothesis_id=hypothesis_id, sql=statement,
+                    columns=columns, rows=rows, row_count=len(rows_raw),
+                )
+            except Exception as e:
+                return QueryResult(
+                    hypothesis_id=hypothesis_id, sql=statement,
+                    columns=[], rows=[], row_count=0, error=str(e),
+                )
+
+        # The refusal `DuckDBConnection` heals is healed here too: this class is DuckDB-backed but inherits
+        # none of that class's overrides (see `execute_with_params`).
+        from aughor.db.connection import heal_duckdb_refusal
+        result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
         elapsed_ms = (time.monotonic() - _t0) * 1000
-        return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
+        return security_post(self._connection_id, hypothesis_id, result.sql, result, elapsed_ms)
 
     def make_reader(self) -> "LocalUploadConnection":
         """Return a clone safe for use in a parallel thread.
