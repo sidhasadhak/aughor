@@ -31,6 +31,8 @@ import {
 } from "@/components/brief/Brief";
 import { TrendStrip } from "@/components/brief/Sparkline";
 import { Icon } from "@/components/ui/icon";
+import { QuestionFrame } from "@/components/QuestionFrame";
+import type { OntologyFrame } from "@/lib/types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -119,6 +121,8 @@ export interface AnswerReport {
   plan_reconciliation?: { planned: string[]; actual: string[]; skipped: string[]; unplanned: string[] } | null;
   // T4-1 — plain-language receipt of how the metric was computed (formula + interpretation).
   metric_definition?: string | null;
+  /** ON-10 — the frame the question was read through; absent when it reached nothing declared. */
+  frame?: OntologyFrame | null;
   // A short closing "bottom line" that lands the answer at the end of the report (before
   // recommendations). Authored by synthesis; older reports omit it.
   closing_summary?: string | null;
@@ -376,11 +380,14 @@ export function InvestigationReportView({
   streamingPhases,
   streamingReport,
   onShowSource,
+  frame,
 }: {
   report?: AnswerReport;
   streamingPhases?: InvestigationPhase[];
   streamingReport?: string;
   onShowSource?: ShowSource;
+  /** ON-10 — the frame the run announced before its report existed; the report's own frame wins once it lands. */
+  frame?: OntologyFrame | null;
 }) {
   // While streaming: progressive phase cards + the report prose as the narrator writes
   // it (R6), so the synthesis phase isn't silent. The terminal report replaces both.
@@ -389,9 +396,10 @@ export function InvestigationReportView({
     // run's raw framing (it streamed a wall of join-path reasoning). The final report already
     // pulls intake out of the analysis phases; mirror that while streaming.
     const phases = (streamingPhases ?? []).filter(p => p.phase_id !== "intake" && !p._hidden);
-    if (!phases.length && !streamingReport) return null;
+    if (!phases.length && !streamingReport && !frame?.defines) return null;
     return (
       <div className="flex flex-col gap-4 pt-1">
+        <QuestionFrame frame={frame} />
         {streamingReport && <BriefProse text={streamingReport} />}
         {phases.map(phase => <StreamingPhaseCard key={phase.phase_id} phase={phase} />)}
       </div>
@@ -449,6 +457,8 @@ export function InvestigationReportView({
           // body states findings, not a hedge banner across the top of every answer.
         ]}
       />
+
+      <QuestionFrame frame={report.frame ?? frame} />
 
       {analysisPhases.map(phase => (
         <PhaseSection key={phase.phase_id} phase={phase} onShowSource={onShowSource} execSummary={report.executive_summary} />

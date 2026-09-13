@@ -47,6 +47,7 @@ from pydantic import BaseModel
 from aughor.ontology.models import (
     ActionParameter,
     Binding,
+    BusinessRule,
     ComputedProperty,
     DefinitionSource,
     DisplayProperty,
@@ -58,6 +59,9 @@ from aughor.ontology.models import (
     OntologyInterface,
     OntologyMetric,
     OntologyRelationship,
+    Process,
+    ProcessStage,
+    Promise,
     QueryTemplate,
     Segment,
     SideEffect,
@@ -148,6 +152,11 @@ def fixture_graph() -> OntologyGraph:
                 sample_values=["12.50", "99.00"], distribution_shape="skewed_right",
                 p25=10.0, p50=40.0, p75=120.0,
             ),
+            # ON-10 — the moments the fixture's process is anchored to (appended, so the walk's first property stays
+            # order_value and every path above is walked exactly as before).
+            "shipped_at": EntityProperty(name="shipped_at", data_type="TIMESTAMP", semantic_type="timestamp"),
+            "ship_by": EntityProperty(name="ship_by", data_type="TIMESTAMP", semantic_type="timestamp"),
+            "delivered_at": EntityProperty(name="delivered_at", data_type="TIMESTAMP", semantic_type="timestamp"),
         },
         computed_properties=[ComputedProperty(
             id="days_since_order", label="Days Since Order",
@@ -161,6 +170,7 @@ def fixture_graph() -> OntologyGraph:
         description="A person or organisation that has placed at least one order.",
         source_tables=["customers"], identity_key="customer_id", grain_verified=True,
         domain="Customer", entity_type="reference_data", created_at_col="signup_date",
+        properties={"country": EntityProperty(name="country", data_type="VARCHAR", semantic_type="dimension")},
     )
     rel = OntologyRelationship(
         id="Order_placed_by_Customer", from_entity="Order", to_entity="Customer",
@@ -169,6 +179,7 @@ def fixture_graph() -> OntologyGraph:
         from_table="orders", from_col="customer_id", to_table="customers", to_col="customer_id",
         join_confidence="verified", nullable=True, value_overlap=0.98,
         name="order_placed_by_customer",   # ON-3b — a person's business-verb link name, so the walk reaches it
+        measured_cardinality="N:1",        # ON-10 — measured, so the frame follows it from Order to Customer
     )
     metric = OntologyMetric(
         id="revenue", display_name="Revenue", description="Recognised order revenue",
@@ -213,6 +224,36 @@ def fixture_graph() -> OntologyGraph:
         object_type="Order",
         edits=[ObjectEdit(object="order", property="review_flag", value="true", note="{order_id}")],
     )
+    # ON-10 — a declared, measured process with two promises and a rule, every field non-default, so the walk reaches
+    # what the question frame renders of them. The first stage carries a promise so the walk descends into one.
+    process = Process(
+        id="order_fulfilment", display_name="Order fulfilment", description="An order from shipping to its door",
+        entity="Order", owner="operations", origin="pack", provenance="pack:core-ecommerce@1", objects=100,
+        verified=True, note="100 Order objects; 2 of 2 stages reached; 2 promises measured",
+        measured_at="2026-09-13T00:00:00+00:00",
+        stages=[
+            ProcessStage(
+                name="shipped", display_name="Shipped", timestamp="shipped_at", state=["shipped"],
+                property="order_status", reached=90, verified=True, note="90 of 100 Order objects reached shipped",
+                both=88, skipped=2, out_of_order=1, p50_days=1.0, p90_days=3.0, p95_days=4.0,
+                promise=Promise(name="shipping", deadline="ship_by", grain="Order", via="to_self", within_days=2,
+                                target=0.9, objects=100, reached=90, breached=9, kept=81, open=10, open_overdue=4,
+                                breach_rate=0.1, as_of="2026-09-01 00:00:00", verified=True,
+                                flags=["never late on Sundays"], note="9 of the 90 Order objects broke it (10.00%)")),
+            ProcessStage(
+                name="delivered", display_name="Delivered", timestamp="delivered_at", reached=80, verified=True,
+                note="80 of 100 Order objects reached delivered", both=80, skipped=0, out_of_order=0,
+                p50_days=2.0, p90_days=5.0, p95_days=6.0,
+                promise=Promise(name="delivery", within_days=5, target=0.8, objects=100, reached=80, breached=8,
+                                kept=72, open=20, open_overdue=3, breach_rate=0.1, as_of="2026-09-02 00:00:00",
+                                verified=True, note="8 of the 80 Order objects broke it (10.00%)")),
+        ])
+    rule = BusinessRule(
+        id="eu_core", display_name="EU core", description="The countries the business calls its EU core",
+        owner="finance", entity="Customer", kind="value_set", property="country", values=["DE", "FR"],
+        conditions=[{"path": "country", "op": "!=", "value": "XX"}], origin="human", provenance="model:x@1",
+        objects=10, admitted=6, observed={"DE": 4, "FR": 2}, missing=["AT"], verified=True,
+        flags=["never observed: AT"], note="admits 6 of 10 Customer objects")
     iface = OntologyInterface(
         id="HasLifecycle", display_name="Has Lifecycle",
         description="Any entity with a named status machine",
@@ -229,6 +270,8 @@ def fixture_graph() -> OntologyGraph:
         actions={template.id: template},
         kinetic_actions={action.id: action},
         interfaces={iface.id: iface},
+        processes={process.id: process},
+        rules={rule.id: rule},
         entity_to_tables={"Order": ["orders"], "Customer": ["customers"]},
         table_to_entity={"orders": "Order", "customers": "Customer"},
         relationship_index={"Order": [rel.id], "Customer": [rel.id]},
@@ -291,6 +334,22 @@ def _intake_entity_context(g: OntologyGraph) -> str:
     return "\n".join(render_entity_context(entity_intake_fields(e)) for e in g.entities.values())
 
 
+#: ON-10 — questions that walk every path the frame block renders: a promise with a rule and a named driver, a lag,
+#: definitions the words fit equally, a stage named for its moment, and a rule that is itself the outcome.
+FRAME_QUESTIONS: tuple[str, ...] = (
+    "Which countries had customer orders shipped late for EU core customers?",
+    "How long does delivery take?",
+    "What was late?",
+    "When were orders shipped?",
+    "How many EU core customers are there?",
+)
+
+
+def _question_frame(g: OntologyGraph) -> str:
+    from aughor.ontology.framing import frame_question, render_frame_block
+    return "\n\n".join(render_frame_block(frame_question(q, g)) for q in FRAME_QUESTIONS)
+
+
 BLOCKS: tuple[Block, ...] = (
     Block("entity_model", "heavy phase · schema-wide (every chat + deep prompt once intelligence is built)",
           "aughor/agent/schema_annotators.py:262", _entity_model),
@@ -306,6 +365,10 @@ BLOCKS: tuple[Block, ...] = (
           "aughor/agent/investigate.py:3787 → aughor/actions/propose.py:62", _actions_declared),
     Block("intake_entity_context", "deep analysis · baseline plan",
           "aughor/agent/investigate.py (intake → baseline plan)", _intake_entity_context),
+    Block("question_frame", "deep analysis · the intake prompt and every phase planner, explore planning "
+                            "(question-scoped; only when the question reaches a declared definition)",
+          "aughor/agent/investigate.py (the deep analysis's intake) · aughor/agent/explore.py (the chain planner)",
+          _question_frame),
 )
 
 #: Prompt sites the harness cannot render in isolation, named so the count stays honest.

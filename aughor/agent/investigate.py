@@ -1455,6 +1455,18 @@ def _extract_qualified_tables(schema: str) -> dict[str, str]:
     return mapping
 
 
+def _frame_named_dimensions(frame, schema: str = "") -> list[str]:
+    """ON-10 — the drivers a question named, as `table.column` over the table that holds each — qualified the way the
+    schema names it, the shape the intake's dimensions take. Only what the frame reached by measured to-one links."""
+    mapping = _extract_qualified_tables(schema) if schema else {}
+    out = []
+    for d in getattr(frame, "drivers", None) or []:
+        if d.named and d.table:
+            table = mapping.get(_bare(d.table), d.table)
+            out.append(f"{table}.{d.property}")
+    return list(dict.fromkeys(out))
+
+
 def _qualify_intake_table_names(intake, schema: str) -> None:
     """In-place fix bare table/column references in an IntakeOutput using the schema context."""
     mapping = _extract_qualified_tables(schema)
@@ -5384,6 +5396,25 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         _logging.getLogger(__name__).info(
             "[ada] pack '%s' is steering this deep analysis", _pack_id)
 
+    # ON-10 — the investigation starts from the ontology. The question's business terms are resolved against the
+    # DECLARED ontology (processes, promises, rules — `aughor.ontology.framing`) BEFORE the intake reads it: the frame
+    # names the outcome's definition with the SQL the object door compiles for it, where to start and the drivers the
+    # declared links reach. A model is asked only to choose among definitions the words fit equally. Data-gated: a
+    # question that reaches nothing declared renders nothing, so the prompt is byte-identical on every connection
+    # where nothing was declared.
+    _frame = None
+    try:
+        from aughor.agent.framing import frame_from_state
+        _frame = frame_from_state(state, dialect=getattr(conn, "dialect", "") or "duckdb")
+    except Exception as _frame_exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(_frame_exc, "framing the question is best-effort; the intake reads the question as written",
+                 counter="deep_analysis.frame", conn_id=state.get("connection_id") or None)
+    from aughor.ontology.framing import render_frame_block
+    _frame_block = render_frame_block(_frame) if _frame is not None else ""
+    if _frame_block:
+        prompt = _frame_block + "\n\n" + prompt
+
     # Loss-intent questions get a deterministic directive naming the loss signals THIS
     # schema carries (contra-revenue / capacity columns) — a revenue ranking cannot find
     # losses, and the live A/B showed it concluding "no losses" over 2.4M of refund
@@ -5529,6 +5560,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             from aughor.kernel.errors import tolerate
             tolerate(_dim_exc, "question-named dimensions are best-effort; the model's "
                                "own choice still serves", counter="deep_analysis.named_dims")
+        if _frame_block:
+            _frame_dims = _frame_named_dimensions(_frame, schema)
+            if _frame_dims:
+                intake.dimensions = _frame_dims + [d for d in (intake.dimensions or []) if d not in _frame_dims]
+                intake.named_dimensions = list(dict.fromkeys((intake.named_dimensions or []) + _frame_dims))
         no_time = (intake.date_column or "").strip().upper() in ("", "NONE")
         # A populated comparison_segment_sql means intake recognised a DRIVER question —
         # force cross-sectional so it routes to the group comparison, never a blind trend.
@@ -5792,6 +5828,9 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             ["Dimensions", ", ".join(intake.dimensions[:8])],
         ]
 
+    if _frame_block and _frame is not None and _frame.reading:
+        _spec_rows.append(["Read as", _frame.reading])
+
     # Store the intake spec in state via a synthetic phase (no SQL, just metadata)
     finding = InvestigationFinding(
         finding_id="intake_spec",
@@ -5838,8 +5877,12 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         connection_id=state.get("connection_id", "") or "",
     )
 
+    if _frame_block:
+        filtered_schema = f"{filtered_schema}\n\n{_frame_block}"
     intake_dict = intake.model_dump()
     intake_dict["filtered_schema"] = filtered_schema
+    if _frame_block and _frame is not None:
+        intake_dict["ontology_frame"] = _frame.model_dump(mode="json")
     if _loss_sig:
         # The loss signals travel with the intake so the cross-section can forward-chain
         # the lens phases the primary metric leaves uncovered (leakage vs utilization).
@@ -6009,7 +6052,7 @@ def _phase_grounding(
     """The data-understanding grounding text for a phase planner (measure-grain
     PREVENTION + trusted-query reuse).
 
-    ``grounding_block`` is the block ada_intake built ONCE for the whole run (R3):
+    ``grounding_block`` is the block the intake built ONCE for the whole run (R3):
     when it is not None it is reused verbatim — including an empty string, which
     means intake determined there is nothing to ground, so we must NOT rebuild.
     Only when it is None (callers that don't thread it, e.g. the cross-section
@@ -9896,6 +9939,11 @@ def ada_synthesize(state: AgentState) -> dict:
 
     # K4b — the agent may propose declared actions from the finished answer (flag-gated, staged).
     _attach_kinetic_proposals(answer_report, state.get("connection_id", ""))
+
+    # ON-10 — the frame the question was read through rides with the answer, so the reader sees what each business
+    # word was taken to mean and where the analysis started.
+    if intake_data.get("ontology_frame"):
+        answer_report["frame"] = intake_data["ontology_frame"]
 
     # Also produce a legacy AnalysisReport for backward compat (history, cache)
     from aughor.agent.state import AnalysisReport, Finding

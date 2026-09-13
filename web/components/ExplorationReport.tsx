@@ -8,6 +8,8 @@ import { stripPlannerNotes } from "@/lib/format";
 import { recordVerdict } from "@/lib/api";
 import { soleSqlOfSteps } from "@/lib/verdictSql";
 import { FixItForm } from "@/components/FixItForm";
+import { QuestionFrame } from "@/components/QuestionFrame";
+import type { OntologyFrame } from "@/lib/types";
 
 interface Props {
   report: ExplorationReportType;
@@ -16,6 +18,8 @@ interface Props {
   queryCount: number;
   connectionId?: string;
   investigationId?: string;
+  /** ON-10 — the frame the question was read through, when it reached a declared definition. */
+  frame?: OntologyFrame | null;
 }
 
 // ── Purpose chip (the one allowed accent) ─────────────────────────────────────
@@ -242,7 +246,7 @@ function FindingVerdict({ headline, connectionId, investigationId, sqlSource }: 
   );
 }
 
-export function ExplorationReportView({ report, subqAnswers, queryCount, connectionId, investigationId }: Props) {
+export function ExplorationReportView({ report, subqAnswers, queryCount, connectionId, investigationId, frame }: Props) {
   const dqNotes = report.data_quality_notes ?? [];
   // The SQL a verdict is ABOUT, and only when that is unambiguous — the rule lives in
   // `lib/verdictSql` because it must be identical on every surface that records a verdict.
@@ -261,6 +265,8 @@ export function ExplorationReportView({ report, subqAnswers, queryCount, connect
         </div>
         <p className="aug-fs-h2 font-medium text-zinc-100 leading-snug">{report.headline}</p>
       </div>
+
+      <QuestionFrame frame={frame} />
 
       {/* Summary — the CONCLUSION only (emphasis rendered, never raw asterisks). The
           narrative — the step-by-step retelling of what the wave did — is process, and

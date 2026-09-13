@@ -185,6 +185,27 @@ describe("deep-path parity (the reducer's investigate-mode fields)", () => {
     expect(t.status).toBe("done");
   });
 
+  it("lands the question's frame before the report, and keeps the explore report's", async () => {
+    const reading = 'Read "dispatch" as the dispatch promise of Order to delivery (stage dispatched).';
+    const msg = await messageFrom([
+      { event: "start", data: { investigation_id: "inv-10" } },
+      { event: "frame", data: { frame: { reading, defines: true, outcomes: [], drivers: [] }, investigation_id: "inv-10" } },
+      { event: "phase_complete", data: { phase: { phase_id: "baseline", findings: [] } } },
+    ]);
+    const streaming = projectTurn("what is causing dispatch delays?", msg, { streaming: true });
+    expect(streaming.frame?.reading).toBe(reading);
+    const explore = await messageFrom([
+      { event: "explore_report", data: {
+        explore_report: { headline: "Office furniture ships late", conclusion: "", narrative: "", recommended_actions: [],
+                          data_quality_notes: [] },
+        sub_questions: [], subq_answers: [], query_count: 0, investigation_id: "inv-11", query_mode: "explore",
+        frame: { reading, defines: true, outcomes: [], drivers: [] },
+      } },
+    ]);
+    expect(projectTurn("q", explore).frame?.reading).toBe(reading);
+    expect(projectTurn("q", undefined).frame).toBeNull();
+  });
+
   it("keeps the live synthesis prose on its own channel while streaming", async () => {
     const msg = await messageFrom([
       { event: "report_delta", data: { executive_summary: "Deep prose so far" } },

@@ -23,6 +23,14 @@ Three arms run on the SAME question against the SAME warehouse:
   * **ontology_guarded** — the ontology arm's SQL through the same guard battery. If the
                     blocks teach cardinality upstream, the guards should fire LESS here than
                     on `guarded` — by-construction beating by-guard, measured.
+  * **framed**    — ON-10's arm (ROADMAP §3.15, the second movement): the question's business terms resolved
+                    against the DECLARED ontology first (`aughor.ontology.framing` — processes, promises,
+                    rules, no model), its frame block — each definition with the SQL the object door
+                    compiles for it, where to start, the drivers the declared links reach — beside the
+                    raw arm's schema; a model chooses among definitions only when the words fit several
+                    equally (`aughor.agent.framing`, one extra call, counted). A question that reaches
+                    nothing declared gets no frame, so the arm IS raw there and spends no call. The
+                    movement's falsifier: on records labelled `definition: declared` it must beat raw.
   * **injected**  — the full intelligence-injected pipeline (`generate_sql_full_pipeline`:
                     exploration annotations + KB + metrics + de-fan + retry). Included to
                     surface, honestly, that LLM-DERIVED context is a SEPARATE axis that can
@@ -72,6 +80,8 @@ if not os.environ.get("AUGHOR_SKIP_DOTENV"):
         load_dotenv(_REPO_ROOT / ".env")
     except ImportError:
         pass
+
+from typing import Optional
 
 from pydantic import BaseModel, Field
 
@@ -143,7 +153,7 @@ def _classify_guarded(score: dict, sql: str | None, fired: list[str]) -> str:
     return "caught" if fired else "silent-wrong"    # flagged (safe) vs slipped past every guard (dangerous)
 
 
-ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "injected", "objects")
+ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "injected", "objects")
 _NO_SQL = {"error": "Generation failed", "execution_success": 0.0}
 
 
@@ -306,6 +316,43 @@ def ontology_context(graph, schema_text: str, tcols: dict) -> str:
     return "\n\n".join(b for b in blocks if b)
 
 
+def framed_context(question: str, graph, *, dialect: str = "duckdb", choose=None) -> tuple[str, Optional[dict], int]:
+    """ON-10 — the frame block for one question, the frame itself (dumped) and the model calls framing spent.
+
+    `choose(frame, graph) -> frame` is called only when the question's words fit several declared definitions
+    equally — the product's own posture (`aughor.agent.framing.choose_definition`). ("", frame, 0) when the question
+    reached nothing declared: the product adds nothing there, and neither does the arm."""
+    from aughor.ontology.framing import frame_question, render_frame_block
+    frame = frame_question(question, graph, dialect=dialect)
+    calls = 0
+    if frame.ambiguous and choose is not None:
+        calls = 1
+        frame = choose(frame, graph)
+    return render_frame_block(frame), frame.model_dump(mode="json"), calls
+
+
+def _frame_summary(frame: Optional[dict]) -> Optional[dict]:
+    if not frame:
+        return None
+    chosen = frame.get("chosen")
+    outcome = frame["outcomes"][chosen] if chosen is not None else None
+    return {"defines": frame.get("defines"), "outcome": outcome["name"] if outcome else None,
+            "chosen_by": frame.get("chosen_by") or None,
+            "candidates": [o["name"] for o in frame.get("outcomes", []) if o.get("usable")],
+            "rules": [r["id"] for r in frame.get("rules", []) if r.get("usable")],
+            "moments": [m["stage"] for m in frame.get("moments", [])],
+            "start": (frame.get("start") or {}).get("entity"),
+            "drivers": [d["path"] for d in frame.get("drivers", []) if d.get("named")]}
+
+
+def _arms_after_frame_check(arms: tuple[str, ...], graph) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Drop the framed arm when the ontology declares nothing to frame: every question would get no frame and the arm
+    would be raw under another name."""
+    if "framed" not in arms or (graph is not None and (getattr(graph, "processes", None) or getattr(graph, "rules", None))):
+        return arms, ()
+    return tuple(a for a in arms if a != "framed"), ("framed",)
+
+
 def check_references(db, records: list[dict]) -> tuple[list[dict], list[dict]]:
     """Execute every reference (and accept_sql) BEFORE any model call.
 
@@ -409,7 +456,7 @@ def run(dataset: str, limit: int | None, output: str | None,
     if limit:
         records = records[:limit]
     arms = tuple(a for a in ARMS if a in arms)          # canonical order, unknown names dropped
-    if "guarded" in arms and "raw" not in arms:
+    if ("guarded" in arms or "framed" in arms) and "raw" not in arms:
         arms = ("raw",) + arms
     if "ontology_guarded" in arms and "ontology" not in arms:
         arms = tuple(a for a in ARMS if a in arms or a == "ontology")
@@ -446,7 +493,7 @@ def run(dataset: str, limit: int | None, output: str | None,
                 "reference_ok": [r["id"] for r in scorable]}
 
     wanted_ontology = "ontology" in arms
-    wanted_graph = wanted_ontology or "objects" in arms
+    wanted_graph = wanted_ontology or "objects" in arms or "framed" in arms
     graph, graph_source = _load_graph(conn_id, schema_name, graph_json) if wanted_graph else (None, None)
     onto_ctx = ontology_context(graph, schema_text, tcols) if wanted_ontology else ""
     arms, dropped = _arms_after_ontology_check(arms, onto_ctx)
@@ -460,6 +507,18 @@ def run(dataset: str, limit: int | None, output: str | None,
               f"types to fill, so it is DROPPED, not spent on.")
         arms = tuple(a for a in arms if a != "objects")
         dropped = tuple(dropped) + ("objects",)
+    arms, frame_dropped = _arms_after_frame_check(arms, graph)
+    if frame_dropped:
+        print(f"  ⚠ the ontology for {label} (source: {graph_source}) declares no process and no rule — the `framed` "
+              f"arm would equal raw, so it is DROPPED, not spent on. Pass --graph-json {label}=<the JSON of GET /ontology>.")
+        dropped = tuple(dropped) + frame_dropped
+    choose = None
+    if "framed" in arms:
+        from aughor.agent.framing import choose_definition
+
+        def choose(frame, g):
+            return choose_definition(frame, g, dialect=getattr(db, "dialect", "") or "duckdb")
+    framing_calls = 0
     catalog_text = ""
     if "objects" in arms:
         from aughor.semantic.object_query import object_catalog, render_object_catalog
@@ -498,6 +557,21 @@ def run(dataset: str, limit: int | None, output: str | None,
                                            "guards_fired": o_fired,
                                            "match": round(og_score.get("result_set_match", 0.0), 3)}
 
+        if "framed" in arms:
+            block, frame, calls = _quiet(lambda: framed_context(q, graph, dialect=getattr(db, "dialect", "") or "duckdb",
+                                                                choose=choose), ("", None, 0))
+            framing_calls += calls
+            if block:
+                f_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text + "\n\n" + block), None)
+                f_score = score_single(db, rec, f_sql) if f_sql else dict(_NO_SQL)
+                row["framed"] = {"sql": f_sql, "class": _classify_plain(f_score, f_sql),
+                                 "match": round(f_score.get("result_set_match", 0.0), 3),
+                                 "frame": _frame_summary(frame), "block_chars": len(block)}
+            else:
+                # nothing declared was reached: the product adds nothing, so the arm is raw — scored, never spent on
+                row["framed"] = {**row["raw"], "via": "raw (the question reached nothing declared)",
+                                 "frame": _frame_summary(frame)}
+
         if "injected" in arms:
             inj_sql = _quiet(lambda: generate_sql_full_pipeline(q, conn_id, db), None)
             inj_score = score_single(db, rec, inj_sql) if inj_sql else dict(_NO_SQL)
@@ -512,6 +586,7 @@ def run(dataset: str, limit: int | None, output: str | None,
                 row["objects_fallback"] = {"class": row[via]["class"], "via": via}
 
         row["latency_s"] = round(time.time() - t0, 1)
+        row["definition"] = rec.get("definition")
         rows.append(row)
     db.close()
 
@@ -524,6 +599,8 @@ def run(dataset: str, limit: int | None, output: str | None,
     summary["ontology_source"] = graph_source
     summary["ontology_context_chars"] = len(onto_ctx)
     summary["arms_dropped"] = list(dropped)
+    if "framed" in arms:
+        summary["framing_model_calls"] = framing_calls
     _print_report(rows, summary, arms)
     result = {"results": rows, "summary": summary}
     if output:
@@ -566,6 +643,31 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
         fired_raw = sum(len(r["guarded"]["guards_fired"]) for r in rows if "guarded" in r)
         fired_onto = sum(len(r["ontology_guarded"]["guards_fired"]) for r in rows)
         out["guards_fired"] = {"on_raw": fired_raw if "guarded" in arms else None, "on_ontology": fired_onto}
+    if "framed" in arms:
+        fc = counts["framed"]
+        out["framed_accuracy"] = round(fc["correct"] / n, 3)
+        out["framed_silent_wrong"] = fc["silent-wrong"]
+        out["framed_gains"] = [r["id"] for r in rows if r["raw"]["class"] != "correct" and r["framed"]["class"] == "correct"]
+        out["framed_losses"] = [r["id"] for r in rows if r["raw"]["class"] == "correct" and r["framed"]["class"] != "correct"]
+        out["framed_no_frame"] = [r["id"] for r in rows if r["framed"].get("via")]
+        # the movement's falsifier (ROADMAP §3.15 ON-10): on the questions whose definition is declared and NOT in the
+        # schema, the framed arm must answer more of them correctly than raw — or the framing is retired
+        by_definition: dict = {}
+        for label in sorted({r.get("definition") or "unlabelled" for r in rows}):
+            subset = [r for r in rows if (r.get("definition") or "unlabelled") == label]
+            entry = {"n": len(subset),
+                     "raw_correct": sum(r["raw"]["class"] == "correct" for r in subset),
+                     "framed_correct": sum(r["framed"]["class"] == "correct" for r in subset)}
+            if "guarded" in arms:
+                entry["guarded_safe"] = sum(r["guarded"]["class"] in ("correct", "caught") for r in subset)
+            by_definition[label] = entry
+        out["by_definition"] = by_definition
+        declared = by_definition.get("declared")
+        out["falsifier"] = None if not declared else {
+            "framed_beats_raw_on_declared": declared["framed_correct"] > declared["raw_correct"],
+            "declared": declared, "controls_lost": [r["id"] for r in rows if r.get("definition") == "schema"
+                                                    and r["raw"]["class"] == "correct"
+                                                    and r["framed"]["class"] != "correct"]}
     if "injected" in arms:
         ic = counts["injected"]
         out["injected_accuracy"] = round(ic["correct"] / n, 3)
@@ -622,6 +724,18 @@ def _print_report(rows: list[dict], s: dict, arms: tuple[str, ...] = ARMS) -> No
     if "ontology_guarded" in arms:
         print(f"  Ontology+guards  : {s['ontology_guarded_safe_rate']:.0%} SAFE   {s['ontology_guarded']}"
               f"   guards fired: {s['guards_fired']}")
+    if "framed" in arms:
+        print(f"  Framed           : {s['framed_accuracy']:.0%} correct   {s['framed']}   "
+              f"(no frame, so raw: {s['framed_no_frame']})")
+        if "raw" in arms:
+            print(f"    vs raw         : gains {s['framed_gains']}  losses {s['framed_losses']}")
+        for label, entry in (s.get("by_definition") or {}).items():
+            print(f"    {label:14} : n={entry['n']}  raw {entry['raw_correct']}  framed {entry['framed_correct']}"
+                  + (f"  guarded safe {entry['guarded_safe']}" if "guarded_safe" in entry else ""))
+        if s.get("falsifier") is not None:
+            verdict = "HOLDS — framed beats raw" if s["falsifier"]["framed_beats_raw_on_declared"] else "FIRES — no lift"
+            print(f"    falsifier      : {verdict} on the declared-definition questions; "
+                  f"controls lost {s['falsifier']['controls_lost']}")
     if "injected" in arms:
         print(f"  Injected         : {s['injected_accuracy']:.0%} correct   {s['injected']}")
     if "objects" in arms:

@@ -39,6 +39,7 @@ import type {
   ExplorationReport,
   Hypothesis,
   InvestigationPhase,
+  OntologyFrame,
   OverviewReport,
   SubQuestion,
   SubQuestionAnswer,
@@ -48,6 +49,7 @@ import type { AughorUIDataTypes } from "./aughorUIDataTypes";
 import { synthesizeResumedUserMessage } from "./uiMessageAdapter";
 
 // Re-export so surfaces can keep saying `InvPhase` without naming the types module.
+
 export type { InvestigationPhase as InvPhase };
 
 /** A message whose data parts are Aughor's declared vocabulary. */
@@ -230,6 +232,9 @@ export interface ChatTurn {
   report: Record<string, unknown> | null;
   queryMode: string | null;
 
+  // ON-10 — the question's frame: its business terms read against the declared ontology before the run started.
+  frame: OntologyFrame | null;
+
   // Explore mode
   subQuestions: SubQuestion[];
   subqAnswers: SubQuestionAnswer[];
@@ -301,6 +306,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
   statusText: null, phases: [], deepReport: null, report: null, queryMode: null,
   subQuestions: [], subqAnswers: [], exploreReport: null,
+  frame: null,
   dossierReport: null, dossierInsightId: null,
   overviewReport: null,
   queriesExecuted: [], latestScore: null,
@@ -502,6 +508,7 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
     };
   },
   playbook_refs: (t, d) => { t.playbookRefs = (d.items as PlaybookRef[]) ?? []; },
+  frame: (t, d) => { t.frame = (d.frame as OntologyFrame) ?? null; },
   clarifying_questions: (t, d) => {
     t.clarifyingQuestions = (d.questions as string[]) ?? [];
     t.clarifyingContext = (d.context_note as string) ?? "";
@@ -542,6 +549,7 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
   explore_report: (t, d) => {
     projectCacheMeta(t, d);
     t.exploreReport = d.explore_report as ExplorationReport;
+    if (d.frame) t.frame = d.frame as OntologyFrame;
     t.subQuestions = (d.sub_questions ?? []) as SubQuestion[];
     t.subqAnswers = (d.subq_answers ?? []) as SubQuestionAnswer[];
     t.queryMode = "explore";
