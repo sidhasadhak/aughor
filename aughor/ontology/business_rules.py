@@ -22,7 +22,7 @@ from typing import Any, Optional
 
 from aughor.ontology.derived import derivations, rule_derivations, rule_filters, rows_of
 from aughor.ontology.models import PROCESS_NAME_PATTERN, BusinessRule, OntologyGraph
-from aughor.ontology.processes import ORIGINS, PATH_PATTERN, NotMeasurable, _Counter, _int, _text
+from aughor.ontology.processes import ORIGINS, PATH_PATTERN, NotMeasurable, ObjectCounter, cell_int, cell_text
 
 logger = logging.getLogger(__name__)
 
@@ -136,16 +136,16 @@ def measure_rule(db: Any, graph: OntologyGraph, rule_id: str, fields: dict) -> B
     entity = graph.entities.get(rule.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{rule.entity}' in this ontology")
-    counter = _Counter(db, graph)
+    counter = ObjectCounter(db, graph)
     filters = list(rule_filters(rule))
     counts = counter.one(entity.api_name, [{"name": "objects", "agg": "count"},
                                            {"name": "admitted", "agg": "count", "where": filters}])
-    rule.objects, rule.admitted = _int(counts.get("objects")) or 0, _int(counts.get("admitted")) or 0
+    rule.objects, rule.admitted = cell_int(counts.get("objects")) or 0, cell_int(counts.get("admitted")) or 0
     rule.flags = []
     if rule.kind == "value_set":
         columns, rows = counter.rows({"object_type": entity.api_name, "filters": filters, "by": [rule.property],
                                       "measures": [{"name": "n", "agg": "count"}]}, max_rows=_MAX_VALUES + 1)
-        rule.observed = {_text(r[0]): _int(r[1]) or 0 for r in rows if _text(r[0])}
+        rule.observed = {cell_text(r[0]): cell_int(r[1]) or 0 for r in rows if cell_text(r[0])}
         rule.missing = [v for v in rule.values if v not in rule.observed]
         if rule.missing:
             rule.flags.append(f"never observed: {', '.join(rule.missing)} — no {entity.id} holds "

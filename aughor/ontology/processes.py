@@ -324,7 +324,8 @@ def resolve_process(graph: OntologyGraph, process_id: str, fields: dict) -> tupl
 # ── measurement ─────────────────────────────────────────────────────────────────────────────
 
 
-def _int(value: Any) -> Optional[int]:
+def cell_int(value: Any) -> Optional[int]:
+    """A result cell as a whole number, or None for an empty or NULL cell — cells come back as text."""
     if value is None:
         return None
     text = str(value).strip()
@@ -336,7 +337,8 @@ def _int(value: Any) -> Optional[int]:
         return None
 
 
-def _text(value: Any) -> str:
+def cell_text(value: Any) -> str:
+    """A result cell as trimmed text, "" for an empty or NULL cell."""
     text = "" if value is None else str(value).strip()
     return "" if text.upper() == "NULL" else text
 
@@ -363,7 +365,7 @@ def quantile_cont(histogram: list[tuple[float, int]], q: float) -> Optional[floa
     return round(a + (position - low) * (b - a), 6)
 
 
-class _Counter:
+class ObjectCounter:
     """Object queries compiled over one graph and run on one connection — the measurement's only way to the data."""
 
     def __init__(self, db: Any, graph: OntologyGraph):
@@ -421,7 +423,7 @@ def _cutoff(as_of: str, days: int) -> str:
     return (day - timedelta(days=days)).isoformat()
 
 
-def _measure_promise(counter: _Counter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
+def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
     spec = promise_filters(work.processes[process.id], index)
     stage = measured.stages[index]
     promise = stage.promise
@@ -435,18 +437,20 @@ def _measure_promise(counter: _Counter, work: OntologyGraph, process: Process, i
         {"name": "still_open", "agg": "count", "where": list(spec["open"])},
         {"name": "as_of", "agg": "max", "path": spec["moment"]},
     ])
-    promise.objects, promise.reached = _int(counts.get("objects")), _int(counts.get("reached")) or 0
-    promise.breached, promise.open = _int(counts.get("breached")) or 0, _int(counts.get("still_open")) or 0
-    promise.as_of = _text(counts.get("as_of"))
+    promise.objects, promise.reached = cell_int(counts.get("objects")), cell_int(counts.get("reached")) or 0
+    promise.breached, promise.open = cell_int(counts.get("breached")) or 0, cell_int(counts.get("still_open")) or 0
+    promise.as_of = cell_text(counts.get("as_of"))
     promise.kept = promise.reached - promise.breached
     promise.open_overdue = None
     if promise.as_of and promise.open:
         overdue = ([{"path": spec["deadline"], "op": "<", "value": promise.as_of}] if spec.get("deadline")
                    else [{"path": spec["start"], "op": "<", "value": _cutoff(promise.as_of, spec["within_days"])}])
-        promise.open_overdue = _int(counter.one(grain.api_name, [
+        promise.open_overdue = cell_int(counter.one(grain.api_name, [
             {"name": "overdue", "agg": "count", "where": list(spec["open"]) + overdue}]).get("overdue")) or 0
     noun = promise_noun(stage)
     what = f"the {promise.deadline} deadline" if promise.deadline else f"{promise.within_days} calendar days"
+    check = (f"check {spec['deadline']} and the moment it is compared with, {spec['moment']}" if spec.get("deadline")
+             else f"check the two moments the days are counted between, {spec['start']} and {spec['moment']}")
     promise.flags = []
     if not promise.reached:
         promise.verified, promise.breach_rate = False, None
@@ -456,10 +460,10 @@ def _measure_promise(counter: _Counter, work: OntologyGraph, process: Process, i
     promise.breach_rate = round(promise.breached / promise.reached, 6)
     if promise.breached == 0:
         promise.flags.append(f"never broken: none of the {promise.reached:,} {grain.id} objects that reached "
-                             f"{stage.name} went past {what} — check the deadline and the moment it is compared with")
+                             f"{stage.name} went past {what} — {check}")
     elif promise.breached == promise.reached:
         promise.flags.append(f"always broken: every one of the {promise.reached:,} {grain.id} objects that reached "
-                             f"{stage.name} went past {what} — check the deadline and the moment it is compared with")
+                             f"{stage.name} went past {what} — {check}")
     promise.note = (f"{promise.breached:,} of the {promise.reached:,} {grain.id} objects that reached {stage.name} broke "
                     f"the {noun} promise ({promise.breach_rate:.2%}); {promise.open:,} have not reached it"
                     + (f", {promise.open_overdue:,} of them already past it as of {promise.as_of}"
@@ -475,7 +479,7 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
     entity = work.entities.get(process.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{process.entity}' in this ontology")
-    counter = _Counter(db, work)
+    counter = ObjectCounter(db, work)
     measures: list[dict] = [{"name": "objects", "agg": "count"}]
     for i, stage in enumerate(process.stages):
         measures.append({"name": f"reached_{i}", "agg": "count", "where": _reached_filters(stage)})
@@ -491,10 +495,10 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
             ]
     counts = counter.one(entity.api_name, measures)
     measured = process.model_copy(deep=True)
-    measured.objects = _int(counts.get("objects")) or 0
+    measured.objects = cell_int(counts.get("objects")) or 0
     for i, stage in enumerate(measured.stages):
         previous = measured.stages[i - 1] if i else None
-        stage.reached = _int(counts.get(f"reached_{i}")) or 0
+        stage.reached = cell_int(counts.get(f"reached_{i}")) or 0
         anchor = stage.timestamp or f"{stage.property} in {', '.join(stage.state)}"
         if stage.reached:
             stage.verified = True
@@ -505,9 +509,9 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
                           else f"no {entity.id} object is in {', '.join(stage.state)}")
         if not (stage.timestamp and previous is not None and previous.timestamp):
             continue
-        stage.both = _int(counts.get(f"both_{i}")) or 0
-        stage.skipped = _int(counts.get(f"skipped_{i}")) or 0
-        stage.out_of_order = _int(counts.get(f"early_{i}")) or 0
+        stage.both = cell_int(counts.get(f"both_{i}")) or 0
+        stage.skipped = cell_int(counts.get(f"skipped_{i}")) or 0
+        stage.out_of_order = cell_int(counts.get(f"early_{i}")) or 0
         if stage.both:
             columns, rows = counter.rows({
                 "object_type": entity.api_name, "by": [lag_name(stage)], "measures": [{"name": "n", "agg": "count"}],
@@ -516,7 +520,7 @@ def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict
             if len(rows) > _MAX_LAG_VALUES:
                 stage.note += f"; more than {_MAX_LAG_VALUES:,} distinct day counts — percentiles not taken"
             else:
-                histogram = [(float(r[0]), _int(r[1]) or 0) for r in rows if _text(r[0])]
+                histogram = [(float(r[0]), cell_int(r[1]) or 0) for r in rows if cell_text(r[0])]
                 stage.p50_days, stage.p90_days, stage.p95_days = (quantile_cont(histogram, q) for q in (0.5, 0.9, 0.95))
         if stage.out_of_order:
             stage.note += f"; {stage.out_of_order:,} reached {stage.name} BEFORE {previous.name}"
