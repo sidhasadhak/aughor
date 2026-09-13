@@ -203,20 +203,37 @@ only where a row carries two lines, nav item 22, attention row 28, activity-tail
   and the rail's badge counts (`components/shell/useNavCounts.ts` — unacknowledged alerts on
   Monitors and the Operations header, running agent runs on Agent runs).
 
+**Pass 3 (2026-09-13) — the Briefing** (`Aughor Intelligence.dc.html`, artboards 01 and 10), with
+artefact manners: a 44px gutter numbering the sections (01, §1…), a 700px measure, superscripts
+(`CiteRef`) into a 300px apparatus rail, and a signature. The shell's header carries the brief's
+written-at stamp, Regenerate and Investigate, under a title that stays "Intelligence" (`Workspace`
+`title`). §1 is the north-star metrics as a table (`components/brief/MovedNumbers.tsx`): now and
+prior are the series' last two buckets — never the whole-history value query beside them, which
+stays on the row as "overall" — and the receipt is a column (`ReceiptRef`). What the data cannot
+carry is not drawn:
+- no briefing number, no "unprompted", no Export — nothing numbers, attributes or exports a brief;
+- no verdict tone, no confidence and no "earned" bar — none is computed for a brief;
+- no contribution column — nothing computes a metric's contribution to the verdict;
+- no Figure 1 — no chart is tied to the prose;
+- the signature's guard chips are the trust gate's plausibility reading of the cited findings, and
+  `held_back` stays off the page (it read as an error log — BriefingPanel says why);
+- a brief is one POST, not a stream: the screen says "opening" or "being written" over skeletons,
+  with no caret and no placeholder prose.
+
 **Not yet:**
 - The Human / Agent / Substrate switcher — left out by the user until there is a concrete use.
 - An Agent Ops needs-human badge: `GET /control-room/needs-human` runs the expiry and parked-run
   sweeps on every call, so the shell must not poll it; it needs a side-effect-free count first.
 - A coverage figure in the strip: no endpoint serves the explorer's frontier.
-- `Cite` and `PartialState` have no call sites yet — the Briefing's citation chips and the "floor,
-  not a total" captions (Spend, the Agent Ops tiles, usage, traces) move with the Intelligence
-  screens.
+- `PartialState` has no call sites yet — the "floor, not a total" captions (Spend, the Agent Ops
+  tiles, usage, traces) still print as captions.
 - About 46 text-only "Loading…" placeholders, about 50 bare red error lines (no one-line inline
   error primitive yet), and about 30 components with raw hexes (canvases, Semantic Layer badges,
   Monitors toggles).
 - The Agent Ops runs chart hatches RUNNER runs, which clashes with the hatch's one meaning
   (unknown, not zero) — left for a decision.
-- The Intelligence screens (`Aughor Intelligence.dc.html`) — the next pass.
+- The other Intelligence screens (`Aughor Intelligence.dc.html` 02–09): Profile, Ontology, Graph,
+  Evidence, Memory, Actions, Org, and Ontology on a warehouse that has just connected.
 
 ## 10. Self-check before a screen ships
 

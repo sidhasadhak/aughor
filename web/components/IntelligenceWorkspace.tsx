@@ -1,5 +1,5 @@
 "use client";
-import { SkeletonRows } from "@/components/ui/motion";
+import { Pending, SkeletonRows } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
@@ -7,6 +7,9 @@ import { getCatalogTree } from "@/lib/api";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
+import { Button } from "@/components/ui/button";
+import { formatTimestamp, relTime } from "@/lib/format";
+import type { BriefHead } from "@/components/BriefingPanel";
 
 // ── Lazy panels ──────────────────────────────────────────────────────────────
 // The four perspectives are heavy graph/data views — load each only when its
@@ -145,6 +148,10 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   }, [connectionId, canvasId, connections]);
   const schema = selectedSchema ?? undefined;
 
+  // The Briefing lifts its header into the shell's (Aughor Intelligence · 01 Briefing): when the
+  // brief was written, and its two actions. Shown on the Briefing layer only.
+  const [briefHead, setBriefHead] = useState<BriefHead | null>(null);
+
   const layers = LAYERS.flatMap(l => (l.id === "ontology" ? [l, GRAPH_LAYER] : [l]));
 
   const showConnPicker = !canvasId && !!onConnectionChange && (connections?.length ?? 0) > 1;
@@ -194,14 +201,39 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     </>
   ) : undefined;
 
+  const briefTrailing = layer === "briefing" && briefHead ? (
+    <>
+      <span className={`aug-content-meta${briefHead.pending === "writing" ? " aug-content-meta-writing" : ""}`}
+        title={briefHead.generatedAt ? `Written ${formatTimestamp(briefHead.generatedAt)}` : undefined}>
+        {briefHead.pending === "writing" ? "being written now"
+          : briefHead.pending === "opening" ? "opening the brief"
+          : briefHead.generatedAt ? `written ${relTime(briefHead.generatedAt)} ago`
+          : briefHead.empty ? "no findings yet" : "not written yet"}
+      </span>
+      {!briefHead.empty && (
+        <Button variant="ghost" size="xs" disabled={!!briefHead.pending} onClick={briefHead.regenerate}
+          title={briefHead.hasNarrative ? "Write this briefing again from the current findings" : "Write the briefing from the current findings"}>
+          {briefHead.pending === "writing" ? <><Pending /> Writing</> : briefHead.hasNarrative ? "Regenerate" : "Write briefing"}
+        </Button>
+      )}
+      {briefHead.investigate && (
+        <Button size="xs" onClick={briefHead.investigate.run} title={`Investigate: ${briefHead.investigate.label}`}>
+          Investigate
+        </Button>
+      )}
+    </>
+  ) : undefined;
+
   return (
     <Workspace
+      title="Intelligence"
       layers={layers}
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Intelligence layers"
       renderIcon={(name, size, color) => <Icon name={name} size={size} color={color} />}
       headerControls={headerControls}
+      headerTrailing={briefTrailing}
       renderLayer={id => {
         // `key` on the scope: a schema switch REMOUNTS the brief rather than mutating it in
         // place. Without it the panel keeps every piece of per-scope state it doesn't
@@ -213,7 +245,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
         // fetch wave 2 repaints — the visible ~1s "briefing flicker", plus every
         // request issued twice under two scope keys. One settled mount, one wave.
         if (id === "briefing") return (canvasId || schemaResolved)
-          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} />
+          ? <BriefingPanel key={`${connectionId}:${canvasId ?? ""}:${schema ?? ""}`} connectionId={connectionId} onInvestigate={(q, insightId) => onInvestigate(q, "investigate", insightId)} canvasId={canvasId} schema={schema} schemaReady={schemaResolved} workspaceId={workspaceId} onHead={setBriefHead} />
           // PX-0 (§3.14) — never a SILENT pane while the schema resolves. This gate was
           // a bare grey div, and with no connection selected it held forever: the app's
           // default landing was a black void with no words on it. An empty state says

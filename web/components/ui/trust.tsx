@@ -9,6 +9,7 @@
  *   <ReceiptChain>  query → guard → guard → figure; a broken link stays in the chain, in red
  *   <Confidence>    the computed figure beside a 3px rule — ≥0.86 green, ≥0.5 amber, else red
  *   <Cite>          a checkable figure (dashed underline) and where it is checked (superscript)
+ *   <CiteRef>       that superscript alone — a claim's pointer into the margin apparatus
  *   <WhyFigure>     a figure whose dashed underline opens "why this number"
  *   <WhyCard>       that popover's body: claim, matched cell, snapshot, rows read, cost, doors
  */
@@ -106,6 +107,28 @@ function pressable(onOpen?: () => void) {
   };
 }
 
+/** Where a claim is checked: the superscript that points into the margin apparatus. An amber one is
+ *  a note that argues with the sentence. Pressable when `onOpen` is given; it hands back the
+ *  marker's box, so the note opens beside it whether it was clicked or keyed. */
+export function CiteRef({ refNo, dissent = false, title, onOpen }: {
+  refNo: React.ReactNode;
+  dissent?: boolean;
+  title?: string;
+  onOpen?: (anchor: DOMRect) => void;
+}) {
+  const cls = `aug-cite-ref${dissent ? " aug-cite-ref-dissent" : ""}${onOpen ? " aug-cite-ref-open" : ""}`;
+  if (!onOpen) return <sup className={cls} title={title}>{refNo}</sup>;
+  return (
+    <sup className={cls} title={title} role="button" tabIndex={0}
+      onClick={e => onOpen(e.currentTarget.getBoundingClientRect())}
+      onKeyDown={e => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onOpen(e.currentTarget.getBoundingClientRect()); }
+      }}>
+      {refNo}
+    </sup>
+  );
+}
+
 /** A figure inline in prose that can be checked, and the note or receipt that checks it. */
 export function Cite({ children, refNo, tone = "neutral", dissent = false, title, onOpen }: {
   children: React.ReactNode;
@@ -122,7 +145,7 @@ export function Cite({ children, refNo, tone = "neutral", dissent = false, title
   return (
     <>
       <span className="aug-cite" style={color ? { color } : undefined} title={title} {...pressable(onOpen)}>{children}</span>
-      {refNo != null && <sup className={`aug-cite-ref${dissent ? " aug-cite-ref-dissent" : ""}`}>{refNo}</sup>}
+      {refNo != null && <CiteRef refNo={refNo} dissent={dissent} />}
     </>
   );
 }

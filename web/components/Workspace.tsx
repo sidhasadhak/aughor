@@ -20,6 +20,11 @@ type WorkspaceProps<L extends string> = {
   /** Render a layer's switcher icon at a given size/colour — kept injectable so the
    *  primitive owns no icon set (each workspace brings its own). */
   renderIcon: (icon: string, size: number, color: string) => React.ReactNode;
+  /** The workspace's own name for the header. The active layer is already the segmented
+   *  control's selected item, so a workspace that passes this keeps one title while its layers
+   *  change beneath it (Aughor Intelligence: "the shell never moves"). Absent → the active
+   *  layer's label, as before. */
+  title?: string;
   /** Optional header controls (connection / schema pickers …) inserted between the
    *  title and the switcher. When present the switcher drops its `margin-left:auto`,
    *  so the trailing group is right-aligned by the first control instead. */
@@ -57,7 +62,7 @@ type WorkspaceProps<L extends string> = {
  * switches. Layers that have never been visited aren't mounted at all.
  */
 export function Workspace<L extends string>({
-  layers, layer, onLayerChange, ariaLabel, headerControls, headerTrailing,
+  layers, layer, onLayerChange, ariaLabel, title, headerControls, headerTrailing,
   renderLayer, badges, headerless,
 }: WorkspaceProps<L>) {
   // Mount a layer the first time it becomes active, then keep it mounted.
@@ -76,7 +81,7 @@ export function Workspace<L extends string>({
         {/* The screen title. The layer's blurb survives as the switcher's tooltip, where it
             answers a question someone is actually asking; beside the title it only repeated
             the chip next to it. */}
-        <span className="aug-content-title" style={{ flexShrink: 0 }}>{active.label}</span>
+        <span className="aug-content-title" style={{ flexShrink: 0 }}>{title ?? active.label}</span>
 
         {headerControls}
 
