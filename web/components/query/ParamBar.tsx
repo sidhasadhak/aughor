@@ -34,8 +34,12 @@ const WIDGETS: { v: ParamDef["widget"]; label: string }[] = [
   { v: "multiselect", label: "Multi-select" },
 ];
 
+// UPWARD, deliberately: this bar is the LAST row of the editor pane, and the pane
+// clips (`overflow: hidden`), so a menu dropping below it renders fully — in the DOM —
+// and shows nothing. Measured live: the gear "opened" invisibly. Opening over the
+// editor keeps every pixel inside the pane.
 const menuStyle: React.CSSProperties = {
-  position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+  position: "absolute", bottom: "100%", left: 0, zIndex: 41, marginBottom: 4,
   minWidth: 200, padding: 5, background: "var(--bg-2)",
   border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
 };
