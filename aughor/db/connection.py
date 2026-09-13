@@ -1150,8 +1150,12 @@ class DuckDBConnection(DatabaseConnection):
         def _attempt(statement: str) -> QueryResult:
             try:
                 if params:
-                    from aughor.sql.params import render_for_engine
-                    self._conn.execute(render_for_engine(statement, "duckdb"), params)
+                    from aughor.sql.params import expand_list_params, render_for_engine
+                    # SE-8C — multiselect lists expand to scalar binds at every driver
+                    # call (this branch exists in FOUR places by construction; the
+                    # connector-capability test walks them all).
+                    exec_sql, bind_params = expand_list_params(statement, params)
+                    self._conn.execute(render_for_engine(exec_sql, "duckdb"), bind_params)
                 else:
                     self._conn.execute(statement)
                 rows = self._conn.fetchall()
@@ -1566,8 +1570,9 @@ class PostgresConnection(DatabaseConnection):
                     # `%(name)s` is produced HERE, after translate/_apply_dialect_fixes:
                     # sqlglot cannot parse pyformat, so introducing it any earlier
                     # breaks validation and the dialect rewrite.
-                    from aughor.sql.params import render_for_engine
-                    cur.execute(render_for_engine(sql, "pyformat"), params)
+                    from aughor.sql.params import expand_list_params, render_for_engine
+                    exec_sql, bind_params = expand_list_params(sql, params)
+                    cur.execute(render_for_engine(exec_sql, "pyformat"), bind_params)
                 else:
                     cur.execute(sql)
                 rows = cur.fetchmany(max_rows)

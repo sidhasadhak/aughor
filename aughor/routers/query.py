@@ -1090,12 +1090,16 @@ class _SaveQueryRequest(BaseModel):
     name: str
     sql: str = ""
     spec: dict = {}
+    # SE-8C — parameter widget definitions, opaque JSON like `spec` (and a separate
+    # field for the same reason: a non-empty spec routes a query to the visual builder).
+    param_defs: dict = {}
 
 
 class _UpdateSavedQueryRequest(BaseModel):
     name: str | None = None
     sql: str | None = None
     spec: dict | None = None
+    param_defs: dict | None = None
 
 
 @router.get("/saved-queries")
@@ -1119,7 +1123,8 @@ def saved_queries_create(body: _SaveQueryRequest, request: Request):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="name is required")
     from aughor.savedquery.store import create_saved_query
-    q = create_saved_query(body.connection_id, body.name.strip(), body.sql, body.spec)
+    q = create_saved_query(body.connection_id, body.name.strip(), body.sql, body.spec,
+                           param_defs=body.param_defs)
     return q.model_dump()
 
 
@@ -1135,7 +1140,8 @@ def saved_queries_get(query_id: str):
 @router.put("/saved-queries/{query_id}")
 def saved_queries_update(query_id: str, body: _UpdateSavedQueryRequest):
     from aughor.savedquery.store import update_saved_query
-    q = update_saved_query(query_id, name=body.name, sql=body.sql, spec=body.spec)
+    q = update_saved_query(query_id, name=body.name, sql=body.sql, spec=body.spec,
+                           param_defs=body.param_defs)
     if not q:
         raise HTTPException(status_code=404, detail="Saved query not found")
     return q.model_dump()

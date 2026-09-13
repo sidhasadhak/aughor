@@ -98,7 +98,7 @@ class Connector(DatabaseConnection):
         import time
         from aughor.control_plane.contracts.execution import QueryResult
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
-        from aughor.sql.params import ParamRenderError, render_for_engine
+        from aughor.sql.params import ParamRenderError, expand_list_params, render_for_engine
 
         if not self.param_style:
             return super().execute_with_params(hypothesis_id, sql, params)
@@ -111,14 +111,18 @@ class Connector(DatabaseConnection):
             return _rp
 
         try:
-            rendered = render_for_engine(sql, self.param_style)
+            # SE-8C — a LIST value (a multiselect widget) becomes a parenthesised group
+            # of scalar binds here, after the guards saw the `:name` form and before
+            # the driver, which can only bind scalars.
+            exec_sql, bind_params = expand_list_params(sql, params or {})
+            rendered = render_for_engine(exec_sql, self.param_style)
         except ParamRenderError as exc:
             return QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[],
                                row_count=0, error=str(exc))
 
         _t0 = time.monotonic()
         try:
-            columns, rows_raw = self._bind_execute(rendered, params or {})
+            columns, rows_raw = self._bind_execute(rendered, bind_params)
             rows = [[str(v) if v is not None else "NULL" for v in row]
                     for row in rows_raw[:self.max_rows]]
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=columns,

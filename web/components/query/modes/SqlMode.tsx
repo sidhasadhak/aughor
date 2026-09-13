@@ -42,6 +42,7 @@ import {
   DEFAULT_FORMAT_PREFS, formatSql, readFormatPrefs, writeFormatPrefs, type FormatPrefs,
 } from "@/lib/query/format";
 import { OpenQueryDialog } from "@/components/query/OpenQueryDialog";
+import { resolveParamValue, type ParamDef, type ParamValue } from "@/lib/query/paramDefs";
 import {
   runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
 } from "@/lib/api";
@@ -53,7 +54,8 @@ import { formatCount } from "@/lib/format";
 type EditorApi = { insert: (text: string) => void; focus: () => void; relint: () => void };
 
 /** Stable identity — a fresh `{}` each render would re-fire every memo below it. */
-const EMPTY_PARAMS: Record<string, string> = {};
+const EMPTY_PARAMS: Record<string, ParamValue> = {};
+const EMPTY_DEFS: Record<string, ParamDef> = {};
 
 /** SE-8A — the row limits the Run menu offers. Bounded above rather than offering "no
  *  limit": the server honours limit<=0 as uncapped, and an uncapped SELECT over a wide
@@ -193,19 +195,26 @@ export function SqlMode({
     return () => { alive = false; };
   }, [sqlText]);
   const paramValues = active?.params ?? EMPTY_PARAMS;
+  const paramDefs = active?.paramDefs ?? EMPTY_DEFS;
   // Only the names still present in the SQL, so a value left behind by a deleted
   // parameter is not silently sent (the server would reject an unknown bind name).
+  // SE-8C — each value resolves through its widget def: defaults fill in, number
+  // widgets bind numbers, ⚡ date tokens become the date they mean today, and a
+  // multiselect binds its list.
   const boundParams = useMemo(() => {
-    const out: Record<string, string> = {};
-    for (const n of paramNames) if ((paramValues[n] ?? "").trim()) out[n] = paramValues[n];
+    const out: Record<string, unknown> = {};
+    for (const n of paramNames) {
+      const v = resolveParamValue(paramDefs[n], paramValues[n] ?? paramDefs[n]?.default);
+      if (v !== undefined) out[n] = v;
+    }
     return out;
-  }, [paramNames, paramValues]);
+  }, [paramNames, paramValues, paramDefs]);
 
   // Built ONCE and read through getters, so a connection or dialect change reaches the
   // linter without rebuilding the editor (which would drop undo history and cursor).
   const connRef = useRef(connId);
   const engineRef = useRef(engine);
-  const paramsRef = useRef<Record<string, string>>(EMPTY_PARAMS);
+  const paramsRef = useRef<Record<string, unknown>>(EMPTY_PARAMS);
   connRef.current = connId;
   engineRef.current = engine;
   paramsRef.current = boundParams;
@@ -282,8 +291,10 @@ export function SqlMode({
 
   const setSql = useCallback((sql: string) => patchActive({ sql }), [patchActive]);
 
-  const openInNewTab = useCallback((sql: string, name = "Query") => {
-    const t = { ...newTab(name), sql };
+  const openInNewTab = useCallback((
+    sql: string, name = "Query", paramDefs?: Record<string, ParamDef>,
+  ) => {
+    const t = { ...newTab(name), sql, ...(paramDefs && Object.keys(paramDefs).length ? { paramDefs } : {}) };
     setTabs(prev => [...prev, t]);
     setActiveId(t.id);
   }, []);
@@ -467,11 +478,20 @@ export function SqlMode({
   // mode's query IS its text, and inventing a builder spec for it would claim the
   // composer could reproduce a statement it may not be able to decompile. The empty
   // spec is what routes the query back here when it is loaded.
-  const captureRef = useRef<() => { sql: string; spec: Record<string, unknown> } | null>(null);
-  const loadRef = useRef<(q: { sql: string; name: string }) => void>(() => {});
+  const captureRef = useRef<() => {
+    sql: string; spec: Record<string, unknown>; param_defs?: Record<string, unknown>;
+  } | null>(null);
+  const loadRef = useRef<(q: {
+    sql: string; name: string; param_defs?: Record<string, unknown>;
+  }) => void>(() => {});
   const nameRef = useRef<() => string>(() => "Untitled query");
-  captureRef.current = () => (sqlText.trim() ? { sql: sqlText, spec: {} } : null);
-  loadRef.current = q => openInNewTab(q.sql, q.name);
+  // SE-8C — widget definitions save WITH the query and come back with it: a dropdown
+  // someone configured is part of what "this saved query" means.
+  captureRef.current = () => (sqlText.trim()
+    ? { sql: sqlText, spec: {}, param_defs: active?.paramDefs ?? {} }
+    : null);
+  loadRef.current = q =>
+    openInNewTab(q.sql, q.name, (q.param_defs ?? {}) as Record<string, ParamDef>);
   // A tab the user renamed is a name they chose — better than anything derived. Only
   // an untouched tab falls back to reading the query's own FROM clause.
   nameRef.current = () => {
@@ -513,12 +533,6 @@ export function SqlMode({
           open={showOpenDialog}
           onClose={() => setShowOpenDialog(false)}
           onOpen={(sql, name) => openInNewTab(sql, name)}
-        />
-
-        <ParamBar
-          names={paramNames}
-          values={paramValues}
-          onChange={next => patchActive({ params: next })}
         />
 
         <div
@@ -729,25 +743,37 @@ export function SqlMode({
           collapsed={maximizeResults}
           style={{ flex: 1, minHeight: 0 }}
           left={
-            <SqlEditorPane
-              value={sqlText}
-              onChange={setSql}
-              onRun={() => runRef.current()}
-              onRunStatement={() => void runStatementRef.current()}
-              onFormat={(text) => formatSql(text, engineRef.current)}
-              onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
-              onReady={api => {
-                editorApi.current = api;
-                relint.current = api.relint;
-                onInsertReady?.(api.insert);
-              }}
-              schema={schema}
-              defaultSchema={defaultSchema}
-              dialect={cmDialect(engine)}
-              quote={quoteForEngine}
-              joins={joins}
-              diagnostics={diagnostics}
-            />
+            // SE-8C — the parameter widgets sit BETWEEN editor and results,
+            // Databricks' own position for them.
+            <div style={{ flex: 1, minHeight: 0, display: "flex", flexDirection: "column" }}>
+              <SqlEditorPane
+                value={sqlText}
+                onChange={setSql}
+                onRun={() => runRef.current()}
+                onRunStatement={() => void runStatementRef.current()}
+                onFormat={(text) => formatSql(text, engineRef.current)}
+                onCursor={(pos, sel) => { cursor.current = pos; selection.current = sel; }}
+                onReady={api => {
+                  editorApi.current = api;
+                  relint.current = api.relint;
+                  onInsertReady?.(api.insert);
+                }}
+                schema={schema}
+                defaultSchema={defaultSchema}
+                dialect={cmDialect(engine)}
+                quote={quoteForEngine}
+                joins={joins}
+                diagnostics={diagnostics}
+              />
+              <ParamBar
+                connId={connId}
+                names={paramNames}
+                values={paramValues}
+                defs={paramDefs}
+                onChange={next => patchActive({ params: next })}
+                onDefsChange={next => patchActive({ paramDefs: next })}
+              />
+            </div>
           }
           right={
             <ResultsPanel

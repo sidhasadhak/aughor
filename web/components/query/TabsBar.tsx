@@ -16,6 +16,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { queryTabName } from "@/lib/format";
+import type { ParamDef, ParamValue } from "@/lib/query/paramDefs";
 
 export interface EditorTab {
   id: string;
@@ -26,8 +27,12 @@ export interface EditorTab {
   status?: "ok" | "error";
   /** SE-4 H — values for this tab's `:name` parameters, persisted with the draft.
    *  Per TAB, not per editor: two tabs may both use `:region` and mean different
-   *  things, and a shared value would silently rewrite the other tab's query. */
-  params?: Record<string, string>;
+   *  things, and a shared value would silently rewrite the other tab's query.
+   *  SE-8C widened a value to `string | string[]` — the array is a multiselect. */
+  params?: Record<string, ParamValue>;
+  /** SE-8C — how each parameter renders as a widget. Rides the tab (and the saved
+   *  query, as `param_defs`) so a configured dropdown survives a reload. */
+  paramDefs?: Record<string, ParamDef>;
   /** SE-8A — the row cap this tab runs with; absent means the 500 default. Part of
    *  the tab, not the editor: the limit describes the QUERY ("show me everything in
    *  this small dimension table"), and carrying it across tabs would silently cap or

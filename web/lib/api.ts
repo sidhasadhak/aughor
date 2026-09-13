@@ -2800,6 +2800,10 @@ export interface SavedQuery {
   sql: string;
   /** Opaque visual-builder state (primaryTable, joins, dims, measures, filters, orderBy, limit). */
   spec: Record<string, unknown>;
+  /** SE-8C — parameter widget definitions (`ParamDef` per `:name`), opaque here.
+   *  A separate field from `spec`: a non-empty spec routes a query to the visual
+   *  builder, and widgets on a SQL query must not change where it opens. */
+  param_defs?: Record<string, unknown>;
   created_at: string;
   updated_at: string;
 }
@@ -2889,11 +2893,15 @@ export async function restoreSavedQuery(queryId: string, version: number): Promi
 
 export async function createSavedQuery(
   connectionId: string, name: string, sql: string, spec: Record<string, unknown>,
+  paramDefs?: Record<string, unknown>,
 ): Promise<SavedQuery> {
   const res = await fetch(`${getApiBase()}/saved-queries`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ connection_id: connectionId, name, sql, spec }),
+    body: JSON.stringify({
+      connection_id: connectionId, name, sql, spec,
+      ...(paramDefs && Object.keys(paramDefs).length ? { param_defs: paramDefs } : {}),
+    }),
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -2903,7 +2911,11 @@ export async function createSavedQuery(
 }
 
 export async function updateSavedQuery(
-  id: string, patch: { name?: string; sql?: string; spec?: Record<string, unknown> },
+  id: string,
+  patch: {
+    name?: string; sql?: string; spec?: Record<string, unknown>;
+    param_defs?: Record<string, unknown>;
+  },
 ): Promise<SavedQuery> {
   const res = await fetch(`${getApiBase()}/saved-queries/${encodeURIComponent(id)}`, {
     method: "PUT",

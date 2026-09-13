@@ -1341,8 +1341,12 @@ class LocalUploadConnection(Connector):
         def _attempt(statement: str) -> QueryResult:
             try:
                 if params:
-                    from aughor.sql.params import render_for_engine
-                    self._duckdb.execute(render_for_engine(statement, "duckdb"), params)
+                    from aughor.sql.params import expand_list_params, render_for_engine
+                    # SE-8C — list values (multiselect) expand to scalar binds; same
+                    # seam as connectors/base.py, duplicated because this class is
+                    # DuckDB-backed without being a DuckDBConnection (the SE-3 F trap).
+                    exec_sql, bind_params = expand_list_params(statement, params)
+                    self._duckdb.execute(render_for_engine(exec_sql, "duckdb"), bind_params)
                 else:
                     self._duckdb.execute(statement)
                 rows_raw = self._duckdb.fetchall()
