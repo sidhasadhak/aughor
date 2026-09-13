@@ -38,7 +38,10 @@ import {
 import { sqlDiagnostics } from "@/components/query/editor/diagnostics";
 import { splitStatements, statementAt, findParams } from "@/lib/query/parserClient";
 import { cmDialect, engineFamily, explainPrefix, quoteIdentifier, type EngineHint } from "@/lib/query/dialect";
-import { formatSql } from "@/lib/query/format";
+import {
+  DEFAULT_FORMAT_PREFS, formatSql, readFormatPrefs, writeFormatPrefs, type FormatPrefs,
+} from "@/lib/query/format";
+import { OpenQueryDialog } from "@/components/query/OpenQueryDialog";
 import {
   runWorkbenchQuery, QueryCancelled, type QueryValidation, type TypedQueryResult,
 } from "@/lib/api";
@@ -157,6 +160,20 @@ export function SqlMode({
   const limit = active?.limit ?? 500;
   const runAllPref = !!active?.runAll;
   const [showRunMenu, setShowRunMenu] = useState(false);
+
+  // SE-8F — "+ → Open existing", and the Format button's preferences menu.
+  const [showOpenDialog, setShowOpenDialog] = useState(false);
+  const [showFormatMenu, setShowFormatMenu] = useState(false);
+  // Storage read in an EFFECT, never a useState initializer (hydration rule).
+  const [fmtPrefs, setFmtPrefs] = useState<FormatPrefs>(DEFAULT_FORMAT_PREFS);
+  useEffect(() => { setFmtPrefs(readFormatPrefs()); }, []);
+  const patchFmt = useCallback((patch: Partial<FormatPrefs>) => {
+    setFmtPrefs(prev => {
+      const next = { ...prev, ...patch };
+      writeFormatPrefs(next);
+      return next;
+    });
+  }, []);
 
   // SE-4 H — the `:name` parameters of the CURRENT document, and this tab's values.
   const paramNames = useMemo(() => findParams(sqlText), [sqlText]);
@@ -475,6 +492,14 @@ export function SqlMode({
           })}
           onRename={(id, name) => setTabs(prev => prev.map(t => t.id === id ? { ...t, name } : t))}
           trailing={toolbar}
+          onOpenExisting={() => setShowOpenDialog(true)}
+        />
+
+        <OpenQueryDialog
+          connId={connId}
+          open={showOpenDialog}
+          onClose={() => setShowOpenDialog(false)}
+          onOpen={(sql, name) => openInNewTab(sql, name)}
         />
 
         <ParamBar
@@ -579,16 +604,64 @@ export function SqlMode({
               its catalog.schema selectors: it answers "against what", which is part of
               the same question as "run". */}
           {schemaControl}
-          <Button
-            variant="ghost"
-            size="xs"
-            className="aug-fs-ui"
-            title="Format the selection, or the whole query (⌘⇧F)"
-            onClick={() => setSql(formatSql(sqlText, engine))}
-            disabled={!sqlText.trim()}
-          >
-            <Icon name="sql" size={14} />
-          </Button>
+          {/* SE-8F — Format grew Databricks' formatter preferences (theirs live in a
+              JSON file in the workspace home; ours behind this caret). Click formats;
+              the caret decides HOW. */}
+          <div style={{ position: "relative", display: "flex", alignItems: "center", flexShrink: 0 }}>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="aug-fs-ui"
+              title="Format the selection, or the whole query (⌘⇧F)"
+              onClick={() => setSql(formatSql(sqlText, engine, fmtPrefs))}
+              disabled={!sqlText.trim()}
+            >
+              <Icon name="sql" size={14} />
+            </Button>
+            <Button variant="ghost" size="xs" title="Formatting preferences"
+              aria-label="Formatting preferences"
+              onClick={() => setShowFormatMenu(v => !v)}
+              style={{ paddingLeft: 2, paddingRight: 2 }}>
+              <Icon name="chevd" size={12} />
+            </Button>
+            {showFormatMenu && (
+              <>
+                <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setShowFormatMenu(false)} />
+                <div className="aug-fs-ui" style={{
+                  position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                  minWidth: 250, padding: "5px 7px 7px", background: "var(--bg-2)",
+                  border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+                }}>
+                  <div className="aug-label" style={{ padding: "3px 0" }}>Formatting</div>
+                  {([
+                    ["Keywords", "keywordCase", [["upper", "UPPER"], ["lower", "lower"], ["preserve", "as written"]]],
+                    ["Functions", "functionCase", [["upper", "UPPER"], ["lower", "lower"], ["preserve", "as written"]]],
+                  ] as const).map(([label, field, opts]) => (
+                    <div key={field} style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}>
+                      <span style={{ color: "var(--t3)", width: 74, flexShrink: 0 }}>{label}</span>
+                      {opts.map(([v, name]) => (
+                        <Button key={v} size="xs" className="aug-fs-ui"
+                          variant={fmtPrefs[field] === v ? "secondary" : "ghost"}
+                          onClick={() => patchFmt({ [field]: v })}>
+                          {name}
+                        </Button>
+                      ))}
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", alignItems: "center", gap: 4, padding: "2px 0" }}>
+                    <span style={{ color: "var(--t3)", width: 74, flexShrink: 0 }}>Indent</span>
+                    {([2, 4] as const).map(w => (
+                      <Button key={w} size="xs" className="aug-fs-ui"
+                        variant={fmtPrefs.tabWidth === w ? "secondary" : "ghost"}
+                        onClick={() => patchFmt({ tabWidth: w })}>
+                        {w} spaces
+                      </Button>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
           <Button
             variant="ghost"
             size="xs"

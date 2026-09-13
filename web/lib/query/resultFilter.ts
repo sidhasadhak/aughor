@@ -176,6 +176,29 @@ export function parseFilter(phrase: string, columns: string[]): ParsedFilter {
   const text = phrase.trim();
   if (!text) return { clause: null, rank: null };
 
+  // SE-8F — OR between clauses, Databricks' "Add OR condition" as grammar rather than
+  // a second UI. Strict on purpose: the split only stands when EVERY part binds to a
+  // real column — `status = active or status = pending` is two clauses, while
+  // `notes contains now or never` has a second part that binds nowhere, so the whole
+  // phrase falls through to a single clause and "now or never" stays one value.
+  const orParts = text.split(/\s+or\s+/i);
+  if (orParts.length > 1) {
+    const parts = orParts.map(p => parseFilter(p, columns));
+    const clauses = parts.map(p => p.clause);
+    if (parts.every(p => !p.rank) &&
+        clauses.every((c): c is FilterClause => !!c && !c.error && c.column !== null)) {
+      return {
+        clause: {
+          text,
+          column: clauses[0].column,
+          describe: clauses.map(c => c.describe).join(" · or · "),
+          predicate: (r) => clauses.some(c => c.predicate(r)),
+        },
+        rank: null,
+      };
+    }
+  }
+
   const rank = RANK_RE.exec(text);
   if (rank) {
     const [, kind, n, colName] = rank;

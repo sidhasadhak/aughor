@@ -142,6 +142,28 @@ export function SqlEditorPane({
   useEffect(() => {
     if (!host.current || view.current) return;
 
+    // SE-8F — ⌥+ / ⌥− editor font size (Databricks' pair). Scoped to THIS editor by
+    // overriding the `--aug-fs-ui` token on the host element — the theme sizes the
+    // content off that var, so the override reaches every piece of editor chrome and
+    // nothing outside it. Clamped at 11 (the documented legibility floor) and 24.
+    const FONT_KEY = "aug.sqledit.fontsize";
+    const fontPx = { v: 0 };
+    const applyFont = () => {
+      if (!host.current) return;
+      if (fontPx.v) host.current.style.setProperty("--aug-fs-ui", `${fontPx.v}px`);
+      else host.current.style.removeProperty("--aug-fs-ui");
+    };
+    try {
+      const stored = Number(localStorage.getItem(FONT_KEY));
+      if (stored >= 11 && stored <= 24) { fontPx.v = stored; applyFont(); }
+    } catch { /* no persistence — the default size stands */ }
+    const bumpFont = (delta: number) => {
+      fontPx.v = Math.min(24, Math.max(11, (fontPx.v || 13) + delta));
+      applyFont();
+      try { localStorage.setItem(FONT_KEY, String(fontPx.v)); } catch { /* session-only */ }
+      return true;
+    };
+
     /** Reformat: the selection if there is one, else the whole document. One dispatch,
      *  so ⌘Z puts it back in one step. */
     const formatRun = (v: EditorView) => {
@@ -219,6 +241,12 @@ export function SqlEditorPane({
       { key: "Mod-l", preventDefault: true, run: gotoLine },
       { key: "Mod-f", preventDefault: true, run: openSearchPanel },
       { key: "Mod-Alt-f", preventDefault: true, run: openSearchPanel },
+      // SE-8F — font size. Both spellings of "+" because the plus key IS shift+equals
+      // on the layouts this app meets, and ⌥ may rewrite `key` — CM falls back to the
+      // physical key name, which is Equal/Minus.
+      { key: "Alt-=", preventDefault: true, run: () => bumpFont(1) },
+      { key: "Alt-+", preventDefault: true, run: () => bumpFont(1) },
+      { key: "Alt--", preventDefault: true, run: () => bumpFont(-1) },
     ]));
 
     const extensions: Extension[] = [

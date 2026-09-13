@@ -86,7 +86,7 @@ export function newTab(name = queryTabName()): EditorTab {
 }
 
 export function TabsBar({
-  tabs, activeId, onSelect, onNew, onClose, onRename, trailing,
+  tabs, activeId, onSelect, onNew, onClose, onRename, trailing, onOpenExisting,
 }: {
   tabs: EditorTab[];
   activeId: string;
@@ -99,9 +99,13 @@ export function TabsBar({
    *  console has two, and the difference was rows that each carried three controls.
    *  Anything a tab does not own — the connection, the saved state — comes in here. */
   trailing?: React.ReactNode;
+  /** SE-8F — when present, "+" opens Databricks' two-option menu (new / open existing)
+   *  instead of creating immediately. */
+  onOpenExisting?: () => void;
 }) {
   const [editing, setEditing] = useState("");
   const [draftName, setDraftName] = useState("");
+  const [plusMenu, setPlusMenu] = useState(false);
 
   const commit = useCallback(() => {
     if (editing && draftName.trim()) onRename(editing, draftName.trim());
@@ -175,9 +179,39 @@ export function TabsBar({
           </div>
         );
       })}
-      <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
-        <Icon name="plus" size={13} />
-      </Button>
+      {onOpenExisting ? (
+        <div style={{ position: "relative", flexShrink: 0 }}>
+          <Button variant="ghost" size="xs" className="aug-fs-ui"
+            onClick={() => setPlusMenu(v => !v)} title="New tab" style={{ color: "var(--t3)" }}>
+            <Icon name="plus" size={13} />
+          </Button>
+          {plusMenu && (
+            <>
+              <div style={{ position: "fixed", inset: 0, zIndex: 40 }} onClick={() => setPlusMenu(false)} />
+              <div className="aug-fs-ui" style={{
+                position: "absolute", top: "100%", left: 0, zIndex: 41, marginTop: 4,
+                minWidth: 170, padding: 5, background: "var(--bg-2)",
+                border: "1px solid var(--b2)", borderRadius: "var(--r2)", boxShadow: "var(--shadow-md)",
+              }}>
+                <Button variant="ghost" size="xs" className="aug-fs-ui"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => { setPlusMenu(false); onNew(); }}>
+                  New query
+                </Button>
+                <Button variant="ghost" size="xs" className="aug-fs-ui"
+                  style={{ width: "100%", justifyContent: "flex-start" }}
+                  onClick={() => { setPlusMenu(false); onOpenExisting(); }}>
+                  Open existing…
+                </Button>
+              </div>
+            </>
+          )}
+        </div>
+      ) : (
+        <Button variant="ghost" size="xs" className="aug-fs-ui" onClick={onNew} title="New tab" style={{ color: "var(--t3)" }}>
+          <Icon name="plus" size={13} />
+        </Button>
+      )}
       {trailing && (
         <>
           <div style={{ flex: 1, minWidth: 8 }} />

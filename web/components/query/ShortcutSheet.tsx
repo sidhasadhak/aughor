@@ -67,6 +67,8 @@ function groups(mod: string): Group[] {
         // ⌘L is the browser's address bar on some hosts and does not always reach the
         // page; ⌥⌘G is claimed by nothing and always does.
         [`⌥${mod}G`, "Go to line — the alternative, when the browser eats ⌘L"],
+        ["⌥+ ⌥−", "Editor font size, up and down"],
+        ["Esc then H", "This sheet — from anywhere outside the editor"],
       ],
     },
     {
@@ -78,7 +80,7 @@ function groups(mod: string): Group[] {
         [`${mod}A`, "Select every cell"],
         [`${mod}F`, "Find a value in the returned rows"],
         [`${mod}G`, "Go to a row by number"],
-        ["Export", "Copy or download as CSV, TSV, JSON, Markdown, HTML, SQL INSERTs or a plain table"],
+        ["Export", "Copy or download as CSV (plain or for Excel), TSV, JSON, Markdown, HTML, SQL INSERTs or a plain table"],
       ],
     },
   ];
@@ -95,6 +97,27 @@ export function ShortcutSheet() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open]);
+
+  // SE-8F — Esc then H, Databricks' own chord for this sheet. Only OUTSIDE an editing
+  // context: their editor opens the sheet mid-typing too, but "Esc to dismiss
+  // completion, then type HAVING" would open ours on the H, and a reference card that
+  // interrupts writing teaches people to fear Esc.
+  useEffect(() => {
+    let lastEsc = 0;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") { lastEsc = Date.now(); return; }
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      if (e.key !== "h" && e.key !== "H") return;
+      const t = e.target as HTMLElement | null;
+      const editing = !!t && (
+        t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable ||
+        !!t.closest?.(".cm-editor")
+      );
+      if (!editing && Date.now() - lastEsc < 1500) setOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   return (
     <>
