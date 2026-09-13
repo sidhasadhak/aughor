@@ -1118,6 +1118,13 @@ class DuckDBConnection(DatabaseConnection):
         return self._run(hypothesis_id, sql, max(1, max_rows))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
+        # before the dialect translate: sqlglot re-spells `:c` as the engine's own
+        # placeholder on the way through `_run`, and an expansion scanning for `:name`
+        # after that rewrite matches nothing (measured: the list silently left the
+        # params dict and the engine asked where its value went).
+        from aughor.sql.params import expand_list_params
+        sql, params = expand_list_params(sql, params or {})
         return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
@@ -1150,12 +1157,8 @@ class DuckDBConnection(DatabaseConnection):
         def _attempt(statement: str) -> QueryResult:
             try:
                 if params:
-                    from aughor.sql.params import expand_list_params, render_for_engine
-                    # SE-8C — multiselect lists expand to scalar binds at every driver
-                    # call (this branch exists in FOUR places by construction; the
-                    # connector-capability test walks them all).
-                    exec_sql, bind_params = expand_list_params(statement, params)
-                    self._conn.execute(render_for_engine(exec_sql, "duckdb"), bind_params)
+                    from aughor.sql.params import render_for_engine
+                    self._conn.execute(render_for_engine(statement, "duckdb"), params)
                 else:
                     self._conn.execute(statement)
                 rows = self._conn.fetchall()
@@ -1538,6 +1541,13 @@ class PostgresConnection(DatabaseConnection):
         return self._run(hypothesis_id, sql, max(1, max_rows))
 
     def execute_with_params(self, hypothesis_id: str, sql: str, params: dict) -> QueryResult:
+        # SE-8C — a LIST value (a multiselect widget) expands to scalar binds HERE,
+        # before the dialect translate: sqlglot re-spells `:c` as the engine's own
+        # placeholder on the way through `_run`, and an expansion scanning for `:name`
+        # after that rewrite matches nothing (measured: the list silently left the
+        # params dict and the engine asked where its value went).
+        from aughor.sql.params import expand_list_params
+        sql, params = expand_list_params(sql, params or {})
         return self._run(hypothesis_id, sql, MAX_ROWS, params=params)
 
     def _run(self, hypothesis_id: str, sql: str, max_rows: int,
