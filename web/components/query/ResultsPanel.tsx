@@ -33,6 +33,7 @@ import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import { type VizConfig } from "@/components/charts/vizConfig";
 import { ResultFilterBar, type ActiveFilter } from "@/components/query/ResultFilterBar";
 import { QuickFixPanel } from "@/components/query/QuickFixPanel";
+import { SchedulePopover } from "@/components/query/SchedulePopover";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { csvFilename, downloadText } from "@/lib/query/csv";
@@ -490,14 +491,10 @@ export function ResultsPanel({
             {pinState === "ok" ? "Pinned" : pinState === "fail" ? "Pin failed" : "Pin"}
           </Button>
         )}
-        {onSchedule && (
-          <Button
-            variant="ghost" size="xs" className="aug-fs-ui"
-            title="Watch this query on a schedule — opens a monitor prefilled with this SQL"
-            onClick={() => onSchedule(result.sql)}
-          >
-            Schedule
-          </Button>
+        {/* SE-8D — schedules are created HERE now; onSchedule survives as the
+            "Open in Monitors" path for thresholds and anomaly rules. */}
+        {connId && (
+          <SchedulePopover connId={connId} sql={result.sql} onOpenMonitors={onSchedule} />
         )}
         {onShare && (
           <Button
