@@ -116,8 +116,11 @@ waves ON-7 (declared entity, parts, links — MERGED #494), ON-7b (explorer agen
 first — first slice built and its receipt taken 2026-09-13: one model call drafted Lux's 14 tables as 8
 entities, every claim measured before it landed, and the falsifier fired once — tickets read under
 Order — so the explorer stays on demand), ON-8 (one ontology, many sources), ON-9 (processes and
-promises), ON-10 (the investigation starts from the ontology) and fixed ON-7 first; §6 item 18 holds the
-three open shape questions.
+promises — first slice built and its receipt met 2026-09-13: Olist's order-to-delivery declared and counted
+THROUGH the object door's compiler, 9.35% of lines broke the dispatch promise and 8.11% of orders the delivery
+one, every number equal to its hand-written reference, and the late segment, the breach rate and the lag each
+promise derives compile by construction), ON-10 (the investigation starts from the ontology) and fixed ON-7
+first; §6 item 18 holds the three open shape questions.
 
 ---
 
@@ -4619,7 +4622,63 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   entity bound to tables on two connections, measured, its objects and one cross-source link
   readable through `/objects/query`; the latency of the cross-source hop on the receipt (it
   decides whether §4's federation question reopens).
-- **ON-9 · Processes and promises.** `Process`: ordered `Stage`s, each anchored to (entity,
+- ✅ **ON-9 · Processes and promises — FIRST SLICE BUILT + RECEIPT MET 2026-09-13** (the user: *"Start with ON-9"*;
+  branch `claude/on-9-processes`). **What exists:** `Process` · `ProcessStage` · `Promise` · `BusinessRule` on the graph
+  (`OntologyGraph.processes`, `.rules` — a graph built before loads with both empty), declared through the overrides
+  tree (two new kinds, `process` and `rule`: new directories, none renamed) and rebuilt with no database from what their
+  measurement recorded (`aughor.ontology.processes`, `aughor.ontology.business_rules`). A stage is anchored to a MOMENT —
+  a date or timestamp path from the type, to-one links only, a static binding's column included — or to lifecycle
+  states. A promise is `within_days` of the previous stage (calendar days) or a per-object `deadline`, kept per object of
+  its `grain`, which reaches the process's type through a measured to-one `via` resolved when it is declared (a
+  marketplace's shipping limit is per LINE). **Every declaration is resolved by the compiler's own path law and COUNTED
+  THROUGH THE OBJECT DOOR'S COMPILER** before it is written and on every measure pass and rebuild — measured by exactly
+  the law it is read by: objects per stage; per transition both moments, skipped, out of order, and p50/p90/p95 calendar
+  days (exact, from a per-day count any warehouse can run — equal to `quantile_cont`); per promise reached, broken,
+  kept, open, and open past it as of the data's own latest moment. A stage no object reaches is measured-false; a
+  promise never or always broken is FLAGGED, and the flag rides every compiled answer as a caveat. **Derived by
+  construction** (`aughor.ontology.derived` — the door's own IR, never prose): `late_<promise>` (segment),
+  `<promise>_breach_rate` (a ratio of two counts; target = the complement of a declared tolerance, none invented),
+  `<promise>_lag_days` (calendar days between consecutive moments) — each refused with the reason until its declaration
+  is measured. The compiler gains `value_path` (two properties of one object compared row by row, to-one only, the same
+  kind of value) and `property_at`. A rule is a `value_set` (the packs' empty aliases filled: rows per value, a value no
+  row holds flagged) or named `conditions` in the door's shape, read as a segment by its id. Doors: `GET/POST
+  /ontology/processes`, `DELETE /ontology/processes/{id}`, `POST /ontology/rules`, `DELETE /ontology/rules/{id}`; the
+  measure door reports both; `/object-types` carries processes, rules and what each type derives. Packs gain
+  `processes:` and `rules:` as claims (kinds `process`, `rule`): a stage matched to a moment by name, a promise with its
+  terms left to the business, settled as the person's where one is declared; `fashion-ecommerce` ships
+  `order_to_delivery` with placeholder promises and DACH as an empty value set. Web: the map's rail lists Processes
+  (each promise's measured breach rate) and Rules; a process opens in `ProcessPanel` (stages, timings, promises with
+  exact counts, flags in red, derived names, a two-click withdraw); the type panel gains "Processes and rules". Nothing
+  reaches a prompt. **Tests:** `tests/unit/test_object_processes.py` (44: every count held to a hand-written query over
+  the samples warehouse plus a per-line `ship_by` deadline; the doors end to end) · 3 pack-claim tests · **16 guard
+  mutations, every one caught** — the first run let one survive (the overdue cutoff moved a day and no fixture object
+  sat on the boundary), now pinned object by object on the boundary · web `ProcessPanel.test.tsx` (5); seven gates
+  green; `gen:api` run. **Live receipt — Olist on `baef6c3e/ecommerce`, through the API, no model call:**
+  `order_to_delivery` declared as placed → approved → dispatched (promise ≤ `shipping_limit_date`, kept per OrderItem via
+  `order_item_to_order`) → delivered (promise ≤ `order_estimated_delivery_date`). Every count equals its hand-written
+  reference: stages 99,441 · 99,281 · 97,658 · 96,476; approved→dispatched p50/p90/p95 **2/6/8 days**, with **1,359
+  orders handed to the carrier BEFORE approval** and 14 with no approval at all; dispatched→delivered 7/19/24; **the
+  dispatch promise broken on 10,423 of 111,456 lines (9.35%)**, 1,194 lines never dispatched, 1,193 of them past their
+  limit as of 2018-09-11; **the delivery promise broken on 7,827 of 96,476 orders (8.11%)** — the table above counted
+  7,826 of 96,478 by STATUS; the process counts by the MOMENT (one late delivery sits on an order whose status is not
+  delivered, and eight delivered orders carry no delivery moment). Derived, through `/objects/query`: `late_dispatch`
+  10,423 · `dispatch_breach_rate` 9.35 · `late_delivery` 7,827 · `delivery_breach_rate` 8.11 · the breach rate and the
+  lines reached per product category, all 74 rows equal (office furniture **28.37%** over 1,678 lines) · per seller state
+  (PR **11.09%**) · mean `dispatch_lag_days` 2.7072; rules `southeast` 2,287 sellers (SP 1,849 · MG 244 · RJ 171 · ES 23)
+  and `fulfilled_orders` 98,207; a comparison across a to-many link refused. `POST /ontology/measure` counted both again
+  and no number moved. **Second receipt — LuxExperience (`914df862`):** `order_to_shipment`, shipped within 2 calendar
+  days of placement, the moment read through the `shipments` static binding: 107,903 reached and **0 broken — FLAGGED
+  "never broken"**, which is exactly what a synthetic 0–1 day lag should earn (4,536 orders never shipped, 4,528 past it
+  as of 2025-06-30 — both equal to references); the map shows it in the rail and the panel. 🔴 **Found by the receipt:**
+  (1) the Intelligence workspace offers only the schema a connection's registry names, so Olist's `ecommerce` ontology —
+  and the process declared on it — cannot be opened in the web map at all (a chip is filed; the API reads it) · (2) a
+  declaration path refused a column named with a space (`Order Date`) that the door itself resolves — relaxed to any
+  name without a dot, a quote, a backtick or a semicolon · (3) the first mutation run found the overdue boundary
+  untested. **Open on this wave:** the explorer (ON-7b) proposes no processes yet · no web form declares a process (the
+  API does) · a `condition` rule reads as a segment and does not yet scope a metric ("revenue excludes cancelled") ·
+  derived metrics stay out of `graph.metrics` and the metric contract ON PURPOSE (no prompt reach) — ON-10 is where a
+  frame reaches the investigation · a promise in hours is not expressible · the Olist and Lux declarations are UNTRACKED
+  override files. The wave as drafted: `Process`: ordered `Stage`s, each anchored to (entity,
   timestamp property | lifecycle state); a transition may carry a **promise** — a fixed duration
   (`within 2 days`) or a per-object deadline property (`shipping_limit_date`,
   `order_estimated_delivery_date`). `Rule`: a named, owned definition with scope and formula
@@ -5021,8 +5080,10 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         ON-7b the explorer maps the business first (proposals with model provenance, measured, confirmed
         in the map) — ✅ FIRST SLICE + RECEIPT 2026-09-13: Lux registered again, 8 business entities drafted
         from 14 tables in one call, 4 of ON-7's 5 queries equal their references, the falsifier FIRED once
-        (tickets under Order) so it stays on demand → ON-9 processes and promises (Olist order-to-delivery; a promise derives the late
-        segment and the breach metric by construction) → ON-10 the investigation starts from the
+        (tickets under Order) so it stays on demand → ON-9 processes and promises — ✅ FIRST SLICE + RECEIPT 2026-09-13: Olist
+        order-to-delivery declared and counted through the object door (dispatch broken on 9.35% of lines, delivery on 8.11% of
+        orders, every count equal to its reference), the late segment, breach rate and lag derived by construction, 16/16
+        guard mutations caught → ON-10 the investigation starts from the
         ontology (frame_question before the intake parse; the falsifier is a set where raw FAILS because
         the definition is not in the data) → ON-8 one ontology, many sources (org-keyed, bindings name
         their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
@@ -5515,7 +5576,9 @@ the browser** · **measure the premise before building.**
     static 1:1 bindings on Lux's Order (ON-1b). *Recommended: parts — the business speaks of an order's
     payment and an order's shipment; a shipment becomes an entity only where the business ships across
     orders (consolidated freight), which a measured N:N key would show.*
-    **(c) The host for ON-9/ON-10's receipts** — Olist (`baef6c3e/ecommerce`, real delays: 9.35% late
+    **(c) The host for ON-9/ON-10's receipts** — *(2026-09-13: ON-9's receipt was taken on Olist, as recommended;
+    LuxExperience hosted the never-broken flag instead. The question stays open for ON-10 and the pack enrichment.)* —
+    Olist (`baef6c3e/ecommerce`, real delays: 9.35% late
     dispatch, 8.11% late delivery) first, or enrich the LuxExperience pack's generator with realistic
     dispatch lags so the demo pack can host the question. *Recommended: Olist first — no generator change,
     real data; the pack enrichment follows as its own small, deterministic change so the demo can tell the
