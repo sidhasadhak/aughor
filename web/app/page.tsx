@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 import { useEffect, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -1117,7 +1118,7 @@ function AddConnectionForm({
             </>
           )}
 
-          {error && <div style={{ fontSize: 11, color: "var(--red4)", padding: "6px 10px", background: "var(--red1)", border: "1px solid var(--red2)", borderRadius: "var(--r2)" }}>{error}</div>}
+          {error && <ErrorState kind="Connection failed" what={error} means="Nothing was saved. Check the details above and save again." />}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
             <Button type="button" onClick={onCancel} variant="ghost" size="sm">Cancel</Button>
             <Button type="submit" disabled={loading || !name.trim()} variant="default" size="sm">

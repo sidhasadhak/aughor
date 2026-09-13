@@ -1,4 +1,6 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
+import { GuardChip } from "@/components/ui/trust";
 
 /**
  * BriefingPanel — M24a + M24b Synthesis Layer
@@ -2184,12 +2186,12 @@ function BriefingEmpty({
 // ── Loading state — content-shaped skeletons ────────────────────────────────────
 // Not a bare spinner: the briefing's OWN shape shimmers in place, so the layout doesn't
 // jump when the real content lands (the old spinner grew the section and shoved
-// everything below it down). Uses the app's standard skeleton idiom (animate-pulse on a
+// everything below it down). Uses the app's standard skeleton idiom (the .aug-skeleton shimmer on a
 // muted fill) and the same flat card language as the reskinned briefing.
 
 /** One shimmer bar. */
 function Shimmer({ w = "100%", h = 12, r = "var(--r1)", mt = 0 }: { w?: number | string; h?: number; r?: string; mt?: number }) {
-  return <div className="animate-pulse" style={{ width: w, height: h, marginTop: mt, borderRadius: r, background: "var(--bg-3)" }} />;
+  return <div className="aug-skeleton" style={{ width: w, height: h, marginTop: mt, borderRadius: r }} />;
 }
 
 const skelCard: React.CSSProperties = { background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" };
@@ -2763,9 +2765,9 @@ export function BriefingPanel({
           <span style={{ fontSize: 11, color: "var(--t3)" }}>unknown</span>
         )}
         {explorerError && (
-          <span style={{ fontSize: 11, color: "var(--red5, #f87171)" }} title={explorerError}>
-            ✗ {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
-          </span>
+          <GuardChip verdict="refused" title={explorerError}>
+            {explorerError.length > 60 ? explorerError.slice(0, 60) + "…" : explorerError}
+          </GuardChip>
         )}
         {/* A dispatched action, named, until the status shows it. Without this the only
             feedback a click produced was a 42ms disabled flicker followed by seconds of
@@ -2934,13 +2936,8 @@ export function BriefingPanel({
           <div className="aug-label" style={{ marginBottom: 10 }}>Full synthesis</div>
           {narrativeLoading && <SynthesisSkeleton />}
           {!narrativeLoading && narrativeError && (
-            <div style={{
-              padding: "10px 14px", borderRadius: "var(--r2)",
-              background: "var(--red1)", border: "1px solid var(--red2)",
-              fontSize: 11, color: "var(--red4)",
-            }}>
-              {narrativeError}
-            </div>
+            <ErrorState kind="Synthesis failed" what={narrativeError}
+              means="The findings below are unaffected; only the written synthesis is missing." />
           )}
           {!narrativeLoading && hasNarrative && narrative && (
             <NarrativeCard

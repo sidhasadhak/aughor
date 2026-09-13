@@ -384,7 +384,7 @@ export function SchemaShape({
   if (loading) return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
       {[1, 2, 3].map(i => (
-        <div key={i} className="animate-pulse" style={{ height: 48, borderRadius: 6, background: "var(--bg-1)" }} />
+        <div key={i} className="aug-skeleton" style={{ height: 48, borderRadius: "var(--r3)" }} />
       ))}
     </div>
   );

@@ -1,4 +1,6 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
+import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { formatCount } from "@/lib/format";
@@ -92,12 +94,6 @@ async function saveBudget(
 
 // ── Verdict badge ─────────────────────────────────────────────────────────────
 
-const VERDICT_COLOR: Record<string, string> = {
-  safe:       "var(--grn3)",
-  suspicious: "var(--amb3)",
-  // was var(--r2, …) — the RADIUS token used as a color, so it always fell to the fallback
-  blocked:    "var(--red3)",
-};
 
 // ── Agent attribution ─────────────────────────────────────────────────────────
 // Map audit labels to the Fleet roster so the trail reads coherently: every
@@ -135,22 +131,12 @@ function AgentCell({ hypothesisId }: { hypothesisId: string }) {
   );
 }
 
+// The audit's verdicts are guard readings: safe passed, suspicious warned, blocked refused.
+const VERDICT_GUARD: Record<string, GuardVerdict> = { safe: "passed", suspicious: "warned", blocked: "refused" };
+
 function VerdictBadge({ verdict }: { verdict: string }) {
-  const color = VERDICT_COLOR[verdict] ?? "var(--t3)";
-  return (
-    <span style={{
-      fontSize: 11,
-      fontWeight: 600,
-      color,
-      border: `1px solid ${color}`,
-      borderRadius: 3,
-      padding: "1px 5px",
-      textTransform: "uppercase",
-      letterSpacing: "0.05em",
-    }}>
-      {verdict}
-    </span>
-  );
+  const guard = VERDICT_GUARD[verdict];
+  return guard ? <GuardChip verdict={guard}>{verdict}</GuardChip> : <span className="aug-guard">{verdict}</span>;
 }
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
@@ -668,16 +654,7 @@ export function SecurityAuditPanel({
 
         {/* Error state */}
         {error && (
-          <div style={{
-            padding: "10px 14px",
-            background: "rgba(248,113,113,0.08)",
-            border: "1px solid var(--red3)",
-            borderRadius: 6,
-            fontSize: 12,
-            color: "var(--red3)",
-          }}>
-            {error}
-          </div>
+          <ErrorState kind="Audit feed failed" what={error} />
         )}
 
         {/* Stats cards */}

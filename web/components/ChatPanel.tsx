@@ -1136,7 +1136,7 @@ export function ChatPanel({ connectionId, canvasId, restoreSessionId, initialQue
               {loadingStarters ? (
                 <div className="flex flex-col">
                   {Array.from({ length: 4 }).map((_, i) => (
-                    <div key={i} className="h-10 animate-pulse" style={{ borderBottom: "1px solid var(--b1)" }} />
+                    <div key={i} className="h-10 flex items-center" style={{ borderBottom: "1px solid var(--b0)" }}><div className="aug-skeleton" style={{ height: 11, width: `${60 - (i % 3) * 12}%`, borderRadius: "var(--r1)" }} /></div>
                   ))}
                 </div>
               ) : (

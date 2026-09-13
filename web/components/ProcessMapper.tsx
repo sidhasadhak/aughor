@@ -1,4 +1,5 @@
 "use client";
+import { Pending } from "@/components/ui/motion";
 
 import { useEffect, useState } from "react";
 import { getProcessMap, type ProcessMap, type ProcessNode, type ProcessEdge } from "@/lib/api";
@@ -111,7 +112,8 @@ export function ProcessMapper({ connId, entityId, schema, onInvestigate }: Props
 
   if (loading) {
     return (
-      <div className="py-8 text-center text-xs text-zinc-500 font-mono animate-pulse">
+      <div className="py-8 flex items-center justify-center gap-1.5 text-xs font-mono" style={{ color: "var(--t3)" }}>
+        <Pending />
         Loading process map…
       </div>
     );

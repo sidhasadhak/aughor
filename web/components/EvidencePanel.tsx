@@ -179,7 +179,7 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
       {loading ? (
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 12 }}>
           {[1, 2, 3].map(i => (
-            <div key={i} className="animate-pulse" style={{ height: 96, borderRadius: "var(--r3)", background: "var(--bg-2)" }} />
+            <div key={i} className="aug-skeleton" style={{ height: 96, borderRadius: "var(--r3)" }} />
           ))}
         </div>
       ) : claims.length === 0 ? (

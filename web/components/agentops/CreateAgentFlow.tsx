@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 /**
  * Create an agent — Start → Scope → Define → Prove.
@@ -265,10 +266,7 @@ export function CreateAgentFlow({ onCreated, onCancel }: {
       </ol>
 
       {error && (
-        <div className="aug-fs-sm" role="alert" style={{
-          padding: "8px 12px", borderRadius: "var(--r2)", background: "var(--red1)",
-          border: "1px solid var(--red2)", color: "var(--red5)", marginBottom: 12,
-        }}>{error}</div>
+        <ErrorState kind="Agent draft failed" what={error} style={{ marginBottom: 12 }} />
       )}
 
       {/* ── 1 · Start ── */}

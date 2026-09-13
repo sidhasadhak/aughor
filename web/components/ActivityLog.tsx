@@ -167,7 +167,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
               style={ph === "failed" ? { background: "var(--red1)", color: "var(--red4)" }
                    : stoppedChip && ph !== "complete" ? { background: "var(--bg-3)", color: "var(--t3)" }
                    : { background: m.bg, color: m.color }}>
-              {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: m.color }} />}
+              {running && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: m.color }} />}
               <span style={{ opacity: 0.75 }}>{sch}</span>
               {" · "}
               {ph === "complete" ? "complete" : ph === "pending" ? "idle" : ph === "failed" ? "failed" : m.label}
@@ -177,7 +177,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
       ) : (
         <span className="flex items-center gap-1.5 aug-fs-xs px-2 py-0.5 rounded font-medium"
           style={isStopped && !isRunning ? { background: "var(--bg-3)", color: "var(--t3)" } : { background: meta.bg, color: meta.color }}>
-          {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] animate-pulse" style={{ background: meta.color }} />}
+          {isRunning && <span className="inline-block w-1.5 h-1.5 rounded-[var(--r-pill)] aug-pulse-dot" style={{ background: meta.color }} />}
           {isStopped && !isRunning ? "stopped" : status.phase === "complete" ? "complete" : status.phase === "pending" ? "idle" : meta.label}
         </span>
       )}
@@ -730,7 +730,7 @@ export function ActivityLog({ connectionId, isActive, canvasId }: Props) {
         )}
         <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
           {showAll ? `${filtered.length}` : `${Math.min(DEFAULT_LIMIT, filtered.length)} of ${filtered.length}`}
-          {isRunning && <span className="ml-2 animate-pulse" style={{ color: "var(--t3)" }}>● live</span>}
+          {isRunning && <span className="ml-2 inline-flex items-center gap-1.5" style={{ color: "var(--t3)" }}><span className="aug-dot aug-dot-live" aria-hidden />live</span>}
         </span>
         {filtered.length > DEFAULT_LIMIT && (
           <button onClick={() => setShowAll(v => !v)} style={{

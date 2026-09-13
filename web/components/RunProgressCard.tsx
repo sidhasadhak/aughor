@@ -87,7 +87,7 @@ export function InFlightFindings({ turn }: { turn: ChatTurn }) {
           {i === spoken.length - 1 && (
             <span
               aria-hidden="true"
-              className="ml-1 inline-block h-[13px] w-[7px] translate-y-[2px] bg-zinc-600 animate-pulse motion-reduce:animate-none"
+              className="aug-caret"
             />
           )}
         </p>

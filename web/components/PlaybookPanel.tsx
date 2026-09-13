@@ -167,7 +167,7 @@ export function PlaybookPanel() {
           {loading && (
             <div className="space-y-1.5 px-3">
               {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="h-14 rounded-[var(--r3)] animate-pulse" style={{ background: "var(--bg-1)" }} />
+                <div key={i} className="h-14 aug-skeleton" style={{ borderRadius: "var(--r3)" }} />
               ))}
             </div>
           )}

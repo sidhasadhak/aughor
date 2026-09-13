@@ -279,7 +279,7 @@ function PatternsTab({
   if (loading) return (
     <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 8 }}>
       {[1, 2, 3].map(i => (
-        <div key={i} className="animate-pulse" style={{ height: 72, borderRadius: 7, background: "var(--bg-1)" }} />
+        <div key={i} className="aug-skeleton" style={{ height: 72, borderRadius: "var(--r3)" }} />
       ))}
     </div>
   );
@@ -979,7 +979,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
 
           {loading ? (
             [1, 2, 3, 4].map(i => (
-              <div key={i} className="animate-pulse" style={{ height: 32, borderRadius: 5, background: "var(--bg-1)", marginBottom: 2 }} />
+              <div key={i} className="aug-skeleton" style={{ height: 32, borderRadius: "var(--r1)", marginBottom: 2 }} />
             ))
           ) : domainList.map(domain => {
             const d = domainData[domain];
@@ -1029,7 +1029,7 @@ export function IntelligenceHub({ connectionId, canvasId, schema }: { connection
       {loading ? (
         <div style={{ flex: 1, display: "flex", flexDirection: "column", gap: 12, padding: 24 }}>
           {[1, 2, 3].map(i => (
-            <div key={i} className="animate-pulse" style={{ height: 140, borderRadius: 8, background: "var(--bg-1)" }} />
+            <div key={i} className="aug-skeleton" style={{ height: 140, borderRadius: "var(--r3)" }} />
           ))}
         </div>
       ) : dataProfile ? (

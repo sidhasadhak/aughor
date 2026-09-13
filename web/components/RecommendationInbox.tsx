@@ -1,4 +1,5 @@
 "use client";
+import { Pending } from "@/components/ui/motion";
 
 import { useEffect, useState, useCallback } from "react";
 import {
@@ -389,7 +390,8 @@ export function RecommendationInbox({ onOpenInvestigation, workspaceId }: Props)
 
       {/* Content */}
       {loading ? (
-        <div className="py-12 text-center text-xs text-zinc-500 font-mono animate-pulse">
+        <div className="py-12 flex items-center justify-center gap-1.5 text-xs font-mono" style={{ color: "var(--t3)" }}>
+        <Pending />
           Loading recommendations…
         </div>
       ) : visible.length === 0 ? (

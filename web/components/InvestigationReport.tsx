@@ -346,7 +346,7 @@ function StreamingPhaseCard({ phase }: { phase: InvestigationPhase }) {
       {/* A running phase with nothing rendered yet — name the wait so the gap reads as progress,
           not a frozen chart (the per-phase interpret is a slow LLM round-trip). */}
       {isRunning && findings.length === 0 && (
-        <div className="aug-fs-xs text-zinc-500 italic pl-2 animate-pulse">Reading the results…</div>
+        <div className="aug-fs-xs pl-2 flex items-center gap-1.5" style={{ color: "var(--t3)" }}><Pending />Reading the results…</div>
       )}
       {findings.map(f => {
         const hasChart = f.columns.length > 0 && f.rows.length >= 2 && f.chart_type !== "none";

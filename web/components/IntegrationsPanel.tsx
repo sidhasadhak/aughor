@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 /**
  * VA-11 · the integrations catalog — Set up, Connect, revoke.
@@ -192,14 +193,10 @@ export function IntegrationsPanel() {
       </div>
 
       {error && (
-        <div className="aug-fs-sm" role="alert" style={{ padding: "8px 12px", marginBottom: 12,
-          borderRadius: "var(--r2)", background: "var(--red1)",
-          border: "1px solid var(--red2)", color: "var(--red5)" }}>{error}</div>
+        <ErrorState kind="Integration failed" what={error} style={{ marginBottom: 12 }} />
       )}
       {notice && (
-        <div className="aug-fs-sm" style={{ padding: "8px 12px", marginBottom: 12,
-          borderRadius: "var(--r2)", background: "var(--amb1)",
-          border: "1px solid var(--amb2)", color: "var(--amb5)" }}>{notice}</div>
+        <div className="aug-callout aug-callout-amber" style={{ marginBottom: 12 }}>{notice}</div>
       )}
 
       {categories.map(([category, rows]) => (

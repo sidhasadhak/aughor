@@ -47,7 +47,7 @@ function PhaseBar({ status }: { status: ExplorationStatus }) {
               <div className={[
                 "h-1 rounded-[var(--r-pill)] transition-colors",
                 done ? "bg-emerald-500" :
-                active ? "bg-violet-400 animate-pulse" :
+                active ? "bg-[var(--vio3)] aug-pulse-dot" :
                 isFailed && i === cur ? "bg-red-500" :
                 "bg-white/10",
               ].join(" ")} />

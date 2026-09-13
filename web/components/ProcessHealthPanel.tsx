@@ -116,7 +116,7 @@ export function ProcessHealthPanel({ connectionId, onInvestigate }: ProcessHealt
     return (
       <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))" }}>
         {[1, 2, 3].map(i => (
-          <div key={i} className="h-36 rounded-md animate-pulse" style={{ background: "var(--bg-0)" }} />
+          <div key={i} className="h-36 aug-skeleton" style={{ borderRadius: "var(--r3)" }} />
         ))}
       </div>
     );

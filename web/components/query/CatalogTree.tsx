@@ -1,4 +1,5 @@
 "use client";
+import { SkeletonRows } from "@/components/ui/motion";
 
 /**
  * The catalog tree — ONE presentation of schema → table → column, for every surface
@@ -272,7 +273,7 @@ export function CatalogTree({
 
       <div className="flex-1 overflow-y-auto py-1">
         {loading && tables.length === 0 && (
-          <p className="aug-fs-ui animate-pulse px-4 py-4" style={{ color: "var(--t3)" }}>Loading catalog…</p>
+          <div className="px-4 py-2" aria-label="Loading catalog"><SkeletonRows rows={6} /></div>
         )}
         {!loading && tables.length === 0 && (
           <p className="aug-fs-ui px-4 py-4" style={{ color: "var(--t3)" }}>{emptyLabel}</p>

@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 /**
  * Agentic Ops · Agents — ONE kind-labelled roster over both agent kinds, with a
@@ -156,9 +157,7 @@ export function AgenticAgentsPanel({ workspaceId, workspaceName, onOpenTrace, fo
       {/* ── detail ── */}
       <div style={{ flex: 1, overflowY: "auto" }}>
         {error && (
-          <div style={{ margin: "12px 20px 0", padding: "8px 12px", fontSize: 12,
-            borderRadius: "var(--r2)", background: "var(--red1)",
-            border: "1px solid var(--red2)", color: "var(--red5)" }}>{error}</div>
+          <ErrorState kind="Agent action failed" what={error} style={{ margin: "12px 20px 0" }} />
         )}
         {selected?.kind === "hire" ? (
           <CreateAgentFlow

@@ -144,6 +144,11 @@ for emphasis.
   title, 12px body, then the one action that resolves it. Never a shrug.
 - **Pending and loading** — `<Pending>` (◐) and `<SkeletonRows>` / `.aug-skeleton`.
   **No spinners anywhere in the product.**
+- **Trust system** — `.aug-guard`, `.aug-receipt-*`, `.aug-confidence`, `.aug-cite`, `.aug-why` →
+  `components/ui/trust.tsx` (`GuardChip`, `ReceiptChain`, `Confidence` + `confidenceTier`, `Cite`,
+  `WhyFigure`, `WhyCard`).
+- **Error, partial, refusal** — `.aug-error`, `.aug-partial` (+ `.aug-hatch`), `.aug-refusal` →
+  `components/ui/states.tsx` (`ErrorState`, `PartialState`, `Refusal`).
 
 ## 6. The shell
 
@@ -178,21 +183,40 @@ the same thing, the icon goes. Status is a 7px dot, not an icon. Emoji are forbi
 `4 · 6 · 8 · 10 · 12 · 16 · 20 · 24`. Dense row 24px (the default), header 22, comfortable 34
 only where a row carries two lines, nav item 22, attention row 28, activity-tail line 17.
 
-## 9. Not built yet — the rest of the spec
+## 9. What exists, and what does not yet
 
-The first pass covered tokens, type, motion, the primitives and the shell chrome. Still open:
+**Pass 1 (2026-09-13)** — tokens, type, motion, the primitives and the shell chrome.
 
-- **Shell features**: the topbar LIVE activity strip (24 ticks of the Ops activity feed), the
-  dark/light toggle in the topbar, the Human / Agent / Substrate layer switcher, and nav badge
-  counts (amber when something waits on a human).
-- **The trust system** as shared primitives: `.aug-confidence`, `.aug-guard`, `.aug-cite`,
-  `.aug-why`, `.aug-receipt-chain`, `.aug-refusal` — `GuardReceiptChain`, `WhyThisNumber` and
-  `GroundedNumber` exist and have not been redrawn to the sheet.
-- **The other three universal states** as primitives: `.aug-error` (what failed · what it means ·
-  what to do, carrying the run id), `.aug-partial` (the hatched unknown-not-zero bar), and
-  skeletons shaped per screen.
-- **Screens**: raw hexes remain in ~30 components (canvases, SecurityAuditPanel's status map,
-  a few Tailwind `blue-*` action buttons), and some panels still wear pre-Instrument inline chrome.
+**Pass 2 (2026-09-13)** — the rest of the design system, adopted into the shared surfaces:
+- **Trust system** (`components/ui/trust.tsx`): guard chips on the chat's guard receipts, on Why
+  this number's guard rows and glance, on the Security audit verdicts and on the Briefing
+  explorer's refused status; `Confidence` on the evidence claim, the evidence panel and the
+  report's hypotheses and findings, with one threshold set everywhere; the grounded-number receipt
+  popover drawn as the why-this-number popover.
+- **States** (`components/ui/states.tsx`): `ErrorState` for the chat turn error, the render
+  boundary, the chart error, and the tinted red boxes in Add connection, Agents, Integrations,
+  Create agent, the audit feed, document upload, the SQL runner and the Briefing synthesis. No
+  `animate-pulse` is left: skeletons are `.aug-skeleton`, live dots `.aug-pulse-dot`, the run
+  caret `.aug-caret`.
+- **Shell**: the topbar LIVE activity strip (`components/shell/ActivityStrip.tsx` — the Agent Ops
+  runs chart in miniature, in-flight agent jobs, "exploring"), the dark/light toggle in the topbar,
+  and the rail's badge counts (`components/shell/useNavCounts.ts` — unacknowledged alerts on
+  Monitors and the Operations header, running agent runs on Agent runs).
+
+**Not yet:**
+- The Human / Agent / Substrate switcher — left out by the user until there is a concrete use.
+- An Agent Ops needs-human badge: `GET /control-room/needs-human` runs the expiry and parked-run
+  sweeps on every call, so the shell must not poll it; it needs a side-effect-free count first.
+- A coverage figure in the strip: no endpoint serves the explorer's frontier.
+- `Cite` and `PartialState` have no call sites yet — the Briefing's citation chips and the "floor,
+  not a total" captions (Spend, the Agent Ops tiles, usage, traces) move with the Intelligence
+  screens.
+- About 46 text-only "Loading…" placeholders, about 50 bare red error lines (no one-line inline
+  error primitive yet), and about 30 components with raw hexes (canvases, Semantic Layer badges,
+  Monitors toggles).
+- The Agent Ops runs chart hatches RUNNER runs, which clashes with the hatch's one meaning
+  (unknown, not zero) — left for a decision.
+- The Intelligence screens (`Aughor Intelligence.dc.html`) — the next pass.
 
 ## 10. Self-check before a screen ships
 

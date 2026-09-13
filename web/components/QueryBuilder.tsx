@@ -1,4 +1,5 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 import { Pending } from "@/components/ui/motion";
 
 import { useEffect, useState, useCallback, useRef, useMemo } from "react";
@@ -2257,9 +2258,9 @@ export function QueryBuilder({
                   </div>
                 )}
                 {runError && !running && (
-                  <div className="p-4 rounded-md border border-red-500/20 bg-red-500/5">
-                    <p className="aug-fs-sm font-mono text-red-400">{runError}</p>
-                  </div>
+                  <ErrorState kind="Query failed" style={{ margin: 16 }}
+                    what={<span className="aug-mono" style={{ whiteSpace: "pre-wrap" }}>{runError}</span>}
+                    means="Edit the SQL and run it again." />
                 )}
                 {result && !running && (
                   <ResultsPane
