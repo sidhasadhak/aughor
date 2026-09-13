@@ -4862,7 +4862,7 @@ Payment are PARTS of Order (today bound as static 1:1 sources) or entities with 
 first against enriching the Lux generator.
 
 
-### 3.16 · Arc UI — Instrument, the design system (adopted 2026-09-13 — §6 item 19; **FIRST PASS BUILT** the same day)
+### 3.16 · Arc UI — Instrument, the design system (adopted 2026-09-13 — §6 item 19; **FIRST PASS BUILT** the same day; **PASSES 1–3 MERGED #498, squash `4476507d`, 2026-09-13**)
 
 > **Origin.** The user, 2026-09-13: *"Lets scoop up a UI overhaul.."*, handing off the Claude Design project
 > "Aughor Design System" (`Aughor Design System.dc.html`: tokens dark and light, type, components, the shell dark
