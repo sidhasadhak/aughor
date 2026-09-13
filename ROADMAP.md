@@ -124,7 +124,9 @@ promise derives compile by construction), ON-10 (the investigation starts from t
 analysis's intake reads them, each definition compiled by the object door and the frame shown with the answer; through
 the running API 15 of 18 Olist questions reached a declared definition and none of the 3 controls did; and the
 falsifier HELD on its run the same day: on the 12 questions whose definition is declared and not in the schema, framed
-answered 8 and raw 3, losing none raw answered and keeping all 3 controls, so the framing stays) and fixed ON-7
+answered 8 and raw 3, losing none raw answered and keeping all 3 controls — and HELD AGAIN on LuxExperience, where
+seven rules and a refund process were declared live for it and the matcher met questions it was never developed on:
+framed 9 of 13, raw 1, one loss, all 3 controls kept — so the framing stays) and fixed ON-7
 first; §6 item 18 holds the three open shape questions.
 
 ---
@@ -4698,7 +4700,8 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   `≤ order_estimated_delivery_date`); the measured breach rates equal the table above; the
   derived segment and metric compile and equal their references.
 - ✅ **ON-10 · The investigation starts from the ontology — FIRST SLICE BUILT + LIVE FRAME RECEIPT 2026-09-13; THE
-  FALSIFIER HELD 2026-09-13 — FRAMED 8 OF 12, RAW 3** (the user: *"Take whats next on the ontology roadmap"*; branch
+  FALSIFIER HELD TWICE 2026-09-13 — OLIST FRAMED 8 OF 12, RAW 3; LUXEXPERIENCE FRAMED 9 OF 13, RAW 1** (the
+  user: *"Take whats next on the ontology roadmap"*; branch
   `claude/on-10-framing`). **What exists:** `aughor.ontology.framing` — pure: no model, no store, no warehouse.
   `frame_question(question, graph, synonyms, hops)` matches the question's words (a small deterministic stemmer; a longer
   declared name wins its words over a shorter one of no higher rank) against what was declared — types by id, display
@@ -4761,8 +4764,42 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   SQLite's `JULIANDAY` against DuckDB with the frame's compiled `DATE_DIFF` in front of it. **What the run does not
   show:** it is one run of one model on 12 questions, and the matcher's reading of these 12 was developed on these very
   questions (the live receipt framed them) — the model half is out of sample, the matcher half is not; a held-out set on
-  another host measures that. **Open on this wave:** a frame that states its rate's unit (the two ×100 misses) —
-  measured on a NEW set, never by re-running this one · a second run for stability (about 27 calls, the user's go) · a
+  another host measures that. **The held-out run on LuxExperience** (the user: *"I would like to run tests on
+  Luxexperience schema.. Olist is small fish.."*; 2026-09-13; same model, fallback none; results in
+  `evals/ablation_on10_luxexperience_business_results.json`). Lux declared nothing a frame could resolve — no rule, one
+  promise never broken — so, with the user's go, seven rules and a process were DECLARED LIVE on `914df862` through the
+  ON-9 doors, each counted before it landed: completed orders (shipped or returned, 107,903 of 112,439), VIP customers
+  (the VIP and Top Customer tiers, 4,576 of 35,136), EU markets (the 12 EU states shipped to — Ireland in; the UK,
+  Switzerland and Norway out), YNAP (its four platforms, whichever group reported the order), controllable returns
+  (quality, not as expected, late delivery), high-risk payments (a fraud score of 0.2 or more: 143 — the fraud flag is
+  never set) and the accessories division (bags, shoes, jewellery and watches, accessories); `return_to_refund` promises
+  a refund within 10 days of the return arriving, broken on 11,648 of 50,048 returns (23.27%). The set
+  `evals/ablation_luxexperience_business.jsonl` — 13 questions whose definition is declared and 3 controls, every
+  reference executed and checked to differ from its column reading before any call — was written for those
+  definitions, and the matcher stayed frozen: its dry run's defects were recorded, not fixed. 28 SQL calls (one
+  transient error retried once), none spent choosing. **THE FALSIFIER HELD AGAIN — framed answered 9 of the 13, raw 1
+  (guarded made 5 safe); all 3 controls kept.** Raw read every term from the columns: completed as `status = 'shipped'`
+  (12,872 for 21,405), VIP as `tier = 'VIP'` (5.60% of fiscal 2025 GMV for 46.51%), EU markets as the Europe region
+  (7,352 orders for 7,727; Norway in Ireland's place among the top three), YNAP as `parent_entity` (4,642,040 for
+  5,477,983), the accessories division as `category = 'accessories'` (5.80% for 32.63%), and the refund promise as any
+  refund after the request (100% broken for 23.27%, every carrier alike). **Framed lost one:** asked what share of
+  completed orders had a return, it applied the rule, then divided by orders repeated by its join to returns (37.33 for
+  39.89) — where raw, reading completed as not cancelled this time, counted distinct orders. **The held-out matcher:** 11
+  of the 13 questions it had never seen framed; the two it missed put the words in another order than the declared
+  name ("returns were controllable", "payments were high-risk"), so they scored as raw — which invented controllable as
+  size, not as expected and quality (74.09% for 37.97%) and read high-risk as the never-set flag (0.00% for 0.13%).
+  Three frame defects cost no answer this run: an answer instruction's "Return the region" read as the Return type (a
+  spurious note in those frames); "GMV from VIP customers" started from Customer, the rule's type, not Order; "return
+  the country" named the customer's country, not the ship country. One control framed ("express shipments" read as the
+  shipped moment) and stayed correct. The lag question failed in raw and framed as on Olist — `JULIANDAY` on DuckDB
+  with the compiled `DATE_DIFF` in front of it: two lag questions, two hosts, the same failure. The run shares Olist's
+  limits — one run, one model — and adds its own: the same hand wrote the definitions, the questions and the references,
+  for a synthetic business the user owns. **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
+  misses) — measured on a NEW set, never by re-running these · the matcher: a declared name's words out of order, an
+  answer instruction's "Return" never a type, a rule reached from a named type starting there, a short name resolved
+  toward the rule's own property — each measured on a NEW set · the SQL path writes SQLite date functions against DuckDB
+  (not framing's: raw does it too) · the declare doors drop `provenance` (their request models lack the field the store
+  keeps) · the framed arm is not guarded in the harness · a second run of either set for stability (the user's go) · a
   live deep analysis showing the frame in the web
   (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the
   prompts; that phase is the next slice) · the model does not word the frame (the reading is the deterministic
@@ -4787,7 +4824,8 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   retired the way ON-6 was.** Costs model calls — never started unasked.
 
 **Hosts.** ON-7's receipt on LuxExperience (shape, no delays needed). ON-9/ON-10's receipts on
-Olist (`baef6c3e/ecommerce`, real delays, no generator change); the LuxExperience pack's
+Olist (`baef6c3e/ecommerce`, real delays, no generator change); ON-10's second, held-out falsifier on
+LuxExperience, through definitions declared live there (7 rules and a refund process, 2026-09-13); the LuxExperience pack's
 generator may later grow realistic dispatch lags so the demo pack can host the question (§6
 item 18). **Open for the user — §6 item 18:** the scope key for ON-8; whether Shipment and
 Payment are PARTS of Order (today bound as static 1:1 sources) or entities with a link; Olist
@@ -5163,7 +5201,8 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         the definition is not in the data) — ✅ FIRST SLICE 2026-09-13: framed with no model before the intake, 15 of 18
         Olist questions framed live through the door and none of the controls, the falsifier set of 15 executed, 29/29
         guard mutations caught; the falsifier HELD (framed 8 of the 12 declared-definition questions, raw 3, no control
-        lost) → ON-8 one ontology, many sources (org-keyed, bindings name
+        lost) and HELD AGAIN on LuxExperience, held out (framed 9 of 13, raw 1, one loss, no control lost) → ON-8 one
+        ontology, many sources (org-keyed, bindings name
         their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
 ```
 
@@ -5656,7 +5695,8 @@ the browser** · **measure the premise before building.**
     orders (consolidated freight), which a measured N:N key would show.*
     **(c) The host for ON-9/ON-10's receipts** — *(2026-09-13: ON-9's receipt was taken on Olist, as recommended;
     LuxExperience hosted the never-broken flag instead. ON-10's falsifier was written and run on Olist too and held
-    (2026-09-13), so the question stays open for the pack enrichment only; framed on LuxExperience, the dispatch
+    (2026-09-13), and held again on LuxExperience through rules and a refund process declared live there with no
+    generator change, so the question stays open for the pack enrichment only; framed on LuxExperience, the dispatch
     question reads as a shipping
     promise the data never breaks — the case for the pack enrichment, now visible on every framed answer.)* —
     Olist (`baef6c3e/ecommerce`, real delays: 9.35% late
