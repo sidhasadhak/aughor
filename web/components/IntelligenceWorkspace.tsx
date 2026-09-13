@@ -22,7 +22,7 @@ const loading = () => (
 
 const BriefingPanel    = dynamic(() => import("@/components/BriefingPanel").then(m => ({ default: m.BriefingPanel })),      { ssr: false, loading });
 const OntologyPanel    = dynamic(() => import("@/components/OntologyPanel").then(m => ({ default: m.OntologyPanel })),       { ssr: false, loading });
-const IntelligenceHub  = dynamic(() => import("@/components/IntelligenceHub").then(m => ({ default: m.IntelligenceHub })),  { ssr: false, loading });
+const ProfilePanel     = dynamic(() => import("@/components/ProfilePanel").then(m => ({ default: m.ProfilePanel })),       { ssr: false, loading });
 const OrgIntelPanel    = dynamic(() => import("@/components/OrgIntelPanel").then(m => ({ default: m.OrgIntelPanel })),      { ssr: false, loading });
 const EvidencePanel    = dynamic(() => import("@/components/EvidencePanel").then(m => ({ default: m.EvidencePanel })),      { ssr: false, loading });
 const KineticPanel     = dynamic(() => import("@/components/KineticPanel").then(m => ({ default: m.KineticPanel })),       { ssr: false, loading });
@@ -260,7 +260,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
           );
         if (id === "ontology") return <OntologyPanel connectionId={connectionId} onInvestigate={q => onInvestigate(q)} schema={schema} />;
         if (id === "graph")    return <ConnectionGraphPanel connectionId={connectionId} schema={schema} onInvestigate={q => onInvestigate(q)} initialTableId={initialGraphTable} />;
-        if (id === "hub")      return <IntelligenceHub connectionId={connectionId} canvasId={canvasId} schema={schema} />;
+        if (id === "hub")      return <ProfilePanel connectionId={connectionId} canvasId={canvasId} schema={schema} workspaceId={workspaceId} />;
         if (id === "evidence") return <EvidencePanel connectionId={connectionId} canvasId={canvasId} onInvestigate={q => onInvestigate(q, "investigate")} />;
         if (id === "memory")   return <MemoryPanel />;
         if (id === "kinetic")  return <KineticPanel connectionId={connectionId} />;

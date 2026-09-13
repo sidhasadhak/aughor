@@ -220,6 +220,24 @@ carry is not drawn:
 - a brief is one POST, not a stream: the screen says "opening" or "being written" over skeletons,
   with no caret and no placeholder prose.
 
+**Evidence** (artboard 05) is a claim ledger: a row per claim — the sentence with its query beneath,
+confidence, feedback, when — filtered by feedback, with the selected claim in an inspector. Not
+drawn, because a claim does not store it: guard columns, a verdict, refused claims, receipt ids,
+run cost, "used in". Two labels were wrong and are corrected — `data_freshness` is the
+investigation's completion time ("recorded"), `metric_used` is a keyword guess ("mentions") — and
+the feedback note says what feedback does today: the alert digest counts unreviewed claims, and
+nothing else reads it.
+
+**Profile** (artboard 02) replaces the Hub (`IntelligenceHub.tsx` and `ExplorationPanel.tsx` are
+gone; their findings, patterns and org knowledge live on Briefing §3 and §5 and the Org layer):
+§01 the business summary with fact chips (✓ an inference held at ≥ 0.86, ◈ a human org setting,
+which wins; "corrected" only when the setting differs from the inference), §02 the table profile
+(grain key, rows, latest record, average null, when profiled), §03 what a blank means (the
+explorer's null meanings), and a rail of governed metrics (draft / proposed / approved /
+deprecated — there is no "disputed") and status columns, drawn as values without arrows because no
+order is recorded. Not drawn: per-table confidence and decided-by; channels, DCs, a fiscal week; a
+profiling-run count; Re-profile and Correct (nothing does either without an LLM call).
+
 **Not yet:**
 - The Human / Agent / Substrate switcher — left out by the user until there is a concrete use.
 - An Agent Ops needs-human badge: `GET /control-room/needs-human` runs the expiry and parked-run
@@ -232,8 +250,8 @@ carry is not drawn:
   Monitors toggles).
 - The Agent Ops runs chart hatches RUNNER runs, which clashes with the hatch's one meaning
   (unknown, not zero) — left for a decision.
-- The other Intelligence screens (`Aughor Intelligence.dc.html` 02–09): Profile, Ontology, Graph,
-  Evidence, Memory, Actions, Org, and Ontology on a warehouse that has just connected.
+- The other Intelligence screens (`Aughor Intelligence.dc.html` 03, 04, 06–09): Ontology, Graph,
+  Memory, Actions, Org, and Ontology on a warehouse that has just connected.
 
 ## 10. Self-check before a screen ships
 

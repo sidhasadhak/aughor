@@ -1094,3 +1094,38 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-fb-door-disputed[aria-pressed="true"] { background: var(--red1); border-color: var(--red2); color: var(--red4); }
 .aug-fb-door-needs_context[aria-pressed="true"] { background: var(--amb1); border-color: var(--amb2); color: var(--amb4); }
 .aug-inspector-note { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t3); }
+
+/* ── The profile (Aughor Intelligence · 02 Profile) ───────────────────────────────────────────
+   Instrument-dense: numbered sections beside a rail of governed metrics and status columns. */
+.aug-profile { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.aug-profile-main { flex: 1; min-width: 0; overflow-y: auto; }
+.aug-profile-main > .aug-brief-strip + .aug-brief-sec { border-top: 0; }
+.aug-profile-strip-end { margin-left: auto; }
+.aug-profile-prose { margin: 0; max-width: 760px; font-size: 13px; line-height: 1.8; color: var(--t1); }
+.aug-profile-facts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.aug-profile-why { margin: 10px 0 0; max-width: 760px; font-size: 12px; line-height: 1.6; color: var(--t3); }
+.aug-profile-table .num { font-size: 11px; }
+.aug-profile-table td.aug-profile-tname { font-family: var(--font-mono); font-size: 11px; }
+.aug-profile-dim { color: var(--t3); }
+.aug-profile-foot { margin: 8px 0 0; padding-top: 8px; border-top: 1px solid var(--b0); font-size: 11px; line-height: 1.6; color: var(--t3); }
+.aug-profile-rail { width: 340px; flex: none; display: flex; flex-direction: column; min-height: 0; overflow-y: auto; border-left: 1px solid var(--b1); }
+.aug-profile-rail-head { height: 32px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--b1); }
+.aug-profile-rail-head > .aug-brief-meta { margin-left: auto; }
+.aug-profile-block { flex: none; display: flex; flex-direction: column; gap: 11px; padding: 10px 14px 12px; border-bottom: 1px solid var(--b1); }
+.aug-profile-metric { display: flex; flex-direction: column; gap: 3px; }
+.aug-profile-metric-head { display: flex; align-items: center; gap: 8px; font-family: var(--font-mono); font-size: 11px; }
+.aug-profile-metric-name { color: var(--t1); }
+.aug-profile-metric-v { color: var(--t3); }
+.aug-profile-metric-state { margin-left: auto; }
+.aug-profile-formula {
+  font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--t3);
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.aug-profile-lc { display: flex; flex-direction: column; gap: 6px; }
+.aug-profile-lc-name { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-profile-states { display: flex; flex-wrap: wrap; gap: 4px; }
+.aug-profile-state { padding: 1px 6px; border: 1px solid var(--b2); border-radius: var(--r1); font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-profile-state-terminal { border-style: dashed; color: var(--t3); }
+.aug-profile-lc-note { font-size: 11px; line-height: 1.5; color: var(--t3); }
+.aug-profile-gap { color: var(--amb4); }
+.aug-profile-rule { max-width: 360px; overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }

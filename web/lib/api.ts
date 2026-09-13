@@ -107,6 +107,8 @@ export interface NorthStarMetric {
 }
 export interface BusinessProfileResponse {
   available: boolean;
+  /** When the profile was inferred — the store's stamp. */
+  generated_at?: string;
   profile?: {
     industry: string;
     business_model: string;
@@ -115,6 +117,8 @@ export interface BusinessProfileResponse {
     key_questions: string[];
     confidence: number;
     currency_code?: string;   // ISO 4217 the business reports in (drives €/£/$ figures)
+    /** Why the inference landed where it did, in the model's words. */
+    evidence?: string | string[];
   };
 }
 
@@ -880,6 +884,8 @@ export interface Metric {
   // Governance lifecycle (B-8) — backend-owned; optional so editor forms needn't set them.
   status?: string;
   version?: number;
+  /** "*" for a metric that applies to every connection, else the connection's id. */
+  connection?: string;
   proposed_by?: string | null;
   proposed_at?: string | null;
 }
