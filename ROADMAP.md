@@ -4794,11 +4794,21 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   shipped moment) and stayed correct. The lag question failed in raw and framed as on Olist — `JULIANDAY` on DuckDB
   with the compiled `DATE_DIFF` in front of it: two lag questions, two hosts, the same failure. The run shares Olist's
   limits — one run, one model — and adds its own: the same hand wrote the definitions, the questions and the references,
-  for a synthetic business the user owns. **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
+  for a synthetic business the user owns. **JULIANDAY repaired** (the user: *"Repair SQLite JULIANDAY written against
+  DuckDB"*; 2026-09-13): the eval harness's generators (`evals/run_golden.py` — the ablation, golden and bake-off runs)
+  and the in-product benchmark runner built `CHAT_PROMPT` without the engine's dialect rules, the DuckDB block that
+  forbids JULIANDAY by name and that the quick path, the deep writer and agent evaluation already carry; each now leads
+  with them, and a guard finds every `CHAT_PROMPT` builder by parsing and fails one that does not reach them. DuckDB's
+  refusal is healed where SQL runs: `DuckDBConnection` and `LocalUploadConnection` retry a refused one-argument
+  JULIANDAY once as `(julian(CAST(x AS TIMESTAMP)) - 0.5)` — SQLite's own number, tested against the standard
+  library's sqlite3 — the audit log records the statement that ran, and the eval scorer, which bypasses the
+  connection, heals the same way. With no model call the four lost statements now answer through the product's
+  connection: Lux's framed refund lag 6.50, its reference; raw's 12.01, the lag counted from the request; Olist's 2.81
+  in both arms, fractional days where the declared lag counts calendar days (2.71). 16 guard mutations, every one
+  caught. **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
   misses) — measured on a NEW set, never by re-running these · the matcher: a declared name's words out of order, an
   answer instruction's "Return" never a type, a rule reached from a named type starting there, a short name resolved
-  toward the rule's own property — each measured on a NEW set · the SQL path writes SQLite date functions against DuckDB
-  (not framing's: raw does it too) · the declare doors drop `provenance` (their request models lack the field the store
+  toward the rule's own property — each measured on a NEW set · the declare doors drop `provenance` (their request models lack the field the store
   keeps) · the framed arm is not guarded in the harness · a second run of either set for stability (the user's go) · a
   live deep analysis showing the frame in the web
   (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the

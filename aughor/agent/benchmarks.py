@@ -227,6 +227,10 @@ def run_benchmarks(connection_id: str) -> BenchmarkRun:
     schema = db.get_schema()
     _schema_name = getattr(db, "_schema_name", None)
     schema_qualifier = (_schema_name or "main") if db.dialect == "duckdb" else (_schema_name or "public")
+    # The engine's dialect rules — the block the quick path and the deep writer carry (`writer_rules`). A
+    # benchmark that generates blind to the dialect scores a system nobody runs.
+    from aughor.db.dialects import writer_rules
+    dialect_block = writer_rules(db)
 
     for case in cases:
         try:
@@ -243,6 +247,8 @@ def run_benchmarks(connection_id: str) -> BenchmarkRun:
                 causal_section="",
                 document_section="",
             )
+            if dialect_block:
+                prompt = dialect_block + "\n\n" + prompt
             answer: _SQL = get_provider("coder").complete(
                 system=CHAT_SQL_SYSTEM, user=prompt, response_model=_SQL,
             )

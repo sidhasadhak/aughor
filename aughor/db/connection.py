@@ -548,6 +548,71 @@ def _pg_fix_interval_arithmetic(sql: str) -> str:
     return _INTERVAL_NUMERIC.sub(_replace, sql)
 
 
+# ── DuckDB: an engine refusal healed after the engine names it ────────────────
+# The model writes SQLite's JULIANDAY for day differences, and DuckDB has no such function. The
+# DuckDB rules forbid it by name at generation; measured 2026-09-13, both ON-10 falsifier runs still
+# lost their lag question to it, in every arm that wrote SQL. Healed where every path that runs SQL
+# on DuckDB converges, and only after DuckDB itself refused — the error-driven posture of the BigQuery
+# connector's date-literal retry: nothing is rewritten speculatively.
+
+#: The exact refusal the heal may answer.
+_JULIANDAY_REFUSAL = re.compile(r"Scalar Function with name julianday does not exist", re.IGNORECASE)
+
+
+def is_julianday_refusal(error: str) -> bool:
+    return bool(_JULIANDAY_REFUSAL.search(error or ""))
+
+
+def rewrite_julianday(sql: str) -> str:
+    """The refused SQL with each one-argument ``JULIANDAY(x)`` written as DuckDB's
+    ``(julian(CAST(x AS TIMESTAMP)) - 0.5)`` — or "" when there is nothing to rewrite (a query that
+    will not parse is a query we must not touch).
+
+    The same number, not a nearby one: SQLite counts the Julian day from noon and DuckDB's ``julian``
+    from midnight, so half a day is the whole difference (measured against SQLite:
+    julianday('2024-01-01 18:00:00') = 2460311.25, julian(TIMESTAMP '2024-01-01 18:00:00') = 2460311.75).
+    A difference of two stays FRACTIONAL days — never the calendar-day count ``date_diff`` gives, which
+    would change the answer rather than heal it. ``JULIANDAY('now')`` is the current moment; a call with
+    SQLite's modifiers ('+1 day', 'start of month') has no reading here and is left as written, so its
+    retry fails the way the original did."""
+    try:
+        tree = sqlglot.parse_one(sql, read="duckdb")
+    except Exception:
+        return ""
+    exp = sqlglot.exp
+    changed = False
+
+    def _swap(node):
+        nonlocal changed
+        if not (isinstance(node, exp.Anonymous) and str(node.name).lower() == "julianday"
+                and len(node.expressions) == 1):
+            return node
+        arg = node.expressions[0].copy()
+        if isinstance(arg, exp.Literal) and arg.is_string and arg.this.strip().lower() == "now":
+            arg = exp.CurrentTimestamp()
+        changed = True
+        moment = exp.Cast(this=arg, to=exp.DataType.build("TIMESTAMP", dialect="duckdb"))
+        return exp.Paren(this=exp.Sub(this=exp.Anonymous(this="julian", expressions=[moment]),
+                                      expression=exp.Literal.number(0.5)))
+
+    healed = tree.transform(_swap)
+    return healed.sql(dialect="duckdb") if changed else ""
+
+
+def heal_duckdb_refusal(result: QueryResult, sql: str, attempt) -> QueryResult:
+    """``result`` — or, when DuckDB refused a JULIANDAY, the rewritten statement run ONCE more through
+    ``attempt`` (one statement in, one QueryResult out; an error is a value, never a raise). A retry that
+    fails leaves the original, honest error standing, and the result's ``sql`` is always the statement
+    that actually ran, so receipts stay truthful."""
+    if not result.error or not is_julianday_refusal(result.error):
+        return result
+    rewritten = rewrite_julianday(sql)
+    if not rewritten or rewritten == sql:
+        return result
+    retried = attempt(rewritten)
+    return result if retried.error else retried
+
+
 # ── Safety ────────────────────────────────────────────────────────────────────
 
 _FORBIDDEN = re.compile(
@@ -1081,31 +1146,36 @@ class DuckDBConnection(DatabaseConnection):
 
         sql = self._normalize_to_duckdb(sql)
         _t0 = _time.monotonic()
-        try:
-            if params:
-                from aughor.sql.params import render_for_engine
-                self._conn.execute(render_for_engine(sql, "duckdb"), params)
-            else:
-                self._conn.execute(sql)
-            rows = self._conn.fetchall()
-            columns = [d[0] for d in self._conn.description] if self._conn.description else []
-            _offer_typed_rows(
-                rows[:max_rows],
-                truncated=len(rows) > max_rows,
-                types=[str(d[1]) for d in self._conn.description] if self._conn.description else [],
-            )
-            result = QueryResult(
-                hypothesis_id=hypothesis_id,
-                sql=sql,
-                columns=columns,
-                rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows[:max_rows]],
-                row_count=len(rows),
-            )
-        except Exception as e:
-            result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))
 
+        def _attempt(statement: str) -> QueryResult:
+            try:
+                if params:
+                    from aughor.sql.params import render_for_engine
+                    self._conn.execute(render_for_engine(statement, "duckdb"), params)
+                else:
+                    self._conn.execute(statement)
+                rows = self._conn.fetchall()
+                columns = [d[0] for d in self._conn.description] if self._conn.description else []
+                _offer_typed_rows(
+                    rows[:max_rows],
+                    truncated=len(rows) > max_rows,
+                    types=[str(d[1]) for d in self._conn.description] if self._conn.description else [],
+                )
+                return QueryResult(
+                    hypothesis_id=hypothesis_id,
+                    sql=statement,
+                    columns=columns,
+                    rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows[:max_rows]],
+                    row_count=len(rows),
+                )
+            except Exception as e:
+                return QueryResult(hypothesis_id=hypothesis_id, sql=statement, columns=[], rows=[], row_count=0,
+                                   error=str(e))
+
+        # A refusal DuckDB names exactly is healed once, deterministically (`heal_duckdb_refusal`).
+        result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
         elapsed_ms = (_time.monotonic() - _t0) * 1000
-        return _security_post(conn_id, hypothesis_id, sql, result, elapsed_ms)
+        return _security_post(conn_id, hypothesis_id, result.sql, result, elapsed_ms)
 
     def get_schema(self) -> str:
         """Fast schema introspection — returns immediately. Never blocks on profiles, ontology, or LLM calls.

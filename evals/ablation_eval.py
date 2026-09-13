@@ -9,7 +9,8 @@ CAUGHT (flagged/repaired)?"
 
 Three arms run on the SAME question against the SAME warehouse:
 
-  * **raw**       — schema-only NL→SQL (`generate_sql_chat`): an LLM + the schema, no guards.
+  * **raw**       — schema-only NL→SQL (`generate_sql_chat`): an LLM + the schema + the engine's dialect
+                    rules (as the quick path sends them), no guards.
                     This is what a thin text-to-SQL agent produces.
   * **guarded**   — the raw SQL run through Aughor's DETERMINISTIC guard battery (the
                     Verifier): fan-out de-fan (a rewrite) + id-arithmetic, ratio-of-sums,
@@ -468,6 +469,10 @@ def run(dataset: str, limit: int | None, output: str | None,
     schema_text = _quiet(db.get_schema, "")
     from aughor.db.schema_render import parse_schema_tables
     tcols = _quiet(lambda: parse_schema_tables(schema_text), {})
+    # The engine's dialect rules, led the way the product's quick path leads them — every arm that asks a model
+    # for SQL carries them, so no arm measures a generator the product does not run.
+    from aughor.db.dialects import writer_rules
+    dialect_rules = _quiet(lambda: writer_rules(db), "")
 
     label = f"{conn_id}{('/' + schema_name) if schema_name else ''}"
     if duckdb_path:
@@ -533,7 +538,7 @@ def run(dataset: str, limit: int | None, output: str | None,
         row: dict = {"id": rec["id"], "trap": rec.get("trap"), "question": q}
 
         if "raw" in arms:
-            raw_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text), None)
+            raw_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text, dialect_rules=dialect_rules), None)
             raw_score = score_single(db, rec, raw_sql) if raw_sql else dict(_NO_SQL)
             row["raw"] = {"sql": raw_sql, "class": _classify_plain(raw_score, raw_sql),
                           "match": round(raw_score.get("result_set_match", 0.0), 3)}
@@ -545,7 +550,7 @@ def run(dataset: str, limit: int | None, output: str | None,
                                   "match": round(g_score.get("result_set_match", 0.0), 3)}
 
         if "ontology" in arms:
-            o_sql = _quiet(lambda: generate_sql_chat(q, conn_id, onto_schema), None)
+            o_sql = _quiet(lambda: generate_sql_chat(q, conn_id, onto_schema, dialect_rules=dialect_rules), None)
             o_score = score_single(db, rec, o_sql) if o_sql else dict(_NO_SQL)
             row["ontology"] = {"sql": o_sql, "class": _classify_plain(o_score, o_sql),
                                "match": round(o_score.get("result_set_match", 0.0), 3)}
@@ -562,7 +567,8 @@ def run(dataset: str, limit: int | None, output: str | None,
                                                                 choose=choose), ("", None, 0))
             framing_calls += calls
             if block:
-                f_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text + "\n\n" + block), None)
+                f_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text + "\n\n" + block,
+                                                            dialect_rules=dialect_rules), None)
                 f_score = score_single(db, rec, f_sql) if f_sql else dict(_NO_SQL)
                 row["framed"] = {"sql": f_sql, "class": _classify_plain(f_score, f_sql),
                                  "match": round(f_score.get("result_set_match", 0.0), 3),
