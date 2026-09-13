@@ -756,7 +756,7 @@ textarea.aug-input, .aug-textarea { min-height: 56px; padding: 7px 9px; line-hei
 /* Beside a partial answer: one bar per attributed driver, the unattributed remainder hatched. */
 .aug-partial-bars { display: flex; flex-direction: column; gap: 5px; }
 .aug-partial-bar { display: flex; align-items: center; gap: 8px; }
-.aug-partial-bar-label { width: 52px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.aug-partial-bar-label { width: 64px; flex: none; font-family: var(--font-mono); font-size: 11px; color: var(--t2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .aug-partial-bar-fill { height: 7px; flex: none; background: var(--chart-deemph); }
 .aug-partial-bar-value { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); font-variant-numeric: tabular-nums; }
 .aug-partial-bar-unknown .aug-partial-bar-value { color: var(--amb4); }

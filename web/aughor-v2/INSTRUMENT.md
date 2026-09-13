@@ -243,8 +243,9 @@ profiling-run count; Re-profile and Correct (nothing does either without an LLM 
 - An Agent Ops needs-human badge: `GET /control-room/needs-human` runs the expiry and parked-run
   sweeps on every call, so the shell must not poll it; it needs a side-effect-free count first.
 - A coverage figure in the strip: no endpoint serves the explorer's frontier.
-- `PartialState` has no call sites yet — the "floor, not a total" captions (Spend, the Agent Ops
-  tiles, usage, traces) still print as captions.
+- `PartialState` has one call site: Spend's cost floor (priced calls against unpriced ones, the unknown
+  share hatched). The "floor, not a total" captions on the Agent Ops tiles, usage and traces stay
+  captions — a callout does not fit a tile.
 - About 46 text-only "Loading…" placeholders, about 50 bare red error lines (no one-line inline
   error primitive yet), and about 30 components with raw hexes (canvases, Semantic Layer badges,
   Monitors toggles).

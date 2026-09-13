@@ -22,11 +22,12 @@ import {
   getUsageCaps, getUsageReport, putUsageCap,
   type AuditFeedEvent, type ModelUsageRow, type UsageCap, type UsageReport,
 } from "@/lib/api";
-import { compactNumber, countNoun, formatTimestamp, pct } from "@/lib/format";
+import { compactNumber, countNoun, formatTimestamp, pct, formatCount } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Icon } from "@/components/ui/icon";
 import { EmptyState } from "@/components/ui/empty-state";
 import { csvFilename, downloadCsv, toCsv } from "@/lib/query/csv";
+import { PartialState } from "@/components/ui/states";
 
 const cell: React.CSSProperties = { padding: "6px 10px", whiteSpace: "nowrap" };
 const num: React.CSSProperties = { ...cell, textAlign: "right", fontFamily: "var(--font-mono)" };
@@ -522,15 +523,17 @@ function Headline({ value, label, tone }: { value: string; label: string; tone?:
  *  whenever any call is unpriced, and it is written as such rather than rounded into a
  *  total nobody can defend.
  */
+function costTotals(report: UsageReport | null): { cost: number; unpriced: number } | null {
+  if (!report) return null;
+  let cost = 0, unpriced = 0;
+  for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; }
+  return { cost, unpriced };
+}
+
 function HeadlineStrip({ report, models, capCount }: {
   report: UsageReport | null; models: ModelUsageRow[]; capCount: number | null;
 }) {
-  const totals = useMemo(() => {
-    if (!report) return null;
-    let cost = 0, unpriced = 0;
-    for (const r of report.rows) { cost += r.cost_usd; unpriced += r.unpriced_calls; }
-    return { cost, unpriced };
-  }, [report]);
+  const totals = useMemo(() => costTotals(report), [report]);
   const failures = models.reduce((n, m) => n + m.failures, 0);
   const failRate = report && report.total_calls ? failures / report.total_calls : 0;
 
@@ -553,6 +556,32 @@ function HeadlineStrip({ report, models, capCount }: {
   );
 }
 
+/** When any call is unpriced the cost is a floor. The partial state names the hole and draws it: priced
+ *  calls against unpriced ones, the unknown share hatched — unknown, never zero (INSTRUMENT.md §5). */
+function CostFloor({ report }: { report: UsageReport | null }) {
+  const totals = useMemo(() => costTotals(report), [report]);
+  const total = report?.total_calls ?? 0;
+  if (!totals || totals.unpriced <= 0 || total <= 0) return null;
+  const priced = Math.max(0, total - totals.unpriced);
+  return (
+    <PartialState
+      kind="Partial · cost is a floor"
+      meta={`${pct(priced / total)} of calls priced`}
+      claim={totals.cost > 0
+        ? <>At least <span className="aug-mono">{money(totals.cost)}</span> spent on model calls.</>
+        : <>The {formatCount(priced)} priced calls came to <span className="aug-mono">{money(0)}</span>; what the other {formatCount(totals.unpriced)} cost is unknown.</>}
+      detail={totals.cost > 0
+        ? `${countNoun(totals.unpriced, "call")} carry no declared price, so their cost is unknown — not zero.`
+        : "No published rate covers them, so no total can be stated: unknown, not zero."}
+      bars={[
+        { label: "priced", share: priced / total, value: formatCount(priced), color: "var(--chart-2)" },
+        { label: "unpriced", share: totals.unpriced / total, unknown: true },
+      ]}
+      style={{ marginBottom: 16 }}
+    />
+  );
+}
+
 export function SpendPanel() {
   // Hoisted so the headline and the sections below read ONE fetch each rather than
   // two of the same — and so declaring a cap moves the headline, which it must.
@@ -568,6 +597,7 @@ export function SpendPanel() {
   return (
     <div style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "14px 24px 18px" }}>
       <HeadlineStrip report={report} models={models} capCount={capCount} />
+      <CostFloor report={report} />
       <CapsSection onCount={setCapCount} />
       <UsageSection report={report} models={models} />
       <FeedSection />
