@@ -18,20 +18,21 @@ import {
 } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
-import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
+import { StatusChip } from "@/components/brief/StatusChip";
+import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
 import { formatTimestamp } from "@/lib/format";
 
-// A guard's action → chip hue + verb. `flagged` is the only cautionary one; a repair/trust is
-// a guard doing its job (info/positive), never red.
-function guardTone(action: string): { hue: ChipHue; verb: string } {
-  if (action === "flagged") return { hue: "caution", verb: "flagged" };
+// A guard's action → its verdict and verb. `flagged` is the only warned one; a repair is a guard
+// doing its job and the figure surviving it — passed, never red. A receipt is never a refusal.
+function guardVerdict(action: string): { verdict: GuardVerdict; verb: string } {
+  if (action === "flagged") return { verdict: "warned", verb: "flagged" };
   // `trusted` is deliberately absent: it is not a guard and is rendered in its own section.
   // It used to map to "reused a trusted query" here — a claim the receipt cannot support,
   // since the pattern was shown to the model rather than demonstrably used by it.
-  return { hue: "info", verb: action.replace(/_/g, " ") };   // validated_by, etc.
+  return { verdict: "passed", verb: action.replace(/_/g, " ") };   // validated_by, etc.
 }
 
 const MODE_LABEL: Record<string, string> = {
@@ -241,11 +242,11 @@ function Drawer({ receiptId, preloaded, onClose }: {
                 <Section title="Guards that fired">
                   <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                     {guards.map((g, i) => {
-                      const t = guardTone(g.action);
+                      const t = guardVerdict(g.action);
                       return (
                         <div key={`g:${i}`} style={{ display: "flex", flexDirection: "column", gap: 2 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                            <StatusChip hue={t.hue} strength="soft">{g.name.replace(/_/g, " ")}</StatusChip>
+                            <GuardChip verdict={t.verdict}>{g.name.replace(/_/g, " ")}</GuardChip>
                             <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>{t.verb}</span>
                           </div>
                           {g.caveat && <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>{g.caveat}</div>}
@@ -441,10 +442,12 @@ function GlanceChips({ rec }: { rec: PublicReceipt }) {
       title={m.detail ?? "Define this metric in the Semantic Layer to enforce it"}>
       define {m.metric}
     </StatusChip>));
+  const flagged = rec.guards.filter(g => g.action === "flagged").length;
   if (fired > 0) chips.push(
-    <StatusChip key="g" hue="positive" strength="soft">
+    <GuardChip key="g" verdict={flagged > 0 ? "warned" : "passed"}
+      title={flagged > 0 ? `${flagged} of them flagged something a reader must know` : undefined}>
       {fired} guard{fired !== 1 ? "s" : ""} fired
-    </StatusChip>);
+    </GuardChip>);
   if (trusted > 0) chips.push(
     <StatusChip key="t" hue="info" strength="soft"
       title="Verified query patterns were put in front of the model — not proof this answer reused one">

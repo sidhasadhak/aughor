@@ -1,7 +1,7 @@
 "use client";
+import { ErrorState } from "@/components/ui/states";
 
 import React from "react";
-import { Button } from "@/components/ui/button";
 
 interface Props {
   children: React.ReactNode;
@@ -40,32 +40,21 @@ export class ErrorBoundary extends React.Component<Props, State> {
 
   render(): React.ReactNode {
     if (this.state.error) {
+      const label = this.props.label ?? "This panel";
+      const message = this.state.error.message || "An unexpected error occurred while rendering.";
+      // The universal error state: what failed, what it means, what to do — and Reload is not
+      // the only door, because the message is what a ticket needs.
       return (
-        <div
-          role="alert"
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            gap: 8,
-            alignItems: "flex-start",
-            margin: 8,
-            padding: "12px 14px",
-            borderRadius: 8,
-            border: "1px solid var(--red3)",
-            background: "var(--bg-1)",
-            color: "var(--t1)",
-          }}
-        >
-          <div style={{ fontSize: 13, fontWeight: 600 }}>
-            {this.props.label ?? "Something went wrong"}
-          </div>
-          <div style={{ fontSize: 12, color: "var(--t2)", wordBreak: "break-word" }}>
-            {this.state.error.message || "An unexpected error occurred while rendering."}
-          </div>
-          <Button variant="outline" size="sm" onClick={this.reset}>
-            Reload
-          </Button>
-        </div>
+        <ErrorState
+          kind="Render failed"
+          what={`${label} could not be drawn.`}
+          means={message}
+          doors={[
+            { label: "Reload", onClick: this.reset, primary: true },
+            { label: "Copy the error", onClick: () => { void navigator.clipboard?.writeText(`${label}: ${message}`); } },
+          ]}
+          style={{ margin: 8 }}
+        />
       );
     }
     return this.props.children;

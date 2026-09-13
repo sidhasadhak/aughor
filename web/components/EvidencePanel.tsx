@@ -1,4 +1,5 @@
 "use client";
+import { Confidence, confidenceTier } from "@/components/ui/trust";
 
 /**
  * EvidencePanel — the Evidence Ledger as a first-class intelligence layer.
@@ -19,16 +20,17 @@ import {
 
 type Feedback = "validated" | "disputed" | "needs_context";
 
+// One threshold set for confidence, the design system's (ui/trust confidenceTier): at or above
+// 0.86 green, from 0.5 amber, below 0.5 red.
 function confColor(c: number): string {
-  if (c >= 0.8) return "var(--grn3)";
-  if (c >= 0.5) return "var(--amb3)";
-  return "var(--t3)";
+  const tier = confidenceTier(c);
+  return tier === "high" ? "var(--grn3)" : tier === "mid" ? "var(--amb3)" : "var(--red3)";
 }
 
 const FEEDBACK_META: Record<Feedback, { label: string; color: string }> = {
-  validated:     { label: "Validated",     color: "var(--grn4, #2e8c63)" },
+  validated:     { label: "Validated",     color: "var(--grn4)" },
   disputed:      { label: "Disputed",      color: "var(--red4)" },
-  needs_context: { label: "Needs context", color: "var(--amb4, #b6862b)" },
+  needs_context: { label: "Needs context", color: "var(--amb4)" },
 };
 
 function fmtWhen(iso: string | null): string {
@@ -52,10 +54,7 @@ function ClaimCard({ claim, onInvestigate, onFeedback }: {
     }}>
       {/* Badge row */}
       <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" as const }}>
-        <span title="confidence" style={{
-          padding: "2px 8px", borderRadius: "var(--r2)", fontSize: 11, fontWeight: 700,
-          background: `color-mix(in srgb, ${cColor} 16%, transparent)`, color: cColor,
-        }}>{Math.round((claim.confidence ?? 0) * 100)}%</span>
+        <Confidence value={claim.confidence ?? 0} title="confidence" />
         {claim.metric_used && (
           <span style={{
             padding: "2px 7px", borderRadius: "var(--r1)", fontSize: 11,

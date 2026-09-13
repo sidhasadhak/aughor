@@ -23,6 +23,7 @@ import {
 import { hasProseBlocks, renderProseBlocks } from "@/components/brief/BriefProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
+import { ErrorState } from "@/components/ui/states";
 import { StatusChip } from "@/components/brief/StatusChip";
 import type { ChatTurn } from "@/lib/chatTurn";
 import { BACKEND_LABEL } from "@/lib/llmMeta";
@@ -1662,29 +1663,22 @@ export function ChatMessage({
            what it produced; only the tail changes. `errorDetail` is null for a backend
            that predates the typed fields, which degrades to exactly the old red line. */}
       {turn.status === "error" && (
-        <div className="py-1">
-          <p className="aug-fs-sm text-red-400">{turn.error}</p>
-          {turn.errorDetail?.hint && (
-            <p className="aug-fs-xs text-zinc-400 mt-1">{turn.errorDetail.hint}</p>
-          )}
-          {turn.errorDetail && (turn.errorDetail.retryable || turn.errorDetail.recovery) && (
-            <div className="flex items-center gap-2 mt-2">
-              {turn.errorDetail.retryable && onRetry && (
-                <Button variant="minimal" size="xs" onClick={() => onRetry(turn.question)}>
-                  Retry
-                </Button>
-              )}
-              {turn.errorDetail.recovery === "switch_model" && (
-                <span className="aug-fs-xs text-zinc-500">
-                  or switch the model in Settings → Inference
-                </span>
-              )}
-              {turn.errorDetail.recovery === "fix_config" && (
-                <span className="aug-fs-xs text-zinc-500">Settings → Inference</span>
-              )}
-            </div>
-          )}
-        </div>
+        <ErrorState
+          kind="Answer failed"
+          style={{ margin: "4px 0" }}
+          what={turn.error}
+          means={[
+            turn.errorDetail?.hint,
+            turn.errorDetail?.recovery === "switch_model"
+              ? "Switching the model in Settings → Inference is the other way through."
+              : turn.errorDetail?.recovery === "fix_config"
+                ? "The fix is in Settings → Inference."
+                : null,
+          ].filter(Boolean).join(" ") || undefined}
+          doors={turn.errorDetail?.retryable && onRetry
+            ? [{ label: "Retry", onClick: () => onRetry(turn.question), primary: true }]
+            : undefined}
+        />
       )}
 
       {/* ── Tables used + timing — Deep Analysis keeps these here for now; the
