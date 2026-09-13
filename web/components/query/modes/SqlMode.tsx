@@ -129,7 +129,12 @@ export function SqlMode({
   const [activeId, setActiveId] = useState("");
   const activeIdRef = useRef("");
   activeIdRef.current = activeId;
-  const [result, setResult] = useState<TypedQueryResult | null>(null);
+  // SE-8B — every statement's result from the last run, in order. A single run is a
+  // one-element array; "Run all" appends as statements complete, so the pager fills
+  // in live. The panel shows `results[resultIdx]`.
+  const [results, setResults] = useState<TypedQueryResult[]>([]);
+  const [resultIdx, setResultIdx] = useState(0);
+  const [maximizeResults, setMaximizeResults] = useState(false);
   const [error, setError] = useState("");
   const [running, setRunning] = useState(false);
   const [verdict, setVerdict] = useState<QueryValidation | null>(null);
@@ -236,7 +241,8 @@ export function SqlMode({
       setTabs([t]);
       setActiveId(t.id);
     }
-    setResult(null);
+    setResults([]);
+    setResultIdx(0);
     setError("");
   }, [connId]);
 
@@ -308,14 +314,15 @@ export function SqlMode({
     setStartedAt(Date.now());
     try {
       const res = await runWorkbenchQuery(connId, toRun, limit, boundParams, ac.signal);
-      setResult(res);
+      setResults([res]);
+      setResultIdx(0);
       if (res.error) setFailedSql(toRun);
       // A query that RAN and reported an error is a value, not an exception — the
       // panel shows the engine's own message rather than a generic failure.
       setError(res.error ?? "");
       patchActive({ status: res.error ? "error" : "ok" });
     } catch (e) {
-      setResult(null);
+      setResults([]);
       // A cancellation is the user's own decision arriving back at them. Reporting it
       // as a failure would make the button they just pressed look like a malfunction,
       // so the panel returns to its resting state and says nothing.
@@ -377,6 +384,9 @@ export function SqlMode({
     setError("");
     setFailedSql("");
     setStartedAt(Date.now());
+    // SE-8B — the pager fills as statements land, so it starts empty.
+    setResults([]);
+    setResultIdx(0);
     const done: string[] = [];
     // Which statement is in flight — so a failure hands Quick Fix THAT statement rather
     // than the whole multi-statement document, which is a different query.
@@ -385,7 +395,10 @@ export function SqlMode({
       for (const [i, stmt] of statements.entries()) {
         inFlight = stmt;
         const res = await runWorkbenchQuery(connId, stmt, limit, boundParams, ac.signal);
-        setResult(res);
+        // SE-8B — EVERY statement's rows are kept now (the roadmap's per-statement
+        // results), and the pager follows the one in flight.
+        setResults(prev => [...prev, res]);
+        setResultIdx(i);
         if (res.error) {
           setError(`Statement ${i + 1} of ${statements.length} failed: ${res.error}`);
           setFailedSql(stmt);
@@ -710,6 +723,10 @@ export function SqlMode({
           initial={260}
           min={120}
           max={720}
+          // SE-8B — the results pane's ⤢: the editor collapses, the results take the
+          // column, and the editor keeps its document because `collapsed` hides
+          // rather than unmounts (the remount trap this file already paid for).
+          collapsed={maximizeResults}
           style={{ flex: 1, minHeight: 0 }}
           left={
             <SqlEditorPane
@@ -734,12 +751,16 @@ export function SqlMode({
           }
           right={
             <ResultsPanel
-              result={result}
+              results={results}
+              resultIdx={resultIdx}
+              onResultIdx={setResultIdx}
               error={error}
               running={running}
               connId={connId}
               onSchedule={onSchedule}
               onShare={onShare}
+              maximized={maximizeResults}
+              onToggleMaximize={() => setMaximizeResults(v => !v)}
               failedSql={failedSql}
               onApplyFix={(fixed) => {
                 // Into the document, never into a run. Applying is the user accepting a
