@@ -390,6 +390,21 @@ def test_a_moved_api_port_reaches_the_bundle_and_the_chat_proxy():
 
 # ── The whole run ────────────────────────────────────────────────────────────────
 
+def test_the_next_time_hint_names_what_this_terminal_is_missing(monkeypatch):
+    """Measured on the `curl | sh` path: the clone lands in ./aughor while the terminal stays in
+    the parent, where a bare `uv run aughor up` fails. And a just-installed uv is on PATH only
+    in a new terminal."""
+    monkeypatch.delenv("AUGHOR_UV_INSTALLED", raising=False)
+    monkeypatch.delenv("AUGHOR_CHECKOUT_DIR", raising=False)
+    assert installer.start_command_hint() == "Next time, start Aughor with:  uv run aughor up"
+    monkeypatch.setenv("AUGHOR_CHECKOUT_DIR", "/home/me/aughor")
+    assert installer.start_command_hint() == "Next time, go to /home/me/aughor and run:  uv run aughor up"
+    monkeypatch.setenv("AUGHOR_UV_INSTALLED", "1")
+    assert installer.start_command_hint() == \
+        "Next time, open a new terminal, go to /home/me/aughor and run:  uv run aughor up"
+    assert "&&" not in installer.start_command_hint(), "Windows PowerShell 5.1 has no &&"
+
+
 def _checkout(root: Path) -> Path:
     (root / "pyproject.toml").write_text('[project]\nname = "aughor"\n')
     _web(root)

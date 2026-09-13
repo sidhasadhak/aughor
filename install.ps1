@@ -111,8 +111,11 @@ function Install-Aughor([string[]]$Arguments) {
         $script:ExitCode = 1; return
     }
 
+    # The hint for next time has to name the checkout when this terminal is not in it.
+    $checkoutElsewhere = $root -ne (Get-Location).Path
     Push-Location $root
     try {
+        if ($checkoutElsewhere) { $env:AUGHOR_CHECKOUT_DIR = $root }
         & $uv python find $PythonVersion *> $null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "  Installing Python $PythonVersion..."
@@ -135,6 +138,7 @@ function Install-Aughor([string[]]$Arguments) {
         Pop-Location
         Remove-Item Env:\AUGHOR_BOOTSTRAP -ErrorAction SilentlyContinue
         Remove-Item Env:\AUGHOR_UV_INSTALLED -ErrorAction SilentlyContinue
+        Remove-Item Env:\AUGHOR_CHECKOUT_DIR -ErrorAction SilentlyContinue
     }
 }
 

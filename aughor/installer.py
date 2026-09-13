@@ -805,11 +805,18 @@ def prepare_web(root: Path, steps: Steps, *, api_port: int = DEFAULT_API_PORT,
 # ── 5. Hand over to `aughor up` ──────────────────────────────────────────────────
 
 def start_command_hint() -> str:
-    """How to start Aughor next time. A uv the bootstrap just installed is on PATH only in NEW
-    terminals, so say so rather than print a command this terminal cannot find."""
+    """How to start Aughor next time, from a terminal that may lack two things the installer had:
+    uv on PATH (a uv the bootstrap just installed reaches PATH only in NEW terminals), and the
+    checkout as its folder (`curl | sh` clones into a sub-folder). Worded as steps rather than
+    `cd … && …`, which Windows PowerShell 5.1 cannot run."""
+    first = []
     if os.environ.get("AUGHOR_UV_INSTALLED"):
-        return "Next time, open a new terminal and run:  uv run aughor up"
-    return "Next time, start Aughor with:  uv run aughor up"
+        first.append("open a new terminal")
+    if os.environ.get("AUGHOR_CHECKOUT_DIR"):
+        first.append(f"go to {os.environ['AUGHOR_CHECKOUT_DIR']}")
+    if not first:
+        return "Next time, start Aughor with:  uv run aughor up"
+    return f"Next time, {', '.join(first)} and run:  uv run aughor up"
 
 
 def _hand_off(root: Path, args: Sequence[str]) -> int:
