@@ -235,7 +235,7 @@ export function EvidencePanel({ connectionId, canvasId, onInvestigate }: {
               ))}
             </div>
             <p className="aug-inspector-note">
-              Recorded on this claim. The alert digest counts the claims no one has reviewed; nothing
+              Recorded on this claim. The alert summary counts the claims no one has reviewed; nothing
               else reads feedback yet, so it does not change future claims.
             </p>
           </div>

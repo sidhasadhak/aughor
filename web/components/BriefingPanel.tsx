@@ -1115,9 +1115,8 @@ function renderFigures(text: string): ReactNode[] {
  * The expanded body of a finding — its grounded result as a chart (or a big scalar, or an
  * honest "no chartable result"), plus Evidence / Investigate.
  *
- * Extracted from the ledger row so a digest tile can open the SAME detail: the tile and the
- * row are two entry points to one finding, and they were never going to stay in step as two
- * copies. Display edits persist through `vizConfig`/`onVizConfigChange`, keyed by the insight.
+ * Opened from its row in the findings ledger. Display edits persist through
+ * `vizConfig`/`onVizConfigChange`, keyed by the finding's id.
  */
 function FindingDetail({
   insight, domain, connectionId, chartHeight, onInvestigate, onEvidence,
@@ -2238,9 +2237,9 @@ export function BriefingPanel({
   const hasPatterns    = scopedPatterns.length > 0;
   const isEmpty        = !briefing || briefing.totalInsights === 0;
 
-  // Saved chart display per finding, for every card-less chart in the brief (ledger rows and
-  // digest-tile details). Scoped exactly like the narrative, so one schema's edits never show
-  // up under another's. Pinned cards persist their own display in `card.render` instead.
+  // Saved chart display per finding, for every card-less chart in the brief (the ledger's rows).
+  // Scoped exactly like the narrative, so one schema's edits never show up under another's.
+  // Pinned cards persist their own display in `card.render` instead.
   const { configFor: vizConfigFor, save: saveVizConfigFor } = useVizConfigs(narrativeScope);
 
   // PX-6 — the scheduled-delivery card, toggled from the control bar.

@@ -412,8 +412,11 @@ BASELINE: dict[str, int] = {
     "copilotkit": 4,
     # 54 → 49: mostly already true on main (the study references moved to docs/, which is
     # outside CODE_ROOTS); Wave 2d removed the last one in a FLAG_META description.
-    "databricks": 46,
-    "digest": 165,
+    # 2026-09-13: 46 → 45. Instrument rewrote `web/aughor-v2/theme/tokens-v2.css`, which held one.
+    "databricks": 45,
+    # 2026-09-13: 165 → 145. Instrument redrew the Briefing: its digest tiles went, and with them
+    # every spelling left in BriefingPanel.tsx.
+    "digest": 145,
     "expertise": 43,
     # 58 → 28: FleetOverviewPanel and the api.ts client are exempt — they name the
     # frozen /control-room/fleet route and its component. No reader sees the word.
@@ -429,10 +432,15 @@ BASELINE: dict[str, int] = {
     # 2026-09-11: 1883 → 1880. ON-3's object page reads findings through the store's
     # glossary-named `get_findings` (the old name stays an alias for existing callers), and the
     # context graph's loader moved to it in the same change.
-    "insight": 1880,
+    # 2026-09-13: 1880 → 1694. Instrument's Profile layer replaced IntelligenceHub.tsx and
+    # ExplorationPanel.tsx (128 between them), and the Briefing and Org layers were redrawn.
+    "insight": 1694,
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
-    "investigation_in_web": 602,
+    # 2026-09-13: 602 → 573, measured. Instrument redrew the Briefing and deleted ProcessMapper.tsx;
+    # what it added spells the backend or the shell's contract — the rail's running-runs badge
+    # (GET /investigations, `investigation.*` events) and the header's Investigate door.
+    "investigation_in_web": 573,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
@@ -444,9 +452,11 @@ BASELINE: dict[str, int] = {
     # 2026-09-06: 348 → 347. SP-1/SP-3 leftovers: the inbox's four accept bodies now
     # share ONE lazy import of the executor's result type (`_executor_result`), so
     # two new accept kinds arrived while the count still fell by one.
-    "kinetic": 333,   # lowered 2026-09-12 with ON-4's withdrawal door: its HTTP suite, the panel's
+    "kinetic": 328,   # lowered 2026-09-12 with ON-4's withdrawal door: its HTTP suite, the panel's
                       # test and the object client are exempt above (frozen route, real component name),
                       # so the counted population shrank and the baseline follows it down.
+                      # 2026-09-13: 333 → 328. Instrument's Actions layer dropped the panel's direct
+                      # execute call and its "kinetic plane" prose; its classes are `aug-actions-*`.
     "mindsdb": 0,
     "palantir": 6,
     "persona": 215,  # paid down 2026-08-24, twice: VA-7 rewrote the configuration-history

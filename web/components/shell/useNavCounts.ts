@@ -6,7 +6,7 @@
  *   unackedAlerts   unacknowledged monitor alerts (GET /alerts) — amber: each one waits on a human
  *   runningRuns     agent runs in flight (GET /investigations, status "running") — neutral: a count
  *
- * Agent Ops' needs-human count is deliberately absent. GET /control-room/needs-human runs the
+ * Agent Ops' needs-human count is deliberately absent. Its route (GET …/needs-human) runs the
  * expiry and parked-run sweeps on every call, so polling it from the shell would run those sweeps
  * from every screen; it stays on the Agent Ops workspace, which already polls it while open.
  *

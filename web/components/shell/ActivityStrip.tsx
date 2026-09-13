@@ -26,7 +26,7 @@ import { getExplorationStatus, getJobs, getObsTimeseries, type TimeSeriesRespons
 import { subscribeKernelEvents } from "@/lib/events";
 import { countNoun, formatCount } from "@/lib/format";
 
-/** The charter no job kind claims (aughor/kernel/agents.py) — background work, not an agent. */
+/** What aughor/kernel/agents.py names a job no agent claims — background work, not an agent. */
 const RUNNER_AGENT = "Worker";
 const IDLE_PHASES = new Set(["", "pending", "complete", "failed"]);
 

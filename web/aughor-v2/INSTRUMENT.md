@@ -225,7 +225,7 @@ confidence, feedback, when — filtered by feedback, with the selected claim in 
 drawn, because a claim does not store it: guard columns, a verdict, refused claims, receipt ids,
 run cost, "used in". Two labels were wrong and are corrected — `data_freshness` is the
 investigation's completion time ("recorded"), `metric_used` is a keyword guess ("mentions") — and
-the feedback note says what feedback does today: the alert digest counts unreviewed claims, and
+the feedback note says what feedback does today: the alert summary counts unreviewed claims, and
 nothing else reads it.
 
 **Profile** (artboard 02) replaces the Hub (`IntelligenceHub.tsx` and `ExplorationPanel.tsx` are

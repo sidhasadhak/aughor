@@ -48,7 +48,7 @@ const input: React.CSSProperties = { width: "100%", padding: "6px 8px", fontSize
 const hint: React.CSSProperties = { fontSize: 12, color: "var(--t3)", padding: "8px 0" };
 
 function Err({ e }: { e: string | null }) {
-  return e ? <p className="aug-kinetic-err">{e}</p> : null;
+  return e ? <p className="aug-actions-err">{e}</p> : null;
 }
 
 /** The gate an action's risk puts on it, as `govern/actions.py` enforces it. */
@@ -156,8 +156,8 @@ function DeclareActionForm({ connectionId, onSaved }: { connectionId: string; on
   };
 
   return (
-    <div className="aug-kinetic-form">
-      <div className="aug-kinetic-form-title">Declare an action</div>
+    <div className="aug-actions-form">
+      <div className="aug-actions-form-title">Declare an action</div>
       <Err e={err} />
       <input style={input} placeholder="action id (e.g. refund_order)" value={id} onChange={e => setId(e.target.value)} />
       <div style={{ display: "flex", gap: 6 }}>
@@ -285,8 +285,8 @@ function AnnotateForm({ connectionId, onSaved }: { connectionId: string; onSaved
   };
 
   return (
-    <div className="aug-kinetic-form">
-      <div className="aug-kinetic-form-title">Annotate a value</div>
+    <div className="aug-actions-form">
+      <div className="aug-actions-form-title">Annotate a value</div>
       <Err e={err} />
       <input style={input} placeholder="table" value={f.table} onChange={e => setF({ ...f, table: e.target.value })} />
       <div style={{ display: "flex", gap: 6 }}>
@@ -331,16 +331,16 @@ function ProposeSection({ connectionId, onStaged }: { connectionId: string; onSt
       </Button>
       {proposals && proposals.length === 0 && <p className="aug-brief-note">The agent abstained — nothing to propose.</p>}
       {proposals && proposals.length > 0 && (
-        <div className="aug-kinetic-proposals">
+        <div className="aug-actions-proposals">
           {proposals.map((p, i) => (
-            <div key={i} className="aug-kinetic-proposal">
+            <div key={i} className="aug-actions-proposal">
               <div className="aug-approval-head">
                 <span className="aug-approval-kind">{p.action_id}</span>
                 <span className="aug-brief-meta">{p.inbox_id ? "staged · awaiting approval" : String(p.status)}</span>
               </div>
               {p.reasoning && <span className="aug-approval-why">{p.reasoning}</span>}
               <span className="aug-approval-params">{JSON.stringify(p.params)}</span>
-              {!p.ok && p.message && <p className="aug-kinetic-err">{p.message}</p>}
+              {!p.ok && p.message && <p className="aug-actions-err">{p.message}</p>}
             </div>
           ))}
         </div>
@@ -433,10 +433,10 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
               <table className="aug-dt aug-ledger-table">
                 <thead>
                   <tr>
-                    <th className="aug-kinetic-col-id">action</th>
+                    <th className="aug-actions-col-id">action</th>
                     <th>what it does</th>
-                    <th className="aug-kinetic-col-about">about</th>
-                    <th className="aug-kinetic-col-gate">gate</th>
+                    <th className="aug-actions-col-about">about</th>
+                    <th className="aug-actions-col-gate">gate</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -444,14 +444,14 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
                     const gate = GATE[a.risk];
                     return (
                       <tr key={a.id}>
-                        <td className="aug-kinetic-id">{a.id}<span className="aug-kinetic-kind">{a.kind}</span></td>
+                        <td className="aug-actions-id">{a.id}<span className="aug-actions-kind">{a.kind}</span></td>
                         <td className="aug-ledger-claim">
                           <span className="aug-ledger-text">{a.description || "—"}</span>
                           {effectLines(a).map((line, i) => <span key={i} className="aug-ledger-query">{line}</span>)}
                         </td>
-                        <td className="aug-kinetic-about">{a.object_type || "—"}</td>
+                        <td className="aug-actions-about">{a.object_type || "—"}</td>
                         <td>
-                          <span className={`aug-kinetic-gate${gate?.ask ? " aug-kinetic-gate-ask" : ""}`} title={gate?.title}>
+                          <span className={`aug-actions-gate${gate?.ask ? " aug-actions-gate-ask" : ""}`} title={gate?.title}>
                             {gate ? gate.label : String(a.risk || "—")}
                           </span>
                         </td>
@@ -474,7 +474,7 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
               <table className="aug-dt aug-ledger-table">
                 <thead>
                   <tr>
-                    <th className="aug-kinetic-col-target">target</th>
+                    <th className="aug-actions-col-target">target</th>
                     <th>edit</th>
                     <th className="num aug-memory-col-when">when</th>
                     <th className="aug-memory-col-door"><span className="sr-only">Withdraw</span></th>
@@ -483,7 +483,7 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
                 <tbody>
                   {edits.map((e, i) => (
                     <tr key={e.id || i}>
-                      <td className="aug-kinetic-target">
+                      <td className="aug-actions-target">
                         {e.table}{e.column ? `.${e.column}` : ""}{e.row_key ? `#${e.key_column}=${e.row_key}` : ""}
                       </td>
                       <td className="aug-ledger-claim">
@@ -546,7 +546,7 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
                       Reject
                     </Button>
                   </div>
-                  {proposalErr[p.id] && <p className="aug-kinetic-err">{proposalErr[p.id]}</p>}
+                  {proposalErr[p.id] && <p className="aug-actions-err">{proposalErr[p.id]}</p>}
                 </div>
               ))}
             </div>
@@ -557,11 +557,11 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
           <span className="aug-brief-eyebrow">Permission model</span>
         </div>
         <div className="aug-profile-block">
-          <dl className="aug-kinetic-perm">
+          <dl className="aug-actions-perm">
             <div><dt>read_only</dt><dd>Never gated. Every run is audited.</dd></div>
             <div><dt>low</dt><dd>Reversible or additive: runs without asking, and every run is audited.</dd></div>
             <div>
-              <dt className="aug-kinetic-gate-ask">high</dt>
+              <dt className="aug-actions-gate-ask">high</dt>
               <dd>A person approves each run. Approving a staged proposal is that approval, once; a standing grant can pre-approve one target.</dd>
             </div>
           </dl>

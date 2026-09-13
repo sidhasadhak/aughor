@@ -43,7 +43,7 @@
   color: var(--t1);
 }
 
-/* Prose — the Briefing and a finished investigation only: a real measure and 1.8 leading. */
+/* Prose — the Briefing and a finished deep analysis only: a real measure and 1.8 leading. */
 .aug-text-prose {
   font-size: 13px;
   line-height: 1.8;

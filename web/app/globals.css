@@ -1157,20 +1157,20 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-memory-share-rule > span { display: block; height: 100%; background: var(--chart-1); }
 
 /* ── Actions (Aughor Intelligence · 07 Actions) — declared actions, overlay edits, approvals ─── */
-.aug-kinetic-col-id { width: 180px; }
-.aug-kinetic-col-about { width: 110px; }
-.aug-kinetic-col-gate { width: 124px; }
-.aug-kinetic-col-target { width: 220px; }
-.aug-kinetic-id { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t1); }
-.aug-kinetic-kind { display: block; margin-top: 2px; color: var(--t3); }
-.aug-kinetic-about, .aug-kinetic-target { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-kinetic-gate { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
-.aug-kinetic-gate-ask { color: var(--amb4); }
-.aug-kinetic-err { margin: 6px 0; font-size: 12px; line-height: 1.5; color: var(--red4); }
-.aug-kinetic-form { margin-top: 12px; padding: 12px; border: 1px solid var(--b1); border-radius: var(--r3); }
-.aug-kinetic-form-title { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--t1); }
-.aug-kinetic-proposals, .aug-approvals { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
-.aug-kinetic-proposal { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--b1); border-radius: var(--r2); }
+.aug-actions-col-id { width: 180px; }
+.aug-actions-col-about { width: 110px; }
+.aug-actions-col-gate { width: 124px; }
+.aug-actions-col-target { width: 220px; }
+.aug-actions-id { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t1); }
+.aug-actions-kind { display: block; margin-top: 2px; color: var(--t3); }
+.aug-actions-about, .aug-actions-target { overflow: hidden; text-overflow: ellipsis; font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-actions-gate { font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+.aug-actions-gate-ask { color: var(--amb4); }
+.aug-actions-err { margin: 6px 0; font-size: 12px; line-height: 1.5; color: var(--red4); }
+.aug-actions-form { margin-top: 12px; padding: 12px; border: 1px solid var(--b1); border-radius: var(--r3); }
+.aug-actions-form-title { margin-bottom: 8px; font-size: 13px; font-weight: 600; color: var(--t1); }
+.aug-actions-proposals, .aug-approvals { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.aug-actions-proposal { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border: 1px solid var(--b1); border-radius: var(--r2); }
 .aug-approval { display: flex; flex-direction: column; gap: 5px; padding-bottom: 10px; border-bottom: 1px solid var(--b0); }
 .aug-approval:last-child { padding-bottom: 0; border-bottom: 0; }
 .aug-approval-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
@@ -1178,10 +1178,10 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-approval-kind { font-family: var(--font-mono); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--amb4); }
 .aug-approval-why { font-size: 12px; line-height: 1.55; color: var(--t1); }
 .aug-approval-params { font-family: var(--font-mono); font-size: 11px; color: var(--t3); word-break: break-all; }
-.aug-kinetic-perm { margin: 0; display: flex; flex-direction: column; gap: 8px; }
-.aug-kinetic-perm > div { display: flex; flex-direction: column; gap: 2px; }
-.aug-kinetic-perm dt { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
-.aug-kinetic-perm dd { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
+.aug-actions-perm { margin: 0; display: flex; flex-direction: column; gap: 8px; }
+.aug-actions-perm > div { display: flex; flex-direction: column; gap: 2px; }
+.aug-actions-perm dt { font-family: var(--font-mono); font-size: 11px; color: var(--t2); }
+.aug-actions-perm dd { margin: 0; font-size: 11px; line-height: 1.55; color: var(--t3); }
 
 /* ── Graph (Aughor Intelligence · 04 Graph) — the map beside what it cannot vouch for ─────────── */
 .aug-graph-modes { margin-left: auto; }
