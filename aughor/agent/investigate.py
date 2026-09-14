@@ -9491,7 +9491,11 @@ def ada_synthesize(state: AgentState) -> dict:
             if phase.get("title"):
                 labels.append(phase["title"])
         labels.append(question)
-        matched = retrieve_for_metric_and_phases(labels, limit=5)
+        from aughor.business_profile.metric_kb import industry_scope
+        _conn = state.get("connection_id") or ""
+        matched = retrieve_for_metric_and_phases(
+            labels, limit=5,
+            industry=industry_scope(_conn, state.get("scope_schema") or None) if _conn else None)
         # PE-3: a cross-sectional report never receives change-triggered entries —
         # the specimen carried five "When GMV up…" patterns it was told to PREFER,
         # inside a prompt whose own note said the question is not temporal.

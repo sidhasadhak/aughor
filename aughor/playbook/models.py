@@ -3,6 +3,10 @@ from __future__ import annotations
 from typing import Literal, Optional
 from pydantic import BaseModel, Field
 
+#: The tag on a play seeded from a KB inflation or deflation cause: a check on the number itself, not a
+#: move for the business. Retrieval leaves these plays out unless a caller asks for them.
+DATA_QUALITY_TAG = "data quality"
+
 
 class PlaybookEntry(BaseModel):
     id: str

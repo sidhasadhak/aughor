@@ -265,8 +265,10 @@ def answer_text_only(state: AgentState) -> dict[str, Any]:
         kb = retrieve_for_planning(question, top_k=3)
         if kb:
             snippets.append(kb)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "KB definitions are best-effort; the answer uses the other sources",
+                 counter="answer_text_only.kb")
 
     # 2. Connection-specific KB
     try:
@@ -274,19 +276,25 @@ def answer_text_only(state: AgentState) -> dict[str, Any]:
         ckb = _conn_kb(question, conn_id)
         if ckb:
             snippets.append(ckb)
-    except Exception:
-        pass
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "connection KB is best-effort; the answer uses the other sources",
+                 counter="answer_text_only.connection_kb")
 
-    # 3. Playbook
+    # 3. Playbook, scoped to this connection's industry. The retriever returns PlaybookEntry models;
+    # this used to call `.get("recommendation")` on them, and the AttributeError went into a bare
+    # `except: pass`, so no definitional answer ever carried a play.
     try:
+        from aughor.business_profile.metric_kb import industry_scope
         from aughor.playbook.retriever import retrieve_for_metric_and_phases
-        pb_entries = retrieve_for_metric_and_phases([question], limit=3)
-        if pb_entries:
-            for e in pb_entries:
-                if e.get("recommendation"):
-                    snippets.append(e["recommendation"])
-    except Exception:
-        pass
+        scope = industry_scope(conn_id, state.get("scope_schema") or None) if conn_id else None
+        for e in retrieve_for_metric_and_phases([question], limit=3, industry=scope):
+            if e.recommendation:
+                snippets.append(e.recommendation)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "playbook entries are best-effort; the answer uses the other sources",
+                 counter="answer_text_only.playbook")
 
     answer = " ".join(snippets).strip()
     if not answer:
