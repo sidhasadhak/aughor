@@ -92,6 +92,58 @@ def test_federated_answer_two_sources(client: TestClient, monkeypatch, tmp_path)
     assert len(data["plan"]["steps"]) == 2
 
 
+def test_federated_answer_passes_the_post_execution_gate_on_every_source(client: TestClient, monkeypatch, tmp_path):
+    """Every read of the fold runs under a plumbing label, so the answer itself passes PII redaction and the audit,
+    on each connection it read (Arc ON leftovers, F7)."""
+    from aughor.security.audit import AuditLogger
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    lp = _duck_file(tmp_path / "orders_pii.duckdb",
+                    "CREATE TABLE orders (order_id INT, cust VARCHAR)",
+                    "INSERT INTO orders VALUES (1,'C1'),(2,'C2')")
+    rp = _duck_file(tmp_path / "crm_pii.duckdb",
+                    "CREATE TABLE customers (cust VARCHAR, email VARCHAR)",
+                    "INSERT INTO customers VALUES ('C1','alice@example.com'),('C2','bob@example.com')")
+    cids = [registry.add_connection("fp-pii-a", "duckdb", lp), registry.add_connection("fp-pii-b", "duckdb", rp)]
+    _fake_planner(monkeypatch, FederatedPlan(steps=[
+        FederatedStep(source=0, sql="SELECT order_id, cust FROM orders ORDER BY order_id", join_key="cust"),
+        FederatedStep(source=1, sql="SELECT cust, email FROM customers", join_key="cust", left_key="cust"),
+    ]))
+
+    data = client.post("/query/federated-answer",
+                       json={"question": "each order's customer email", "conn_ids": cids}).json()
+
+    assert data["error"] is None and data["row_count"] == 2
+    assert [r[data["columns"].index("email")] for r in data["rows"]] == ["[REDACTED]", "[REDACTED]"]
+    for connection_id in cids:
+        records = AuditLogger.recent(50, connection_id=connection_id, label="federated_planner")
+        assert any(r["verdict"] == "safe" and r["row_count"] == 2 for r in records), connection_id
+
+
+def test_federated_answer_joins_on_a_key_that_looks_like_pii_before_redacting(client: TestClient, monkeypatch,
+                                                                              tmp_path):
+    """The driver's read is plumbing, so an email key meets the other source's rows; only the answer is redacted
+    (Arc ON leftovers, F7). Redacted per read, the driver's keys became `[REDACTED]` and met nothing."""
+    monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
+    lp = _duck_file(tmp_path / "orders_email.duckdb",
+                    "CREATE TABLE orders (order_id INT, email VARCHAR)",
+                    "INSERT INTO orders VALUES (1,'alice@example.com'),(2,'bob@example.com')")
+    rp = _duck_file(tmp_path / "crm_email.duckdb",
+                    "CREATE TABLE customers (email VARCHAR, tier VARCHAR)",
+                    "INSERT INTO customers VALUES ('alice@example.com','gold'),('bob@example.com','silver')")
+    cids = [registry.add_connection("fp-email-a", "duckdb", lp), registry.add_connection("fp-email-b", "duckdb", rp)]
+    _fake_planner(monkeypatch, FederatedPlan(steps=[
+        FederatedStep(source=0, sql="SELECT order_id, email FROM orders ORDER BY order_id", join_key="email"),
+        FederatedStep(source=1, sql="SELECT email, tier FROM customers", join_key="email", left_key="email"),
+    ]))
+
+    data = client.post("/query/federated-answer",
+                       json={"question": "each order's customer tier", "conn_ids": cids}).json()
+
+    assert data["error"] is None and data["row_count"] == 2
+    assert [r[data["columns"].index("tier")] for r in data["rows"]] == ["gold", "silver"]
+    assert [r[data["columns"].index("email")] for r in data["rows"]] == ["[REDACTED]", "[REDACTED]"]
+
+
 def test_federated_answer_three_sources_chain(client: TestClient, monkeypatch, tmp_path):
     monkeypatch.setenv("AUGHOR_FEDERATION_PLANNER", "1")
     cids = _three_sources(tmp_path)

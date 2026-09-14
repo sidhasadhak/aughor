@@ -463,15 +463,18 @@ def test_the_answer_across_two_connections_passes_every_gate_a_single_statement_
         seen["pre"].append((connection_id, label))
         return real_pre(connection_id, label, sql)
 
-    def post(connection_id, label, sql, result, ms):
-        seen["post"].append((connection_id, label, result.row_count))
-        return real_post(connection_id, label, sql, result, ms)
+    def post(connection_id, label, sql, result, ms, also_read=()):
+        seen["post"].append((connection_id, label, result.row_count, list(also_read)))
+        return real_post(connection_id, label, sql, result, ms, also_read)
 
     monkeypatch.setattr(C, "security_pre", pre)
     monkeypatch.setattr(C, "security_post", post)
     rows, _, _ = answer(across, QUERIES["orders by customer country"])
     assert seen["pre"] == [(sources["shop"], "objects"), (sources["crm"], "objects")]
-    assert seen["post"] == [(sources["shop"], "objects", len(rows))]
+    assert seen["post"] == [(sources["shop"], "objects", len(rows), [sources["crm"]])]
+    # the far connection's audit trail records the answer its rows reached, not only the home connection's
+    from aughor.security.audit import AuditLogger
+    assert any(r["verdict"] == "safe" for r in AuditLogger.recent(200, connection_id=sources["crm"], label="objects"))
 
     blocked = QueryResult(hypothesis_id="objects", sql="", columns=[], rows=[], row_count=0, error="[BLOCKED] by policy")
     monkeypatch.setattr(C, "security_pre", lambda connection_id, label, sql: blocked if connection_id == sources["crm"] else None)

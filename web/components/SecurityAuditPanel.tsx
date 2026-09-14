@@ -111,6 +111,7 @@ function agentLabel(hypothesisId: string): { agent: string; detail?: string } {
     case "__remote_join__":    return { agent: "Analyst", detail: "remote join" };
     case "query_builder":      return { agent: "You", detail: "Query Builder" };
     case "cross_source_join":  return { agent: "You", detail: "cross-source" };
+    case "federated_planner":  return { agent: "Analyst", detail: "federation" };
     case "semantic_operator":  return { agent: "You", detail: "semantic op" };
     case "profile-calibrate":  return { agent: "Curator", detail: "profile" };
   }

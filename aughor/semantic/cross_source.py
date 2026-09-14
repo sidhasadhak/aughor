@@ -270,7 +270,8 @@ def execute_plan(plan: CrossSourcePlan, *, home_connection_id: str, home_db: Any
     answer = QueryResult(hypothesis_id=label, sql=display_sql, columns=out_columns,
                          rows=[[str(v) if v is not None else "NULL" for v in row] for row in out_rows],
                          row_count=len(out_rows))
-    return security_post(home_connection_id, label, display_sql, answer, (time.monotonic() - started) * 1000), timings
+    return security_post(home_connection_id, label, display_sql, answer, (time.monotonic() - started) * 1000,
+                         also_read=[read.connection_id for read in plan.reads]), timings
 
 
 def _ms(since: float) -> float:

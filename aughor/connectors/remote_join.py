@@ -154,6 +154,10 @@ def _fetch_right(
             return [], {}, 0, str(exc)
         if res.error:
             return [], {}, 0, res.error
+        if res.row_count > len(res.rows) or fetched + len(res.rows) > max_rows:
+            # a join taken from part of the right rows drops or blanks left rows without saying so
+            return [], {}, 0, (f"the right side holds more than {max_rows:,} rows for these keys, and a join is "
+                               "never taken from part of them")
         cols = list(res.columns)
         jki = _idx(cols, "__jk")
         if jki < 0:
@@ -352,17 +356,35 @@ def cross_source_join(
     how: str = "inner",
     right_cols: list[str] | None = None,
     reconcile: bool = False,
+    label: str = "cross_source_join",
 ) -> QueryResult:
     """Run ``left_sql`` on one connection and batched-foreach-join it to a table/sub-query on another.
 
     The by-connection-id entry point the planner and API surface call — the right side is either
-    ``right_table`` or ``right_sql`` (a grounded sub-query). Fail-safe throughout."""
-    from aughor.db.connection import open_connection_for
+    ``right_table`` or ``right_sql`` (a grounded sub-query). Fail-safe throughout.
+
+    Both reads run under plumbing labels, which skip the security gates, so the gates run here: the caller gates the
+    left SQL as user SQL at its door (``gate_user_sql``), the right connection passes the pre-execution gate, and the
+    joined answer passes the post-execution one — PII redaction, the stricter of the two row budgets, and an audit
+    record on each connection."""
+    import time
+
+    from aughor.db.connection import open_connection_for, security_post, security_pre
+    started = time.monotonic()
+    columns = ", ".join(_qident(c) for c in right_cols) if right_cols else "*"
+    right_read = right_sql or f"SELECT {columns} FROM {_qident(right_table or '')}"
+    blocked = security_pre(right_conn_id, label, right_read)
+    if blocked is not None:
+        return blocked
     left_conn = open_connection_for(left_conn_id)
     left = left_conn.execute_bounded("__remote_join_left__", left_sql, _MAX_OUT_ROWS)
     right_conn = open_connection_for(right_conn_id)
-    return batched_foreach_join(
+    joined = batched_foreach_join(
         left, left_key, right_conn, right_key,
         right_table=right_table, right_sql=right_sql,
         right_cols=right_cols, how=how, reconcile=reconcile,
     )
+    read = (f"{left_sql.rstrip().rstrip(';')}\n"
+            f"-- joined ({how}) on {left_key} = {right_key} to {right_conn_id}: {right_read}")
+    return security_post(left_conn_id, label, read, joined, (time.monotonic() - started) * 1000,
+                         also_read=[right_conn_id])

@@ -257,3 +257,25 @@ def test_reconcile_absent_for_truly_disjoint_cross_source_keys():
     assert out.row_count == 2                        # no transform reconciles → left join, nulls kept
     vi = out.columns.index("v")
     assert all(r[vi] is None for r in out.rows)
+
+
+def test_a_right_read_past_its_cap_is_refused_rather_than_joined_from_part():
+    """A join taken from part of the right rows drops or blanks left rows without saying so, so a right side holding
+    more rows for the keys than the cap is an error that says why (Arc ON leftovers, F7)."""
+    left_conn = _duck(
+        "CREATE TABLE orders (order_id INT, cust VARCHAR)",
+        "INSERT INTO orders VALUES (1,'C1'),(2,'C2')",
+    )
+    right_conn = _duck(
+        "CREATE TABLE customers (cust VARCHAR, name VARCHAR)",
+        "INSERT INTO customers VALUES ('C1','Alice'),('C2','Bob')",
+    )
+    left = _left(left_conn, "SELECT order_id, cust FROM orders ORDER BY order_id")
+
+    part = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers",
+                                right_cols=["cust", "name"], max_right_rows=1)
+    assert part.rows == [] and "never taken from part of them" in (part.error or "")
+
+    whole = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers",
+                                 right_cols=["cust", "name"], max_right_rows=2)
+    assert whole.error is None and whole.row_count == 2

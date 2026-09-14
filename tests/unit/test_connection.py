@@ -147,7 +147,9 @@ def test_security_pre_skips_internal_query() -> None:
 def test_fleet_agent_data_queries_are_audited() -> None:
     """Every agent that reads USER data appears in the audit trail — the
     'any dunder is internal' rule silently exempted Scout/Watcher (and the
-    revalidate/federation paths) from Security & Audit."""
+    revalidate paths) from Security & Audit. The federation paths' reads are
+    plumbing since 2026-09-14; their ANSWERS are audited on every connection
+    they read (tests/unit/test_security_post_across_connections.py)."""
     from aughor.db.connection import _AUDITED_AGENT_LABELS, _is_internal_query
 
     for h in _AUDITED_AGENT_LABELS:

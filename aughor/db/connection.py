@@ -49,8 +49,10 @@ _AUDITED_AGENT_LABELS = frozenset({
     "__monitor_window__",  # Watcher — monitor window anchoring (MAX(ts) probe)
     "__revalidate__",      # finding re-validation re-runs stored finding SQL
     "__fix_save__",        # persisting a repaired finding re-runs its SQL
-    "__fed_driver__",      # federated planner driver query (user question)
-    "__remote_join__",     # cross-source remote join (user question)
+    # `__fed_driver__` and `__remote_join__` (the federated driver and a join's keyed right reads) left this set on
+    # 2026-09-14. Posted per read, they were redacted BEFORE the join, so a key that looked like PII met none of its
+    # rows, and one connection's row budget cut a join's input, answering from part of it. They are plumbing now,
+    # and the joined answer passes the gate once for every connection it read (`security_post(..., also_read=)`).
     # WP-1c — model-generated and stored-SQL paths that ran with the gate SKIPPED
     # (the "any dunder is internal" exemption). Generated SQL must always pass the
     # AST mutation gate; stored governed SQL gets the same treatment the explorer
@@ -216,10 +218,16 @@ def _security_post(
     sql: str,
     result: QueryResult,
     duration_ms: float,
+    also_read: "list[str] | tuple[str, ...]" = (),
 ) -> QueryResult:
-    """PII redaction + audit logging + budget enforcement. Returns (possibly modified) result."""
+    """PII redaction + audit logging + budget enforcement. Returns (possibly modified) result.
+
+    ``also_read`` names the other connections an answer's rows were read from — a join across sources. The
+    strictest row budget among all of them applies, and the audit log records the answer under each one, so every
+    connection's trail shows the answers its rows reached."""
     if _is_internal_query(hypothesis_id):
         return result  # platform plumbing — skip PII/audit, but still return rows
+    read_from = list(dict.fromkeys([connection_id, *(c for c in also_read if c)]))
     try:
         from aughor.security.pii     import PiiScanner
         from aughor.security.audit   import AuditLogger
@@ -230,19 +238,19 @@ def _security_post(
         # discard the guard findings attached to the result (SE-0 forwards caveats
         # to the caller, so dropping them here would blank exactly the runs the
         # budget touched).
-        budget = get_budget(connection_id)
-        if len(result.rows) > budget.max_rows:
+        max_rows = min(get_budget(read_id).max_rows for read_id in read_from)
+        if len(result.rows) > max_rows:
             result = QueryResult(
                 hypothesis_id=result.hypothesis_id,
                 sql=result.sql,
                 columns=result.columns,
-                rows=result.rows[:budget.max_rows],
+                rows=result.rows[:max_rows],
                 row_count=result.row_count,
                 error=result.error,
                 caveats=result.caveats,
                 annotations=result.annotations,
             )
-            _typed_mirror_slice(budget.max_rows)
+            _typed_mirror_slice(max_rows)
 
         # 2. PII — redact, block, or stand aside, as the ACTIVE AGENT's policy says
         #    (VA-8). No agent, or no policy, means `redact`: exactly what this did before
@@ -304,17 +312,18 @@ def _security_post(
                 pii_count = scan.redacted_count
                 _typed_mirror_redaction(_pre_scan_rows, scan.rows)
 
-        # 3. Audit log
-        AuditLogger.log(
-            connection_id=connection_id,
-            hypothesis_id=hypothesis_id,
-            sql=sql,
-            verdict="pii_blocked" if pii_blocked else "safe",
-            row_count=result.row_count,
-            duration_ms=duration_ms,
-            pii_redacted=pii_count,
-            error=result.error,
-        )
+        # 3. Audit log — one record on every connection the answer read
+        for read_id in read_from:
+            AuditLogger.log(
+                connection_id=read_id,
+                hypothesis_id=hypothesis_id,
+                sql=sql,
+                verdict="pii_blocked" if pii_blocked else "safe",
+                row_count=result.row_count,
+                duration_ms=duration_ms,
+                pii_redacted=pii_count,
+                error=result.error,
+            )
     except Exception as exc:
         # Post-exec (PII redaction / budget / audit) stays best-effort: it must
         # NOT drop already-safe rows on a hiccup. But make the swallow observable
@@ -346,9 +355,11 @@ def security_pre(connection_id: str, hypothesis_id: str, sql: str) -> "QueryResu
 
 
 def security_post(connection_id: str, hypothesis_id: str, sql: str,
-                  result: "QueryResult", duration_ms: float) -> "QueryResult":
-    """Post-execution PII redaction + audit + budget. Returns the (possibly modified) result."""
-    return _security_post(connection_id, hypothesis_id, sql, result, duration_ms)
+                  result: "QueryResult", duration_ms: float,
+                  also_read: "list[str] | tuple[str, ...]" = ()) -> "QueryResult":
+    """Post-execution PII redaction + audit + budget. Returns the (possibly modified) result. ``also_read`` names the
+    other connections a cross-source answer read: the strictest budget applies and each one records the answer."""
+    return _security_post(connection_id, hypothesis_id, sql, result, duration_ms, also_read)
 
 
 def offer_typed_rows(rows, *, truncated: bool, types: list[str]) -> None:
