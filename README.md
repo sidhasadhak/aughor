@@ -37,37 +37,27 @@ Aughor connects to your warehouse and **keeps learning from it**. It builds a li
 
 ## Quick start
 
-One command installs everything Aughor needs, builds the web app, starts Aughor and opens it in your browser. The only thing to have beforehand is **Git**.
+One command downloads Aughor, installs everything it needs, builds the web app, starts Aughor and opens it in your browser. Nothing has to be installed first — not even Git.
 
-**macOS / Linux**
-
-```bash
-git clone https://github.com/sidhasadhak/aughor.git && cd aughor
-./install.sh
-```
-
-**Windows** (Command Prompt or PowerShell)
-
-```bat
-git clone https://github.com/sidhasadhak/aughor.git && cd aughor
-install.cmd
-```
-
-It installs [uv](https://docs.astral.sh/uv/), Python, every Python and web dependency, and — when the computer has no Node.js 20.9 or newer — an official Node.js build, checked against nodejs.org's published checksums. The terminal shows one line per step; what the tools print goes to `.aughor/logs/`, and if a step fails you see the end of its log and what to do next. Run it again at any time (after a `git pull`, say): it only redoes what changed. `--no-start` installs without starting; `--help` lists every option.
-
-Or without cloning first — the installer downloads Aughor into `./aughor`:
+**macOS / Linux** — in a terminal:
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh | sh
 ```
 
+**Windows** — in PowerShell:
+
 ```powershell
-powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
+irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex
 ```
 
-Aughor starts empty — no data is created on your behalf. Click **+ Add** and paste a DuckDB path, a PostgreSQL DSN, or BigQuery credentials, and exploration begins. Want something to explore first? `uv run aughor seed` writes a synthetic demo dataset with a discoverable outage.
+Aughor lands in an `aughor` folder inside the one you ran the command from (set `AUGHOR_DIR` to choose another): cloned with Git when the computer has it, otherwise downloaded as a snapshot. The installer then adds [uv](https://docs.astral.sh/uv/), Python, every Python and web dependency, and — when the computer has no Node.js 20.9 or newer — an official Node.js build, checked against nodejs.org's published checksums. The terminal shows one line per step; what the tools print goes to `.aughor/logs/`, and if a step fails you see the end of its log and what to do next.
 
-**Next time**, start Aughor with `uv run aughor up`. It reinstalls or rebuilds the web app only when something changed, and never kills an existing process — a busy port names its owner and exits (`--api-port` / `--web-port` to move; `--dev` for hot reload with the logs in the terminal; `--api-only` / `--web-only` to split; `--no-browser`; `--verbose` to see everything). Or run the pieces yourself:
+Already have a clone? Run `./install.sh` (macOS / Linux) or `install.cmd` (Windows) inside it. Run it again at any time — after a `git pull`, say: it only redoes what changed. `--no-start` installs without starting; `--help` lists every option. (A snapshot has no `git pull`; with Git installed first, you get a clone you can update.)
+
+Aughor starts empty — no data is created on your behalf. Click **+ Add** and paste a DuckDB path, a PostgreSQL DSN, or BigQuery credentials, and exploration begins. Want something to explore first? From the `aughor` folder, `uv run aughor seed` writes a synthetic demo dataset with a discoverable outage.
+
+**Next time**, start Aughor from its folder with `uv run aughor up` (in a new terminal, if the installer had to install uv). It reinstalls or rebuilds the web app only when something changed, and never kills an existing process — a busy port names its owner and exits (`--api-port` / `--web-port` to move; `--dev` for hot reload with the logs in the terminal; `--api-only` / `--web-only` to split; `--no-browser`; `--verbose` to see everything). Or run the pieces yourself:
 
 ```bash
 uv run uvicorn aughor.api:app --port 8000    # API
@@ -177,6 +167,8 @@ uv sync --all-extras                      # everything (recommended for developm
 uv sync --extra export --extra semantic   # or pick individually
 uv sync                                   # serving core only
 ```
+
+Each `uv sync` leaves exactly the extras it names and removes any others — so name every extra you want in one command. The installer syncs them all.
 
 | Extra | Adds | Without it |
 |---|---|---|

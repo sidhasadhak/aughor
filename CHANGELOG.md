@@ -11,7 +11,10 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Added
-- **One-command install on macOS, Linux and Windows.** `./install.sh` (or `install.cmd`)
+- **One-command install on macOS, Linux and Windows.** On a computer without Aughor, one
+  `curl … | sh` (or `irm … | iex`) line downloads it — a clone when Git is there, a snapshot
+  when it is not, so nothing has to be installed first. Inside a checkout, `./install.sh` (or
+  `install.cmd`) does the rest. Either way it
   installs uv, Python, every Python and web dependency and — on a computer with no Node.js
   20.9 or newer — an official Node.js build verified against nodejs.org's checksums; builds
   the web app; starts Aughor and opens it in the browser. One line per step: what the tools

@@ -1,23 +1,26 @@
 # Aughor installer for Windows.
 #
+# On a computer without Aughor, one line in PowerShell does everything: downloads Aughor into
+# .\aughor, installs what it needs, starts it and opens it in the browser. Nothing has to be
+# installed first, not even Git:
+#   irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex
+#
+# Inside a checkout:
 #   install.cmd                install everything Aughor needs, start it, open it in a browser
 #   install.cmd --no-start     install only
 #   install.cmd --help         every option
 #
-# install.cmd runs this file without changing PowerShell's execution policy. From PowerShell:
-#   powershell -ExecutionPolicy Bypass -File install.ps1
-# Or without cloning first (Aughor is downloaded into .\aughor):
-#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
-#
+# install.cmd runs this file without changing PowerShell's execution policy.
 # Run it again whenever you like: it only redoes what changed.
 #
-# Like install.sh, this only finds the checkout and gets uv, then hands over to
-# `python -m aughor.installer`, which runs the same steps on every OS.
+# Like install.sh, this only finds the checkout (or downloads one) and gets uv, then hands over
+# to `python -m aughor.installer`, which runs the same steps on every OS.
 # Keep this file ASCII: Windows PowerShell 5.1 reads a script without a BOM as ANSI, so any
 # other character here would be garbled.
 
-# AUGHOR_REPO_URL installs from a fork (or a local clone) instead.
+# AUGHOR_REPO_URL and AUGHOR_ARCHIVE_URL install from a fork (or a local copy) instead.
 $RepoUrl = if ($env:AUGHOR_REPO_URL) { $env:AUGHOR_REPO_URL } else { 'https://github.com/sidhasadhak/aughor.git' }
+$ArchiveUrl = if ($env:AUGHOR_ARCHIVE_URL) { $env:AUGHOR_ARCHIVE_URL } else { 'https://github.com/sidhasadhak/aughor/archive/refs/heads/main.zip' }
 $PythonVersion = '3.11'  # aughor/installer.py PYTHON_VERSION
 
 function Write-Ok([string]$Text) {
@@ -50,6 +53,40 @@ function Find-Uv {
     return $null
 }
 
+# A clone when this computer has Git, so the checkout can `git pull` later; otherwise the same
+# code as a snapshot, so a fresh Windows (which has no Git) needs nothing installed first.
+# Throws when neither way works.
+function Get-Aughor([string]$Target, [string]$Log) {
+    if (Get-Command git -ErrorAction SilentlyContinue) {
+        & git clone --quiet $RepoUrl $Target *> $Log
+        if ($LASTEXITCODE -eq 0) { return }
+        # A failed clone's leftovers: the caller refused a folder with anything else in it.
+        Remove-Item -LiteralPath $Target -Recurse -Force -ErrorAction SilentlyContinue
+    }
+    $parent = Split-Path -Parent $Target
+    New-Item -ItemType Directory -Force -Path $parent -ErrorAction Stop | Out-Null
+    $staging = Join-Path $parent ('.aughor-download-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+    $previousProgress = $ProgressPreference
+    try {
+        New-Item -ItemType Directory -Path $staging -ErrorAction Stop | Out-Null
+        $zip = Join-Path $staging 'aughor.zip'
+        # Windows PowerShell draws Invoke-WebRequest's progress bar so slowly that it multiplies
+        # the download time; nothing here needs it.
+        $ProgressPreference = 'SilentlyContinue'
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072
+        Invoke-WebRequest -UseBasicParsing -Uri $ArchiveUrl -OutFile $zip -ErrorAction Stop
+        Expand-Archive -LiteralPath $zip -DestinationPath $staging -Force -ErrorAction Stop
+        $unpacked = Get-ChildItem -LiteralPath $staging -Directory |
+            Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'pyproject.toml') } |
+            Select-Object -First 1
+        if (-not $unpacked) { throw 'The downloaded archive holds no Aughor checkout.' }
+        Move-Item -LiteralPath $unpacked.FullName -Destination $Target -ErrorAction Stop
+    } finally {
+        $ProgressPreference = $previousProgress
+        Remove-Item -LiteralPath $staging -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 # The result goes in $script:ExitCode, never through `return`: a PowerShell function returns
 # everything it outputs, so capturing it would also capture the installer's live output and
 # nothing would reach the screen until the end. And never `exit` in here: under `irm | iex`
@@ -69,18 +106,24 @@ function Install-Aughor([string[]]$Arguments) {
     } else {
         $root = if ($env:AUGHOR_DIR) { $env:AUGHOR_DIR } else { Join-Path (Get-Location).Path 'aughor' }
         if (-not (Test-Checkout $root)) {
-            if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
-                Write-Failure 'Git is needed to download Aughor.' 'Install Git (https://git-scm.com/download/win), then run this again.'
+            # Never write into a folder that holds anything else: a failed download is cleaned
+            # up by deleting the folder, and that must only ever meet what the download put there.
+            if ((Test-Path -LiteralPath $root) -and (Get-ChildItem -LiteralPath $root -Force | Select-Object -First 1)) {
+                Write-Failure "$root already exists, and it isn't Aughor." 'Move it out of the way, or pick another folder by setting AUGHOR_DIR, then run this again.'
                 $script:ExitCode = 1; return
             }
             Write-Host "  Downloading Aughor into $root..."
-            & git clone --quiet $RepoUrl $root
-            if ($LASTEXITCODE -ne 0) {
-                Write-Failure 'Could not download Aughor.' 'Check your internet connection, then run this again.'
+            $downloadLog = Join-Path $env:TEMP 'aughor-download.log'
+            try {
+                Get-Aughor $root $downloadLog
+            } catch {
+                Add-Content -LiteralPath $downloadLog -Value $_.Exception.Message -ErrorAction SilentlyContinue
+                Write-Failure 'Could not download Aughor.' "Check your internet connection, then run this again. Log: $downloadLog"
                 $script:ExitCode = 1; return
             }
             Write-Ok 'Aughor downloaded'
         }
+        $root = (Resolve-Path -LiteralPath $root).Path
     }
 
     $logs = Join-Path $root '.aughor\logs'

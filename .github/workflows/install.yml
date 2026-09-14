@@ -72,6 +72,34 @@ jobs:
         shell: cmd
         run: install.cmd --no-start
 
+      # The one-liner's path on a computer with no Git: from an empty folder, the script alone,
+      # Aughor fetched as a snapshot. A repository that cannot be cloned sends it down that
+      # path, and the snapshot is this commit, so the run tests this change rather than main.
+      - name: Fresh install from an empty folder, as a snapshot (macOS, Linux)
+        if: runner.os != 'Windows' && matrix.node == 'installed'
+        run: |
+          git archive --format=tar.gz --prefix=aughor-main/ -o "$RUNNER_TEMP/aughor-main.tar.gz" HEAD
+          mkdir -p "$RUNNER_TEMP/fresh"
+          cd "$RUNNER_TEMP/fresh"
+          AUGHOR_REPO_URL="$RUNNER_TEMP/no-such-repo" \
+          AUGHOR_ARCHIVE_URL="file://$RUNNER_TEMP/aughor-main.tar.gz" \
+            sh -s -- --no-start < "$GITHUB_WORKSPACE/install.sh"
+          test -f "$RUNNER_TEMP/fresh/aughor/web/.next/BUILD_ID"
+
+      - name: Fresh install from an empty folder, as a snapshot (Windows)
+        if: runner.os == 'Windows' && matrix.node == 'installed'
+        shell: pwsh
+        run: |
+          git archive --format=zip --prefix=aughor-main/ -o "$env:RUNNER_TEMP\aughor-main.zip" HEAD
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\fresh" | Out-Null
+          Copy-Item install.ps1 "$env:RUNNER_TEMP\install.ps1"
+          Set-Location "$env:RUNNER_TEMP\fresh"
+          $env:AUGHOR_REPO_URL = "$env:RUNNER_TEMP\no-such-repo"
+          $env:AUGHOR_ARCHIVE_URL = "file:///$($env:RUNNER_TEMP -replace '\\', '/')/aughor-main.zip"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\install.ps1" --no-start
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$env:RUNNER_TEMP\fresh\aughor\web\.next\BUILD_ID")) { exit 1 }
+
       - name: Start, and both servers answer (macOS, Linux)
         if: runner.os != 'Windows'
         run: |
