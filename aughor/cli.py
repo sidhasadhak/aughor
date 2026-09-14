@@ -47,6 +47,10 @@ LLM_BACKENDS: tuple[str, ...] = ("ollama", "lmstudio", "groq", "together", "anth
 @click.group()
 def cli():
     """Aughor — Autonomous Intelligence Platform"""
+    # Before any output. Redirected on Windows, a stream encodes as the ANSI code page, which has
+    # no "→": one in `aughor up`'s summary crashed it the moment its servers were up.
+    from aughor.installer import tolerate_narrow_output
+    tolerate_narrow_output()
     # 🔴 Load `.env` HERE, in the group callback every command passes through — not at
     # module import, which would put a developer's environment into any test that merely
     # imports this module (`test_env_isolation` guards exactly that, and said so).

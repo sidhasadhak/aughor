@@ -108,33 +108,60 @@ jobs:
         if: runner.os != 'Windows'
         run: |
           ./install.sh --no-browser > up.log 2>&1 &
+          ready=no
           for attempt in $(seq 1 90); do
             if curl -fsS http://127.0.0.1:8000/health > /dev/null &&
                curl -fsS -o /dev/null http://127.0.0.1:3000/; then
-              cat up.log
-              exit 0
+              ready=yes
+              break
             fi
             sleep 2
           done
+          # The summary prints right after both answer; a crash there would stop both servers.
+          if [ "$ready" = yes ]; then
+            sleep 8
+            { curl -fsS http://127.0.0.1:8000/health > /dev/null &&
+              curl -fsS -o /dev/null http://127.0.0.1:3000/; } || ready=no
+          fi
           cat up.log
-          tail -n 50 .aughor/logs/*.log || true
-          exit 1
+          tail -n 40 .aughor/logs/*.log || true
+          [ "$ready" = yes ]
 
       - name: Start, and both servers answer (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          Start-Process -FilePath cmd.exe -ArgumentList '/c', 'install.cmd --no-browser > up.log 2>&1' -NoNewWindow
-          for ($attempt = 0; $attempt -lt 90; $attempt++) {
+          # Actions runs pwsh with $ErrorActionPreference = 'Stop'; the diagnostics below must print
+          # even when a log is missing or still held open by the servers.
+          $ErrorActionPreference = 'Continue'
+          # Its own hidden console, so nothing the servers or their shutdown do to a console can
+          # reach this step's shell.
+          $up = Start-Process -FilePath cmd.exe -ArgumentList '/c', 'install.cmd --no-browser > up.log 2>&1' -WindowStyle Hidden -PassThru
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 90 -and -not $up.HasExited; $attempt++) {
             try {
               Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health | Out-Null
               Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
-              Get-Content up.log
-              exit 0
+              $ready = $true
+              break
             } catch {
               Start-Sleep -Seconds 2
             }
           }
-          Get-Content up.log
-          Get-ChildItem .aughor/logs/*.log | ForEach-Object { Get-Content $_ -Tail 50 }
-          exit 1
+          # The summary prints right after both answer; a crash there would stop both servers.
+          if ($ready) {
+            Start-Sleep -Seconds 8
+            try {
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health | Out-Null
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
+            } catch {
+              $ready = $false
+            }
+          }
+          Write-Host "servers answered: $ready; installer exited: $($up.HasExited)"
+          Get-Content up.log -ErrorAction SilentlyContinue
+          Get-ChildItem .aughor/logs/*.log -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "--- $($_.Name)"
+            Get-Content $_.FullName -Tail 40 -ErrorAction SilentlyContinue
+          }
+          if (-not $ready) { exit 1 }

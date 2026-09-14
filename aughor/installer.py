@@ -120,6 +120,21 @@ def _vt_enabled() -> bool:
         return False
 
 
+def tolerate_narrow_output() -> None:
+    """Let stdout and stderr write "?" for a character their encoding lacks, instead of raising.
+
+    A stream redirected to a file or pipe on Windows encodes as the ANSI code page (cp1252),
+    which has no "→". Measured on the Windows CI job: one in `aughor up`'s closing summary
+    raised UnicodeEncodeError the moment both servers were up, and the cleanup that followed
+    stopped them. A UTF-8 stream — every macOS and Linux terminal, and Windows' own console
+    API — is left untouched.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        encoding = (getattr(stream, "encoding", None) or "").lower().replace("-", "")
+        if hasattr(stream, "reconfigure") and not stream.closed and not encoding.startswith("utf8"):
+            stream.reconfigure(errors="replace")
+
+
 def _format_seconds(seconds: float) -> str:
     whole = int(round(seconds))
     return f"{whole}s" if whole < 60 else f"{whole // 60}m {whole % 60:02d}s"
@@ -962,6 +977,7 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Optional[Sequence[str]] = None) -> int:
+    tolerate_narrow_output()
     args = list(sys.argv[1:] if argv is None else argv)
     options = _parser().parse_args(args)
     root = Path.cwd()

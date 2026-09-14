@@ -8,6 +8,7 @@ so the logs folder it creates is never the repository's.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -297,6 +298,29 @@ def test_the_cors_defaults_mirror_the_api():
     """The mirror exists so a moved web port is ADDED to the API's defaults; a mirror that
     drifted would silently drop an origin the API itself accepts."""
     assert f'"{cli_mod._DEFAULT_CORS_ORIGINS}"' in (REPO / "aughor" / "api.py").read_text(encoding="utf-8")
+
+
+def test_a_narrow_output_encoding_cannot_crash_the_summary():
+    """Measured on the Windows CI job: output redirected to a file encodes as cp1252, which has
+    no "→"; the summary raised UnicodeEncodeError the moment both servers were up, and the
+    cleanup stopped them. Runs with and without the guard, so the test can fail."""
+    script = ("import aughor.cli as cli, aughor.installer as installer\n"
+              "{guard}"
+              "cli._print_boot_summary({{'status': 'ok', 'llm': {{'ready': False, 'reason': 'no_model'}}}},"
+              " 8000, 3000)\n")
+    env = {**os.environ, "PYTHONIOENCODING": "cp1252", "AUGHOR_SKIP_DOTENV": "1"}
+
+    def run(guard: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, "-c", script.format(guard=guard)], cwd=REPO, env=env,
+                              capture_output=True, text=True, encoding="cp1252", errors="replace",
+                              timeout=120)
+
+    unguarded = run("")
+    assert unguarded.returncode != 0 and "UnicodeEncodeError" in unguarded.stderr, \
+        "the reproduction no longer reproduces; the guard below proves nothing"
+    guarded = run("installer.tolerate_narrow_output()\n")
+    assert guarded.returncode == 0, guarded.stderr
+    assert "Settings ? Models" in guarded.stdout
 
 
 # ── Helper behaviours ─────────────────────────────────────────────────────────
