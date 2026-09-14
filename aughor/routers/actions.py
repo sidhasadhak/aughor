@@ -5,16 +5,18 @@ import asyncio
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import add_connection, get_dsn, get_meta
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["actions"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["actions"], dependencies=[Depends(connection_owner_guard)])
 
 
 # ── Action Triggers ───────────────────────────────────────────────────────────

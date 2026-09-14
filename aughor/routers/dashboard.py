@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.dashboard.models import CardProvenance, DashboardCard
@@ -19,8 +19,10 @@ from aughor.dashboard.store import (
     set_viz_config, upsert_card,
 )
 from aughor.kernel.errors import tolerate
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["dashboard"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["dashboard"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _layout_user_id(request: Request) -> str:

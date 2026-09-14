@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.paths import state_dir
@@ -22,6 +22,7 @@ from aughor.routers._shared import (
     kickoff_exploration,
     spawn_explorer,
 )
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 import re as _re
@@ -254,7 +255,8 @@ def _needs_filter(conn_id: str, schema: str | None) -> bool:
 
 from aughor.licensing import Capability, gate
 
-router = APIRouter(tags=["exploration"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["exploration"], dependencies=[Depends(connection_owner_guard)])
 
 
 class RetryQueryRequest(BaseModel):

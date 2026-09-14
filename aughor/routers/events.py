@@ -20,13 +20,15 @@ import os
 import time
 from typing import Optional
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
 from aughor.kernel.ledger import Ledger
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(dependencies=[Depends(connection_owner_guard)])
 
 _POLL_SECONDS = 1.0          # journal tail cadence (server-side, indexed query)
 _POLL_IDLE_MAX = 5.0         # …backed off to this while the journal stays quiet

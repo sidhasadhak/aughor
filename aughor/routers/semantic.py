@@ -38,13 +38,15 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 from aughor.licensing import Capability, gate
 
-router = APIRouter(prefix="/semantic", tags=["semantic"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(prefix="/semantic", tags=["semantic"], dependencies=[Depends(connection_owner_guard)])
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
