@@ -496,6 +496,9 @@ class _Scope:
     alias: str
     joins: list[str] = field(default_factory=list)
     join_alias: dict = field(default_factory=dict)
+    #: The connection this level's rows live on — "" for the query's home. A level built inside an EXISTS or a
+    #: pre-aggregation read by key from another connection lives there, and joins on that connection as it would at home.
+    source: str = ""
 
 
 @dataclass
@@ -509,6 +512,9 @@ class _Readings:
     alias: str
     inner_alias: str
     columns: list[tuple[str, str]] = field(default_factory=list)
+    #: The connection the readings live on, and whether that is another than the object's (O3: read by key).
+    source: str = ""
+    far: bool = False
 
     def column(self, expr: str) -> str:
         for name, existing in self.columns:
@@ -518,11 +524,13 @@ class _Readings:
         self.columns.append((name, expr))
         return name
 
-    def join_sql(self) -> str:
+    def pre_aggregate(self) -> str:
         key = f"{self.inner_alias}.{quote_ident(self.binding.key)}"
         cols = ", ".join(f"{expr} AS {name}" for name, expr in self.columns)
-        return (f"LEFT JOIN (SELECT {key} AS k, {cols} FROM {binding_from(self.binding, self.inner_alias)} "
-                f"GROUP BY {key}) AS {self.alias} "
+        return f"SELECT {key} AS k, {cols} FROM {binding_from(self.binding, self.inner_alias)} GROUP BY {key}"
+
+    def join_sql(self) -> str:
+        return (f"LEFT JOIN ({self.pre_aggregate()}) AS {self.alias} "
                 f"ON {self.outer_alias}.{quote_ident(self.entity_key)} = {self.alias}.k")
 
 
@@ -534,6 +542,9 @@ class _ManyLink:
     alias: str
     inner: _Scope
     columns: list[tuple[str, str]] = field(default_factory=list)
+    #: Whether the link's target lives on another connection than the query's rows (O3: the pre-aggregation is read by
+    #: key from there).
+    far: bool = False
 
     def column(self, expr: str) -> str:
         for name, existing in self.columns:
@@ -543,12 +554,14 @@ class _ManyLink:
         self.columns.append((name, expr))
         return name
 
-    def join_sql(self) -> str:
+    def pre_aggregate(self) -> str:
         key = f"{self.inner.alias}.{quote_ident(self.hop.remote_col)}"
         cols = ", ".join(f"{expr} AS {name}" for name, expr in self.columns)
         joins = "".join(f" {j}" for j in self.inner.joins)
-        return (f"LEFT JOIN (SELECT {key} AS k, {cols} FROM {backing_from(self.hop.target, self.inner.alias)}{joins} "
-                f"GROUP BY {key}) AS {self.alias} "
+        return f"SELECT {key} AS k, {cols} FROM {backing_from(self.hop.target, self.inner.alias)}{joins} GROUP BY {key}"
+
+    def join_sql(self) -> str:
+        return (f"LEFT JOIN ({self.pre_aggregate()}) AS {self.alias} "
                 f"ON {self.outer_alias}.{quote_ident(self.hop.local_col)} = {self.alias}.k")
 
 
@@ -585,10 +598,18 @@ class _Compiler:
         self.home = graph.connection_id
         self.top: Optional[_Scope] = None
         self.far: dict[str, KeyedRead] = {}
+        #: O2 — each alias a path through a keyed read stands for: the read, and the alias its rows carry inside the
+        #: read's own statement (``__r`` for the read's own type, another for a type or binding joined inside it).
+        self.far_paths: dict[str, tuple[KeyedRead, str]] = {}
+        self._far_joined: dict[tuple, str] = {}
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
         return f"{prefix}{self._n}"
+
+    def at(self, scope: _Scope) -> str:
+        """The connection ``scope``'s rows live on."""
+        return scope.source or self.home
 
     # ── names ──
     def entity(self, name: str) -> OntologyEntity:
@@ -630,9 +651,8 @@ class _Compiler:
         """The SQL for a property of ``entity`` under ``alias``: its column, a further binding's column joined on
         the object's key (ON-1b), or — for an overlay property — the accepted values joined on the object's key.
         The source is read, never written."""
-        far = self.far.get(alias)
-        if far is not None:
-            return self.far_column(far, entity, p)
+        if alias in self.far_paths:
+            return self.far_column(scope, alias, entity, p)
         binding = property_binding(entity, p.name)
         if binding is not None:
             return self.binding_column(scope, alias, entity, binding, p)
@@ -700,12 +720,10 @@ class _Compiler:
         if problem:
             raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which the compiler "
                                      f"does not join: {problem}")
-        if alias in self.far:
-            raise ObjectQueryRefused(
-                f"{entity.id}.{p.name} is read from the binding {binding.name} of a type this query reads by key from "
-                f"another connection — such a type is read for its own columns only; anchor the query on {entity.id}")
+        if alias in self.far_paths:
+            return self.far_binding_column(scope, alias, entity, binding, p)
         source = binding_source(self.g, entity, binding)
-        if source != self.home:
+        if source != self.at(scope):
             return self.far_binding(scope, alias, entity, binding, p, source)
         slot = ("binding", alias, binding.name)
         joined = scope.join_alias.get(slot)
@@ -713,9 +731,7 @@ class _Compiler:
             b = entity.backing
             key = (b.primary_key if b is not None else "") or entity.identity_key
             joined = self._alias("b")
-            source = (latest_from(binding, joined) if binding.kind == "timeseries"
-                      else detail_from(binding, joined) if binding.kind == "detail"
-                      else binding_from(binding, joined))
+            source = self.binding_rows(binding, joined)
             if not source:
                 raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which names "
                                          "no source to read it from")
@@ -724,6 +740,14 @@ class _Compiler:
             scope.join_alias[slot] = joined
             self.note_binding(entity, binding, key)
         return f"{joined}.{quote_ident(column_of(binding, p.name))}"
+
+    @staticmethod
+    def binding_rows(binding: Binding, alias: str) -> str:
+        """The aliased FROM fragment a binding is joined through, one row per object: its latest row for a timeseries
+        binding, its rollups for a detail binding, its rows as they stand for a static one."""
+        return (latest_from(binding, alias) if binding.kind == "timeseries"
+                else detail_from(binding, alias) if binding.kind == "detail"
+                else binding_from(binding, alias))
 
     def object_key(self, entity: OntologyEntity) -> str:
         """The column that holds an object's key — what every binding joins on."""
@@ -756,10 +780,6 @@ class _Compiler:
         problem = binding_problem(entity, binding)
         if problem:
             raise ObjectQueryRefused(f"the readings of {binding.name} on {entity.id} cannot be read: {problem}")
-        if binding_source(self.g, entity, binding) != self.home:
-            raise ObjectQueryRefused(f"the readings of {binding.name} on {entity.id} live on another connection "
-                                     f"({binding_source(self.g, entity, binding)}) — a timeseries binding is not read "
-                                     "across two connections yet")
         if not self.object_key(entity):
             raise ObjectQueryRefused(f"{entity.id} declares no key, so its {binding.name} readings have nothing "
                                      "to hang off")
@@ -788,7 +808,14 @@ class _Compiler:
         set is filtered, never multiplied, exactly as a to-many link's condition is."""
         key = self.object_key(scope.entity)
         inner = self._alias("e")
-        conds = [f"{inner}.{quote_ident(binding.key)} = {scope.alias}.{quote_ident(key)}"]
+        source = binding_source(self.g, scope.entity, binding)
+        across = source != self.at(scope)
+        if across and scope is not self.top:
+            raise ObjectQueryRefused(f"the readings of {binding.name} on {scope.entity.id} live on another connection "
+                                     f"({source}) and are tested from inside a pre-aggregated link or an EXISTS — "
+                                     f"readings are read by key from the query's own level; anchor the query on "
+                                     f"{scope.entity.id}")
+        conds = [] if across else [f"{inner}.{quote_ident(binding.key)} = {scope.alias}.{quote_ident(key)}"]
         negate = False
         if rest:
             conds.append(self.readings_condition(inner, binding,
@@ -804,6 +831,21 @@ class _Compiler:
                            f"{'NOT EXISTS' if negate else 'EXISTS'} over {binding.table or 'a keyed SELECT'} — "
                            f"keeps {scope.entity.id} objects {'without' if negate else 'with'} a matching "
                            "reading; the set is filtered, never multiplied")
+        if across:
+            alias = self._alias("x")
+            where = f" WHERE {' AND '.join(conds)}" if conds else ""
+            read = KeyedRead(alias=alias, kind="exists", connection_id=source, table=None, sql=None, key="k",
+                             local=f"{scope.alias}.{quote_ident(key)}", target=scope.entity.id,
+                             label=f"readings of {binding.name} on {scope.entity.id}",
+                             base=(f"(SELECT DISTINCT {inner}.{quote_ident(binding.key)} AS k, 1 AS __present "
+                                   f"FROM {binding_from(binding, inner)}{where}) AS __r"))
+            read.need("__present")
+            self.far[alias] = read
+            self.far_paths[alias] = (read, "__r")
+            scope.joins.append(f"LEFT JOIN __far_{alias} AS {alias} ON {scope.alias}.{quote_ident(key)} = {alias}.k")
+            self.plan.append(f"readings of {binding.name} on {scope.entity.id}: cross-source — the {binding.key} values "
+                             f"with a matching reading on {source} are read by key, one row per key")
+            return f"{alias}.__present IS {'NULL' if negate else 'NOT NULL'}"
         sql = f"EXISTS (SELECT 1 FROM {binding_from(binding, inner)} WHERE {' AND '.join(conds)})"
         return f"NOT {sql}" if negate else sql
 
@@ -814,11 +856,18 @@ class _Compiler:
         if t.agg == "count_distinct":
             raise ObjectQueryRefused(f"{label}: count_distinct over the readings of {binding.name} does not add "
                                      f"up over {scope.entity.id} objects (one value can sit under two of them)")
+        source = binding_source(self.g, scope.entity, binding)
+        if source != self.at(scope) and scope is not self.top:
+            raise ObjectQueryRefused(f"{label}: the readings of {binding.name} on {scope.entity.id} live on another "
+                                     f"connection ({source}) and are aggregated from inside a pre-aggregated link or an "
+                                     f"EXISTS — readings are read by key from the query's own level; anchor the query "
+                                     f"on {scope.entity.id}")
         slot = (scope.alias, binding.name)
         r = self._readings.get(slot)
         if r is None:
             r = _Readings(binding=binding, entity_key=self.object_key(scope.entity), outer_alias=scope.alias,
-                          alias=self._alias("r"), inner_alias=self._alias("s"))
+                          alias=self._alias("r"), inner_alias=self._alias("s"), source=source,
+                          far=source != self.at(scope))
             self._readings[slot] = r
             self.note_readings(scope.entity, binding, "pre-aggregated",
                                f"readings of {binding.name} on {scope.entity.id}: "
@@ -933,12 +982,9 @@ class _Compiler:
         key = (from_alias, h.rel.id, h.name)
         if key in scope.join_alias:
             return scope.join_alias[key]
-        if from_alias in self.far:
-            raise ObjectQueryRefused(
-                f"link {h.describe()} would be followed from {h.source.id}, which this query reads by key from another "
-                f"connection — a path does not continue past a cross-source link yet; anchor the query on "
-                f"{h.source.id} (object_type '{h.source.api_name}') to follow it")
-        if entity_source(self.g, h.target) != self.home:
+        if from_alias in self.far_paths:
+            return self.far_hop(scope, from_alias, h)
+        if entity_source(self.g, h.target) != self.at(scope):
             return self.far_link(scope, from_alias, h)
         alias = self._alias("j")
         scope.joins.append(f"LEFT JOIN {backing_from(h.target, alias)} "
@@ -969,6 +1015,7 @@ class _Compiler:
         self.far[alias] = KeyedRead(alias=alias, kind="link", connection_id=source, table=table, sql=None,
                                     key=h.remote_col, local=f"{from_alias}.{quote_ident(h.local_col)}",
                                     label=f"link {h.name} ({h.source.id} → {h.target.id})", target=h.target.id)
+        self.far_paths[alias] = (self.far[alias], "__r")
         scope.joins.append(f"LEFT JOIN __far_{alias} AS {alias} "
                            f"ON {from_alias}.{quote_ident(h.local_col)} = {alias}.{quote_ident(h.remote_col)}")
         scope.join_alias[(from_alias, h.rel.id, h.name)] = alias
@@ -978,28 +1025,81 @@ class _Compiler:
                        f"measurement, so it cannot multiply {h.source.id} rows")
         return alias
 
-    def far_column(self, far: KeyedRead, entity: OntologyEntity, p: EntityProperty) -> str:
-        """ON-8 — a property of a type this query reads by key from another connection: a column its backing holds."""
+    def far_value(self, read: KeyedRead, inner: str, column: str) -> str:
+        """O2 — the name the keyed read ``read`` returns ``inner``'s column under: the column itself for the read's own
+        rows, a projection for a type or binding joined inside its statement."""
+        if inner == "__r":
+            read.need(column)
+            return column
+        return read.project(f"{inner}__{column}", f"{inner}.{quote_ident(column)}")
+
+    def far_column(self, scope: _Scope, alias: str, entity: OntologyEntity, p: EntityProperty) -> str:
+        """ON-8 — a property of a type this query reads by key from another connection: a column its backing holds, or
+        (O2) one a binding of that type supplies."""
+        read, inner = self.far_paths[alias]
         column = next((k for k in entity.properties or {} if k.lower() == p.name.lower()), None)
         if column is None:
+            binding = property_binding(entity, p.name)
+            if binding is not None:
+                return self.binding_column(scope, alias, entity, binding, p)
             names = sorted(entity.properties or {})
             raise ObjectQueryRefused(
-                f"{entity.id}.{p.name} is not a column of {entity.id}'s backing — a type read by key from another "
-                f"connection is read for its own columns, not for what a binding, an edit or a derivation supplies "
-                f"({', '.join(names)[:200]})", names)
-        far.need(column)
-        return f"{far.alias}.{quote_ident(column)}"
+                f"{entity.id}.{p.name} is neither a column of {entity.id}'s backing nor one a binding of it supplies — "
+                f"a type read by key from another connection is read for its own columns and bindings, not for what an "
+                f"edit or a derivation supplies ({', '.join(names)[:200]})", names)
+        return f"{read.alias}.{quote_ident(self.far_value(read, inner, column))}"
+
+    def far_hop(self, scope: _Scope, from_alias: str, h: ObjectLink) -> str:
+        """O2 — a to-one link followed past a type this query reads by key from another connection. A target on that
+        same connection is joined inside the keyed read's own statement — to-one by measurement, so the read still
+        returns one row per key. A target anywhere else is a second keyed read, keyed by the values the first one's
+        rows hold."""
+        read, inner = self.far_paths[from_alias]
+        target_source = entity_source(self.g, h.target)
+        slot = (from_alias, h.rel.id, h.name)
+        if target_source == read.connection_id:
+            joined = self._alias("__q")
+            read.joins.append(f"LEFT JOIN {backing_from(h.target, joined)} "
+                              f"ON {inner}.{quote_ident(h.local_col)} = {joined}.{quote_ident(h.remote_col)}")
+            alias = self._alias("x")
+            self.far_paths[alias] = (read, joined)
+            scope.join_alias[slot] = alias
+            self.note_link(h, "joined inside a keyed read",
+                           f"link {h.describe()}: joined inside the keyed read of {read.target} on {read.connection_id} "
+                           "— to-one by measurement, so that read still returns one row per key")
+            return alias
+        if scope is not self.top:
+            raise ObjectQueryRefused(
+                f"link {h.describe()} crosses to {h.target.id} on another connection ({target_source}) from inside a "
+                f"pre-aggregated link or an EXISTS — a cross-source link is read by key from the query's own level; "
+                f"anchor the query on {h.source.id}")
+        b = h.target.backing
+        table = (b.table if b is not None and b.kind == "table" else None) or ""
+        if not table:
+            raise ObjectQueryRefused(f"link {h.describe()} crosses to {h.target.id} on another connection "
+                                     f"({target_source}), which is read through a keyed SELECT — a cross-source link "
+                                     "reads a table")
+        local = self.far_value(read, inner, h.local_col)
+        alias = self._alias("x")
+        child = KeyedRead(alias=alias, kind="link", connection_id=target_source, table=table, sql=None,
+                          key=h.remote_col, local=local, via=read.alias, target=h.target.id,
+                          label=f"link {h.name} ({h.source.id} → {h.target.id})")
+        self.far[alias] = child
+        self.far_paths[alias] = (child, "__r")
+        scope.joins.append(f"LEFT JOIN __far_{alias} AS {alias} "
+                           f"ON {read.alias}.{quote_ident(local)} = {alias}.{quote_ident(h.remote_col)}")
+        scope.join_alias[slot] = alias
+        self.note_link(h, "read by key",
+                       f"link {h.describe()}: cross-source — {h.target.id} lives on {target_source}, so its rows are read "
+                       f"by key from the {h.local_col} values the keyed read of {read.target} on {read.connection_id} "
+                       "returns; to-one by measurement, so it cannot multiply those rows")
+        return alias
 
     def far_binding(self, scope: _Scope, alias: str, entity: OntologyEntity, binding: Binding, p: EntityProperty,
                     source: str) -> str:
         """ON-8 — a property a binding reads from another connection: the binding is READ BY KEY — the objects' own
         keys — and joined beside them in the stage. One row per object by measurement, so only a static binding, and
         only from the query's own FROM level."""
-        if binding.kind != "static":
-            raise ObjectQueryRefused(
-                f"{entity.id}.{p.name} is read from the {binding.kind} binding {binding.name}, which lives on another "
-                f"connection ({source}) — a cross-source binding is read by key, one row per object, so only a static "
-                "one is read yet")
         if scope is not self.top:
             raise ObjectQueryRefused(
                 f"{entity.id}.{p.name} is read from the binding {binding.name} on another connection ({source}) from "
@@ -1011,7 +1111,8 @@ class _Compiler:
             joined = self._alias("x")
             self.far[joined] = KeyedRead(alias=joined, kind="binding", connection_id=source, table=binding.table,
                                          sql=binding.sql, key=binding.key, local=f"{alias}.{quote_ident(key)}",
-                                         label=f"binding {binding.name} on {entity.id}", target=entity.id)
+                                         label=f"binding {binding.name} on {entity.id}", target=entity.id,
+                                         base=self.binding_base(binding))
             scope.joins.append(f"LEFT JOIN __far_{joined} AS {joined} "
                                f"ON {alias}.{quote_ident(key)} = {joined}.{quote_ident(binding.key)}")
             scope.join_alias[slot] = joined
@@ -1029,6 +1130,55 @@ class _Compiler:
         column = column_of(binding, p.name)
         self.far[joined].need(column)
         return f"{joined}.{quote_ident(column)}"
+
+    def binding_base(self, binding: Binding) -> str:
+        """O3 — the one-row-per-object FROM fragment a binding read by key reads through: its latest row per key for a
+        timeseries binding, its rollups per key for a detail binding; "" for a static one, read as it stands."""
+        return "" if binding.kind == "static" else self.binding_rows(binding, "__r")
+
+    def far_binding_column(self, scope: _Scope, alias: str, entity: OntologyEntity, binding: Binding,
+                           p: EntityProperty) -> str:
+        """O2 — a property a binding supplies to a type this query reads by key from another connection. A binding on
+        that same connection is joined inside the keyed read's statement, one row per object by measurement; a binding
+        anywhere else is a second keyed read, keyed by the object keys the first one returns."""
+        read, inner = self.far_paths[alias]
+        source = binding_source(self.g, entity, binding)
+        column = column_of(binding, p.name)
+        key = self.object_key(entity)
+        if source == read.connection_id:
+            slot = (alias, binding.name)
+            joined = self._far_joined.get(slot)
+            if joined is None:
+                joined = self._alias("__q")
+                read.joins.append(f"LEFT JOIN {self.binding_rows(binding, joined)} "
+                                  f"ON {inner}.{quote_ident(key)} = {joined}.{quote_ident(binding.key)}")
+                self._far_joined[slot] = joined
+                self.plan.append(f"binding {binding.name} on {entity.id}: joined inside the keyed read of {read.target} "
+                                 f"on {read.connection_id} ({key} = {binding.key}) — one row per {entity.id} by "
+                                 f"measurement ({binding.note})")
+            name = read.project(f"{joined}__{column}", f"{joined}.{quote_ident(column)}")
+            return f"{read.alias}.{quote_ident(name)}"
+        if scope is not self.top:
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is read from the binding {binding.name} on another connection ({source}) from "
+                "inside a pre-aggregated link or an EXISTS — a cross-source binding is read from the query's own level")
+        slot = (alias, binding.name, "read")
+        child = self._far_joined.get(slot)
+        if child is None:
+            local = self.far_value(read, inner, key)
+            child = self._alias("x")
+            self.far[child] = KeyedRead(alias=child, kind="binding", connection_id=source, table=binding.table,
+                                        sql=binding.sql, key=binding.key, local=local, via=read.alias,
+                                        base=self.binding_base(binding), target=entity.id,
+                                        label=f"binding {binding.name} on {entity.id}")
+            scope.joins.append(f"LEFT JOIN __far_{child} AS {child} "
+                               f"ON {read.alias}.{quote_ident(local)} = {child}.{quote_ident(binding.key)}")
+            self._far_joined[slot] = child
+            self.plan.append(f"binding {binding.name} on {entity.id}: cross-source — read by key on {source} from the "
+                             f"{key} values the keyed read of {read.target} on {read.connection_id} returns; one row per "
+                             f"{entity.id} by measurement ({binding.note})")
+        self.far[child].need(column)
+        return f"{child}.{quote_ident(column)}"
 
     def column(self, scope: _Scope, path: str, purpose: str) -> tuple[str, EntityProperty, list[ObjectLink]]:
         """A property reached through to-one links only."""
@@ -1087,15 +1237,19 @@ class _Compiler:
                     f"filter '{f.path} {f.op} {f.value_path}' crosses {h.describe()}, a to-many link — two properties "
                     f"are compared at the object's own grain; anchor the query on {h.target.id} and reach "
                     f"{h.source.id} through its link")
-            return self.exists(alias, h, ".".join(segs[i + 1:]), f)
+            return self.exists(scope, alias, h, ".".join(segs[i + 1:]), f)
         raise ObjectQueryRefused(f"filter path '{f.path}' did not resolve")
 
-    def exists(self, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter) -> str:
-        if outer_alias in self.far or entity_source(self.g, h.target) != self.home:
+    def exists(self, scope: _Scope, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter) -> str:
+        target_source = entity_source(self.g, h.target)
+        if outer_alias in self.far_paths or (target_source != self.at(scope) and scope is not self.top):
             raise ObjectQueryRefused(
-                f"a condition through {h.describe()} would test rows on another connection inside an EXISTS, and no "
-                "statement sees two connections — a condition across connections reads a to-one link's columns")
-        inner = _Scope(entity=h.target, alias=self._alias("e"))
+                f"a condition through {h.describe()} would test rows on another connection from inside a type read by "
+                "key, a pre-aggregated link or an EXISTS — a keyed EXISTS is read from the query's own level; anchor the "
+                f"query on {h.source.id}")
+        if target_source != self.at(scope):
+            return self.far_exists(scope, outer_alias, h, rest, f, target_source)
+        inner = _Scope(entity=h.target, alias=self._alias("e"), source=scope.source)
         conds = [f"{inner.alias}.{quote_ident(h.remote_col)} = {outer_alias}.{quote_ident(h.local_col)}"]
         negate = False
         if rest:
@@ -1109,6 +1263,38 @@ class _Compiler:
                                      f"{h.target.id}; the set is filtered, never multiplied")
         sql = f"EXISTS (SELECT 1 FROM {backing_from(h.target, inner.alias)}{joins} WHERE {' AND '.join(conds)})"
         return f"NOT {sql}" if negate else sql
+
+    def far_exists(self, scope: _Scope, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter,
+                   source: str) -> str:
+        """O3 — a condition through a to-many link to a type on another connection. The keys there with a matching row
+        are read by key, one row per key, and tested beside the query's rows: the set is filtered, never multiplied,
+        exactly as an EXISTS filters it."""
+        inner = _Scope(entity=h.target, alias=self._alias("e"), source=source)
+        conds: list[str] = []
+        negate = False
+        if rest:
+            conds.append(self.condition(inner, ObjectFilter(path=rest, op=f.op, value=f.value, values=f.values)))
+        else:
+            negate = f.op == "not_exists"
+        joins = "".join(f" {j}" for j in inner.joins)
+        where = f" WHERE {' AND '.join(conds)}" if conds else ""
+        alias = self._alias("x")
+        read = KeyedRead(alias=alias, kind="exists", connection_id=source, table=None, sql=None, key=h.remote_col,
+                         local=f"{outer_alias}.{quote_ident(h.local_col)}", target=h.target.id,
+                         label=f"link {h.name} ({h.source.id} → {h.target.id})",
+                         base=(f"(SELECT DISTINCT {inner.alias}.{quote_ident(h.remote_col)} AS {quote_ident(h.remote_col)}, "
+                               f"1 AS __present FROM {backing_from(h.target, inner.alias)}{joins}{where}) AS __r"))
+        read.need("__present")
+        self.far[alias] = read
+        self.far_paths[alias] = (read, "__r")
+        scope.joins.append(f"LEFT JOIN __far_{alias} AS {alias} "
+                           f"ON {outer_alias}.{quote_ident(h.local_col)} = {alias}.{quote_ident(h.remote_col)}")
+        self.note_link(h, "anti-join, read by key" if negate else "semi-join, read by key",
+                       f"link {h.describe()}: cross-source {'NOT EXISTS' if negate else 'EXISTS'} — the {h.remote_col} "
+                       f"values with a matching {h.target.id} on {source} are read by key, one row per key, and keep "
+                       f"{h.source.id} objects {'without' if negate else 'with'} one; the set is filtered, never "
+                       "multiplied")
+        return f"{alias}.__present IS {'NULL' if negate else 'NOT NULL'}"
 
     def where(self, scope: _Scope, filters: list[ObjectFilter]) -> str:
         return " AND ".join(f"({self.condition(scope, f)})" for f in filters)
@@ -1256,9 +1442,10 @@ class _Compiler:
         cond = self.where(scope, t.where)
         if entity is not None:
             value = self.colref(scope, alias, entity, p)
+        elif alias in self.far_paths:
+            read, inner = self.far_paths[alias]            # ON-8 — a linked object's key, read by key; O2 — at any depth
+            value = f"{read.alias}.{quote_ident(self.far_value(read, inner, p.name))}"
         else:
-            if alias in self.far:
-                self.far[alias].need(p.name)                 # ON-8 — a linked object's key, read by key
             value = f"{alias}.{quote_ident(p.name)}"
         if t.agg in ("sum", "avg") and _is_bool(p):
             value = f"CAST({value} AS INTEGER)"
@@ -1267,11 +1454,13 @@ class _Compiler:
         return _agg_sql(t.agg, value, cond)
 
     def many_measure(self, scope: _Scope, h: ObjectLink, rest: str, t: MeasureTerm, label: str) -> str:
-        if entity_source(self.g, h.target) != self.home:
+        source = entity_source(self.g, h.target)
+        across = source != self.at(scope)
+        if across and scope is not self.top:
             raise ObjectQueryRefused(
-                f"{label}: {h.describe()} is to-many and crosses to another connection "
-                f"({entity_source(self.g, h.target)}) — a pre-aggregation across two connections is not read yet; "
-                f"anchor the query on {h.target.id} and reach {h.source.id} through its to-one link")
+                f"{label}: {h.describe()} is to-many and crosses to another connection ({source}) from inside a "
+                "pre-aggregated link or an EXISTS — a pre-aggregation is read by key from the query's own level; anchor "
+                f"the query on {h.source.id}")
         agg = t.agg
         if agg == "count_distinct":
             raise ObjectQueryRefused(
@@ -1281,11 +1470,13 @@ class _Compiler:
         ml = self._many.get(key)
         if ml is None:
             ml = _ManyLink(hop=h, outer_alias=scope.alias, alias=self._alias("a"),
-                           inner=_Scope(entity=h.target, alias=self._alias("m")))
+                           inner=_Scope(entity=h.target, alias=self._alias("m"), source=source), far=across)
             self._many[key] = ml
-            self.note_link(h, "pre-aggregated",
+            self.note_link(h, "pre-aggregated, read by key" if across else "pre-aggregated",
                            f"link {h.describe()}: pre-aggregated per {h.remote_col} before the join — 1:N by "
-                           f"measurement, so each {h.source.id} meets at most one aggregate row")
+                           f"measurement, so each {h.source.id} meets at most one aggregate row"
+                           + (f"; {h.target.id} lives on {source}, so the pre-aggregation runs there and is read by "
+                              "key" if across else ""))
         cond = self.where(ml.inner, t.where)
         if not rest:
             if agg != "count":
@@ -1415,8 +1606,15 @@ class _Compiler:
 
         sql = f"SELECT {', '.join(select)} FROM {backing_from(anchor, 't0')}"
         sql += "".join(f" {j}" for j in scope.joins)
-        sql += "".join(f" {ml.join_sql()}" for ml in self._many.values())
-        sql += "".join(f" {r.join_sql()}" for r in self._readings.values())
+        for ml in self._many.values():
+            sql += " " + (self.pre_aggregated(ml.alias, ml.pre_aggregate(), ml.inner.source, ml.outer_alias,
+                                              ml.hop.local_col, ml.columns, ml.hop.target.id,
+                                              f"link {ml.hop.name} ({ml.hop.source.id} → {ml.hop.target.id}), "
+                                              "pre-aggregated") if ml.far else ml.join_sql())
+        for r in self._readings.values():
+            sql += " " + (self.pre_aggregated(r.alias, r.pre_aggregate(), r.source, r.outer_alias, r.entity_key,
+                                              r.columns, r.binding.name,
+                                              f"readings of {r.binding.name}, pre-aggregated") if r.far else r.join_sql())
         if where:
             sql += " WHERE " + " AND ".join(f"({w})" for w in where)
         if grouped:
@@ -1432,6 +1630,18 @@ class _Compiler:
                                    columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
                                    dimensions=dims, measures=measure_names, overlay=self.overlay,
                                    bindings=self.bindings, cross_source=cross)
+
+    def pre_aggregated(self, alias: str, select: str, source: str, outer: str, local: str,
+                       columns: list[tuple[str, str]], target: str, label: str) -> str:
+        """O3 — a pre-aggregation whose rows live on another connection: it runs there, one row per key by construction,
+        is read by the keys the query's rows hold, and is joined beside them in the stage."""
+        read = KeyedRead(alias=alias, kind="aggregate", connection_id=source, table=None, sql=None, key="k",
+                         local=f"{outer}.{quote_ident(local)}", label=label, target=target, base=f"({select}) AS __r")
+        for name, _ in columns:
+            read.need(name)
+        self.far[alias] = read
+        self.far_paths[alias] = (read, "__r")
+        return f"LEFT JOIN __far_{alias} AS {alias} ON {outer}.{quote_ident(local)} = {alias}.k"
 
     def split_far(self, sql: str):
         """ON-8 — the assembled statement split at its keyed reads: what runs on the anchor's connection, what each

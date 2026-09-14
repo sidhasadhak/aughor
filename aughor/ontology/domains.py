@@ -214,10 +214,6 @@ def bind_source(domain: Domain, entity_id: str, name: str, spec: dict, open_sour
         spec.pop("connection_id", None)
     else:
         check_source(domain, where)
-        if (spec.get("kind") or "static") != "static":
-            raise DomainRefused(400, (
-                f"a binding on another connection than {entity_id}'s is read by key, one row per object — bind it "
-                f"`static`; a {spec.get('kind')} binding across two connections is not read yet"))
     objects = open_source(home)
     rows = objects if where == home else open_source(where)
     try:

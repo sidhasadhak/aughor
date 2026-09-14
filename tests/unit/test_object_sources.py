@@ -57,8 +57,17 @@ CREATE TABLE ecommerce.regions AS
 SELECT * FROM (VALUES ('US', 'Americas'), ('CA', 'Americas'), ('BR', 'Americas'), ('GB', 'Europe'), ('FR', 'Europe'),
                       ('DE', 'Europe'), ('JP', 'Asia'), ('IN', 'Asia'), ('AU', 'Oceania'), ('NG', 'Africa'))
        AS t(country, region);
+CREATE TABLE ecommerce.country_managers AS
+SELECT * FROM (VALUES ('US', 'Avery'), ('CA', 'Blake'), ('BR', 'Cruz'), ('GB', 'Drew'), ('FR', 'Eden'), ('DE', 'Finn'),
+                      ('JP', 'Gray'), ('IN', 'Hale'), ('AU', 'Ira')) AS t(country, manager);
+CREATE TABLE ecommerce.payment_events AS
+SELECT printf('O%06d', i) AS order_id, TIMESTAMP '2024-01-01 00:00:00' + to_days(i % 30) + to_hours(e) AS event_at,
+       CASE e WHEN 0 THEN 'authorized' WHEN 1 THEN 'captured' ELSE 'settled' END AS status,
+       ROUND(((i * 7 + e * 13) % 400)::NUMERIC, 2) AS amount
+FROM range(1, 5001) t(i), range(0, 3) s(e) WHERE i % 5 <> 0 AND (e < 2 OR i % 2 = 0);
 """
-SPLIT = {"shop": ("orders", "order_items"), "crm": ("customers", "products", "reviews", "payments", "regions")}
+SPLIT = {"shop": ("orders", "order_items", "country_managers"),
+         "crm": ("customers", "products", "reviews", "payments", "regions", "payment_events")}
 
 PLACED_BY = {"from_entity": "Order", "to_entity": "Customer", "name": "placed_by", "from_column": "customer_id",
              "to_column": "customer_id"}
@@ -72,6 +81,15 @@ PAYMENT = {"schema_name": "ecommerce", "table": "payments", "key": "order_id",
            "properties": {"psp": "psp", "paid_amount": "amount", "payment_status": "status"}}
 SPEND = {"sql": "SELECT customer_id, lifetime_spend AS spend FROM ecommerce.customers", "key": "customer_id",
          "properties": {"spend": "spend"}}
+MANAGED_BY = {"from_entity": "Region", "to_entity": "Manager", "name": "managed_by", "from_column": "country",
+              "to_column": "country"}
+ORDER_COUNT = {"sql": "SELECT customer_id, COUNT(*) AS order_count FROM ecommerce.orders GROUP BY customer_id",
+               "key": "customer_id", "properties": {"order_count": "order_count"}}
+PAYMENT_LATEST = {"schema_name": "ecommerce", "table": "payment_events", "key": "order_id", "kind": "timeseries",
+                  "time_column": "event_at", "properties": {"latest_status": "status", "latest_amount": "amount"}}
+PAYMENT_EVENTS = {"schema_name": "ecommerce", "table": "payment_events", "key": "order_id", "kind": "detail",
+                  "rollups": {"event_count": {"column": "status", "agg": "count"},
+                              "paid_total": {"column": "amount", "agg": "sum"}}}
 
 
 @pytest.fixture(scope="module")
@@ -131,6 +149,27 @@ def model(sources: dict, name: str, *, shop: str, crm: str):
 def both(sources):
     """``(across, reference)``: the same ontology declared across the two halves, and on the whole file."""
     return model(sources, "default", shop="shop", crm="crm"), model(sources, "reference", shop="whole", crm="whole")
+
+
+def wide_model(sources: dict, name: str, *, shop: str, crm: str):
+    """`model`, and what reaches past a type read by key: a Manager per country where `shop` names (Region managed_by
+    Manager — a link from a type on `crm` to one on `shop`), the orders each customer placed read from `shop` onto
+    Customer, and each order's payment events read from `crm` onto Order — its latest event (timeseries) and its
+    rollups (detail)."""
+    domain = model(sources, name, shop=shop, crm=crm)
+    declare_entity(domain, typed("Manager", "country_managers", "country", sources[shop]), open_connection_for)
+    declare_link(domain, MANAGED_BY, open_connection_for)
+    bind_source(domain, "Customer", "orders_placed", {**ORDER_COUNT, "connection_id": sources[shop]}, open_connection_for)
+    bind_source(domain, "Order", "payment_latest", {**PAYMENT_LATEST, "connection_id": sources[crm]}, open_connection_for)
+    bind_source(domain, "Order", "payment_events", {**PAYMENT_EVENTS, "connection_id": sources[crm]}, open_connection_for)
+    return domain
+
+
+@pytest.fixture
+def wide(sources):
+    """``(across, reference)`` for `wide_model`."""
+    return (wide_model(sources, "default", shop="shop", crm="crm"),
+            wide_model(sources, "reference", shop="whole", crm="whole"))
 
 
 def normal(rows) -> list[tuple]:
@@ -264,19 +303,21 @@ def test_a_binding_across_two_connections_is_counted_as_the_same_binding_is_on_o
     assert "met in memory" in far.note and "met in memory" not in near.note
 
 
-def test_a_binding_read_across_two_connections_binds_only_static(sources):
+def test_a_binding_read_across_two_connections_binds_whatever_its_kind_but_is_never_absorbed(sources):
+    """O3 — read by key, a detail binding is its rollups per object and a timeseries binding its latest row per object:
+    one row per object either way, so both bind across two connections. Absorbing a part still belongs to the ontology
+    of the connection that holds both tables."""
     domain = resolve_domain()
     declare_entity(domain, typed("Order", "orders", "order_id", sources["shop"]), open_connection_for)
     rolled = {"connection_id": sources["crm"], "schema_name": "ecommerce", "table": "reviews", "key": "order_id",
               "kind": "detail", "rollups": {"review_count": {"column": "review_id", "agg": "count"}}}
-    with pytest.raises(DomainRefused) as detail:
-        bind_source(domain, "Order", "reviews", rolled, open_connection_for)
+    bind_source(domain, "Order", "reviews", rolled, open_connection_for)
     with pytest.raises(DomainRefused) as absorbed:
         bind_source(domain, "Order", "payment", {**PAYMENT, "connection_id": sources["crm"], "absorb": True},
                     open_connection_for)
-    assert (detail.value.status, absorbed.value.status) == (400, 400)
-    assert "static" in detail.value.detail
-    assert domain_graph(domain).entities["Order"].bindings == []
+    assert absorbed.value.status == 400
+    [reviews] = domain_graph(domain).entities["Order"].bindings
+    assert (reviews.name, reviews.kind, reviews.connection_id) == ("reviews", "detail", sources["crm"])
 
 
 # ── queries across two connections equal the single statement ──────────────────────────────────
@@ -370,20 +411,114 @@ def test_a_query_that_reads_nothing_on_another_connection_stays_one_statement(bo
     assert [link["treatment"] for link in compiled.links] == ["joined"]
 
 
+# O2/O3 — reads past a type read by key, and the shapes that cross as one row per key: each held to the single statement.
+DEEPER = {
+    "orders by customer region, a join inside a keyed read": {
+        "object_type": "Order", "measures": [{"agg": "count", "name": "orders"}], "by": ["placed_by.located_in.region"]},
+    "distinct customers by region, a far type's own key read beside a join inside its read": {
+        "object_type": "Order", "measures": [{"agg": "count_distinct", "path": "placed_by", "name": "customers"}],
+        "by": ["placed_by.located_in.region"]},
+    "revenue from big spenders, a binding of a type read by key": {
+        "object_type": "Order", "filters": [{"path": "placed_by.spend", "op": ">", "value": 5000}],
+        "measures": [{"agg": "sum", "path": "total_amount"}], "by": ["status"]},
+    "orders by region manager, a keyed read keyed by a keyed read": {
+        "object_type": "Order", "measures": [{"agg": "count", "name": "orders"}],
+        "by": ["placed_by.located_in.managed_by.manager"]},
+    "units by their customer's order count, a binding read by a keyed read": {
+        "object_type": "OrderItem", "measures": [{"agg": "sum", "path": "quantity"}],
+        "by": ["belongs_to.placed_by.order_count"]},
+    "orders by latest payment event, a timeseries binding read by key": {
+        "object_type": "Order", "measures": [{"agg": "count", "name": "orders"}], "by": ["latest_status"]},
+    "paid total by order status, a detail binding read by key": {
+        "object_type": "Order", "measures": [{"agg": "sum", "path": "paid_total"}, {"agg": "sum", "path": "event_count"}],
+        "by": ["status"]},
+    "payment readings by order status, pre-aggregated by key": {
+        "object_type": "Order", "by": ["status"],
+        "measures": [{"agg": "sum", "path": "payment_latest.latest_amount"},
+                     {"agg": "count", "path": "payment_latest", "name": "readings"}]},
+    "orders with a captured payment reading, tested by key": {
+        "object_type": "Order", "filters": [{"path": "payment_latest.latest_status", "value": "captured"}],
+        "measures": [{"agg": "count", "name": "orders"}]},
+    "customer revenue by country, a to-many link pre-aggregated by key": {
+        "object_type": "Customer", "by": ["country"],
+        "measures": [{"agg": "sum", "path": "customer_to_order.total_amount"},
+                     {"agg": "count", "path": "customer_to_order", "name": "orders"},
+                     {"agg": "avg", "path": "customer_to_order.total_amount"}]},
+    "customers with a delivered order, an EXISTS read by key": {
+        "object_type": "Customer", "filters": [{"path": "customer_to_order.status", "value": "delivered"}],
+        "measures": [{"agg": "count", "name": "customers"}], "by": ["country"]},
+    "customers without an order, a NOT EXISTS read by key": {
+        "object_type": "Customer", "filters": [{"path": "customer_to_order", "op": "not_exists"}],
+        "measures": [{"agg": "count", "name": "customers"}]},
+    "products in a delivered order, an EXISTS read by key that joins on its own connection": {
+        "object_type": "Product", "filters": [{"path": "product_to_order_item.belongs_to.status", "value": "delivered"}],
+        "measures": [{"agg": "count", "name": "products"}], "by": ["category"]},
+    "delivered units by category, a pre-aggregation read by key that joins on its own connection": {
+        "object_type": "Product", "by": ["category"],
+        "measures": [{"agg": "sum", "path": "product_to_order_item.quantity",
+                      "where": [{"path": "belongs_to.status", "value": "delivered"}]}]},
+}
+
+
+@pytest.mark.parametrize("name", sorted(DEEPER))
+def test_what_reaches_past_a_type_read_by_key_returns_exactly_the_rows_of_the_single_statement(wide, name):
+    across, same = wide
+    rows, compiled, result = answer(across, DEEPER[name])
+    single, one, _ = answer(same, DEEPER[name])
+    assert compiled.cross_source is not None and one.cross_source is None
+    assert not result.error, result.error
+    assert rows and rows == single
+
+
+def test_a_read_past_a_type_read_by_key_joins_on_its_own_connection_and_chains_to_another(wide, sources):
+    across, _ = wide
+    graph = domain_graph(across)
+    region = compile_object_query(DEEPER["orders by customer region, a join inside a keyed read"], graph,
+                                  fiscal_start_month=1)
+    [read] = region.cross_source.reads
+    assert (read.connection_id, read.via, len(read.joins)) == (sources["crm"], "", 1)
+    assert "regions" in read.from_clause() and [name for name, _ in read.projections]
+    manager = compile_object_query(DEEPER["orders by region manager, a keyed read keyed by a keyed read"], graph,
+                                   fiscal_start_month=1)
+    parent, child = manager.cross_source.reads
+    assert (parent.connection_id, child.connection_id, child.via) == (sources["crm"], sources["shop"], parent.alias)
+    assert child.local in [name for name, _ in parent.projections]
+    assert f"{parent.alias}.__jk_{child.alias}" in manager.cross_source.stage_sql
+    absent = compile_object_query(DEEPER["customers without an order, a NOT EXISTS read by key"], graph,
+                                  fiscal_start_month=1)
+    [semi] = absent.cross_source.reads
+    assert semi.kind == "exists" and semi.columns == ["__present"] and "IS NULL" in absent.cross_source.stage_sql.upper()
+    latest = compile_object_query(DEEPER["orders by latest payment event, a timeseries binding read by key"], graph,
+                                  fiscal_start_month=1)
+    [binding] = latest.cross_source.reads
+    assert binding.kind == "binding" and binding.base.startswith("(SELECT DISTINCT")
+    spend = compile_object_query(DEEPER["revenue from big spenders, a binding of a type read by key"], graph,
+                                 fiscal_start_month=1)
+    [spent] = spend.cross_source.reads                     # Customer's binding joined inside Customer's own keyed read
+    assert (spent.connection_id, len(spent.joins), spent.via) == (sources["crm"], 1, "")
+    # A keyed read's own statement names each column once: DuckDB renames a repeated one inside a subquery, but Postgres
+    # refuses the ambiguous reference, so the key a query also reads is projected once beside the joins' columns.
+    distinct = compile_object_query(
+        DEEPER["distinct customers by region, a far type's own key read beside a join inside its read"], graph,
+        fiscal_start_month=1)
+    [keyed] = distinct.cross_source.reads
+    assert "customer_id" in keyed.columns and keyed.projections
+    import sqlglot
+    statement = keyed.from_clause()
+    select = sqlglot.parse_one(statement[1:statement.rindex(") AS __far")], read="duckdb")
+    names = [e.alias_or_name for e in select.expressions]
+    assert "customer_id" in names and len(names) == len(set(names)), names
+
+
 REFUSED = {
-    "a path past a type read by key": (
-        {"object_type": "Order", "measures": [{"agg": "count"}], "by": ["placed_by.located_in.region"]},
-        "does not continue past a cross-source link"),
-    "a binding of a type read by key": (
-        {"object_type": "Order", "measures": [{"agg": "count"}], "by": ["placed_by.spend"]},
-        "not a column of Customer's backing"),
-    "a to-many link across two connections": (
-        {"object_type": "Customer", "measures": [{"agg": "count", "path": "customer_to_order"}]},
-        "to-many and crosses to another connection"),
-    "an EXISTS across two connections": (
-        {"object_type": "Customer", "filters": [{"path": "customer_to_order", "op": "exists"}],
+    "an EXISTS from a type read by key": (
+        {"object_type": "Order", "filters": [{"path": "placed_by.customer_to_order", "op": "exists"}],
          "measures": [{"agg": "count"}]},
-        "inside an EXISTS"),
+        "from inside a type read by key"),
+    "a to-many link crossed from inside a keyed EXISTS": (
+        {"object_type": "Customer", "measures": [{"agg": "count"}],
+         "filters": [{"path": "customer_to_order.order_to_order_item.is_for.category", "value": "Kitchen"}]},
+        "from inside a pre-aggregated link or an EXISTS"),
     "a keyed read inside a pre-aggregated link": (
         {"object_type": "Order", "measures": [{"agg": "max", "path": "order_to_order_item.is_for.price"}]},
         "from inside a pre-aggregated link or an EXISTS"),
@@ -405,19 +540,13 @@ def test_what_does_not_cross_by_key_is_refused_with_the_reason_and_answers_on_on
     assert one.cross_source is None and not result.error and rows
 
 
-def test_a_binding_on_another_connection_that_is_not_static_is_refused_by_the_compiler_too(both):
-    across, _ = both
-    graph = domain_graph(across)
-    payment = next(b for b in graph.entities["Order"].bindings if b.name == "payment")
-    payment.kind, payment.time_column = "timeseries", "order_id"            # as though it had been bound that way
-    with pytest.raises(ObjectQueryRefused) as latest:
-        compile_object_query({"object_type": "Order", "measures": [{"agg": "count"}], "by": ["psp"]}, graph,
-                             fiscal_start_month=1)
-    with pytest.raises(ObjectQueryRefused) as readings:
-        compile_object_query({"object_type": "Order", "measures": [{"agg": "sum", "path": "payment.paid_amount"}]}, graph,
-                             fiscal_start_month=1)
-    assert "only a static one" in latest.value.reason
-    assert "not read across two connections" in readings.value.reason
+def test_a_timeseries_and_a_detail_binding_on_another_connection_bind_and_are_measured(wide, sources):
+    across, _ = wide
+    order = domain_graph(across).entities["Order"]
+    latest = next(b for b in order.bindings if b.name == "payment_latest")
+    events = next(b for b in order.bindings if b.name == "payment_events")
+    assert (latest.kind, latest.connection_id, latest.verified) == ("timeseries", sources["crm"], True)
+    assert (events.kind, events.connection_id, events.verified) == ("detail", sources["crm"], True)
 
 
 def test_one_table_name_on_two_connections_is_two_tables_and_on_one_is_a_duplicate(sources):
@@ -583,8 +712,13 @@ def test_the_doors_declare_query_measure_and_withdraw_an_organisations_ontology_
     assert [t["read"] for t in ran["timings"]][0] == "home" and ran["timings"][-1]["read"] == "stage"
     far = next(t for t in ran["timings"] if t.get("kind") == "link")
     assert (far["keys"], far["rows"], far["queries"]) == (500, 500, 1)
-    refused = client.post("/objects/query", params=domain,
-                          json={"object_type": "Customer", "measures": [{"agg": "count", "path": "customer_to_order"}]})
+    many = client.post("/objects/query", params=domain,
+                       json={"object_type": "Customer", "measures": [{"agg": "count", "path": "customer_to_order"}]}).json()
+    assert many["path"] == "compiled" and many["error"] is None       # O3 — a to-many link across two connections
+    assert normal(many["rows"]) == reference(sources, (
+        "SELECT COUNT(*) FROM ecommerce.customers c JOIN ecommerce.orders o ON o.customer_id = c.customer_id"))
+    refused = client.post("/objects/query", params=domain, json={
+        "object_type": "Customer", "measures": [{"agg": "count_distinct", "path": "customer_to_order.status"}]})
     assert refused.json()["path"] == "refused"
 
     measured = client.post("/ontology/measure", params=domain).json()
