@@ -452,8 +452,9 @@ a:hover { color: var(--blue4); }
 .aug-badge-neutral, .aug-tag-gray  { background: var(--bg-3);  border-color: var(--b2);    color: var(--t2); }
 
 /* ── Buttons — height 26 (small 22), radius 3, label 12/600 ────────────────
-   One primary per view. A press steps the background and the label holds still:
-   no translate, no scale. Loading is the rest state plus ◐ at .8 opacity. */
+   One primary per view. A press steps the background and the label holds still — except on
+   the primary, which also scales to 0.96 (.aug-press, below). Loading is the rest state plus ◐
+   at .8 opacity. */
 .aug-btn {
   display: inline-flex;
   align-items: center;
@@ -897,6 +898,17 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* press: the element's own :active background does the work; the label never moves. */
 .aug-pressable { transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
 
+/* press, the Primary only (decided 2026-09-14): the one main action per view also scales to 0.96 —
+   150ms ease-out, the colours keep --dur-1 — so a click on it is felt. Every other control keeps the
+   background step: in a dense row, a label that moves under the cursor reads as a misclick.
+   <Button static> keeps a Primary still. */
+.aug-press, .aug-btn-primary {
+  transition-property: background-color, border-color, color, scale;
+  transition-duration: var(--dur-1), var(--dur-1), var(--dur-1), 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.aug-press:active:not(:disabled), .aug-btn-primary:active:not([aria-disabled="true"]) { scale: .96; }
+
 /* disclosure: a trace, row group or methodology block opening. The grid-template-rows
    0fr→1fr trick: a transition, not an animation, so mounting open paints instantly and
    only a live data-open flip moves. --dur-2, a row entering: rows open many times a session and
@@ -908,6 +920,13 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 }
 .aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
 .aug-disclose > * { min-height: 0; overflow: hidden; }
+
+/* The Briefing's first open of a session (components/brief/firstOpen.ts): the verdict, then the
+   numbers that moved, then everything below the hero, 60ms apart — the order says what to read
+   first. BriefingPanel sets .aug-brief-entering for that one entrance and drops it after. */
+.aug-brief-entering [data-brief-hero] > div > * { animation: aug-step-in var(--dur-2) var(--ease-out) both; }
+.aug-brief-entering [data-brief-hero] > div > [data-brief-movers] { animation-delay: 60ms; }
+.aug-brief-entering [data-brief-hero] ~ * { animation: aug-step-in var(--dur-2) var(--ease-out) 120ms both; }
 
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
 @keyframes edge-flow         { to { stroke-dashoffset: -12; } }
@@ -929,7 +948,8 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
     transition-property: color, background-color, border-color, outline-color, text-decoration-color,
       fill, stroke, opacity, box-shadow !important;
   }
-  .aug-anim-fade, .aug-anim-up, .aug-step-in, .aug-stream-in, .aug-anim-pop {
+  .aug-anim-fade, .aug-anim-up, .aug-step-in, .aug-stream-in, .aug-anim-pop,
+  .aug-brief-entering [data-brief-hero] > div > *, .aug-brief-entering [data-brief-hero] ~ * {
     animation-name: aug-fade-in !important;
     animation-duration: var(--dur-2) !important;
   }
@@ -939,6 +959,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
   .aug-skeleton, .aug-shimmer { animation: none; background: var(--bg-4); }
   .aug-shimmer-text { animation: none; background: none; color: var(--t2); }
   .aug-check-pop { animation: none; }
+  .aug-press:active:not(:disabled), .aug-btn-primary:active:not([aria-disabled="true"]) { scale: none; }
 }
 
 /* ── Intelligence layer sections (Profile · Actions · Memory) ─────────────────────────────────

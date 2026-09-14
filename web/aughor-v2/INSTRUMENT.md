@@ -115,8 +115,9 @@ for emphasis.
 
 ## 5. Components (class → primitive)
 
-- **Buttons** — height 26 (small 22), radius 3, label 12/600; a press steps the background,
-  the label never moves; loading = rest state + ◐ at .8 opacity. `.aug-btn`
+- **Buttons** — height 26 (small 22), radius 3, label 12/600; a press steps the background and
+  the label never moves — except the one Primary per view, which also scales to 0.96 (`.aug-press`,
+  150ms ease-out; `<Button static>` keeps it still); loading = rest state + ◐ at .8 opacity. `.aug-btn`
   (`-primary` `-ghost` `-minimal` `-sm`). `<Button>` variants: `default` Primary · `secondary`
   Secondary · `outline` and `minimal` Ghost (bordered) · `link` Minimal ("show source") ·
   `ghost` the quiet toolbar/menu-row idiom (not on the sheet) · `destructive`. Sizes: default,
@@ -167,13 +168,24 @@ keeps **Spend** under Operations: the design was synced before Spend shipped.
 | name | class | duration · easing | reduced motion |
 |---|---|---|---|
 | streaming-caret | `.aug-caret` | 1s `steps(1)` | solid, static |
-| step-in | `.aug-anim-up` `.aug-step-in` `.aug-stream-in` | `--dur-2` · `--ease-out`, opacity + 4px up | final position |
+| step-in | `.aug-anim-up` `.aug-step-in` `.aug-stream-in` | `--dur-2` · `--ease-out`, opacity + 4px up | a fade |
 | check-pop | `.aug-check-pop` | `--dur-1`, 1.04 that settles | colour only |
-| pulse | `.aug-pulse-dot` `.aug-dot-live` | 1.05s `--ease-inout` | lit colour, static |
+| pulse | `.aug-pulse-dot` `.aug-dot-live` | 1.05s `--ease-inout`, brightness only | lit colour, static |
 | shimmer | `.aug-skeleton` | 1.1s linear, 360px sweep | flat `--bg-4` |
-| disclosure | `.aug-disclose` | `--dur-3` · `--ease-out` | instant |
-| modal-pop | `.aug-anim-pop`, `<DialogContent>` | `--dur-2`, 0.98 → 1 | final state |
+| disclosure | `.aug-disclose` | `--dur-2` · `--ease-out` | instant |
+| modal-pop | `.aug-anim-pop`, `<DialogContent>` | `--dur-2`, 0.98 → 1 | a fade (`.aug-anim-pop`); final state |
 | press | element `:active` | `--dur-1`, background only | background only |
+| primary press | `.aug-press` (`<Button>` Primary), `.aug-btn-primary` | 150ms `--ease-out`, scale 0.96 + background | background only |
+| brief entrance | `.aug-brief-entering`, first open of a session | step-in: verdict → numbers → cards, 60ms apart | fades, same order |
+
+Under reduced motion, transitions keep colour, opacity and shadow at their own durations; movement and
+loops stop. The ⌘K palette has no entrance at all — it is summoned from the keyboard.
+
+**Decided 2026-09-14** (the Instrument Polish Review, against the better-ui and emil-design-eng
+skills): the Primary alone gets a press scale, and dense controls keep the background step; the
+Briefing enters verdict → numbers → cards once a session (`components/brief/firstOpen.ts`), never on
+Reload or Regenerate; depth stays a hairline, not a shadow — a card is the page's own plane, and on
+`#101010` a drop shadow would not show.
 
 ## 8. Icons and density
 

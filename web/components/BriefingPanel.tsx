@@ -17,7 +17,7 @@ import { GuardChip } from "@/components/ui/trust";
  *   • generateBriefingNarrative() — LLM prose with citation links (M24b)
  */
 
-import { useEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useState, useCallback, useRef, useMemo, type ReactNode } from "react";
 import { formatTimestamp, formatMetricValue, normalizeNumberPrecision } from "@/lib/format";
 import {
   runDirectQuery,
@@ -67,6 +67,7 @@ import { IndustryKpiStrip } from "@/components/brief/IndustryKpiStrip";
 import { BriefSchedule } from "@/components/brief/BriefSchedule";
 import { StatTile } from "@/components/brief/StatTile";
 import { extractKeyFigure } from "@/components/brief/keyFigure";
+import { claimBriefingEntrance } from "@/components/brief/firstOpen";
 import { PinnedCards } from "@/components/brief/PinnedCards";
 import { ResultChartCard } from "@/components/charts/ResultChartCard";
 import type { VizConfig } from "@/components/charts/vizConfig";
@@ -1497,7 +1498,7 @@ function VerdictHero({
   return (
     // Flat panel in the shared card language (was a gradient + glow + shadow hero). Prominence now
     // comes from position, the display-size verdict, and the primary action — not chrome.
-    <div style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
+    <div data-brief-hero style={{ background: "var(--bg-2)", border: "1px solid var(--b1)", borderRadius: "var(--r3)" }}>
       <div style={{ padding: "18px 26px 17px" }}>
         {/* eyebrow (context) + controls */}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 13, flexWrap: "wrap" as const }}>
@@ -1562,7 +1563,7 @@ function VerdictHero({
             findings; each tile is one click from its ledger row (the "every number one click
             from its why" guarantee). Not north-star KPIs — cycle-specific movers. */}
         {movers && movers.length > 0 && (
-          <div style={{ marginTop: 18 }}>
+          <div data-brief-movers style={{ marginTop: 18 }}>
             <div className="aug-label" style={{ marginBottom: 8, color: "var(--t3)" }}>Numbers that moved</div>
             <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(4, movers.length)}, minmax(0, 1fr))`, gap: 12 }}>
               {movers.slice(0, 4).map(d => (
@@ -2703,6 +2704,23 @@ export function BriefingPanel({
   // PX-6 — the scheduled-delivery card, toggled from the control bar.
   const [showSchedule, setShowSchedule] = useState(false);
 
+  // The first open of a session enters verdict → numbers → cards (.aug-brief-entering in globals.css,
+  // components/brief/firstOpen.ts). Claimed before paint, the moment there is a brief to show, and
+  // dropped once the entrance has run, so a Reload or Regenerate that re-renders the brief paints at once.
+  const [entering, setEntering] = useState(false);
+  const entranceClaimed = useRef(false);
+  const hasBrief = !loading && !isEmpty;
+  useLayoutEffect(() => {
+    if (!hasBrief || entranceClaimed.current) return;
+    entranceClaimed.current = true;
+    if (claimBriefingEntrance()) setEntering(true);
+  }, [hasBrief]);
+  useEffect(() => {
+    if (!entering) return;
+    const done = setTimeout(() => setEntering(false), 600);
+    return () => clearTimeout(done);
+  }, [entering]);
+
   if (loading)  return <BriefingLoading />;
 
   if (error) {
@@ -2718,7 +2736,7 @@ export function BriefingPanel({
     // rather than overlaying it — the whole point is reading an answer against the brief it
     // is about. (Same shape as ChatPanel's source drawer.) The brief keeps its own scroller.
     <div style={{ flex: 1, display: "flex", minHeight: 0, minWidth: 0 }}>
-    <div ref={scrollRef} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
+    <div ref={scrollRef} className={entering ? "aug-brief-entering" : undefined} style={{ flex: 1, minWidth: 0, overflowY: "auto", padding: "20px 28px" }}>
 
       {/* Evidence drill-through drawer (finding actions, #4). Transient hints/side-effect
           feedback now go through the shared <Toaster/> (toast.*), mounted in the root layout. */}
