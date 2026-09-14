@@ -55,6 +55,7 @@ from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
 from aughor.ontology.derived import derived_for, find_derived_metric, find_derived_property, find_derived_segment
 from aughor.ontology.parts import detail_from, rollup_note
+from aughor.ontology.sources import binding_source, entity_source
 from aughor.ontology.timeseries import latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.models import (
@@ -65,6 +66,7 @@ from aughor.ontology.models import (
     OntologyMetric,
     OntologyRelationship,
 )
+from aughor.semantic.cross_source import KeyedRead
 
 AggName = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
 FilterOp = Literal["=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between",
@@ -167,13 +169,18 @@ class CompiledObjectQuery:
     overlay: list[dict] = field(default_factory=list)
     #: ON-1b — every further binding the query joined, with what it was measured to hold.
     bindings: list[dict] = field(default_factory=list)
+    #: ON-8 — set when the query reads a source by key from another connection than its anchor's: the statement split
+    #: into what runs at home, what each other connection is read for, and the aggregation over both
+    #: (`aughor.semantic.cross_source`). ``sql`` is then the statement as written, for a reader, and is not run.
+    cross_source: Optional[Any] = None
 
     def to_dict(self) -> dict:
         return {"path": "compiled", "sql": self.sql, "dialect": self.dialect,
                 "object_type": self.object_type, "columns": list(self.columns),
                 "dimensions": list(self.dimensions), "measures": list(self.measures),
                 "plan": list(self.plan), "links": list(self.links), "caveats": list(self.caveats),
-                "overlay": list(self.overlay), "bindings": list(self.bindings)}
+                "overlay": list(self.overlay), "bindings": list(self.bindings),
+                **({"cross_source": self.cross_source.to_dict()} if self.cross_source is not None else {})}
 
 
 # ── links, read from where the query stands ─────────────────────────────────────────────
@@ -573,6 +580,11 @@ class _Compiler:
         #: ON-9 — the derived properties being compiled right now (a derivation may not read itself), and those planned.
         self._deriving: set = set()
         self._derived_noted: set = set()
+        #: ON-8 — the connection the query runs on (its anchor's; every type of a per-connection graph reads the graph's
+        #: own, so nothing there is ever far), the FROM level a keyed read may hang off, and each keyed read by alias.
+        self.home = graph.connection_id
+        self.top: Optional[_Scope] = None
+        self.far: dict[str, KeyedRead] = {}
 
     def _alias(self, prefix: str) -> str:
         self._n += 1
@@ -618,6 +630,9 @@ class _Compiler:
         """The SQL for a property of ``entity`` under ``alias``: its column, a further binding's column joined on
         the object's key (ON-1b), or — for an overlay property — the accepted values joined on the object's key.
         The source is read, never written."""
+        far = self.far.get(alias)
+        if far is not None:
+            return self.far_column(far, entity, p)
         binding = property_binding(entity, p.name)
         if binding is not None:
             return self.binding_column(scope, alias, entity, binding, p)
@@ -685,6 +700,13 @@ class _Compiler:
         if problem:
             raise ObjectQueryRefused(f"{entity.id}.{p.name} is read from the binding {binding.name}, which the compiler "
                                      f"does not join: {problem}")
+        if alias in self.far:
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is read from the binding {binding.name} of a type this query reads by key from "
+                f"another connection — such a type is read for its own columns only; anchor the query on {entity.id}")
+        source = binding_source(self.g, entity, binding)
+        if source != self.home:
+            return self.far_binding(scope, alias, entity, binding, p, source)
         slot = ("binding", alias, binding.name)
         joined = scope.join_alias.get(slot)
         if joined is None:
@@ -734,6 +756,10 @@ class _Compiler:
         problem = binding_problem(entity, binding)
         if problem:
             raise ObjectQueryRefused(f"the readings of {binding.name} on {entity.id} cannot be read: {problem}")
+        if binding_source(self.g, entity, binding) != self.home:
+            raise ObjectQueryRefused(f"the readings of {binding.name} on {entity.id} live on another connection "
+                                     f"({binding_source(self.g, entity, binding)}) — a timeseries binding is not read "
+                                     "across two connections yet")
         if not self.object_key(entity):
             raise ObjectQueryRefused(f"{entity.id} declares no key, so its {binding.name} readings have nothing "
                                      "to hang off")
@@ -907,6 +933,13 @@ class _Compiler:
         key = (from_alias, h.rel.id, h.name)
         if key in scope.join_alias:
             return scope.join_alias[key]
+        if from_alias in self.far:
+            raise ObjectQueryRefused(
+                f"link {h.describe()} would be followed from {h.source.id}, which this query reads by key from another "
+                f"connection — a path does not continue past a cross-source link yet; anchor the query on "
+                f"{h.source.id} (object_type '{h.source.api_name}') to follow it")
+        if entity_source(self.g, h.target) != self.home:
+            return self.far_link(scope, from_alias, h)
         alias = self._alias("j")
         scope.joins.append(f"LEFT JOIN {backing_from(h.target, alias)} "
                            f"ON {from_alias}.{quote_ident(h.local_col)} = {alias}.{quote_ident(h.remote_col)}")
@@ -914,6 +947,88 @@ class _Compiler:
         self.note_link(h, "joined", f"link {h.describe()}: joined — to-one by measurement, so it cannot "
                                     f"multiply {h.source.id} rows")
         return alias
+
+    # ── ON-8: sources on another connection, read by key ──
+    def far_link(self, scope: _Scope, from_alias: str, h: ObjectLink) -> str:
+        """ON-8 — a to-one link to a type on another connection. No statement joins two connections, so the type's
+        rows are READ BY KEY — the distinct keys the query's own rows hold — through the batched-foreach engine, and
+        joined beside them in the stage (`aughor.semantic.cross_source`). Only from the query's own FROM level, and
+        only for the columns the type's backing holds."""
+        source = entity_source(self.g, h.target)
+        if scope is not self.top:
+            raise ObjectQueryRefused(
+                f"link {h.describe()} crosses to {h.target.id} on another connection ({source}) from inside a "
+                f"pre-aggregated link or an EXISTS — a cross-source link is read by key from the query's own level; "
+                f"anchor the query on {h.source.id}")
+        b = h.target.backing
+        table = (b.table if b is not None and b.kind == "table" else None) or ""
+        if not table:
+            raise ObjectQueryRefused(f"link {h.describe()} crosses to {h.target.id} on another connection ({source}), "
+                                     "which is read through a keyed SELECT — a cross-source link reads a table")
+        alias = self._alias("x")
+        self.far[alias] = KeyedRead(alias=alias, kind="link", connection_id=source, table=table, sql=None,
+                                    key=h.remote_col, local=f"{from_alias}.{quote_ident(h.local_col)}",
+                                    label=f"link {h.name} ({h.source.id} → {h.target.id})", target=h.target.id)
+        scope.joins.append(f"LEFT JOIN __far_{alias} AS {alias} "
+                           f"ON {from_alias}.{quote_ident(h.local_col)} = {alias}.{quote_ident(h.remote_col)}")
+        scope.join_alias[(from_alias, h.rel.id, h.name)] = alias
+        self.note_link(h, "read by key",
+                       f"link {h.describe()}: cross-source — {h.target.id} lives on {source}, so its rows are read by "
+                       f"key through the batched-foreach engine and joined beside the {h.source.id} rows; to-one by "
+                       f"measurement, so it cannot multiply {h.source.id} rows")
+        return alias
+
+    def far_column(self, far: KeyedRead, entity: OntologyEntity, p: EntityProperty) -> str:
+        """ON-8 — a property of a type this query reads by key from another connection: a column its backing holds."""
+        column = next((k for k in entity.properties or {} if k.lower() == p.name.lower()), None)
+        if column is None:
+            names = sorted(entity.properties or {})
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is not a column of {entity.id}'s backing — a type read by key from another "
+                f"connection is read for its own columns, not for what a binding, an edit or a derivation supplies "
+                f"({', '.join(names)[:200]})", names)
+        far.need(column)
+        return f"{far.alias}.{quote_ident(column)}"
+
+    def far_binding(self, scope: _Scope, alias: str, entity: OntologyEntity, binding: Binding, p: EntityProperty,
+                    source: str) -> str:
+        """ON-8 — a property a binding reads from another connection: the binding is READ BY KEY — the objects' own
+        keys — and joined beside them in the stage. One row per object by measurement, so only a static binding, and
+        only from the query's own FROM level."""
+        if binding.kind != "static":
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is read from the {binding.kind} binding {binding.name}, which lives on another "
+                f"connection ({source}) — a cross-source binding is read by key, one row per object, so only a static "
+                "one is read yet")
+        if scope is not self.top:
+            raise ObjectQueryRefused(
+                f"{entity.id}.{p.name} is read from the binding {binding.name} on another connection ({source}) from "
+                "inside a pre-aggregated link or an EXISTS — a cross-source binding is read from the query's own level")
+        slot = ("binding", alias, binding.name)
+        joined = scope.join_alias.get(slot)
+        if joined is None:
+            key = self.object_key(entity)
+            joined = self._alias("x")
+            self.far[joined] = KeyedRead(alias=joined, kind="binding", connection_id=source, table=binding.table,
+                                         sql=binding.sql, key=binding.key, local=f"{alias}.{quote_ident(key)}",
+                                         label=f"binding {binding.name} on {entity.id}", target=entity.id)
+            scope.joins.append(f"LEFT JOIN __far_{joined} AS {joined} "
+                               f"ON {alias}.{quote_ident(key)} = {joined}.{quote_ident(binding.key)}")
+            scope.join_alias[slot] = joined
+            if (entity.id, binding.name) not in self._bindings_noted:
+                self._bindings_noted.add((entity.id, binding.name))
+                read = binding.table or "a keyed SELECT"
+                self.plan.append(f"binding {binding.name} on {entity.id}: cross-source — {read} lives on {source}, so "
+                                 f"it is read by key ({key} = {binding.key}) through the batched-foreach engine; one row "
+                                 f"per {entity.id} by measurement ({binding.note}), so it cannot multiply "
+                                 f"{entity.id} rows")
+                self.bindings.append({"binding": binding.name, "object_type": entity.api_name, "kind": binding.kind,
+                                      "source": read, "connection_id": source, "on": f"{key} = {binding.key}",
+                                      "rows": binding.rows, "objects": binding.objects, "covered": binding.covered,
+                                      "treatment": "read by key", "time_column": None})
+        column = column_of(binding, p.name)
+        self.far[joined].need(column)
+        return f"{joined}.{quote_ident(column)}"
 
     def column(self, scope: _Scope, path: str, purpose: str) -> tuple[str, EntityProperty, list[ObjectLink]]:
         """A property reached through to-one links only."""
@@ -976,6 +1091,10 @@ class _Compiler:
         raise ObjectQueryRefused(f"filter path '{f.path}' did not resolve")
 
     def exists(self, outer_alias: str, h: ObjectLink, rest: str, f: ObjectFilter) -> str:
+        if outer_alias in self.far or entity_source(self.g, h.target) != self.home:
+            raise ObjectQueryRefused(
+                f"a condition through {h.describe()} would test rows on another connection inside an EXISTS, and no "
+                "statement sees two connections — a condition across connections reads a to-one link's columns")
         inner = _Scope(entity=h.target, alias=self._alias("e"))
         conds = [f"{inner.alias}.{quote_ident(h.remote_col)} = {outer_alias}.{quote_ident(h.local_col)}"]
         negate = False
@@ -1135,7 +1254,12 @@ class _Compiler:
                 f"Anchor the query on {one.id} (object_type '{one.api_name}') and reach {scope.entity.id} "
                 "through its link, or use count_distinct / min / max, which repetition cannot change.")
         cond = self.where(scope, t.where)
-        value = self.colref(scope, alias, entity, p) if entity is not None else f"{alias}.{quote_ident(p.name)}"
+        if entity is not None:
+            value = self.colref(scope, alias, entity, p)
+        else:
+            if alias in self.far:
+                self.far[alias].need(p.name)                 # ON-8 — a linked object's key, read by key
+            value = f"{alias}.{quote_ident(p.name)}"
         if t.agg in ("sum", "avg") and _is_bool(p):
             value = f"CAST({value} AS INTEGER)"
         self.plan.append(f"{label}: {t.agg}({t.path}) over {scope.entity.id} rows"
@@ -1143,6 +1267,11 @@ class _Compiler:
         return _agg_sql(t.agg, value, cond)
 
     def many_measure(self, scope: _Scope, h: ObjectLink, rest: str, t: MeasureTerm, label: str) -> str:
+        if entity_source(self.g, h.target) != self.home:
+            raise ObjectQueryRefused(
+                f"{label}: {h.describe()} is to-many and crosses to another connection "
+                f"({entity_source(self.g, h.target)}) — a pre-aggregation across two connections is not read yet; "
+                f"anchor the query on {h.target.id} and reach {h.source.id} through its to-one link")
         agg = t.agg
         if agg == "count_distinct":
             raise ObjectQueryRefused(
@@ -1215,6 +1344,7 @@ class _Compiler:
         q = self.q
         anchor = self.entity(q.object_type)
         scope = _Scope(entity=anchor, alias="t0")
+        self.home, self.top = entity_source(self.g, anchor), scope
         b = anchor.backing
         key = (b.primary_key if b is not None else "") or anchor.identity_key
         verdict = {True: "unique, measured", False: "NOT unique, measured", None: "unmeasured"}[
@@ -1296,10 +1426,33 @@ class _Compiler:
             sql += f" ORDER BY {order}"
         if q.limit is not None:
             sql += f" LIMIT {int(q.limit)}"
-        return CompiledObjectQuery(sql=self.render(sql), dialect=self.dialect, object_type=anchor.api_name,
+        cross = self.split_far(sql) if self.far else None
+        return CompiledObjectQuery(sql=self.render(sql) if cross is None else self.display_far(sql), dialect=self.dialect,
+                                   object_type=anchor.api_name,
                                    columns=names, plan=self.plan, links=self.links, caveats=self.caveats,
                                    dimensions=dims, measures=measure_names, overlay=self.overlay,
-                                   bindings=self.bindings)
+                                   bindings=self.bindings, cross_source=cross)
+
+    def split_far(self, sql: str):
+        """ON-8 — the assembled statement split at its keyed reads: what runs on the anchor's connection, what each
+        other connection is read for, and the aggregation that runs over both."""
+        from aughor.semantic.cross_source import CrossSourceRefused, split
+        try:
+            plan = split(sql, self.far, dialect=self.dialect, date_cols=self._date_cols)
+        except CrossSourceRefused as exc:
+            raise ObjectQueryRefused(str(exc)) from exc
+        sources = sorted({r.connection_id for r in self.far.values()})
+        self.plan.append(f"cross-source: {len(self.far)} read(s) by key on {', '.join(sources)}; everything else runs on "
+                         f"{self.home} as one statement at the object's grain, and the answer is aggregated over both in "
+                         "an in-process stage that is dropped once it is read")
+        return plan
+
+    def display_far(self, sql: str) -> str:
+        """The statement as written, each keyed read named by the connection, schema and table it reads."""
+        text = self.render(sql)
+        for alias, read in self.far.items():
+            text = re.sub(rf"\b__far_{alias}\b", lambda _m, shown=read.display(): shown, text)
+        return text
 
     def render(self, sql: str) -> str:
         import sqlglot
@@ -1347,7 +1500,9 @@ def property_at(graph: Optional[OntologyGraph], object_type: str, path: str, *,
         raise ObjectQueryRefused("no ontology is built for this scope — there are no object types to resolve against")
     compiler = _Compiler(graph, ObjectQuery(object_type=object_type, measures=[ObjectMeasure()]), "duckdb", 1)
     anchor = compiler.entity(object_type)
-    _, prop, hops = compiler.column(_Scope(entity=anchor, alias="t0"), path, purpose)
+    scope = _Scope(entity=anchor, alias="t0")
+    compiler.home, compiler.top = entity_source(graph, anchor), scope
+    _, prop, hops = compiler.column(scope, path, purpose)
     return (hops[-1].target if hops else anchor), prop, hops
 
 

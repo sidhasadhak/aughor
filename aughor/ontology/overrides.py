@@ -223,10 +223,7 @@ def _path(conn: str, schema: str, kind: TargetKind, target_id: str) -> Path:
     return _dir(conn, schema) / kind / f"{_safe(target_id)}.yaml"
 
 
-# ── public store API ────────────────────────────────────────────────────────
-
-def save_override(conn: str, schema: str, ov: OntologyOverride) -> None:
-    """Write (replace) one override's YAML file. Best-effort — never raises."""
+def _write(conn: str, schema: str, ov: OntologyOverride) -> None:
     try:
         p = _path(conn, schema, ov.target_kind, ov.target_id)
         p.parent.mkdir(parents=True, exist_ok=True)
@@ -235,8 +232,7 @@ def save_override(conn: str, schema: str, ov: OntologyOverride) -> None:
         pass
 
 
-def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
-    """Remove one override file. Returns True if a file was deleted."""
+def _unlink(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
     try:
         p = _path(conn, schema, kind, target_id)
         if p.exists():
@@ -245,6 +241,79 @@ def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) ->
     except Exception:
         pass
     return False
+
+
+# ── an organisation's ontology: edited by people only ───────────────────────
+
+#: ON-8 — the first segment an organisation's ontology is kept under in this tree (`org=<org>/<domain>`). A connection
+#: id never holds `=`, so no connection's scope can name it.
+ORGANISATION_SEGMENT = "org="
+#: The scope the web carries an organisation's ontology in where a connection id goes (`domain:<name>`) — never a
+#: directory of this tree.
+DOMAIN_CARRIER = "domain:"
+
+
+def organisation_scope(conn: str) -> bool:
+    """Whether ``conn`` names an organisation's ontology — its tree segment, or the scope the web carries it in —
+    rather than one connection's."""
+    return str(conn or "").startswith((ORGANISATION_SEGMENT, DOMAIN_CARRIER))
+
+
+def not_a_persons(ov: OntologyOverride) -> str:
+    """Why ``ov`` is not a person's own declaration — a model's proposal, or what another source wrote — or "" when it
+    is one. The user's rule (2026-09-14): an organisation's ontology is edited by people only."""
+    if (ov.source or "human") != "human":
+        return f"it was written by '{ov.source}', not a person"
+    if str(ov.fields.get("origin") or "human") != "human" or str(ov.fields.get("provenance") or "").strip():
+        return "it records a model's proposal"
+    entries = (ov.binding.get("bindings") or {}).get("entries") or {}
+    for name, entry in entries.items():
+        if isinstance(entry, dict) and (str(entry.get("origin") or "human") != "human"
+                                        or str(entry.get("provenance") or "").strip()):
+            return f"its binding '{name}' records a model's proposal"
+    return ""
+
+
+# ── public store API ────────────────────────────────────────────────────────
+
+def save_override(conn: str, schema: str, ov: OntologyOverride) -> None:
+    """Write (replace) one override's YAML file. Best-effort — never raises, except when ``conn`` is not a connection:
+    an organisation's ontology is written by `save_organisation_override` alone."""
+    if organisation_scope(conn):
+        raise ValueError(f"'{conn}' is an organisation's ontology, not a connection's — it is written by "
+                         "save_organisation_override, which takes a person's declaration only")
+    _write(conn, schema, ov)
+
+
+def delete_override(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """Remove one override file. Returns True if a file was deleted. Raises when ``conn`` is not a connection: a
+    declaration is withdrawn from an organisation's ontology by `delete_organisation_override` alone."""
+    if organisation_scope(conn):
+        raise ValueError(f"'{conn}' is an organisation's ontology, not a connection's — a declaration is withdrawn "
+                         "from it by delete_organisation_override")
+    return _unlink(conn, schema, kind, target_id)
+
+
+def save_organisation_override(conn: str, schema: str, ov: OntologyOverride) -> None:
+    """ON-8 — write one declaration of an organisation's ontology (``conn`` is its tree segment, ``org=<org>``). Only a
+    person's declaration is written; a model's proposal, or anything another source wrote, raises with the reason. The
+    user's rule (2026-09-14): an organisation's ontology is edited by people only — a model drafts, and a person
+    confirms, inside one connection's ontology."""
+    if not str(conn or "").startswith(ORGANISATION_SEGMENT):
+        raise ValueError(f"'{conn}' is not an organisation's ontology")
+    why = not_a_persons(ov)
+    if why:
+        raise ValueError(f"an organisation's ontology is edited by people only — {ov.target_kind} "
+                         f"'{ov.target_id}' was not written: {why}")
+    _write(conn, schema, ov)
+
+
+def delete_organisation_override(conn: str, schema: str, kind: TargetKind, target_id: str) -> bool:
+    """ON-8 — withdraw one declaration from an organisation's ontology (``conn`` is its tree segment). Returns True if a
+    file was deleted."""
+    if not str(conn or "").startswith(ORGANISATION_SEGMENT):
+        raise ValueError(f"'{conn}' is not an organisation's ontology")
+    return _unlink(conn, schema, kind, target_id)
 
 
 def find_override(conn: str, schema: str, kind: TargetKind,

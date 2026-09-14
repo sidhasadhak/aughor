@@ -11,17 +11,11 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from aughor.security.authz import connection_owner_guard
 
 
-def _budget_owner_guard(request: Request) -> None:
-    """Object-level authz for the by-connection budget routes: a budget is a
-    per-connection setting, so its tenant is the connection's org."""
-    from aughor.security.authz import check_owner, get_principal
-    if (cid := request.path_params.get("connection_id")):
-        check_owner("connection", cid, get_principal(request))
-
-
-router = APIRouter(tags=["security"], dependencies=[Depends(_budget_owner_guard)])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["security"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _tenant() -> str | None:

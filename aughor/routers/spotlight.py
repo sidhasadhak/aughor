@@ -17,10 +17,12 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["spotlight"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["spotlight"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _roster(connection_id: str):

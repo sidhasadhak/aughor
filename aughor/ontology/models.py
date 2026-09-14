@@ -152,6 +152,10 @@ class Backing(BaseModel):
     #: ON-3b: the rows the backing held when its key was measured — the "rows" fact the entity-type map
     #: shows. None until measured (POST /ontology/measure), never estimated from a profile.
     rows: Optional[int] = None
+    #: ON-8 — the connection these rows live on, in an organisation's ontology, whose types may be read from any
+    #: connection the organisation holds. "" means the graph's own connection: every graph built per connection
+    #: reads that, so each loads unchanged.
+    connection_id: str = ""
 
     def from_clause(self, alias: str = "b") -> str:
         """The FROM fragment a consumer queries this object through."""
@@ -265,6 +269,9 @@ class Binding(BaseModel):
     source: Literal["human", "proposed", "model"] = "human"
     #: ON-7b — who said it, for a binding an explorer proposed: `model:<id>@<version>`, kept after a person confirms it.
     provenance: str = ""
+    #: ON-8 — the connection the binding's source lives on when it is not the object's own: an order's shipments read
+    #: from the logistics warehouse onto an Order whose rows are in the commerce one. "" means the object's connection.
+    connection_id: str = ""
     #: Measured — None until counted: the binding's rows, its rows with a key, its distinct keys, the objects it
     #: was measured against, how many of them it covers, and the distinct keys that reach no object.
     rows: Optional[int] = None
@@ -470,6 +477,11 @@ class OntologyRelationship(BaseModel):
     origin: Literal["join_map", "human", "model"] = "join_map"
     #: ON-7b — who said a declared link exists, when a model did: `model:<id>@<version>`, kept after a person confirms.
     provenance: str = ""
+    #: ON-8 — `join` when both types are read from one connection, so one statement joins them; `cross-source` when
+    #: they live on two, and the compiler reads the far side by key through the batched-foreach engine instead. Stamped
+    #: from the two types' connections (`aughor.ontology.domains.stamp_traversals`) by the law the compiler follows,
+    #: so a graph built before reads `join`.
+    traversal: Literal["join", "cross-source"] = "join"
 
     @model_validator(mode="after")
     def _fill_link_names(self) -> "OntologyRelationship":
@@ -949,6 +961,10 @@ class OntologyGraph(BaseModel):
     connection_id: str
     schema_name: str = ""          # DB schema this ontology covers (e.g. "analytics", "public")
     schema_fingerprint: str
+    #: ON-8 — `org/domain` when this is an organisation's ontology, whose types may live on several connections
+    #: (`aughor.ontology.domains.domain_graph`); "" for the graph the builder makes of one connection's schema, which
+    #: is the SOURCE CATALOGUE a business ontology draws on.
+    scope: str = ""
     generated_at: str = Field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )

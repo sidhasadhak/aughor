@@ -34,11 +34,13 @@ from aughor.routers._shared import (
     explorers_for_connection as _explorers_for_connection,
     get_schema_cached as _get_schema_cached,
 )
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 from aughor.licensing import Capability, gate
 
-router = APIRouter(tags=["investigations"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["investigations"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _record_memory(inv_id: str, connection_id: str, question: str, state: dict) -> None:

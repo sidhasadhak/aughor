@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
+from aughor.security.authz import connection_owner_guard
 
 
 def _brief_owner_guard(request: Request) -> None:
@@ -26,7 +27,8 @@ def _brief_owner_guard(request: Request) -> None:
         check_owner("brief", sid, get_principal(request))
 
 
-router = APIRouter(tags=["briefing"], dependencies=[Depends(_brief_owner_guard)])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["briefing"], dependencies=[Depends(_brief_owner_guard), Depends(connection_owner_guard)])
 
 
 class _SubscriptionBody(BaseModel):

@@ -13,14 +13,16 @@ from __future__ import annotations
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from aughor.db.registry import BUILTIN_ID
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["kinetic"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["kinetic"], dependencies=[Depends(connection_owner_guard)])
 
 
 class ExecuteRequest(BaseModel):

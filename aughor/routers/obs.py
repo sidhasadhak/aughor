@@ -27,7 +27,7 @@ import json
 import logging
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -35,9 +35,11 @@ from aughor.kernel.ledger import Ledger
 from aughor.obs import prompt_window, session_log
 from aughor.obs.timeseries import JOB_READ_LIMIT, resolve_window
 from aughor.org.context import current_org_id
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["obs"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["obs"], dependencies=[Depends(connection_owner_guard)])
 
 _POLL_SECONDS = 1.0          # tail cadence (indexed seq > ? query)
 _HEARTBEAT_EVERY = 25        # SSE comment keep-alive, in tail ticks

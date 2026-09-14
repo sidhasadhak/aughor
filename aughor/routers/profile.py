@@ -3,12 +3,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from aughor.business_profile import store
 from aughor.business_profile.infer import infer_business_profile
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["profile"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["profile"], dependencies=[Depends(connection_owner_guard)])
 
 
 @router.get("/business-profile")

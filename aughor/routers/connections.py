@@ -28,22 +28,13 @@ from aughor.routers._shared import (
     kickoff_exploration as _kickoff_exploration,
 )
 from aughor.tools.schema import norm_type
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 
 
-def _connection_owner_guard(request: Request) -> None:
-    """Object-level authz (SEC-05 / DATA-06): a by-id connection route is reachable
-    only by the org that owns the connection. No-op on routes without a ``conn_id``
-    (list/create) and in localhost mode (identity off). Shared builtins have no org
-    and are allowed for everyone."""
-    from aughor.security.authz import check_owner, get_principal
-    conn_id = request.path_params.get("conn_id")
-    if conn_id:
-        check_owner("connection", conn_id, get_principal(request))
-
-
-router = APIRouter(tags=["connections"], dependencies=[Depends(_connection_owner_guard)])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["connections"], dependencies=[Depends(connection_owner_guard)])
 
 class AddConnectionRequest(BaseModel):
     name: str

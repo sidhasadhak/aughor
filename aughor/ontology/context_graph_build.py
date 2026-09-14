@@ -327,7 +327,7 @@ def build_context_graph(
     if ontology is None:
         return None
 
-    merged_glossary = _safe(_load_glossary, "glossary", {})
+    merged_glossary = _safe(lambda: _load_glossary(connection_id), "glossary", {})
     resolutions = _safe(
         lambda: _list_resolutions(connection_id, resolved_org), "ambiguity_ledger", [])
     findings = _safe(lambda: load_findings(connection_id), "findings", [])
@@ -444,7 +444,7 @@ def note_finding(
         return False
 
 
-def _load_glossary() -> dict:
+def _load_glossary(connection_id: Optional[str] = None) -> dict:
     """The merged glossary as the projection wants it: a ``{table: meta}`` mapping.
 
     ``load_merged_glossary`` returns the *envelope* ``{"tables": {table: meta}}``, and
@@ -455,7 +455,7 @@ def _load_glossary() -> dict:
     that knows the store's shape.
     """
     from aughor.semantic.glossary import load_merged_glossary
-    merged = load_merged_glossary() or {}
+    merged = load_merged_glossary(connection_id=connection_id) or {}   # this connection's words only
     return merged.get("tables", merged)
 
 

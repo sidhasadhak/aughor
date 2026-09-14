@@ -10,9 +10,11 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["components"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["components"], dependencies=[Depends(connection_owner_guard)])
 
 
 @router.get("/components")

@@ -23,6 +23,7 @@ from aughor.ontology.display import display_of, key_of
 from aughor.ontology.processes import processes_of
 from aughor.ontology.models import LINK_NAME_PATTERN, Binding, OntologyEntity, OntologyGraph
 from aughor.ontology.parts import absorb_problem, part_of, parts_of
+from aughor.ontology.sources import entity_source
 from aughor.semantic.object_query import (
     MAX_LINK_HOPS,
     ObjectLink,
@@ -61,7 +62,8 @@ def _binding(entity: OntologyEntity, supplies: int) -> dict:
     key = key_of(entity)
     common = {"primary": True, "kind": "static", "key": key, "object_key": key, "source": "backing",
               "verified": b.verified if b is not None else None, "rows": b.rows if b is not None else None,
-              "note": b.verification_note if b is not None else "", "supplies": supplies, "usable": True}
+              "note": b.verification_note if b is not None else "", "supplies": supplies, "usable": True,
+              "connection_id": b.connection_id if b is not None else ""}
     if b is not None and b.kind == "query":
         return {"name": "query", "reads": "query", "sql": b.sql or "", **common}
     table = (b.table if b is not None else None) or (entity.source_tables[0] if entity.source_tables else "")
@@ -79,6 +81,7 @@ def _further_binding(entity: OntologyEntity, binding: Binding) -> dict:
            "non_null": binding.non_null, "distinct": binding.distinct, "objects": binding.objects,
            "covered": binding.covered, "orphans": binding.orphans, "note": binding.note,
            "supplies": len(binding.properties), "skipped": dict(binding.skipped), "usable": not problem,
+           "connection_id": binding.connection_id,
            "frames": {name: f.describe() for name, f in binding.frames.items()},
            "rollups": {name: r.describe(binding.name) for name, r in binding.rollups.items()}}
     if problem:
@@ -148,7 +151,7 @@ def link_row(h: ObjectLink) -> dict:
            "to": h.target.api_name, "to_type": h.target.id, "to_name": h.target.display_name or h.target.id,
            "cardinality": h.label, "measured": rel.measured_cardinality is not None,
            "kind": "to-one" if h.to_one else "to-many", "on": f"{h.local_col} = {h.remote_col}",
-           "traversable": not problem}
+           "traversable": not problem, "traversal": rel.traversal}
     if problem:
         row["why_not"] = problem
     return row
@@ -267,6 +270,8 @@ def describe_object_type(graph: OntologyGraph, object_type: Union[str, OntologyE
         "object_type": entity.api_name, "id": entity.id, "display_name": entity.display_name or entity.id,
         "description": entity.description, "role": entity.entity_type, "domain": entity.domain or "",
         "origin": entity.origin, "provenance": entity.provenance, "parts": parts, "part_of": parent,
+        # ON-8 — the connection this type's objects are read from (in an organisation's ontology, each its own).
+        "connection_id": entity_source(graph, entity),
         "key": {"property": key, "verified": b.verified if b is not None else None,
                 "rows": b.rows if b is not None else None, "note": b.verification_note if b is not None else ""},
         "display_property": display_of(entity),
@@ -308,6 +313,7 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
         parent, parts = part_of(graph, e), parts_of(graph, e)
         types.append({"object_type": e.api_name, "id": e.id, "display_name": e.display_name or e.id,
                       "role": e.entity_type, "domain": e.domain or "", "key": key_of(e),
+                      "connection_id": entity_source(graph, e),
                       # ON-7 — who made the type, whether it is a part of another (and of which), and its parts.
                       "origin": e.origin, "provenance": e.provenance,
                       "absorbed_into": parent.api_name if parent is not None else "",
@@ -341,7 +347,7 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
                       "name": r.api_name, "reverse_name": r.reverse_api_name, "business_name": r.business_name(),
                       "verb": r.verb, "cardinality": r.measured_cardinality or r.cardinality,
                       "measured": r.measured_cardinality is not None, "traversable": not problem,
-                      **({"why_not": problem} if problem else {})})
+                      "traversal": r.traversal, **({"why_not": problem} if problem else {})})
     api = (lambda eid: graph.entities[eid].api_name if eid in graph.entities else eid)  # noqa: E731
     # ON-9 — every declared process and rule, one short row each: what the map's rail lists.
     processes = [{"id": p.id, "display_name": p.display_name or p.id, "entity": api(p.entity), "origin": p.origin,

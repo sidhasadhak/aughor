@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.packs import (
@@ -19,8 +19,10 @@ from aughor.packs import (
 from aughor.packs import roots as _roots
 from aughor.packs import scope as _scope
 from aughor.packs.resolver import binding_report
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["packs"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["packs"], dependencies=[Depends(connection_owner_guard)])
 
 #: The AUTHORED root. Kept as a module constant because it is API surface for this
 #: router's own writes; every READ below goes through `roots.pack_dir`, which also finds

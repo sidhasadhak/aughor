@@ -115,7 +115,9 @@ real process (9.35% late dispatch, 8.11% late delivery, measured through the API
 waves ON-7 (declared entity, parts, links — MERGED #494), ON-7b (explorer agents map the business
 first — first slice built and its receipt taken 2026-09-13: one model call drafted Lux's 14 tables as 8
 entities, every claim measured before it landed, and the falsifier fired once — tickets read under
-Order — so the explorer stays on demand), ON-8 (one ontology, many sources), ON-9 (processes and
+Order — so the explorer stays on demand), ON-8 (one ontology, many sources — first slice built 2026-09-14: an
+organisation's ontology keyed `org/domain` whose types and bindings live on any connection, a link across two read by key
+through the batched-foreach engine, and every cross-source answer equal to the single statement), ON-9 (processes and
 promises — first slice built and its receipt met 2026-09-13: Olist's order-to-delivery declared and counted
 THROUGH the object door's compiler, 9.35% of lines broke the dispatch promise and 8.11% of orders the delivery
 one, every number equal to its hand-written reference, and the late segment, the breach rate and the lag each
@@ -128,7 +130,7 @@ answered 8 and raw 3, losing none raw answered and keeping all 3 controls — an
 seven rules and a refund process were declared live for it and the matcher met questions it was never developed on:
 framed 9 of 13, raw 1, one loss, all 3 controls kept — so the framing stays; the matcher gaps that run found were then
 fixed and measured with no model on a new set of 54 questions, 51 of 51 in scope) and fixed ON-7
-first; §6 item 18 holds the three open shape questions.
+first; §6 item 18 holds its two remaining shape questions (the first, ON-8's scope key, was taken as recommended).
 
 ---
 
@@ -4571,8 +4573,8 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   equals its reference; the map reads 8 cards; a hand-written mutation set on the roll-up is
   caught (the ON-1b pattern).
 - ✅ **ON-7b · The explorer maps the business first — FIRST SLICE BUILT + RECEIPT TAKEN 2026-09-13; the
-  falsifier FIRED once, so the explorer stays on demand** (the user: *"Go for ON-7b"*; branch
-  `claude/on-7b-explorer`). **What exists:** `aughor/ontology/explorer.py` — ONE model call over the SOURCE
+  falsifier FIRED once, so the explorer stays on demand · MERGED #495, squash `3508a844`, 2026-09-13** (the user:
+  *"Go for ON-7b"*; branch `claude/on-7b-explorer`). **What exists:** `aughor/ontology/explorer.py` — ONE model call over the SOURCE
   CATALOGUE (`source_catalogue`: every type with its key verdict, rows and columns with sample values; the
   builder's joins with measured cardinality and overlap; the bindings the data proposes; what is ALREADY
   DECLARED; the glossary for this scope's own tables; the bound pack's claims), answered as three flat lists
@@ -4637,16 +4639,83 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   **Falsifier:** the draft's grouping is compared with ON-7's hand-declared 8; a draft that fuses
   what the measured keys say are different things does not ship default-on. Costs model tokens —
   never started unasked.
-- **ON-8 · One ontology, many sources.** The declared ontology is keyed by the organisation (or a
+- ✅ **ON-8 · One ontology, many sources — FIRST SLICE BUILT 2026-09-14** (the user: *"Lets go with ON-8 then.."*; branch
+  `claude/on-8-many-sources`; §6 item 18(a) taken as recommended — `org/domain`, one default domain per organisation).
+  **What exists:** the organisation's ontology is keyed `org/domain` and served by `aughor.ontology.domains.domain_graph` —
+  no cache and no build. Its declarations live in the overrides tree under `org=<org>/<domain>` (a connection id never holds
+  `=`, so there is no second store and every declaration kind works there unchanged) and are overlaid onto an empty graph on
+  every read, with no database. `Backing.connection_id` and `Binding.connection_id` name where rows live ("" is the graph's
+  own, so every graph built before loads unchanged); `OntologyRelationship.traversal` is `join | cross-source`, stamped by the
+  SOURCE LAW (`aughor.ontology.sources`: a type reads its backing's connection, a binding its own, a link crosses when its
+  two types differ) — the one law the compiler follows. **Measured across two connections under the verdicts one connection
+  meets:** a binding's rows, keyed rows and distinct keys counted where they live, and its keys and the objects' read in the
+  batched-foreach engine's canonical key form and met in memory (`measure_binding(object_db=)`); a link's two sides each
+  counted on its own connection and its overlap met the same way (`measure_declared_link(to_db=)`); a side with more than
+  2,000,000 distinct keys, or one its connection returns only partly, leaves the claim unmeasured. A declaration borrows its
+  columns' roles from its own connection's catalogue and keeps the copy (`profile_record`), so the overlay needs no database.
+  **The compiled door across two connections** (`aughor.semantic.cross_source`): a to-one link to a type on another
+  connection, or a STATIC binding read from one, is a KEYED READ hanging off the query's own FROM level. The assembled
+  statement is split with sqlglot: every expression that reads no far column and holds no aggregate is computed at HOME, on
+  the anchor's connection, at the object's grain; each far source is read through the engine by exactly the distinct keys the
+  home rows hold, one query per 1,000 keys, its values typed (`remote_join.fetch_by_keys` over
+  `DatabaseConnection.read_typed_rows`, which takes plumbing labels only — a caller-facing one is refused); and the
+  compiler's own SELECT, WHERE, GROUP BY and ORDER BY run over both in an in-process DuckDB STAGE, joined on the canonical
+  key and dropped once read. Capped (250,000 home rows and 250,000 keyed rows; past a cap the answer is an error with the
+  count, never part of the data); a far key that now meets two rows is refused rather than joined; every connection is gated
+  before it is read and the answer passes the PII, audit and budget post-pass on the anchor's connection; every read is
+  timed. Refused with the reason: a path past a far type, a to-many link or an EXISTS across connections, a keyed read inside
+  a pre-aggregation or an EXISTS, far readings, a far binding that is not static, and a far type's own bindings. Doors:
+  `?domain=` on `POST/DELETE /ontology/entities`, `PUT/DELETE /ontology/entities/{id}/bindings/{name}`, `POST/DELETE
+  /ontology/links`, `POST /ontology/measure`, `GET /object-types` and `/object-types/{type}`, `/object-paths`,
+  `/objects/catalog` and `POST /objects/query` (which returns `cross_source` and `timings`); `GET /ontology/domains`. One
+  connection's ontology refuses a source on another and names `?domain=`, and its entity-edit door refuses the `domain:`
+  scope the web carries. Web: the Ontology layer's **Domain** view — the entity-type map over every connection a type is
+  declared on, each card and binding naming its connection, a cross-source link drawn dotted and labelled, the declare forms
+  picking a connection (from another one a binding is static only); the doors that read one connection's graph (a display
+  property, part marks, link names, the explorer, declared actions) are not offered there. **Tests:**
+  `tests/unit/test_object_sources.py` (37: a warehouse split across two DuckDB files and written whole into a third — every
+  cross-source count equal to the same claim on one connection, eight query shapes equal to the single statement row for
+  row and three to hand-written SQL, every refusal, both caps, a repeated far key, the typed read's label rule, the gates, the
+  doors over HTTP) and **41 guard mutations, every one caught** — the first run let one survive (the split's date-truncation
+  fix is invisible on DuckDB; a BigQuery-dialect test now pins it); web: domain tests in `EntityTypeMap` and
+  `EntityTypePanel`, `lib/objectTypes.test.ts`; seven gates green; `gen:api` run; web 889 green. **Live receipt:**
+  LuxExperience through the running API, no model call, 2026-09-14 — the same ontology declared
+  twice through the new doors: in `default`, Order on `914df862` and Customer and the order's shipments on `b428fce7`; in
+  `reference`, everything on `914df862`. 🔴 Both registrations open the SAME file (`data/luxexperience_demo.duckdb`, read
+  through `duckdb_databases()`), so this receipt times two connection objects, keyed reads and the stage — not a network;
+  the unit receipt's separate DuckDB files are the physical two-source proof. Declared and measured across the two: Order's
+  key 112,439 distinct of 112,439, Customer's 35,136 of 35,136; `placed_by` N:1 with 100% of Order's 29,048 distinct customer
+  keys held, stamped `cross-source`; `shipment` (static, from `b428fce7`) 107,903 rows, one per order, covering 107,903 of
+  112,439 orders with 0 orphans — every count equal to `reference`'s single-connection count. Five queries, each run five
+  times on both domains, every answer equal row for row, and GMV by customer country also equal to hand-written SQL (35
+  rows): GMV by customer country **1,382 ms across against 43 ms as one statement** (home 112,439 rows 253 ms · Customer
+  read by 29,048 keys in 30 queries 890 ms · stage 179 ms); orders and shipping cost by carrier 4,310 ms against 52 ms
+  (shipments read by 112,439 keys in 113 queries, 3,825 ms); average VIP order by service level 5,185 against 59; delivery
+  days by customer region and fiscal year 5,175 against 63; distinct customers by carrier 5,080 against 66 (medians). The
+  measure pass re-counted all of it in 583 ms, and the full backend suite ran once: 9,995 passed. **What the latency says**
+  (§6 item 14(c): live resolution reopens only on a measured latency a cache cannot cover): the hop costs about 30 ms per
+  1,000-key read, so it is priced by how many distinct keys the home rows carry — 30 reads by customer, 113 by order — not
+  by the rows an answer returns; at 112,439 objects that is 1.4 to 5.2 seconds on one machine, and a remote warehouse adds
+  its round trip to every keyed read. That is inside an interactive answer and the levers are named (fewer, larger keyed
+  reads; the home side pre-aggregated at the key's grain), so the posture holds and nothing is materialised. 🔴 **Found while building it:** the engine's older door, `POST /query/cross-source-join`, returns rows
+  read under internal labels, which skip PII redaction, audit and the row budget (a task is filed; this wave's executor gates
+  every connection and posts its answer). **Open on this wave:** a far type is read for its own columns only — no hop past
+  it, none of its bindings; to-many links, EXISTS, timeseries and detail bindings across connections; pre-aggregating the home
+  rows at the key's grain (the stage reads the object's grain, capped); the Workspace connection has no bounded read, so a
+  keyed read there stops at 500 rows and is refused; connectors with no typed capture (BigQuery, Snowflake, MySQL) are refused
+  as a side; the object page, titles, processes, rules, framing and the agent's tools do not read an organisation's
+  ontology yet — and by the user's rule the same day (§6 item 20) the explorer never will, and nothing but a person
+  edits it; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
+  The declared ontology is keyed by the organisation (or a
   named domain within it — §6 item 18), not by a schema; a binding names
   `connection_id.schema.table`; a link whose two sides live on different connections is
   `traversal: cross-source` and the compiler resolves it through the existing batched-foreach
   engine instead of one SQL; joins within a connection are unchanged. **Receipt:** one declared
   entity bound to tables on two connections, measured, its objects and one cross-source link
   readable through `/objects/query`; the latency of the cross-source hop on the receipt (it
-  decides whether §4's federation question reopens).
-- ✅ **ON-9 · Processes and promises — FIRST SLICE BUILT + RECEIPT MET 2026-09-13** (the user: *"Start with ON-9"*;
-  branch `claude/on-9-processes`). **What exists:** `Process` · `ProcessStage` · `Promise` · `BusinessRule` on the graph
+  decides whether §6 item 14(c)'s live-resolution posture reopens — the draft said §4, which holds no federation entry).
+- ✅ **ON-9 · Processes and promises — FIRST SLICE BUILT + RECEIPT MET 2026-09-13 · MERGED #496, squash `d92c14e8`,
+  2026-09-13** (the user: *"Start with ON-9"*; branch `claude/on-9-processes`). **What exists:** `Process` · `ProcessStage` · `Promise` · `BusinessRule` on the graph
   (`OntologyGraph.processes`, `.rules` — a graph built before loads with both empty), declared through the overrides
   tree (two new kinds, `process` and `rule`: new directories, none renamed) and rebuilt with no database from what their
   measurement recorded (`aughor.ontology.processes`, `aughor.ontology.business_rules`). A stage is anchored to a MOMENT —
@@ -4872,9 +4941,9 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
 Olist (`baef6c3e/ecommerce`, real delays, no generator change); ON-10's second, held-out falsifier on
 LuxExperience, through definitions declared live there (7 rules and a refund process, 2026-09-13); the LuxExperience pack's
 generator may later grow realistic dispatch lags so the demo pack can host the question (§6
-item 18). **Open for the user — §6 item 18:** the scope key for ON-8; whether Shipment and
-Payment are PARTS of Order (today bound as static 1:1 sources) or entities with a link; Olist
-first against enriching the Lux generator.
+item 18). **Open for the user — §6 item 18:** whether Shipment and Payment are PARTS of Order (today bound as static
+1:1 sources) or entities with a link; Olist first against enriching the Lux generator. (Its first question, the scope key
+for ON-8, was taken as recommended when ON-8 began, 2026-09-14.)
 
 
 ### 3.16 · Arc UI — Instrument, the design system (adopted 2026-09-13 — §6 item 19; **FIRST PASS BUILT** the same day; **PASSES 1–3 MERGED #498, squash `4476507d`, 2026-09-13**)
@@ -5281,7 +5350,13 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         lost) and HELD AGAIN on LuxExperience, held out (framed 9 of 13, raw 1, one loss, no control lost); its matcher
         gaps fixed on a new set (51 of 51 in scope) → ON-8 one
         ontology, many sources (org-keyed, bindings name
-        their connection, cross-source links via the foreach engine). Order after ON-7 is the user's knob.
+        their connection, cross-source links via the foreach engine) — ✅ FIRST SLICE 2026-09-14: the organisation's
+        ontology served from its declarations, a type or a static binding on any connection measured across two under the
+        verdicts one connection meets, a to-one link or static binding across connections read by key and the answer
+        aggregated in an in-process stage — every cross-source query equal to the single statement on a split warehouse,
+        41/41 guard mutations caught; live on LuxExperience (two registrations of one file) every declaration counted
+        across two equal to one connection's and five queries equal to the single statement, 1.4–5.2 s across against
+        43–66 ms as one statement — about 30 ms per 1,000-key read. Order after ON-7 is the user's knob.
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -5578,6 +5653,10 @@ the browser** · **measure the premise before building.**
 > the movement's adoption and is **OPEN, with recommendations** — none blocks ON-7. Two open: 16, 18.
 > **Amended 2026-09-13:** item 19 (Instrument, the design system) arrived with the Claude Design handoff; its
 > three questions were asked before the build began and decided the same turn. Still two open: 16, 18.
+> **Amended 2026-09-14:** item 18(a) — ON-8's scope key — was taken as recommended when ON-8 began; (b) and (c) stay
+> open. Still two open: 16, 18.
+> **Amended 2026-09-14, later:** item 20 — the user's two rules on an organisation's ontology and the explorer's
+> reach, and the three questions they raised, answered the same turn. Still two open: 16, 18.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -5766,9 +5845,11 @@ the browser** · **measure the premise before building.**
 18. ⏳ **OPEN (2026-09-12, none blocks ON-7) — the second movement's shape questions.** Arrived with the
     adoption of ON-7…ON-10 (§3.15, "Amended 2026-09-12 — the SECOND MOVEMENT"). The user fixed the order's
     head (ON-7 first) and added ON-7b; three shape questions remain, each with a recommendation:
-    **(a) The scope key for ON-8** — the organisation, or a named DOMAIN inside it (one company may hold a
-    retail ontology and a finance ontology). *Recommended: a named domain, defaulting to one per organisation
-    — the key is `org/domain`, and a single-domain org never sees the second segment.*
+    ✅ **(a) The scope key for ON-8 — TAKEN AS RECOMMENDED 2026-09-14.** The organisation, or a named DOMAIN inside it
+    (one company may hold a retail ontology and a finance ontology). *Recommended: a named domain, defaulting to one per
+    organisation — the key is `org/domain`, and a single-domain org never sees the second segment.* The recommendation was
+    put to the user before the build, and they answered *"Lets go with ON-8 then.."*: the key is `org/domain`, the domain is
+    `default` until an organisation names another, and a door names one with `?domain=`.
     **(b) Shipment and Payment: PARTS of Order, or entities of their own with a link?** Today both are
     static 1:1 bindings on Lux's Order (ON-1b). *Recommended: parts — the business speaks of an order's
     payment and an order's shipment; a shipment becomes an entity only where the business ships across
@@ -5799,6 +5880,46 @@ the browser** · **measure the premise before building.**
     `--t4` was a text colour in 425 places. *Take the design's ramp and move every text colour off `--t4` to `--t3`*;
     `--t4` keeps ticks and rules. The content-side fix the user chose for Agent Ops on 2026-08-22, made platform-wide.
     All three recommendations were taken as written.
+
+20. ✅ **DECIDED 2026-09-14 (the user) — an organisation's ontology is edited by people only, and the explorer does not
+    look beyond the connection it explores.** Set in the user's words after ON-8's first slice: *"The out of the
+    connection ontology should be strictly human edit. The Explorer agent should not look beyond a particular
+    connection."* An audit of the explorer's run path found that it already did look beyond: autoseed wrote every
+    connection's model-written table descriptions into ONE global glossary map, read back for any table of the same
+    name; the schema text, the coherence gates and the catalogue build read the metric registry with no connection; a
+    federated connection opens its members; and the playbook ranks its entries by success rates learned from outcomes on
+    every connection. The organisation's ontology itself was never read by the explorer. Three questions followed and
+    were answered the same turn, each as recommended:
+    **(a) The glossary** — a model's words are written in the section of the connection whose tables it read; a
+    connection reads a person's global words and its own section; a model-written global entry names no connection, so
+    none reads it until autoseed writes it again for the connection that does.
+    **(b) A federated connection** — not explored; whoever starts an exploration on one is told why.
+    **(c) The playbook** — the explorer ranks entries by relevance alone; investigations keep the learned rates.
+    The curated KB, the industry KB, organisation settings and pack claims stay: product and organisation knowledge, not
+    another connection's data. **Held by:** the store's own writer for an organisation's tree
+    (`overrides.save_organisation_override`, which writes a person's declaration only — every other writer refuses the
+    scope); a router dependency on the ontology and object doors that refuses the tree's segment as a connection id, and
+    the web's `domain:` scope on any door that takes no `?domain=` (the explorer's doors take none); a declaration that
+    says it is a model's refused at the domain doors; a copied column profile that keeps what was measured and never
+    words (`bindings.PROFILE_COPIED`); the metric registry read per connection (`build_metrics_block`, the drift gate and
+    the label vocabulary, `builder._lift_metrics`); the glossary read in one connection's layers
+    (`glossary._connection_layers`) and written in its section (autoseed, the sidecar split); `explorer_refusal` on every
+    spawn path; `learned_rates=False` at the explorer's playbook read; and an import-and-call ratchet
+    (`tests/unit/test_organisation_ontology_boundary.py`) that names who may import the organisation's ontology and its
+    writer, what the explorer may not import, and that every prompt read of the glossary names its connection.
+    **Receipts** (commit `9d2592ff` on `claude/on-8-many-sources`): the ratchet above, `tests/unit/test_explorer_reads_one_connection.py`,
+    and new cases in `test_object_sources.py`, `test_ontology_o2_rekey.py` and `test_formula_drift.py` — the targeted
+    runs green (962, then 85 on the exploration doors); **50 guard mutations, every one caught** (29 on the
+    organisation's ontology and the metrics, 19 on the glossary, federated connections and the playbook, 2 on the canvas
+    doors, which also refuse before they wipe). **Live, 2026-09-14,** the API restarted on the commit (0 active jobs;
+    the three saved canvases already finished, so nothing resumed): the tree's segment as a connection id, the explorer
+    on the web's domain scope and a declaration marked as a model's each answered 400 with the reason, and nothing was
+    written; LuxExperience's `default` domain still maps Order and Customer across its two registrations with the
+    cross-source link, and Order's 26 properties keep their roles and carry no copied words. **What the glossary call
+    costs:** the sidecar held 264 model-written global entries (182 qualified, 82 bare) and no connection's section, so
+    no connection reads any of them now — Olist's schema text no longer carries the generated `orders` description —
+    until autoseed writes them again per connection, one model call per undescribed table, on each connection's next
+    intelligence build. The full backend suite ran once on the commit: **10,020 passed, 5 skipped**.
 
 ---
 

@@ -5,7 +5,7 @@ import asyncio
 import json
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from aughor.db.paths import state_dir
@@ -22,6 +22,7 @@ from aughor.routers._shared import (
     kickoff_exploration,
     spawn_explorer,
 )
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
 import re as _re
@@ -254,7 +255,8 @@ def _needs_filter(conn_id: str, schema: str | None) -> bool:
 
 from aughor.licensing import Capability, gate
 
-router = APIRouter(tags=["exploration"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["exploration"], dependencies=[Depends(connection_owner_guard)])
 
 
 class RetryQueryRequest(BaseModel):
@@ -905,6 +907,10 @@ def _purge_exploration_state(conn_id: str) -> list[str]:
 async def restart_exploration(conn_id: str):
     """Wipe ALL exploration state for the connection (connection-level + every per-schema run)
     and start fresh — fanning out one run PER schema for a multi-schema connection."""
+    from aughor.routers._shared import explorer_refusal
+    refusal = explorer_refusal(conn_id)
+    if refusal:   # refused before anything is wiped: a restart that cannot start must not purge
+        return {"ok": False, "reason": refusal}        # answered as start answers a refusal, so the web shows why
     deleted = _purge_exploration_state(conn_id)
     started = kickoff_exploration(conn_id)   # fans out per schema (or connection-level if single)
     if not started:
@@ -1004,6 +1010,11 @@ async def start_exploration(conn_id: str, schema: str | None = None):
     if existing and existing.status.phase not in (ExplorationPhase.COMPLETE, ExplorationPhase.FAILED):
         return {"ok": False, "reason": "already running", "phase": existing.status.phase.value}
 
+    # The Explorer does not look beyond the connection it explores (the user's rule, 2026-09-14).
+    from aughor.routers._shared import explorer_refusal
+    refusal = explorer_refusal(conn_id)
+    if refusal:
+        return {"ok": False, "reason": refusal}
     # Same background open+test+explore path used by connection auto-onboarding.
     started = kickoff_exploration(conn_id, schema)
     return {"ok": started}
@@ -1162,6 +1173,10 @@ async def resume_canvas_exploration(canvas_id: str):
         raise HTTPException(status_code=404, detail="Canvas not found")
     conn_id = canvas.scopes[0].connection_id
     tables  = canvas.scopes[0].tables or None
+    from aughor.routers._shared import explorer_refusal
+    refusal = explorer_refusal(conn_id)
+    if refusal:   # the explorer does not look beyond the connection it explores — say why, as start does
+        return {"ok": False, "reason": refusal}
     existing = _canvas_explorers.get(canvas_id)
     if existing and not existing._stopped:
         existing.resume()
@@ -1191,6 +1206,10 @@ async def restart_canvas_exploration(canvas_id: str):
         raise HTTPException(status_code=404, detail="Canvas not found")
     conn_id = canvas.scopes[0].connection_id
     tables  = canvas.scopes[0].tables or None
+    from aughor.routers._shared import explorer_refusal
+    refusal = explorer_refusal(conn_id)
+    if refusal:   # refused before the canvas's state is wiped: a restart that cannot start must not purge
+        return {"ok": False, "reason": refusal}
     old = _canvas_explorers.pop(canvas_id, None)
     if old:
         old.stop()

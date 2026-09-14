@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, ValidationError
 
 from aughor.automations.graph import build_graph
@@ -28,8 +28,10 @@ from aughor.automations.store import (
     set_layout,
     upsert_automation,
 )
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["automations"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["automations"], dependencies=[Depends(connection_owner_guard)])
 
 
 # ── Request bodies ─────────────────────────────────────────────────────────────

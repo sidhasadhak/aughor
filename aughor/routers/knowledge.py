@@ -6,13 +6,15 @@ import re
 from pathlib import Path as _Path
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel
 
 from aughor.semantic.glossary import load_glossary, update_column, update_table
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
-router = APIRouter(tags=["knowledge"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["knowledge"], dependencies=[Depends(connection_owner_guard)])
 
 
 # ── Documents ─────────────────────────────────────────────────────────────────

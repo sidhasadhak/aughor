@@ -10,11 +10,13 @@ receipts the platform already stores — there is no live-path behaviour to make
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
+from aughor.security.authz import connection_owner_guard
 
 
-router = APIRouter(tags=["consistency"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["consistency"], dependencies=[Depends(connection_owner_guard)])
 
 
 
