@@ -23,7 +23,9 @@ from pathlib import Path
 # routers/investigations.py (28) + agent/investigate.py (19) — leaving only the
 # 3 justified control-flow handlers (JSON-parse fallback, per-number float parse,
 # premise-check skip signal), ratcheting 263 → 214.
-SILENT_SWALLOW_BASELINE = 214
+# 2026-09-14: answer_text_only's three swallows (one hid the playbook AttributeError) go
+# through tolerate(), ratcheting 214 → 211.
+SILENT_SWALLOW_BASELINE = 211
 PRIVATE_IMPORT_BASELINE = 22
 
 REPO = Path(__file__).parent.parent.parent

@@ -10,8 +10,8 @@ import re
 import uuid
 from pathlib import Path
 
-from aughor.playbook.models import PlaybookEntry
-from aughor.playbook.store import count_entries, save_entry
+from aughor.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
+from aughor.playbook.store import count_entries, save_entries
 
 _KB_PATH = Path(__file__).parent.parent.parent / "data" / "kb"
 
@@ -47,6 +47,20 @@ def _tags(e: dict) -> list[str]:
     if isinstance(raw, list):
         return [t for t in raw if isinstance(t, str)][:10]
     return []
+
+
+def _cause_text(cause) -> str:
+    """The cause an inflation or deflation entry names: a dict's ``cause``, or a bare string.
+
+    This was ``cause.get("cause") or cause if isinstance(cause, str) else ""``, which Python reads as
+    ``(cause.get("cause") or cause) if isinstance(cause, str) else ""``. Every cause in the KB is a dict, so
+    each became "" and was skipped — 486 causes, each with detection SQL and a fix, never became plays — and a
+    string cause raised AttributeError."""
+    if isinstance(cause, dict):
+        return str(cause.get("cause") or "").strip()
+    if isinstance(cause, str):
+        return cause.strip()
+    return ""
 
 
 def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
@@ -85,7 +99,7 @@ def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
 
     # 2. inflation_causes → one entry per cause
     for cause in (e.get("inflation_causes") or []):
-        cause_text = cause.get("cause") or cause if isinstance(cause, str) else ""
+        cause_text = _cause_text(cause)
         if not cause_text:
             continue
         results.append(PlaybookEntry(
@@ -97,13 +111,13 @@ def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
             expected_impact="Correct metric definition or exclude contaminating data",
             typical_timeline="Same day",
             owner_role="Data Analyst",
-            tags=tags + ["data quality", "inflation"],
+            tags=tags + [DATA_QUALITY_TAG, "inflation"],
             status="draft",
         ))
 
     # 3. deflation_causes → one entry per cause
     for cause in (e.get("deflation_causes") or []):
-        cause_text = cause.get("cause") or cause if isinstance(cause, str) else ""
+        cause_text = _cause_text(cause)
         if not cause_text:
             continue
         results.append(PlaybookEntry(
@@ -115,7 +129,7 @@ def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
             expected_impact="Uncover hidden volume or revenue",
             typical_timeline="Same day",
             owner_role="Data Analyst",
-            tags=tags + ["data quality", "deflation"],
+            tags=tags + [DATA_QUALITY_TAG, "deflation"],
             status="draft",
         ))
 
@@ -161,7 +175,8 @@ def seed_from_kb(force: bool = False) -> int:
         user_entries = [e for e in existing if not (e.source_kb_id or e.id.startswith("kb_"))]
         _save_raw([e.model_dump() for e in user_entries])
 
-    for entry in playbook:
-        save_entry(entry)
+    # One read and one write for the whole seed: a save per play rewrote the playbook and its version log
+    # each time, which is quadratic — and startup awaits this.
+    save_entries(playbook)
 
     return len(playbook)

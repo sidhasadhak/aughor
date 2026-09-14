@@ -1,12 +1,13 @@
 """
 Match investigation context to playbook entries.
-Used by ADA synthesis to surface proven interventions.
+Used by ADA synthesis, the Explorer and chat answers to surface matching interventions.
 """
 from __future__ import annotations
 
 import re
+from typing import Optional
 
-from aughor.playbook.models import PlaybookEntry
+from aughor.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
 from aughor.playbook.store import list_active_entries
 
 
@@ -47,11 +48,19 @@ def _score(entry: PlaybookEntry, query_tokens: set[str], *, learned_rates: bool 
     return score
 
 
+def is_data_quality(entry: PlaybookEntry) -> bool:
+    """A KB-seeded check on the number itself ("GMV appears inflated: check whether cancelled orders
+    are filtered"), not a move for the business."""
+    return bool(entry.source_kb_id) and DATA_QUALITY_TAG in entry.tags
+
+
 def retrieve_for_metric_and_phases(
     metric_labels: list[str],
     limit: int = 6,
     *,
     learned_rates: bool = True,
+    industry: Optional[str] = None,
+    include_data_quality: bool = False,
 ) -> list[PlaybookEntry]:
     """
     Given a list of metric/phase labels extracted from the investigation,
@@ -59,6 +68,12 @@ def retrieve_for_metric_and_phases(
     ``learned_rates=False`` sorts by relevance alone — the explorer's call, since a rate is
     learned on every connection and the explorer does not look beyond its own (the user's
     rule, 2026-09-14).
+
+    ``industry`` is ``aughor.business_profile.metric_kb.industry_scope`` for the connection being
+    analysed. A curated id ("airline") reads that industry's plays plus the ones every industry shares,
+    ``""`` reads only the shared ones, and ``None`` — nothing is known about the industry — reads all of
+    them. Unscoped, a SaaS "why is churn up this quarter" drew four e-commerce plays. Data-quality plays
+    are left out unless ``include_data_quality``: they check a number, they don't recommend a move.
     """
     if not metric_labels:
         return []
@@ -76,6 +91,11 @@ def retrieve_for_metric_and_phases(
         return []
 
     entries = list_active_entries()
+    if not include_data_quality:
+        entries = [e for e in entries if not is_data_quality(e)]
+    if industry is not None:
+        from aughor.business_profile.metric_kb import kb_entry_industry
+        entries = [e for e in entries if kb_entry_industry(e.source_kb_id) in ("", industry)]
     scored = [(s, e) for e in entries if (s := _score(e, query_tokens, learned_rates=learned_rates)) > 0]
     scored.sort(key=lambda x: -x[0])
     return [e for _, e in scored[:limit]]
@@ -108,13 +128,19 @@ def build_playbook_prompt_section(entries: list[PlaybookEntry]) -> str:
     """
     Render matched playbook entries as a prompt block for ADA synthesis.
     Returns empty string if no entries.
+
+    The header says "proven" only when an entry has a logged outcome. Every play seeded from the KB
+    starts with none, and the block used to open with "proven interventions … Prefer these" regardless.
     """
     if not entries:
         return ""
 
+    proven = any(e.historical_success_rate > 0 for e in entries)
     lines = [
-        "PLAYBOOK — proven interventions from organisational knowledge:",
-        "(Prefer these recommendations. For root causes NOT covered here, generate a recommendation "
+        "PLAYBOOK — proven interventions from organisational knowledge:" if proven else
+        "PLAYBOOK — reference patterns from organisational knowledge (none has a logged outcome yet):",
+        "(Use an entry where this analysis's evidence supports it; an entry with a success rate has worked "
+        "before. For root causes NOT covered here, generate a recommendation "
         "but append \"[unproven — consider adding to playbook]\" so the user can review it.)",
     ]
     for e in entries:

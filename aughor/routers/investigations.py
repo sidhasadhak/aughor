@@ -1717,8 +1717,10 @@ def _answer_core(
             return (s + "\n\n") if s else ""
 
         def _pb_match():
+            from aughor.business_profile.metric_kb import industry_scope
             from aughor.playbook.retriever import retrieve_for_metric_and_phases
-            return retrieve_for_metric_and_phases([question], limit=4)
+            return retrieve_for_metric_and_phases(
+                [question], limit=4, industry=industry_scope(connection_id, canvas_scope_eff_schema))
 
         def _safe(fn):
             try:
@@ -3824,8 +3826,10 @@ async def _stream_investigation(
     # Surface matched org-playbook items up front (they're also injected into deep-analysis
     # synthesis). The user can keep / modify / remove them from the result.
     try:
+        from aughor.business_profile.metric_kb import industry_scope
         from aughor.playbook.retriever import retrieve_for_metric_and_phases
-        _pb = await asyncio.to_thread(lambda: retrieve_for_metric_and_phases([question], limit=4))
+        _pb = await asyncio.to_thread(lambda: retrieve_for_metric_and_phases(
+            [question], limit=4, industry=industry_scope(connection_id, scope_schema)))
         if _pb:
             yield _sse("playbook_refs", {"items": _pb_serialize(_pb)})
     except Exception as exc:

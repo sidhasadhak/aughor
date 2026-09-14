@@ -2334,6 +2334,7 @@ class SchemaExplorer:
         profile_angles: list[str] = []
         _profile_for_pin = None
         _metric_ranges: list = []   # (distinctive tokens, kind, max) per north-star metric
+        _eff_industry_seen = None   # the effective industry, once the profile below resolves it
         try:
             from aughor.business_profile.infer import get_or_infer
             # Key the profile by THIS run's schema (a per-schema run) or the connection's
@@ -2408,6 +2409,7 @@ class SchemaExplorer:
                 # Track E (2026-08-06): identity resolved through the workspace
                 # that OWNS this connection — see _org_identity.
                 _org_block, _eff_industry = _org_identity(self.connection_id, _bp.industry)
+                _eff_industry_seen = _eff_industry
                 # Steer by the effective industry's CURATED metrics — names + formula + grain +
                 # anti-patterns. Deterministic, no LLM.
                 #
@@ -2459,6 +2461,10 @@ class SchemaExplorer:
             from aughor.kernel.errors import tolerate
             tolerate(_exc, "business-profile steering is best-effort; on failure fall back to "
                      "the generic DOMAIN_ANGLES", counter="explorer.profile_steer_failed")
+
+        # The playbook is read for this connection's industry only, plus the plays every industry shares.
+        from aughor.business_profile.metric_kb import industry_scope
+        _pb_scope = industry_scope(self.connection_id, self.schema_name, industry=_eff_industry_seen)
 
         # Embedding vectors for paraphrase dedup, aligned to self._state["insights"].
         # Seed from any insights already present (e.g. Phase-7 cross-table) so Phase-8
@@ -2625,7 +2631,8 @@ class SchemaExplorer:
                 _pb_labels = [domain] + list(profile_angles) + list(angles)
                 # Relevance alone: a play's success rate is learned from outcomes on every connection, and
                 # the explorer does not look beyond its own (the user's rule, 2026-09-14).
-                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4, learned_rates=False)
+                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4, learned_rates=False,
+                                                        industry=_pb_scope)
                 if _plays:
                     _pb_lines = "\n".join(
                         f"  • When {p.trigger_metric} {p.trigger_condition}: {(p.recommendation or '')[:140]}"

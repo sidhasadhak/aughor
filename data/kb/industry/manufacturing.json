@@ -1,6 +1,8 @@
 {
   "industry": "Manufacturing / Industrial Production",
   "aliases": ["manufacturing", "production", "factory", "industrial", "industrial production", "plant", "assembly", "assembly line", "oem", "shop floor", "fabrication", "machining", "process manufacturing", "discrete manufacturing", "operations"],
+  "generic_aliases": ["production", "industrial", "plant", "assembly", "operations"],
+  "kb_files": ["manufacturing_production"],
   "description": "Conversion of raw materials into finished goods on machines/lines across shifts. Levers are asset effectiveness (OEE), quality (yield, scrap), flow (cycle/takt time, throughput), reliability (downtime, MTBF/MTTR), and schedule adherence (OTIF).",
   "metrics": [
     {

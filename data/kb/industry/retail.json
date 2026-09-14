@@ -1,6 +1,8 @@
 {
   "industry": "Retail / E-commerce",
   "aliases": ["retail", "ecommerce", "e-commerce", "dtc", "direct-to-consumer", "online retail", "commerce", "consumer goods", "marketplace", "beauty", "cosmetics", "apparel", "cpg"],
+  "generic_aliases": ["retail", "commerce", "marketplace", "consumer goods", "beauty", "cosmetics", "apparel", "cpg"],
+  "kb_files": ["ec_customer_lifecycle", "ec_customer_lifecycle_level_2", "ec_funnel_conversion", "ec_funnel_conversion_level_2", "ec_inventory_merchandising", "ec_inventory_merchandising_level_2", "ec_orders_revenue", "ec_orders_revenue_level_2"],
   "description": "Transactional sale of physical goods to consumers, online or in-store. Levers are demand generation (acquisition, conversion), unit economics (AOV, margin), retention (repeat purchase), and inventory efficiency.",
   "metrics": [
     {

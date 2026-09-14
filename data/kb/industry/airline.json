@@ -1,6 +1,8 @@
 {
   "industry": "Airline / Commercial Aviation",
   "aliases": ["airline", "airlines", "aviation", "commercial aviation", "carrier", "air carrier", "flights", "flight", "airways", "air travel", "passenger airline", "lcc", "low-cost carrier", "legacy carrier", "fleet"],
+  "generic_aliases": ["carrier", "fleet"],
+  "kb_files": ["airline_operations"],
   "description": "Scheduled transport of passengers (and cargo) on aircraft over a network of routes. Levers are capacity deployment (seats x distance flown), demand capture (load factor, yield), operational reliability (on-time, cancellations), and asset/cost efficiency (utilization, unit cost per seat-mile).",
   "metrics": [
     {

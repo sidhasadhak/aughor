@@ -87,12 +87,16 @@ def _versions_path(path: Path | None = None) -> Path:
 
 
 def _append_version(snapshot: dict, path: Path | None = None) -> None:
+    _append_versions([snapshot], path)
+
+
+def _append_versions(snapshots: list[dict], path: Path | None = None) -> None:
     vp = _versions_path(path)
     vp.parent.mkdir(parents=True, exist_ok=True)
     log = json.load(open(vp)) if vp.exists() else []
     if not isinstance(log, list):
         log = []
-    log.append(snapshot)
+    log.extend(snapshots)
     with open(vp, "w") as f:
         json.dump(log, f, indent=2)
 
@@ -118,31 +122,47 @@ def save_entry(entry: PlaybookEntry, path: Path | None = None) -> None:
     """Upsert a play, version-aware. A CONTENT change (new receipt) bumps the version and
     appends an immutable snapshot; a meta-only save (success-rate refresh, status promotion)
     carries the version + receipt forward untouched, so versions track advice, not bookkeeping."""
+    save_entries([entry], path)
+
+
+def save_entries(entries: list[PlaybookEntry], path: Path | None = None) -> None:
+    """:func:`save_entry` for many plays, reading and writing the playbook and its version log once.
+
+    Seeding saved one play at a time, and every save rewrote both files: 392 plays took 3.8 s of
+    startup, and the time grows with the square of the count."""
+    if not entries:
+        return
     raw = _load_raw(path)
-    prior = next((e for e in raw if e.get("id") == entry.id), None)
-    receipt = compute_receipt(entry)
+    index: dict = {}
+    for i, e in enumerate(raw):
+        index.setdefault(e.get("id"), i)
+    snapshots: list[dict] = []
+    for entry in entries:
+        at = index.get(entry.id)
+        prior = raw[at] if at is not None else None
+        receipt = compute_receipt(entry)
 
-    if prior is None or prior.get("receipt") != receipt:
-        entry.version = (prior.get("version", 0) + 1) if prior else 1
-        entry.receipt = receipt
-        entry.updated_at = _now_iso()
-        _append_version({
-            "entry_id": entry.id, "version": entry.version, "receipt": receipt,
-            "saved_at": entry.updated_at, "content": entry.model_dump(),
-        }, path)
-    else:
-        # content unchanged — preserve the pin from the stored record
-        entry.version = prior.get("version", 1)
-        entry.receipt = prior.get("receipt") or receipt
-        entry.updated_at = prior.get("updated_at", "")
+        if prior is None or prior.get("receipt") != receipt:
+            entry.version = (prior.get("version", 0) + 1) if prior else 1
+            entry.receipt = receipt
+            entry.updated_at = _now_iso()
+            snapshots.append({
+                "entry_id": entry.id, "version": entry.version, "receipt": receipt,
+                "saved_at": entry.updated_at, "content": entry.model_dump(),
+            })
+        else:
+            # content unchanged — preserve the pin from the stored record
+            entry.version = prior.get("version", 1)
+            entry.receipt = prior.get("receipt") or receipt
+            entry.updated_at = prior.get("updated_at", "")
 
-    if prior is not None:
-        for i, e in enumerate(raw):
-            if e.get("id") == entry.id:
-                raw[i] = entry.model_dump()
-                break
-    else:
-        raw.append(entry.model_dump())
+        if at is not None:
+            raw[at] = entry.model_dump()
+        else:
+            index[entry.id] = len(raw)
+            raw.append(entry.model_dump())
+    if snapshots:
+        _append_versions(snapshots, path)
     _save_raw(raw, path)
 
 

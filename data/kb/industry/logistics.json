@@ -1,6 +1,8 @@
 {
   "industry": "Transport / Logistics",
   "aliases": ["logistics", "transport", "transportation", "freight", "shipping", "supply chain", "last mile", "last-mile", "3pl", "courier", "trucking", "carrier", "fleet", "parcel", "delivery", "distribution", "haulage", "fulfillment"],
+  "generic_aliases": ["transport", "transportation", "shipping", "supply chain", "last mile", "last-mile", "courier", "carrier", "fleet", "delivery", "distribution", "fulfillment"],
+  "kb_files": ["logistics_operations"],
   "description": "Movement of goods from origin to destination across legs, modes, and carriers. Levers are service quality (on-time, in-full, low damage), speed (transit and dwell time), and cost/asset efficiency (cost per shipment/mile, vehicle and container load factor, routes per driver).",
   "metrics": [
     {

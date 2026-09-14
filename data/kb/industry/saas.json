@@ -1,6 +1,8 @@
 {
   "industry": "SaaS / Subscription Software",
   "aliases": ["saas", "subscription", "software", "b2b saas", "b2c saas", "subscription software", "recurring revenue", "cloud software", "freemium", "seat-based", "usage-based", "plg", "product-led growth"],
+  "generic_aliases": ["subscription", "recurring revenue", "freemium", "seat-based", "usage-based"],
+  "kb_files": ["saas_subscription"],
   "description": "Recurring sale of software access via subscriptions. Levers are recurring revenue (MRR/ARR), expansion vs. churn (retention), unit economics (CAC, LTV), and funnel conversion (trial/free → paid). The defining grain trap is recurring vs. one-time money: only the subscription's periodic price is recurring revenue.",
   "metrics": [
     {
