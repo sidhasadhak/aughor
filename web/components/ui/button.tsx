@@ -2,14 +2,16 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { IconsBeside } from "@/components/ui/icon"
 
 /**
  * The one button system — the Instrument component sheet (web/aughor-v2/INSTRUMENT.md §4).
  *
- * Radius 3, label 12/600, two heights: 26 and a small 22. A press steps the background
- * and nothing else — no translate, no scale — because a label that moves under a cursor
- * reads as a misclick. Focus is the global 2px --bfocus ring (app/globals.css), never a
- * border change.
+ * Radius 3, label 12/600, two heights: 26 and a small 22. A press steps the background and
+ * nothing moves — a label that moves under a cursor reads as a misclick in a dense row — except
+ * on the one Primary per view, which also scales to 0.96 (.aug-press, 150ms ease-out; decided
+ * 2026-09-14): a single main action is worth feeling. `static` opts a Primary out. Focus is the
+ * global 2px --bfocus ring (app/globals.css), never a border change.
  *
  * Variant → the sheet's name:
  *   default      Primary    --blue-solid fill, white label. One per view.
@@ -63,14 +65,26 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  static: isStatic = false,
+  children,
   ...props
-}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+}: ButtonPrimitive.Props & VariantProps<typeof buttonVariants> & {
+  /** Keep a Primary still on press, where the scale would distract. */
+  static?: boolean
+}) {
+  // A labelled button's icons sit beside a 500–600 label, so they take the semibold stroke; an
+  // icon-only size has no label to match and keeps the regular one.
+  const labelled = !String(size).startsWith("icon")
+  // The Primary — one per view — is the only press that scales.
+  const press = variant === "default" && !isStatic
   return (
     <ButtonPrimitive
       data-slot="button"
-      className={cn(buttonVariants({ variant, size, className }))}
+      className={cn(buttonVariants({ variant, size, className }), press && "aug-press")}
       {...props}
-    />
+    >
+      {labelled ? <IconsBeside weight="semibold">{children}</IconsBeside> : children}
+    </ButtonPrimitive>
   )
 }
 

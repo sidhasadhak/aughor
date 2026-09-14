@@ -75,10 +75,9 @@ function effectLines(a: any): string[] {
   return out;
 }
 
-function Section({ mark, title, meta, children }: { mark: string; title: string; meta?: string; children: React.ReactNode }) {
+function Section({ title, meta, children }: { title: string; meta?: string; children: React.ReactNode }) {
   return (
     <section className="aug-brief-sec">
-      <div className="aug-brief-gutter" aria-hidden>{mark}</div>
       <div className="aug-brief-body">
         <div className="aug-brief-head">
           <span className="aug-brief-eyebrow">{title}</span>
@@ -424,7 +423,7 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
           <span className="aug-brief-meta">{meta}</span>
         </div>
 
-        <Section mark="01" title="Declared actions" meta="what Aughor is permitted to do on this connection, and what it must ask first">
+        <Section title="Declared actions" meta="what Aughor is permitted to do on this connection, and what it must ask first">
           <Err e={actionsErr} />
           {actionList.length === 0 ? (
             <p className="aug-brief-note">No declared actions yet — declare one below.</p>
@@ -465,7 +464,7 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
           <DeclareActionForm connectionId={connectionId} onSaved={loadActions} />
         </Section>
 
-        <Section mark="02" title="Overlay edits" meta="a person's edit over the data — merged when it is read, never written to the source">
+        <Section title="Overlay edits" meta="a person's edit over the data — merged when it is read, never written to the source">
           <Err e={editsErr} />
           {edits.length === 0 ? (
             <p className="aug-brief-note">No overlay edits yet — annotate or correct a value below.</p>
@@ -508,7 +507,7 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
           <AnnotateForm connectionId={connectionId} onSaved={loadEdits} />
         </Section>
 
-        <Section mark="03" title="Propose from a finding" meta="the agent stages; a person approves">
+        <Section title="Propose from a finding" meta="the agent stages; a person approves">
           <ProposeSection connectionId={connectionId} onStaged={loadPending} />
         </Section>
       </div>

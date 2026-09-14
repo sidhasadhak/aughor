@@ -465,7 +465,7 @@ function TabPill({
         border: `1px solid ${active ? "color-mix(in srgb, var(--blue4) 35%, transparent)" : "transparent"}`,
         color: active ? "var(--blue4)" : "var(--t3)",
         fontSize: 12, fontWeight: active ? 500 : 400,
-        cursor: "pointer", transition: "all .1s",
+        cursor: "pointer", transition: "background-color .1s, border-color .1s, color .1s",
       }}
     >
       <Icon name={icon} size={12} color={active ? "var(--blue4)" : "var(--t3)"} />
@@ -724,7 +724,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             padding: "4px 8px", borderRadius: "var(--r2)",
             background: "none", border: "1px solid transparent",
             color: "var(--t3)", fontSize: 11, cursor: "pointer",
-            transition: "all .1s",
+            transition: "border-color .1s, color .1s",
           }}
           onMouseEnter={e => {
             (e.currentTarget as HTMLButtonElement).style.color = "var(--t1)";
@@ -831,7 +831,7 @@ export function CanvasWorkspace({ canvas, connections, onClose, onCanvasUpdate, 
             width: 28, height: 28, borderRadius: "var(--r2)",
             background: showSettings ? "var(--bg-3)" : "none",
             border: `1px solid ${showSettings ? "var(--b2)" : "transparent"}`,
-            color: "var(--t3)", cursor: "pointer", transition: "all .1s",
+            color: "var(--t3)", cursor: "pointer", transition: "background-color .1s, border-color .1s, color .1s",
           }}
           onMouseEnter={e => (e.currentTarget as HTMLButtonElement).style.color = "var(--t1)"}
           onMouseLeave={e => (e.currentTarget as HTMLButtonElement).style.color = "var(--t3)"}

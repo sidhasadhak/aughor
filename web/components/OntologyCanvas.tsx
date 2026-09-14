@@ -426,7 +426,7 @@ function EntityNode({
   return (
     <div
       className={cn(
-        "absolute rounded-md border cursor-pointer select-none transition-all duration-200",
+        "absolute rounded-md border cursor-pointer select-none transition-[border-color,background-color,opacity] duration-200",
         isNeighbour && !isSelected ? "border-violet-600/35 bg-zinc-900/90" : typeTheme.border,
         isDimmed && "opacity-20 pointer-events-none",
         draggable && "cursor-grab active:cursor-grabbing",

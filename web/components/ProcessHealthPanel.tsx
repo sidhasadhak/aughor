@@ -36,7 +36,7 @@ function MetricHealthCard({
   const s = STATUS_COLORS[item.status];
   return (
     <div
-      className="flex flex-col gap-3 rounded-md p-4 transition-all"
+      className="flex flex-col gap-3 rounded-md p-4 transition-colors"
       style={{ background: s.bg, border: `0.5px solid ${s.border}` }}
     >
       {/* Header */}
@@ -82,7 +82,7 @@ function MetricHealthCard({
       {(item.status === "yellow" || item.status === "red") && (
         <button
           onClick={() => onInvestigate(item.label)}
-          className="mt-auto aug-fs-xs px-2.5 py-1 rounded-[4px] transition-all text-left"
+          className="mt-auto aug-fs-xs px-2.5 py-1 rounded-[4px] transition-colors text-left"
           style={{ border: `0.5px solid ${s.border}`, background: "var(--bg-0)", color: s.text }}
           onMouseEnter={e => (e.currentTarget.style.background = s.bg)}
           onMouseLeave={e => (e.currentTarget.style.background = "var(--bg-0)")}

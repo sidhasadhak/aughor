@@ -519,7 +519,7 @@ export function DocumentUploader() {
                   onDragOver={onDragOver}
                   onDragLeave={onDragLeave}
                   onClick={() => inputRef.current?.click()}
-                  className={`relative rounded-md border-2 border-dashed p-6 text-center cursor-pointer transition-all ${
+                  className={`relative rounded-md border-2 border-dashed p-6 text-center cursor-pointer transition-colors ${
                     dragging
                       ? "border-violet-500 bg-violet-500/10"
                       : "border-zinc-600 hover:border-zinc-500 hover:bg-zinc-800/50"

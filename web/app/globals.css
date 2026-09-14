@@ -236,7 +236,7 @@ a:hover { color: var(--blue4); }
   position: relative;
   z-index: 60;
 }
-.aug-nav-section { padding: 5px 0 7px; border-bottom: 1px solid var(--b0); }
+.aug-nav-section { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-bottom: 1px solid var(--b0); }
 .aug-nav-group {
   display: flex;
   align-items: center;
@@ -255,7 +255,8 @@ a:hover { color: var(--blue4); }
   align-items: center;
   gap: 9px;
   width: 100%;
-  height: 22px;
+  height: 28px;
+  flex-shrink: 0;
   padding: 0 14px;
   font-size: 12px;
   font-weight: 400;
@@ -296,7 +297,25 @@ a:hover { color: var(--blue4); }
   color: var(--t3);
 }
 .aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
-.aug-nav-foot { margin-top: auto; padding: 4px 0 8px; border-top: 1px solid var(--b1); }
+.aug-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-top: 1px solid var(--b1); }
+.aug-nav-kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+
+/* Collapsed — the toggle at the rail's foot, or ⌘\ (lib/navCollapse.ts): a column of icons. The state
+   is an attribute on <html>, set before the first paint, so the rail never renders open and snaps shut.
+   Labels, group names, the shortcut and the version line go; a count becomes a dot on its icon; a hover
+   names the row. No animation: the rail and the content snap to their widths together. */
+:root[data-nav="collapsed"] .aug-sidebar { width: var(--sidebar-collapsed); }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-item { justify-content: center; gap: 0; padding: 0; }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-label,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-kbd,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-meta,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-group { display: none; }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge {
+  position: absolute; top: 6px; left: calc(50% + 4px);
+  width: 6px; height: 6px; padding: 0; border-radius: var(--r-pill);
+  font-size: 0; background: var(--t3);
+}
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge-waiting { background: var(--amb3); }
 
 /* ── Shell · the LIVE activity strip ─────────────────────────────────────────
    The only always-on motion in the app: ticks of the same feed the Agent Ops activity tail
@@ -452,8 +471,9 @@ a:hover { color: var(--blue4); }
 .aug-badge-neutral, .aug-tag-gray  { background: var(--bg-3);  border-color: var(--b2);    color: var(--t2); }
 
 /* ── Buttons — height 26 (small 22), radius 3, label 12/600 ────────────────
-   One primary per view. A press steps the background and the label holds still:
-   no translate, no scale. Loading is the rest state plus ◐ at .8 opacity. */
+   One primary per view. A press steps the background and the label holds still — except on
+   the primary, which also scales to 0.96 (.aug-press, below). Loading is the rest state plus ◐
+   at .8 opacity. */
 .aug-btn {
   display: inline-flex;
   align-items: center;
@@ -854,7 +874,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 @keyframes aug-step-in   { from { opacity: 0; translate: 0 4px } to { opacity: 1; translate: 0 0 } }
 @keyframes aug-modal-pop { from { opacity: 0; scale: .98 } to { opacity: 1; scale: 1 } }
 @keyframes aug-check-pop { 0% { scale: 1 } 50% { scale: 1.04 } 100% { scale: 1 } }
-@keyframes aug-pulse     { 0%, 100% { opacity: .55; scale: 1 } 50% { opacity: 1; scale: 1.12 } }
+@keyframes aug-pulse     { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }   /* brightness only: the dot is already coloured */
 @keyframes aug-caret     { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 @keyframes aug-shimmer   { 0% { background-position: -180px 0 } 100% { background-position: 180px 0 } }
 @keyframes aug-shimmer-text { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
@@ -897,16 +917,35 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* press: the element's own :active background does the work; the label never moves. */
 .aug-pressable { transition: background-color var(--dur-1) var(--ease-out), border-color var(--dur-1) var(--ease-out), color var(--dur-1) var(--ease-out); }
 
+/* press, the Primary only (decided 2026-09-14): the one main action per view also scales to 0.96 —
+   150ms ease-out, the colours keep --dur-1 — so a click on it is felt. Every other control keeps the
+   background step: in a dense row, a label that moves under the cursor reads as a misclick.
+   <Button static> keeps a Primary still. */
+.aug-press, .aug-btn-primary {
+  transition-property: background-color, border-color, color, scale;
+  transition-duration: var(--dur-1), var(--dur-1), var(--dur-1), 150ms;
+  transition-timing-function: var(--ease-out);
+}
+.aug-press:active:not(:disabled), .aug-btn-primary:active:not([aria-disabled="true"]) { scale: .96; }
+
 /* disclosure: a trace, row group or methodology block opening. The grid-template-rows
    0fr→1fr trick: a transition, not an animation, so mounting open paints instantly and
-   only a live data-open flip moves. */
+   only a live data-open flip moves. --dur-2, a row entering: rows open many times a session and
+   reflow the layout on every frame of the opening, so it stays short. */
 .aug-disclose {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--dur-3) var(--ease-out);
+  transition: grid-template-rows var(--dur-2) var(--ease-out);
 }
 .aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
 .aug-disclose > * { min-height: 0; overflow: hidden; }
+
+/* The Briefing's first open of a session (components/brief/firstOpen.ts): the verdict, then the
+   numbers that moved, then everything below the hero, 60ms apart — the order says what to read
+   first. BriefingPanel sets .aug-brief-entering for that one entrance and drops it after. */
+.aug-brief-entering [data-brief-hero] > div > * { animation: aug-step-in var(--dur-2) var(--ease-out) both; }
+.aug-brief-entering [data-brief-hero] > div > [data-brief-movers] { animation-delay: 60ms; }
+.aug-brief-entering [data-brief-hero] ~ * { animation: aug-step-in var(--dur-2) var(--ease-out) 120ms both; }
 
 /* ── Ontology canvas edge animations ─────────────────────────────────────── */
 @keyframes edge-flow         { to { stroke-dashoffset: -12; } }
@@ -916,126 +955,62 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    shape stays put and only its weight changes, so the eye reads state, not a new icon. */
 .aug-icon-filled { fill: currentColor; }
 
-/* ── Reduced motion — every fallback is the FINISHED frame, never the empty one ── */
+/* ── Reduced motion — gentler, not none ────────────────────────────────────────────────────────
+   Nothing travels, grows or loops: a transform, a row growing open, a dash running along an edge.
+   A fade or a colour change still shows what changed, so transitions keep those — at each element's
+   own duration — and an entrance that moved arrives as a fade. Every other fallback is the FINISHED
+   frame, never the empty one. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
+    transition-property: color, background-color, border-color, outline-color, text-decoration-color,
+      fill, stroke, opacity, box-shadow !important;
+  }
+  .aug-anim-fade, .aug-anim-up, .aug-step-in, .aug-stream-in, .aug-anim-pop,
+  .aug-brief-entering [data-brief-hero] > div > *, .aug-brief-entering [data-brief-hero] ~ * {
+    animation-name: aug-fade-in !important;
+    animation-duration: var(--dur-2) !important;
   }
   /* The caret is solid, the pulse is its lit colour, the skeleton a flat fill. */
   .aug-caret { animation: none; opacity: 1; }
-  .aug-pulse-dot, .aug-dot-live, .aug-dot-analysing { animation: none; opacity: 1; scale: 1; }
+  .aug-pulse-dot, .aug-dot-live, .aug-dot-analysing { animation: none; opacity: 1; }
   .aug-skeleton, .aug-shimmer { animation: none; background: var(--bg-4); }
   .aug-shimmer-text { animation: none; background: none; color: var(--t2); }
   .aug-check-pop { animation: none; }
+  .aug-press:active:not(:disabled), .aug-btn-primary:active:not([aria-disabled="true"]) { scale: none; }
 }
 
-/* ── The brief as an artefact (Aughor Intelligence · 01 Briefing) ─────────────────────────────
-   Briefing is one of the two screens with artefact manners: a 700px measure, numbered sections in
-   a 44px gutter, superscripts into a margin apparatus, a signature block. The other Intelligence
-   layers stay instrument-dense and get none of it. */
-.aug-content-meta-writing { color: var(--vio4); }
-.aug-brief-scroll { flex: 1; min-width: 0; overflow-y: auto; }
+/* ── Intelligence layer sections (Profile · Actions · Memory) ─────────────────────────────────
+   A section is set off by a rule, not a number: the numbered 44px gutter came out on 2026-09-14
+   (the user: it was not helping), when the Briefing went back to its verdict-first layout. */
 .aug-brief-strip { display: flex; align-items: center; gap: 10px; padding: 6px 16px; border-bottom: 1px solid var(--b1); }
-.aug-brief-pad { padding: 16px 20px; }
-.aug-brief { container-type: inline-size; }
-.aug-brief-cols { display: flex; align-items: flex-start; min-width: 0; }
-.aug-brief-main { flex: 1; min-width: 0; }
 .aug-brief-sec { display: flex; border-top: 1px solid var(--b1); }
 .aug-brief-sec:first-child { border-top: 0; }
-.aug-brief-gutter {
-  width: 44px; flex: none; padding-top: 13px; border-right: 1px solid var(--b0);
-  text-align: center; font-family: var(--font-mono); font-size: 11px; color: var(--t4);
-}
 .aug-brief-body { flex: 1; min-width: 0; padding: 12px 22px 16px 20px; }
-.aug-brief-measure { max-width: 700px; }
 .aug-brief-head { display: flex; align-items: baseline; gap: 10px; min-width: 0; margin-bottom: 8px; }
-.aug-brief-title { margin: 0; font-size: 15px; font-weight: 600; color: var(--t1); white-space: nowrap; }
 .aug-brief-meta {
   min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   font-family: var(--font-mono); font-size: 11px; color: var(--t3);
 }
-.aug-brief-head-end { margin-left: auto; display: flex; align-items: center; gap: 8px; flex: none; }
 .aug-brief-eyebrow {
   font-family: var(--font-mono); font-size: 11px; letter-spacing: .14em;
   text-transform: uppercase; color: var(--t3); white-space: nowrap;
 }
-.aug-brief-writing { color: var(--vio4); }
 .aug-brief-eyebrow-row { display: flex; align-items: center; gap: 8px; min-width: 0; margin-bottom: 8px; }
 .aug-brief-eyebrow-row > .aug-brief-meta { margin-left: auto; }
-.aug-brief-verdict {
-  margin: 0; font-size: 18px; font-weight: 600; line-height: 1.5;
-  letter-spacing: -0.01em; color: var(--t1); text-wrap: pretty;
-}
-.aug-brief-lede { margin: 8px 0 0; font-size: 13px; line-height: 1.7; color: var(--t2); }
-.aug-brief-doors { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
-.aug-brief-prose { font-size: 13px; line-height: 1.8; color: var(--t1); }
-.aug-brief-prose > p { margin: 0 0 10px; }
-.aug-brief-prose > p:last-child { margin-bottom: 0; }
 .aug-brief-note { margin: 0; font-size: 12px; line-height: 1.6; color: var(--t3); }
-.aug-brief-skel { display: flex; flex-direction: column; gap: 8px; }
-.aug-brief-skel > .aug-skeleton { height: 11px; border-radius: var(--r1); }
-.aug-brief-skel > .aug-brief-skel-h1 { height: 18px; }
 .aug-cite-ref-open { padding: 0 1px; cursor: pointer; }
 .aug-cite-ref-open:hover { text-decoration: underline; }
 
-/* §1 — the numbers that moved. Receipts are columns, not badges. */
+/* The compact numeric table — drawn first for the artefact Briefing; the Profile layer's tables read it. */
 .aug-moves-wrap { overflow-x: auto; }
 .aug-moves thead th { position: static; padding: 0 8px 0 0; background: transparent; }
 .aug-moves tbody td { padding: 0 8px 0 0; }
 .aug-moves thead th:last-child, .aug-moves tbody td:last-child { padding-right: 0; }
 .aug-moves .num { font-size: 11px; }
-.aug-moves-metric { max-width: 340px; overflow: hidden; text-overflow: ellipsis; }
-.aug-moves-overall { margin-left: 8px; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
-.aug-moves-prior, .aug-moves-flat { color: var(--t3); }
 .aug-moves-good { color: var(--grn4); }
-.aug-moves-bad { color: var(--red4); }
-.aug-moves-writing { color: var(--vio4); }
-.aug-moves-dropped td { color: var(--t3); }
-.aug-moves-expandable { cursor: pointer; }
-.aug-moves-spark-skel { display: inline-block; width: 76px; height: 11px; border-radius: var(--r1); vertical-align: middle; }
-.aug-moves-detail { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--b1); border-radius: var(--r2); }
-.aug-moves-detail-head {
-  display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;
-  font-size: 12px; font-weight: 600; color: var(--t1);
-}
-.aug-why.aug-receipt-ref {
-  font-family: var(--font-mono); font-size: 11px; color: var(--blue4); cursor: pointer;
-  border-bottom-color: color-mix(in srgb, var(--blue4) 50%, transparent);
-}
 
-/* The apparatus — the margin the superscripts point into, and the brief's signature. */
-.aug-apparatus {
-  width: 300px; flex: none; align-self: flex-start; position: sticky; top: 0;
-  max-height: calc(100vh - 92px); display: flex; flex-direction: column; border-left: 1px solid var(--b1);
-}
-.aug-apparatus-head {
-  height: 32px; flex: none; display: flex; align-items: center; gap: 8px;
-  padding: 0 14px; border-bottom: 1px solid var(--b1);
-}
-.aug-apparatus-head > .aug-brief-meta { margin-left: auto; }
-.aug-apparatus-notes {
-  flex: 1; min-height: 0; overflow-y: auto; margin: 0; padding: 8px;
-  list-style: none; display: flex; flex-direction: column; gap: 2px;
-}
-.aug-apparatus-note { display: flex; gap: 9px; padding: 5px 6px; border-radius: var(--r2); cursor: pointer; }
-.aug-apparatus-note:hover, .aug-apparatus-note-on { background: var(--bg-hover); }
-.aug-apparatus-n { flex: none; min-width: 12px; padding-top: 2px; font-family: var(--font-mono); font-size: 11px; color: var(--blue4); }
-.aug-apparatus-body { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.aug-apparatus-text {
-  font-size: 12px; line-height: 1.55; color: var(--t2);
-  display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; overflow: hidden;
-}
-.aug-apparatus-meta { font-family: var(--font-mono); font-size: 11px; color: var(--t3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.aug-apparatus-empty { margin: 0; padding: 4px 6px; font-size: 12px; line-height: 1.55; color: var(--t3); }
-.aug-apparatus-sig { flex: none; display: flex; flex-direction: column; gap: 6px; padding: 10px 14px 12px; border-top: 1px solid var(--b1); }
-.aug-apparatus-sig-text { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t2); }
-.aug-apparatus-guards { display: flex; flex-wrap: wrap; gap: 5px; }
-@container (max-width: 980px) {
-  .aug-brief-cols { flex-direction: column; align-items: stretch; }
-  .aug-apparatus { width: auto; position: static; max-height: none; border-left: 0; border-top: 1px solid var(--b1); }
-}
 
 /* ── The claim ledger (Aughor Intelligence · 05 Evidence) ─────────────────────────────────────
    A claim is a row, not a card; the selected claim opens in the inspector beside the ledger. */
@@ -1096,8 +1071,17 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 .aug-inspector-note { margin: 0; font-size: 11px; line-height: 1.6; color: var(--t3); }
 
 /* ── The profile (Aughor Intelligence · 02 Profile) ───────────────────────────────────────────
-   Instrument-dense: numbered sections beside a rail of governed metrics and status columns. */
+   Instrument-dense: sections beside a rail of governed metrics and status columns. */
 .aug-profile { flex: 1; display: flex; min-height: 0; min-width: 0; }
+/* The Profile layer's domain rail: the Hub's categorisation of findings by domain, beside the profile. */
+.aug-profile-layer { flex: 1; display: flex; min-height: 0; min-width: 0; }
+.aug-profile-domains { width: 208px; flex: none; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--b1); background: var(--bg-0); }
+.aug-profile-domains-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 6px; display: flex; flex-direction: column; gap: 2px; }
+.aug-profile-domain-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.aug-profile-hint {
+  position: fixed; bottom: 20px; left: 50%; translate: -50% 0; z-index: 70; max-width: 420px;
+  padding: 10px 16px; border: 1px solid var(--b2); border-radius: var(--r2); background: var(--bg-1); color: var(--t2); box-shadow: var(--shadow-md);
+}
 .aug-profile-main { flex: 1; min-width: 0; overflow-y: auto; }
 .aug-profile-main > .aug-brief-strip + .aug-brief-sec { border-top: 0; }
 .aug-profile-strip-end { margin-left: auto; }

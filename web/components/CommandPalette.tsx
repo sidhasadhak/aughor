@@ -491,12 +491,12 @@ export function CommandPalette({ open, onClose, selectedConn, onNavigate, onGoTo
       {/* Backdrop */}
       <div
         onClick={onClose}
-        className="aug-anim-fade"
         style={{ position: "fixed", inset: 0, background: "var(--scrim)", backdropFilter: "blur(3px)", zIndex: 200 }}
       />
 
-      {/* Palette */}
-      <div className="aug-anim-pop" style={{
+      {/* Palette — no entrance: it is summoned from the keyboard, many times a day, so it paints
+          in the frame the keystroke lands. */}
+      <div style={{
         position: "fixed", top: "14%", left: "50%", transform: "translateX(-50%)",
         zIndex: 201, width: "100%", maxWidth: 580,
         background: "var(--bg-2)", border: "1px solid var(--b2)",

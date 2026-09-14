@@ -19,7 +19,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { MetricProvenancePanel } from "@/components/ontology/MetricProvenance";
 import { StatusChip } from "@/components/brief/StatusChip";
-import { WhyFigure, GuardChip, type GuardVerdict } from "@/components/ui/trust";
+import { GuardChip, type GuardVerdict } from "@/components/ui/trust";
 import { WarrantChip } from "@/components/graph/WarrantChip";
 import { AddToEvalSuite } from "@/components/AddToEvalSuite";
 import { costSummary } from "@/lib/cost";
@@ -501,24 +501,4 @@ export function WhyThisNumber({ receiptId }: { receiptId: string }) {
       {open && <Drawer receiptId={receiptId} preloaded={rec} onClose={() => setOpen(false)} />}
     </>
   );
-}
-
-/** A receipt as a table cell: its short id in mono with a dashed underline, opening the same
- *  Trust Receipt drawer as "Why this number →". Nothing is fetched until it is opened — a
- *  column of these must not cost a request per row. */
-export function ReceiptRef({ receiptId, title }: { receiptId: string; title?: string }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
-      <WhyFigure className="aug-receipt-ref" title={title ?? "Open the Trust Receipt"} onOpen={() => setOpen(true)}>
-        {receiptLabel(receiptId)}
-      </WhyFigure>
-      {open && <Drawer receiptId={receiptId} onClose={() => setOpen(false)} />}
-    </>
-  );
-}
-
-/** A receipt id short enough for a column: its last six letters and digits. */
-export function receiptLabel(id: string): string {
-  return `R-${id.replace(/[^a-z0-9]/gi, "").slice(-6)}`;
 }

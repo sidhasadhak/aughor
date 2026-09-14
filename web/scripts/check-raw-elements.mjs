@@ -21,7 +21,7 @@ const ROOTS = ["components", "app"];
 const EXTS = [".tsx", ".ts"];
 
 // One-way ratchet. LOWER this as raw <button>s become <Button>; never raise it.
-const BASELINE = 57;
+const BASELINE = 55;
 
 const RAW_BUTTON = /<button[ >]/g;
 

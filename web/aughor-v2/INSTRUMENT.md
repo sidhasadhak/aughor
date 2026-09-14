@@ -44,7 +44,7 @@ table or column name, and code**, always tabular (`.aug-num`). Line heights 1.45
 **Geometry.** Radii `--r1` 3 · `--r2` 4 · `--r3` 6 (the design's `--r-3/--r-4/--r-6` alias
 them). 3 for chips, tags, buttons; 4 for inputs, nav items, small containers; 6 for frames,
 panels, overlays — a ceiling, not a default. Fully round (`--r-pill`) only for what IS round:
-avatars and status dots. Shell: rail `--sidebar` 248 · topbar `--topbar` 48 · content header
+avatars and status dots. Shell: rail `--sidebar` 248 (collapsed `--sidebar-collapsed` 48) · topbar `--topbar` 48 · content header
 44 · prose measure `--shell-measure` 700.
 
 **Focus.** `2px solid var(--bfocus)` at 2px offset on every interactive element, never a
@@ -115,8 +115,9 @@ for emphasis.
 
 ## 5. Components (class → primitive)
 
-- **Buttons** — height 26 (small 22), radius 3, label 12/600; a press steps the background,
-  the label never moves; loading = rest state + ◐ at .8 opacity. `.aug-btn`
+- **Buttons** — height 26 (small 22), radius 3, label 12/600; a press steps the background and
+  the label never moves — except the one Primary per view, which also scales to 0.96 (`.aug-press`,
+  150ms ease-out; `<Button static>` keeps it still); loading = rest state + ◐ at .8 opacity. `.aug-btn`
   (`-primary` `-ghost` `-minimal` `-sm`). `<Button>` variants: `default` Primary · `secondary`
   Secondary · `outline` and `minimal` Ghost (bordered) · `link` Minimal ("show source") ·
   `ghost` the quiet toolbar/menu-row idiom (not on the sheet) · `destructive`. Sizes: default,
@@ -167,13 +168,24 @@ keeps **Spend** under Operations: the design was synced before Spend shipped.
 | name | class | duration · easing | reduced motion |
 |---|---|---|---|
 | streaming-caret | `.aug-caret` | 1s `steps(1)` | solid, static |
-| step-in | `.aug-anim-up` `.aug-step-in` `.aug-stream-in` | `--dur-2` · `--ease-out`, opacity + 4px up | final position |
+| step-in | `.aug-anim-up` `.aug-step-in` `.aug-stream-in` | `--dur-2` · `--ease-out`, opacity + 4px up | a fade |
 | check-pop | `.aug-check-pop` | `--dur-1`, 1.04 that settles | colour only |
-| pulse | `.aug-pulse-dot` `.aug-dot-live` | 1.05s `--ease-inout` | lit colour, static |
+| pulse | `.aug-pulse-dot` `.aug-dot-live` | 1.05s `--ease-inout`, brightness only | lit colour, static |
 | shimmer | `.aug-skeleton` | 1.1s linear, 360px sweep | flat `--bg-4` |
-| disclosure | `.aug-disclose` | `--dur-3` · `--ease-out` | instant |
-| modal-pop | `.aug-anim-pop`, `<DialogContent>` | `--dur-2`, 0.98 → 1 | final state |
+| disclosure | `.aug-disclose` | `--dur-2` · `--ease-out` | instant |
+| modal-pop | `.aug-anim-pop`, `<DialogContent>` | `--dur-2`, 0.98 → 1 | a fade (`.aug-anim-pop`); final state |
 | press | element `:active` | `--dur-1`, background only | background only |
+| primary press | `.aug-press` (`<Button>` Primary), `.aug-btn-primary` | 150ms `--ease-out`, scale 0.96 + background | background only |
+| brief entrance | `.aug-brief-entering`, first open of a session | step-in: verdict → numbers → cards, 60ms apart | fades, same order |
+
+Under reduced motion, transitions keep colour, opacity and shadow at their own durations; movement and
+loops stop. The ⌘K palette has no entrance at all — it is summoned from the keyboard.
+
+**Decided 2026-09-14** (the Instrument Polish Review, against the better-ui and emil-design-eng
+skills): the Primary alone gets a press scale, and dense controls keep the background step; the
+Briefing enters verdict → numbers → cards once a session (`components/brief/firstOpen.ts`), never on
+Reload or Regenerate; depth stays a hairline, not a shadow — a card is the page's own plane, and on
+`#101010` a drop shadow would not show.
 
 ## 8. Icons and density
 
@@ -181,7 +193,9 @@ One stroke set — Tabler, through `components/ui/icon.tsx` only (`lint:icons`) 
 `currentColor`, no fills. Icons are navigational, never decorative: if an icon and a word say
 the same thing, the icon goes. Status is a 7px dot, not an icon. Emoji are forbidden. Spacing
 `4 · 6 · 8 · 10 · 12 · 16 · 20 · 24`. Dense row 24px (the default), header 22, comfortable 34
-only where a row carries two lines, nav item 22, attention row 28, activity-tail line 17.
+only where a row carries two lines, nav item 28 with 2px between rows, attention row 28, activity-tail line 17. The rail collapses to a 48px column of
+icons — the toggle at its foot, or `⌘\` — remembered per browser and set before the first paint
+(`lib/navCollapse.ts`); a collapsed row names itself on hover, and nothing animates.
 
 ## 9. What exists, and what does not yet
 
@@ -220,6 +234,14 @@ carry is not drawn:
 - a brief is one POST, not a stream: the screen says "opening" or "being written" over skeletons,
   with no caret and no placeholder prose.
 
+**2026-09-14 — the Briefing is verdict-first again, and no section is numbered.** The user took
+the Briefing back to its layout from before pass 3: the verdict, "Numbers that moved" as tiles that
+open their finding in place, then the rest of the page as it stood — drawn on the Instrument tokens,
+which stay. The numbered 44px gutter came out of every layer that had one (Profile, Actions, Memory):
+a section is set off by a rule. What only the artefact layout used went with it — `MovedNumbers`,
+`useNorthStarMoves` and `moves.ts`, the apparatus and signature CSS, `ReceiptRef`, and the shell
+header's Regenerate and Investigate under an "Intelligence" title. `ff04daa7` still has them.
+
 **Evidence** (artboard 05) is a claim ledger: a row per claim — the sentence with its query beneath,
 confidence, feedback, when — filtered by feedback, with the selected claim in an inspector. Not
 drawn, because a claim does not store it: guard columns, a verdict, refused claims, receipt ids,
@@ -237,6 +259,12 @@ explorer's null meanings), and a rail of governed metrics (draft / proposed / ap
 deprecated — there is no "disputed") and status columns, drawn as values without arrows because no
 order is recorded. Not drawn: per-table confidence and decided-by; channels, DCs, a fiscal week; a
 profiling-run count; Re-profile and Correct (nothing does either without an LLM call).
+
+**2026-09-14 — the domain rail is back** (`ProfileLayer.tsx`). The Hub's categorisation of findings
+by domain returns as a rail beside the profile: each domain with its finding count (a violet dot
+where something was promoted to the org), and a domain's page — its findings ranked by novelty, each
+with the Briefing's finding actions; the patterns that involve it; what it promoted to the org.
+"Overview" is the profile described above.
 
 **Org** (artboard 08) is a ledger of promoted findings — the one thing Org records. People and
 ownership, who to ask, and open disagreements are not recorded, so none of them is drawn, and the

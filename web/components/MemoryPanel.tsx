@@ -129,7 +129,6 @@ export function MemoryPanel() {
         </div>
 
         <section className="aug-brief-sec">
-          <div className="aug-brief-gutter" aria-hidden>01</div>
           <div className="aug-brief-body">
             <div className="aug-brief-head">
               <span className="aug-brief-eyebrow">Remembered readings</span>
@@ -202,7 +201,6 @@ export function MemoryPanel() {
         </section>
 
         <section className="aug-brief-sec">
-          <div className="aug-brief-gutter" aria-hidden>02</div>
           <div className="aug-brief-body">
             {/* PX-4 — the closed loop's WRITE half. The flywheel moves by grading, and
                 until this section grading had no door: the panel could show trusted
@@ -213,7 +211,6 @@ export function MemoryPanel() {
 
         {datasets && (
           <section className="aug-brief-sec">
-            <div className="aug-brief-gutter" aria-hidden>03</div>
             <div className="aug-brief-body">
               <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4 }}>
                 <span className="aug-fs-sm" style={{ fontWeight: 600, color: "var(--t2)" }}>Training corpus</span>

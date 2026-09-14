@@ -61,7 +61,7 @@ import {
   IconArrowsSplit2, IconBinaryTree, IconChartDots3, IconGauge, IconHandStop, IconStack2,
   IconList, IconPaperclip,
 } from "@tabler/icons-react";
-import type { ComponentType } from "react";
+import { createContext, useContext, type ComponentType, type ReactNode } from "react";
 
 interface GlyphProps {
   size?: number | string;
@@ -194,16 +194,30 @@ export type IconName = keyof typeof ICONS;
 /** Every role this set answers to — for the icon gate and for a picker. */
 export const ICON_NAMES = Object.keys(ICONS) as IconName[];
 
-/** Stroke in Tabler's 24-unit grid that renders ~1.1 device pixels at `size`. */
-function opticalStroke(size: number): number {
-  return Math.min(2.4, Math.max(1.0, Math.round((26 / size) * 100) / 100));
+/** The weight of the label an icon sits beside. better-ui matches the stroke to it — 1.5 beside
+ *  regular text, 2 beside medium or semibold, on a 24-unit grid: a 4/3 step. */
+export type LabelWeight = "regular" | "semibold";
+const LabelWeightContext = createContext<LabelWeight>("regular");
+
+/** Icons inside take the stroke for a label of this weight. <Button> sets it around a labelled
+ *  button's content (its labels are 500–600); an explicit `stroke` still wins. */
+export function IconsBeside({ weight, children }: { weight: LabelWeight; children: ReactNode }) {
+  return <LabelWeightContext.Provider value={weight}>{children}</LabelWeightContext.Provider>;
+}
+
+/** Stroke in Tabler's 24-unit grid that renders ~1.1 device pixels at `size` beside regular text,
+ *  and 4/3 of that beside semibold. The clamp still keeps a small glyph from filling in. */
+function opticalStroke(size: number, beside: LabelWeight = "regular"): number {
+  const perLabel = beside === "semibold" ? 4 / 3 : 1;
+  return Math.min(2.4, Math.max(1.0, Math.round((26 / size) * perLabel * 100) / 100));
 }
 
 export function Icon({
   name, size = 14, stroke, className, label,
 }: { name: IconName; size?: number; stroke?: number; className?: string; label?: string }) {
   const Glyph = ICONS[name] ?? ICONS.info;
-  const weight = stroke ?? opticalStroke(size);
+  const beside = useContext(LabelWeightContext);
+  const weight = stroke ?? opticalStroke(size, beside);
   // An icon is either a picture that carries meaning or decoration beside a word that
   // already carries it. Naming both is worse than naming neither: a screen reader then
   // reads "Copy, Copy" on every button. `label` marks the first case; its absence marks

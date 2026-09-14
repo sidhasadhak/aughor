@@ -434,13 +434,21 @@ BASELINE: dict[str, int] = {
     # context graph's loader moved to it in the same change.
     # 2026-09-13: 1880 → 1694. Instrument's Profile layer replaced IntelligenceHub.tsx and
     # ExplorationPanel.tsx (128 between them), and the Briefing and Org layers were redrawn.
-    "insight": 1692,
+    # 2026-09-14: 1692 → 1759, a RAISE. The user took the Briefing back to its layout from
+    # before Instrument (BriefingPanel.tsx +39: the verdict hero, the moved-number tiles and
+    # the headline cards name the finding type and its props as the old file did) and
+    # restored the Hub's domain rail on the Profile layer (ProfileLayer.tsx +28: the
+    # domain-findings API by its own names). Code #498 removed came back by request;
+    # renaming that API to dodge the pattern would only hide it from this test.
+    "insight": 1759,
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     # 2026-09-13: 602 → 573, measured. Instrument redrew the Briefing and deleted ProcessMapper.tsx;
     # what it added spells the backend or the shell's contract — the rail's running-runs badge
     # (GET /investigations, `investigation.*` events) and the header's Investigate door.
-    "investigation_in_web": 573,
+    # 2026-09-14: 573 → 583, a RAISE: the restored Briefing's Investigate doors (+15), less
+    # the shell header's Investigate door that the restore took out (−5).
+    "investigation_in_web": 583,
     # Lowered twice over, by two waves that landed together. DS-11's completion reworded
     # four prose hits in `actions/inbox.py` and exempted the inbox suite; DS-13 exempted
     # `aughor/actions/executor.py` and its own suite, where every hit is a type name, an
