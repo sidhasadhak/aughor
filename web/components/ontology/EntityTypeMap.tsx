@@ -291,8 +291,15 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
           <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500 }}>
             {t.display_name}
           </span>
+          {/* ON-8 — the connection on a line of its own: a name like "LuxExperience (explorer draft)" would push the key
+              and the links off the rail's edge. */}
+          {sources && t.connection_id && (
+            <span className="aug-fs-xs" data-testid="entity-rail-connection" title={`read from ${nameOf(sources, t.connection_id)}`}
+              style={{ color: "var(--t3)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              on {nameOf(sources, t.connection_id)}
+            </span>
+          )}
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            {sources && t.connection_id ? `on ${nameOf(sources, t.connection_id)} · ` : ""}
             {part ? `part of ${t.absorbed_into}` : `${keyWords(t.key_verified)} · ${t.links} ${t.links === 1 ? "link" : "links"}`}
             {!part && t.parts?.length ? ` · ${t.parts.length} ${t.parts.length === 1 ? "part" : "parts"}` : ""}
             {t.unconfirmed ? ` · ${t.unconfirmed} proposed` : ""}

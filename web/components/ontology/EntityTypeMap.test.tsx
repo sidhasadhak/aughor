@@ -375,6 +375,7 @@ describe("EntityTypeMap — an organisation's ontology", () => {
     render(<EntityTypeMap connectionId="domain:default" />);
     await waitFor(() => expect(handoff.nodes.find((n) => n.id === "customer")?.data.source).toBe("CRM"));
     expect(screen.getByTestId("rf-node-order")).toHaveTextContent("on Shop");
+    expect(screen.getAllByTestId("entity-rail-connection").map((n) => n.textContent).sort()).toEqual(["on CRM", "on Shop"]);
     await waitFor(() => expect(handoff.edges).toHaveLength(1));
     const [edge] = handoff.edges;
     expect(edge.style.strokeDasharray).toBe("1 4");
