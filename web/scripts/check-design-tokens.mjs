@@ -68,6 +68,11 @@ const RADIUS_RULES = [
 /** Both spellings of a raw font size: the Tailwind bracket and the style object. */
 const FONT_SIZE = /\btext-\[(\d+(?:\.\d+)?)px\]|\bfontSize:\s*"?(\d+(?:\.\d+)?)(?:px)?"?/g;
 
+/** `transition: all` animates whatever else happens to change — padding, width, a shadow — and
+ *  moves unlike the Button system beside it. Name what changes instead: transition-colors,
+ *  transition-opacity, transition-[…], or a named inline list. Held at zero, not ratcheted. */
+const TRANSITION_ALL = /\btransition-all\b|\btransition(?:Property)?:\s*["'`]all\b/g;
+
 function* walk(dir) {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
@@ -80,6 +85,7 @@ function* walk(dir) {
 
 const violations = [];
 const offScale = [];
+const transitionAll = [];
 let rawFontSizes = 0;
 
 for (const root of ROOTS) {
@@ -92,6 +98,9 @@ for (const root of ROOTS) {
         for (const m of line.matchAll(re)) {
           violations.push({ file: rel, line: i + 1, token: m[0], hint });
         }
+      }
+      for (const m of line.matchAll(TRANSITION_ALL)) {
+        transitionAll.push({ file: rel, line: i + 1, token: m[0] });
       }
       for (const m of line.matchAll(FONT_SIZE)) {
         rawFontSizes++;
@@ -126,6 +135,15 @@ if (offScale.length) {
   if (offScale.length > 40) console.error(`  … and ${offScale.length - 40} more`);
 }
 
+if (transitionAll.length) {
+  failed = true;
+  console.error(
+    `\n✗ design-token gate: ${transitionAll.length} transition(s) on "all". Name the properties that ` +
+    `change — transition-colors, transition-opacity, transition-[…], or "background-color .1s, color .1s".\n`);
+  for (const v of transitionAll.slice(0, 40)) console.error(`  ${v.file}:${v.line}  ${v.token}`);
+  if (transitionAll.length > 40) console.error(`  … and ${transitionAll.length - 40} more`);
+}
+
 if (rawFontSizes > FONT_SIZE_BASELINE) {
   failed = true;
   console.error(
@@ -137,6 +155,6 @@ if (failed) process.exit(1);
 
 const slack = FONT_SIZE_BASELINE - rawFontSizes;
 console.log(
-  "✓ design-token gate: no raw radius, every font size on the " +
+  "✓ design-token gate: no raw radius, no transition on all, every font size on the " +
   `${[...SCALE].join("/")}px scale; ${rawFontSizes} raw literals ` +
   `(baseline ${FONT_SIZE_BASELINE}${slack > 0 ? `, ${slack} under — lower it` : ""}).`);

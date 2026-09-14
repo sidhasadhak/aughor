@@ -56,7 +56,7 @@ function FilterChip({ label, icon, active, onClick }: { label: string; icon?: Ic
       border: `1px solid ${active ? "var(--blue4)" : "var(--b1)"}`,
       color: active ? "var(--blue4)" : "var(--t2)",
       fontSize: 12, fontWeight: active ? 500 : 400,
-      cursor: "pointer", transition: "all .1s", whiteSpace: "nowrap",
+      cursor: "pointer", transition: "background-color .1s, border-color .1s, color .1s", whiteSpace: "nowrap",
     }}>
       {icon && <Icon name={icon} size={13} color={active ? "var(--blue4)" : "var(--t3)"} />}
       {label}
@@ -451,7 +451,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                   style={{ display: "inline-flex", alignItems: "center", justifyContent: "center",
                     width: 27, height: 24, borderRadius: 5, cursor: "pointer",
                     background: view === v ? "var(--bg-4)" : "transparent",
-                    color: view === v ? "var(--t1)" : "var(--t3)", transition: "all .1s" }}>
+                    color: view === v ? "var(--t1)" : "var(--t3)", transition: "background-color .1s, color .1s" }}>
                   <Icon name={ic} size={13} color="currentColor" />
                 </div>
               ))}
@@ -466,7 +466,7 @@ export function CanvasBrowser({ connections, onSelect, onNew, workspaceId }: Pro
                 padding: "5px 10px", borderRadius: "var(--r2)",
                 background: sortOpen ? "var(--bg-3)" : "transparent",
                 border: `1px solid ${sortOpen ? "var(--b2)" : "transparent"}`,
-                color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "all .1s",
+                color: "var(--t2)", fontSize: 12, cursor: "pointer", transition: "background-color .1s, border-color .1s",
               }}
               onMouseEnter={e => { if (!sortOpen) e.currentTarget.style.background = "var(--bg-2)"; }}
               onMouseLeave={e => { if (!sortOpen) e.currentTarget.style.background = "transparent"; }}

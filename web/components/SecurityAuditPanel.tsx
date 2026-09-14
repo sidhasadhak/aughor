@@ -386,7 +386,7 @@ function LensToggle({ value, onChange }: { value: Lens; onChange: (v: Lens) => v
           background: value === o.v ? "var(--bg-3)" : "transparent",
           color: value === o.v ? "var(--t1)" : "var(--t3)",
           border: value === o.v ? "0.5px solid var(--b2)" : "0.5px solid transparent",
-          transition: "all .1s",
+          transition: "background-color .1s, border-color .1s, color .1s",
         }}>
           {o.label}
         </button>

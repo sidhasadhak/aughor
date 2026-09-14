@@ -158,7 +158,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
             style={{
               display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
               borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
-              cursor: "pointer", border: "1px solid transparent", transition: "all .12s",
+              cursor: "pointer", border: "1px solid transparent", transition: "background-color .12s, color .12s, box-shadow .12s",
               background: mode === "ask" ? "var(--bg-3)" : "transparent",
               color: mode === "ask" ? "var(--t1)" : "var(--t3)",
               boxShadow: mode === "ask" ? "0 1px 3px rgba(0,0,0,.3)" : "none",
@@ -173,7 +173,7 @@ function InputBox({ textareaRef, multiline, input, setInput, streaming, mode, se
               display: "flex", alignItems: "center", gap: 5, padding: "3px 10px",
               borderRadius: "var(--r1)", fontSize: 11, fontWeight: 500, fontFamily: "var(--font-ui)",
               cursor: "pointer", border: mode === "investigate" ? "1px solid var(--vio2)" : "1px solid transparent",
-              transition: "all .12s",
+              transition: "background-color .12s, border-color .12s, color .12s, box-shadow .12s",
               background: mode === "investigate" ? "var(--vio1)" : "transparent",
               color: mode === "investigate" ? "var(--vio5)" : "var(--t3)",
               boxShadow: mode === "investigate" ? "0 1px 3px rgba(0,0,0,.3)" : "none",

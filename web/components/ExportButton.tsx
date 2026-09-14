@@ -49,7 +49,7 @@ export function ExportButton({ invId }: { invId: string }) {
           display: "inline-flex", alignItems: "center", gap: 6,
           padding: "4px 10px", borderRadius: "var(--r2)", fontSize: 12,
           background: "var(--bg-2)", border: "1px solid var(--b1)",
-          color: "var(--t2)", cursor: "pointer", transition: "all .1s",
+          color: "var(--t2)", cursor: "pointer", transition: "border-color .1s, color .1s",
         }}
         onMouseEnter={e => { e.currentTarget.style.color = "var(--t1)"; e.currentTarget.style.borderColor = "var(--b2)"; }}
         onMouseLeave={e => { e.currentTarget.style.color = "var(--t2)"; e.currentTarget.style.borderColor = "var(--b1)"; }}

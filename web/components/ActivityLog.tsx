@@ -192,7 +192,7 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         </span>
         {isRunning && (
           <button onClick={onStop} disabled={stopping}
-            className="flex items-center gap-1 aug-fs-xs px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="flex items-center gap-1 aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--red1)", color: "var(--red4)", border: "0.5px solid var(--red2)" }}>
             <span className="w-2 h-2 rounded-sm inline-block" style={{ background: "var(--red4)" }} />
             {stopping ? "stopping…" : "Stop"}
@@ -200,12 +200,12 @@ function StatusBar({ status, stopped, onStop, onResume, onRestart, stopping, res
         )}
         {isStopped && !isRunning && (<>
           <button onClick={onResume} disabled={resuming || restarting}
-            className="aug-fs-xs px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--blue1)", color: "var(--blue4)", border: "0.5px solid var(--blue2)" }}>
             {resuming ? "resuming…" : "Resume"}
           </button>
           <button onClick={onRestart} disabled={resuming || restarting}
-            className="aug-fs-xs px-2.5 py-1 rounded transition-all disabled:opacity-40"
+            className="aug-fs-xs px-2.5 py-1 rounded transition-opacity disabled:opacity-40"
             style={{ background: "var(--amb1)", color: "var(--amb4)", border: "0.5px solid var(--amb2)" }}>
             {restarting ? "restarting…" : "Restart"}
           </button>
@@ -540,7 +540,7 @@ function Seg<T extends string>({ value, options, onChange }: { value: T; options
           color: value === o.v ? "var(--blue4)" : "var(--t3)",
           border: value === o.v ? "0.5px solid var(--blue2)" : "0.5px solid transparent",
           fontWeight: value === o.v ? 500 : 400,
-          transition: "all .1s",
+          transition: "background-color .1s, border-color .1s, color .1s",
         }}>
           {o.label}
         </button>

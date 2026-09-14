@@ -1861,7 +1861,7 @@ export function QueryBuilder({
                     onDragOver={e=>{e.preventDefault();setOverDims(true);}}
                     onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setOverDims(false);}}
                     onDrop={onDropDims}
-                    className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-all ${
+                    className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-[border-color,background-color,box-shadow] ${
                       overDims ? "border-blue-500 bg-blue-500/5 shadow-[0_0_0_1px_rgba(59,130,246,0.2)]"
                                : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}
@@ -1945,7 +1945,7 @@ export function QueryBuilder({
                     onDragOver={e=>{e.preventDefault();setOverMeasures(true);}}
                     onDragLeave={e=>{if(!e.currentTarget.contains(e.relatedTarget as Node))setOverMeasures(false);}}
                     onDrop={onDropMeasures}
-                    className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-all ${
+                    className={`min-h-[42px] rounded-md border-2 border-dashed p-2 flex flex-wrap gap-2 items-center content-start transition-[border-color,background-color,box-shadow] ${
                       overMeasures ? "border-violet-500 bg-violet-500/5 shadow-[0_0_0_1px_rgba(139,92,246,0.2)]"
                                    : "border-zinc-600 bg-zinc-800/10 hover:border-zinc-500"
                     }`}

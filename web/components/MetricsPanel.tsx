@@ -394,7 +394,7 @@ export function MetricsPanel({ connId }: { connId?: string }) {
                 )}
                 <button
                   onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
-                  className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 text-xs transition-all ml-1"
+                  className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 text-xs transition-[opacity,color] ml-1"
                   disabled={deleting === m.name}
                 >
                   {deleting === m.name ? "…" : "✕"}

@@ -296,7 +296,7 @@ function ConnectorActions({ connId, connType }: { connId: string; connType: stri
     padding: "5px 12px", borderRadius: 4, fontSize: 11, fontWeight: 500,
     cursor: syncing || uploading ? "not-allowed" : "pointer",
     background: "var(--blue1, #152B50)", border: "1px solid var(--blue2, #1A3A6E)",
-    color: "var(--blue5, #88BAFF)", transition: "all .12s",
+    color: "var(--blue5, #88BAFF)", transition: "background-color .12s, border-color .12s, color .12s, opacity .12s",
     opacity: syncing || uploading ? 0.5 : 1,
   };
 
@@ -1261,7 +1261,7 @@ function CatalogHomePanel({ tree, onPick }: { tree: CatalogTree | null; onPick: 
                   style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 500, padding: "6px 14px", borderRadius: "var(--r-chip)", cursor: "pointer",
                     background: on ? "rgba(45,114,210,0.13)" : "transparent",
                     color: on ? "var(--blue5)" : "var(--t2)",
-                    border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}`, transition: "all .1s" }}
+                    border: `1px solid ${on ? "rgba(45,114,210,0.45)" : "var(--b1)"}` }}
                   onMouseEnter={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b2)"; }}
                   onMouseLeave={e => { if (!on) (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; }}
                 >

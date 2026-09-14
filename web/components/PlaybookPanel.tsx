@@ -124,7 +124,7 @@ export function PlaybookPanel() {
             <button
               onClick={handleReseed}
               disabled={seeding}
-              className="aug-fs-xs px-2 py-1 rounded-[4px] transition-all"
+              className="aug-fs-xs px-2 py-1 rounded-[4px] transition-colors"
               style={{ border: "0.5px solid var(--b2)", background: "var(--bg-1)", color: "var(--t3)" }}
               onMouseEnter={e => e.currentTarget.style.color = "var(--t2)"}
               onMouseLeave={e => e.currentTarget.style.color = "var(--t3)"}
@@ -149,7 +149,7 @@ export function PlaybookPanel() {
               <button
                 key={s}
                 onClick={() => setStatusFilter(s)}
-                className="text-[11px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-all"
+                className="text-[11px] px-2 py-0.5 rounded-[var(--r-chip)] font-mono transition-colors"
                 style={{
                   background: statusFilter === s ? "var(--blue1)" : "transparent",
                   border: `0.5px solid ${statusFilter === s ? "#3d6bff55" : "var(--b2)"}`,
@@ -312,7 +312,7 @@ function PlaybookDetail({
         {entry.status !== "active" && (
           <button
             onClick={() => onStatusChange("active")}
-            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-all"
+            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--grn1)", border: "0.5px solid var(--grn2)", color: "var(--grn4)" }}
             onMouseEnter={e => e.currentTarget.style.borderColor = "var(--grn4)"}
             onMouseLeave={e => e.currentTarget.style.borderColor = "var(--grn2)"}
@@ -323,7 +323,7 @@ function PlaybookDetail({
         {entry.status !== "deprecated" && (
           <button
             onClick={() => onStatusChange("deprecated")}
-            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-all"
+            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
             onMouseEnter={e => { e.currentTarget.style.borderColor = "var(--red4)"; e.currentTarget.style.color = "var(--red4)"; }}
             onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b2)"; e.currentTarget.style.color = "var(--t3)"; }}
@@ -334,7 +334,7 @@ function PlaybookDetail({
         {entry.status === "deprecated" && (
           <button
             onClick={() => onStatusChange("draft")}
-            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-all"
+            className="aug-fs-xs px-3 py-1.5 rounded-[5px] transition-colors"
             style={{ background: "var(--bg-1)", border: "0.5px solid var(--b2)", color: "var(--t3)" }}
           >
             Restore to draft

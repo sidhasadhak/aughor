@@ -9,6 +9,7 @@ import { ChatPanel } from "@/components/ChatPanel";
 import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
+import { applyTheme } from "@/lib/themeSwitch";
 import { installAuthFetch } from "@/lib/auth";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
@@ -608,7 +609,7 @@ function HomeScreen({
               <button key={a.name} onClick={a.action} style={{
                 textAlign: "left", padding: "14px 14px",
                 background: "var(--bg-2)", border: "1px solid var(--b1)",
-                borderRadius: "var(--r3)", cursor: "pointer", transition: "all .12s",
+                borderRadius: "var(--r3)", cursor: "pointer", transition: "background-color .12s, border-color .12s",
               }}
                 onMouseEnter={e => { e.currentTarget.style.borderColor = a.accent + "66"; e.currentTarget.style.background = "var(--bg-3)"; }}
                 onMouseLeave={e => { e.currentTarget.style.borderColor = "var(--b1)"; e.currentTarget.style.background = "var(--bg-2)"; }}
@@ -854,7 +855,7 @@ function SettingsScreen({ theme, setTheme, workspaceId, workspaceName }: { theme
                   padding: "12px 14px", borderRadius: "var(--r3)", cursor: "pointer",
                   background: theme === m.id ? "var(--bg-sel)" : "var(--bg-2)",
                   border: `1px solid ${theme === m.id ? "var(--blue3)" : "var(--b1)"}`,
-                  transition: "all .14s", textAlign: "left",
+                  transition: "background-color .14s, border-color .14s", textAlign: "left",
                 }}>
                   <div style={{
                     width: 36, height: 28, borderRadius: "var(--r2)", flexShrink: 0,
@@ -1065,7 +1066,7 @@ function AddConnectionForm({
                       background: type === ct.type ? "var(--bg-sel)" : "var(--bg-2)",
                       border: `1px solid ${type === ct.type ? "var(--blue2)" : "var(--b1)"}`,
                       fontSize: 11, color: type === ct.type ? "var(--blue5)" : "var(--t2)",
-                      transition: "all .1s",
+                      transition: "background-color .1s, border-color .1s, color .1s",
                     }}
                   >
                     <div style={{ fontWeight: 500 }}>{ct.label}</div>
@@ -1188,7 +1189,7 @@ function DeleteConnModal({
               padding: "5px 12px", borderRadius: "var(--r2)", fontSize: 12, fontWeight: 500,
               background: "var(--red1)", border: "1px solid var(--red2)", color: "var(--red4)",
               cursor: text === conn.name && !loading ? "pointer" : "not-allowed",
-              opacity: text !== conn.name || loading ? 0.4 : 1, transition: "all .12s",
+              opacity: text !== conn.name || loading ? 0.4 : 1, transition: "opacity .12s",
             }}
           >
             {loading ? "Removing…" : "Remove"}
@@ -1566,7 +1567,7 @@ export default function Home() {
     const saved = typeof window !== "undefined" ? localStorage.getItem(THEME_KEY) as Theme | null : null;
     const initial: Theme = saved || "dark";
     setThemeState(initial);
-    document.documentElement.setAttribute("data-theme", initial);
+    applyTheme(initial);
     const syncStoredTheme = () => {
       getMyPreferences()
         .then(({ preferences }) => {
@@ -1574,7 +1575,7 @@ export default function Home() {
           if ((stored === "dark" || stored === "light")
               && stored !== document.documentElement.getAttribute("data-theme")) {
             setThemeState(stored);
-            document.documentElement.setAttribute("data-theme", stored);
+            applyTheme(stored);
             if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, stored);
           }
         })
@@ -1597,7 +1598,7 @@ export default function Home() {
 
   const setTheme = (t: Theme) => {
     setThemeState(t);
-    document.documentElement.setAttribute("data-theme", t);
+    applyTheme(t);
     if (typeof window !== "undefined") localStorage.setItem(THEME_KEY, t);
     // Write through to the settings store so the choice follows the user, not this
     // browser. Fire-and-forget: the visible change already happened above.

@@ -121,7 +121,7 @@ function FileTile({ info, onClick }: { info: ConnectorTypeInfo; onClick: () => v
     <Button variant="ghost" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
       className={`h-auto p-0 font-normal whitespace-normal items-stretch justify-start ${SVG_SIZE_AUTO}`}
       style={{ display: "flex", flexDirection: "column", gap: 10, padding: 16, borderRadius: 10, cursor: off ? "not-allowed" : "pointer",
-        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%",
+        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", width: "100%",
         opacity: off ? 0.55 : 1 }}
       onMouseEnter={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
       onMouseLeave={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
@@ -140,7 +140,7 @@ function ConnectorCard({ info, onClick }: { info: ConnectorTypeInfo; onClick: ()
     <Button variant="ghost" onClick={onClick} disabled={off} title={off ? missingNote(info) : undefined}
       className={`h-auto p-0 font-normal justify-start ${SVG_SIZE_AUTO}`}
       style={{ display: "flex", alignItems: "center", gap: 11, padding: "11px 13px", borderRadius: 9, cursor: off ? "not-allowed" : "pointer",
-        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", transition: "all .12s", width: "100%",
+        background: "var(--bg-1)", border: "1px solid var(--b1)", textAlign: "left", width: "100%",
         opacity: off ? 0.55 : 1 }}
       onMouseEnter={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = brandColor(info.type); (e.currentTarget as HTMLElement).style.background = "var(--bg-2)"; }}
       onMouseLeave={e => { if (off) return; (e.currentTarget as HTMLElement).style.borderColor = "var(--b1)"; (e.currentTarget as HTMLElement).style.background = "var(--bg-1)"; }}
@@ -488,7 +488,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
           border: `1.5px dashed ${drag ? brandColor("local_upload") : "var(--b1)"}`,
           borderRadius: 12, padding: "34px 24px", textAlign: "center", cursor: "pointer",
           background: drag ? "color-mix(in srgb, var(--blue4,#60a5fa) 8%, var(--bg-1))" : "var(--bg-1)",
-          transition: "all .12s",
+          transition: "background-color .12s, border-color .12s",
         }}
       >
         <input key={`review-${pickerKey}`} ref={inputRef} type="file" accept={ACCEPT} multiple hidden
@@ -533,7 +533,7 @@ function WorkspaceUploader({ onAdded }: { onAdded: () => void }) {
             border: `1.5px dashed ${drag ? brandColor("local_upload") : "var(--b1)"}`,
             borderRadius: 12, padding: "34px 24px", textAlign: "center", cursor: bulkBusy ? "wait" : "pointer",
             background: drag ? "color-mix(in srgb, var(--blue4,#60a5fa) 8%, var(--bg-1))" : "var(--bg-1)",
-            transition: "all .12s", opacity: bulkBusy ? 0.7 : 1,
+            transition: "background-color .12s, border-color .12s, opacity .12s", opacity: bulkBusy ? 0.7 : 1,
           }}
         >
           <input key={`bulk-${pickerKey}`} ref={bulkInputRef} type="file" accept={ACCEPT} multiple hidden

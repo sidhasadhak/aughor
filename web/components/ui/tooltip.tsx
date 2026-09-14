@@ -4,17 +4,10 @@ import { Tooltip as TooltipPrimitive } from "@base-ui/react/tooltip"
 
 import { cn } from "@/lib/utils"
 
-function TooltipProvider({
-  delay = 0,
-  ...props
-}: TooltipPrimitive.Provider.Props) {
-  return (
-    <TooltipPrimitive.Provider
-      data-slot="tooltip-provider"
-      delay={delay}
-      {...props}
-    />
-  )
+/** No delay default here: a tooltip waits Base UI's own 600ms, so a cursor crossing a toolbar does
+ *  not flash every tooltip it passes — and once one is showing, its neighbours open at once. */
+function TooltipProvider(props: TooltipPrimitive.Provider.Props) {
+  return <TooltipPrimitive.Provider data-slot="tooltip-provider" {...props} />
 }
 
 function Tooltip({ ...props }: TooltipPrimitive.Root.Props) {
@@ -52,7 +45,7 @@ function TooltipContent({
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"
           className={cn(
-            "z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-[var(--r2)] border border-[var(--b2)] bg-[var(--bg-3)] px-[9px] py-[7px] text-xs text-[var(--t1)] shadow-[var(--shadow-sm)] data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0",
+            "z-50 inline-flex w-fit max-w-xs origin-(--transform-origin) items-center gap-1.5 rounded-[var(--r2)] border border-[var(--b2)] bg-[var(--bg-3)] px-[9px] py-[7px] text-xs text-[var(--t1)] shadow-[var(--shadow-sm)] data-[state=delayed-open]:animate-in data-[state=delayed-open]:fade-in-0 data-open:animate-in data-open:fade-in-0 data-closed:animate-out data-closed:fade-out-0 data-instant:data-open:animate-none data-instant:data-closed:animate-none",
             className
           )}
           {...props}
