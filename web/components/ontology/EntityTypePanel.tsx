@@ -33,6 +33,7 @@ import {
   measureOntology,
   nameLink,
   removeBinding,
+  scopeDomain,
   setPartOf,
   type BindingSpec,
   type ConfirmTarget,
@@ -85,7 +86,8 @@ function Section({ title, aside, children }: { title: string; aside?: React.Reac
   );
 }
 
-export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onOpenProcess, onChanged }: {
+export function EntityTypePanel({ connectionId, schema, objectType, types, version, onOpen, onOpenProcess, onChanged,
+  sources }: {
   connectionId: string;
   schema?: string;
   objectType: string;
@@ -97,6 +99,8 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   onOpenProcess?: (processId: string) => void;
   /** A write here (a declaration, a measurement) changes what the map shows. */
   onChanged: () => void;
+  /** ON-8 — set in an organisation's ontology: its connections by id, for the type, its bindings and a new binding. */
+  sources?: Record<string, string>;
 }) {
   const [detail, setDetail] = useState<ObjectTypeDetail | TypeRefusal | null>(null);
   const [error, setError] = useState("");
@@ -118,7 +122,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
     body = <EmptyState icon="info" title={`No object type “${objectType}”`}>{detail.refused}</EmptyState>;
   } else {
     body = <TypeDetail detail={detail} connectionId={connectionId} schema={schema} types={types}
-      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} />;
+      onOpen={onOpen} onOpenProcess={onOpenProcess} onChanged={onChanged} sources={sources} />;
   }
   return (
     <aside aria-label="Entity type" data-testid="entity-type-panel"
@@ -129,7 +133,7 @@ export function EntityTypePanel({ connectionId, schema, objectType, types, versi
   );
 }
 
-function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged }: {
+function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess, onChanged, sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
@@ -137,8 +141,12 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
   onOpen: (objectType: string) => void;
   onOpenProcess?: (processId: string) => void;
   onChanged: () => void;
+  sources?: Record<string, string>;
 }) {
   const declared = detail.origin === "human" || detail.origin === "model";
+  // ON-8 — in an organisation's ontology the doors that read one connection's graph (a display property, a part mark, a
+  // link's name, an explorer's proposal, declared actions) are not offered: they would read a connection nobody holds.
+  const inDomain = !!scopeDomain(connectionId);
   return (
     <>
       <header style={{ padding: "14px 16px 12px" }}>
@@ -155,11 +163,18 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
           )}
         </div>
         <div className="aug-fs-xs" style={{ ...MONO, color: "var(--t3)", marginTop: 2 }}>{detail.object_type}</div>
+        {sources && detail.connection_id && (
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", marginTop: 2 }} data-testid="entity-connection">
+            read from {sources[detail.connection_id] ?? detail.connection_id}
+          </div>
+        )}
         {detail.description && (
           <p className="aug-fs-sm" style={{ margin: "8px 0 0", color: "var(--t2)", lineHeight: 1.5 }}>{detail.description}</p>
         )}
-        <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
-        {detail.origin === "model" && (
+        {!inDomain && (
+          <PartOfLine detail={detail} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
+        )}
+        {detail.origin === "model" && !inDomain && (
           <div className="aug-fs-xs" style={{ marginTop: 8, display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
             <span style={{ ...MONO, color: "var(--t3)" }}>{detail.provenance || "proposed by a model"}</span>
             <ConfirmProposal target={{ kind: "entity", entity: detail.id }} connectionId={connectionId} schema={schema}
@@ -169,12 +184,13 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         {declared && <WithdrawEntity detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
       </header>
       <KeySection detail={detail} />
-      <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      <DisplaySection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} readOnly={inDomain} />
       <PropertiesSection detail={detail} />
-      <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      <BindingsSection detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} sources={sources} />
       <PartsSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
-      <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged} />
-      <ActionsSection detail={detail} connectionId={connectionId} />
+      <LinksSection detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} onChanged={onChanged}
+        inDomain={inDomain} />
+      {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
       <MetricsSection detail={detail} />
       <ProcessesSection detail={detail} onOpenProcess={onOpenProcess} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
@@ -405,11 +421,13 @@ function PartsSection({ detail, types, connectionId, schema, onOpen, onChanged }
   );
 }
 
-function DisplaySection({ detail, connectionId, schema, onChanged }: {
+function DisplaySection({ detail, connectionId, schema, onChanged, readOnly }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
   onChanged: () => void;
+  /** ON-8 — shown, and measured, but not declared from here. */
+  readOnly?: boolean;
 }) {
   const shown = detail.display_property;
   const [busy, setBusy] = useState(false);
@@ -447,11 +465,15 @@ function DisplaySection({ detail, connectionId, schema, onChanged }: {
       </div>
       {shown.note && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--t3)", lineHeight: 1.45 }}>{shown.note}</p>}
       <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
-        <label className="aug-fs-xs" htmlFor={`display-${detail.object_type}`} style={{ color: "var(--t3)" }}>Declare</label>
-        <select id={`display-${detail.object_type}`} className="aug-fs-xs" style={SELECT} value={shown.property}
-          disabled={busy} onChange={(e) => act(() => declareDisplayProperty(connectionId, detail.id, e.target.value, schema))}>
-          {choices.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
-        </select>
+        {!readOnly && (
+          <>
+            <label className="aug-fs-xs" htmlFor={`display-${detail.object_type}`} style={{ color: "var(--t3)" }}>Declare</label>
+            <select id={`display-${detail.object_type}`} className="aug-fs-xs" style={SELECT} value={shown.property}
+              disabled={busy} onChange={(e) => act(() => declareDisplayProperty(connectionId, detail.id, e.target.value, schema))}>
+              {choices.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+            </select>
+          </>
+        )}
         <Button variant="minimal" size="xs" disabled={busy} onClick={() => act(() => measureOntology(connectionId, schema))}
           title="Count keys, link cardinalities, lifecycles and display properties against the data — no model call">
           {busy ? "Working…" : "Measure"}
@@ -570,13 +592,15 @@ function bindingVerdict(b: TypeBinding): [string, string] | null {
   return b.verified === false ? ["aug-tag-red", "refuted"] : ["aug-tag-gray", "not yet measured"];
 }
 
-function BindingRow({ binding: b, first, busy, onRemove, confirm }: {
+function BindingRow({ binding: b, first, busy, onRemove, confirm, source }: {
   binding: TypeBinding;
   first: boolean;
   busy: boolean;
   onRemove?: () => void;
   /** ON-7b — the door that makes an explorer's binding a person's, given only for one. */
   confirm?: React.ReactNode;
+  /** ON-8 — in an organisation's ontology, the name of the connection the source lives on. */
+  source?: string;
 }) {
   const verdict = bindingVerdict(b);
   const term: React.CSSProperties = { color: "var(--t3)" };
@@ -605,6 +629,12 @@ function BindingRow({ binding: b, first, busy, onRemove, confirm }: {
         style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 12, rowGap: 3, margin: "6px 0 0" }}>
         <dt style={term}>{b.reads === "table" ? "Table" : "Query"}</dt>
         <dd style={{ ...value, ...MONO, overflowWrap: "anywhere" }}>{b.reads === "table" ? b.table : b.sql}</dd>
+        {source && (
+          <>
+            <dt style={term}>Connection</dt>
+            <dd style={value} data-testid="entity-binding-connection">{source}</dd>
+          </>
+        )}
         <dt style={term}>Key</dt>
         <dd style={{ ...value, ...MONO }}>{b.primary ? b.key : `${b.key} → ${b.object_key}`}</dd>
         {b.time_column && (
@@ -662,14 +692,20 @@ function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding;
   );
 }
 
-function BindingsSection({ detail, connectionId, schema, onChanged }: {
+function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
   schema?: string;
   onChanged: () => void;
+  /** ON-8 — set in an organisation's ontology: each binding names its connection, and a new one may pick another. */
+  sources?: Record<string, string>;
 }) {
   const [busy, setBusy] = useState("");
   const [problem, setProblem] = useState("");
+  const sourceOf = (b: TypeBinding) => {
+    const where = b.connection_id || detail.connection_id;
+    return sources && where ? sources[where] ?? where : undefined;
+  };
   // An API older than ON-1b sends no proposals; the panel must not fall over while the two deploy apart.
   const proposals = detail.proposed_bindings ?? [];
   const act = async (name: string, write: () => Promise<void>) => {
@@ -687,10 +723,10 @@ function BindingsSection({ detail, connectionId, schema, onChanged }: {
   return (
     <Section title="Bindings" aside="where its properties are read from">
       {detail.bindings.map((b, i) => (
-        <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name}
+        <BindingRow key={b.name} binding={b} first={i === 0} busy={busy === b.name} source={sourceOf(b)}
           onRemove={b.source === "human" || b.source === "model"
             ? () => act(b.name, () => removeBinding(connectionId, detail.id, b.name, schema)) : undefined}
-          confirm={b.source === "model" ? (
+          confirm={b.source === "model" && !sources ? (
             <ConfirmProposal target={{ kind: "binding", entity: detail.id, binding: b.name }} connectionId={connectionId}
               schema={schema} onChanged={onChanged} />
           ) : undefined} />
@@ -707,7 +743,7 @@ function BindingsSection({ detail, connectionId, schema, onChanged }: {
           ))}
         </div>
       )}
-      <DeclareBinding detail={detail} busy={!!busy} onDeclare={(name, spec) =>
+      <DeclareBinding detail={detail} busy={!!busy} sources={sources} onDeclare={(name, spec) =>
         act(name, () => addBinding(connectionId, detail.id, name, spec, schema))} />
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
@@ -720,12 +756,18 @@ function BindingsSection({ detail, connectionId, schema, onChanged }: {
  *  API-only, and the live Lux price history had to be bound with a hand-written PUT. The server reads the source's
  *  columns and counts it against the objects before it answers; a spec that does not bind is refused with the
  *  reason and nothing is written. */
-function DeclareBinding({ detail, busy, onDeclare }: {
+function DeclareBinding({ detail, busy, onDeclare, sources }: {
   detail: ObjectTypeDetail;
   busy: boolean;
   onDeclare: (name: string, spec: BindingSpec) => void;
+  /** ON-8 — set in an organisation's ontology: the source may live on any of these connections. */
+  sources?: Record<string, string>;
 }) {
   const [open, setOpen] = useState(false);
+  const [connection, setConnection] = useState(detail.connection_id || "");
+  const [schemaName, setSchemaName] = useState("");
+  /** A source on another connection than the type's own is read by key, one row per object — static only. */
+  const crosses = !!sources && !!connection && connection !== detail.connection_id;
   const [name, setName] = useState("");
   const [reads, setReads] = useState<"table" | "query">("table");
   const [source, setSource] = useState("");
@@ -741,16 +783,19 @@ function DeclareBinding({ detail, busy, onDeclare }: {
   const ready = !!name.trim() && !!source.trim() && !!key.trim()
     && (kind !== "timeseries" || !!timeColumn.trim())
     && (kind !== "detail" || rolled.length > 0)
+    && (!crosses || kind === "static")
     && usable.every((f) => f.what !== "avg-trailing" || Number(f.window) >= 1);
   const declare = () => {
     const spec: BindingSpec = { kind, key: key.trim() };
     if (reads === "table") spec.table = source.trim();
     else spec.sql = source.trim();
+    if (crosses) spec.connection_id = connection;
+    if (sources && reads === "table" && schemaName.trim()) spec.schema_name = schemaName.trim();
     if (kind === "timeseries") spec.time_column = timeColumn.trim();
     if (usable.length) spec.frames = Object.fromEntries(usable.map((f) => [f.name.trim(), frameSpec(f)]));
     if (kind === "detail") {
       spec.rollups = Object.fromEntries(rolled.map((r) => [r.name.trim(), { column: r.column.trim(), agg: r.agg }]));
-      if (reads === "table" && absorb) spec.absorb = true;
+      if (reads === "table" && absorb && !sources) spec.absorb = true;
     }
     onDeclare(name.trim(), spec);
   };
@@ -770,6 +815,27 @@ function DeclareBinding({ detail, busy, onDeclare }: {
         rollups declare, each one value per object. Every column but the key is supplied under its own name; one the
         type already uses is skipped with the reason.
       </p>
+      {sources && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>from</span>
+          <select className="aug-fs-xs" style={SELECT} value={connection} aria-label="Binding connection"
+            data-testid="declare-binding-connection" onChange={(e) => setConnection(e.target.value)}>
+            {Object.entries(sources).map(([cid, label]) => (
+              <option key={cid} value={cid}>{cid === detail.connection_id ? `${label} (its own)` : label}</option>
+            ))}
+          </select>
+          {reads === "table" && (
+            <input className="aug-fs-xs" style={{ ...FIELD, width: 110 }} value={schemaName} placeholder="schema"
+              aria-label="Binding schema" onChange={(e) => setSchemaName(e.target.value)} />
+          )}
+          {crosses && (
+            <span className="aug-fs-xs" style={{ color: "var(--t3)", flexBasis: "100%", lineHeight: 1.45 }}
+              data-testid="declare-binding-crosses">
+              On another connection a binding is read by key, one row per {detail.display_name} — a static one only.
+            </span>
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
         <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={name} placeholder="binding name"
           aria-label="Binding name" onChange={(e) => setName(e.target.value)} />
@@ -876,7 +942,7 @@ function DeclareBinding({ detail, busy, onDeclare }: {
             onClick={() => setRollups((rs) => [...rs, { name: "", agg: "sum", column: "" }])}>
             + Add a rollup
           </Button>
-          {reads === "table" && (
+          {reads === "table" && !sources && (
             <label className="aug-fs-xs" style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, color: "var(--t2)" }}>
               <input type="checkbox" checked={absorb} aria-label="Absorb its type as a part"
                 onChange={(e) => setAbsorb(e.target.checked)} />
@@ -1083,13 +1149,15 @@ function WithdrawLink({ link, connectionId, schema, onChanged }: {
   );
 }
 
-function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged }: {
+function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged, inDomain }: {
   detail: ObjectTypeDetail;
   types: TypeMapRow[];
   connectionId: string;
   schema?: string;
   onOpen: (objectType: string) => void;
   onChanged: () => void;
+  /** ON-8 — in an organisation's ontology a link is not named, and an explorer's proposal not confirmed, from here. */
+  inDomain?: boolean;
 }) {
   return (
     <Section title="Links" aside={`${detail.counts.traversable_links} of ${detail.counts.links} followed by the compiler`}>
@@ -1103,13 +1171,19 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged }
             <span className={`aug-tag ${link.traversable ? "aug-tag-green" : "aug-tag-amber"}`}>
               {link.traversable ? "followed" : "refused"}
             </span>
+            {link.traversal === "cross-source" && (
+              <span className="aug-tag aug-tag-gray" data-testid="entity-link-cross-source"
+                title="Its two types live on two connections: the compiler reads the far side by key and joins it in the answer">
+                cross-source
+              </span>
+            )}
             {link.origin === "human" && (
               <span className="aug-tag aug-tag-blue"
                 title={link.provenance ? `declared — first proposed by ${link.provenance}` : "declared by a person"}>
                 declared
               </span>
             )}
-            {link.origin === "model" && (
+            {link.origin === "model" && !inDomain && (
               <>
                 <span className="aug-tag aug-tag-violet" title={`proposed by ${link.provenance || "an explorer"}, not yet confirmed`}>
                   proposed
@@ -1118,7 +1192,7 @@ function LinksSection({ detail, types, connectionId, schema, onOpen, onChanged }
                   schema={schema} onChanged={onChanged} />
               </>
             )}
-            <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+            {!inDomain && <NameLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />}
             {(link.origin === "human" || link.origin === "model") && (
               <WithdrawLink link={link} connectionId={connectionId} schema={schema} onChanged={onChanged} />
             )}

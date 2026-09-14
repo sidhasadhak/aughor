@@ -24,7 +24,14 @@ import re
 from typing import Any, Optional
 
 from aughor.ontology.backing import measure_key, object_from
-from aughor.ontology.bindings import COLUMN_PATTERN, SELECT_PATTERN, TABLE_PATTERN, column_profiles, taken_names
+from aughor.ontology.bindings import (
+    COLUMN_PATTERN,
+    CONNECTION_PATTERN,
+    SELECT_PATTERN,
+    TABLE_PATTERN,
+    column_profiles,
+    taken_names,
+)
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.models import (
     LINK_NAME_PATTERN,
@@ -68,6 +75,13 @@ def entity_spec_problem(spec: Any) -> str:
         return f"{table!r} is not a table identifier"
     if sql and (not SELECT_PATTERN.match(sql) or ";" in sql.rstrip().rstrip(";")):
         return "a backing's `sql` is one SELECT"
+    connection, schema = str(backing.get("connection_id") or "").strip(), str(backing.get("schema_name") or "").strip()
+    if connection and not CONNECTION_PATTERN.match(connection):
+        return f"{connection!r} is not a connection id"
+    if schema and (not COLUMN_PATTERN.match(schema) or not table):
+        return "a backing's `schema_name` qualifies its table: an identifier, beside `table` and never beside `sql`"
+    if schema and "." in table:
+        return f"{table!r} is already qualified — name its schema once"
     if not COLUMN_PATTERN.match(str(backing.get("primary_key") or "").strip()):
         return "a backing names the column that is the object's key in `primary_key`"
     return ""
@@ -77,8 +91,12 @@ def entity_fields(spec: dict) -> dict:
     """The override fields a declaration stores — trimmed, the empty parts dropped. Idempotent."""
     backing = spec["backing"]
     table, sql = str(backing.get("table") or "").strip(), str(backing.get("sql") or "").strip()
+    schema = str(backing.get("schema_name") or "").strip()
     stored: dict = {"kind": "table" if table else "query", "primary_key": str(backing["primary_key"]).strip()}
-    stored["table" if table else "sql"] = table or sql.rstrip().rstrip(";").strip()
+    stored["table" if table else "sql"] = (f"{schema}.{table}" if schema and table else table) or sql.rstrip().rstrip(";").strip()
+    if str(backing.get("connection_id") or "").strip():
+        # ON-8 — the connection its rows live on, in an organisation's ontology (a schema, when named, qualifies the table)
+        stored["connection_id"] = str(backing["connection_id"]).strip()
     out: dict = {"declared": True, "display_name": str(spec["display_name"]).strip(),
                  "origin": spec.get("origin") or "human", "backing": stored}
     for field in ("description", "domain"):
@@ -139,9 +157,9 @@ def declared_entity(ov, graph: Optional[OntologyGraph]) -> Optional[OntologyEnti
     key = str(entry.get("primary_key") or spec.get("primary_key") or "").strip()
     unique = entry.get("unique")
     backing = Backing(kind="table" if table else "query", table=table or None, sql=sql or None, primary_key=key,
-                      verified=unique, rows=entry.get("rows"),
+                      verified=unique, rows=entry.get("rows"), connection_id=str(spec.get("connection_id") or ""),
                       verification_note=str(entry.get("unique_note") or ("declared; key not yet counted" if unique is None else "")))
-    properties = column_profiles(graph, table or None, columns, sql or None)
+    properties = column_profiles(graph, table or None, columns, sql or None, recorded=entry.get("profiles"))
     for name, prop in properties.items():
         if name.lower() == key.lower():
             properties[name] = prop.model_copy(update={"is_primary_key": True, "semantic_type": prop.semantic_type or "key"})
@@ -163,13 +181,16 @@ def register_entity(graph: OntologyGraph, entity: OntologyEntity) -> None:
     graph.relationship_index.setdefault(entity.id, [])
 
 
-def backs_existing_type(graph: OntologyGraph, table: str) -> Optional[OntologyEntity]:
+def backs_existing_type(graph: OntologyGraph, table: str, connection_id: str = "") -> Optional[OntologyEntity]:
     """The type whose own rows are ``table``'s, if any — a second type over the same table is a duplicate, not a
-    business entity; the way to one noun over that table is to rename or absorb the type that has it."""
+    business entity; the way to one noun over that table is to rename or absorb the type that has it. ON-8 — on
+    ``connection_id``: in an organisation's ontology one table name on two connections is two tables."""
     want = (table or "").strip().lower()
     bare = want.rsplit(".", 1)[-1]
     for e in graph.entities.values():
         b = e.backing
+        if ((b.connection_id if b is not None else "") or "") != connection_id:
+            continue
         own = (b.table if b is not None and b.kind == "table" and b.table else
                (e.source_tables[0] if e.source_tables else "")) or ""
         if own.lower() in (want, bare) or own.lower().rsplit(".", 1)[-1] == bare:
@@ -271,10 +292,14 @@ def _count_side(db: Any, entity: OntologyEntity, column: str) -> Optional[tuple[
         return None
 
 
-def measure_declared_link(db: Any, graph: OntologyGraph, fields: dict) -> dict:
+def measure_declared_link(db: Any, graph: OntologyGraph, fields: dict, *, to_db: Any = None) -> dict:
     """The `link` entry for a declared link: each side counted (rows, keyed rows, distinct keys — a side is "1"
     when its key is unique, ON-0a's law), the label that follows, and how many of the from-side's distinct keys
-    the to-side holds. ALWAYS returns an entry; `bound` False when a side cannot be counted."""
+    the to-side holds. ALWAYS returns an entry; `bound` False when a side cannot be counted.
+
+    ON-8 — ``to_db`` is the connection the to-side lives on when it is not ``db``: each side is counted on its own
+    connection and the keys that meet are intersected in memory (`_overlap_across`), so the label and the overlap
+    mean what they mean on one connection."""
     a, b = graph.entities[fields["from_entity"]], graph.entities[fields["to_entity"]]
     fa, tb = _has_column(a, fields["from_column"]) or fields["from_column"], _has_column(b, fields["to_column"]) or fields["to_column"]
     from_table = (a.backing.table if a.backing is not None and a.backing.kind == "table" and a.backing.table
@@ -282,30 +307,47 @@ def measure_declared_link(db: Any, graph: OntologyGraph, fields: dict) -> dict:
     to_table = (b.backing.table if b.backing is not None and b.backing.kind == "table" and b.backing.table
                 else (b.source_tables[0] if b.source_tables else "")) or ""
     entry: dict = {"from_table": from_table, "to_table": to_table, "from_column": fa, "to_column": tb}
-    fc, tc = _count_side(db, a, fa), _count_side(db, b, tb)
+    tdb = to_db if to_db is not None else db
+    fc, tc = _count_side(db, a, fa), _count_side(tdb, b, tb)
     if fc is None or tc is None or not fc[1] or not tc[1]:
         which = [f"{a.id}.{fa}" for _ in [0] if fc is None or not fc[1]] + [f"{b.id}.{tb}" for _ in [0] if tc is None or not tc[1]]
         return {**entry, "bound": False, "measured_cardinality": None, "value_overlap": None,
                 "note": f"not measurable: no non-null rows or no probe result on {', '.join(which)}"}
     side = lambda c: "1" if c[1] > 0 and c[2] == c[1] else "N"  # noqa: E731
     label = f"{side(fc)}:{side(tc)}"
-    overlap_sql = (f"SELECT COUNT(DISTINCT a.{quote_ident(fa)}) FROM {object_from(a, 'a')} "
-                   f"WHERE a.{quote_ident(fa)} IS NOT NULL AND a.{quote_ident(fa)} IN "
-                   f"(SELECT b.{quote_ident(tb)} FROM {object_from(b, 'b')} WHERE b.{quote_ident(tb)} IS NOT NULL)")
     overlap: Optional[float] = None
-    try:
-        result = db.execute("__link_probe__", overlap_sql)
-        if not getattr(result, "error", None) and getattr(result, "rows", None):
-            overlap = round(int(result.rows[0][0]) / fc[2], 4) if fc[2] else 0.0
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("link overlap probe raised on %s: %s", fields.get("name"), exc)
+    if tdb is not db:
+        overlap = _overlap_across(db, tdb, a, fa, b, tb)
+    else:
+        overlap_sql = (f"SELECT COUNT(DISTINCT a.{quote_ident(fa)}) FROM {object_from(a, 'a')} "
+                       f"WHERE a.{quote_ident(fa)} IS NOT NULL AND a.{quote_ident(fa)} IN "
+                       f"(SELECT b.{quote_ident(tb)} FROM {object_from(b, 'b')} WHERE b.{quote_ident(tb)} IS NOT NULL)")
+        try:
+            result = db.execute("__link_probe__", overlap_sql)
+            if not getattr(result, "error", None) and getattr(result, "rows", None):
+                overlap = round(int(result.rows[0][0]) / fc[2], 4) if fc[2] else 0.0
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("link overlap probe raised on %s: %s", fields.get("name"), exc)
     entry.update({"bound": True, "measured_cardinality": label, "value_overlap": overlap,
                   "from_rows": fc[0], "from_non_null": fc[1], "from_distinct": fc[2],
                   "to_rows": tc[0], "to_non_null": tc[1], "to_distinct": tc[2],
                   "note": (f"measured {label}: {a.id}.{fa} {fc[2]:,} distinct over {fc[1]:,} non-null rows "
                            f"({side(fc)}); {b.id}.{tb} {tc[2]:,} distinct over {tc[1]:,} non-null rows ({side(tc)})"
-                           + (f"; {overlap:.0%} of {a.id}'s keys are held by {b.id}" if overlap is not None else ""))})
+                           + (f"; {overlap:.0%} of {a.id}'s keys are held by {b.id}" if overlap is not None else "")
+                           + ("; the two sides live on two connections, and their keys were met in memory"
+                              if tdb is not db else ""))})
     return entry
+
+
+def _overlap_across(db: Any, to_db: Any, a: OntologyEntity, fa: str, b: OntologyEntity, tb: str) -> Optional[float]:
+    """ON-8 — the share of ``a``'s distinct keys that ``b`` holds when the two live on two connections: each key set read
+    where it lives and met in canonical form. None when either side could not be read whole."""
+    from aughor.ontology.sources import distinct_keys
+    froms, _ = distinct_keys(db, object_from(a, "a"), "a", fa)
+    tos, _ = distinct_keys(to_db, object_from(b, "b"), "b", tb) if froms is not None else (None, "")
+    if froms is None or tos is None:
+        return None
+    return round(len(froms & tos) / len(froms), 4) if froms else 0.0
 
 
 def declared_relationship(ov, graph: OntologyGraph) -> Optional[OntologyRelationship]:

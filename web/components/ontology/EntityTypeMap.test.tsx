@@ -55,6 +55,7 @@ vi.mock("@/lib/api", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/api")>()),
   getMyPreferences: vi.fn(async () => ({ user: "local", preferences: { ontology_map_layout: stored.value } })),
   putMyPreference: (key: string, value: unknown) => putPreference(key, value),
+  getConnections: vi.fn(async () => [{ id: "shop1", name: "Shop" }, { id: "crm1", name: "CRM" }]),
 }));
 
 vi.mock("@/components/ontology/EntityTypePanel", () => ({
@@ -110,6 +111,7 @@ const drafted: OntologyDraft = {
   counts: { proposed: 2, confirmed: 0, released: 0, withdrawn: 0, refused: 1 },
 };
 const draftState: { value: OntologyDraft } = { value: emptyDraft };
+const getOntologyDraft = vi.fn(async (..._args: unknown[]) => draftState.value);
 const exploreOntology = vi.fn(async (..._args: unknown[]) => { draftState.value = drafted; return drafted; });
 const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ ...draftState.value, confirmed: [], refused: [] }));
 
@@ -117,7 +119,7 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/objectTypes")>()),
   getTypeMap: vi.fn(async () => served.map),
   declareEntity: (...a: unknown[]) => declareEntity(...a),
-  getOntologyDraft: vi.fn(async () => draftState.value),
+  getOntologyDraft: (...a: unknown[]) => getOntologyDraft(...a),
   exploreOntology: (...a: unknown[]) => exploreOntology(...a),
   confirmProposals: (...a: unknown[]) => confirmProposals(...a),
 }));
@@ -340,5 +342,71 @@ describe("EntityTypeMap — ON-7b: the explorer's draft", () => {
     expect(handoff.edges.find((e) => e.id === "oi_product")!.style.stroke).toBe("var(--amb4)");   // refused stays refused
     await waitFor(() =>
       expect(handoff.edges.find((e) => e.id === "oi_order")!.label).toBe("belongs to · N:1 · proposed"));
+  });
+});
+
+/** ON-8 — the organisation's ontology: one map over the connections its types are declared on. */
+describe("EntityTypeMap — an organisation's ontology", () => {
+  const domainMap: TypeMap = {
+    connection_id: "org=default", schema_name: "default", generated_at: "", domain: "default/default",
+    links: [
+      { relationship: "Order_placed_by_Customer", from: "order", to: "customer", name: "placed_by",
+        reverse_name: "customer_to_order", business_name: "placed_by", verb: "placed by", cardinality: "N:1",
+        measured: true, traversable: true, traversal: "cross-source" },
+    ],
+    object_types: [["order", "shop1"], ["customer", "crm1"]].map(([t, conn]) => ({
+      object_type: t, id: t, display_name: t, role: "business_object", domain: "", key: `${t}_id`,
+      key_verified: true, rows: 3, table: `ecommerce.${t}s`, display_property: `${t}_id`, display_is_key: true,
+      properties: 1, bindings: 1, proposed_bindings: 0, links: 1, traversable_links: 1, actions: 0, metrics: 0,
+      connection_id: conn,
+    })),
+  };
+
+  beforeEach(() => {
+    window.localStorage.clear();
+    served.map = domainMap;
+    handoff.nodes = [];
+    handoff.edges = [];
+    getOntologyDraft.mockClear();
+    declareEntity.mockClear();
+  });
+
+  it("names each type's connection, draws a cross-source link dotted and says so, and reads no explorer draft", async () => {
+    render(<EntityTypeMap connectionId="domain:default" />);
+    await waitFor(() => expect(handoff.nodes.find((n) => n.id === "customer")?.data.source).toBe("CRM"));
+    expect(screen.getByTestId("rf-node-order")).toHaveTextContent("on Shop");
+    await waitFor(() => expect(handoff.edges).toHaveLength(1));
+    const [edge] = handoff.edges;
+    expect(edge.style.strokeDasharray).toBe("1 4");
+    await waitFor(() => expect(handoff.edges[0].label).toBe("placed by · N:1 · cross-source"));
+    expect(screen.queryByTestId("explorer-draft")).toBeNull();
+    expect(getOntologyDraft).not.toHaveBeenCalled();
+  });
+
+  it("declares a type on the connection a person picks, with the schema that qualifies its table", async () => {
+    const user = userEvent.setup();
+    render(<EntityTypeMap connectionId="domain:default" />);
+    await waitFor(() => expect(handoff.nodes).toHaveLength(2));
+    await user.click(screen.getByTestId("entity-declare-open"));
+    const form = screen.getByTestId("entity-declare");
+    await waitFor(() => expect(within(form).getByRole("option", { name: "CRM" })).toBeInTheDocument());
+    await user.selectOptions(within(form).getByTestId("entity-declare-connection"), "crm1");
+    await user.type(within(form).getByLabelText("Entity id"), "Ticket");
+    await user.type(within(form).getByLabelText("Entity display name"), "Ticket");
+    await user.type(within(form).getByLabelText("Entity table"), "tickets");
+    await user.type(within(form).getByLabelText("Entity schema"), "support");
+    await user.type(within(form).getByLabelText("Entity key column"), "ticket_id");
+    await user.click(within(form).getByRole("button", { name: "Declare" }));
+    await waitFor(() => expect(declareEntity).toHaveBeenCalledTimes(1));
+    expect(declareEntity.mock.calls[0][0]).toBe("domain:default");
+    expect(declareEntity.mock.calls[0][1]).toMatchObject({
+      id: "Ticket", backing: { table: "tickets", schema_name: "support", primary_key: "ticket_id", connection_id: "crm1" } });
+  });
+
+  it("opens an empty organisation's ontology on the door that declares its first type", async () => {
+    served.map = { ...domainMap, object_types: [], links: [] };
+    render(<EntityTypeMap connectionId="domain:default" />);
+    await waitFor(() => expect(screen.getByTestId("entity-declare-open")).toBeInTheDocument());
+    expect(screen.getByText(/Nothing is declared in the organisation's ontology yet/)).toBeInTheDocument();
   });
 });

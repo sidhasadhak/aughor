@@ -41,6 +41,10 @@ class _BindingSpec(BaseModel):
     """ON-1b — a further binding: a table or keyed SELECT joined to the object on its key."""
     table: Optional[str] = None
     sql: Optional[str] = None
+    #: ON-8 — in an organisation's ontology (`?domain=`): the connection the source lives on when it is not the type's
+    #: own, and the schema that qualifies a bare table there.
+    connection_id: Optional[str] = None
+    schema_name: Optional[str] = None
     #: The binding's column that holds the object's key.
     key: str
     kind: Literal["static", "timeseries", "detail"] = "static"
@@ -85,6 +89,10 @@ class _DeclaredBacking(BaseModel):
     table: Optional[str] = None
     sql: Optional[str] = None
     primary_key: str
+    #: ON-8 — in an organisation's ontology (`?domain=`): the connection the rows live on, and the schema that
+    #: qualifies a bare table there.
+    connection_id: Optional[str] = None
+    schema_name: Optional[str] = None
 
 
 class _DeclaredEntity(BaseModel):
@@ -233,6 +241,58 @@ def _resolve_schema(connection_id: str, schema_name: Optional[str]) -> str:
 #: converse tool roster's `propose_context_note` resolves the same schema the ontology
 #: routes write to — one rule, so an agent note lands where the UI reads it).
 resolve_effective_schema = _resolve_schema
+
+
+def _domain_scope(domain: Optional[str]):
+    """ON-8 — the organisation's ontology a request names (`?domain=`); 400 when the name cannot be a domain's."""
+    from aughor.ontology.domains import DomainRefused, resolve_domain
+    try:
+        return resolve_domain(domain)
+    except DomainRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+def _open_source(connection_id: str):
+    """ON-8 — one registered connection, opened for a domain declaration to read its source on."""
+    return open_connection_for(connection_id)
+
+
+def _domain_door(run):
+    """ON-8 — a domain door's body, its refusal answered with the status it carries."""
+    from aughor.ontology.domains import DomainRefused
+    try:
+        return run()
+    except DomainRefused as exc:
+        raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
+
+
+def _own_connection_spec(spec: dict, connection_id: str) -> dict:
+    """ON-8 — a binding spec on ONE connection's ontology: a source on another connection is refused with where it
+    belongs, and a schema qualifies a bare table."""
+    spec = dict(spec)
+    foreign = str(spec.pop("connection_id", "") or "").strip()
+    if foreign and foreign != connection_id:
+        raise HTTPException(status_code=400, detail=(
+            f"a source on another connection ({foreign}) is bound in an organisation's ontology — send this with "
+            "?domain=default; one connection's ontology reads its own connection only"))
+    schema = str(spec.pop("schema_name", "") or "").strip()
+    if schema and spec.get("table") and "." not in str(spec["table"]):
+        spec["table"] = f"{schema}.{spec['table']}"
+    return spec
+
+
+def _own_connection_backing(spec: dict, connection_id: str) -> dict:
+    """ON-8 — a declared type on ONE connection's ontology reads that connection: another one is refused with where the
+    declaration belongs."""
+    spec = dict(spec)
+    backing = dict(spec.get("backing") or {})
+    foreign = str(backing.pop("connection_id", "") or "").strip()
+    if foreign and foreign != connection_id:
+        raise HTTPException(status_code=400, detail=(
+            f"a type whose rows live on another connection ({foreign}) is declared in an organisation's ontology — send "
+            "this with ?domain=default; one connection's ontology reads its own connection only"))
+    spec["backing"] = backing
+    return spec
 
 
 def cached_ontology_schemas(connection_id: str) -> list[str]:
@@ -675,6 +735,7 @@ def measure_ontology(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
     pack: Optional[str] = Query(default=None, description="A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless"),
+    domain: Optional[str] = Query(default=None, description="ON-8 — measure an organisation's ontology instead: every declaration in the domain, on the connections it names"),
 ):
     """Measure the cached ontology against the live data and save what it says — no model
     call, no rebuild (ON-0a).
@@ -689,6 +750,10 @@ def measure_ontology(
     that is already there, invalidates the enriched-schema cache that embeds the blocks,
     and journals `ontology.measure`.
     """
+    if domain is not None:
+        from aughor.ontology.domains import measure_domain
+        scope = _domain_scope(domain)
+        return _domain_door(lambda: measure_domain(scope, _open_source))
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.ontology.store import measure_latest
     effective = _resolve_schema(connection_id, schema_name)
@@ -1028,6 +1093,12 @@ def override_ontology_entity(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
+    if connection_id.startswith("domain:"):
+        # ON-8 — the web carries an organisation's ontology as `domain:<name>` where a connection id goes. This door
+        # edits one connection's graph, and would otherwise write an override for a connection nobody registered.
+        raise HTTPException(status_code=400, detail=(
+            "this door edits one connection's ontology; an organisation's ontology is edited through the doors that "
+            "take ?domain="))
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride, find_override
@@ -1062,13 +1133,17 @@ def bind_ontology_entity(
     body: _BindingSpec,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="ON-8 — bind onto a type of an organisation's ontology, from a source on any of its connections"),
 ):
     """Bind a further source to an object type (ON-1b): a table or keyed SELECT joined to the object on its key,
     supplying properties its backing does not carry. The source is read for its columns first — its key, its time
     column and every property it supplies must exist and be free on the type, or nothing is written (400) — then it is
     counted against the objects: a static binding must hold one row per object, a timeseries binding must reach them.
     Merged into the type's other human edits; the response carries the binding as the entity-type panel shows it.
-    No model call."""
+    No model call. ON-8 — with ``domain`` the type is the organisation's, and the source may live on another
+    connection (``connection_id``): read there, and counted against the objects across both."""
+    if domain is not None:
+        return _domain_bind(entity_id, name, body.model_dump(exclude_none=True), domain)
     return _bind_entity_core(entity_id, name, body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1084,6 +1159,7 @@ def _bind_entity_core(entity_id: str, name: str, spec: dict, connection_id: str,
     from aughor.ontology.overrides import OntologyOverride, find_override, save_override
     from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
+    spec = _own_connection_spec(spec, connection_id)
     graph = _get_ontology_graph(connection_id, effective)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
@@ -1166,9 +1242,13 @@ def unbind_ontology_entity(
     name: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Remove one binding a person set (ON-1b). The type's other human edits stay; the properties that binding
-    supplied stop resolving on the next read. 404 when the type has no such binding."""
+    supplied stop resolving on the next read. 404 when the type has no such binding. ON-8 — with ``domain``, from a
+    type in the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.bindings import binding_block
@@ -1199,13 +1279,17 @@ def declare_ontology_entity(
     body: _DeclaredEntity,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="ON-8 — declare the type in an organisation's ontology, on the connection `backing.connection_id` names"),
 ):
     """Declare a business entity (ON-7): the noun first, then the source bound into it — a table or a keyed
     SELECT whose rows are its objects, with the column that is its key. The source is read for its columns and
     the key is counted before anything is written (400 with the reason when it cannot be read); a table that
     already backs a type is refused — rename or absorb that type instead of doubling it. The declaration lives
     in the overrides tree with provenance (human, or a model's proposal) and survives every rebuild. No model
-    call."""
+    call. ON-8 — with ``domain`` the type is the organisation's: ``backing.connection_id`` names the connection its
+    rows live on, and they are read and counted there."""
+    if domain is not None:
+        return _domain_declare_entity(body.model_dump(exclude_none=True), domain)
     return _declare_entity_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1222,6 +1306,7 @@ def _declare_entity_core(spec: dict, connection_id: str, schema_name: Optional[s
     from aughor.ontology.overrides import OntologyOverride, save_override
     from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
+    spec = _own_connection_backing(spec, connection_id)
     problem = entity_spec_problem(spec)
     if problem:
         raise HTTPException(status_code=400, detail=problem)
@@ -1259,10 +1344,14 @@ def delete_declared_entity(
     entity_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Withdraw a DECLARED entity (ON-7) — its override file, and with it the type. A type the builder made from
     a table is not deletable here (404 says so): absorb it into another type, or leave it. A declared link on
-    the withdrawn type stops applying on the next read and is reported skipped, never silently kept."""
+    the withdrawn type stops applying on the next read and is reported skipped, never silently kept. ON-8 — with
+    ``domain``, from the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override, find_override
@@ -1284,13 +1373,17 @@ def declare_ontology_link(
     body: _DeclaredLink,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="ON-8 — declare the link in an organisation's ontology, where its two types may live on two connections"),
 ):
     """Declare a link between two types (ON-7): a business verb and the column each side joins on. Both columns
     must be properties of their type, the name must be free on the from-side and the reverse name on the to-side
     (a path segment names one thing), and no found link may already join the same columns — name that one instead.
     Each side is counted (a side is "1" when its key is unique — the cardinality, ON-0a's law) and the share of
     from-keys the to-side holds is measured before anything is written; the compiler follows the link exactly as
-    it would a found one: measured, and not N:N. No model call."""
+    it would a found one: measured, and not N:N. No model call. ON-8 — with ``domain``, between types of the
+    organisation's ontology: each side counted on its own connection, and a link across two is `cross-source`."""
+    if domain is not None:
+        return _domain_declare_link(body.model_dump(exclude_none=True), domain)
     return _declare_link_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1339,8 +1432,12 @@ def delete_declared_link(
     relationship_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
-    """Withdraw a DECLARED link (ON-7). A link the builder found is not deletable here (404 says so)."""
+    """Withdraw a DECLARED link (ON-7). A link the builder found is not deletable here (404 says so). ON-8 — with
+    ``domain``, from the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.overrides import delete_override, find_override
@@ -1352,6 +1449,66 @@ def delete_declared_link(
                                                        if existing is not None else "")))
     delete_override(connection_id, effective, "link", relationship_id)
     return {"removed": True, "link": relationship_id}
+
+
+# ── ON-8: one ontology, many sources ────────────────────────────────────────────────────────
+
+
+@router.get("/ontology/domains")
+def list_ontology_domains():
+    """ON-8 — the organisation's ontologies: the default domain every organisation has, and each other domain it has
+    declared anything in, with how many types and links each holds, how many of the links cross two connections, and
+    the connections it reads. A read of the declaration files: no warehouse query, no model call."""
+    from aughor.ontology.domains import DEFAULT_DOMAIN, connections_of, domain_graph, domain_names
+    rows = []
+    for name in dict.fromkeys([DEFAULT_DOMAIN, *domain_names()]):
+        scope = _domain_scope(name)
+        graph = domain_graph(scope)
+        rows.append({"domain": name, "key": scope.key, "object_types": len(graph.entities),
+                     "links": len(graph.relationships),
+                     "cross_source_links": sum(1 for r in graph.relationships.values() if r.traversal == "cross-source"),
+                     "connections": connections_of(graph)})
+    return {"org": _domain_scope(None).org, "default": DEFAULT_DOMAIN, "domains": rows}
+
+
+def _domain_declare_entity(spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import declare_entity, domain_graph
+    from aughor.semantic.object_types import describe_object_type
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: declare_entity(scope, spec, _open_source))
+    served = domain_graph(scope)
+    if ov.target_id not in served.entities:
+        raise HTTPException(status_code=500, detail=f"{ov.target_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "entity": describe_object_type(served, ov.target_id), "domain": scope.key}
+
+
+def _domain_bind(entity_id: str, name: str, spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import bind_source, domain_graph
+    from aughor.semantic.object_types import describe_object_type
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: bind_source(scope, entity_id, name, spec, _open_source))
+    served = domain_graph(scope)
+    described = describe_object_type(served, entity_id) if entity_id in served.entities else {}
+    row = next((b for b in described.get("bindings", []) if b["name"] == name), None)
+    return {**_override_result(ov), "binding": row, "domain": scope.key}
+
+
+def _domain_declare_link(spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import declare_link, domain_graph
+    from aughor.semantic.object_types import describe_object_type
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: declare_link(scope, spec, _open_source))
+    served = domain_graph(scope)
+    source = str(ov.fields.get("from_entity") or "")
+    described = describe_object_type(served, source) if source in served.entities else {}
+    row = next((link for link in described.get("links", []) if link["relationship"] == ov.target_id), None)
+    return {**_override_result(ov), "link": row, "relationship": ov.target_id, "domain": scope.key}
 
 
 # ── ON-9: processes, promises and rules ─────────────────────────────────────────────────────

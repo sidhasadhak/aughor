@@ -919,6 +919,28 @@ class DatabaseConnection(ABC):
         bounded = f"SELECT * FROM ({sql.strip().rstrip(';')}) __q LIMIT {limit}" if limit > 0 else sql
         return self.execute("__bulk__", bounded)
 
+    def read_typed_rows(self, hypothesis_id: str, sql: str, max_rows: int) -> "tuple[QueryResult, dict | None]":
+        """ON-8 — `execute_bounded` with the raw row values captured, for platform PLUMBING only: the cross-source
+        object query reads each source's rows here and joins them in memory before anything is returned.
+
+        `execute_typed` refuses an internal label, because an internal query skips the PII and audit post-pass and a
+        typed payload handed to a caller would be an unredacted side channel. This read is the other case and so
+        demands the other label: its rows never leave the process. They are staged, joined and aggregated, and the
+        ANSWER is what passes the post-pass (`aughor.semantic.cross_source`). A caller-facing label is refused, so this
+        cannot become the side channel `execute_typed` guards. The payload is ``{rows, types, truncated}``, or None
+        when the connector offers no typed rows, and the caller then refuses rather than guess a type."""
+        if not _is_internal_query(hypothesis_id):
+            raise ValueError(f"read_typed_rows is platform plumbing; {hypothesis_id!r} is not an internal label")
+        token = _TYPED_SINK.set({})
+        try:
+            result = self.execute_bounded(hypothesis_id, sql, max_rows)
+            sink = _TYPED_SINK.get()
+        finally:
+            _TYPED_SINK.reset(token)
+        if result.error or not sink or not sink.get("armed"):
+            return result, None
+        return result, sink
+
     def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> "QueryResult":
         """Like :meth:`execute` but may return up to ``max_rows`` rows.
 
