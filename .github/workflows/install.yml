@@ -65,10 +65,12 @@ jobs:
 
       - name: Install (macOS, Linux)
         if: runner.os != 'Windows'
+        timeout-minutes: 20
         run: ./install.sh --no-start
 
       - name: Install (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 25
         shell: cmd
         run: install.cmd --no-start
 
@@ -77,6 +79,7 @@ jobs:
       # path, and the snapshot is this commit, so the run tests this change rather than main.
       - name: Fresh install from an empty folder, as a snapshot (macOS, Linux)
         if: runner.os != 'Windows' && matrix.node == 'installed'
+        timeout-minutes: 20
         run: |
           git archive --format=tar.gz --prefix=aughor-main/ -o "$RUNNER_TEMP/aughor-main.tar.gz" HEAD
           mkdir -p "$RUNNER_TEMP/fresh"
@@ -90,6 +93,7 @@ jobs:
 
       - name: Fresh install from an empty folder, as a snapshot (Windows)
         if: runner.os == 'Windows' && matrix.node == 'installed'
+        timeout-minutes: 25
         shell: pwsh
         run: |
           git archive --format=zip --prefix=aughor-main/ -o "$env:RUNNER_TEMP\aughor-main.zip" HEAD
@@ -98,14 +102,19 @@ jobs:
           Set-Location "$env:RUNNER_TEMP\fresh"
           $env:AUGHOR_REPO_URL = "$env:RUNNER_TEMP\no-such-repo"
           $env:AUGHOR_ARCHIVE_URL = "file:///$($env:RUNNER_TEMP -replace '\\', '/')/aughor-main.zip"
+          # On the runner's D: work drive: the home folder is on C:, the system drive, where this
+          # step sat for 15 minutes on its first run. The home-folder default is covered on macOS
+          # and Linux.
+          $env:AUGHOR_DIR = "$env:RUNNER_TEMP\fresh\aughor"
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\install.ps1" --no-start
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "$HOME\aughor\web\.next\BUILD_ID")) { exit 1 }
+          if (-not (Test-Path "$env:AUGHOR_DIR\web\.next\BUILD_ID")) { exit 1 }
           & "$HOME\.local\bin\aughor.cmd" --help
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Start, and both servers answer (macOS, Linux)
         if: runner.os != 'Windows'
+        timeout-minutes: 10
         run: |
           ./install.sh --no-browser > up.log 2>&1 &
           ready=no
@@ -129,6 +138,7 @@ jobs:
 
       - name: Start, and both servers answer (Windows)
         if: runner.os == 'Windows'
+        timeout-minutes: 10
         shell: pwsh
         run: |
           # Actions runs pwsh with $ErrorActionPreference = 'Stop'; the diagnostics below must print
