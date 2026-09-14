@@ -69,11 +69,12 @@ class ExasolConnection(Connector):
         try:
             stmt = self._conn.execute(sql)
             columns = list(stmt.columns().keys())
-            rows_raw = stmt.fetchmany(MAX_ROWS)
-            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw]
+            # one row past the cap: a read the cap cut counts more rows than it keeps
+            rows_raw = stmt.fetchmany(MAX_ROWS + 1)
+            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw[:MAX_ROWS]]
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=columns, rows=rows, row_count=len(rows),
+                columns=columns, rows=rows, row_count=len(rows_raw),
             )
         except Exception as e:
             result = QueryResult(

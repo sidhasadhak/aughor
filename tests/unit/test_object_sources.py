@@ -439,7 +439,7 @@ def test_keys_that_cannot_all_be_read_leave_a_claim_unmeasured_and_unread(source
             return QueryResult(hypothesis_id=label, sql=sql, columns=["k"], rows=[["a"], ["b"]], row_count=5)
 
     keys, why = SRC.distinct_keys(Partial(), "t AS o", "o", "k")
-    assert keys is None and "2 of 5" in why
+    assert keys is None and "2 of at least 5" in why
     monkeypatch.setattr(SRC, "MAX_KEYS", 100)
     capped = model(sources, "capped", shop="shop", crm="crm")
     graph = domain_graph(capped)

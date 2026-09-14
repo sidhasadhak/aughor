@@ -65,6 +65,6 @@ def distinct_keys(db: Any, from_clause: str, alias: str, column: str) -> tuple[O
         return None, f"more than {MAX_KEYS:,} distinct keys on one side — too many to meet across two connections"
     held = int(getattr(result, "row_count", 0) or 0)
     if held > len(rows):
-        return None, (f"its connection returned {len(rows):,} of {held:,} distinct keys, and a partial key set would "
+        return None, (f"its connection returned {len(rows):,} of at least {held:,} distinct keys, and a partial key set would "
                       "measure a coverage that is not there")
     return {canon_key(str(row[0])) for row in rows}, ""

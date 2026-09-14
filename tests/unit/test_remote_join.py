@@ -279,3 +279,52 @@ def test_a_right_read_past_its_cap_is_refused_rather_than_joined_from_part():
     whole = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers",
                                  right_cols=["cust", "name"], max_right_rows=2)
     assert whole.error is None and whole.row_count == 2
+
+
+def test_a_left_read_its_connection_cut_is_refused_rather_than_joined_from_part():
+    """The join door's left read and the federated driver come from a connection that may cut them. A left side that
+    counts more rows than it holds is refused, where it used to be joined with a PARTIAL note only the SQL carried
+    (Arc ON leftovers, S2)."""
+    from aughor.control_plane.contracts.execution import QueryResult
+
+    right_conn = _duck(
+        "CREATE TABLE customers (cust VARCHAR, name VARCHAR)",
+        "INSERT INTO customers VALUES ('C1','Alice')",
+    )
+    left = QueryResult(hypothesis_id="h", sql="", columns=["cust"], rows=[["C1"]], row_count=2)
+    out = batched_foreach_join(left, "cust", right_conn, "cust", right_table="customers", right_cols=["cust", "name"])
+    assert out.rows == [] and "left read stopped at 1 rows" in (out.error or "")
+
+
+def test_a_join_that_fans_out_past_its_cap_is_refused_rather_than_cut():
+    """The output cap used to stop at `max_out_rows` joined rows and hand them back as the whole join (S2)."""
+    left_conn = _duck(
+        "CREATE TABLE orders (order_id INT, cust VARCHAR)",
+        "INSERT INTO orders VALUES (1,'C1')",
+    )
+    right_conn = _duck(
+        "CREATE TABLE visits (cust VARCHAR, page VARCHAR)",
+        "INSERT INTO visits VALUES ('C1','a'),('C1','b'),('C1','c')",
+    )
+    left = _left(left_conn, "SELECT order_id, cust FROM orders")
+
+    cut = batched_foreach_join(left, "cust", right_conn, "cust", right_table="visits",
+                               right_cols=["cust", "page"], max_out_rows=2)
+    assert cut.rows == [] and "more than 2 rows" in (cut.error or "")
+    fits = batched_foreach_join(left, "cust", right_conn, "cust", right_table="visits",
+                                right_cols=["cust", "page"], max_out_rows=3)
+    assert fits.error is None and fits.row_count == 3
+
+    # The cap is reached exactly between two left rows: stopping there would hand back half the join as the whole.
+    two_left = _duck(
+        "CREATE TABLE orders (order_id INT, cust VARCHAR)",
+        "INSERT INTO orders VALUES (1,'C1'),(2,'C2')",
+    )
+    customers = _duck(
+        "CREATE TABLE customers (cust VARCHAR, name VARCHAR)",
+        "INSERT INTO customers VALUES ('C1','Alice'),('C2','Bob')",
+    )
+    halves = batched_foreach_join(_left(two_left, "SELECT order_id, cust FROM orders ORDER BY order_id"), "cust",
+                                  customers, "cust", right_table="customers", right_cols=["cust", "name"],
+                                  max_out_rows=1)
+    assert halves.rows == [] and "more than 1 rows" in (halves.error or "")

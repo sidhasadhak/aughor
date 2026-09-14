@@ -63,7 +63,7 @@ class MySQLConnection(Connector):
     def _bind_execute(self, sql: str, params: dict):
         with self._conn.cursor() as cur:
             cur.execute(sql, params)
-            rows_raw = cur.fetchmany(self.max_rows)
+            rows_raw = cur.fetchmany(self.max_rows + 1)   # one past the cap, so a cut read shows
             # DictCursor: columns come from the first row, and from `description` when the
             # result is empty — the same two-source read `execute` already does.
             cols = (list(rows_raw[0].keys()) if rows_raw else
@@ -84,14 +84,15 @@ class MySQLConnection(Connector):
         try:
             with self._conn.cursor() as cur:
                 cur.execute(sql)
-                rows_raw = cur.fetchmany(MAX_ROWS)
+                # one row past the cap: a read the cap cut counts more rows than it keeps
+                rows_raw = cur.fetchmany(MAX_ROWS + 1)
                 columns = list(rows_raw[0].keys()) if rows_raw else (
                     [desc[0] for desc in cur.description] if cur.description else []
                 )
-                rows = [[str(v) if v is not None else "NULL" for v in row.values()] for row in rows_raw]
+                rows = [[str(v) if v is not None else "NULL" for v in row.values()] for row in rows_raw[:MAX_ROWS]]
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=columns, rows=rows, row_count=len(rows),
+                columns=columns, rows=rows, row_count=len(rows_raw),
             )
         except Exception as e:
             # Auto-reconnect on dropped connection

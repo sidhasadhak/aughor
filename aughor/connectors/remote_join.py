@@ -23,11 +23,11 @@ query), so the two sides normalize identically. The first transform that lifts t
 bar is adopted; otherwise the raw result stands.
 
 Bounds & failure: bounded by the key-chunk size, right-rows fetched, output rows, and transforms
-tried. Per-source fetches also inherit the connection layer's own row cap; when the LEFT driver is
-capped, the result note is flagged ``PARTIAL`` rather than silently truncated. Fail-safe: a bad/empty
-left key returns the LEFT result unchanged; a **right-query error returns an error result** (an inner
-join that couldn't read the right side is a failure, not a left-only success) — the primitive never
-raises into the query path.
+tried. A read that stops before its rows end — the left read cut by its connection, a right side past
+its cap, a join past its output cap — is an error result that says so, never a partial join handed back
+as the whole. Fail-safe: a bad/empty left key returns the LEFT result unchanged; a **right-query error
+returns an error result** (an inner join that couldn't read the right side is a failure, not a
+left-only success) — the primitive never raises into the query path.
 """
 from __future__ import annotations
 
@@ -45,8 +45,8 @@ logger = logging.getLogger(__name__)
 _KEY_CHUNK      = 1000     # distinct keys per IN-list batch — one right query per chunk
 _MAX_RIGHT_ROWS = 100_000  # cap total right rows fetched across all chunks
 _MAX_OUT_ROWS   = 50_000   # cap merged output rows (a fan-out backstop)
-# NOTE: the connection layer caps each execute() at its own MAX_ROWS; that lower bound dominates
-# these ceilings today, so a very large join is flagged PARTIAL (see _distinct-key truncation below).
+# NOTE: a connection without its own `execute_bounded` caps each read at its MAX_ROWS, below these ceilings; such a
+# cut read counts more rows than it keeps, and the join refuses it rather than joining part of it.
 
 # Paired normalizations for self-healing cross-source keys: (name, python fn over the left key,
 # SQL expr over the right key {col}). The Python fn and SQL expr MUST compute the same string so the
@@ -191,11 +191,11 @@ def _hash_join(
         if matches:
             for m in matches:
                 out_rows.append(list(row) + list(m))
-                if len(out_rows) >= max_out:
+                if len(out_rows) > max_out:
                     break
         elif how == "left":
             out_rows.append(list(row) + [None] * len(right_columns))
-        if len(out_rows) >= max_out:
+        if len(out_rows) > max_out:   # one row past the cap, so the caller knows the join did not fit
             break
     return out_cols, out_rows
 
@@ -224,6 +224,10 @@ def batched_foreach_join(
     li = _idx(left.columns, left_key)
     if left.error or li < 0 or not left.rows or not (right_table or right_sql):
         return left
+    if left.row_count > len(left.rows):
+        # the left read's connection kept fewer rows than the statement produced
+        return _join_refused(f"the left read stopped at {len(left.rows):,} rows while more remained, and a join is "
+                             "never taken from part of them")
 
     from_clause = f"({right_sql.rstrip().rstrip(';')}) AS __rt" if right_sql else _qident(right_table)
 
@@ -255,10 +259,8 @@ def batched_foreach_join(
             bump("federation.remote_join.reconciled")
 
     out_cols, out_rows = _hash_join(left, li, keyfn, right_columns, by_key, how, max_out_rows)
-
-    partial = ""
-    if left.row_count > len(left.rows):     # the connection layer capped the driver — say so, don't hide it
-        partial = f"; PARTIAL: left driver capped at {len(left.rows)} of {left.row_count} rows"
+    if len(out_rows) > max_out_rows:
+        return _join_refused(f"the join produces more than {max_out_rows:,} rows, and it is never cut to part of them")
 
     from aughor.stats import bump
     bump("federation.remote_join.executed")
@@ -266,7 +268,7 @@ def batched_foreach_join(
     return QueryResult(
         hypothesis_id="__remote_join__",
         sql=(f"-- batched foreach join: left.{left_key} = {right_label}.{right_key} ({how}); "
-             f"{chosen_note}, {fetched} right rows, {len(out_rows)} joined{partial}"),
+             f"{chosen_note}, {fetched} right rows, {len(out_rows)} joined"),
         columns=out_cols, rows=out_rows, row_count=len(out_rows),
     )
 
@@ -297,6 +299,14 @@ def _empty_like(left: QueryResult) -> QueryResult:
     return QueryResult(
         hypothesis_id="__remote_join__", sql="-- remote join: no join keys",
         columns=list(left.columns), rows=[], row_count=0,
+    )
+
+
+def _join_refused(why: str) -> QueryResult:
+    """A join that would be taken from part of its rows is an error that says why, never a partial answer."""
+    return QueryResult(
+        hypothesis_id="__remote_join__", sql="-- cross-source join refused", columns=[], rows=[],
+        row_count=0, error=f"cross-source join refused: {why}",
     )
 
 

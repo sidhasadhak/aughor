@@ -56,7 +56,7 @@ class SnowflakeConnection(Connector):
         cur = self._conn.cursor()
         cur.execute(sql, params)
         cols = [d[0] for d in cur.description] if cur.description else []
-        return cols, cur.fetchmany(self.max_rows)
+        return cols, cur.fetchmany(self.max_rows + 1)   # one past the cap, so a cut read shows
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
@@ -72,12 +72,13 @@ class SnowflakeConnection(Connector):
         try:
             cur = self._conn.cursor()
             cur.execute(sql)
-            rows_raw = cur.fetchmany(MAX_ROWS)
+            # one row past the cap: a read the cap cut counts more rows than it keeps
+            rows_raw = cur.fetchmany(MAX_ROWS + 1)
             columns = [desc[0] for desc in cur.description] if cur.description else []
-            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw]
+            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw[:MAX_ROWS]]
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
-                columns=columns, rows=rows, row_count=len(rows),
+                columns=columns, rows=rows, row_count=len(rows_raw),
             )
         except Exception as e:
             result = QueryResult(

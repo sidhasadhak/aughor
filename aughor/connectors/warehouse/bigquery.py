@@ -210,7 +210,7 @@ class BigQueryConnection(Connector):
             query_parameters=declared,
         )
         with self._running(self._client.query(sql, job_config=job_config)) as job:
-            rows_it = job.result(max_results=self.max_rows)
+            rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
@@ -250,7 +250,8 @@ class BigQueryConnection(Connector):
                 default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None
             )
             with self._running(self._client.query(sql, job_config=job_config)) as job:
-                rows_it = job.result(max_results=MAX_ROWS)
+                # one row past the cap: a read the cap cut counts more rows than it keeps
+                rows_it = job.result(max_results=MAX_ROWS + 1)
                 columns = [field.name for field in rows_it.schema]
                 rows = [
                     [str(v) if v is not None else "NULL" for v in row.values()]
@@ -260,7 +261,7 @@ class BigQueryConnection(Connector):
                 hypothesis_id=hypothesis_id,
                 sql=sql,
                 columns=columns,
-                rows=rows,
+                rows=rows[:MAX_ROWS],
                 row_count=len(rows),
             )
         except Exception as e:

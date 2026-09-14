@@ -208,9 +208,12 @@ def execute_plan(plan: CrossSourcePlan, *, home_connection_id: str, home_db: Any
                                            "joined with another connection's"), timings
     rows = list(payload.get("rows") or [])
     if payload.get("truncated") or len(rows) > MAX_HOME_ROWS:
-        return _failed(label, display_sql, f"the objects this query reads on {home_connection_id} number more than "
-                                           f"{MAX_HOME_ROWS:,}, and a cross-source answer is never taken from part of "
-                                           "them — narrow the query"), timings
+        # a connection with a cap of its own stops before MAX_HOME_ROWS, and the reason names where it stopped
+        where = (f"the objects this query reads on {home_connection_id} number more than {MAX_HOME_ROWS:,}"
+                 if len(rows) > MAX_HOME_ROWS else
+                 f"{home_connection_id} stopped at {len(rows):,} of the objects this query reads, a cap of its own")
+        return _failed(label, display_sql, f"{where}, and a cross-source answer is never taken from part of them — "
+                                           "narrow the query"), timings
     columns = list(result.columns)
     types = [str(t or "") for t in payload.get("types") or []]
     timings.append({"read": "home", "connection_id": home_connection_id, "rows": len(rows), "ms": _ms(clock)})
