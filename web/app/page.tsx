@@ -10,6 +10,8 @@ import { ThreadsRail } from "@/components/ThreadsRail";
 import { WorkspaceSwitcher } from "@/components/WorkspaceSwitcher";
 import { AuthControl } from "@/components/AuthControl";
 import { applyTheme } from "@/lib/themeSwitch";
+import { useNavCollapsed } from "@/components/shell/useNavCollapsed";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { installAuthFetch } from "@/lib/auth";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
@@ -279,7 +281,7 @@ function Topbar({
 // ── Two-tier nav: a short primary rail, then labelled sections. The section
 // headers are static labels (an earlier draft planned collapsible ones — never
 // built, and this comment once claimed they were); Settings sits pinned in the
-// sidebar footer, not the topbar. Each id maps 1:1 to a render block. (PX-6:
+// sidebar footer, not the topbar, above the toggle that collapses the whole rail to icons. Each id maps 1:1 to a render block. (PX-6:
 // this comment now describes the nav that exists, not the one once planned.)
 const NAV_PRIMARY = [
   { id: "home",         icon: "home",   label: "Home" },
@@ -358,31 +360,54 @@ function Sidebar({
     if (id === "recents" && counts?.runningRuns) return { value: counts.runningRuns, waiting: false, noun: "running" };
     return null;
   };
+  // Collapsed (the toggle at the foot, or ⌘\), the rail is a column of icons: every row keeps its
+  // aria-label, and a hover names it — Base UI waits 600ms for the first label, then opens neighbours at once.
+  const [collapsed, toggleCollapsed] = useNavCollapsed();
+  const navRow = (key: string, row: {
+    icon: string; label: string; name: string; tip: string;
+    active?: boolean; expanded?: boolean; onClick: () => void; trailing?: React.ReactNode;
+  }) => (
+    <Tooltip key={key} disabled={!collapsed}>
+      <TooltipTrigger
+        render={
+          <button
+            className={`aug-nav-item${row.active ? " active" : ""}`}
+            onClick={row.onClick}
+            // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
+            // so every nav button read as anonymous. An explicit aria-label guarantees the name
+            // (and now the badge's count); aria-current marks the active destination.
+            aria-label={row.name}
+            aria-current={row.active ? "page" : undefined}
+            aria-expanded={row.expanded}
+          />
+        }
+      >
+        <NavIcon name={row.icon} size={14} />
+        <span className="aug-nav-label">{row.label}</span>
+        {row.trailing}
+      </TooltipTrigger>
+      <TooltipContent side="right" sideOffset={10}>{row.tip}</TooltipContent>
+    </Tooltip>
+  );
   const renderItem = (item: { id: string; icon: string; label: string }) => {
     const badge = badgeFor(item.id);
-    return (
-      <button
-        key={item.id}
-        className={`aug-nav-item${tab === item.id ? " active" : ""}`}
-        onClick={() => onNavigate(item.id as NavTab)}
-        // WP-11 a11y (§1.7-7): the visible <span> label wasn't computing an accessible name,
-        // so every nav button read as anonymous. An explicit aria-label guarantees the name
-        // (and now the badge's count); aria-current marks the active destination.
-        aria-label={badge ? `${item.label}, ${badge.value} ${badge.noun}` : item.label}
-        aria-current={tab === item.id ? "page" : undefined}
-      >
-        <NavIcon name={item.icon} size={14} />
-        <span>{item.label}</span>
-        {badge && (
-          <span className={`aug-nav-badge${badge.waiting ? " aug-nav-badge-waiting" : ""}`}>{formatCount(badge.value)}</span>
-        )}
-      </button>
-    );
+    return navRow(item.id, {
+      icon: item.icon,
+      label: item.label,
+      name: badge ? `${item.label}, ${badge.value} ${badge.noun}` : item.label,
+      tip: badge ? `${item.label} · ${formatCount(badge.value)} ${badge.noun}` : item.label,
+      active: tab === item.id,
+      onClick: () => onNavigate(item.id as NavTab),
+      trailing: badge && (
+        <span className={`aug-nav-badge${badge.waiting ? " aug-nav-badge-waiting" : ""}`}>{formatCount(badge.value)}</span>
+      ),
+    });
   };
 
   // Four groups, each ruled off in --b0, then Settings pinned to the bottom. The active
   // item is the only coloured thing in the rail: a 2px --blue3 bar on --bg-sel.
   return (
+    <TooltipProvider>
     <nav className="aug-sidebar">
       <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
         <div className="aug-nav-section">
@@ -404,16 +429,25 @@ function Sidebar({
       </div>
       <div className="aug-nav-foot">
         {renderItem({ id: "settings", icon: "settings", label: "Settings" })}
+        {navRow("nav-toggle", {
+          icon: "panel",
+          label: "Collapse",
+          name: collapsed ? "Expand navigation" : "Collapse navigation",
+          tip: "Expand navigation · ⌘\\",
+          expanded: !collapsed,
+          onClick: toggleCollapsed,
+          trailing: <span className="aug-nav-kbd" aria-hidden>⌘\</span>,
+        })}
         {/* Demo posture is stated, not implied. The hosted demo names a real company, so
             a visitor must be able to see at a glance that the operational figures are
             synthetic — and "Local" was simply wrong there: the backend is a recording. */}
-        <div className="aug-fs-xs aug-mono" style={{ color: "var(--t3)", padding: "6px 14px 0" }}>
+        <div className="aug-fs-xs aug-mono aug-nav-meta" style={{ color: "var(--t3)", padding: "6px 14px 0" }}>
           {DEMO_PACK ? "v2 · Demo" : "v2 · Local"}
         </div>
         {DEMO_PACK && (
           <div
             title="These are completed analyses served from a frozen recording. The operational figures are synthetic and are not the financial results of any real company."
-            className="aug-fs-xs"
+            className="aug-fs-xs aug-nav-meta"
             style={{ lineHeight: 1.45, color: "var(--t3)", padding: "4px 14px 0" }}
           >
             Synthetic data · illustrative only
@@ -421,6 +455,7 @@ function Sidebar({
         )}
       </div>
     </nav>
+    </TooltipProvider>
   );
 }
 

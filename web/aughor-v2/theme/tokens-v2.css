@@ -113,6 +113,7 @@
 
   /* shell */
   --sidebar: 248px;
+  --sidebar-collapsed: 48px;   /* the rail as a column of icons */
   --topbar: 48px;
   --measure-chat: 100%;
   --chat-gutter: clamp(20px, 4%, 88px);

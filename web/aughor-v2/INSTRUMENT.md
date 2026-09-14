@@ -44,7 +44,7 @@ table or column name, and code**, always tabular (`.aug-num`). Line heights 1.45
 **Geometry.** Radii `--r1` 3 · `--r2` 4 · `--r3` 6 (the design's `--r-3/--r-4/--r-6` alias
 them). 3 for chips, tags, buttons; 4 for inputs, nav items, small containers; 6 for frames,
 panels, overlays — a ceiling, not a default. Fully round (`--r-pill`) only for what IS round:
-avatars and status dots. Shell: rail `--sidebar` 248 · topbar `--topbar` 48 · content header
+avatars and status dots. Shell: rail `--sidebar` 248 (collapsed `--sidebar-collapsed` 48) · topbar `--topbar` 48 · content header
 44 · prose measure `--shell-measure` 700.
 
 **Focus.** `2px solid var(--bfocus)` at 2px offset on every interactive element, never a
@@ -193,7 +193,9 @@ One stroke set — Tabler, through `components/ui/icon.tsx` only (`lint:icons`) 
 `currentColor`, no fills. Icons are navigational, never decorative: if an icon and a word say
 the same thing, the icon goes. Status is a 7px dot, not an icon. Emoji are forbidden. Spacing
 `4 · 6 · 8 · 10 · 12 · 16 · 20 · 24`. Dense row 24px (the default), header 22, comfortable 34
-only where a row carries two lines, nav item 22, attention row 28, activity-tail line 17.
+only where a row carries two lines, nav item 28 with 2px between rows, attention row 28, activity-tail line 17. The rail collapses to a 48px column of
+icons — the toggle at its foot, or `⌘\` — remembered per browser and set before the first paint
+(`lib/navCollapse.ts`); a collapsed row names itself on hover, and nothing animates.
 
 ## 9. What exists, and what does not yet
 

@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter, JetBrains_Mono } from "next/font/google";
 import { Toaster } from "@/components/ui/toast";
 import { Providers } from "./providers";
+import { NAV_COLLAPSE_BOOT } from "@/lib/navCollapse";
 import "./globals.css";
 
 // Two families, both self-hosted by next/font at build time (no runtime request
@@ -63,7 +64,13 @@ export default function RootLayout({
     <html
       lang="en"
       className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      // NAV_COLLAPSE_BOOT sets data-nav on <html> before React hydrates (an attribute React does not
+      // render), so a collapsed rail is drawn collapsed from the first paint, with no hydration warning.
+      suppressHydrationWarning
     >
+      <head>
+        <script dangerouslySetInnerHTML={{ __html: NAV_COLLAPSE_BOOT }} />
+      </head>
       <body className="min-h-full flex flex-col">
         <Providers>
           {children}

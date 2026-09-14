@@ -236,7 +236,7 @@ a:hover { color: var(--blue4); }
   position: relative;
   z-index: 60;
 }
-.aug-nav-section { padding: 5px 0 7px; border-bottom: 1px solid var(--b0); }
+.aug-nav-section { display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-bottom: 1px solid var(--b0); }
 .aug-nav-group {
   display: flex;
   align-items: center;
@@ -255,7 +255,8 @@ a:hover { color: var(--blue4); }
   align-items: center;
   gap: 9px;
   width: 100%;
-  height: 22px;
+  height: 28px;
+  flex-shrink: 0;
   padding: 0 14px;
   font-size: 12px;
   font-weight: 400;
@@ -296,7 +297,25 @@ a:hover { color: var(--blue4); }
   color: var(--t3);
 }
 .aug-nav-badge-waiting { background: var(--amb1); color: var(--amb4); }
-.aug-nav-foot { margin-top: auto; padding: 4px 0 8px; border-top: 1px solid var(--b1); }
+.aug-nav-foot { margin-top: auto; display: flex; flex-direction: column; gap: 2px; padding: 8px 0 10px; border-top: 1px solid var(--b1); }
+.aug-nav-kbd { margin-left: auto; font-family: var(--font-mono); font-size: 11px; color: var(--t3); }
+
+/* Collapsed — the toggle at the rail's foot, or ⌘\ (lib/navCollapse.ts): a column of icons. The state
+   is an attribute on <html>, set before the first paint, so the rail never renders open and snaps shut.
+   Labels, group names, the shortcut and the version line go; a count becomes a dot on its icon; a hover
+   names the row. No animation: the rail and the content snap to their widths together. */
+:root[data-nav="collapsed"] .aug-sidebar { width: var(--sidebar-collapsed); }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-item { justify-content: center; gap: 0; padding: 0; }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-label,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-kbd,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-meta,
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-group { display: none; }
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge {
+  position: absolute; top: 6px; left: calc(50% + 4px);
+  width: 6px; height: 6px; padding: 0; border-radius: var(--r-pill);
+  font-size: 0; background: var(--t3);
+}
+:root[data-nav="collapsed"] .aug-sidebar .aug-nav-badge-waiting { background: var(--amb3); }
 
 /* ── Shell · the LIVE activity strip ─────────────────────────────────────────
    The only always-on motion in the app: ticks of the same feed the Agent Ops activity tail
@@ -1057,7 +1076,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 /* The Profile layer's domain rail: the Hub's categorisation of findings by domain, beside the profile. */
 .aug-profile-layer { flex: 1; display: flex; min-height: 0; min-width: 0; }
 .aug-profile-domains { width: 208px; flex: none; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--b1); background: var(--bg-0); }
-.aug-profile-domains-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 6px; }
+.aug-profile-domains-list { flex: 1; min-height: 0; overflow-y: auto; padding: 2px 0 6px; display: flex; flex-direction: column; gap: 2px; }
 .aug-profile-domain-page { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .aug-profile-hint {
   position: fixed; bottom: 20px; left: 50%; translate: -50% 0; z-index: 70; max-width: 420px;
