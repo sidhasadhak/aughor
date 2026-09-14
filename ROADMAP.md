@@ -4909,6 +4909,111 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, `9a986534` on `claude/industry-playbook-packages-884f76`, not merged)
+
+> **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
+> agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
+> of the playbook which the user can choose from during installation. Each package would be one industry such
+> ecommerce and aviation that we have right now. Scan the web for top such business and lets draw a plan to generate
+> playbooks for them."* The research is three studies in `docs/`: `INDUSTRY_PACKAGES_RANKING_STUDY_2026-09-14.md`
+> (29 industries scored), `INDUSTRY_CANON_REGULATED_STUDY_2026-09-14.md` (10 industries) and
+> `INDUSTRY_CANON_COMMERCE_STUDY_2026-09-14.md` (14 industries, and a gap check of the six we ship).
+
+**The premise, read in the code and probed on main `0f1eb220` — the playbook was read in part, and never for one
+industry.**
+- The Explorer read the most: the matched industry KB's curated metrics (up to 10 recipes), four plays per domain,
+  and the deep KB through vector search, which needs an embedding model.
+- The Analyst's synthesis and the Responder read plays ranked by word overlap across all 392, whatever the industry;
+  the synthesis block called them "proven interventions" and told the model to prefer them.
+- The Curator's birth job read no KB and no play — only the ontology claims of a pack a person had bound.
+- The Briefer read the industry's name and its north-star metric names.
+- There were six industries, not two: retail/e-commerce, airline, food delivery, logistics, manufacturing and SaaS
+  (`data/kb/industry/*.json`, with deep-KB files such as `ec_*` and `airline_operations`).
+
+**IP-0 · An honest playbook — BUILT `9a986534`.** Four defects and a label, each measured by a hermetic probe on a copy
+of the live `data/playbook.json` (nothing written, no model called):
+- **Industry scope.** 21 of 96 plays across 24 probe questions came from another industry — "why is churn up this
+  quarter" on SaaS drew four e-commerce plays. `retrieve_for_metric_and_phases` takes `industry=` from
+  `metric_kb.industry_scope`: the organisation's declared industry, else the connection's STORED profile, never an
+  inference. A curated id reads that industry's plays and the shared ones; "" (known, uncurated) the shared ones only;
+  None (unknown) everything. The Explorer, deep-analysis synthesis, chat answers, the investigation stream and
+  definitional answers all pass it. The same probe returns 0.
+- **The seed.** `cause.get("cause") or cause if isinstance(cause, str) else ""` parses as a conditional over the whole
+  `or`, so all 486 inflation and deflation causes — each with detection SQL and a fix — became "" and were skipped.
+  Fixed, and the seed is one write (`store.save_entries`): 878 plays in 0.08 s, where the 392 took 3.8 s of awaited
+  startup. Data-quality plays stay out of every read unless a caller asks for them.
+- **Industry matching.** `match_industry` was a substring test: "Retail Banking" got the retail KB and "Online Travel
+  Marketplace" the food-delivery one. It matches whole words now; a KB's `generic_aliases` decide only when no specific
+  alias matches and the text names no uncurated industry; a tie abstains. Every live profile still resolves to retail.
+  The union-of-all-KBs vocabulary for an unmatched industry is unchanged.
+- **Definitional answers** called `.get()` on `PlaybookEntry` models into a bare `except: pass` and never carried a
+  play. They do now, and their three swallows go through `tolerate()` (ratchet 214 → 211).
+- **The label.** The synthesis block says "proven" only when a play has a logged outcome.
+- **Receipts:** `tests/unit/test_industry_match.py` and `tests/unit/test_playbook_reads.py`; the full backend suite
+  once on the commit, 9,998 passed, 5 skipped. **To merge:** the branch is based on `0f1eb220`, and #502 edits the
+  same retriever call (`learned_rates=False`), so main goes in first.
+
+**The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
+ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
+`metrics/*.yaml` (formula, grain, sane range with its source, anti-patterns), `playbooks/*.yaml` (diagnostic,
+data-quality and practice plays, each bound to a metric it declares), `kb/*.json` (causes, detection SQL, fixes),
+`questions.yaml`, `evals/*.yaml` (goldens on a named public dataset) and `sources.yaml`.
+**Laws:** data, not code; everything a claim until measured; no table names; never the organisation's ontology (§6
+item 20); a sane range without a source fails the gate.
+**Layers:** functions (finance, marketing, product, customer, risk-and-fraud) apply to any industry. Bases implement a
+KPI shape once — a ratio of sums, a rate over time-weighted exposure, ageing and roll rates, churn with a declared
+unit, decision rates, clocks with a start, a stop and a tail, completion of immature periods, results with and without
+extreme events, rates by count or by value — and every money measure states what it includes (DoorDash's order value
+includes tips; Uber's bookings exclude them). Industries extend bases; a company extends its industry, by people.
+
+**How the agents read a package.** Every read is scoped to the connection's industry — IP-0's rule, extended to the
+deep KB and the recipes. Diagnostic plays feed the Explorer's angles and the Analyst's synthesis; data-quality plays
+the Verifier and SQL repair; practice plays the recommendations. Reference is not steering: recipes, plays and claims
+are read without a binding, while a persona and role-bound recipes keep the pinned-binding gate. **The Briefer reads
+the recipes** — sane ranges and anti-patterns on the numbers that moved (§6 item 21, answer 5). **The Curator measures
+a package's ontology claims on every connection of its industry** into measured-true, measured-false and expected
+(answer 6); nothing unmeasured reaches a prompt.
+
+**Chosen at install.** The question sits inside the one-line install of #501 — nothing typed before it or after — and
+before the slow steps. `curl | sh` leaves stdin at the end of the script, so the answer comes from `/dev/tty` (the
+console on Windows); with no terminal nothing is asked, and scripts pass `--industries` or `AUGHOR_INDUSTRIES`. The
+installer stays standard-library and writes one small file the API reads. **Skipping keeps every shipped package
+available and detects the industry per connection** (answer 1); a pick narrows what the profile may choose from. It
+changes later in Settings → Organization or with `aughor industries`. **Packages live in the repo** (answer 2).
+
+**How a package is made — six gates, in order.** (1) A cited dossier. (2) A drafted package: authoring tokens, no
+Aughor model. (3) The static gate, in CI: schema, a source per sane range, roles not tables, no alias collision, every
+play bound. (4) Measured on public data, no model: every recipe inside its sane range, every claim tiered, every
+detection query run; where no realistic public data exists, reproduce the regulator's published figures from the
+regulator's own data and test lifecycles on a synthetic generator. (5) Ablation with and without the package — model
+calls, run for the reference package and afterwards only where gate 4 is ambiguous (answer 8). (6) A person's review:
+draft → active.
+
+**Waves.**
+- **IP-0** an honest playbook — ✅ BUILT (above).
+- **IP-1 the package seam.** Industry ids on packs; packs load plays and KB entries through one resolver that replaces
+  the four hard-coded `data/kb` loaders; the six industries and the functions move into packages unchanged;
+  data-quality plays reach the Verifier. Only then do existing playbooks receive the 486 plays (answer 7: not yet).
+- **IP-2 chosen at install**, as above.
+- **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
+- **IP-4 the tiers.**
+  - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
+    and FFIEC Call Reports that reconcile to the FDIC's published totals), then payments & fintech (it reuses
+    banking's parties, accounts and transactions), then insurance; the finance and risk-and-fraud functions alongside.
+  - **Tier 2:** healthcare, payer module first (moved from tier 1 by answer 4), pharma after it, CPG, travel &
+    hospitality, energy & utilities, telecommunications.
+  - **Tier 3,** when a customer asks: public sector, education, capital markets & wealth, media with advertising, oil &
+    gas, automotive, restaurants. **Tier 4,** drafted from a standard on demand: real estate, construction,
+    agriculture, gaming, nonprofit, professional services.
+
+**Falsifier.** If gate 5 on the reference package shows no lift or a regression, package prompt blocks are retired and
+a package's value is confined to the guards and the compiled path — ON-0's rule (§3.15), applied to packages.
+
+**Not this:** a prose block per industry; a reference model adopted wholesale (FIBO, FHIR, ACORD and IEC CIM are
+quarries, as §3.15 ON-0a says); a registry or any second distribution channel; a package or an agent that writes the
+organisation's ontology; a table name inside a package.
+
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -5226,6 +5331,13 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              accepted-proposal receipt (waits for a natural evidence-backed
              occasion), periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
+ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
+        for the connection's own industry. IP-0 ✅ BUILT (`9a986534`, not merged): playbook reads
+        scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
+        whole-word industry matching, definitional answers read plays, "proven" only with an
+        outcome. Next: IP-1 the package seam → IP-2 chosen at install → IP-3 the generator
+        (airline as reference) → IP-4 tier 1: banking & lending first, then payments & fintech,
+        then insurance
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -5799,6 +5911,24 @@ the browser** · **measure the premise before building.**
     `--t4` was a text colour in 425 places. *Take the design's ramp and move every text colour off `--t4` to `--t3`*;
     `--t4` keeps ticks and rules. The content-side fix the user chose for Agent Ops on 2026-08-22, made platform-wide.
     All three recommendations were taken as written.
+
+21. ✅ **DECIDED 2026-09-14 (the user) — Arc IP (§3.17): nine answers that shape the industry packages.** Put as the
+    plan's open calls, each with a recommendation, and answered over two turns.
+    **(1) Skipping the install question** — every shipped package stays available and the industry is detected per
+    connection. *As recommended.*
+    **(2) Where packages live** — in the repo; no registry. *As recommended.*
+    **(3) Which industry goes first** — left to the builder: **banking & lending**, then payments & fintech, then
+    insurance.
+    **(4) Healthcare brings patient data** — *not* as recommended: healthcare moves to tier 2, and payments comes
+    forward into tier 1.
+    **(5) The Briefer reads the recipes** — yes. *As recommended.*
+    **(6) A package's ontology claims** — measured on every connection of its industry, not only where a person bound
+    the pack. *As recommended.*
+    **(7) Existing playbooks and the 486 new plays** — not yet: they arrive when IP-1 routes data-quality plays to the
+    Verifier. *As recommended.*
+    **(8) Ablation spend** — gate 5 for the reference package; later packages only where gate 4 is ambiguous. *As
+    recommended.*
+    **(9) Record the arc here** — yes: §3.17, this item and the §5 band.
 
 ---
 
