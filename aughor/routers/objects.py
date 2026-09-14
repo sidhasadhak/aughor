@@ -16,10 +16,12 @@ from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
 from aughor.routers.ontology import refuse_organisation_scope
+from aughor.security.authz import connection_owner_guard
 from aughor.semantic.object_query import ObjectQuery
 
-#: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection.
-router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope)])
+#: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection;
+#: DATA-06 — every connection a door names belongs to the caller's org (identity on).
+router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard)])
 
 #: Rows a response carries; `row_count` still says how many the query returned.
 _MAX_ROWS = 1000

@@ -12,6 +12,7 @@ from aughor.db.registry import BUILTIN_ID, get_meta
 from aughor.ontology.models import QueryTemplate
 from aughor.ontology.overrides import DOMAIN_CARRIER, ORGANISATION_SEGMENT
 from aughor.routers._shared import invalidate_schema_cache as _invalidate_schema_cache
+from aughor.security.authz import connection_owner_guard
 
 from aughor.licensing import Capability, gate
 
@@ -38,7 +39,8 @@ def refuse_organisation_scope(request: Request) -> None:
                 + "an organisation's ontology is read and edited by people, through the doors that take ?domain="))
 
 
-router = APIRouter(tags=["ontology"], dependencies=[Depends(refuse_organisation_scope)])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["ontology"], dependencies=[Depends(refuse_organisation_scope), Depends(connection_owner_guard)])
 
 
 class _UseInstead(BaseModel):
