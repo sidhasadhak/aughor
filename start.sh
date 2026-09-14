@@ -1,9 +1,10 @@
 #!/bin/bash
-# Thin shim over `uv run aughor up` — kept for muscle memory.
-# Usage: ./start.sh                    — API (:8000) + web (:3000), foreground, Ctrl-C stops both
+# Starts Aughor. The same as ./install.sh, which installs anything missing first and takes a few
+# seconds when nothing is — kept for muscle memory.
+# Usage: ./start.sh                    — API (:8000) + web app (:3000), opened in your browser; Ctrl-C stops both
 #        ./start.sh --api-only         — API only
-#        ./start.sh --web-only         — web only
-#        ./start.sh --dev              — API with auto-reload
+#        ./start.sh --web-only         — web app only
+#        ./start.sh --dev              — hot reload for both, their logs in this terminal
 #        ./start.sh --api-port 8010 --web-port 3010
 #        ./start.sh --stop             — stop stray background processes (graceful TERM)
 #
@@ -14,7 +15,7 @@ set -e
 
 AUGHOR_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# npm may live behind nvm in interactive shells; make it available here too.
+# Node.js may live behind nvm in interactive shells; make it available here too.
 export NVM_DIR="$HOME/.nvm"
 [ -s "$NVM_DIR/nvm.sh" ] && source "$NVM_DIR/nvm.sh"
 
@@ -27,10 +28,9 @@ if [ "${1:-}" = "--stop" ]; then
   # --stop from killing a sibling clone's servers. -u confines the sweep to this user.
   pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}.*[u]vicorn aughor\.api" 2>/dev/null \
     && echo "API stopped" || echo "API was not running"
-  pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}/web.*[n]ext dev" 2>/dev/null \
+  pkill -u "$(id -u)" -f "^.*${AUGHOR_DIR}/web.*[n]ext (dev|start)" 2>/dev/null \
     && echo "Web stopped" || echo "Web was not running"
   exit 0
 fi
 
-cd "$AUGHOR_DIR"
-exec uv run aughor up "$@"
+exec "$AUGHOR_DIR/install.sh" "$@"
