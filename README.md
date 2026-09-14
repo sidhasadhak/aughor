@@ -49,15 +49,7 @@ curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh 
 powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
 ```
 
-That one line installs everything — no Git, Python or Node.js needed first — and opens Aughor at http://localhost:3000. Next time, run `aughor` (`aughor up --help` lists the options).
-
-Aughor starts empty: click **+ Add** to connect DuckDB, PostgreSQL or BigQuery, or run `aughor seed` for a demo dataset.
-
-Already cloned? Run `./install.sh` (Windows: `install.cmd`), or by hand with uv and Node.js 20.9+:
-
-```bash
-uv sync --all-extras && uv run aughor up
-```
+Next time, run `aughor`.
 
 ## Pick your models
 
