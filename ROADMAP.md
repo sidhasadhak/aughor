@@ -4548,8 +4548,9 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   first `ships_from` was declared on `warehouse = warehouse_id`; the measurement said N:1 with **0% of keys
   held** (shipments carry the warehouse's NAME), and the compiler still traversed it and answered NULL — a link
   the data refutes must be refused, not followed: `link_problem` now refuses a measured zero overlap (pinned).
-  **Open on this wave:** §6 item 18(b) — Payment and Shipment are parts on the receipt as drafted; one *Release*
-  undoes it · the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types ·
+  **Open on this wave:** ~~§6 item 18(b) — Payment and Shipment are parts on the receipt as drafted; one *Release*
+  undoes it~~ — decided 2026-09-15, entities with a link, released and linked live on LuxExperience (§6 item 18(b)) ·
+  the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types ·
   a declared type does not round-trip through export/import · line-grain access to a part's rows stays through
   the measured link (`order_to_order_item.category`), not through the binding's name. `POST /ontology/entities` declares an entity (display name,
   api_name, description, domain, a key claim); `POST /ontology/links` declares a link (business
@@ -4697,15 +4698,30 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   1,000-key read, so it is priced by how many distinct keys the home rows carry — 30 reads by customer, 113 by order — not
   by the rows an answer returns; at 112,439 objects that is 1.4 to 5.2 seconds on one machine, and a remote warehouse adds
   its round trip to every keyed read. That is inside an interactive answer and the levers are named (fewer, larger keyed
-  reads; the home side pre-aggregated at the key's grain), so the posture holds and nothing is materialised. 🔴 **Found while building it:** the engine's older door, `POST /query/cross-source-join`, returns rows
-  read under internal labels, which skip PII redaction, audit and the row budget (a task is filed; this wave's executor gates
-  every connection and posts its answer). **Open on this wave:** a far type is read for its own columns only — no hop past
-  it, none of its bindings; to-many links, EXISTS, timeseries and detail bindings across connections; pre-aggregating the home
-  rows at the key's grain (the stage reads the object's grain, capped); the Workspace connection has no bounded read, so a
-  keyed read there stops at 500 rows and is refused; connectors with no typed capture (BigQuery, Snowflake, MySQL) are refused
-  as a side; the object page, titles, processes, rules, framing and the agent's tools do not read an organisation's
-  ontology yet — and by the user's rule the same day (§6 item 20) the explorer never will, and nothing but a person
-  edits it; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
+  reads; the home side pre-aggregated at the key's grain), so the posture holds and nothing is materialised. 🔴 **Found while building it:** the engine's older door, `POST /query/cross-source-join`, returned rows
+  the post-pass never saw. **Leftovers, second round (2026-09-15, branch `claude/on-leftovers-ii`; the user: *"Lets finish
+  Arc ON leftovers back to back.."*):** ✅ **a cross-source answer passes the security gate once, for every connection it
+  read** (`6c35fa35`) — measured first, and the premise was half wrong: the join's right reads and the federated driver
+  were audited PER READ (#135), so they were redacted and budget-cut before the join (an email key met none of its rows;
+  a right connection's row budget silently dropped joined rows), while the left read skipped the gate entirely; every
+  read is plumbing now, and the answer is redacted after the join, held to the strictest row budget of the connections
+  it read and audited on each · ✅ **the declare doors keep the provenance they are given** (`4eb8230b`; an
+  organisation's doors refuse it, by §6 item 20) · ✅ **a read its connection cut is known to be cut** (`35d67e7b`) —
+  SQLite, BigQuery, Exasol, MySQL and Snowflake reported the capped row count, so a cut key set or join input looked
+  whole; each fetches one row past its cap, the Workspace and SQLite connections read past their caps when bounded, and
+  the join refuses a cut left read and a join past its output cap, both of which it used to hand back as the whole ·
+  ✅ **every connector hands back typed values and a bounded read** (`626827b3`) — the five DuckDB-backed connectors'
+  copied execute became one shared read with typed capture and the JULIANDAY heal, and the four warehouses name their
+  column types for the stage · ✅ **a query reads past a type read by key, and to-many links, EXISTS, timeseries and
+  detail bindings cross as one row per key** (`00310eb9`) — a type or binding past a keyed read on that read's own
+  connection is joined inside it, one on another connection is read by key from that read's rows, and every other shape
+  is one row per key by construction; 13 new shapes, each equal to the single statement, 18/18 guard mutations caught.
+  **Still open on this wave:** pre-aggregating the home rows at the key's grain; the object page, titles, processes,
+  rules and the frame door on an organisation's ontology; plumbing SQL in a native-SQL connector's own dialect
+  (BigQuery, MySQL, Snowflake and Exasol run it as written, and it is written for DuckDB); a further crossing from inside
+  a keyed EXISTS or pre-aggregation, refused with the reason. By the user's rule (§6 item 20) the explorer never reads
+  an organisation's ontology and only a person edits it, and by the boundary that holds that rule the agent's tools read
+  one connection's ontology; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
   The declared ontology is keyed by the organisation (or a
   named domain within it — §6 item 18), not by a schema; a binding names
   `connection_id.schema.table`; a link whose two sides live on different connections is
@@ -4978,7 +4994,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, `9a986534` on `claude/industry-playbook-packages-884f76`, not merged)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5019,8 +5035,8 @@ of the live `data/playbook.json` (nothing written, no model called):
   play. They do now, and their three swallows go through `tolerate()` (ratchet 214 → 211).
 - **The label.** The synthesis block says "proven" only when a play has a logged outcome.
 - **Receipts:** `tests/unit/test_industry_match.py` and `tests/unit/test_playbook_reads.py`; the full backend suite
-  once on the commit, 9,998 passed, 5 skipped. **To merge:** the branch is based on `0f1eb220`, and #502 edits the
-  same retriever call (`learned_rates=False`), so main goes in first.
+  once on the commit, 9,998 passed, 5 skipped. **Merged** as #503 (squash `aebe5feb`, 2026-09-14) after #502, which edits the same
+  retriever call: the explorer's read passes both `learned_rates=False` and the industry scope.
 
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
@@ -5401,7 +5417,7 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              occasion), periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
-        for the connection's own industry. IP-0 ✅ BUILT (`9a986534`, not merged): playbook reads
+        for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
         whole-word industry matching, definitional answers read plays, "proven" only with an
         outcome. Next: IP-1 the package seam → IP-2 chosen at install → IP-3 the generator
@@ -5469,6 +5485,10 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         41/41 guard mutations caught; live on LuxExperience (two registrations of one file) every declaration counted
         across two equal to one connection's and five queries equal to the single statement, 1.4–5.2 s across against
         43–66 ms as one statement — about 30 ms per 1,000-key read. Order after ON-7 is the user's knob.
+        → LEFTOVERS II (2026-09-15, `claude/on-leftovers-ii`): the cross-source security gate, cut reads known to be cut,
+        typed values and bounded reads on every connector, reads past a type read by key, and to-many links, EXISTS,
+        timeseries and detail bindings across; §6 item 18(b) decided — Shipment and Payment are entities with a link,
+        applied live on LuxExperience.
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -5769,6 +5789,8 @@ the browser** · **measure the premise before building.**
 > open. Still two open: 16, 18.
 > **Amended 2026-09-14, later:** item 20 — the user's two rules on an organisation's ontology and the explorer's
 > reach, and the three questions they raised, answered the same turn. Still two open: 16, 18.
+> **Amended 2026-09-15:** item 18(b) — Shipment and Payment — decided by the user, and not as recommended: entities
+> with a link, applied live on LuxExperience the same day. Still two open: 16, and 18(c).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -5962,10 +5984,20 @@ the browser** · **measure the premise before building.**
     organisation — the key is `org/domain`, and a single-domain org never sees the second segment.* The recommendation was
     put to the user before the build, and they answered *"Lets go with ON-8 then.."*: the key is `org/domain`, the domain is
     `default` until an organisation names another, and a door names one with `?domain=`.
-    **(b) Shipment and Payment: PARTS of Order, or entities of their own with a link?** Today both are
-    static 1:1 bindings on Lux's Order (ON-1b). *Recommended: parts — the business speaks of an order's
-    payment and an order's shipment; a shipment becomes an entity only where the business ships across
-    orders (consolidated freight), which a measured N:N key would show.*
+    ✅ **(b) DECIDED 2026-09-15 (the user) — entities with a link, not as recommended.** Asked with the leftovers of
+    the arc (*"Entities with a link"*). The question was: Shipment and Payment, PARTS of Order, or entities of their
+    own with a link? Both had been static 1:1 bindings on Lux's Order (ON-1b) and parts of it (ON-7). *Recommended
+    was parts — the business speaks of an order's payment and an order's shipment; a shipment becomes an entity only
+    where the business ships across orders (consolidated freight), which a measured N:N key would show.* **Applied
+    live on LuxExperience (`914df862`), through the doors, no model call:** Shipment and Payment released from Order;
+    `Shipment fulfils Order` (reverse `shipment`) and `Payment pays_for Order` (reverse `payment`) declared and
+    measured 1:1, every key held; Order's `shipments` and `payments` static bindings withdrawn; `order_to_shipment`
+    re-declared on `shipment.ship_date`, its counts unchanged (107,903 reached, 0 broken, 4,536 open, 4,528 overdue as
+    of 2025-06-30; p50/p90/p95 0/1/1 days); a measure pass left every process and rule verified; seven questions
+    that read the two tables — shipping cost by carrier, payment by method, delivery days by service level, orders
+    by payment status, shipments by warehouse country, high-risk payments, orders shipped from Italy — returned the
+    same rows through the links as they had through the bindings. The map shows ten cards where it showed eight.
+    The explorer's registration (`b428fce7`) and the organisation's `default` domain keep their own declarations.
     **(c) The host for ON-9/ON-10's receipts** — *(2026-09-13: ON-9's receipt was taken on Olist, as recommended;
     LuxExperience hosted the never-broken flag instead. ON-10's falsifier was written and run on Olist too and held
     (2026-09-13), and held again on LuxExperience through rules and a refund process declared live there with no
