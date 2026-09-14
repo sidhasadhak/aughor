@@ -1,7 +1,7 @@
 #!/bin/sh
 # Aughor installer for macOS and Linux.
 #
-# On a computer without Aughor, one line does everything: downloads Aughor into ./aughor,
+# On a computer without Aughor, one line does everything: downloads Aughor into ~/aughor,
 # installs what it needs, starts it and opens it in the browser. Nothing has to be installed
 # first, not even Git:
 #   curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh | sh
@@ -29,6 +29,7 @@ main() {
 
   setup_output
   printf '\n  %sAughor installer%s\n\n' "$bold" "$reset"
+  blank=1 # the header ends with a blank line
 
   find_checkout
   # The hint for next time has to name the checkout when this terminal is not in it.
@@ -50,7 +51,7 @@ main() {
 }
 
 setup_output() {
-  bold="" red="" green="" reset=""
+  bold="" red="" green="" reset="" blank=""
   if [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && [ "${TERM:-}" != "dumb" ]; then
     bold=$(printf '\033[1m') red=$(printf '\033[31m') green=$(printf '\033[32m') reset=$(printf '\033[0m')
   fi
@@ -60,10 +61,19 @@ setup_output() {
   esac
 }
 
-ok() { printf '  %s%s%s %s\n' "$green" "$tick" "$reset" "$1"; }
+say() {
+  printf '  %s\n' "$1"
+  blank=""
+}
+
+ok() {
+  printf '  %s%s%s %s\n' "$green" "$tick" "$reset" "$1"
+  blank=""
+}
 
 fail() {
-  printf '\n  %s%s %s%s\n' "$red" "$cross" "$1" "$reset" >&2
+  [ -n "${blank:-}" ] || printf '\n' >&2 # one blank line before a failure, never two
+  printf '  %s%s %s%s\n' "$red" "$cross" "$1" "$reset" >&2
   [ -n "${2:-}" ] && printf '  %s\n' "$2" >&2
   printf '\n' >&2
   exit 1
@@ -75,7 +85,7 @@ is_checkout() {
 }
 
 # The folder this script sits in, the current folder, or — when neither is a checkout, as under
-# `curl | sh` — a fresh download into ./aughor (or AUGHOR_DIR).
+# `curl | sh` — a fresh download into ~/aughor (or AUGHOR_DIR), wherever the terminal happens to be.
 find_checkout() {
   script_dir=$(CDPATH='' cd -- "$(dirname -- "$0")" 2>/dev/null && pwd -P) || script_dir=""
   if [ -n "$script_dir" ] && is_checkout "$script_dir"; then
@@ -83,7 +93,7 @@ find_checkout() {
   elif is_checkout "$(pwd -P)"; then
     ROOT=$(pwd -P)
   else
-    ROOT=${AUGHOR_DIR:-$(pwd -P)/aughor}
+    ROOT=${AUGHOR_DIR:-$HOME/aughor}
     if ! is_checkout "$ROOT"; then
       # Never write into a folder that holds anything else: a failed download is cleaned up
       # with `rm -rf`, and that must only ever meet what the download itself put there.
@@ -91,7 +101,7 @@ find_checkout() {
         fail "$ROOT already exists, and it isn't Aughor." \
           "Move it out of the way, or pick another folder with AUGHOR_DIR=/some/folder, then run this again."
       fi
-      printf '  Downloading Aughor into %s...\n' "$ROOT"
+      say "Downloading Aughor into $ROOT..."
       DOWNLOAD_LOG="${TMPDIR:-/tmp}"
       DOWNLOAD_LOG="${DOWNLOAD_LOG%/}/aughor-download.log" # macOS's TMPDIR ends in a slash
       : >"$DOWNLOAD_LOG"
@@ -162,7 +172,7 @@ ensure_uv() {
   if UV=$(find_uv); then
     return 0
   fi
-  printf '  Installing uv, the Python package manager Aughor uses...\n'
+  say "Installing uv, the Python package manager Aughor uses..."
   if command -v curl >/dev/null 2>&1; then
     curl -LsSf https://astral.sh/uv/install.sh 2>>"$LOGS/uv-install.log" | sh >>"$LOGS/uv-install.log" 2>&1 || true
   elif command -v wget >/dev/null 2>&1; then
@@ -192,7 +202,7 @@ ensure_python() {
   if "$UV" python find "$PYTHON_VERSION" >/dev/null 2>&1 </dev/null; then
     return 0
   fi
-  printf '  Installing Python %s...\n' "$PYTHON_VERSION"
+  say "Installing Python $PYTHON_VERSION..."
   "$UV" python install "$PYTHON_VERSION" >"$LOGS/python-install.log" 2>&1 </dev/null ||
     fail "Could not install Python $PYTHON_VERSION." "Check your internet connection, then run this again. Log: $LOGS/python-install.log"
   ok "Python $PYTHON_VERSION installed"

@@ -1,9 +1,9 @@
 # Aughor installer for Windows.
 #
-# On a computer without Aughor, one line in PowerShell does everything: downloads Aughor into
-# .\aughor, installs what it needs, starts it and opens it in the browser. Nothing has to be
-# installed first, not even Git:
-#   irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex
+# On a computer without Aughor, one line does everything, typed in Command Prompt or PowerShell:
+# downloads Aughor into the aughor folder in your home folder, installs what it needs, starts it
+# and opens it in the browser. Nothing has to be installed first, not even Git:
+#   powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
 #
 # Inside a checkout:
 #   install.cmd                install everything Aughor needs, start it, open it in a browser
@@ -23,13 +23,19 @@ $RepoUrl = if ($env:AUGHOR_REPO_URL) { $env:AUGHOR_REPO_URL } else { 'https://gi
 $ArchiveUrl = if ($env:AUGHOR_ARCHIVE_URL) { $env:AUGHOR_ARCHIVE_URL } else { 'https://github.com/sidhasadhak/aughor/archive/refs/heads/main.zip' }
 $PythonVersion = '3.11'  # aughor/installer.py PYTHON_VERSION
 
+function Write-Status([string]$Text) {
+    Write-Host "  $Text"
+    $script:Blank = $false
+}
+
 function Write-Ok([string]$Text) {
     Write-Host '  + ' -ForegroundColor Green -NoNewline
     Write-Host $Text
+    $script:Blank = $false
 }
 
 function Write-Failure([string]$Text, [string]$Hint) {
-    Write-Host ''
+    if (-not $script:Blank) { Write-Host '' }  # one blank line before a failure, never two
     Write-Host "  x $Text" -ForegroundColor Red
     if ($Hint) { Write-Host "  $Hint" }
     Write-Host ''
@@ -92,11 +98,13 @@ function Get-Aughor([string]$Target, [string]$Log) {
 # nothing would reach the screen until the end. And never `exit` in here: under `irm | iex`
 # this runs inside the user's own PowerShell session, whose window `exit` would close.
 $script:ExitCode = 0
+$script:Blank = $false
 
 function Install-Aughor([string[]]$Arguments) {
     Write-Host ''
     Write-Host '  Aughor installer'
     Write-Host ''
+    $script:Blank = $true  # the header ends with a blank line
 
     # -- Find the checkout (or download one) --
     if (Test-Checkout $PSScriptRoot) {
@@ -104,7 +112,7 @@ function Install-Aughor([string[]]$Arguments) {
     } elseif (Test-Checkout (Get-Location).Path) {
         $root = (Get-Location).Path
     } else {
-        $root = if ($env:AUGHOR_DIR) { $env:AUGHOR_DIR } else { Join-Path (Get-Location).Path 'aughor' }
+        $root = if ($env:AUGHOR_DIR) { $env:AUGHOR_DIR } else { Join-Path $HOME 'aughor' }
         if (-not (Test-Checkout $root)) {
             # Never write into a folder that holds anything else: a failed download is cleaned
             # up by deleting the folder, and that must only ever meet what the download put there.
@@ -112,7 +120,7 @@ function Install-Aughor([string[]]$Arguments) {
                 Write-Failure "$root already exists, and it isn't Aughor." 'Move it out of the way, or pick another folder by setting AUGHOR_DIR, then run this again.'
                 $script:ExitCode = 1; return
             }
-            Write-Host "  Downloading Aughor into $root..."
+            Write-Status "Downloading Aughor into $root..."
             $downloadLog = Join-Path $env:TEMP 'aughor-download.log'
             try {
                 Get-Aughor $root $downloadLog
@@ -132,7 +140,7 @@ function Install-Aughor([string[]]$Arguments) {
     # -- Get uv, the one tool the rest cannot install through itself --
     $uv = Find-Uv
     if (-not $uv) {
-        Write-Host '  Installing uv, the Python package manager Aughor uses...'
+        Write-Status 'Installing uv, the Python package manager Aughor uses...'
         $log = Join-Path $logs 'uv-install.log'
         $command = '[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; irm https://astral.sh/uv/install.ps1 | iex'
         Start-Process -FilePath 'powershell.exe' -Wait -NoNewWindow `
@@ -161,7 +169,7 @@ function Install-Aughor([string[]]$Arguments) {
         if ($checkoutElsewhere) { $env:AUGHOR_CHECKOUT_DIR = $root }
         & $uv python find $PythonVersion *> $null
         if ($LASTEXITCODE -ne 0) {
-            Write-Host "  Installing Python $PythonVersion..."
+            Write-Status "Installing Python $PythonVersion..."
             $log = Join-Path $logs 'python-install.log'
             & $uv python install $PythonVersion *> $log
             if ($LASTEXITCODE -ne 0) {

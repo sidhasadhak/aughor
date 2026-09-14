@@ -45,19 +45,21 @@ One command downloads Aughor, installs everything it needs, builds the web app, 
 curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh | sh
 ```
 
-**Windows** — in PowerShell:
+**Windows** — in Command Prompt or PowerShell:
 
 ```powershell
-irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
 ```
 
-Aughor lands in an `aughor` folder inside the one you ran the command from (set `AUGHOR_DIR` to choose another): cloned with Git when the computer has it, otherwise downloaded as a snapshot. The installer then adds [uv](https://docs.astral.sh/uv/), Python, every Python and web dependency, and — when the computer has no Node.js 20.9 or newer — an official Node.js build, checked against nodejs.org's published checksums. The terminal shows one line per step; what the tools print goes to `.aughor/logs/`, and if a step fails you see the end of its log and what to do next.
+That line is the whole install: nothing to set up before it, nothing else to type after it.
+
+Aughor lands in an `aughor` folder in your home folder (set `AUGHOR_DIR` to choose another): cloned with Git when the computer has it, otherwise downloaded as a snapshot. The installer then adds [uv](https://docs.astral.sh/uv/), Python, every Python and web dependency, and — when the computer has no Node.js 20.9 or newer — an official Node.js build, checked against nodejs.org's published checksums. The terminal shows one line per step; what the tools print goes to `.aughor/logs/`, and if a step fails you see the end of its log and what to do next.
 
 Already have a clone? Run `./install.sh` (macOS / Linux) or `install.cmd` (Windows) inside it. Run it again at any time — after a `git pull`, say: it only redoes what changed. `--no-start` installs without starting; `--help` lists every option. (A snapshot has no `git pull`; with Git installed first, you get a clone you can update.)
 
-Aughor starts empty — no data is created on your behalf. Click **+ Add** and paste a DuckDB path, a PostgreSQL DSN, or BigQuery credentials, and exploration begins. Want something to explore first? From the `aughor` folder, `uv run aughor seed` writes a synthetic demo dataset with a discoverable outage.
+Aughor starts empty — no data is created on your behalf. Click **+ Add** and paste a DuckDB path, a PostgreSQL DSN, or BigQuery credentials, and exploration begins. Want something to explore first? `aughor seed` writes a synthetic demo dataset with a discoverable outage.
 
-**Next time**, start Aughor from its folder with `uv run aughor up` (in a new terminal, if the installer had to install uv). It reinstalls or rebuilds the web app only when something changed, and never kills an existing process — a busy port names its owner and exits (`--api-port` / `--web-port` to move; `--dev` for hot reload with the logs in the terminal; `--api-only` / `--web-only` to split; `--no-browser`; `--verbose` to see everything). Or run the pieces yourself:
+**Next time**, type `aughor` in any terminal: the installer adds that one command, and its last line says so. (Where it can't put the command on your PATH, that line names the folder to run `uv run aughor up` in instead.) Starting reinstalls or rebuilds the web app only when something changed, and never kills an existing process — a busy port names its owner and exits. Options go after `aughor up`: `--api-port` / `--web-port` to move, `--dev` for hot reload with the logs in the terminal, `--api-only` / `--web-only` to split, `--no-browser`, `--verbose` to see everything. Or run the pieces yourself:
 
 ```bash
 uv run uvicorn aughor.api:app --port 8000    # API

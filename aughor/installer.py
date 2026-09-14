@@ -34,6 +34,7 @@ import json
 import os
 import platform
 import re
+import shlex
 import shutil
 import signal
 import subprocess
@@ -805,13 +806,121 @@ def prepare_web(root: Path, steps: Steps, *, api_port: int = DEFAULT_API_PORT,
     return node, env
 
 
+# ── The `aughor` command ─────────────────────────────────────────────────────────
+
+#: In every launcher this installer writes, so a later install recognises its own file and never
+#: overwrites someone else's `aughor`.
+LAUNCHER_MARK = "Written by the Aughor installer"
+
+
+def launcher_dir(uv: str) -> Optional[Path]:
+    """uv's folder for commands (`uv tool dir --bin`): the one uv's own installer puts on PATH,
+    and the one UV_TOOL_BIN_DIR moves."""
+    try:
+        out = subprocess.run([uv, "tool", "dir", "--bin"], capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    folder = out.stdout.strip()
+    return Path(folder) if out.returncode == 0 and folder else None
+
+
+def launcher_script(root: Path, uv: str, windows: bool) -> str:
+    """The `aughor` command. With no arguments it starts Aughor; anything else goes to its CLI
+    (`aughor seed`, `aughor up --dev`). It runs from the checkout, whatever folder the terminal
+    is in, and says so plainly if the checkout has been moved or deleted."""
+    if windows:
+        # Labels and gotos rather than ( ) blocks: cmd expands %AUGHOR_ROOT% before it parses a
+        # block, so a folder with a bracket in its name would break one.
+        return "\r\n".join([
+            "@echo off",
+            f"rem {LAUNCHER_MARK}.",
+            "rem `aughor` starts Aughor; `aughor seed`, `aughor up --dev` and the rest go to its CLI.",
+            "setlocal",
+            f'set "AUGHOR_ROOT={root}"',
+            'if exist "%AUGHOR_ROOT%\\pyproject.toml" goto found',
+            "echo Aughor is no longer in %AUGHOR_ROOT%. Run the installer again. 1>&2",
+            "exit /b 1",
+            ":found",
+            'set "AUGHOR_UV=uv"',
+            f'where uv >nul 2>nul || set "AUGHOR_UV={uv}"',
+            'pushd "%AUGHOR_ROOT%"',
+            'if "%~1"=="" goto start',
+            '"%AUGHOR_UV%" run --quiet aughor %*',
+            "goto done",
+            ":start",
+            '"%AUGHOR_UV%" run --quiet aughor up',
+            ":done",
+            'set "AUGHOR_CODE=%ERRORLEVEL%"',
+            "popd",
+            "exit /b %AUGHOR_CODE%",
+            "",
+        ])
+    return "\n".join([
+        "#!/bin/sh",
+        f"# {LAUNCHER_MARK}.",
+        "# `aughor` starts Aughor; `aughor seed`, `aughor up --dev` and the rest go to its CLI.",
+        f"root={shlex.quote(str(root))}",
+        'if [ ! -f "$root/pyproject.toml" ]; then',
+        '  echo "Aughor is no longer in $root. Run the installer again." >&2',
+        "  exit 1",
+        "fi",
+        '[ "$#" -eq 0 ] && set -- up',
+        f"uv=$(command -v uv 2>/dev/null || echo {shlex.quote(uv)})",
+        'cd "$root" && exec "$uv" run --quiet aughor "$@"',
+        "",
+    ])
+
+
+def _same_path(a: Path, b: Path) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return os.path.normcase(os.path.abspath(a)) == os.path.normcase(os.path.abspath(b))
+
+
+def install_launcher(root: Path, uv: Optional[str]) -> str:
+    """Put the `aughor` command where a terminal finds it, and say how the next-time hint should
+    read: "ready" (this terminal already finds it), "new-terminal" (the next one will: the
+    bootstrap just installed uv, and uv's installer put that folder on PATH), or "" (no
+    terminal will — the hint falls back to the checkout's own command)."""
+    if not uv:
+        return ""
+    folder = launcher_dir(uv)
+    if folder is None:
+        return ""
+    windows = os.name == "nt"
+    target = folder / ("aughor.cmd" if windows else "aughor")
+    try:
+        if target.exists() and LAUNCHER_MARK not in _read_text(target):
+            return ""  # someone else's `aughor`: never overwrite it
+        folder.mkdir(parents=True, exist_ok=True)
+        target.write_text(launcher_script(root, uv, windows), encoding="utf-8", newline="")
+        if not windows:
+            target.chmod(0o755)
+    except OSError:
+        return ""  # a read-only folder costs the shortcut, never the install
+    found = shutil.which("aughor")
+    if found:
+        return "ready" if _same_path(Path(found), target) else ""
+    if os.environ.get("AUGHOR_UV_INSTALLED") and _same_path(Path(uv).parent, folder):
+        return "new-terminal"
+    return ""
+
+
 # ── 5. Hand over to `aughor up` ──────────────────────────────────────────────────
 
 def start_command_hint() -> str:
-    """How to start Aughor next time, from a terminal that may lack two things the installer had:
+    """How to start Aughor next time. One word wherever the installer could put the `aughor`
+    command on PATH; otherwise the checkout's own command, from a terminal that may lack two
+    things the installer had:
     uv on PATH (a uv the bootstrap just installed reaches PATH only in NEW terminals), and the
     checkout as its folder (`curl | sh` clones into a sub-folder). Worded as steps rather than
     `cd … && …`, which Windows PowerShell 5.1 cannot run."""
+    launcher = os.environ.get("AUGHOR_LAUNCHER")
+    if launcher == "ready":
+        return "Next time, start Aughor with:  aughor"
+    if launcher == "new-terminal":
+        return "Next time, open a new terminal and run:  aughor"
     first = []
     if os.environ.get("AUGHOR_UV_INSTALLED"):
         first.append("open a new terminal")
@@ -872,6 +981,9 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     except KeyboardInterrupt:
         steps.line()
         return 130
+    # One command for next time. Put in the environment so `aughor up`, which prints the closing
+    # hint after the hand-over, reads the same answer.
+    os.environ["AUGHOR_LAUNCHER"] = install_launcher(root, find_uv())
     if options.no_start:
         steps.line()
         steps.line(steps.bold("Aughor is installed."))

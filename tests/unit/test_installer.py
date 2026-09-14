@@ -9,6 +9,7 @@ from __future__ import annotations
 import ast
 import hashlib
 import io
+import os
 import shutil
 import subprocess
 import sys
@@ -21,6 +22,14 @@ import pytest
 from aughor import installer
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+@pytest.fixture(autouse=True)
+def _no_launcher_on_the_real_path(tmp_path, monkeypatch):
+    """`main()` writes the `aughor` command into uv's command folder. Every test points that
+    folder at a temp dir, so no test can put a launcher on the developer's real PATH."""
+    monkeypatch.setattr(installer, "launcher_dir", lambda uv: tmp_path / "uv-bin")
+    monkeypatch.delenv("AUGHOR_LAUNCHER", raising=False)
 
 
 # ── It runs before anything is installed ─────────────────────────────────────────
@@ -460,3 +469,101 @@ def test_outside_a_checkout_the_installer_says_where_to_run_it(tmp_path, monkeyp
     monkeypatch.chdir(tmp_path)
     assert installer.main(["--no-start"]) == 1
     assert "is not an Aughor checkout" in capsys.readouterr().out
+
+
+# ── The `aughor` command ─────────────────────────────────────────────────────────
+
+def _fake_uv(folder: Path) -> Path:
+    """A `uv` that reports where it ran and what it was asked, instead of running anything."""
+    folder.mkdir(parents=True, exist_ok=True)
+    uv = folder / "uv"
+    uv.write_text('#!/bin/sh\necho "$PWD|$*"\n')
+    uv.chmod(0o755)
+    return uv
+
+
+@pytest.mark.skipif(os.name == "nt", reason="runs the POSIX launcher; CI runs the Windows one")
+def test_the_aughor_command_starts_aughor_from_any_folder(tmp_path, monkeypatch):
+    root = tmp_path / "home" / "aughor"
+    root.mkdir(parents=True)
+    _checkout(root)
+    uv = _fake_uv(tmp_path / "uv-home")
+    bin_dir = tmp_path / "bin"
+    monkeypatch.setattr(installer, "launcher_dir", lambda uv: bin_dir)
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), str(uv.parent), "/usr/bin", "/bin"]))
+    assert installer.install_launcher(root, str(uv)) == "ready"
+
+    elsewhere = tmp_path / "somewhere-else"
+    elsewhere.mkdir()
+
+    def aughor(*args):
+        return subprocess.run([str(bin_dir / "aughor"), *args], cwd=elsewhere,
+                              capture_output=True, text=True, timeout=30)
+
+    where, _, asked = aughor().stdout.strip().partition("|")
+    assert Path(where).resolve() == root.resolve(), "runs from the checkout, not the terminal's folder"
+    assert asked == "run --quiet aughor up", "no arguments starts Aughor"
+    assert aughor("seed").stdout.strip().endswith("|run --quiet aughor seed")
+
+    shutil.rmtree(root)
+    gone = aughor()
+    assert gone.returncode == 1 and "no longer in" in gone.stderr
+
+
+def test_someone_elses_aughor_command_is_never_overwritten(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    theirs = bin_dir / ("aughor.cmd" if os.name == "nt" else "aughor")
+    theirs.write_text("echo their own aughor\n")
+    monkeypatch.setattr(installer, "launcher_dir", lambda uv: bin_dir)
+    root = tmp_path / "aughor"
+    root.mkdir()
+    _checkout(root)
+    assert installer.install_launcher(root, str(tmp_path / "uv")) == ""
+    assert theirs.read_text() == "echo their own aughor\n"
+
+
+def test_a_launcher_beside_a_just_installed_uv_works_in_the_next_terminal(tmp_path, monkeypatch):
+    bin_dir = tmp_path / "bin"
+    monkeypatch.setattr(installer, "launcher_dir", lambda uv: bin_dir)
+    monkeypatch.setenv("PATH", os.pathsep.join(["/usr/bin", "/bin"]))  # this terminal: not yet
+    root = tmp_path / "aughor"
+    root.mkdir()
+    _checkout(root)
+    monkeypatch.setenv("AUGHOR_UV_INSTALLED", "1")
+    assert installer.install_launcher(root, str(bin_dir / "uv")) == "new-terminal"
+    monkeypatch.delenv("AUGHOR_UV_INSTALLED")
+    assert installer.install_launcher(root, str(tmp_path / "brew" / "uv")) == "", \
+        "a folder no terminal has on PATH gets the checkout's own command instead"
+
+
+def test_the_windows_command_is_a_plain_cmd_script():
+    text = installer.launcher_script(Path("C:/Users/you/aughor"), "C:/Users/you/.local/bin/uv.exe",
+                                     windows=True)
+    assert text.startswith("@echo off\r\n")
+    assert "\n" not in text.replace("\r\n", ""), "cmd.exe needs CRLF line endings"
+    assert installer.LAUNCHER_MARK in text
+    assert '"%AUGHOR_UV%" run --quiet aughor up' in text
+    assert '"%AUGHOR_UV%" run --quiet aughor %*' in text
+    assert "(" not in text, "a ( ) block breaks on a folder name with a bracket in it"
+
+
+def test_next_time_is_one_command_where_the_launcher_reaches(monkeypatch):
+    monkeypatch.setenv("AUGHOR_CHECKOUT_DIR", "/home/me/aughor")
+    monkeypatch.setenv("AUGHOR_LAUNCHER", "ready")
+    assert installer.start_command_hint() == "Next time, start Aughor with:  aughor"
+    monkeypatch.setenv("AUGHOR_LAUNCHER", "new-terminal")
+    assert installer.start_command_hint() == "Next time, open a new terminal and run:  aughor"
+    monkeypatch.setenv("AUGHOR_LAUNCHER", "")
+    assert installer.start_command_hint().endswith("uv run aughor up")
+
+
+def test_the_installer_leaves_the_aughor_command_behind(tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(_checkout(tmp_path))
+    monkeypatch.setattr(installer, "sync_python", lambda root, steps: None)
+    monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
+    placed: list = []
+    monkeypatch.setattr(installer, "install_launcher", lambda root, uv: placed.append(root) or "ready")
+    assert installer.main(["--no-start"]) == 0
+    assert placed == [tmp_path]
+    assert "Next time, start Aughor with:  aughor" in capsys.readouterr().out

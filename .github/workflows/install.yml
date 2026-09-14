@@ -84,7 +84,9 @@ jobs:
           AUGHOR_REPO_URL="$RUNNER_TEMP/no-such-repo" \
           AUGHOR_ARCHIVE_URL="file://$RUNNER_TEMP/aughor-main.tar.gz" \
             sh -s -- --no-start < "$GITHUB_WORKSPACE/install.sh"
-          test -f "$RUNNER_TEMP/fresh/aughor/web/.next/BUILD_ID"
+          test -f "$HOME/aughor/web/.next/BUILD_ID"
+          # ...and left one command behind that starts Aughor's CLI from any folder.
+          "$HOME/.local/bin/aughor" --help
 
       - name: Fresh install from an empty folder, as a snapshot (Windows)
         if: runner.os == 'Windows' && matrix.node == 'installed'
@@ -98,7 +100,9 @@ jobs:
           $env:AUGHOR_ARCHIVE_URL = "file:///$($env:RUNNER_TEMP -replace '\\', '/')/aughor-main.zip"
           powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\install.ps1" --no-start
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          if (-not (Test-Path "$env:RUNNER_TEMP\fresh\aughor\web\.next\BUILD_ID")) { exit 1 }
+          if (-not (Test-Path "$HOME\aughor\web\.next\BUILD_ID")) { exit 1 }
+          & "$HOME\.local\bin\aughor.cmd" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Start, and both servers answer (macOS, Linux)
         if: runner.os != 'Windows'
