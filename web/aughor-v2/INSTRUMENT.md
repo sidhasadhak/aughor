@@ -220,6 +220,14 @@ carry is not drawn:
 - a brief is one POST, not a stream: the screen says "opening" or "being written" over skeletons,
   with no caret and no placeholder prose.
 
+**2026-09-14 — the Briefing is verdict-first again, and no section is numbered.** The user took
+the Briefing back to its layout from before pass 3: the verdict, "Numbers that moved" as tiles that
+open their finding in place, then the rest of the page as it stood — drawn on the Instrument tokens,
+which stay. The numbered 44px gutter came out of every layer that had one (Profile, Actions, Memory):
+a section is set off by a rule. What only the artefact layout used went with it — `MovedNumbers`,
+`useNorthStarMoves` and `moves.ts`, the apparatus and signature CSS, `ReceiptRef`, and the shell
+header's Regenerate and Investigate under an "Intelligence" title. `ff04daa7` still has them.
+
 **Evidence** (artboard 05) is a claim ledger: a row per claim — the sentence with its query beneath,
 confidence, feedback, when — filtered by feedback, with the selected claim in an inspector. Not
 drawn, because a claim does not store it: guard columns, a verdict, refused claims, receipt ids,
@@ -237,6 +245,12 @@ explorer's null meanings), and a rail of governed metrics (draft / proposed / ap
 deprecated — there is no "disputed") and status columns, drawn as values without arrows because no
 order is recorded. Not drawn: per-table confidence and decided-by; channels, DCs, a fiscal week; a
 profiling-run count; Re-profile and Correct (nothing does either without an LLM call).
+
+**2026-09-14 — the domain rail is back** (`ProfileLayer.tsx`). The Hub's categorisation of findings
+by domain returns as a rail beside the profile: each domain with its finding count (a violet dot
+where something was promoted to the org), and a domain's page — its findings ranked by novelty, each
+with the Briefing's finding actions; the patterns that involve it; what it promoted to the org.
+"Overview" is the profile described above.
 
 **Org** (artboard 08) is a ledger of promoted findings — the one thing Org records. People and
 ownership, who to ask, and open disagreements are not recorded, so none of them is drawn, and the

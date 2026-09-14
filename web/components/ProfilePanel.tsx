@@ -86,10 +86,9 @@ function metricState(status?: string): ReactNode {
 /** At or above this the industry guess is held; below it the chip says it is an inference. */
 const HELD = 0.86;
 
-function Section({ mark, children }: { mark: string; children: ReactNode }) {
+function Section({ children }: { children: ReactNode }) {
   return (
     <section className="aug-brief-sec">
-      <div className="aug-brief-gutter" aria-hidden>{mark}</div>
       <div className="aug-brief-body">{children}</div>
     </section>
   );
@@ -200,7 +199,7 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
           {canvasId && <span className="aug-brief-meta aug-profile-strip-end">connection-wide — a canvas does not narrow the profile</span>}
         </div>
 
-        <Section mark="01">
+        <Section>
           <div className="aug-brief-eyebrow-row">
             <span className="aug-brief-eyebrow">What this business is · {corrected ? "inferred, then corrected" : confirmed ? "inferred · org settings agree" : "inferred"}</span>
           </div>
@@ -229,7 +228,7 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
           )}
         </Section>
 
-        <Section mark="02">
+        <Section>
           <div className="aug-brief-head">
             <span className="aug-brief-eyebrow">Data profile · by table</span>
             <span className="aug-brief-meta">rows · grain · latest record · null pressure · when profiled</span>
@@ -289,7 +288,7 @@ export function ProfilePanel({ connectionId, canvasId, schema, workspaceId }: {
           )}
         </Section>
 
-        <Section mark="03">
+        <Section>
           <div className="aug-brief-head">
             <span className="aug-brief-eyebrow">What a blank means · by column</span>
             <span className="aug-brief-meta">a null the explorer could explain, and the rule behind it</span>

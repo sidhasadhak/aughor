@@ -19,7 +19,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { explorerPhaseLabel, splitLede } from "@/components/BriefingPanel";
+import { explorerPhaseLabel } from "@/components/BriefingPanel";
 
 describe("explorerPhaseLabel", () => {
   it("softens a failed run that LEFT WORK BEHIND", () => {
@@ -72,23 +72,5 @@ describe("explorerPhaseLabel", () => {
     const without = explorerPhaseLabel("failed", false);
     expect(withWork.text).not.toBe(without.text);
     expect(withWork.tone).not.toBe(without.tone);
-  });
-});
-
-/**
- * The verdict's lede and §2's depth come from one narrative. The narrator is asked for a lede
- * paragraph, then paragraphs of depth, blank-line separated — so a blank line (even one holding
- * stray spaces) is the only boundary, and a one-paragraph brief has no §2 at all.
- */
-describe("splitLede", () => {
-  it("takes the first paragraph as the lede and keeps the rest, in order, as depth", () => {
-    expect(splitLede("Lede one. Two.[1]\n\nDepth A.[2]\n  \nDepth B.")).toEqual({
-      lede: "Lede one. Two.[1]", depth: ["Depth A.[2]", "Depth B."],
-    });
-  });
-
-  it("leaves no depth for a single paragraph, and nothing at all for no narrative", () => {
-    expect(splitLede("Only a lede.")).toEqual({ lede: "Only a lede.", depth: [] });
-    expect(splitLede("")).toEqual({ lede: "", depth: [] });
   });
 });
