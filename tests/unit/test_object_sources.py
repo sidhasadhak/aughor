@@ -12,6 +12,7 @@ statement. What does not cross by key is refused with the reason.
 from __future__ import annotations
 
 import json
+from contextlib import contextmanager
 from decimal import Decimal
 from pathlib import Path
 
@@ -36,11 +37,13 @@ from aughor.ontology.domains import (
     domain_names,
     measure_domain,
     resolve_domain,
+    set_display_property,
 )
 from aughor.ontology.models import OntologyGraph
 from aughor.ontology.processes import describe_process
 from aughor.ontology.sources import binding_source, entity_source, link_crosses
 from aughor.semantic import cross_source as XS
+from aughor.semantic.object_instances import ObjectNotFound, get_object, list_linked, titles
 from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
 from aughor.util.json_store import KeyedJsonStore
 
@@ -761,6 +764,106 @@ def test_a_process_or_rule_reading_another_organisations_connection_is_refused_b
     assert (domain_graph(across).processes, domain_graph(across).rules) == ({}, {})
 
 
+# ── an object's page, what it links to and its name, across connections (O5) ───────────────────────────────────
+
+
+@contextmanager
+def opened_sources():
+    """``source_db`` as the doors hand it: each connection opened the first time a read needs it, all closed at the end."""
+    opened: dict = {}
+
+    def source_db(connection_id: str):
+        if connection_id not in opened:
+            opened[connection_id] = open_connection_for(connection_id)
+        return opened[connection_id]
+    try:
+        yield source_db
+    finally:
+        for db in opened.values():
+            db.close()
+
+
+def page_of(domain, object_type: str, pk: str) -> dict:
+    with opened_sources() as source_db:
+        return get_object(domain_graph(domain), None, object_type, pk, source_db=source_db).to_dict()
+
+
+def test_an_objects_page_across_two_connections_reads_what_it_reads_on_one(wide, sources):
+    across, one = wide
+    for domain, where in zip(wide, ("crm", "whole")):
+        # a payment is found from its order by `order_id`, a column of the payment that is not its key: the page
+        # looks it up where the payments live
+        declare_entity(domain, typed("Payment", "payments", "payment_id", sources[where]), open_connection_for)
+        declare_link(domain, {"from_entity": "Order", "to_entity": "Payment", "name": "paid_by", "from_column": "order_id",
+                              "to_column": "order_id"}, open_connection_for)
+    for object_type, pk in (("Order", "O000002"), ("Order", "O000010"), ("Customer", "C00001"), ("Region", "DE")):
+        assert page_of(across, object_type, pk) == page_of(one, object_type, pk), (object_type, pk)
+    order = page_of(across, "Order", "O000002")
+    values = {p["name"]: p["value"] for p in order["properties"]}
+    assert normal([[values["psp"], values["latest_status"], values["event_count"], values["paid_total"]]]) == reference(
+        sources, ("SELECT (SELECT psp FROM ecommerce.payments WHERE order_id = 'O000002'), "
+                  "(SELECT status FROM ecommerce.payment_events WHERE order_id = 'O000002' ORDER BY event_at DESC LIMIT 1), "
+                  "(SELECT COUNT(status) FROM ecommerce.payment_events WHERE order_id = 'O000002'), "
+                  "(SELECT SUM(amount) FROM ecommerce.payment_events WHERE order_id = 'O000002')"))
+    assert [len(series["rows"]) for series in order["timeseries"]] == [3]       # the readings behind the latest, on crm
+    [(payment,)] = reference(sources, "SELECT payment_id FROM ecommerce.payments WHERE order_id = 'O000002'")
+    paid_by = next(link for link in order["links"] if link["name"] == "paid_by")
+    assert (paid_by["kind"], paid_by["pk"]) == ("to-one", payment)
+    links = {link["name"]: link for link in page_of(across, "Customer", "C00001")["links"]}
+    [(placed,)] = reference(sources, "SELECT COUNT(*) FROM ecommerce.orders WHERE customer_id = 'C00001'")
+    assert (links["customer_to_order"]["kind"], links["customer_to_order"]["count"]) == ("to-many", placed)
+    with pytest.raises(ObjectNotFound):
+        page_of(across, "Order", "O999999")
+
+
+def test_the_objects_a_link_reaches_across_two_connections_are_listed_as_on_one(wide, sources):
+    listed = []
+    for domain in wide:
+        with opened_sources() as source_db:
+            listed.append(list_linked(domain_graph(domain), None, "Customer", "C00001", "customer_to_order",
+                                      limit=2, offset=1, source_db=source_db))
+    assert listed[0] == listed[1]
+    [(placed,)] = reference(sources, "SELECT COUNT(*) FROM ecommerce.orders WHERE customer_id = 'C00001'")
+    at = listed[0]["columns"].index("order_id")
+    assert [(row[at],) for row in listed[0]["rows"]] == reference(sources, (
+        "SELECT order_id FROM ecommerce.orders WHERE customer_id = 'C00001' ORDER BY order_id LIMIT 2 OFFSET 1"))
+    assert listed[0]["has_more"] is (placed > 3)
+
+
+def test_a_type_is_named_by_its_row_or_by_a_binding_on_another_connection_counted_where_it_is_read(
+        wide, sources, monkeypatch):
+    across, _ = wide
+    for domain in wide:
+        set_display_property(domain, "Customer", "full_name", open_connection_for)
+        set_display_property(domain, "Order", "psp", open_connection_for)     # read from `payments` on crm; Order is on shop
+    keys = ["O000001", "O000002", "O000010", "O900001", "O999999"]         # no payment · a payment for no order · no order
+    named = []
+    for domain in wide:
+        with opened_sources() as source_db:
+            named.append(titles(domain_graph(domain), None, "Order", keys, source_db=source_db))
+    assert named[0] == named[1]
+    assert (named[0]["through"], named[0]["titles"]) == ("payment", dict(reference(sources, (
+        "SELECT o.order_id, p.psp FROM ecommerce.orders o JOIN ecommerce.payments p ON p.order_id = o.order_id "
+        "WHERE o.order_id IN ('O000001', 'O000002', 'O000010', 'O900001', 'O999999')"))))
+    [(full_name,)] = reference(sources, "SELECT full_name FROM ecommerce.customers WHERE customer_id = 'C00001'")
+    [(psp,)] = reference(sources, "SELECT psp FROM ecommerce.payments WHERE order_id = 'O000002'")
+    assert (page_of(across, "Customer", "C00001")["title"], page_of(across, "Order", "O000002")["title"]) == (full_name, psp)
+    entry = OV.find_override(*across.tree, "entity", "Order").binding["display_property"]
+    [(rows, non_null, distinct)] = reference(sources, "SELECT COUNT(*), COUNT(psp), COUNT(DISTINCT psp) FROM ecommerce.payments")
+    assert (entry["connection_id"], entry["rows"], entry["non_null"], entry["distinct"], entry["verified"]) == (
+        sources["crm"], rows, non_null, distinct, False)       # three providers are a category; a person may name by it
+    with pytest.raises(DomainRefused) as moving:
+        set_display_property(across, "Order", "latest_status", open_connection_for)
+    assert moving.value.status == 400 and "timeseries" in moving.value.detail
+    report = measure_domain(across, open_connection_for)
+    assert [(r["entity"], r["property"], r["connection_id"], r["bound"]) for r in report["display_properties"]] == [
+        ("Customer", "full_name", sources["crm"], True), ("Order", "psp", sources["crm"], True)]
+    monkeypatch.setattr(registry, "get_connection_org", lambda cid: "another-org" if cid == sources["crm"] else "")
+    with pytest.raises(DomainRefused) as foreign:
+        set_display_property(across, "Order", "psp", open_connection_for)
+    assert foreign.value.status == 403
+
+
 # ── the doors ───────────────────────────────────────────────────────────────────────────────────
 
 
@@ -883,6 +986,42 @@ def test_the_process_rule_and_frame_doors_take_an_organisations_ontology_over_ht
 
 
 
+def test_the_object_doors_open_an_organisations_objects_where_they_live_over_http(client, wide, sources, monkeypatch):
+    domain = {"domain": "default"}
+    named = client.put("/ontology/entities/Customer", params=domain, json={"display_property": "full_name"})
+    assert named.status_code == 200, named.text
+    assert (named.json()["domain"], named.json()["override"]["fields"]["display_property"]) == ("default/default",
+                                                                                               "full_name")
+    worded = client.put("/ontology/entities/Customer", params=domain, json={"description": "people who buy"})
+    assert worded.status_code == 400 and "display property" in worded.json()["detail"]
+    moving = client.put("/ontology/entities/Order", params=domain, json={"display_property": "latest_status"})
+    assert moving.status_code == 400 and "timeseries" in moving.json()["detail"]
+    unknown = client.put("/ontology/entities/Order", params=domain, json={"display_property": "nickname"})
+    assert unknown.status_code == 400 and "has no property 'nickname'" in unknown.json()["detail"]
+
+    [(full_name,)] = reference(sources, "SELECT full_name FROM ecommerce.customers WHERE customer_id = 'C00001'")
+    [(placed,)] = reference(sources, "SELECT COUNT(*) FROM ecommerce.orders WHERE customer_id = 'C00001'")
+    opened = client.get("/objects/Customer/C00001", params=domain)
+    assert opened.status_code == 200, opened.text
+    assert (opened.json()["path"], opened.json()["domain"], opened.json()["connection_id"], opened.json()["title"]) == (
+        "object", "default/default", sources["crm"], full_name)
+    carried = client.get("/objects/Customer/C00001", params={"connection_id": "domain:default", "domain": "default"})
+    assert carried.json() == opened.json()                 # the scope the web carries an organisation's ontology in
+    stray = client.get("/objects/Customer/C00001", params={"connection_id": "domain:default"})
+    assert stray.status_code == 400 and "?domain=" in stray.json()["detail"]
+    assert client.get("/objects/Customer/C99999", params=domain).status_code == 404
+    assert client.get("/objects/Nothing/1", params=domain).json()["path"] == "refused"
+    linked = client.get("/objects/Customer/C00001/links/customer_to_order", params={**domain, "limit": 2}).json()
+    assert (linked["path"], linked["connection_id"], len(linked["rows"])) == ("links", sources["shop"], min(2, placed))
+    titled = client.post("/objects/titles", params=domain, json={"object_type": "Customer", "keys": ["C00001", "C99999"]})
+    assert (titled.json()["path"], titled.json()["titles"]) == ("titles", {"C00001": full_name})
+
+    # a page that would read a connection the organisation does not hold is refused, never read part-way
+    monkeypatch.setattr(registry, "get_connection_org", lambda cid: "another-org" if cid == sources["crm"] else "")
+    assert client.get("/objects/Order/O000002", params=domain).status_code == 403
+
+
+
 def test_one_connections_ontology_refuses_a_source_on_another_and_says_where_it_belongs(client, sources):
     params = {"connection_id": sources["shop"], "schema_name": "ecommerce"}
     bound = client.put("/ontology/entities/Order/bindings/payment", params=params,
@@ -974,8 +1113,7 @@ def test_no_door_reaches_an_organisations_ontology_by_naming_its_tree_as_a_conne
     # the scope the web carries an organisation's ontology in reaches a door that takes ?domain=, and no other
     carried = {"connection_id": "domain:default", "domain": "default"}
     assert [t["id"] for t in client.get("/object-types", params=carried).json()["object_types"]] == ["Order"]
-    assert client.put("/ontology/entities/Order", params=carried,
-                      json={"display_property": "order_id"}).status_code == 400
+    assert client.delete("/ontology/overrides/entity/Order", params=carried).status_code == 400
     assert not (OV._ROOT / "domain_default").exists()
 
 

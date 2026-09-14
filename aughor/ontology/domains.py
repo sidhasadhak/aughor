@@ -281,6 +281,46 @@ def declare_link(domain: Domain, spec: dict, open_source: Opener):
     return ov
 
 
+def set_display_property(domain: Domain, entity_id: str, name: str, open_source: Opener):
+    """ON-3b on an organisation's ontology: the property whose value names one object of a declared type — a column of
+    its row, or a property a static binding supplies, which may live on another connection — counted where it is read
+    before it is written: how many objects carry a value, and how many distinct. Returns the saved override."""
+    from aughor.ontology.display import display_property_problem
+    from aughor.ontology.overrides import find_override, save_organisation_override
+    graph = domain_graph(domain)
+    entity, existing = graph.entities.get(entity_id), find_override(*domain.tree, "entity", entity_id)
+    if entity is None or existing is None:
+        raise DomainRefused(404, f"no type '{entity_id}' in {domain.key}")
+    match, problem = display_property_problem(entity, name)
+    if problem:
+        raise DomainRefused(400, problem)
+    ov = existing.model_copy(deep=True)
+    ov.fields["display_property"] = match
+    ov.binding["display_property"] = _display_entry(domain, graph, entity, match, open_source)
+    save_organisation_override(*domain.tree, ov)
+    return ov
+
+
+def _display_entry(domain: Domain, graph: OntologyGraph, entity, name: str, open_source: Opener) -> dict:
+    """A display property's binding entry: whether the type still has it, and its counts over the source it is read from
+    — the type's row, or the static binding that supplies it — on the connection that source lives on."""
+    from aughor.ontology.display import display_property_problem, display_source, measure_display
+    match, problem = display_property_problem(entity, name)
+    if problem:
+        return {"bound": False, "note": problem, "property": name}
+    _, _, through = display_source(entity, match)
+    binding = next((b for b in entity.bindings or [] if b.name == through), None)
+    where = binding_source(graph, entity, binding) if binding is not None else entity_source(graph, entity)
+    check_source(domain, where)
+    db = open_source(where)
+    try:
+        m = measure_display(db, entity, match, "human")
+    finally:
+        db.close()
+    return {"bound": True, "note": "", "property": match, "connection_id": where, "rows": m.rows,
+            "non_null": m.non_null, "distinct": m.distinct, "verified": m.verified, "measured_note": m.note}
+
+
 def declare_process(domain: Domain, spec: dict, open_source: Opener):
     """ON-9 on an organisation's ontology: a process one of its types goes through, each stage resolved by the object
     door's path law over the domain and the whole declaration counted through it before anything is written — a stage
@@ -363,7 +403,8 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
             opened[connection_id] = open_source(connection_id)
         return opened[connection_id]
 
-    out: dict = {"domain": domain.key, "entities": [], "bindings": [], "links": [], "processes": [], "rules": []}
+    out: dict = {"domain": domain.key, "entities": [], "bindings": [], "links": [], "display_properties": [],
+                 "processes": [], "rules": []}
     try:
         for ov in load_overrides(*domain.tree):
             if ov.target_kind != "entity" or not ov.fields.get("declared"):
@@ -420,6 +461,20 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
                                      "measured_cardinality": entry.get("measured_cardinality"),
                                      "value_overlap": entry.get("value_overlap"), "bound": entry.get("bound"),
                                      "note": entry.get("note")})
+        # a person's display property on each type, counted where it is read, over the bindings just counted
+        graph = domain_graph(domain)
+        for ov in load_overrides(*domain.tree):
+            name = ov.fields.get("display_property") if ov.target_kind == "entity" else None
+            entity = graph.entities.get(ov.target_id)
+            if not isinstance(name, str) or not name.strip() or entity is None:
+                continue
+            entry = _display_entry(domain, graph, entity, name.strip(), open_source)
+            ov.binding["display_property"] = entry
+            save_organisation_override(*domain.tree, ov)
+            out["display_properties"].append({"entity": ov.target_id, "property": entry["property"],
+                                              "connection_id": entry.get("connection_id"), "bound": entry["bound"],
+                                              "verified": entry.get("verified"),
+                                              "note": entry.get("measured_note") or entry["note"]})
         # processes, then rules — each over the graph as the counts just recorded leave it (the rules over a second
         # read, so a rule that reads a process's lag sees its fresh verdict), as one connection's measure pass counts
         # them, and each written back through the organisation's own writer

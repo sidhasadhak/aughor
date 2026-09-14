@@ -9,6 +9,7 @@ pages (`GET /objects/{type}/{pk}`) will live beside these.
 """
 from __future__ import annotations
 
+from contextlib import contextmanager
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -74,13 +75,35 @@ def _checked_source(scope, connection_id: str) -> None:
         raise HTTPException(status_code=exc.status, detail=exc.detail) from exc
 
 
+@contextmanager
+def _domain_sources(scope):
+    """ON-8 — the connections one request reads an organisation's objects from: each checked as the organisation's and
+    opened the first time a read needs it, and every one closed when the request ends."""
+    from aughor.db.connection import open_connection_for
+    opened: dict = {}
+
+    def source_db(connection_id: str):
+        if connection_id not in opened:
+            _checked_source(scope, connection_id)
+            opened[connection_id] = open_connection_for(connection_id)
+        return opened[connection_id]
+    try:
+        yield source_db
+    finally:
+        for db in opened.values():
+            db.close()
+
+
 @router.get("/objects/{object_type}/{pk}")
 def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
-                    schema_name: Optional[str] = Query(default=None)):
+                    schema_name: Optional[str] = Query(default=None), domain: Optional[str] = Query(default=None)):
     """ON-3: one object, resolved live through its backing — its properties, and its links resolved
     to the linked object's key (to-one) or a count of the linked objects (to-many). A link the
     compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
-    an unknown type is `path: refused` with the types that exist."""
+    an unknown type is `path: refused` with the types that exist. ON-8 — with ``domain``, an object of the
+    organisation's ontology: its row, each binding and each linked type read on the connection it lives on."""
+    if domain is not None:
+        return _domain_object_page(object_type, pk, domain)
     from aughor.semantic.object_context import object_context
     from aughor.semantic.object_instances import ObjectNotFound, get_object
     from aughor.semantic.object_query import ObjectQueryRefused
@@ -103,12 +126,45 @@ def get_object_page(object_type: str, pk: str, connection_id: str = BUILTIN_ID,
         db.close()
 
 
+def _domain_object_page(object_type: str, pk: str, domain: str) -> dict:
+    from aughor.ontology.sources import entity_source
+    from aughor.semantic.object_context import object_context
+    from aughor.semantic.object_instances import ObjectNotFound, get_object
+    from aughor.semantic.object_query import ObjectQueryRefused, find_object_type
+
+    scope, graph = _domain_served(domain)
+    try:
+        entity = find_object_type(graph, object_type)
+    except ObjectQueryRefused as exc:
+        return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+    home = entity_source(graph, entity)
+    with _domain_sources(scope) as source_db:
+        try:
+            instance = get_object(graph, None, entity.api_name, pk, overlay=_accepted_edits(home), source_db=source_db)
+        except ObjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key,
+                    "connection_id": home}
+        db = source_db(home)
+        table = (entity.backing.table if entity.backing is not None else "") or ""
+        # the findings and notes around it are the ones kept on the connection its rows live on
+        related = object_context(graph, db, home, table.split(".")[-2] if "." in table else "", instance,
+                                 dialect=getattr(db, "dialect", "") or "duckdb")
+    return {"path": "object", "domain": scope.key, "connection_id": home, "schema_name": "", **instance.to_dict(),
+            "related": related}
+
+
 @router.get("/objects/{object_type}/{pk}/links/{link}")
 def get_object_links_page(object_type: str, pk: str, link: str, connection_id: str = BUILTIN_ID,
                           schema_name: Optional[str] = Query(default=None),
-                          limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0)):
+                          limit: int = Query(default=50, ge=1, le=200), offset: int = Query(default=0, ge=0),
+                          domain: Optional[str] = Query(default=None)):
     """ON-3: one page of the objects a link reaches from one object, ordered by their key — refused
-    when the link is (unmeasured, N:N, or touching a query backing)."""
+    when the link is (unmeasured, N:N, or touching a query backing). ON-8 — with ``domain``, in the organisation's
+    ontology: the object read where it lives, and the linked objects where theirs do."""
+    if domain is not None:
+        return _domain_links_page(object_type, pk, link, domain, limit, offset)
     from aughor.semantic.object_instances import ObjectNotFound, list_linked
     from aughor.semantic.object_query import ObjectQueryRefused
 
@@ -125,6 +181,23 @@ def get_object_links_page(object_type: str, pk: str, link: str, connection_id: s
         return {"path": "links", "connection_id": connection_id, "schema_name": graph.schema_name, **page}
     finally:
         db.close()
+
+
+def _domain_links_page(object_type: str, pk: str, link: str, domain: str, limit: int, offset: int) -> dict:
+    from aughor.ontology.sources import entity_source
+    from aughor.semantic.object_instances import ObjectNotFound, list_linked
+    from aughor.semantic.object_query import ObjectQueryRefused
+
+    scope, graph = _domain_served(domain)
+    with _domain_sources(scope) as source_db:
+        try:
+            page = list_linked(graph, None, object_type, pk, link, limit=limit, offset=offset, source_db=source_db)
+        except ObjectNotFound as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+    where = entity_source(graph, graph.entities[page["type_id"]])
+    return {"path": "links", "domain": scope.key, "connection_id": where, "schema_name": "", **page}
 
 
 @router.get("/objects/catalog")
@@ -148,10 +221,13 @@ class _TitlesRequest(BaseModel):
 
 @router.post("/objects/titles")
 def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
-                       schema_name: Optional[str] = Query(default=None)):
+                       schema_name: Optional[str] = Query(default=None), domain: Optional[str] = Query(default=None)):
     """The name of each object a set of keys names — one query over the backing, so a table of keys costs one
     round trip. A type named by its own key resolves nothing and says so; a key nothing matches is absent from
-    the map rather than guessed at. An unknown type is `path: refused`. No model call."""
+    the map rather than guessed at. An unknown type is `path: refused`. No model call. ON-8 — with ``domain``, a
+    type of the organisation's ontology, its names read where they live."""
+    if domain is not None:
+        return _domain_titles(body, domain)
     from aughor.db.connection import open_connection_for_with_schema
     from aughor.routers.ontology import resolve_effective_schema
     from aughor.semantic.object_instances import titles
@@ -169,6 +245,21 @@ def post_object_titles(body: _TitlesRequest, connection_id: str = BUILTIN_ID,
         return {"path": "titles", "connection_id": connection_id, "schema_name": graph.schema_name, **found}
     finally:
         db.close()
+
+
+def _domain_titles(body: _TitlesRequest, domain: str) -> dict:
+    from aughor.ontology.sources import entity_source
+    from aughor.semantic.object_instances import titles
+    from aughor.semantic.object_query import ObjectQueryRefused
+
+    scope, graph = _domain_served(domain)
+    with _domain_sources(scope) as source_db:
+        try:
+            found = titles(graph, None, body.object_type, body.keys, source_db=source_db)
+        except ObjectQueryRefused as exc:
+            return {"path": "refused", "refused": exc.reason, "available": exc.available, "domain": scope.key}
+    home = entity_source(graph, graph.entities[found["type_id"]])
+    return {"path": "titles", "domain": scope.key, "connection_id": home, "schema_name": "", **found}
 
 
 @router.get("/object-types")

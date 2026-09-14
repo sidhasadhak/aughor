@@ -26,11 +26,12 @@ def refuse_organisation_scope(request: Request) -> None:
     take none: the explorer drafts one connection's ontology and reads nothing beyond it (the user's rule, 2026-09-14)."""
     route = request.scope.get("route")
     params = getattr(getattr(route, "dependant", None), "query_params", None) or []
-    takes_domain = any(getattr(p, "alias", "") == "domain" for p in params)
+    # the carrier reaches an organisation's ontology only beside the ?domain= that names it, on a door that takes one
+    names_domain = any(getattr(p, "alias", "") == "domain" for p in params) and "domain" in request.query_params
     for name, value in request.query_params.multi_items():
         if name != "connection_id" and not name.endswith("_connection_id"):
             continue
-        if value.startswith(ORGANISATION_SEGMENT) or (value.startswith(DOMAIN_CARRIER) and not takes_domain):
+        if value.startswith(ORGANISATION_SEGMENT) or (value.startswith(DOMAIN_CARRIER) and not names_domain):
             explorer = str(getattr(route, "path", "")).startswith(("/ontology/explore", "/ontology/draft"))
             raise HTTPException(status_code=400, detail=(
                 f"'{value}' is an organisation's ontology, not a connection — "
@@ -1089,32 +1090,15 @@ def _override_result(ov) -> dict:
 
 def _display_property_or_error(connection_id: str, schema: str, entity_id: str, name: str) -> str:
     """ON-3b — the property a display-property edit names, spelled as the type spells it: 404 when the type is not
-    in the served graph, 400 naming its properties when it has no such property.
-
-    A property a STATIC binding supplies may name objects too (ON-1b): the binding holds one row per object, so
-    the name is as single-valued as any column of the backing. A TIMESERIES binding is refused with its reason —
-    it is read as the object's latest row, so a title taken from it would change under the reader, and a title
-    that moves is not a name."""
-    from aughor.ontology.bindings import property_binding
+    in the served graph, 400 with the reason when it cannot name objects (`display.display_property_problem`)."""
+    from aughor.ontology.display import display_property_problem
     graph = _get_ontology_graph(connection_id, schema)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
-    wanted = str(name or "").strip()
-    bound = {p: b for b in (entity.bindings or []) for p in b.properties}
-    match = next((k for k in (entity.properties or {}) if k.lower() == wanted.lower()), None)
-    if match is None:
-        match = next((k for k in bound if k.lower() == wanted.lower()), None)
-    if match is None:
-        available = sorted({*(entity.properties or {}), *bound})
-        raise HTTPException(status_code=400, detail=(f"{entity_id} has no property '{wanted}' — its properties: "
-                                                     f"{', '.join(available) or 'none'}"))
-    binding = property_binding(entity, match)
-    if binding is not None and binding.kind == "timeseries":
-        raise HTTPException(status_code=400, detail=(
-            f"'{match}' is read from the timeseries binding {binding.name}, as this object's latest value — a "
-            f"title taken from it would change when the next reading lands. Name objects by a property of the "
-            f"backing or of a static binding."))
+    match, problem = display_property_problem(entity, name)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     return match
 
 
@@ -1124,9 +1108,13 @@ def override_ontology_entity(
     body: _EntityOverride,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="ON-8 — name the objects of a type of an organisation's ontology"),
 ):
-    # ON-8 — the scope the web carries an organisation's ontology in never reaches this door: it takes no ?domain=, so
-    # `refuse_organisation_scope` answers 400 first, and the store refuses the write besides.
+    # ON-8 — with ``domain``, a declared type of the organisation's ontology takes its display property here and nothing
+    # else. The scope the web carries that ontology in reaches this door only beside the ?domain= that names it
+    # (`refuse_organisation_scope`), and the store refuses a write to it through one connection's writer besides.
+    if domain is not None:
+        return _domain_edit_entity(entity_id, body, domain)
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride, find_override
@@ -1152,6 +1140,25 @@ def override_ontology_entity(
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     return _override_result(ov)
+
+
+def _domain_edit_entity(entity_id: str, body: _EntityOverride, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import domain_graph, set_display_property
+    from aughor.semantic.object_types import describe_object_type
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    other = sorted(set(fields) - {"display_property"})
+    if other or not fields:
+        raise HTTPException(status_code=400, detail=(
+            "a type of an organisation's ontology takes its display property through this door"
+            + (f", not {', '.join(other)}" if other else ", and none was given")
+            + " — the type is declared with POST /ontology/entities?domain= and its sources bound with "
+              "PUT /ontology/entities/{id}/bindings/{name}?domain="))
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: set_display_property(scope, entity_id, fields["display_property"], _open_source))
+    served = domain_graph(scope)
+    return {**_override_result(ov), "entity": describe_object_type(served, entity_id), "domain": scope.key}
 
 
 @router.put("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

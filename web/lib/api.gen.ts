@@ -7359,7 +7359,8 @@ export interface paths {
          * Post Object Titles
          * @description The name of each object a set of keys names — one query over the backing, so a table of keys costs one
          *     round trip. A type named by its own key resolves nothing and says so; a key nothing matches is absent from
-         *     the map rather than guessed at. An unknown type is `path: refused`. No model call.
+         *     the map rather than guessed at. An unknown type is `path: refused`. No model call. ON-8 — with ``domain``, a
+         *     type of the organisation's ontology, its names read where they live.
          */
         post: operations["post_object_titles_objects_titles_post"];
         delete?: never;
@@ -7380,7 +7381,8 @@ export interface paths {
          * @description ON-3: one object, resolved live through its backing — its properties, and its links resolved
          *     to the linked object's key (to-one) or a count of the linked objects (to-many). A link the
          *     compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
-         *     an unknown type is `path: refused` with the types that exist.
+         *     an unknown type is `path: refused` with the types that exist. ON-8 — with ``domain``, an object of the
+         *     organisation's ontology: its row, each binding and each linked type read on the connection it lives on.
          */
         get: operations["get_object_page_objects__object_type___pk__get"];
         put?: never;
@@ -7401,7 +7403,8 @@ export interface paths {
         /**
          * Get Object Links Page
          * @description ON-3: one page of the objects a link reaches from one object, ordered by their key — refused
-         *     when the link is (unmeasured, N:N, or touching a query backing).
+         *     when the link is (unmeasured, N:N, or touching a query backing). ON-8 — with ``domain``, in the organisation's
+         *     ontology: the object read where it lives, and the linked objects where theirs do.
          */
         get: operations["get_object_links_page_objects__object_type___pk__links__link__get"];
         put?: never;
@@ -27558,6 +27561,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -27594,6 +27598,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -27631,6 +27636,7 @@ export interface operations {
                 schema_name?: string | null;
                 limit?: number;
                 offset?: number;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -28610,6 +28616,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description ON-8 — name the objects of a type of an organisation's ontology */
+                domain?: string | null;
             };
             header?: never;
             path: {

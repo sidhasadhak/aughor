@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
 from aughor.ontology.parts import detail_from, rollup_note
@@ -31,6 +31,7 @@ from aughor.ontology.timeseries import (
 from aughor.ontology.cardinality import quote_ident
 from aughor.ontology.display import display_of
 from aughor.ontology.models import Binding, EntityProperty, OntologyEntity, OntologyGraph
+from aughor.ontology.sources import binding_source, entity_source
 from aughor.semantic.object_query import (
     ObjectLink,
     ObjectQueryRefused,
@@ -99,6 +100,17 @@ def _read(db: Any, sql: str, what: str):
     return result
 
 
+def _reader(graph: OntologyGraph, db: Any, source_db: Optional[Callable[[str], Any]]):
+    """Where each read of one call runs. On one connection's ontology that is ``db``. On an organisation's (ON-8) a
+    type's rows, a binding's and a linked type's may each live on another connection, so each is read where it lives:
+    ``source_db(connection_id)`` hands back that connection, opened by the caller, who closes it."""
+    def on(entity: OntologyEntity, binding: Optional[Binding] = None) -> Any:
+        if source_db is None:
+            return db
+        return source_db(binding_source(graph, entity, binding) if binding is not None else entity_source(graph, entity))
+    return on
+
+
 def title_column(entity: OntologyEntity) -> Optional[str]:
     """The column that titles one object: the type's declared display property (ON-3b), or None when its key
     names it — the key is already on screen. A proposal the data refuted gives way to the key."""
@@ -119,13 +131,14 @@ def _fetch_row(db: Any, entity: OntologyEntity, pk: str) -> tuple[dict, list[str
     return dict(zip(columns, rows[0])), columns, len(rows) > 1
 
 
-def _bound_properties(db: Any, entity: OntologyEntity, key: str,
+def _bound_properties(on: Callable[..., Any], entity: OntologyEntity, key: str,
                      pk: str) -> tuple[list[dict], list[dict], list[str]]:
     """ON-1b/ON-5 — the properties each further binding supplies for one object, read by its key under the
     compiler's law: a binding measured one row per object is read; one that is not is named in a caveat and never
     read. A TIMESERIES binding is read through its latest-row reduction (ON-5) — the same SQL the compiler joins,
     narrowed to this object — and the readings behind that value come back beside it as its history. An object a
-    binding does not cover reads those properties as empty.
+    binding does not cover reads those properties as empty. Each binding is read on the connection its rows live on
+    (``on``, `_reader`).
 
     Returns ``(properties, timeseries, caveats)``."""
     properties: list[dict] = []
@@ -146,6 +159,7 @@ def _bound_properties(db: Any, entity: OntologyEntity, key: str,
         if not source_sql:
             caveats.append(f"not read from {binding.name}: it names no source to read")
             continue
+        db = on(entity, binding)
         # A timeseries binding reads its whole reduced row, so the time column is on it even when no property is
         # supplied from that column — the value is only half the fact, and WHEN is the other half.
         read = reduced_columns(binding) if latest else [column_of(binding, name) for name, _ in supplied]
@@ -206,7 +220,7 @@ def _history(db: Any, entity: OntologyEntity, binding: Binding, literal: str, pk
     return {**view, "columns": read, "rows": [list(r) for r in (result.rows or [])]}
 
 
-def _link_view(db: Any, link: ObjectLink, row: dict) -> dict:
+def _link_view(on: Callable[..., Any], link: ObjectLink, row: dict) -> dict:
     view = {"name": link.name, "business_name": link.business, "verb": link.rel.verb,
             "to": link.target.api_name, "to_type": link.target.id,
             "cardinality": link.label, "on": f"{link.local_col} = {link.remote_col}",
@@ -224,20 +238,22 @@ def _link_view(db: Any, link: ObjectLink, row: dict) -> dict:
         target_key = _key_of(link.target)
         if link.remote_col.lower() == target_key.lower():
             return {**view, "usable": True, "pk": str(value)}
-        found = _read(db, f"SELECT l.{quote_ident(target_key)} FROM {source} "
+        found = _read(on(link.target), f"SELECT l.{quote_ident(target_key)} FROM {source} "
                           f"WHERE l.{quote_ident(link.remote_col)} = {literal} LIMIT 1", link.describe())
         return {**view, "usable": True, "pk": str(found.rows[0][0]) if found.rows else None}
-    counted = _read(db, f"SELECT COUNT(*) FROM {source} WHERE l.{quote_ident(link.remote_col)} = {literal}",
+    counted = _read(on(link.target), f"SELECT COUNT(*) FROM {source} WHERE l.{quote_ident(link.remote_col)} = {literal}",
                     link.describe())
     return {**view, "usable": True, "count": int(counted.rows[0][0]) if counted.rows else 0}
 
 
 def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
-               overlay: Optional[list] = None) -> ObjectInstance:
+               overlay: Optional[list] = None, source_db: Optional[Callable[[str], Any]] = None) -> ObjectInstance:
     """One object — its properties (with the overlay properties accepted edits set on it, ON-4), and
-    its links resolved to a key or a count."""
+    its links resolved to a key or a count. ON-8 — on an organisation's ontology ``db`` is None and ``source_db`` hands
+    back the connection each read runs on (`_reader`)."""
     entity = find_object_type(graph, object_type)
-    row, columns, repeated = _fetch_row(db, entity, pk)
+    on = _reader(graph, db, source_db)
+    row, columns, repeated = _fetch_row(on(entity), entity, pk)
     key = _key_of(entity)
     caveats: list[str] = []
     if repeated:
@@ -253,7 +269,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
                            "data_type": prop.data_type if prop else "",
                            "unit": prop.unit if prop else "",
                            "description": prop.description if prop else ""})
-    bound, series, bound_caveats = _bound_properties(db, entity, key, pk)
+    bound, series, bound_caveats = _bound_properties(on, entity, key, pk)
     properties += bound
     caveats += bound_caveats
     for edits in overlay_properties(entity, overlay).values():
@@ -272,7 +288,7 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
     # Read off the ASSEMBLED properties, not the backing row: ON-1b lets a name live on a static binding, and
     # `_bound_properties` has already fetched it. The backing row is still where a backing property comes from.
     title = None if shown["is_key"] else _value({p["name"]: p["value"] for p in properties}, shown["property"])
-    links = [_link_view(db, link, row) for link in object_links(graph, entity)]
+    links = [_link_view(on, link, row) for link in object_links(graph, entity)]
     return ObjectInstance(object_type=entity.api_name, type_id=entity.id,
                           type_name=entity.display_name or entity.id, key=key, pk=str(pk),
                           title=str(title) if title is not None else None,
@@ -286,14 +302,18 @@ def get_object(graph: OntologyGraph, db: Any, object_type: str, pk: str, *,
 MAX_TITLES = 500
 
 
-def titles(graph: OntologyGraph, db: Any, object_type: str, keys: list[str]) -> dict:
+def titles(graph: OntologyGraph, db: Any, object_type: str, keys: list[str], *,
+           source_db: Optional[Callable[[str], Any]] = None) -> dict:
     """The name of each object a set of keys names — ONE query over the backing, so an answer table of 200
     customer ids costs one round trip rather than 200.
 
     A type whose key IS its name resolves nothing and says so: the key is already on screen, and inventing a
     title for it would put the same string in two columns. A key nothing matches is simply absent from the
-    map — a missing title is a key rendered as it always was, never a guess."""
+    map — a missing title is a key rendered as it always was, never a guess. ON-8 — on an organisation's ontology
+    ``db`` is None and ``source_db`` hands back the connection each read runs on (`_reader`); a name on a binding on
+    another connection costs a second read, of which of the keys an object holds."""
     entity = find_object_type(graph, object_type)
+    on = _reader(graph, db, source_db)
     key = _key_of(entity)
     column = title_column(entity)
     wanted, seen = [], set()
@@ -315,19 +335,32 @@ def titles(graph: OntologyGraph, db: Any, object_type: str, keys: list[str]) -> 
     # A name on a static binding (ON-1b) is read through that binding, joined on the object's key — the same
     # join the object page makes for the same property, so the two cannot disagree.
     binding = property_binding(entity, column)
+    reader, objects = on(entity), None
     if binding is not None and binding.kind == "static" and not binding_problem(entity, binding):
         out["through"] = binding.name
-        sql = (f"SELECT t0.{quote_ident(key)}, d0.{quote_ident(column_of(binding, column))} "
-               f"FROM {backing_from(entity, 't0')} "
-               f"JOIN {binding_from(binding, 'd0')} ON d0.{quote_ident(binding.key)} = t0.{quote_ident(key)} "
-               f"WHERE t0.{quote_ident(key)} IN ({literals})")
+        if binding_source(graph, entity, binding) != entity_source(graph, entity):
+            # ON-8 — on another connection no statement joins it to the backing: it holds one row per object keyed by
+            # the object's key, so it is read by those keys where it lives, as the object page reads it — and a key is
+            # named only when an object holds it, read from the backing where the backing lives
+            reader = on(entity, binding)
+            sql = (f"SELECT d0.{quote_ident(binding.key)}, d0.{quote_ident(column_of(binding, column))} "
+                   f"FROM {binding_from(binding, 'd0')} WHERE d0.{quote_ident(binding.key)} IN ({literals})")
+            present = _read(on(entity), f"SELECT t0.{quote_ident(key)} FROM {backing_from(entity, 't0')} "
+                                        f"WHERE t0.{quote_ident(key)} IN ({literals})", f"the {entity.id} objects named")
+            objects = {str(row[0]) for row in (present.rows or [])}
+        else:
+            sql = (f"SELECT t0.{quote_ident(key)}, d0.{quote_ident(column_of(binding, column))} "
+                   f"FROM {backing_from(entity, 't0')} "
+                   f"JOIN {binding_from(binding, 'd0')} ON d0.{quote_ident(binding.key)} = t0.{quote_ident(key)} "
+                   f"WHERE t0.{quote_ident(key)} IN ({literals})")
     else:
         sql = (f"SELECT t0.{quote_ident(key)}, t0.{quote_ident(column)} FROM {backing_from(entity, 't0')} "
                f"WHERE t0.{quote_ident(key)} IN ({literals})")
-    result = _read(db, sql, f"the names of {entity.id} objects")
+    result = _read(reader, sql, f"the names of {entity.id} objects")
     # Matched back as TEXT: the warehouse hands a key back in its own type (an integer id comes back an int),
     # and the caller asked with the string it had on screen.
-    out["titles"] = {str(row[0]): str(row[1]) for row in (result.rows or []) if row[1] is not None}
+    out["titles"] = {str(row[0]): str(row[1]) for row in (result.rows or [])
+                     if row[1] is not None and (objects is None or str(row[0]) in objects)}
     return out
 
 
@@ -347,16 +380,18 @@ def _find_link(graph: OntologyGraph, entity: OntologyEntity, name: str) -> Objec
 
 
 def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: str, *,
-                limit: int = 50, offset: int = 0) -> dict:
-    """One page of the objects a link reaches from one object — refused when the link is."""
+                limit: int = 50, offset: int = 0, source_db: Optional[Callable[[str], Any]] = None) -> dict:
+    """One page of the objects a link reaches from one object — refused when the link is. ON-8 — on an organisation's
+    ontology ``db`` is None and ``source_db`` hands back the connection each read runs on (`_reader`)."""
     entity = find_object_type(graph, object_type)
+    on = _reader(graph, db, source_db)
     chosen = _find_link(graph, entity, link)
     problem = link_problem(chosen)
     if problem:
         raise ObjectQueryRefused(problem)
     limit = max(1, min(int(limit), _MAX_PAGE))
     offset = max(0, int(offset))
-    row, _, _ = _fetch_row(db, entity, pk)
+    row, _, _ = _fetch_row(on(entity), entity, pk)
     target = chosen.target
     target_key = _key_of(target)
     base = {"link": chosen.name, "object_type": target.api_name, "type_id": target.id,
@@ -371,7 +406,7 @@ def list_linked(graph: OntologyGraph, db: Any, object_type: str, pk: str, link: 
     sql = (f"SELECT * FROM {source} WHERE l.{quote_ident(chosen.remote_col)} = "
            f"{typed_literal(str(value), remote, chosen.remote_col)} "
            f"ORDER BY l.{quote_ident(target_key)} LIMIT {limit + 1} OFFSET {offset}")
-    result = _read(db, sql, chosen.describe())
+    result = _read(on(target), sql, chosen.describe())
     rows = list(result.rows or [])
     return {**base, "columns": list(result.columns or []), "rows": rows[:limit], "has_more": len(rows) > limit}
 
