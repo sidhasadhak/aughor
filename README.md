@@ -37,36 +37,27 @@ Aughor connects to your warehouse and **keeps learning from it**. It builds a li
 
 ## Quick start
 
-One command downloads Aughor, installs everything it needs, builds the web app, starts Aughor and opens it in your browser. Nothing has to be installed first — not even Git.
-
-**macOS / Linux** — in a terminal:
+**macOS / Linux**
 
 ```bash
 curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh | sh
 ```
 
-**Windows** — in Command Prompt or PowerShell:
+**Windows**
 
 ```powershell
 powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
 ```
 
-That line is the whole install: nothing to set up before it, nothing else to type after it.
+That one line installs everything — no Git, Python or Node.js needed first — and opens Aughor at http://localhost:3000. Next time, run `aughor` (`aughor up --help` lists the options).
 
-Aughor lands in an `aughor` folder in your home folder (set `AUGHOR_DIR` to choose another): cloned with Git when the computer has it, otherwise downloaded as a snapshot. The installer then adds [uv](https://docs.astral.sh/uv/), Python, every Python and web dependency, and — when the computer has no Node.js 20.9 or newer — an official Node.js build, checked against nodejs.org's published checksums. The terminal shows one line per step; what the tools print goes to `.aughor/logs/`, and if a step fails you see the end of its log and what to do next.
+Aughor starts empty: click **+ Add** to connect DuckDB, PostgreSQL or BigQuery, or run `aughor seed` for a demo dataset.
 
-Already have a clone? Run `./install.sh` (macOS / Linux) or `install.cmd` (Windows) inside it. Run it again at any time — after a `git pull`, say: it only redoes what changed. `--no-start` installs without starting; `--help` lists every option. (A snapshot has no `git pull`; with Git installed first, you get a clone you can update.)
-
-Aughor starts empty — no data is created on your behalf. Click **+ Add** and paste a DuckDB path, a PostgreSQL DSN, or BigQuery credentials, and exploration begins. Want something to explore first? `aughor seed` writes a synthetic demo dataset with a discoverable outage.
-
-**Next time**, type `aughor` in any terminal: the installer adds that one command, and its last line says so. (Where it can't put the command on your PATH, that line names the folder to run `uv run aughor up` in instead.) Starting reinstalls or rebuilds the web app only when something changed, and never kills an existing process — a busy port names its owner and exits. Options go after `aughor up`: `--api-port` / `--web-port` to move, `--dev` for hot reload with the logs in the terminal, `--api-only` / `--web-only` to split, `--no-browser`, `--verbose` to see everything. Or run the pieces yourself:
+Already cloned? Run `./install.sh` (Windows: `install.cmd`), or by hand with uv and Node.js 20.9+:
 
 ```bash
-uv run uvicorn aughor.api:app --port 8000    # API
-cd web && npm ci && npm run dev               # web app on :3000 (NEXT_PUBLIC_API_URL if the API moved)
+uv sync --all-extras && uv run aughor up
 ```
-
-The installer syncs every [extra](#optional-extras). A bare `uv sync` installs the **serving core** only; heavyweight features ship as extras and degrade with a message naming what to install — nothing crashes.
 
 ## Pick your models
 
