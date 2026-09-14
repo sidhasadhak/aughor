@@ -5907,6 +5907,19 @@ the browser** · **measure the premise before building.**
     spawn path; `learned_rates=False` at the explorer's playbook read; and an import-and-call ratchet
     (`tests/unit/test_organisation_ontology_boundary.py`) that names who may import the organisation's ontology and its
     writer, what the explorer may not import, and that every prompt read of the glossary names its connection.
+    **Receipts** (commit `9d2592ff` on `claude/on-8-many-sources`): the ratchet above, `tests/unit/test_explorer_reads_one_connection.py`,
+    and new cases in `test_object_sources.py`, `test_ontology_o2_rekey.py` and `test_formula_drift.py` — the targeted
+    runs green (962, then 85 on the exploration doors); **50 guard mutations, every one caught** (29 on the
+    organisation's ontology and the metrics, 19 on the glossary, federated connections and the playbook, 2 on the canvas
+    doors, which also refuse before they wipe). **Live, 2026-09-14,** the API restarted on the commit (0 active jobs;
+    the three saved canvases already finished, so nothing resumed): the tree's segment as a connection id, the explorer
+    on the web's domain scope and a declaration marked as a model's each answered 400 with the reason, and nothing was
+    written; LuxExperience's `default` domain still maps Order and Customer across its two registrations with the
+    cross-source link, and Order's 26 properties keep their roles and carry no copied words. **What the glossary call
+    costs:** the sidecar held 264 model-written global entries (182 qualified, 82 bare) and no connection's section, so
+    no connection reads any of them now — Olist's schema text no longer carries the generated `orders` description —
+    until autoseed writes them again per connection, one model call per undescribed table, on each connection's next
+    intelligence build. The full backend suite ran once on the commit: **10,020 passed, 5 skipped**.
 
 ---
 

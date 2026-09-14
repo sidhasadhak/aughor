@@ -175,7 +175,7 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   // ON-7b — the explorer's draft beside the map: what it proposed, and where each proposal stands now. A scope with no
   // draft — or an API older than the draft door — simply offers a first one.
   useEffect(() => {
-    // ON-8 — an explorer drafts one connection's tables; an organisation's ontology has no draft to read yet.
+    // ON-8 — an explorer drafts one connection's tables and never an organisation's ontology, which people alone edit.
     if (domain) return;
     let live = true;
     getOntologyDraft(connectionId, schema)
