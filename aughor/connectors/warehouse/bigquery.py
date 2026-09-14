@@ -214,6 +214,13 @@ class BigQueryConnection(Connector):
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+        return self._execute(hypothesis_id, sql, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return self._execute(hypothesis_id, sql, max(1, max_rows))
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         import time as _time
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 
@@ -225,7 +232,7 @@ class BigQueryConnection(Connector):
             return _rp
 
         _t0 = _time.monotonic()
-        result = self._run_job(hypothesis_id, sql)
+        result = self._run_job(hypothesis_id, sql, max_rows)
         if result.error and _is_timestamp_date_clash(result.error):
             # The engine named the exact clash; the deterministic rewrite answers it
             # (cast the bare date literals, retry ONCE). Fixing here rather than in
@@ -235,34 +242,38 @@ class BigQueryConnection(Connector):
             # what actually ran, so receipts stay truthful.
             rewritten = _retype_date_literals(sql)
             if rewritten and rewritten != sql:
-                retried = self._run_job(hypothesis_id, rewritten)
+                retried = self._run_job(hypothesis_id, rewritten, max_rows)
                 if not retried.error:
                     result = retried
 
         elapsed_ms = (_time.monotonic() - _t0) * 1000
         return security_post(self._connection_id, hypothesis_id, result.sql, result, elapsed_ms)
 
-    def _run_job(self, hypothesis_id: str, sql: str) -> QueryResult:
-        """One BigQuery job → a QueryResult; an error is a value, never a raise."""
+    def _run_job(self, hypothesis_id: str, sql: str, max_rows: int = MAX_ROWS) -> QueryResult:
+        """One BigQuery job → a QueryResult; an error is a value, never a raise. Its raw values are offered to a typed
+        capture, so a BigQuery table can be one side of a cross-source object query."""
         try:
             from google.cloud import bigquery
+
+            from aughor.connectors.base import stage_type
+            from aughor.db.connection import offer_typed_rows
             job_config = bigquery.QueryJobConfig(
                 default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None
             )
             with self._running(self._client.query(sql, job_config=job_config)) as job:
                 # one row past the cap: a read the cap cut counts more rows than it keeps
-                rows_it = job.result(max_results=MAX_ROWS + 1)
-                columns = [field.name for field in rows_it.schema]
-                rows = [
-                    [str(v) if v is not None else "NULL" for v in row.values()]
-                    for row in rows_it
-                ]
+                rows_it = job.result(max_results=max_rows + 1)
+                schema = list(rows_it.schema)
+                raw = [list(row.values()) for row in rows_it]
+            offer_typed_rows(raw[:max_rows], truncated=len(raw) > max_rows,
+                             types=[stage_type(getattr(field, "field_type", ""), getattr(field, "precision", None),
+                                               getattr(field, "scale", None)) for field in schema])
             return QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,
-                columns=columns,
-                rows=rows[:MAX_ROWS],
-                row_count=len(rows),
+                columns=[field.name for field in schema],
+                rows=[[str(v) if v is not None else "NULL" for v in row] for row in raw[:max_rows]],
+                row_count=len(raw),
             )
         except Exception as e:
             return QueryResult(

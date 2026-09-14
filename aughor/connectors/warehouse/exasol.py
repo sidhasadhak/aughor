@@ -55,8 +55,23 @@ class ExasolConnection(Connector):
     #: declares `dialect = "postgres"` for transpile, and pyexasol speaks no Postgres
     #: placeholder syntax at all. That counter-example is why `param_style` exists.
 
+    @staticmethod
+    def _stage_type(column: object) -> str:
+        """pyexasol describes a column as a dict of its `type`, `precision` and `scale`."""
+        from aughor.connectors.base import stage_type
+        if isinstance(column, dict):
+            return stage_type(column.get("type"), column.get("precision"), column.get("scale"))
+        return stage_type(column)
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        from aughor.db.connection import enforce_row_policy, security_pre, security_post
+        return self._execute(hypothesis_id, sql, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return self._execute(hypothesis_id, sql, max(1, max_rows))
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        from aughor.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post
 
         sql = sql.strip().rstrip(";")
         if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
@@ -68,10 +83,13 @@ class ExasolConnection(Connector):
         _t0 = time.monotonic()
         try:
             stmt = self._conn.execute(sql)
-            columns = list(stmt.columns().keys())
+            meta = stmt.columns()
+            columns = list(meta.keys())
             # one row past the cap: a read the cap cut counts more rows than it keeps
-            rows_raw = stmt.fetchmany(MAX_ROWS + 1)
-            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw[:MAX_ROWS]]
+            rows_raw = stmt.fetchmany(max_rows + 1)
+            offer_typed_rows([list(row) for row in rows_raw[:max_rows]], truncated=len(rows_raw) > max_rows,
+                             types=[self._stage_type(column) for column in meta.values()])
+            rows = [[str(v) if v is not None else "NULL" for v in row] for row in rows_raw[:max_rows]]
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
                 columns=columns, rows=rows, row_count=len(rows_raw),

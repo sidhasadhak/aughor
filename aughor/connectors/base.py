@@ -15,6 +15,35 @@ from aughor.db.single_flight import single_flight_build
 
 ConnectorCategory = Literal["warehouse", "file", "api", "knowledge"]
 
+_INTEGER_KINDS = frozenset({"INTEGER", "INT", "INT64", "BIGINT", "SMALLINT", "TINYINT", "LONG", "LONGLONG", "SHORT",
+                            "TINY", "INT24", "YEAR"})
+_FLOAT_KINDS = frozenset({"FLOAT", "FLOAT64", "DOUBLE", "REAL"})
+_DECIMAL_KINDS = frozenset({"NUMERIC", "BIGNUMERIC", "DECIMAL", "NEWDECIMAL", "FIXED", "NUMBER"})
+
+
+def stage_type(kind: object, precision: object = None, scale: object = None) -> str:
+    """A driver's column type in the names the cross-source stage reads — BIGINT, DOUBLE, DECIMAL(p,s), BOOLEAN, DATE,
+    TIMESTAMP, VARCHAR. The stage types a column from its values, so this name decides only a column holding no value,
+    which would otherwise be staged as text."""
+    k = str(kind or "").strip().upper()
+    if k in _INTEGER_KINDS:
+        return "BIGINT"
+    if k in _FLOAT_KINDS:
+        return "DOUBLE"
+    if k in _DECIMAL_KINDS:
+        places = scale if isinstance(scale, int) else (9 if k in ("NUMERIC", "BIGNUMERIC") else 0)
+        if places == 0:
+            return "BIGINT"
+        digits = precision if isinstance(precision, int) and precision > 0 else 38
+        return f"DECIMAL({digits},{places})"
+    if k in ("BOOLEAN", "BOOL"):
+        return "BOOLEAN"
+    if k in ("DATE", "NEWDATE"):
+        return "DATE"
+    if k.startswith("TIMESTAMP") or k == "DATETIME":
+        return "TIMESTAMP"
+    return "VARCHAR" if k else ""
+
 
 class Connector(DatabaseConnection):
     """Base class for all pluggable connectors.
@@ -38,6 +67,49 @@ class Connector(DatabaseConnection):
 
     #: Row cap for a bound run, matching what every connector's `execute` already applies.
     max_rows: int = 2000
+
+    def _duckdb_read(self, handle, hypothesis_id: str, sql: str, max_rows: int):
+        """The read every DuckDB-backed connector runs — MotherDuck, S3, Google Sheets, the federated connection and
+        the REST syncs: the security gates and the row policy, DuckDB's JULIANDAY refusal healed, the rows kept up to
+        ``max_rows`` and counted in full, typed values offered to a caller that asked for them, and the post-pass.
+
+        It lives here once because it was copied five times, and no copy had grown what `DuckDBConnection` has since:
+        typed capture, a bounded read, the heal. So a cross-source object query refused every one of them as a side."""
+        import time
+
+        from aughor.control_plane.contracts.execution import QueryResult
+        from aughor.db.connection import (
+            enforce_row_policy, heal_duckdb_refusal, offer_typed_rows, security_post, security_pre,
+        )
+
+        sql = sql.strip().rstrip(";")
+        if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
+            return blocked
+        sql, _rp = enforce_row_policy(self, hypothesis_id, sql)   # RBAC row-policy (Rec 7); no-op off
+        if _rp is not None:
+            return _rp
+
+        started = time.monotonic()
+
+        def _attempt(statement: str) -> QueryResult:
+            try:
+                handle.execute(statement)
+                rows_raw = handle.fetchall()
+                description = handle.description or []
+                offer_typed_rows(rows_raw[:max_rows], truncated=len(rows_raw) > max_rows,
+                                 types=[str(d[1]) for d in description])
+                return QueryResult(
+                    hypothesis_id=hypothesis_id, sql=statement, columns=[d[0] for d in description],
+                    rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows_raw[:max_rows]],
+                    row_count=len(rows_raw),
+                )
+            except Exception as exc:  # noqa: BLE001 — an engine error is the result's error, never a raise
+                return QueryResult(hypothesis_id=hypothesis_id, sql=statement, columns=[], rows=[], row_count=0,
+                                   error=str(exc))
+
+        result = heal_duckdb_refusal(_attempt(sql), sql, _attempt)
+        return security_post(self._connection_id, hypothesis_id, result.sql, result,
+                             (time.monotonic() - started) * 1000)
 
     @single_flight_build
     def build_intelligence(self) -> str:

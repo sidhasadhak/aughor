@@ -107,8 +107,8 @@ def test_clash_error_triggers_one_rewritten_retry_and_sql_reports_what_ran(monke
     conn = _conn()
     calls = []
 
-    def fake_run(hypothesis_id, sql):
-        calls.append(sql)
+    def fake_run(hypothesis_id, sql, max_rows=None):
+        calls.append((sql, max_rows))
         if "CAST" not in sql:
             return _result(sql, error=_LIVE_ERROR)
         return _result(sql)
@@ -119,12 +119,17 @@ def test_clash_error_triggers_one_rewritten_retry_and_sql_reports_what_ran(monke
     assert len(calls) == 2
     assert "CAST('2026-08-01' AS TIMESTAMP)" in out.sql   # the receipt names what ran
 
+    # A bounded read keeps its bound through the retry: the rewritten job must not fall back to the 2,000-row cap.
+    calls.clear()
+    bounded = conn.execute_bounded("h", "SELECT COUNT(*) FROM t WHERE ts >= '2026-08-01'", 777)
+    assert bounded.error is None and [rows for _, rows in calls] == [777, 777]
+
 
 def test_a_failed_retry_leaves_the_original_error_standing(monkeypatch):
     conn = _conn()
 
     monkeypatch.setattr(conn, "_run_job",
-                        lambda h, sql: _result(sql, error=_LIVE_ERROR))
+                        lambda h, sql, max_rows=None: _result(sql, error=_LIVE_ERROR))
     out = conn.execute("h", "SELECT 1 FROM t WHERE ts >= '2026-08-01'")
     assert out.error and "No matching signature" in out.error
 
@@ -133,7 +138,7 @@ def test_other_errors_never_retry(monkeypatch):
     conn = _conn()
     calls = []
 
-    def fake_run(hypothesis_id, sql):
+    def fake_run(hypothesis_id, sql, max_rows=None):
         calls.append(sql)
         return _result(sql, error="400 Syntax error: Unexpected identifier")
 
@@ -179,7 +184,7 @@ def test_clash_with_nothing_rewritable_does_not_retry(monkeypatch):
     conn = _conn()
     calls = []
 
-    def fake_run(hypothesis_id, sql):
+    def fake_run(hypothesis_id, sql, max_rows=None):
         calls.append(sql)
         return _result(sql, error=_LIVE_ERROR)
 

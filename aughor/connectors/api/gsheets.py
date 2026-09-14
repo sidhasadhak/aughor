@@ -200,35 +200,11 @@ class GoogleSheetsConnector(Connector):
         return cols, self._duckdb.fetchall()
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        from aughor.db.connection import enforce_row_policy, security_pre, security_post
+        return self._duckdb_read(self._duckdb, hypothesis_id, sql, MAX_ROWS)
 
-        sql = sql.strip().rstrip(";")
-        if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
-            return blocked
-        sql, _rp = enforce_row_policy(self, hypothesis_id, sql)   # RBAC row-policy (Rec 7); no-op off
-        if _rp is not None:
-            return _rp
-
-        _t0 = time.monotonic()
-        try:
-            self._duckdb.execute(sql)
-            rows_raw = self._duckdb.fetchall()
-            columns = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
-            rows = [
-                [str(v) if v is not None else "NULL" for v in row]
-                for row in rows_raw[:MAX_ROWS]
-            ]
-            result = QueryResult(
-                hypothesis_id=hypothesis_id, sql=sql,
-                columns=columns, rows=rows, row_count=len(rows_raw),
-            )
-        except Exception as e:
-            result = QueryResult(
-                hypothesis_id=hypothesis_id, sql=sql,
-                columns=[], rows=[], row_count=0, error=str(e),
-            )
-        elapsed_ms = (time.monotonic() - _t0) * 1000
-        return security_post(self._connection_id, hypothesis_id, sql, result, elapsed_ms)
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return self._duckdb_read(self._duckdb, hypothesis_id, sql, max(1, max_rows))
 
     def dry_run(self, sql: str) -> tuple[bool, str]:
         try:

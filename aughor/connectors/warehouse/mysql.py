@@ -70,8 +70,28 @@ class MySQLConnection(Connector):
                     ([d[0] for d in cur.description] if cur.description else []))
             return cols, [list(r.values()) for r in rows_raw]
 
+    @staticmethod
+    def _stage_types(description) -> list[str]:
+        """Each column's type in the cross-source stage's names, from pymysql's type code and the precision and scale
+        its description carries."""
+        from aughor.connectors.base import stage_type
+        try:
+            from pymysql.constants import FIELD_TYPE
+        except ImportError:
+            return []
+        names = {code: name for name, code in vars(FIELD_TYPE).items() if name.isupper() and isinstance(code, int)}
+        return [stage_type(names.get(d[1], "") if len(d) > 1 else "",
+                           d[4] if len(d) > 4 else None, d[5] if len(d) > 5 else None) for d in description]
+
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
-        from aughor.db.connection import enforce_row_policy, security_pre, security_post
+        return self._execute(hypothesis_id, sql, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past MAX_ROWS."""
+        return self._execute(hypothesis_id, sql, max(1, max_rows))
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        from aughor.db.connection import enforce_row_policy, offer_typed_rows, security_pre, security_post
 
         sql = sql.strip().rstrip(";")
         if (blocked := security_pre(self._connection_id, hypothesis_id, sql)):
@@ -85,11 +105,14 @@ class MySQLConnection(Connector):
             with self._conn.cursor() as cur:
                 cur.execute(sql)
                 # one row past the cap: a read the cap cut counts more rows than it keeps
-                rows_raw = cur.fetchmany(MAX_ROWS + 1)
+                rows_raw = cur.fetchmany(max_rows + 1)
                 columns = list(rows_raw[0].keys()) if rows_raw else (
                     [desc[0] for desc in cur.description] if cur.description else []
                 )
-                rows = [[str(v) if v is not None else "NULL" for v in row.values()] for row in rows_raw[:MAX_ROWS]]
+                raw = [list(row.values()) for row in rows_raw]
+                offer_typed_rows(raw[:max_rows], truncated=len(raw) > max_rows,
+                                 types=self._stage_types(cur.description or []))
+                rows = [[str(v) if v is not None else "NULL" for v in row] for row in raw[:max_rows]]
             result = QueryResult(
                 hypothesis_id=hypothesis_id, sql=sql,
                 columns=columns, rows=rows, row_count=len(rows_raw),
