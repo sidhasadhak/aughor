@@ -14,10 +14,12 @@ def _tokenize(text: str) -> set[str]:
     return set(re.findall(r"[a-z][a-z0-9_]*", text.lower()))
 
 
-def _score(entry: PlaybookEntry, query_tokens: set[str]) -> float:
+def _score(entry: PlaybookEntry, query_tokens: set[str], *, learned_rates: bool = True) -> float:
     """
     Score a playbook entry against a set of query tokens.
     Returns 0 if no overlap.
+    ``learned_rates=False`` scores relevance alone: a success rate is learned from outcomes
+    on every connection, and a caller that reads one connection only does not rank by it.
     """
     metric_tokens = _tokenize(entry.trigger_metric)
     tag_tokens: set[str] = set()
@@ -39,7 +41,7 @@ def _score(entry: PlaybookEntry, query_tokens: set[str]) -> float:
         score *= 1.2
 
     # Boost proven entries
-    if entry.historical_success_rate > 0:
+    if learned_rates and entry.historical_success_rate > 0:
         score += entry.historical_success_rate * 2.0
 
     return score
@@ -48,10 +50,15 @@ def _score(entry: PlaybookEntry, query_tokens: set[str]) -> float:
 def retrieve_for_metric_and_phases(
     metric_labels: list[str],
     limit: int = 6,
+    *,
+    learned_rates: bool = True,
 ) -> list[PlaybookEntry]:
     """
     Given a list of metric/phase labels extracted from the investigation,
     return the top matching playbook entries sorted by relevance and success rate.
+    ``learned_rates=False`` sorts by relevance alone — the explorer's call, since a rate is
+    learned on every connection and the explorer does not look beyond its own (the user's
+    rule, 2026-09-14).
     """
     if not metric_labels:
         return []
@@ -69,7 +76,7 @@ def retrieve_for_metric_and_phases(
         return []
 
     entries = list_active_entries()
-    scored = [(s, e) for e in entries if (s := _score(e, query_tokens)) > 0]
+    scored = [(s, e) for e in entries if (s := _score(e, query_tokens, learned_rates=learned_rates)) > 0]
     scored.sort(key=lambda x: -x[0])
     return [e for _, e in scored[:limit]]
 

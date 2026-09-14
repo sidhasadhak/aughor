@@ -4,17 +4,41 @@ from __future__ import annotations
 import asyncio
 from typing import Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import BUILTIN_ID, get_meta
 from aughor.ontology.models import QueryTemplate
+from aughor.ontology.overrides import DOMAIN_CARRIER, ORGANISATION_SEGMENT
 from aughor.routers._shared import invalidate_schema_cache as _invalidate_schema_cache
 
 from aughor.licensing import Capability, gate
 
-router = APIRouter(tags=["ontology"])
+
+def refuse_organisation_scope(request: Request) -> None:
+    """ON-8 — a door reads or edits ONE connection's ontology by the connection id it is given, and an organisation's
+    ontology is read and edited only through the doors that take ``?domain=``. So a connection id naming an
+    organisation's tree (``org=<org>``) is refused on every door — no door reaches another organisation's declarations,
+    or edits one past the rule that people alone edit them, by naming it — and the scope the web carries an
+    organisation's ontology in (``domain:<name>``) is refused on a door that takes no ``?domain=``. The explorer's doors
+    take none: the explorer drafts one connection's ontology and reads nothing beyond it (the user's rule, 2026-09-14)."""
+    route = request.scope.get("route")
+    params = getattr(getattr(route, "dependant", None), "query_params", None) or []
+    takes_domain = any(getattr(p, "alias", "") == "domain" for p in params)
+    for name, value in request.query_params.multi_items():
+        if name != "connection_id" and not name.endswith("_connection_id"):
+            continue
+        if value.startswith(ORGANISATION_SEGMENT) or (value.startswith(DOMAIN_CARRIER) and not takes_domain):
+            explorer = str(getattr(route, "path", "")).startswith(("/ontology/explore", "/ontology/draft"))
+            raise HTTPException(status_code=400, detail=(
+                f"'{value}' is an organisation's ontology, not a connection — "
+                + ("the explorer drafts one connection's ontology and never reads beyond it; " if explorer
+                   else "this door reads or edits one connection's ontology; ")
+                + "an organisation's ontology is read and edited by people, through the doors that take ?domain="))
+
+
+router = APIRouter(tags=["ontology"], dependencies=[Depends(refuse_organisation_scope)])
 
 
 class _UseInstead(BaseModel):
@@ -1093,12 +1117,8 @@ def override_ontology_entity(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    if connection_id.startswith("domain:"):
-        # ON-8 — the web carries an organisation's ontology as `domain:<name>` where a connection id goes. This door
-        # edits one connection's graph, and would otherwise write an override for a connection nobody registered.
-        raise HTTPException(status_code=400, detail=(
-            "this door edits one connection's ontology; an organisation's ontology is edited through the doors that "
-            "take ?domain="))
+    # ON-8 — the scope the web carries an organisation's ontology in never reaches this door: it takes no ?domain=, so
+    # `refuse_organisation_scope` answers 400 first, and the store refuses the write besides.
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride, find_override
@@ -1252,7 +1272,13 @@ def unbind_ontology_entity(
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
     from aughor.ontology.bindings import binding_block
-    from aughor.ontology.overrides import OntologyOverride, delete_override, find_override, save_override
+    from aughor.ontology.overrides import (
+        OntologyOverride, delete_organisation_override, delete_override, find_override, save_organisation_override,
+        save_override,
+    )
+    # ON-8 — an organisation's ontology has its own writer, which takes a person's declaration only.
+    save, remove = ((save_organisation_override, delete_organisation_override) if domain is not None
+                    else (save_override, delete_override))
     effective = _resolve_schema(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     specs = dict((existing.fields.get("bindings") if existing else None) or {})
@@ -1267,10 +1293,10 @@ def unbind_ontology_entity(
         entries.pop(name, None)
         binding["bindings"] = binding_block(entries)
     if fields:
-        save_override(connection_id, effective, OntologyOverride(
+        save(connection_id, effective, OntologyOverride(
             target_kind="entity", target_id=entity_id, fields=fields, source=existing.source, binding=binding))
     else:
-        delete_override(connection_id, effective, "entity", entity_id)
+        remove(connection_id, effective, "entity", entity_id)
     return {"removed": True, "entity": entity_id, "binding": name}
 
 
@@ -1354,7 +1380,8 @@ def delete_declared_entity(
         connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override, find_override
+    from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
+    remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
     effective = _resolve_schema(connection_id, schema_name)
     existing = find_override(connection_id, effective, "entity", entity_id)
     if existing is None or not existing.fields.get("declared"):
@@ -1364,7 +1391,7 @@ def delete_declared_entity(
                 f"{entity_id} was built from its table, not declared — a built type is absorbed into another or "
                 "kept, never deleted"))
         raise HTTPException(status_code=404, detail=f"no declared entity '{entity_id}'")
-    delete_override(connection_id, effective, "entity", entity_id)
+    remove(connection_id, effective, "entity", entity_id)
     return {"removed": True, "entity": entity_id}
 
 
@@ -1440,14 +1467,15 @@ def delete_declared_link(
         connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override, find_override
+    from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
+    remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
     effective = _resolve_schema(connection_id, schema_name)
     existing = find_override(connection_id, effective, "link", relationship_id)
     if existing is None or not existing.fields.get("declared"):
         raise HTTPException(status_code=404, detail=(
             f"no declared link '{relationship_id}'" + (" — a found link is named, never deleted"
                                                        if existing is not None else "")))
-    delete_override(connection_id, effective, "link", relationship_id)
+    remove(connection_id, effective, "link", relationship_id)
     return {"removed": True, "link": relationship_id}
 
 

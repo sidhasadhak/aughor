@@ -75,6 +75,20 @@ def explorers_for_connection(connection_id: str, *, include_paused: bool = False
     return out
 
 
+def explorer_refusal(conn_id: str) -> str:
+    """Why the Explorer may not explore this connection, or "" when it may. The Explorer does not look beyond the
+    connection it explores (the user's rule, 2026-09-14), and a federated connection attaches other connections by
+    construction: people query it, and the Explorer skips it and says why."""
+    try:
+        from aughor.db.registry import get_conn_type
+        if get_conn_type(conn_id) == "federated":
+            return ("a federated connection attaches other connections, and the Explorer does not look beyond the "
+                    "connection it explores — explore each of the connections it attaches instead")
+    except Exception:
+        return ""
+    return ""
+
+
 async def spawn_explorer(
     conn_id: str,
     *,
@@ -92,6 +106,9 @@ async def spawn_explorer(
     Returns ``{"ok": bool, "reason": str | None, "job_id": str | None}``.
     Must be awaited from a running event loop.
     """
+    refusal = explorer_refusal(conn_id)
+    if refusal:
+        return {"ok": False, "reason": refusal, "job_id": None}
     import asyncio
     import logging
 
@@ -412,6 +429,18 @@ def kickoff_exploration(conn_id: str, schema_name: str | None = None, *, auto: b
     Thin sync wrapper over ``spawn_explorer``. Must be called from within a running event loop.
     """
     from aughor.explorer.models import ExplorationPhase
+
+    refusal = explorer_refusal(conn_id)
+    if refusal:
+        import logging
+        logging.getLogger(__name__).info("kickoff_exploration: not exploring %s — %s", conn_id, refusal)
+        try:
+            from aughor.kernel.ledger import Ledger
+            Ledger.default().emit("exploration.skipped",
+                                  {"reason": "federated_connection", "connection_id": conn_id}, conn_id=conn_id)
+        except Exception:
+            logging.getLogger(__name__).debug("exploration.skipped emit failed", exc_info=True)
+        return False
 
     if auto:
         from aughor.kernel.agents import is_enabled

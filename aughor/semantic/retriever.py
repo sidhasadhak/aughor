@@ -64,17 +64,17 @@ def build_schema_index(path=None, connection_id: str = "", schema_name: str = ""
     connection's index can neither overwrite nor answer for another's.
     """
     try:
-        return _build(path, scope_key(connection_id, schema_name))
+        return _build(path, scope_key(connection_id, schema_name), connection_id)
     except Exception:
         return 0
 
 
-def _build(path=None, scope: str = "") -> int:
+def _build(path=None, scope: str = "", connection_id: str = "") -> int:
     from aughor.semantic.glossary import load_merged_glossary
     from aughor.semantic.embedder import embed
     from aughor.semantic.vector_store import ensure_collection, upsert
 
-    tables = load_merged_glossary(path).get("tables", {})
+    tables = load_merged_glossary(path, connection_id=connection_id or None).get("tables", {})   # its words only
     if not tables:
         return 0
 

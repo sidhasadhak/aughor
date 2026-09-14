@@ -134,19 +134,24 @@ def _asserted_registered(finding_text: str, metrics: list) -> list:
     return out
 
 
-def drifted_registered_metric(finding_text: str, sql: str) -> str | None:
+def drifted_registered_metric(finding_text: str, sql: str, connection_id: str = "") -> str | None:
     """The deeper coherence layer under the alias↔claim signal: a finding that ASSERTS a
     REGISTERED metric whose SQL structurally DRIFTS from that metric's governed formula —
     caught even with no revealing result alias (the alias guard needs one). High-precision:
     only registered metrics with a governed formula; the governed signature is checked
     alias-insensitively (so a correct prefixed query is never flagged); and a hard reject
     fires ONLY when a wrong-usage COLUMN the metric warns against is actually present (so a
-    merely differently-written correct query is never dropped). Returns a reason or None."""
+    merely differently-written correct query is never dropped). Returns a reason or None.
+
+    ``connection_id`` scopes the registry to the connection the finding was read on — its own
+    metrics and the global ones it has not scoped, never a metric another connection scoped
+    (the user's rule, 2026-09-14: the explorer does not look beyond its connection)."""
     if not finding_text or not sql:
         return None
     try:
         from aughor.semantic.metrics import list_metrics
-        metrics = [m for m in list_metrics() if (getattr(m, "sql", "") or "").strip()]
+        metrics = [m for m in list_metrics(connection_id=connection_id or None)
+                   if (getattr(m, "sql", "") or "").strip()]
     except Exception as _e:
         logger.debug("formula-drift: registry unavailable: %s", _e)
         return None
@@ -291,9 +296,11 @@ def metric_vocab_for(conn, industry: str = "") -> dict:
             ind = _industry_for_conn(getattr(conn, "_connection_id", "") or "")
         from aughor.business_profile.metric_kb import metric_vocabulary
         vocab = {t: (label, formula) for (t, label, formula) in metric_vocabulary(ind)}
-        try:    # org-registered metrics (governed) extend the vocabulary by name + label
+        try:    # registered metrics (governed) extend the vocabulary by name + label: this connection's own and the
+            # global ones it has not scoped — never another connection's (the explorer reads one connection)
             from aughor.semantic.metrics import list_metrics
-            for m in list_metrics():
+            own = (getattr(conn, "_connection_id", "") or None) if conn is not None else None
+            for m in list_metrics(connection_id=own):
                 label = getattr(m, "label", "") or getattr(m, "name", "")
                 for tok in (getattr(m, "name", ""), label):
                     t = _kbnorm(tok)

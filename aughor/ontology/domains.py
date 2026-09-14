@@ -16,7 +16,12 @@ declared on whichever connections hold their rows.
 * **The doors' bodies** — declaring a type, binding a source, declaring a link, and measuring them all again. Each
   reads its source on that source's own connection, and a binding or link whose two sides live on two connections is
   counted on both, under the verdict it would meet on one (`bindings.measure_binding`, `declared.measure_declared_link`).
-  A column borrows its role from its own source's catalogue when it is declared, and the declaration keeps the copy.
+  A column borrows what the builder measured of it (its role and unit) from its own source's catalogue when it is
+  declared, and the declaration keeps the copy.
+* **Edited by people only** — the user's rule, 2026-09-14. A declaration here is a person's: one that says it is a
+  model's is refused before anything is read, the tree is written by `overrides.save_organisation_override` alone
+  (which refuses anything but a person's declaration too), and a copied column profile carries no words a model or the
+  explorer wrote. The explorer drafts inside one connection's ontology and never reads this one.
 """
 from __future__ import annotations
 
@@ -26,6 +31,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
 from aughor.ontology.models import OntologyGraph
+from aughor.ontology.overrides import ORGANISATION_SEGMENT
 from aughor.ontology.sources import binding_source, entity_source, stamp_traversals
 
 logger = logging.getLogger(__name__)
@@ -34,8 +40,6 @@ logger = logging.getLogger(__name__)
 DEFAULT_DOMAIN = "default"
 #: A domain's name: the second segment of ``org/domain``, and a directory of the overrides tree.
 DOMAIN_PATTERN = re.compile(r"^[a-z][a-z0-9_-]{0,39}$")
-#: The overrides tree's first segment for an organisation's ontology.
-_TREE_PREFIX = "org="
 
 #: ``open_source(connection_id)`` → an open connection to that registered source. Whoever opens one closes it.
 Opener = Callable[[str], Any]
@@ -63,7 +67,7 @@ class Domain:
     @property
     def tree(self) -> tuple[str, str]:
         """The two segments its declarations are kept under in the overrides tree."""
-        return f"{_TREE_PREFIX}{self.org}", self.name
+        return f"{ORGANISATION_SEGMENT}{self.org}", self.name
 
 
 def resolve_domain(name: Optional[str] = None, org: Optional[str] = None) -> Domain:
@@ -79,7 +83,7 @@ def domain_names(org: Optional[str] = None) -> list[str]:
     """The domains an organisation has declared anything in."""
     from aughor.ontology.overrides import override_scopes
     from aughor.org.context import current_org_id
-    return override_scopes(f"{_TREE_PREFIX}{org or current_org_id()}")
+    return override_scopes(f"{ORGANISATION_SEGMENT}{org or current_org_id()}")
 
 
 def domain_graph(domain: Domain) -> OntologyGraph:
@@ -130,15 +134,27 @@ def _schema_of(table: Optional[str]) -> str:
     return parts[-2] if len(parts) >= 2 else ""
 
 
+def _persons_only(spec: dict) -> None:
+    """The user's rule (2026-09-14): an organisation's ontology is edited by people only. A declaration that says it is a
+    model's — an ``origin`` other than human, or a model's provenance — is refused before anything is read: a model
+    drafts, and a person confirms, inside one connection's ontology."""
+    origin = str(spec.get("origin") or "human")
+    if origin != "human" or str(spec.get("provenance") or "").strip():
+        raise DomainRefused(400, (
+            "an organisation's ontology is edited by people only — a model's proposal is drafted and confirmed in one "
+            f"connection's ontology, never here (this declaration's origin is '{origin}')"))
+
+
 def declare_entity(domain: Domain, spec: dict, open_source: Opener):
     """Declare a type in the domain. The source holding one row per object is read for its columns ON ITS OWN
-    connection and its key counted there before anything is written; its columns borrow their roles from that
-    connection's catalogue, and the declaration keeps the copy. Returns the saved override."""
+    connection and its key counted there before anything is written; its columns borrow what the builder measured of
+    them from that connection's catalogue, and the declaration keeps the copy. Returns the saved override."""
     from aughor.ontology.bindings import column_profiles, describe_with, profile_record
     from aughor.ontology.declared import (
         backs_existing_type, entity_fields, entity_spec_problem, measure_declared_backing,
     )
-    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.ontology.overrides import OntologyOverride, save_organisation_override
+    _persons_only(spec)
     problem = entity_spec_problem(spec)
     if problem:
         raise DomainRefused(400, problem)
@@ -169,7 +185,7 @@ def declare_entity(domain: Domain, spec: dict, open_source: Opener):
                                                       entry.get("columns") or {}, fields["backing"].get("sql")))
     ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields, source=fields["origin"],
                           binding={"backing": entry})
-    save_override(*domain.tree, ov)
+    save_organisation_override(*domain.tree, ov)
     return ov
 
 
@@ -179,7 +195,8 @@ def bind_source(domain: Domain, entity_id: str, name: str, spec: dict, open_sour
     the objects across both. Across two connections a binding is read by key, one row per object, so only a static one
     binds. ``schema_name`` qualifies a bare table. Returns the saved override."""
     from aughor.ontology.bindings import bind_binding, binding_block, declared_bindings, describe_with, measure_binding
-    from aughor.ontology.overrides import OntologyOverride, find_override, save_override
+    from aughor.ontology.overrides import OntologyOverride, find_override, save_organisation_override
+    _persons_only(spec)
     graph = domain_graph(domain)
     entity = graph.entities.get(entity_id)
     if entity is None:
@@ -223,7 +240,7 @@ def bind_source(domain: Domain, entity_id: str, name: str, spec: dict, open_sour
         ov = OntologyOverride(target_kind="entity", target_id=entity_id, fields=fields,
                               source=(existing.source if existing else "human"),
                               binding={**kept, "bindings": binding_block(entries)})
-        save_override(*domain.tree, ov)
+        save_organisation_override(*domain.tree, ov)
     finally:
         objects.close()
         if rows is not objects:
@@ -238,7 +255,8 @@ def declare_link(domain: Domain, spec: dict, open_source: Opener):
     from aughor.ontology.declared import (
         link_fields, link_id, link_problem_on_graph, link_spec_problem, measure_declared_link,
     )
-    from aughor.ontology.overrides import OntologyOverride, save_override
+    from aughor.ontology.overrides import OntologyOverride, save_organisation_override
+    _persons_only(spec)
     problem = link_spec_problem(spec)
     if problem:
         raise DomainRefused(400, problem)
@@ -263,17 +281,20 @@ def declare_link(domain: Domain, spec: dict, open_source: Opener):
         raise DomainRefused(400, f"link '{fields['name']}' did not bind: {entry.get('note')}")
     ov = OntologyOverride(target_kind="link", target_id=link_id(fields), fields=fields, source=fields["origin"],
                           binding={"link": entry})
-    save_override(*domain.tree, ov)
+    save_organisation_override(*domain.tree, ov)
     return ov
 
 
 def measure_domain(domain: Domain, open_source: Opener) -> dict:
     """Count every declaration in the domain again — each type's key, each binding against its objects, each link's two
     sides — on the connections they name, and record the counts on their files so the next read carries them. The
-    types first, because bindings and links are counted against the objects. No model call."""
-    from aughor.ontology.bindings import binding_block, declared_bindings, describe_with, measure_binding
+    types first, because bindings and links are counted against the objects. No model call. A copied column profile is
+    kept as the rule has it now: what the builder measured, and no words."""
+    from aughor.ontology.bindings import (
+        binding_block, declared_bindings, describe_with, measure_binding, profile_record, recorded_profiles,
+    )
     from aughor.ontology.declared import measure_declared_backing, measure_declared_link
-    from aughor.ontology.overrides import load_overrides, save_override
+    from aughor.ontology.overrides import load_overrides, save_organisation_override
     opened: dict[str, Any] = {}
 
     def source(connection_id: str) -> Any:
@@ -294,9 +315,9 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
             db = source(connection)
             entry = measure_declared_backing(db, ov.fields, describe_with(db))
             if "profiles" in kept:
-                entry["profiles"] = kept["profiles"]
+                entry["profiles"] = profile_record(recorded_profiles(kept["profiles"]))
             ov.binding["backing"] = entry
-            save_override(*domain.tree, ov)
+            save_organisation_override(*domain.tree, ov)
             out["entities"].append({"entity": ov.target_id, "connection_id": connection, "bound": entry.get("bound"),
                                     "unique": entry.get("unique"), "rows": entry.get("rows"),
                                     "note": entry.get("unique_note") or entry.get("note") or ""})
@@ -315,11 +336,14 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
                                         object_db=None if where == home else source(home))
                     entries[binding.name] = {**entries[binding.name],
                                              "measured": {"spec": entries[binding.name]["spec"], **m.counts()}}
+                    if "profiles" in entries[binding.name]:
+                        entries[binding.name]["profiles"] = profile_record(
+                            recorded_profiles(entries[binding.name]["profiles"]))
                     out["bindings"].append({"binding": f"{entity.id}.{binding.name}", "connection_id": where,
                                             "cross_source": where != home, **m.counts()})
                 if built:
                     ov.binding["bindings"] = binding_block(entries)
-                    save_override(*domain.tree, ov)
+                    save_organisation_override(*domain.tree, ov)
             elif ov.target_kind == "link" and ov.fields.get("declared"):
                 a = graph.entities.get(str(ov.fields.get("from_entity") or ""))
                 b = graph.entities.get(str(ov.fields.get("to_entity") or ""))
@@ -329,7 +353,7 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
                 entry = measure_declared_link(source(left_source), graph, ov.fields,
                                               to_db=None if left_source == right_source else source(right_source))
                 ov.binding["link"] = entry
-                save_override(*domain.tree, ov)
+                save_organisation_override(*domain.tree, ov)
                 out["links"].append({"link": ov.target_id,
                                      "traversal": "cross-source" if left_source != right_source else "join",
                                      "measured_cardinality": entry.get("measured_cardinality"),

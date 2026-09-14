@@ -186,7 +186,7 @@ def _intelligence(conn, base: str) -> str:
         from aughor.ontology.builder import render_ontology_annotations
         from aughor.ontology.store import get_or_build_ontology, save_ontology
         from aughor.semantic.glossary import load_merged_glossary
-        _glossary = load_merged_glossary()
+        _glossary = load_merged_glossary(connection_id=cid or None)   # this connection's words only
         _schema_label = getattr(conn, "_schema_name", None) or "default"
         _stage = "ontology"
         graph = get_or_build_ontology(

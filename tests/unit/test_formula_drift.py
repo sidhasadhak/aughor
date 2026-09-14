@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.explorer.agent import verify_insight
+from aughor.explorer.agent import verify_insight as emission_gate
 from aughor.explorer.metric_coherence import (
     drifted_registered_metric, _asserted_registered, _wrong_usage_idents, _alias_stripped_norm,
 )
@@ -48,8 +48,37 @@ def test_asserted_requires_a_value_in_the_clause():
 
 def _drift_via_stub(finding, sql, monkeypatch):
     # list_metrics is imported inside the function from its source module — patch there.
-    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda: [_REVENUE])
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
     return drifted_registered_metric(finding, sql)
+
+
+def test_the_registry_it_judges_by_is_the_connection_the_finding_was_read_on(monkeypatch):
+    # The explorer does not look beyond its connection (the user's rule, 2026-09-14): a metric another connection
+    # scoped never judges this connection's finding.
+    asked = []
+
+    def scoped(connection_id=None):
+        asked.append(connection_id)
+        return [_REVENUE] if connection_id == "conn_a" else []
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", scoped)
+    finding, sql = "Revenue was 4.1M last month.", "SELECT SUM(line_total) FROM order_items"
+    assert drifted_registered_metric(finding, sql, "conn_a")
+    assert drifted_registered_metric(finding, sql, "conn_b") is None
+    assert asked == ["conn_a", "conn_b"]
+
+
+def test_the_emission_gate_hands_the_drift_check_the_connection_it_read(monkeypatch):
+    from aughor.explorer import verify as V
+    seen = []
+
+    def drift(finding_text, sql, connection_id=""):
+        seen.append(connection_id)
+        return "metric formula drift: recorded"
+    monkeypatch.setattr(V, "drifted_registered_metric", drift)
+    ok, reason = emission_gate([[4_100_000.0]], finding_text="Total revenue reached $4.1M.",
+                               sql="SELECT SUM(line_total) AS r FROM order_items", columns=["r"],
+                               conn=SimpleNamespace(_connection_id="conn_a"))
+    assert (ok, reason, seen) == (False, "metric formula drift: recorded", ["conn_a"])
 
 
 def test_line_total_grain_drift_is_flagged(monkeypatch):
@@ -82,7 +111,7 @@ def test_gate_rejects_a_line_total_revenue_finding_real_registry():
         import pytest
         pytest.skip("no governed 'revenue' metric registered in this env")
     rows = [[4_100_000.0]]
-    ok, reason = verify_insight(
+    ok, reason = emission_gate(
         rows, finding_text="Total revenue reached $4.1M.",
         sql="SELECT SUM(line_total) AS r FROM order_items", columns=["r"])
     assert ok is False and "formula drift" in reason
@@ -90,7 +119,7 @@ def test_gate_rejects_a_line_total_revenue_finding_real_registry():
 
 def test_gate_accepts_governed_revenue_real_registry():
     rows = [[4_100_000.0]]
-    ok, _ = verify_insight(
+    ok, _ = emission_gate(
         rows, finding_text="Total revenue reached $4.1M.",
         sql="SELECT SUM(o.total_amount) AS r FROM orders o", columns=["r"])
     assert ok is True

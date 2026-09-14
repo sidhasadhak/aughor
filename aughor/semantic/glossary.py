@@ -56,6 +56,11 @@ def _read_yaml(p: Path) -> dict:
         return yaml.safe_load(f) or {}
 
 
+def _generated(entry: Any) -> bool:
+    """Whether a glossary entry is one a model wrote (autoseed marks it ``auto_generated``)."""
+    return isinstance(entry, dict) and bool(entry.get("auto_generated"))
+
+
 def _load_raw(path: Path | None = None) -> dict:
     """The glossary as one dict, re-joined from its two files.
 
@@ -81,10 +86,22 @@ def _load_raw(path: Path | None = None) -> dict:
         return authored          # nothing split out (yet, or ever) — byte-identical behaviour
 
     out = dict(generated)
-    out.update({k: v for k, v in authored.items() if k != "tables"})
+    out.update({k: v for k, v in authored.items() if k not in ("tables", CONNECTIONS_KEY)})
     tables = dict(generated.get("tables") or {})
     tables.update(authored.get("tables") or {})
     out["tables"] = tables
+    # A connection's section is re-joined the same way, per connection and per table: what a model wrote for that
+    # connection is in the sidecar, what a person wrote is in the tracked file, and a person's words win.
+    sections: dict = {}
+    for source in (generated, authored):
+        for cid, section in (source.get(CONNECTIONS_KEY) or {}).items():
+            section = section or {}
+            mine = sections.setdefault(cid, {})
+            mine.update({k: v for k, v in section.items() if k != "tables"})
+            if "tables" in section or "tables" in mine:
+                mine["tables"] = {**(mine.get("tables") or {}), **(section.get("tables") or {})}
+    if sections:
+        out[CONNECTIONS_KEY] = sections
     return out
 
 
@@ -169,6 +186,28 @@ def _align_keys(dbt_tables: dict, yaml_keys: set[str]) -> dict:
     return aligned
 
 
+def _connection_layers(path: Path | None, connection_id: str) -> tuple[dict, dict, dict]:
+    """``(glossary, a model's words, a person's words)`` as ONE connection reads them.
+
+    A person's words are the global entries with the connection's own section merged over them (O2 — the specific
+    answer wins). A model's words are only those written for THIS connection: a model-written global entry names no
+    connection, so it may describe another connection's table of the same name, and no connection reads it until
+    autoseed writes it again for the connection that does. The user's rule (2026-09-14): the explorer does not look
+    beyond its connection.
+    """
+    data = _load_raw(path)
+    section = connection_overlay(data, connection_id)
+    own = section.get("tables") or {}
+    peoples = {t: e for t, e in (data.get("tables") or {}).items() if not _generated(e)}
+    for table, entry in own.items():
+        if not _generated(entry):
+            peoples[table] = _deep_merge(peoples.get(table) or {}, entry)
+    models = {t: e for t, e in own.items() if _generated(e)}
+    rest = _deep_merge({k: v for k, v in data.items() if k not in ("tables", CONNECTIONS_KEY)},
+                       {k: v for k, v in section.items() if k != "tables"})
+    return {**rest, "tables": {**models, **peoples}}, models, peoples
+
+
 def load_merged_glossary(path: Path | None = None,
                          connection_id: str | None = None) -> dict:
     """
@@ -179,16 +218,22 @@ def load_merged_glossary(path: Path | None = None,
     The dbt layer is skipped if AUGHOR_DBT_MANIFEST is not configured.
     Entries written by autoseed (auto_generated: true) are treated as the
     weakest layer — dbt and manual YAML both override them.
+
+    With ``connection_id`` the glossary is that connection's (`_connection_layers`): a person's
+    global words, the connection's own section, and a model's words written for that
+    connection only — never a model-written global entry, which names no connection.
     """
     from aughor.semantic.dbt import load_dbt_glossary
 
     dbt = load_dbt_glossary()
-    yaml_data = load_glossary(path, connection_id)   # O2: connection overlay wins
-    yaml_tables = yaml_data.get("tables", {})
-
-    # Split YAML entries: auto-generated (weak) vs manually provided (strong)
-    auto_tables:   dict = {t: e for t, e in yaml_tables.items() if e.get("auto_generated")}
-    manual_tables: dict = {t: e for t, e in yaml_tables.items() if not e.get("auto_generated")}
+    if connection_id:
+        yaml_data, auto_tables, manual_tables = _connection_layers(path, connection_id)
+    else:
+        yaml_data = load_glossary(path)
+        yaml_tables = yaml_data.get("tables", {})
+        # Split YAML entries: auto-generated (weak) vs manually provided (strong)
+        auto_tables = {t: e for t, e in yaml_tables.items() if e.get("auto_generated")}
+        manual_tables = {t: e for t, e in yaml_tables.items() if not e.get("auto_generated")}
     dbt_tables:    dict = _align_keys(dbt.get("tables", {}) if dbt else {},
                                       set(auto_tables) | set(manual_tables))
 
@@ -277,15 +322,43 @@ def save_glossary(data: dict, path: Path | None = None) -> None:
     authored_p = Path(path) if path else _default_path()
     tables = (data or {}).get("tables") or {}
 
-    generated = {t: e for t, e in tables.items() if isinstance(e, dict) and e.get("auto_generated")}
+    generated = {t: e for t, e in tables.items() if _generated(e)}
     authored = {t: e for t, e in tables.items() if t not in generated}
 
-    rest = {k: v for k, v in (data or {}).items() if k != "tables"}
-    _write_yaml(authored_p, {**rest, "tables": authored} if tables or rest else dict(data or {}))
+    # A connection's section splits the same way: what a model wrote for THAT connection goes to the sidecar under the
+    # same connection, and what a person wrote stays in the tracked file.
+    sections_generated: dict = {}
+    sections_authored: dict = {}
+    for cid, section in ((data or {}).get(CONNECTIONS_KEY) or {}).items():
+        section = section or {}
+        own = section.get("tables") or {}
+        written = {t: e for t, e in own.items() if _generated(e)}
+        if written:
+            sections_generated[cid] = {"tables": written}
+        kept = {k: v for k, v in section.items() if k != "tables"}
+        if "tables" in section and (len(written) < len(own) or not kept):
+            kept["tables"] = {t: e for t, e in own.items() if t not in written}
+        if kept and (kept.get("tables") or any(k != "tables" for k in kept) or not written):
+            sections_authored[cid] = kept
+
+    rest: dict = {}
+    for k, v in (data or {}).items():
+        if k == "tables":
+            continue
+        if k == CONNECTIONS_KEY:
+            if sections_authored:
+                rest[k] = sections_authored
+            continue
+        rest[k] = v
+    _write_yaml(authored_p, {**rest, "tables": authored} if tables or rest or sections_generated
+                else dict(data or {}))
 
     gen_p = generated_path(authored_p)
-    if generated:
-        _write_yaml(gen_p, {"tables": generated})
+    if generated or sections_generated:
+        payload: dict = {"tables": generated}
+        if sections_generated:
+            payload[CONNECTIONS_KEY] = sections_generated
+        _write_yaml(gen_p, payload)
     elif gen_p.exists():
         # The last generated entry was removed — leaving a stale sidecar would make it
         # reappear on the next read.
@@ -330,7 +403,8 @@ def update_column(table: str, column: str, description: str | None = None,
 
 # ── Enrichment ────────────────────────────────────────────────────────────────
 
-def apply_glossary(schema_str: str, path: Path | None = None, schema: str | None = None) -> str:
+def apply_glossary(schema_str: str, path: Path | None = None, schema: str | None = None,
+                   connection_id: str | None = None) -> str:
     """
     Enrich a raw schema string with business glossary annotations.
 
@@ -340,8 +414,11 @@ def apply_glossary(schema_str: str, path: Path | None = None, schema: str | None
 
     Falls back to the unmodified schema_str if the glossary is empty or
     the YAML library is not installed.
+
+    ``connection_id`` is the connection whose schema this is: its words are a person's global
+    entries and that connection's own, never a model's words written for another connection.
     """
-    glossary = load_merged_glossary(path)
+    glossary = load_merged_glossary(path, connection_id)
     tables_meta: dict[str, Any] = glossary.get("tables", {})
     if not tables_meta:
         return schema_str

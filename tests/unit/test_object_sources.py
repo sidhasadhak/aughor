@@ -610,3 +610,134 @@ def test_one_connections_ontology_refuses_a_source_on_another_and_says_where_it_
                        json={"display_property": "order_id"})
     assert stray.status_code == 400 and "?domain=" in stray.json()["detail"]
     assert not (OV._ROOT / "domain_default").exists()
+
+
+# ── edited by people only, and never reached by naming its tree (the user's rules, 2026-09-14) ─────────────────────
+
+
+def test_an_organisations_ontology_takes_a_persons_declaration_only(sources):
+    domain = resolve_domain()
+    order = typed("Order", "orders", "order_id", sources["shop"])
+    with pytest.raises(DomainRefused) as proposed:
+        declare_entity(domain, {**order, "origin": "model"}, open_connection_for)
+    with pytest.raises(DomainRefused) as attributed:
+        declare_entity(domain, {**order, "provenance": "model:some-model@1"}, open_connection_for)
+    assert (proposed.value.status, attributed.value.status) == (400, 400)
+    assert "edited by people only" in proposed.value.detail
+    assert domain_graph(domain).entities == {}
+    declare_entity(domain, order, open_connection_for)
+    declare_entity(domain, typed("Customer", "customers", "customer_id", sources["crm"]), open_connection_for)
+    with pytest.raises(DomainRefused) as link:
+        declare_link(domain, {**PLACED_BY, "origin": "model"}, open_connection_for)
+    with pytest.raises(DomainRefused) as binding:
+        bind_source(domain, "Order", "payment", {**PAYMENT, "connection_id": sources["crm"], "origin": "model"},
+                    open_connection_for)
+    assert (link.value.status, binding.value.status) == (400, 400)
+    graph = domain_graph(domain)
+    assert graph.relationships == {} and not graph.entities["Order"].bindings
+    assert {e.origin for e in graph.entities.values()} == {"human"}
+
+
+def test_only_the_organisations_own_writer_writes_its_tree_and_only_a_persons_declaration(sources):
+    domain = resolve_domain()
+    declare_entity(domain, typed("Order", "orders", "order_id", sources["shop"]), open_connection_for)
+    conn, name = domain.tree
+    mine = OV.find_override(conn, name, "entity", "Order")
+    for scope in (conn, "domain:default"):
+        with pytest.raises(ValueError):
+            OV.save_override(scope, name, mine)
+        with pytest.raises(ValueError):
+            OV.delete_override(scope, name, "entity", "Order")
+    with pytest.raises(ValueError):
+        OV.save_organisation_override(sources["shop"], "ecommerce", mine)    # one connection's scope is not an organisation's
+    proposals = (
+        mine.model_copy(update={"fields": {**mine.fields, "origin": "model"}}),
+        mine.model_copy(update={"fields": {**mine.fields, "provenance": "model:some-model@1"}}),
+        mine.model_copy(update={"source": "pack"}),
+        mine.model_copy(update={"binding": {**mine.binding, "bindings": {"entries": {
+            "payment": {"spec": PAYMENT, "bound": True, "origin": "model", "provenance": "model:some-model@1"}}}}}),
+    )
+    for ov in proposals:
+        with pytest.raises(ValueError, match="edited by people only"):
+            OV.save_organisation_override(conn, name, ov)
+    assert OV.find_override(conn, name, "entity", "Order") == mine
+    assert not (OV._ROOT / "domain_default").exists()
+    assert OV.delete_organisation_override(conn, name, "entity", "Order") is True
+    assert domain_graph(domain).entities == {}
+
+
+def test_no_door_reaches_an_organisations_ontology_by_naming_its_tree_as_a_connection(client, sources):
+    assert client.post("/ontology/entities", params={"domain": "default"},
+                       json=typed("Order", "orders", "order_id", sources["shop"])).status_code == 200
+    tree = {"connection_id": "org=default", "schema_name": "default"}
+    answers = {
+        "list": client.get("/ontology/overrides", params=tree),
+        "withdraw": client.delete("/ontology/overrides/entity/Order", params=tree),
+        "edit": client.put("/ontology/entities/Order", params=tree, json={"display_property": "order_id"}),
+        "declare": client.post("/ontology/entities", params=tree,
+                               json=typed("Buyer", "customers", "customer_id", sources["crm"])),
+        "unbind": client.delete("/ontology/entities/Order/bindings/payment", params=tree),
+        "map": client.get("/object-types", params=tree),
+        "query": client.post("/objects/query", params=tree, json=QUERIES["orders by customer country"]),
+        "compare": client.get("/ontology/draft", params={"connection_id": sources["shop"], "schema_name": "ecommerce",
+                                                         "reference_connection_id": "org=default"}),
+    }
+    assert {what: r.status_code for what, r in answers.items()} == dict.fromkeys(answers, 400)
+    assert all("?domain=" in r.json()["detail"] for r in answers.values())
+    assert (OV._ROOT / "org=default" / "default" / "entity" / "Order.yaml").exists()
+    # the scope the web carries an organisation's ontology in reaches a door that takes ?domain=, and no other
+    carried = {"connection_id": "domain:default", "domain": "default"}
+    assert [t["id"] for t in client.get("/object-types", params=carried).json()["object_types"]] == ["Order"]
+    assert client.put("/ontology/entities/Order", params=carried,
+                      json={"display_property": "order_id"}).status_code == 400
+    assert not (OV._ROOT / "domain_default").exists()
+
+
+def test_the_explorer_is_refused_an_organisations_ontology_before_any_model_is_asked(client, sources, monkeypatch):
+    import aughor.llm.provider as provider
+
+    def no_model(*_args, **_kwargs):
+        raise AssertionError("the explorer asked a model about an organisation's ontology")
+    monkeypatch.setattr(provider, "get_provider", no_model)
+    assert client.post("/ontology/entities", params={"domain": "default"},
+                       json=typed("Order", "orders", "order_id", sources["shop"])).status_code == 200
+    before = {p: p.read_text() for p in OV._ROOT.rglob("*.yaml")}
+    for scope in ({"connection_id": "domain:default", "domain": "default"}, {"connection_id": "domain:default"},
+                  {"connection_id": "org=default", "schema_name": "default"}):
+        explored = client.post("/ontology/explore", params=scope)
+        confirmed = client.post("/ontology/draft/confirm", params=scope, json={"all": True, "actor": "a person"})
+        drafted = client.get("/ontology/draft", params=scope)
+        assert (explored.status_code, confirmed.status_code, drafted.status_code) == (400, 400, 400), scope
+        assert "the explorer drafts one connection's ontology" in explored.json()["detail"]
+    assert {p: p.read_text() for p in OV._ROOT.rglob("*.yaml")} == before
+
+
+def test_a_copied_column_profile_keeps_what_was_measured_and_no_words(sources):
+    from aughor.ontology.bindings import PROFILE_COPIED, profile_record, recorded_profiles
+    from aughor.ontology.models import EntityProperty
+    domain = resolve_domain()
+    declare_entity(domain, typed("Order", "orders", "order_id", sources["shop"]), open_connection_for)
+    conn, name = domain.tree
+    kept = OV.find_override(conn, name, "entity", "Order").binding["backing"]["profiles"]
+    assert (kept["total_amount"]["measure_grain"], kept["total_amount"]["unit"]) == ("per_unit", "USD")
+    assert all(set(profile) <= set(PROFILE_COPIED) for profile in kept.values())   # the catalogue describes order_id
+    worded = EntityProperty(name="note", semantic_type="dimension", description="what a model wrote",
+                            null_meaning="what the explorer said a null means")
+    assert profile_record({"note": worded}) == {"note": {"name": "note", "semantic_type": "dimension"}}
+    older = {**kept, "total_amount": {**kept["total_amount"], "description": "what a model wrote"}}
+    assert recorded_profiles(older)["total_amount"].description == ""
+    ov = OV.find_override(conn, name, "entity", "Order")
+    ov.binding["backing"]["profiles"] = older
+    OV.save_organisation_override(conn, name, ov)
+    measure_domain(domain, open_connection_for)
+    cleaned = OV.find_override(conn, name, "entity", "Order").binding["backing"]["profiles"]
+    assert "description" not in cleaned["total_amount"] and cleaned["total_amount"]["unit"] == "USD"
+    # a binding's copy, made before the rule, is kept to what was measured the next time it is counted
+    bind_source(domain, "Order", "payment", {**PAYMENT, "connection_id": sources["crm"]}, open_connection_for)
+    ov = OV.find_override(conn, name, "entity", "Order")
+    ov.binding["bindings"]["entries"]["payment"]["profiles"] = {
+        "amount": {"name": "amount", "semantic_type": "measure", "description": "what a model wrote"}}
+    OV.save_organisation_override(conn, name, ov)
+    measure_domain(domain, open_connection_for)
+    payment = OV.find_override(conn, name, "entity", "Order").binding["bindings"]["entries"]["payment"]
+    assert payment["profiles"] == {"amount": {"name": "amount", "semantic_type": "measure"}}

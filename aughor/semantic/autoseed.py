@@ -4,7 +4,9 @@ Auto-Seed Glossary — Milestone 1a+.
 When get_schema() encounters tables with no glossary entry, this module
 calls the LLM once per missing table to infer business descriptions from
 column names and sample values, then writes the results back to
-data/glossary.yaml marked auto_generated: true.
+data/glossary.yaml marked auto_generated: true — in the section of the
+connection whose tables it read (the explorer does not look beyond its
+connection, the user's rule of 2026-09-14), never as a global entry.
 
 User-provided entries always take precedence — autoseed never overwrites
 an existing entry. The operation is idempotent: once a table is seeded
@@ -198,6 +200,7 @@ def seed_missing_tables(raw_schema: str, schema: str | None = None,
     """
     Seed glossary entries for tables not yet in glossary.yaml.
     Called by get_schema() before apply_glossary().
+    A model's words are written for ``connection_id`` alone; with no connection nothing is seeded.
     Returns True if any new entries were written.
     Never raises — failures are silent so schema load is never blocked.
 
@@ -222,16 +225,27 @@ def seed_missing_tables(raw_schema: str, schema: str | None = None,
 def _seed(raw_schema: str, schema: str | None = None,
           connection_id: str | None = None, conn=None) -> bool:
     from aughor.llm.provider import get_provider
-    from aughor.semantic.glossary import canonical_key, load_merged_glossary, lookup_table
+    from aughor.semantic.glossary import CONNECTIONS_KEY, canonical_key, load_merged_glossary, lookup_table
     from aughor.db.schema_cache import compute_fingerprint, is_complete, mark_complete, scope_key
 
-    # Check the fully merged glossary (manual + dbt) so we never re-seed
-    # tables that dbt already covers.
-    merged = load_merged_glossary().get("tables") or {}
+    # A model's words are written for the connection whose tables it read, or not at all: an entry naming no
+    # connection may describe another connection's table of the same name, and the explorer does not look beyond
+    # its connection (the user's rule, 2026-09-14).
+    if not connection_id:
+        return False
 
-    # But write new entries only to the YAML file (not dbt manifest)
+    # Check what THIS connection reads — a person's words, dbt, and its own section — so we never re-seed a table it
+    # already has words for, and do seed one that only another connection (or no connection) has words for.
+    merged = load_merged_glossary(connection_id=connection_id).get("tables") or {}
+
+    # But write new entries only to the YAML file (not dbt manifest), in this connection's own section
     glossary = load_glossary()
-    yaml_tables = glossary.get("tables") or {}
+    sections = glossary.get(CONNECTIONS_KEY) or {}
+    glossary[CONNECTIONS_KEY] = sections
+    section = sections.get(connection_id) or {}
+    sections[connection_id] = section
+    yaml_tables = section.get("tables") or {}
+    section["tables"] = yaml_tables
     table_blocks = _parse_table_blocks(raw_schema)
     # Resolve per schema rather than by exact key: the store holds BOTH bare and qualified
     # keys (the connectors disagree on the TABLE: header), so an exact-set check re-seeded
@@ -265,7 +279,7 @@ def _seed(raw_schema: str, schema: str | None = None,
         return False
 
     provider = get_provider()
-    tables_meta: dict = glossary.setdefault("tables", {})
+    tables_meta: dict = yaml_tables   # this connection's own section
     wrote_any = False
 
     for table_name, schema_block in missing.items():
@@ -309,7 +323,7 @@ def _seed(raw_schema: str, schema: str | None = None,
         save_glossary(glossary)
         # If all tables are now covered, record the fingerprint so the next
         # call with the same schema skips LLM calls entirely.
-        _after = load_merged_glossary().get("tables") or {}
+        _after = load_merged_glossary(connection_id=connection_id).get("tables") or {}
         remaining = {t for t in table_blocks if not lookup_table(_after, t, schema)}
         if not remaining:
             mark_complete(fp)

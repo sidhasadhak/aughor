@@ -389,20 +389,30 @@ def column_profiles(graph: Optional[OntologyGraph], table: Optional[str], column
     return out
 
 
+#: ON-8 — what a declaration in an organisation's ontology copies of a column's profile from its source's catalogue:
+#: what was MEASURED of the column. Never words — a description, or what a null means — because an organisation's
+#: ontology is edited by people only (the user's rule, 2026-09-14) and a catalogue's words may be a model's or the
+#: explorer's; never the data type (the warehouse reports that at bind); never sample values (a declaration copies
+#: meaning, not data). A list of what IS copied, so a field the profile gains later is not copied until it is named here.
+PROFILE_COPIED = ("name", "display_name", "semantic_type", "unit", "value_interpretation", "measure_grain",
+                  "is_primary_key", "is_foreign_key", "is_nullable", "null_rate", "is_derived", "distribution_shape")
+
+
 def profile_record(properties: dict[str, EntityProperty]) -> dict:
-    """ON-8 — what a bind entry keeps of the profiles its columns borrowed from their source's catalogue: each column's
-    role, unit and description as the builder took them. Never the data type (the warehouse reports that at bind) and
-    never sample values (a declaration copies meaning, not data)."""
-    return {name.lower(): p.model_dump(exclude={"data_type", "sample_values"}, exclude_defaults=True)
-            for name, p in properties.items() if p.semantic_type or p.unit or p.description}
+    """ON-8 — what a bind entry keeps of the profiles its columns borrowed from their source's catalogue: what was
+    measured (`PROFILE_COPIED`) of each column that has a role, a unit, a grain or an interpretation."""
+    return {name.lower(): p.model_dump(include=set(PROFILE_COPIED), exclude_defaults=True)
+            for name, p in properties.items()
+            if p.semantic_type or p.unit or p.measure_grain or p.value_interpretation}
 
 
 def recorded_profiles(raw: Any) -> dict[str, EntityProperty]:
-    """``{column (lowered): profile}`` from what `profile_record` kept; anything that is not one is left out."""
+    """``{column (lowered): profile}`` from what `profile_record` kept; anything that is not one is left out, and so is
+    whatever a copy made before `PROFILE_COPIED` holds beyond it — a description included."""
     if not isinstance(raw, dict):
         return {}
-    return {str(k).lower(): EntityProperty.model_validate(v) for k, v in raw.items()
-            if isinstance(v, dict) and v.get("name")}
+    return {str(k).lower(): EntityProperty.model_validate({f: v[f] for f in PROFILE_COPIED if f in v})
+            for k, v in raw.items() if isinstance(v, dict) and v.get("name")}
 
 
 def supply(columns: dict[str, EntityProperty], key: str, taken: dict[str, str],

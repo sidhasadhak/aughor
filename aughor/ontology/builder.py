@@ -337,16 +337,20 @@ def _infer_cardinality(
 
 def _lift_metrics(
     table_to_entity: dict[str, str],
+    connection_id: str = "",
 ) -> dict[str, OntologyMetric]:
     """
     Lift metrics from data/metrics.json into OntologyMetric objects.
     Assigns each metric to an entity based on its source tables.
     Best-effort: missing or malformed entries are silently skipped.
+    Only this connection's metrics and the global ones it has not scoped are lifted: a metric
+    another connection scoped never enters this connection's catalogue, which the explorer
+    reads (it does not look beyond its connection — the user's rule, 2026-09-14).
     """
     metrics: dict[str, OntologyMetric] = {}
     try:
         from aughor.semantic.metrics import list_metrics
-        for m in list_metrics():
+        for m in list_metrics(connection_id=connection_id or None):
             entity = "unknown"
             for t in (m.tables or []):
                 if t in table_to_entity:
@@ -970,7 +974,7 @@ def extract_structural_ontology(
         relationship_index.setdefault(to_entity, []).append(from_entity)
 
     # ── Step 3: Lift metrics from Metrics Catalog ─────────────────────────────
-    metrics = _lift_metrics(table_to_entity)
+    metrics = _lift_metrics(table_to_entity, connection_id)
 
     # ── Step 4: Generate deterministic actions ────────────────────────────────
     actions = _generate_deterministic_actions(entities, table_to_entity)

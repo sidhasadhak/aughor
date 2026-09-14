@@ -11,13 +11,15 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
+from aughor.routers.ontology import refuse_organisation_scope
 from aughor.semantic.object_query import ObjectQuery
 
-router = APIRouter(tags=["objects"])
+#: ON-8 — an organisation's ontology is reached through `?domain=` only, never by naming its tree as a connection.
+router = APIRouter(tags=["objects"], dependencies=[Depends(refuse_organisation_scope)])
 
 #: Rows a response carries; `row_count` still says how many the query returned.
 _MAX_ROWS = 1000

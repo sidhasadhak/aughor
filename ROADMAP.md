@@ -4703,8 +4703,9 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   it, none of its bindings; to-many links, EXISTS, timeseries and detail bindings across connections; pre-aggregating the home
   rows at the key's grain (the stage reads the object's grain, capped); the Workspace connection has no bounded read, so a
   keyed read there stops at 500 rows and is refused; connectors with no typed capture (BigQuery, Snowflake, MySQL) are refused
-  as a side; the object page, titles, processes, rules, framing, the explorer and the agent's tools do not read an
-  organisation's ontology yet; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
+  as a side; the object page, titles, processes, rules, framing and the agent's tools do not read an organisation's
+  ontology yet — and by the user's rule the same day (§6 item 20) the explorer never will, and nothing but a person
+  edits it; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
   The declared ontology is keyed by the organisation (or a
   named domain within it — §6 item 18), not by a schema; a binding names
   `connection_id.schema.table`; a link whose two sides live on different connections is
@@ -5654,6 +5655,8 @@ the browser** · **measure the premise before building.**
 > three questions were asked before the build began and decided the same turn. Still two open: 16, 18.
 > **Amended 2026-09-14:** item 18(a) — ON-8's scope key — was taken as recommended when ON-8 began; (b) and (c) stay
 > open. Still two open: 16, 18.
+> **Amended 2026-09-14, later:** item 20 — the user's two rules on an organisation's ontology and the explorer's
+> reach, and the three questions they raised, answered the same turn. Still two open: 16, 18.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -5877,6 +5880,33 @@ the browser** · **measure the premise before building.**
     `--t4` was a text colour in 425 places. *Take the design's ramp and move every text colour off `--t4` to `--t3`*;
     `--t4` keeps ticks and rules. The content-side fix the user chose for Agent Ops on 2026-08-22, made platform-wide.
     All three recommendations were taken as written.
+
+20. ✅ **DECIDED 2026-09-14 (the user) — an organisation's ontology is edited by people only, and the explorer does not
+    look beyond the connection it explores.** Set in the user's words after ON-8's first slice: *"The out of the
+    connection ontology should be strictly human edit. The Explorer agent should not look beyond a particular
+    connection."* An audit of the explorer's run path found that it already did look beyond: autoseed wrote every
+    connection's model-written table descriptions into ONE global glossary map, read back for any table of the same
+    name; the schema text, the coherence gates and the catalogue build read the metric registry with no connection; a
+    federated connection opens its members; and the playbook ranks its entries by success rates learned from outcomes on
+    every connection. The organisation's ontology itself was never read by the explorer. Three questions followed and
+    were answered the same turn, each as recommended:
+    **(a) The glossary** — a model's words are written in the section of the connection whose tables it read; a
+    connection reads a person's global words and its own section; a model-written global entry names no connection, so
+    none reads it until autoseed writes it again for the connection that does.
+    **(b) A federated connection** — not explored; whoever starts an exploration on one is told why.
+    **(c) The playbook** — the explorer ranks entries by relevance alone; investigations keep the learned rates.
+    The curated KB, the industry KB, organisation settings and pack claims stay: product and organisation knowledge, not
+    another connection's data. **Held by:** the store's own writer for an organisation's tree
+    (`overrides.save_organisation_override`, which writes a person's declaration only — every other writer refuses the
+    scope); a router dependency on the ontology and object doors that refuses the tree's segment as a connection id, and
+    the web's `domain:` scope on any door that takes no `?domain=` (the explorer's doors take none); a declaration that
+    says it is a model's refused at the domain doors; a copied column profile that keeps what was measured and never
+    words (`bindings.PROFILE_COPIED`); the metric registry read per connection (`build_metrics_block`, the drift gate and
+    the label vocabulary, `builder._lift_metrics`); the glossary read in one connection's layers
+    (`glossary._connection_layers`) and written in its section (autoseed, the sidecar split); `explorer_refusal` on every
+    spawn path; `learned_rates=False` at the explorer's playbook read; and an import-and-call ratchet
+    (`tests/unit/test_organisation_ontology_boundary.py`) that names who may import the organisation's ontology and its
+    writer, what the explorer may not import, and that every prompt read of the glossary names its connection.
 
 ---
 

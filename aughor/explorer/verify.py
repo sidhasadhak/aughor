@@ -716,7 +716,7 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         nm = mislabeled_named_metric(finding_text, sql, metric_vocab_for(conn, industry))
         if nm:
             return (False, nm)
-        dr = drifted_registered_metric(finding_text, sql)
+        dr = drifted_registered_metric(finding_text, sql, getattr(conn, "_connection_id", "") or "")
         if dr:
             return (False, dr)
         return (True, "")
