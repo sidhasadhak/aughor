@@ -308,3 +308,72 @@ describe("EntityTypePanel — ON-7b: what an explorer proposed, and a person's c
     expect(changed).not.toHaveBeenCalled();
   });
 });
+
+describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () => {
+  const sources = { shop1: "Shop", crm1: "CRM" };
+  const onShop: ObjectTypeDetail = {
+    ...detail, connection_id: "shop1", schema_name: "",
+    bindings: [
+      { ...detail.bindings[0], connection_id: "shop1" },
+      { name: "reviews", primary: false, kind: "static", reads: "table", table: "support.reviews", key: "product_id",
+        object_key: "product_id", source: "human", verified: true, rows: 90, objects: 1000, covered: 90, orphans: 0,
+        note: "", supplies: 1, usable: true, connection_id: "crm1" },
+    ],
+    links: [{ ...detail.links[0], traversal: "cross-source" }],
+  };
+
+  beforeEach(() => {
+    shown.detail = onShop;
+    addBinding.mockClear();
+  });
+  afterEach(() => { shown.detail = undefined; });
+
+  function inDomain() {
+    return render(
+      <EntityTypePanel connectionId="domain:default" objectType="product" types={rows} version={0}
+        onOpen={() => {}} onChanged={() => {}} sources={sources} />);
+  }
+
+  it("says where the type and each binding are read from, marks a cross-source link, and offers no one-connection door", async () => {
+    inDomain();
+    expect(await screen.findByTestId("entity-connection")).toHaveTextContent("read from Shop");
+    expect(screen.getAllByTestId("entity-binding-connection").map((n) => n.textContent)).toEqual(["Shop", "CRM"]);
+    expect(screen.getByTestId("entity-link-cross-source")).toHaveTextContent("cross-source");
+    expect(screen.queryByRole("button", { name: "Name it" })).toBeNull();
+    expect(screen.queryByLabelText("Declare")).toBeNull();
+    expect(screen.getByRole("button", { name: "Measure" })).toBeInTheDocument();
+  });
+
+  it("binds from another connection only as a static binding, naming that connection and its schema in the spec", async () => {
+    const user = userEvent.setup();
+    inDomain();
+    await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
+    await user.selectOptions(screen.getByTestId("declare-binding-connection"), "crm1");
+    expect(screen.getByTestId("declare-binding-crosses")).toBeInTheDocument();
+    await user.type(screen.getByLabelText("Binding name"), "tickets");
+    await user.type(screen.getByLabelText("Table"), "tickets");
+    await user.type(screen.getByLabelText("Binding schema"), "support");
+    await user.selectOptions(screen.getByLabelText("Binding kind"), "timeseries");
+    await user.type(screen.getByLabelText("Time column"), "opened_at");
+    expect(screen.getByRole("button", { name: "Bind" })).toBeDisabled();    // across two connections: static only
+    await user.selectOptions(screen.getByLabelText("Binding kind"), "static");
+    await user.click(screen.getByRole("button", { name: "Bind" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    const [conn, entity, name, spec] = addBinding.mock.calls[0];
+    expect([conn, entity, name]).toEqual(["domain:default", "products", "tickets"]);
+    expect(spec).toEqual({ kind: "static", key: "product_id", table: "tickets", connection_id: "crm1", schema_name: "support" });
+  });
+
+  it("sends no connection when the source is on the type's own connection", async () => {
+    const user = userEvent.setup();
+    inDomain();
+    await user.click(await screen.findByRole("button", { name: "Declare a binding" }));
+    expect(screen.getByTestId("declare-binding-connection")).toHaveValue("shop1");
+    expect(screen.queryByTestId("declare-binding-crosses")).toBeNull();
+    await user.type(screen.getByLabelText("Binding name"), "stock");
+    await user.type(screen.getByLabelText("Table"), "stock");
+    await user.click(screen.getByRole("button", { name: "Bind" }));
+    await waitFor(() => expect(addBinding).toHaveBeenCalled());
+    expect(addBinding.mock.calls[0][3]).toEqual({ kind: "static", key: "product_id", table: "stock" });
+  });
+});
