@@ -8303,7 +8303,9 @@ export interface paths {
          *     where to start, the rules and stage moments it names, and the drivers reachable from the start by measured
          *     to-one links, each definition compiled by the object door. When the words fit several declared definitions
          *     equally they are all returned and none is chosen. No model call, no warehouse: the investigation frames every
-         *     question this way before its intake reads it, and this door shows the same frame.
+         *     question this way before its intake reads it, and this door shows the same frame. ON-8 — with ``domain``, against
+         *     the organisation's ontology: what people declared there alone. A person's synonyms are recorded on one connection
+         *     and name its tables and columns, so none of them widens the words of an ontology whose types live on several.
          */
         post: operations["frame_ontology_question_ontology_frame_post"];
         delete?: never;
@@ -8605,7 +8607,8 @@ export interface paths {
         /**
          * List Ontology Processes
          * @description Every declared process (ON-9) with what its measurement counted — each stage and how many objects reach it,
-         *     each transition timed, each promise with its breaches and the names it derives — and every declared rule.
+         *     each transition timed, each promise with its breaches and the names it derives — and every declared rule. ON-8 —
+         *     with ``domain``, the organisation's ontology's.
          */
         get: operations["list_ontology_processes_ontology_processes_get"];
         put?: never;
@@ -8617,7 +8620,8 @@ export interface paths {
          *     resolved by the object door's own path law and the whole declaration is COUNTED through its compiler before
          *     anything is written (400 with the reason when it cannot be); the count rides the override file and is taken again
          *     on every measure pass. The door then compiles what each promise derives — `late_<name>`, `<name>_breach_rate`,
-         *     `<name>_lag_days`. No model call.
+         *     `<name>_lag_days`. No model call. ON-8 — with ``domain``, into the organisation's ontology, where a stage may be
+         *     anchored on a type or binding on another connection and is counted across the two.
          */
         post: operations["declare_ontology_process_ontology_processes_post"];
         delete?: never;
@@ -8638,7 +8642,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Declared Process
-         * @description Withdraw a declared process (ON-9) — its override file, and with it every name it derived.
+         * @description Withdraw a declared process (ON-9) — its override file, and with it every name it derived. ON-8 — with
+         *     ``domain``, from the organisation's ontology.
          */
         delete: operations["delete_declared_process_ontology_processes__process_id__delete"];
         options?: never;
@@ -8784,7 +8789,8 @@ export interface paths {
          * @description Declare a named business rule (ON-9): a value set — the values of one property the business groups under one
          *     name, "DACH is DE, AT and CH" — or conditions in the object door's shape. Compiled and COUNTED before it is
          *     written: how many objects it admits, and for a value set the rows per value, a value no row holds flagged. The
-         *     object door reads it as a segment named by its id. No model call.
+         *     object door reads it as a segment named by its id. No model call. ON-8 — with ``domain``, into the organisation's
+         *     ontology, where a condition may read a type on another connection through a to-one link.
          */
         post: operations["declare_ontology_rule_ontology_rules_post"];
         delete?: never;
@@ -8805,7 +8811,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Declared Rule
-         * @description Withdraw a declared rule (ON-9) — its override file, and with it the segment it named.
+         * @description Withdraw a declared rule (ON-9) — its override file, and with it the segment it named. ON-8 — with ``domain``,
+         *     from the organisation's ontology.
          */
         delete: operations["delete_declared_rule_ontology_rules__rule_id__delete"];
         options?: never;
@@ -29142,6 +29149,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29630,6 +29638,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29662,6 +29671,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29698,6 +29708,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -29929,6 +29940,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29965,6 +29977,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {

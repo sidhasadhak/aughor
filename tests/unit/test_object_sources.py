@@ -24,17 +24,21 @@ from aughor.db.connection import open_connection_for
 from aughor.demo.setup import _seed_ecommerce
 from aughor.ontology import overrides as OV
 from aughor.ontology import store as ST
+from aughor.ontology.business_rules import describe_rule
 from aughor.ontology.domains import (
     DomainRefused,
     bind_source,
     declare_entity,
     declare_link,
+    declare_process,
+    declare_rule,
     domain_graph,
     domain_names,
     measure_domain,
     resolve_domain,
 )
 from aughor.ontology.models import OntologyGraph
+from aughor.ontology.processes import describe_process
 from aughor.ontology.sources import binding_source, entity_source, link_crosses
 from aughor.semantic import cross_source as XS
 from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
@@ -668,6 +672,95 @@ def test_the_measure_pass_counts_every_declaration_again_on_the_connections_it_n
     assert (placed["traversal"], placed["measured_cardinality"], placed["value_overlap"]) == ("cross-source", "N:1", 1.0)
 
 
+# ── processes and rules across connections (O5) ─────────────────────────────────────────────────
+
+#: An order's journey from its customer's signup — read by key from `crm` — to placed and shipped on `shop`, with a
+#: promise on each move; and two rules: one over a type on one connection, one that reads a type on the other.
+JOURNEY = {"id": "customer_journey", "entity": "Order", "owner": "growth", "stages": [
+    {"name": "signed_up", "timestamp": "placed_by.signup_date"},
+    {"name": "placed", "timestamp": "order_date", "promise": {"name": "first_order", "within_days": 365}},
+    {"name": "shipped", "timestamp": "shipped_at", "promise": {"name": "dispatch", "within_days": 3}},
+]}
+EU_CUSTOMERS = {"id": "eu_customers", "entity": "Customer", "kind": "value_set", "property": "country",
+                "values": ["DE", "FR", "GB", "XX"]}
+EU_ORDERS = {"id": "eu_orders", "entity": "Order", "kind": "condition",
+             "conditions": [{"path": "placed_by.country", "op": "in", "values": ["DE", "FR", "GB"]}]}
+
+
+def counted(domain) -> dict:
+    """Every process and rule in the domain as the panel reads it, without the moment it was counted."""
+    graph = domain_graph(domain)
+    rows = {p.id: describe_process(graph, p) for p in graph.processes.values()}
+    rows |= {r.id: describe_rule(graph, r) for r in graph.rules.values()}
+    for row in rows.values():
+        row.pop("measured_at", None)
+    return rows
+
+
+def test_a_process_and_rules_across_two_connections_count_exactly_what_they_count_on_one(wide, sources):
+    across, one = wide
+    for domain in wide:
+        declare_process(domain, JOURNEY, open_connection_for)
+        declare_rule(domain, EU_CUSTOMERS, open_connection_for)
+        declare_rule(domain, EU_ORDERS, open_connection_for)
+    signed_up = {"object_type": "Order",
+                 "measures": [{"agg": "count", "where": [{"path": "placed_by.signup_date", "op": "not_null"}]}]}
+    assert compile_object_query(signed_up, domain_graph(across), fiscal_start_month=1).cross_source is not None
+    counts = counted(across)
+    assert counts == counted(one)
+    journey = counts["customer_journey"]
+    [reached] = reference(sources, ("SELECT COUNT(c.signup_date), COUNT(o.order_date), COUNT(o.shipped_at) "
+                                    "FROM ecommerce.orders o LEFT JOIN ecommerce.customers c ON c.customer_id = o.customer_id"))
+    assert (journey["verified"], tuple(stage["reached"] for stage in journey["stages"])) == (True, reached)
+    assert [stage["promise"]["verified"] for stage in journey["stages"][1:]] == [True, True]
+    [(admitted,)] = reference(sources, ("SELECT COUNT(*) FROM ecommerce.orders o JOIN ecommerce.customers c "
+                                        "ON c.customer_id = o.customer_id WHERE c.country IN ('DE', 'FR', 'GB')"))
+    assert (counts["eu_orders"]["admitted"], counts["eu_orders"]["verified"]) == (admitted, True)
+    assert (counts["eu_customers"]["observed"], counts["eu_customers"]["missing"]) == (
+        {"DE": 50, "FR": 50, "GB": 50}, ["XX"])
+    # what they derive reads across the two as the single statement reads it
+    for query in ({"object_type": "Order", "measures": [{"metric": "first_order_breach_rate", "scale": 100, "decimals": 2}]},
+                  {"object_type": "Order", "segment": "late_dispatch", "measures": [{"agg": "count"}],
+                   "by": ["placed_by.country"]},
+                  {"object_type": "Order", "segment": "eu_orders", "measures": [{"agg": "sum", "path": "total_amount"}]},
+                  {"object_type": "Customer", "segment": "eu_customers", "measures": [{"agg": "count"}]}):
+        rows, _, result = answer(across, query)
+        assert result.error is None and rows and rows == answer(one, query)[0], query
+
+
+def test_the_measure_pass_counts_a_domains_processes_and_rules_again_and_says_when_one_no_longer_resolves(wide):
+    across, _ = wide
+    for domain in wide:
+        declare_process(domain, JOURNEY, open_connection_for)
+        declare_rule(domain, EU_ORDERS, open_connection_for)
+    measured, on_one = (measure_domain(domain, open_connection_for) for domain in wide)
+    assert (measured["processes"], measured["rules"]) == (on_one["processes"], on_one["rules"])
+    assert [(p["process"], p["verified"], [x["promise"] for x in p["promises"]]) for p in measured["processes"]] == [
+        ("customer_journey", True, ["first_order", "dispatch"])]
+    assert [(r["rule"], r["verified"]) for r in measured["rules"]] == [("eu_orders", True)]
+    OV.delete_organisation_override(*across.tree, "link", "Order_placed_by_Customer")
+    unlinked = measure_domain(across, open_connection_for)
+    assert [(row["verified"], "no longer resolves" in row["note"]) for row in unlinked["processes"] + unlinked["rules"]] == [
+        (False, True), (False, True)]
+    recorded = [OV.find_override(*across.tree, kind, name).binding[kind]["measured"]["verified"]
+                for kind, name in (("process", "customer_journey"), ("rule", "eu_orders"))]
+    assert recorded == [False, False]                       # written back through the organisation's own writer
+
+
+def test_a_process_or_rule_reading_another_organisations_connection_is_refused_before_anything_is_counted(
+        wide, sources, monkeypatch):
+    across, _ = wide
+    monkeypatch.setattr(registry, "get_connection_org", lambda cid: "another-org" if cid == sources["crm"] else "")
+
+    def never(_connection_id):
+        raise AssertionError("a declaration on another organisation's connection was counted")
+    for declare, spec in ((declare_process, JOURNEY), (declare_rule, EU_ORDERS)):
+        with pytest.raises(DomainRefused) as refused:
+            declare(across, spec, never)
+        assert refused.value.status == 403 and sources["crm"] in refused.value.detail
+    assert (domain_graph(across).processes, domain_graph(across).rules) == ({}, {})
+
+
 # ── the doors ───────────────────────────────────────────────────────────────────────────────────
 
 
@@ -732,6 +825,62 @@ def test_the_doors_declare_query_measure_and_withdraw_an_organisations_ontology_
     assert (empty.json()["domain"], empty.json()["object_types"]) == ("default/nothing-here", [])
     assert client.post("/objects/query", params={"domain": "nothing-here"},
                        json=QUERIES["orders by customer country"]).status_code == 404
+
+
+def test_the_process_rule_and_frame_doors_take_an_organisations_ontology_over_http(client, wide):
+    domain = {"domain": "default"}
+    declared = client.post("/ontology/processes", params=domain, json=JOURNEY)
+    assert declared.status_code == 200, declared.text
+    on_one = client.post("/ontology/processes", params={"domain": "reference"}, json=JOURNEY)
+    assert (declared.json()["domain"], declared.json()["process"]["verified"]) == ("default/default", True)
+    assert {**declared.json()["process"], "measured_at": None} == {**on_one.json()["process"], "measured_at": None}
+    assert client.post("/ontology/processes", params=domain, json=JOURNEY).status_code == 409
+    proposed = client.post("/ontology/processes", params=domain, json={**JOURNEY, "id": "proposed", "origin": "model"})
+    assert proposed.status_code == 400 and "edited by people only" in proposed.json()["detail"]
+    unreadable = client.post("/ontology/processes", params=domain, json={"id": "unreadable", "entity": "Order", "stages": [
+        {"name": "signed_up", "timestamp": "placed_by.nickname"}, {"name": "placed", "timestamp": "order_date"}]})
+    assert unreadable.status_code == 400 and "nickname" in unreadable.json()["detail"]
+
+    ruled = client.post("/ontology/rules", params=domain, json=EU_ORDERS)
+    assert ruled.status_code == 200, ruled.text
+    assert ruled.json()["rule"]["admitted"] == client.post("/ontology/rules", params={"domain": "reference"},
+                                                           json=EU_ORDERS).json()["rule"]["admitted"]
+    assert client.post("/ontology/rules", params=domain,
+                       json={**EU_ORDERS, "provenance": "model:some-model@1"}).status_code == 400
+
+    listed = client.get("/ontology/processes", params=domain)
+    assert listed.status_code == 200, listed.text
+    assert (listed.json()["domain"], [p["id"] for p in listed.json()["processes"]],
+            [r["id"] for r in listed.json()["rules"]]) == ("default/default", ["customer_journey"], ["eu_orders"])
+    carried = client.get("/ontology/processes", params={"connection_id": "domain:default", "domain": "default"})
+    assert carried.json() == listed.json()                 # the scope the web carries an organisation's ontology in
+    rate = client.post("/objects/query", params=domain, json={
+        "object_type": "Order", "by": ["placed_by.country"],
+        "measures": [{"metric": "dispatch_breach_rate", "scale": 100, "decimals": 2}]}).json()
+    assert (rate["path"], rate["error"]) == ("compiled", None), rate
+
+    framed = client.post("/ontology/frame", params=domain,
+                         json={"question": "Which customer countries break the dispatch promise most often?"})
+    assert framed.status_code == 200, framed.text
+    frame = framed.json()["frame"]
+    assert (frame["defines"], frame["outcomes"][frame["chosen"]]["name"], frame["start"]["entity"]) == (
+        True, "dispatch_breach_rate", "Order")
+    assert (frame["drivers"][0]["path"], frame["drivers"][0]["named"]) == ("placed_by.country", True)   # read by key
+    assert "late_dispatch" in frame["compiled"] and framed.json()["domain"] == "default/default"
+
+    remeasured = client.post("/ontology/measure", params=domain).json()
+    assert [(p["process"], p["verified"]) for p in remeasured["processes"]] == [("customer_journey", True)]
+    assert [(r["rule"], r["verified"]) for r in remeasured["rules"]] == [("eu_orders", True)]
+    assert client.delete("/ontology/processes/customer_journey", params=domain).status_code == 200
+    assert client.delete("/ontology/processes/customer_journey", params=domain).status_code == 404
+    assert client.delete("/ontology/rules/eu_orders", params=domain).status_code == 200
+    assert client.get("/ontology/processes", params=domain).json() == {"domain": "default/default", "processes": [],
+                                                                      "rules": []}
+    gone = client.post("/objects/query", params=domain,
+                       json={"object_type": "Order", "segment": "late_dispatch", "measures": [{"agg": "count"}]}).json()
+    assert gone["path"] == "refused"
+    assert not (OV._ROOT / "domain_default").exists()
+
 
 
 def test_one_connections_ontology_refuses_a_source_on_another_and_says_where_it_belongs(client, sources):

@@ -1554,16 +1554,23 @@ def _domain_declare_link(spec: dict, domain: str) -> dict:
 def list_ontology_processes(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Every declared process (ON-9) with what its measurement counted — each stage and how many objects reach it,
-    each transition timed, each promise with its breaches and the names it derives — and every declared rule."""
+    each transition timed, each promise with its breaches and the names it derives — and every declared rule. ON-8 —
+    with ``domain``, the organisation's ontology's."""
     from aughor.ontology.business_rules import describe_rule
     from aughor.ontology.processes import describe_process
-    graph = _get_ontology_graph(connection_id, schema_name)
-    if graph is None:
-        raise HTTPException(status_code=404, detail="Ontology not available")
-    return {"connection_id": connection_id, "schema_name": graph.schema_name,
-            "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
+    if domain is not None:
+        from aughor.ontology.domains import domain_graph
+        scope = _domain_scope(domain)
+        graph, where = domain_graph(scope), {"domain": scope.key}
+    else:
+        graph = _get_ontology_graph(connection_id, schema_name)
+        if graph is None:
+            raise HTTPException(status_code=404, detail="Ontology not available")
+        where = {"connection_id": connection_id, "schema_name": graph.schema_name}
+    return {**where, "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
             "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())]}
 
 
@@ -1591,6 +1598,7 @@ def frame_ontology_question(
     body: _FrameQuestion,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Frame a question against the declared ontology (ON-10): its business terms resolved — deterministically,
     against the declared names, a person's synonyms, the processes with their stages and promises, what each promise
@@ -1598,11 +1606,22 @@ def frame_ontology_question(
     where to start, the rules and stage moments it names, and the drivers reachable from the start by measured
     to-one links, each definition compiled by the object door. When the words fit several declared definitions
     equally they are all returned and none is chosen. No model call, no warehouse: the investigation frames every
-    question this way before its intake reads it, and this door shows the same frame."""
+    question this way before its intake reads it, and this door shows the same frame. ON-8 — with ``domain``, against
+    the organisation's ontology: what people declared there alone. A person's synonyms are recorded on one connection
+    and name its tables and columns, so none of them widens the words of an ontology whose types live on several."""
     from aughor.ontology.framing import DEFAULT_HOPS, frame_question
     question = (body.question or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="a question is required")
+    if domain is not None:
+        from aughor.ontology.domains import connections_of, domain_graph
+        scope = _domain_scope(domain)
+        graph = domain_graph(scope)
+        # the dialect the object door compiles in on the connections the domain reads: theirs when they share one
+        dialects = {_frame_dialect(c) for c in connections_of(graph)}
+        frame = frame_question(question[:2000], graph, hops=body.hops or DEFAULT_HOPS,
+                               dialect=dialects.pop() if len(dialects) == 1 else "duckdb")
+        return {"domain": scope.key, "frame": frame.model_dump(mode="json")}
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
@@ -1621,6 +1640,7 @@ def declare_ontology_process(
     body: _DeclaredProcess,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Declare a process (ON-9): the type that goes through it, its stages in order — each anchored to the moment an
     object reaches it or to the states that place it there — and on a stage the promise about reaching it: within N
@@ -1628,7 +1648,10 @@ def declare_ontology_process(
     resolved by the object door's own path law and the whole declaration is COUNTED through its compiler before
     anything is written (400 with the reason when it cannot be); the count rides the override file and is taken again
     on every measure pass. The door then compiles what each promise derives — `late_<name>`, `<name>_breach_rate`,
-    `<name>_lag_days`. No model call."""
+    `<name>_lag_days`. No model call. ON-8 — with ``domain``, into the organisation's ontology, where a stage may be
+    anchored on a type or binding on another connection and is counted across the two."""
+    if domain is not None:
+        return _domain_declare_process(body.model_dump(exclude_none=True), domain)
     return _declare_process_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1670,20 +1693,39 @@ def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[
     return {**_override_result(ov), "process": describe_process(served, served.processes[process_id])}
 
 
+def _domain_declare_process(spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import declare_process, domain_graph
+    from aughor.ontology.processes import describe_process
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: declare_process(scope, spec, _open_source))
+    served = domain_graph(scope)
+    if ov.target_id not in served.processes:
+        raise HTTPException(status_code=500, detail=f"{ov.target_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "process": describe_process(served, served.processes[ov.target_id]),
+            "domain": scope.key}
+
+
 @router.delete("/ontology/processes/{process_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def delete_declared_process(
     process_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
-    """Withdraw a declared process (ON-9) — its override file, and with it every name it derived."""
+    """Withdraw a declared process (ON-9) — its override file, and with it every name it derived. ON-8 — with
+    ``domain``, from the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override, find_override
+    from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
+    remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
     effective = _resolve_schema(connection_id, schema_name)
     if find_override(connection_id, effective, "process", process_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
-    delete_override(connection_id, effective, "process", process_id)
+    remove(connection_id, effective, "process", process_id)
     return {"removed": True, "process": process_id}
 
 
@@ -1692,11 +1734,15 @@ def declare_ontology_rule(
     body: _DeclaredRule,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Declare a named business rule (ON-9): a value set — the values of one property the business groups under one
     name, "DACH is DE, AT and CH" — or conditions in the object door's shape. Compiled and COUNTED before it is
     written: how many objects it admits, and for a value set the rows per value, a value no row holds flagged. The
-    object door reads it as a segment named by its id. No model call."""
+    object door reads it as a segment named by its id. No model call. ON-8 — with ``domain``, into the organisation's
+    ontology, where a condition may read a type on another connection through a to-one link."""
+    if domain is not None:
+        return _domain_declare_rule(body.model_dump(exclude_none=True), domain)
     return _declare_rule_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1738,20 +1784,38 @@ def _declare_rule_core(spec: dict, connection_id: str, schema_name: Optional[str
     return {**_override_result(ov), "rule": describe_rule(served, served.rules[rule_id])}
 
 
+def _domain_declare_rule(spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.business_rules import describe_rule
+    from aughor.ontology.domains import declare_rule, domain_graph
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: declare_rule(scope, spec, _open_source))
+    served = domain_graph(scope)
+    if ov.target_id not in served.rules:
+        raise HTTPException(status_code=500, detail=f"{ov.target_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "rule": describe_rule(served, served.rules[ov.target_id]), "domain": scope.key}
+
+
 @router.delete("/ontology/rules/{rule_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def delete_declared_rule(
     rule_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
-    """Withdraw a declared rule (ON-9) — its override file, and with it the segment it named."""
+    """Withdraw a declared rule (ON-9) — its override file, and with it the segment it named. ON-8 — with ``domain``,
+    from the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override, find_override
+    from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
+    remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
     effective = _resolve_schema(connection_id, schema_name)
     if find_override(connection_id, effective, "rule", rule_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared rule '{rule_id}'")
-    delete_override(connection_id, effective, "rule", rule_id)
+    remove(connection_id, effective, "rule", rule_id)
     return {"removed": True, "rule": rule_id}
 
 

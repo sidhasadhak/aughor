@@ -281,16 +281,81 @@ def declare_link(domain: Domain, spec: dict, open_source: Opener):
     return ov
 
 
+def declare_process(domain: Domain, spec: dict, open_source: Opener):
+    """ON-9 on an organisation's ontology: a process one of its types goes through, each stage resolved by the object
+    door's path law over the domain and the whole declaration counted through it before anything is written — a stage
+    anchored on a type or binding on another connection is counted across the two, split at the keyed reads, as a query
+    there is. Returns the saved override."""
+    from aughor.ontology.overrides import OntologyOverride, save_organisation_override
+    from aughor.ontology.processes import (
+        NotMeasurable, measure_process, process_entry, process_fields, process_spec_problem, resolve_process,
+    )
+    _persons_only(spec)
+    problem = process_spec_problem(spec)
+    if problem:
+        raise DomainRefused(400, problem)
+    graph = domain_graph(domain)
+    process_id = str(spec["id"])
+    if process_id in graph.processes:
+        raise DomainRefused(409, f"a process '{process_id}' already exists in {domain.key}")
+    problem, fields = resolve_process(graph, process_id, process_fields(spec))
+    if problem:
+        raise DomainRefused(400, problem)
+    for connection_id in connections_of(graph):
+        check_source(domain, connection_id)
+    try:
+        measured = measure_process(None, graph, process_id, fields, open_source=open_source)
+    except NotMeasurable as exc:
+        raise DomainRefused(400, f"{process_id} could not be counted: {exc}") from exc
+    ov = OntologyOverride(target_kind="process", target_id=process_id, fields=fields, source=fields["origin"],
+                          binding={"process": process_entry(fields, measured)})
+    save_organisation_override(*domain.tree, ov)
+    return ov
+
+
+def declare_rule(domain: Domain, spec: dict, open_source: Opener):
+    """ON-9 on an organisation's ontology: a named rule over one of its types — a value set, or conditions in the object
+    door's shape, which may read a type on another connection through a to-one link — counted through the door before
+    anything is written. Returns the saved override."""
+    from aughor.ontology.business_rules import measure_rule, resolve_rule, rule_entry, rule_fields, rule_spec_problem
+    from aughor.ontology.overrides import OntologyOverride, save_organisation_override
+    from aughor.ontology.processes import NotMeasurable
+    _persons_only(spec)
+    problem = rule_spec_problem(spec)
+    if problem:
+        raise DomainRefused(400, problem)
+    graph = domain_graph(domain)
+    rule_id = str(spec["id"])
+    if rule_id in graph.rules:
+        raise DomainRefused(409, f"a rule '{rule_id}' already exists in {domain.key}")
+    problem, fields = resolve_rule(graph, rule_id, rule_fields(spec))
+    if problem:
+        raise DomainRefused(400, problem)
+    for connection_id in connections_of(graph):
+        check_source(domain, connection_id)
+    try:
+        measured = measure_rule(None, graph, rule_id, fields, open_source=open_source)
+    except NotMeasurable as exc:
+        raise DomainRefused(400, f"{rule_id} could not be counted: {exc}") from exc
+    ov = OntologyOverride(target_kind="rule", target_id=rule_id, fields=fields, source=fields["origin"],
+                          binding={"rule": rule_entry(fields, measured)})
+    save_organisation_override(*domain.tree, ov)
+    return ov
+
+
 def measure_domain(domain: Domain, open_source: Opener) -> dict:
     """Count every declaration in the domain again — each type's key, each binding against its objects, each link's two
-    sides — on the connections they name, and record the counts on their files so the next read carries them. The
-    types first, because bindings and links are counted against the objects. No model call. A copied column profile is
-    kept as the rule has it now: what the builder measured, and no words."""
+    sides, each process and rule — on the connections they name, and record the counts on their files so the next read
+    carries them. The types first, because bindings and links are counted against the objects; processes and rules
+    last, because they are counted through all three. No model call. A copied column profile is kept as the rule has it
+    now: what the builder measured, and no words."""
     from aughor.ontology.bindings import (
         binding_block, declared_bindings, describe_with, measure_binding, profile_record, recorded_profiles,
     )
+    from aughor.ontology.business_rules import measure_override_rules
     from aughor.ontology.declared import measure_declared_backing, measure_declared_link
     from aughor.ontology.overrides import load_overrides, save_organisation_override
+    from aughor.ontology.processes import measure_override_processes
     opened: dict[str, Any] = {}
 
     def source(connection_id: str) -> Any:
@@ -298,7 +363,7 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
             opened[connection_id] = open_source(connection_id)
         return opened[connection_id]
 
-    out: dict = {"domain": domain.key, "entities": [], "bindings": [], "links": []}
+    out: dict = {"domain": domain.key, "entities": [], "bindings": [], "links": [], "processes": [], "rules": []}
     try:
         for ov in load_overrides(*domain.tree):
             if ov.target_kind != "entity" or not ov.fields.get("declared"):
@@ -355,6 +420,13 @@ def measure_domain(domain: Domain, open_source: Opener) -> dict:
                                      "measured_cardinality": entry.get("measured_cardinality"),
                                      "value_overlap": entry.get("value_overlap"), "bound": entry.get("bound"),
                                      "note": entry.get("note")})
+        # processes, then rules — each over the graph as the counts just recorded leave it (the rules over a second
+        # read, so a rule that reads a process's lag sees its fresh verdict), as one connection's measure pass counts
+        # them, and each written back through the organisation's own writer
+        out["processes"] = measure_override_processes(*domain.tree, None, domain_graph(domain), open_source=open_source,
+                                                      save=save_organisation_override)
+        out["rules"] = measure_override_rules(*domain.tree, None, domain_graph(domain), open_source=open_source,
+                                              save=save_organisation_override)
     finally:
         for db in opened.values():
             db.close()

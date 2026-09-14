@@ -366,24 +366,51 @@ def quantile_cont(histogram: list[tuple[float, int]], q: float) -> Optional[floa
 
 
 class ObjectCounter:
-    """Object queries compiled over one graph and run on one connection — the measurement's only way to the data."""
+    """Object queries compiled over one graph and run where their rows live — the measurement's only way to the data.
+    On one connection's ontology that is ``db``. On an organisation's (ON-8), ``open_source`` opens the connection each
+    query's anchor type lives on, and a query whose sources span two runs as the object door runs it, split at its keyed
+    reads (`aughor.semantic.cross_source`)."""
 
-    def __init__(self, db: Any, graph: OntologyGraph):
-        self.db, self.graph = db, graph
-        self.dialect = getattr(db, "dialect", "") or "duckdb"
+    def __init__(self, db: Any, graph: OntologyGraph, open_source: Any = None):
+        self.db, self.graph, self.open_source = db, graph, open_source
 
     def rows(self, query: dict, *, max_rows: int = 500) -> tuple[list[str], list]:
-        from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+        from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
+        home_db, home, opened = self.db, "", None
         try:
-            sql = compile_object_query(query, self.graph, dialect=self.dialect, fiscal_start_month=1).sql
-        except ObjectQueryRefused as exc:
-            raise NotMeasurable(exc.reason) from exc
-        try:
-            bounded = getattr(self.db, "execute_bounded", None)
-            result = (bounded("__process_probe__", sql, max_rows) if callable(bounded)
-                      else self.db.execute("__process_probe__", sql))
-        except Exception as exc:  # noqa: BLE001 — a failed count is an unmeasured declaration, not a crash
-            raise NotMeasurable(f"{type(exc).__name__}: {exc}") from exc
+            if self.open_source is not None:
+                from aughor.ontology.sources import entity_source
+                try:
+                    anchor = find_object_type(self.graph, str(query.get("object_type") or ""))
+                except ObjectQueryRefused as exc:
+                    raise NotMeasurable(exc.reason) from exc
+                home = entity_source(self.graph, anchor)
+                home_db = opened = self.open_source(home)
+            try:
+                compiled = compile_object_query(query, self.graph, dialect=getattr(home_db, "dialect", "") or "duckdb",
+                                                fiscal_start_month=1)
+            except ObjectQueryRefused as exc:
+                raise NotMeasurable(exc.reason) from exc
+            try:
+                if compiled.cross_source is not None:
+                    if self.open_source is None:
+                        raise NotMeasurable("the count reads sources on more than one connection, and this ontology "
+                                            "reads one")
+                    from aughor.semantic.cross_source import execute_plan
+                    result, _ = execute_plan(compiled.cross_source, home_connection_id=home, home_db=home_db,
+                                             open_source=self.open_source, label="__process_probe__",
+                                             display_sql=compiled.sql)
+                else:
+                    bounded = getattr(home_db, "execute_bounded", None)
+                    result = (bounded("__process_probe__", compiled.sql, max_rows) if callable(bounded)
+                              else home_db.execute("__process_probe__", compiled.sql))
+            except NotMeasurable:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a failed count is an unmeasured declaration, not a crash
+                raise NotMeasurable(f"{type(exc).__name__}: {exc}") from exc
+        finally:
+            if opened is not None:
+                opened.close()
         if getattr(result, "error", None):
             raise NotMeasurable(str(result.error)[:300])
         return list(getattr(result, "columns", None) or []), list(getattr(result, "rows", None) or [])
@@ -470,16 +497,17 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
                        if promise.open_overdue is not None else ""))
 
 
-def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict) -> Process:
+def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict, *, open_source: Any = None) -> Process:
     """Count a (resolved) declaration against the warehouse through the object door's compiler and return the process
-    with every number and verdict stamped. Raises `NotMeasurable` when a count cannot be taken."""
+    with every number and verdict stamped. Raises `NotMeasurable` when a count cannot be taken. On an organisation's
+    ontology ``db`` is None and ``open_source`` opens each count's connection (`ObjectCounter`)."""
     process = process_from_fields(process_id, fields)
     work = graph.model_copy()
     work.processes = {**(graph.processes or {}), process_id: _provisional(process)}
     entity = work.entities.get(process.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{process.entity}' in this ontology")
-    counter = ObjectCounter(db, work)
+    counter = ObjectCounter(db, work, open_source)
     measures: list[dict] = [{"name": "objects", "agg": "count"}]
     for i, stage in enumerate(process.stages):
         measures.append({"name": f"reached_{i}", "agg": "count", "where": _reached_filters(stage)})
@@ -576,10 +604,13 @@ def declared_process(ov, graph: Optional[OntologyGraph]) -> Optional[Process]:
 
 
 def measure_override_processes(connection_id: str, schema_name: Optional[str], db: Any,
-                               graph: Optional[OntologyGraph]) -> list[dict]:
+                               graph: Optional[OntologyGraph], *, open_source: Any = None,
+                               save: Any = None) -> list[dict]:
     """Re-resolve and re-count every declared process against the SERVED graph (declared types, links and bindings in
     it) and record what was counted on its override file. A process whose anchors no longer resolve is measured-false
-    with the reason; one that cannot be counted on this pass keeps no verdict. One summary row per process."""
+    with the reason; one that cannot be counted on this pass keeps no verdict. One summary row per process. On an
+    organisation's ontology (ON-8) ``db`` is None, ``open_source`` opens each count's connection, and ``save`` is the
+    organisation's own writer."""
     out: list[dict] = []
     if graph is None:
         return out
@@ -588,6 +619,7 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
         overrides = load_overrides(connection_id, schema_name or "default")
     except Exception:  # noqa: BLE001
         return out
+    save = save or save_override
     for ov in overrides:
         if ov.target_kind != "process" or not ov.fields.get("declared"):
             continue
@@ -598,14 +630,14 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
             measured.measured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         else:
             try:
-                measured = measure_process(db, graph, ov.target_id, resolved)
+                measured = measure_process(db, graph, ov.target_id, resolved, open_source=open_source)
                 ov.fields = resolved
             except NotMeasurable as exc:
                 measured = process_from_fields(ov.target_id, ov.fields)
                 measured.note = f"not measurable on this pass: {exc}"[:500]
         ov.binding["process"] = process_entry(ov.fields, measured)
         try:
-            save_override(connection_id, schema_name or "default", ov)
+            save(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001
             logger.debug("process measurement not saved for %s: %s", ov.target_id, exc)
         out.append({"process": ov.target_id, "verified": measured.verified, "objects": measured.objects,

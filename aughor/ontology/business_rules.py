@@ -129,14 +129,15 @@ def resolve_rule(graph: OntologyGraph, rule_id: str, fields: dict) -> tuple[str,
     return "", out
 
 
-def measure_rule(db: Any, graph: OntologyGraph, rule_id: str, fields: dict) -> BusinessRule:
+def measure_rule(db: Any, graph: OntologyGraph, rule_id: str, fields: dict, *,
+                 open_source: Any = None) -> BusinessRule:
     """Count a (resolved) rule through the object door's compiler: the type's objects, the ones it admits, and for a
     value set the rows holding each declared value. Raises `NotMeasurable` when a count cannot be taken."""
     rule = rule_from_fields(rule_id, fields)
     entity = graph.entities.get(rule.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{rule.entity}' in this ontology")
-    counter = ObjectCounter(db, graph)
+    counter = ObjectCounter(db, graph, open_source)
     filters = list(rule_filters(rule))
     counts = counter.one(entity.api_name, [{"name": "objects", "agg": "count"},
                                            {"name": "admitted", "agg": "count", "where": filters}])
@@ -190,8 +191,11 @@ def declared_rule(ov, graph: Optional[OntologyGraph]) -> Optional[BusinessRule]:
 
 
 def measure_override_rules(connection_id: str, schema_name: Optional[str], db: Any,
-                           graph: Optional[OntologyGraph]) -> list[dict]:
-    """Re-resolve and re-count every declared rule against the served graph; one summary row per rule."""
+                           graph: Optional[OntologyGraph], *, open_source: Any = None,
+                           save: Any = None) -> list[dict]:
+    """Re-resolve and re-count every declared rule against the served graph; one summary row per rule. On an
+    organisation's ontology (ON-8) ``db`` is None, ``open_source`` opens each count's connection, and ``save`` is the
+    organisation's own writer."""
     out: list[dict] = []
     if graph is None:
         return out
@@ -200,6 +204,7 @@ def measure_override_rules(connection_id: str, schema_name: Optional[str], db: A
         overrides = load_overrides(connection_id, schema_name or "default")
     except Exception:  # noqa: BLE001
         return out
+    save = save or save_override
     for ov in overrides:
         if ov.target_kind != "rule" or not ov.fields.get("declared"):
             continue
@@ -209,14 +214,14 @@ def measure_override_rules(connection_id: str, schema_name: Optional[str], db: A
             measured.verified, measured.note = False, f"no longer resolves on this graph: {problem}"[:500]
         else:
             try:
-                measured = measure_rule(db, graph, ov.target_id, resolved)
+                measured = measure_rule(db, graph, ov.target_id, resolved, open_source=open_source)
                 ov.fields = resolved
             except NotMeasurable as exc:
                 measured = rule_from_fields(ov.target_id, ov.fields)
                 measured.note = f"not measurable on this pass: {exc}"[:500]
         ov.binding["rule"] = rule_entry(ov.fields, measured)
         try:
-            save_override(connection_id, schema_name or "default", ov)
+            save(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001
             logger.debug("rule measurement not saved for %s: %s", ov.target_id, exc)
         out.append({"rule": ov.target_id, "verified": measured.verified, "admitted": measured.admitted,

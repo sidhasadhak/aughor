@@ -794,8 +794,10 @@ export interface RuleDetail {
 }
 
 export interface ProcessesAndRules {
-  connection_id: string;
-  schema_name: string;
+  /** One connection's ontology; an organisation's names its `domain` instead (ON-8). */
+  connection_id?: string;
+  schema_name?: string;
+  domain?: string;
   processes: ProcessDetail[];
   rules: RuleDetail[];
 }
