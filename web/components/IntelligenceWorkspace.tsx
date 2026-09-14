@@ -115,6 +115,13 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
   // briefing request that races the SCOPED one issued once the catalog resolves — the two
   // hit different cached briefs, and the VERDICT headline visibly flips as the last lands.
   const [schemaResolved, setSchemaResolved] = useState(false);
+  // The connection's declared schema, read out HERE so the effect below keys on the value, not on
+  // `connections`: the shell rebuilds that array on every one of its renders. Keyed on the array,
+  // the effect re-ran each time — ⌘K, a nav count, a layer switch — and for a connection with no
+  // declared schema every re-run re-gated the scope and re-read the catalog tree. The re-gate swaps
+  // the kept-alive Briefing out and back in, and a Briefing that mounts again posts its brief again,
+  // on screen or behind another layer (IntelligenceWorkspace.test.tsx).
+  const metaSchema = connections?.find(c => c.id === connectionId)?.schema_name ?? null;
   useEffect(() => {
     // A canvas is already table-scoped → ready immediately. But "no connection yet" is NOT
     // ready: setting resolved=true here would leak a stale `true` into the first render where
@@ -125,7 +132,6 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     // Fast path: a connection whose registry meta names its single schema resolves
     // INSTANTLY — the catalog tree opens EVERY connection (seconds on a cold API,
     // BigQuery included), and the schema-gated Briefing rendered blank for all of it.
-    const metaSchema = connections?.find(c => c.id === connectionId)?.schema_name ?? null;
     if (metaSchema) {
       setSchemas([metaSchema]); setSelectedSchema(metaSchema); setSchemaResolved(true);
       return;
@@ -145,7 +151,7 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
       })
       .catch(() => { if (alive) { setSchemas([]); setSchemaResolved(true); } });
     return () => { alive = false; };
-  }, [connectionId, canvasId, connections]);
+  }, [connectionId, canvasId, metaSchema]);
   const schema = selectedSchema ?? undefined;
 
   // The Briefing lifts its header into the shell's (Aughor Intelligence · 01 Briefing): when the
