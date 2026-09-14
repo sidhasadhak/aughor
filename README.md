@@ -37,24 +37,19 @@ Aughor connects to your warehouse and **keeps learning from it**. It builds a li
 
 ## Quick start
 
-**You need:** [uv](https://docs.astral.sh/uv/), **Python 3.11+**, and **Node 20.9+**.
+**macOS / Linux**
 
 ```bash
-git clone https://github.com/sidhasadhak/aughor.git && cd aughor
-uv sync --all-extras   # Python deps (DuckDB is built in)
-uv run aughor up       # installs web deps on first run; API :8000 + web :3000
+curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh | sh
 ```
 
-Open **http://localhost:3000**. Aughor starts empty — no data is created on your behalf. Click **+ Add** and paste a DuckDB path, a PostgreSQL DSN, or BigQuery credentials, and exploration begins. Want something to explore first? `uv run aughor seed` writes a synthetic demo dataset with a discoverable outage.
+**Windows**
 
-`aughor up` never kills an existing process — a busy port names its owner and exits (`--api-port` / `--web-port` to move; `--dev` for auto-reload; `--api-only` / `--web-only` to split). Or run the pieces yourself:
-
-```bash
-uv run uvicorn aughor.api:app --port 8000    # API
-cd web && npm install && npm run dev          # web UI on :3000 (NEXT_PUBLIC_API_URL if API moved)
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
 ```
 
-A bare `uv sync` installs the **serving core** only; heavyweight features ship as [extras](#optional-extras) and degrade with a message naming what to install — nothing crashes.
+Next time, run `aughor`.
 
 ## Pick your models
 
@@ -157,6 +152,8 @@ uv sync --all-extras                      # everything (recommended for developm
 uv sync --extra export --extra semantic   # or pick individually
 uv sync                                   # serving core only
 ```
+
+Each `uv sync` leaves exactly the extras it names and removes any others — so name every extra you want in one command. The installer syncs them all.
 
 | Extra | Adds | Without it |
 |---|---|---|

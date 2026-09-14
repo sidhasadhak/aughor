@@ -734,7 +734,7 @@ def apply_schema_enrichment(
     # It now runs in `_intelligence` (the HEAVY phase, background), which is where work
     # that calls a model belongs. A display must never wait on inference.
     with _stage("enrich.apply_glossary"):
-        enriched = apply_glossary(raw, schema=schema_name)
+        enriched = apply_glossary(raw, schema=schema_name, connection_id=connection_id or None)
     # The vector index is NOT rebuilt here. This function runs on every `get_schema`
     # — the request that merely DISPLAYS a schema — and rebuilding embeds the whole
     # thing. Where the embedder is unreachable that call retries with backoff, and

@@ -4,6 +4,7 @@ import { Pending } from "@/components/ui/motion";
 import { useCallback, useEffect, useState } from "react";
 
 import { EntityTypeMap } from "@/components/ontology/EntityTypeMap";
+import { domainScope } from "@/lib/objectTypes";
 import { OverridesDrawer } from "@/components/ontology/OverridesDrawer";
 import { Button }      from "@/components/ui/button";
 import {
@@ -485,6 +486,8 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
   // PX-6 — the human-edit ledger: overrides list/revert, routing proposals, export/import.
   const [showOverrides,     setShowOverrides]     = useState(false);
   const [orgMode,           setOrgMode]          = useState(false);
+  // ON-8 — the organisation's ontology: one map over every connection a type is declared on.
+  const [domainMode,        setDomainMode]       = useState(false);
   // ON-3b — the entity-type map IS this layer (re-laid 2026-09-12, the user: "we need only map in ontology..
   // overview doesnt matter if it is not being used as context.. remove it in that case"). The whole-graph ERD it
   // used to sit beside was a second drawing of the same facts that nothing downstream read; the Org board keeps
@@ -527,7 +530,7 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
           duplicates, proposals, skills, and every edit made here — belongs to this
           schema and no other. It used to be possible to be looking at a neighbour's
           graph with nothing on screen saying so. */}
-      {!orgMode && schema && (
+      {!orgMode && !domainMode && schema && (
         <span
           className="aug-fs-xs text-zinc-400 border border-zinc-700 rounded-[var(--r-chip)] px-2 py-0.5 font-code"
           title="This ontology is scoped to one schema. Switch schemas with the workspace scope picker above."
@@ -537,25 +540,35 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
         </span>
       )}
 
-      {/* Org ⟷ Connection view toggle */}
+      {/* Org ⟷ Domain ⟷ Connection view toggle. ON-8 — Domain is the organisation's ontology: types declared on any
+          connection, and the links between them, read by key where they cross two. */}
       <div className="flex shrink-0 items-center rounded-md border border-zinc-700 overflow-hidden aug-fs-xs">
         <button
-          onClick={() => setOrgMode(true)}
+          onClick={() => { setOrgMode(true); setDomainMode(false); }}
           className={cn(
             "px-2.5 py-1 transition",
             orgMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
           )}
         >Org</button>
         <button
-          onClick={() => setOrgMode(false)}
+          onClick={() => { setDomainMode(true); setOrgMode(false); }}
           className={cn(
             "px-2.5 py-1 transition border-l border-zinc-700",
-            !orgMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+            domainMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
+          )}
+          title="The organisation's ontology — types declared on any connection, and the links between them"
+          data-testid="ontology-domain-toggle"
+        >Domain</button>
+        <button
+          onClick={() => { setOrgMode(false); setDomainMode(false); }}
+          className={cn(
+            "px-2.5 py-1 transition border-l border-zinc-700",
+            !orgMode && !domainMode ? "bg-violet-500/15 text-violet-300" : "text-zinc-400 hover:text-zinc-200",
           )}
         >Connection</button>
       </div>
 
-      {!orgMode && graph && (
+      {!orgMode && !domainMode && graph && (
         <div className="flex items-center gap-2 ml-auto">
           {graph.enriched ? (
             <span className="aug-fs-xs text-emerald-400 border border-emerald-500/20 bg-emerald-500/8 rounded-[var(--r-chip)] px-2 py-0.5">
@@ -636,6 +649,18 @@ export function OntologyPanel({ connectionId, onInvestigate, schema }: Props) {
       )}
     </div>
   );
+
+  // ── ON-8 — the organisation's ontology, which no one connection's graph gates ─────
+  if (domainMode) {
+    return (
+      <div className="flex-1 flex flex-col overflow-hidden">
+        {headerBar}
+        <div className="flex-1 flex overflow-hidden">
+          <EntityTypeMap connectionId={domainScope()} />
+        </div>
+      </div>
+    );
+  }
 
   // ── Org-level board — bypasses the single-graph loading/error gates ──────────
   if (orgMode) {

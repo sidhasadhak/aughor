@@ -169,7 +169,7 @@ def _fake_index(monkeypatch):
 def test_indexed_points_carry_their_scope(monkeypatch):
     captured = _fake_index(monkeypatch)
     monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
-                        lambda path=None: {"tables": {"lux.orders": {"description": "d"}}})
+                        lambda path=None, connection_id=None: {"tables": {"lux.orders": {"description": "d"}}})
 
     n = retriever.build_schema_index(connection_id="connA", schema_name="lux")
     assert n == 1
@@ -182,7 +182,7 @@ def test_two_connections_no_longer_write_the_same_point(monkeypatch):
     """THE BUG. Identical qualified table, two connections — one point id, so indexing the
     second silently replaced the first's embedding and retrieval ranked by the wrong text."""
     monkeypatch.setattr("aughor.semantic.glossary.load_merged_glossary",
-                        lambda path=None: {"tables": {"lux.orders": {"description": "d"}}})
+                        lambda path=None, connection_id=None: {"tables": {"lux.orders": {"description": "d"}}})
 
     captured = _fake_index(monkeypatch)
     retriever.build_schema_index(connection_id="connA", schema_name="lux")

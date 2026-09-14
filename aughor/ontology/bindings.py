@@ -55,6 +55,8 @@ _TABLE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*){0,2}$")
 _SELECT = re.compile(r"^\s*(select|with)\b", re.IGNORECASE)
 #: The same three shapes, public — a declaration (ON-7, `aughor.ontology.declared`) is held to the identical rule.
 COLUMN_PATTERN, TABLE_PATTERN, SELECT_PATTERN = _COLUMN, _TABLE, _SELECT
+#: ON-8 — a connection as a declaration names it: a registered connection's id, never a DSN.
+CONNECTION_PATTERN = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 #: Tables the builder asks the data about for one type — a wide schema must not turn a measurement into a crawl.
 MAX_CANDIDATES = 8
 #: What a count of one binding records, on the model and on a bind entry.
@@ -168,15 +170,21 @@ def verdict(kind: str, key: str, entity_id: str, rows: Optional[int], non_null: 
     return True, detail
 
 
-def measure_binding(db: Any, entity: OntologyEntity, binding: Binding) -> BindingMeasurement:
+def measure_binding(db: Any, entity: OntologyEntity, binding: Binding, *, object_db: Any = None) -> BindingMeasurement:
     """Count one binding against the objects it binds to, in one probe. A probe that fails leaves it unmeasured,
-    never refuted."""
+    never refuted.
+
+    ON-8 — ``object_db`` is the connection the objects live on when the binding's source (``db``) lives on another.
+    No statement sees both, so the binding's rows are counted where they are, the object keys where THEY are, and the
+    keys that meet are intersected in memory (`_measure_across`) — under the same verdict."""
     m = BindingMeasurement(entity_id=entity.id, name=binding.name, kind=binding.kind)
     object_key = key_of(entity)
     source, objects = binding_from(binding, "b"), object_from(entity, "o")
     if not (source and objects and object_key and binding.key):
         m.note = "no source, no object rows or no key to count"
         return m
+    if object_db is not None and object_db is not db:
+        return _measure_across(db, object_db, entity, binding, m)
     bk, ok = quote_ident(binding.key), quote_ident(object_key)
     sql = (f"WITH bound_keys AS (SELECT b.{bk} AS k FROM {source}), "
            f"object_keys AS (SELECT DISTINCT o.{ok} AS k FROM {objects} WHERE o.{ok} IS NOT NULL) "
@@ -199,6 +207,39 @@ def measure_binding(db: Any, entity: OntologyEntity, binding: Binding) -> Bindin
         return m
     m.verified, m.note = verdict(binding.kind, binding.key, entity.id, m.rows, m.non_null, m.distinct,
                                  m.objects, m.covered, m.orphans)
+    return m
+
+
+def _measure_across(db: Any, object_db: Any, entity: OntologyEntity, binding: Binding,
+                    m: BindingMeasurement) -> BindingMeasurement:
+    """ON-8 — `measure_binding` when a binding and its objects live on two connections: the binding's rows, keyed rows
+    and distinct keys counted where they are; its distinct keys and the objects' read in canonical form, each on its
+    own connection; coverage and orphans from the two sets — the form the cross-source object query joins on."""
+    from aughor.ontology.sources import distinct_keys
+    source, objects = binding_from(binding, "b"), object_from(entity, "o")
+    bk = quote_ident(binding.key)
+    try:
+        result = db.execute("__binding_probe__", f"SELECT COUNT(*), COUNT(b.{bk}), COUNT(DISTINCT b.{bk}) FROM {source}")
+    except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
+        m.note = f"probe raised: {exc}"[:200]
+        return m
+    if getattr(result, "error", None) or not getattr(result, "rows", None):
+        m.note = f"probe failed: {getattr(result, 'error', '') or 'no rows'}"[:200]
+        return m
+    bound, why = distinct_keys(db, source, "b", binding.key)
+    held, why_objects = distinct_keys(object_db, objects, "o", key_of(entity)) if bound is not None else (None, "")
+    if bound is None or held is None:
+        m.note = why or why_objects
+        return m
+    try:
+        m.rows, m.non_null, m.distinct = (int(v) for v in result.rows[0][:3])
+    except (TypeError, ValueError):
+        m.note = "probe returned an unreadable row"
+        return m
+    m.objects, m.covered, m.orphans = len(held), len(held & bound), len(bound - held)
+    m.verified, m.note = verdict(binding.kind, binding.key, entity.id, m.rows, m.non_null, m.distinct,
+                                 m.objects, m.covered, m.orphans)
+    m.note += "; the binding and its objects live on two connections, and their keys were met in memory"
     return m
 
 
@@ -309,7 +350,7 @@ def select_lineage(sql: Optional[str], graph: Optional[OntologyGraph]) -> dict[s
 
 
 def column_profiles(graph: Optional[OntologyGraph], table: Optional[str], columns: dict[str, str],
-                    sql: Optional[str] = None) -> dict[str, EntityProperty]:
+                    sql: Optional[str] = None, recorded: Any = None) -> dict[str, EntityProperty]:
     """``{column: its profile}`` for a binding's columns (``columns`` is ``{column: the data type the warehouse
     reported}``).
 
@@ -318,13 +359,20 @@ def column_profiles(graph: Optional[OntologyGraph], table: Optional[str], column
     of the column read: the table's own column for a table binding, and for a keyed SELECT the source column a
     pass-through projection names (`select_lineage`). A computed column borrows no role, so its reported type alone
     decides what the compiler will do with it; a column nothing typed stays untyped, and the compiler will not add it
-    up."""
-    own = _profiles_of(graph, table) if table else {}
-    traced = select_lineage(sql, graph) if not table and (sql or "").strip() else {}
+    up.
+
+    ON-8 — ``recorded`` is the profile a declaration COPIED from its source's own catalogue when it was bound
+    (`profile_record`): an organisation's ontology holds no builder profile of a table on another connection, so its
+    overlay reads the copy, still with no database; a column the copy lacks borrows nothing."""
+    kept = recorded_profiles(recorded)
+    own = _profiles_of(graph, table) if table and not kept else {}
+    traced = select_lineage(sql, graph) if not kept and not table and (sql or "").strip() else {}
     out: dict[str, EntityProperty] = {}
     for col, data_type in columns.items():
         name = str(col)
-        if table:
+        if kept:
+            profile = kept.get(name.lower())
+        elif table:
             profile = own.get(name.lower())
         else:
             source = traced.get(name.lower())
@@ -339,6 +387,32 @@ def column_profiles(graph: Optional[OntologyGraph], table: Optional[str], column
         reported = str(data_type or "").strip()
         out[name] = prop.model_copy(update={"data_type": reported}) if reported else prop
     return out
+
+
+#: ON-8 — what a declaration in an organisation's ontology copies of a column's profile from its source's catalogue:
+#: what was MEASURED of the column. Never words — a description, or what a null means — because an organisation's
+#: ontology is edited by people only (the user's rule, 2026-09-14) and a catalogue's words may be a model's or the
+#: explorer's; never the data type (the warehouse reports that at bind); never sample values (a declaration copies
+#: meaning, not data). A list of what IS copied, so a field the profile gains later is not copied until it is named here.
+PROFILE_COPIED = ("name", "display_name", "semantic_type", "unit", "value_interpretation", "measure_grain",
+                  "is_primary_key", "is_foreign_key", "is_nullable", "null_rate", "is_derived", "distribution_shape")
+
+
+def profile_record(properties: dict[str, EntityProperty]) -> dict:
+    """ON-8 — what a bind entry keeps of the profiles its columns borrowed from their source's catalogue: what was
+    measured (`PROFILE_COPIED`) of each column that has a role, a unit, a grain or an interpretation."""
+    return {name.lower(): p.model_dump(include=set(PROFILE_COPIED), exclude_defaults=True)
+            for name, p in properties.items()
+            if p.semantic_type or p.unit or p.measure_grain or p.value_interpretation}
+
+
+def recorded_profiles(raw: Any) -> dict[str, EntityProperty]:
+    """``{column (lowered): profile}`` from what `profile_record` kept; anything that is not one is left out, and so is
+    whatever a copy made before `PROFILE_COPIED` holds beyond it — a description included."""
+    if not isinstance(raw, dict):
+        return {}
+    return {str(k).lower(): EntityProperty.model_validate({f: v[f] for f in PROFILE_COPIED if f in v})
+            for k, v in raw.items() if isinstance(v, dict) and v.get("name")}
 
 
 def supply(columns: dict[str, EntityProperty], key: str, taken: dict[str, str],
@@ -546,6 +620,9 @@ def spec_problem(name: str, spec: Any) -> str:
         return f"{table!r} is not a table identifier"
     if sql and (not _SELECT.match(sql) or ";" in sql.rstrip().rstrip(";")):
         return "a binding's `sql` is one SELECT"
+    connection = str(spec.get("connection_id") or "").strip()
+    if connection and not CONNECTION_PATTERN.match(connection):
+        return f"{connection!r} is not a connection id"
     if not _COLUMN.match(str(spec.get("key") or "").strip()):
         return "a binding names the column that holds the object's key in `key`"
     kind = spec.get("kind") or "static"
@@ -594,6 +671,9 @@ def spec_problem(name: str, spec: Any) -> str:
 def normalized_spec(spec: dict) -> dict:
     """The spec as the overrides tree stores it: trimmed, the empty parts dropped. Idempotent."""
     out: dict = {"kind": spec.get("kind") or "static", "key": str(spec.get("key") or "").strip()}
+    connection = str(spec.get("connection_id") or "").strip()
+    if connection:
+        out["connection_id"] = connection          # ON-8 — the source lives on another connection than its objects
     table, sql = str(spec.get("table") or "").strip(), str(spec.get("sql") or "").strip()
     if table:
         out["table"] = table
@@ -618,6 +698,8 @@ def binding_spec(binding: Binding) -> dict:
     """The part of a binding a person edits — its source, key, kind, time column and property names — never its
     measurement: what the overrides tree stores, what the export writes, and what binding a proposal sends."""
     spec: dict = {"kind": binding.kind, "key": binding.key}
+    if binding.connection_id:
+        spec["connection_id"] = binding.connection_id
     if binding.reads == "query":
         spec["sql"] = binding.sql or ""
     else:
@@ -653,11 +735,15 @@ def describe_with(db: Any) -> Describe:
 
 
 def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[OntologyGraph],
-                 describe: Describe) -> dict:
+                 describe: Describe, *, profiles_from: Optional[OntologyGraph] = None) -> dict:
     """The bind entry for one binding a person set on ``entity`` (the served type): the spec's shape, then its source
     read for columns — the key and the time column must be among them, and every property it supplies must be free
     on the type. ALWAYS returns an entry, ``bound`` False with the reason when anything fails; nothing is counted
-    here (`measure_binding` is)."""
+    here (`measure_binding` is).
+
+    ON-8 — ``profiles_from`` is the catalogue of the connection the source lives on, when ``graph`` holds no profile of
+    it (an organisation's ontology does not): the columns borrow their roles from it, and the entry keeps a copy
+    (`profile_record`) so the overlay rebuilds them with no database."""
     problem = spec_problem(name, spec)
     if problem:
         return {"bound": False, "note": problem}
@@ -665,7 +751,9 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
     if name == primary_name(entity).lower():
         return {"bound": False, "note": f"'{name}' names {entity.id}'s backing, its first binding", "spec": spec}
     backing_table = (entity.backing.table if entity.backing is not None else None) or ""
-    if spec.get("table") and backing_table and spec["table"].lower() == backing_table.lower():
+    home = (entity.backing.connection_id if entity.backing is not None else "") or ""
+    if (spec.get("table") and backing_table and spec["table"].lower() == backing_table.lower()
+            and spec.get("connection_id", home) == home):
         return {"bound": False, "note": f"{spec['table']} already backs {entity.id} — its columns are its properties",
                 "spec": spec}
     try:
@@ -689,23 +777,28 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
         spec["time_column"] = time_column
     others = [b for b in entity.bindings or [] if b.name != name]
     reported = {str(c): str(t or "") for c, t in columns.items()}
+    source_graph = profiles_from if profiles_from is not None else graph
+
+    def profiled() -> dict[str, EntityProperty]:
+        return column_profiles(source_graph, spec.get("table"), columns, spec.get("sql"))
+
+    # ON-8 — a copy of what the columns borrowed, kept on the entry when they borrowed from another source's catalogue.
+    copied = {"profiles": profile_record(profiled())} if profiles_from is not None else {}
     if spec["kind"] == "detail":
         # ON-7 — its columns are many per object, so it supplies exactly its rollups, each traced to a column.
-        rollups, rolled, problem = rollup_properties(spec["rollups"],
-                                                     column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
+        rollups, rolled, problem = rollup_properties(spec["rollups"], profiled(),
                                                      taken_names(graph, entity, others), name)
         if problem:
             return {"bound": False, "note": problem, "spec": spec}
         return {"bound": True, "note": "", "spec": spec, "columns": reported,
-                "supplies": {n: r.describe(name) for n, r in rollups.items()}, "skipped": {}}
-    properties, renamed, skipped, problem = supply(column_profiles(graph, spec.get("table"), columns, spec.get("sql")),
-                                                   key, taken_names(graph, entity, others), spec.get("properties"),
-                                                   strict=True)
+                "supplies": {n: r.describe(name) for n, r in rollups.items()}, "skipped": {}, **copied}
+    properties, renamed, skipped, problem = supply(profiled(), key, taken_names(graph, entity, others),
+                                                   spec.get("properties"), strict=True)
     if problem:
         return {"bound": False, "note": problem, "spec": spec}
     # A binding may supply nothing BUT frames — "the trailing average of a price" is a property the source has no
     # column for, and demanding a pass-through column beside it would be arbitrary.
-    profiles = column_profiles(graph, spec.get("table"), columns, spec.get("sql"))
+    profiles = profiled()
     frames, framed, problem = frame_properties(spec.get("frames") or {}, profiles,
                                                taken_names(graph, entity, others), properties)
     if problem:
@@ -717,7 +810,7 @@ def bind_binding(entity: OntologyEntity, name: str, spec: Any, graph: Optional[O
                                                          if skipped else "")}
     return {"bound": True, "note": "", "spec": spec, "columns": reported,
             "supplies": {**{p: renamed.get(p, p) for p in properties},
-                         **{name: f.describe() for name, f in frames.items()}}, "skipped": skipped}
+                         **{name: f.describe() for name, f in frames.items()}}, "skipped": skipped, **copied}
 
 
 def _origin_of(entry: dict) -> str:
@@ -753,7 +846,7 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
             skipped.append(f"{name}: {entry.get('note') or 'not bound against the warehouse since it was written'}")
             continue
         columns = entry.get("columns") if isinstance(entry.get("columns"), dict) else {}
-        profiles = column_profiles(graph, spec.get("table"), columns, spec.get("sql"))
+        profiles = column_profiles(graph, spec.get("table"), columns, spec.get("sql"), recorded=entry.get("profiles"))
         taken = taken_names(graph, entity, out)
         if spec["kind"] == "detail":
             rollups, rolled, rollup_problem_note = rollup_properties(spec.get("rollups") or {}, profiles, taken, name)
@@ -761,6 +854,7 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
                 skipped.append(f"{name}: {rollup_problem_note}")
                 continue
             binding = Binding(name=name, kind="detail", table=spec.get("table"), sql=spec.get("sql"),
+                              connection_id=spec.get("connection_id") or "",
                               key=spec["key"], properties=rolled, rollups=rollups, source=_origin_of(entry),
                               provenance=str(entry.get("provenance") or ""), note="bound; not yet measured")
             measured = entry.get("measured") if isinstance(entry.get("measured"), dict) else {}
@@ -775,6 +869,7 @@ def declared_bindings(entity: OntologyEntity, specs: Any, block: Any,
             skipped.append(f"{name}: {frame_problem_note}")
             continue
         binding = Binding(name=name, kind=spec["kind"], table=spec.get("table"), sql=spec.get("sql"), key=spec["key"],
+                          connection_id=spec.get("connection_id") or "",
                           time_column=spec.get("time_column", ""), properties={**properties, **framed},
                           columns=renamed, frames=frames,
                           skipped=lost, source=_origin_of(entry), provenance=str(entry.get("provenance") or ""),

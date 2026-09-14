@@ -7240,7 +7240,8 @@ export interface paths {
         /**
          * Get Object Paths
          * @description ON-3b — how one object type reaches another: every chain of links within `max_hops`, each hop marked
-         *     followed or refused with the compiler's reason, followed paths first. An unknown type is `path: refused`.
+         *     followed or refused with the compiler's reason, followed paths first. An unknown type is `path: refused`. ON-8 —
+         *     with ``domain``, in the organisation's ontology.
          */
         get: operations["get_object_paths_object_paths_get"];
         put?: never;
@@ -7262,7 +7263,8 @@ export interface paths {
          * Get Object Type Map
          * @description ON-3b — the entity-type map: every object type with the measured facts its card shows (key verified, rows,
          *     bindings, links the compiler follows, declared actions, verified metrics), and every link between two types
-         *     with its verb and measured cardinality. A cache read: no warehouse query, no model call.
+         *     with its verb and measured cardinality. A cache read: no warehouse query, no model call. ON-8 — with ``domain``,
+         *     the organisation's ontology: each type says the connection it lives on, and each link whether it crosses two.
          */
         get: operations["get_object_type_map_object_types_get"];
         put?: never;
@@ -7284,7 +7286,8 @@ export interface paths {
          * Get Object Type
          * @description ON-3b — one object type as the entity-type panel shows it and `describe_entity` returns it: the key and
          *     whether it is unique, the display property, every property with its source, the bindings, the links (followed,
-         *     or refused and why), the declared actions and the verified metrics. An unknown type is `path: refused`.
+         *     or refused and why), the declared actions and the verified metrics. An unknown type is `path: refused`. ON-8 —
+         *     with ``domain``, a type of the organisation's ontology.
          */
         get: operations["get_object_type_object_types__object_type__get"];
         put?: never;
@@ -7305,7 +7308,8 @@ export interface paths {
         /**
          * Get Object Catalog
          * @description Every object type the compiler can query: properties by role, links with their measured
-         *     cardinality (and why an unusable one is not), verified segments and verified metrics.
+         *     cardinality (and why an unusable one is not), verified segments and verified metrics. ON-8 — with ``domain``, the
+         *     organisation's ontology.
          */
         get: operations["get_object_catalog_objects_catalog_get"];
         put?: never;
@@ -7332,7 +7336,8 @@ export interface paths {
          *     `path` says what happened: `compiled` — the SQL, the plan (one line per decision the compiler
          *     made), the links relied on with their measured cardinality, and the rows — or `refused`, with
          *     the reason and the names that do exist. A refusal is an answer, not an error: the compiler
-         *     never guesses.
+         *     never guesses. ON-8 — with ``domain``, the query runs on its anchor type's connection; a source on another
+         *     connection is read by key and the answer aggregated over both (`cross_source` says how, `timings` how long).
          */
         post: operations["post_object_query_objects_query_post"];
         delete?: never;
@@ -7841,6 +7846,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/domains": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ontology Domains
+         * @description ON-8 — the organisation's ontologies: the default domain every organisation has, and each other domain it has
+         *     declared anything in, with how many types and links each holds, how many of the links cross two connections, and
+         *     the connections it reads. A read of the declaration files: no warehouse query, no model call.
+         */
+        get: operations["list_ontology_domains_ontology_domains_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/draft": {
         parameters: {
             query?: never;
@@ -7926,7 +7953,8 @@ export interface paths {
          *     the key is counted before anything is written (400 with the reason when it cannot be read); a table that
          *     already backs a type is refused — rename or absorb that type instead of doubling it. The declaration lives
          *     in the overrides tree with provenance (human, or a model's proposal) and survives every rebuild. No model
-         *     call.
+         *     call. ON-8 — with ``domain`` the type is the organisation's: ``backing.connection_id`` names the connection its
+         *     rows live on, and they are read and counted there.
          */
         post: operations["declare_ontology_entity_ontology_entities_post"];
         delete?: never;
@@ -7972,7 +8000,8 @@ export interface paths {
          * Delete Declared Entity
          * @description Withdraw a DECLARED entity (ON-7) — its override file, and with it the type. A type the builder made from
          *     a table is not deletable here (404 says so): absorb it into another type, or leave it. A declared link on
-         *     the withdrawn type stops applying on the next read and is reported skipped, never silently kept.
+         *     the withdrawn type stops applying on the next read and is reported skipped, never silently kept. ON-8 — with
+         *     ``domain``, from the organisation's ontology.
          */
         delete: operations["delete_declared_entity_ontology_entities__entity_id__delete"];
         options?: never;
@@ -7995,14 +8024,16 @@ export interface paths {
          *     column and every property it supplies must exist and be free on the type, or nothing is written (400) — then it is
          *     counted against the objects: a static binding must hold one row per object, a timeseries binding must reach them.
          *     Merged into the type's other human edits; the response carries the binding as the entity-type panel shows it.
-         *     No model call.
+         *     No model call. ON-8 — with ``domain`` the type is the organisation's, and the source may live on another
+         *     connection (``connection_id``): read there, and counted against the objects across both.
          */
         put: operations["bind_ontology_entity_ontology_entities__entity_id__bindings__name__put"];
         post?: never;
         /**
          * Unbind Ontology Entity
          * @description Remove one binding a person set (ON-1b). The type's other human edits stay; the properties that binding
-         *     supplied stop resolving on the next read. 404 when the type has no such binding.
+         *     supplied stop resolving on the next read. 404 when the type has no such binding. ON-8 — with ``domain``, from a
+         *     type in the organisation's ontology.
          */
         delete: operations["unbind_ontology_entity_ontology_entities__entity_id__bindings__name__delete"];
         options?: never;
@@ -8388,7 +8419,8 @@ export interface paths {
          *     (a path segment names one thing), and no found link may already join the same columns — name that one instead.
          *     Each side is counted (a side is "1" when its key is unique — the cardinality, ON-0a's law) and the share of
          *     from-keys the to-side holds is measured before anything is written; the compiler follows the link exactly as
-         *     it would a found one: measured, and not N:N. No model call.
+         *     it would a found one: measured, and not N:N. No model call. ON-8 — with ``domain``, between types of the
+         *     organisation's ontology: each side counted on its own connection, and a link across two is `cross-source`.
          */
         post: operations["declare_ontology_link_ontology_links_post"];
         delete?: never;
@@ -8415,7 +8447,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Declared Link
-         * @description Withdraw a DECLARED link (ON-7). A link the builder found is not deletable here (404 says so).
+         * @description Withdraw a DECLARED link (ON-7). A link the builder found is not deletable here (404 says so). ON-8 — with
+         *     ``domain``, from the organisation's ontology.
          */
         delete: operations["delete_declared_link_ontology_links__relationship_id__delete"];
         options?: never;
@@ -13898,6 +13931,8 @@ export interface components {
         _BindingSpec: {
             /** Absorb */
             absorb?: boolean | null;
+            /** Connection Id */
+            connection_id?: string | null;
             /** Frames */
             frames?: {
                 [key: string]: {
@@ -13922,6 +13957,8 @@ export interface components {
                     [key: string]: unknown;
                 };
             } | null;
+            /** Schema Name */
+            schema_name?: string | null;
             /** Sql */
             sql?: string | null;
             /** Table */
@@ -14105,8 +14142,12 @@ export interface components {
          * @description ON-7 — the source whose rows ARE a declared type's objects.
          */
         _DeclaredBacking: {
+            /** Connection Id */
+            connection_id?: string | null;
             /** Primary Key */
             primary_key: string;
+            /** Schema Name */
+            schema_name?: string | null;
             /** Sql */
             sql?: string | null;
             /** Table */
@@ -27328,6 +27369,7 @@ export interface operations {
                 connection_id?: string;
                 schema_name?: string | null;
                 max_hops?: number;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -27360,6 +27402,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -27392,6 +27435,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -27426,6 +27470,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -27460,6 +27505,8 @@ export interface operations {
                 schema_name?: string | null;
                 /** @description False returns the compiled SQL and plan without running it */
                 execute?: boolean;
+                /** @description ON-8 — query an organisation's ontology, whose types may live on several connections */
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -28313,6 +28360,26 @@ export interface operations {
             };
         };
     };
+    list_ontology_domains_ontology_domains_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_ontology_draft_ontology_draft_get: {
         parameters: {
             query?: {
@@ -28454,6 +28521,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description ON-8 — declare the type in an organisation's ontology, on the connection `backing.connection_id` names */
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -28564,6 +28633,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -28598,6 +28668,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description ON-8 — bind onto a type of an organisation's ontology, from a source on any of its connections */
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -28637,6 +28709,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -29231,6 +29304,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description ON-8 — declare the link in an organisation's ontology, where its two types may live on two connections */
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29305,6 +29380,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -29341,6 +29417,8 @@ export interface operations {
                 schema_name?: string | null;
                 /** @description A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless */
                 pack?: string | null;
+                /** @description ON-8 — measure an organisation's ontology instead: every declaration in the domain, on the connections it names */
+                domain?: string | null;
             };
             header?: never;
             path?: never;

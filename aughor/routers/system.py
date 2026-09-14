@@ -4,12 +4,14 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from aughor.db.registry import BUILTIN_ID
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["system"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["system"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _llm_readiness() -> dict:

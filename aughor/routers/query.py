@@ -9,6 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
+from aughor.security.authz import connection_owner_guard
 
 
 def _query_owner_guard(request: Request) -> None:
@@ -37,7 +38,8 @@ def _check_conn_org(request: Request, *conn_ids: str) -> None:
             check_owner("connection", cid, principal)
 
 
-router = APIRouter(tags=["query"], dependencies=[Depends(_query_owner_guard)])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["query"], dependencies=[Depends(_query_owner_guard), Depends(connection_owner_guard)])
 
 
 # ── SE-3 F — cancellation and a time limit that actually bites ─────────────────

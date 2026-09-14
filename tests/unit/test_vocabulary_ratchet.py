@@ -434,7 +434,7 @@ BASELINE: dict[str, int] = {
     # context graph's loader moved to it in the same change.
     # 2026-09-13: 1880 → 1694. Instrument's Profile layer replaced IntelligenceHub.tsx and
     # ExplorationPanel.tsx (128 between them), and the Briefing and Org layers were redrawn.
-    "insight": 1694,
+    "insight": 1692,
     # 659 → 617: CA-1 deleted the reducer stack (investigationStream.ts, useChat.ts,
     # useInvestigationThread.ts, aguiTransport.ts) — 42 spellings went with it.
     # 2026-09-13: 602 → 573, measured. Instrument redrew the Briefing and deleted ProcessMapper.tsx;

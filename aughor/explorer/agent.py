@@ -2629,7 +2629,10 @@ class SchemaExplorer:
             try:
                 from aughor.playbook.retriever import retrieve_for_metric_and_phases
                 _pb_labels = [domain] + list(profile_angles) + list(angles)
-                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4, industry=_pb_scope)
+                # Relevance alone: a play's success rate is learned from outcomes on every connection, and
+                # the explorer does not look beyond its own (the user's rule, 2026-09-14).
+                _plays = retrieve_for_metric_and_phases(_pb_labels, limit=4, learned_rates=False,
+                                                        industry=_pb_scope)
                 if _plays:
                     _pb_lines = "\n".join(
                         f"  • When {p.trigger_metric} {p.trigger_condition}: {(p.recommendation or '')[:140]}"

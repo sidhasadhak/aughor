@@ -1,0 +1,6 @@
+# Git for Windows checks text files out with CRLF line endings by default. A shell script
+# with carriage returns does not run (`sh` reads `set -eu\r`), and cmd.exe misreads a batch
+# file without them — so the installers pin their own endings.
+*.sh   text eol=lf
+*.cmd  text eol=crlf
+*.bat  text eol=crlf

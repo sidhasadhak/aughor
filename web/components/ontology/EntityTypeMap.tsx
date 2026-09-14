@@ -39,7 +39,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Icon } from "@/components/ui/icon";
 import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
-import { getMyPreferences, putMyPreference } from "@/lib/api";
+import { getConnections, getMyPreferences, putMyPreference } from "@/lib/api";
 import { formatCount } from "@/lib/format";
 import { CARD, collapseParts, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
 import {
@@ -48,6 +48,7 @@ import {
   exploreOntology,
   getOntologyDraft,
   getTypeMap,
+  scopeDomain,
   type ConfirmTarget,
   type DeclaredEntitySpec,
   type DraftProposal,
@@ -121,6 +122,13 @@ interface CardData extends Record<string, unknown> {
   row: TypeMapRow;
   lit: boolean;
   picked: boolean;
+  /** ON-8 — in an organisation's ontology, the name of the connection the type's rows live on. */
+  source?: string;
+}
+
+/** ON-8 — a connection by its name where the name is known, else by its id. */
+function nameOf(sources: Record<string, string>, connectionId: string | undefined): string {
+  return connectionId ? sources[connectionId] ?? connectionId : "";
 }
 
 export function EntityTypeMap({ connectionId, schema }: { connectionId: string; schema?: string }) {
@@ -137,6 +145,18 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
     setOpenProcess(null);
     setSelected(objectType);
   };
+  // ON-8 — the organisation's ontology is a map over several connections: every type and binding names its own, and
+  // the rail, the cards and the panel say which by name.
+  const domain = scopeDomain(connectionId);
+  const [sources, setSources] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!domain) return;
+    let live = true;
+    getConnections()
+      .then((all) => { if (live) setSources(Object.fromEntries(all.map((c) => [c.id, c.name]))); })
+      .catch(() => { /* a connection's id stands in for its name */ });
+    return () => { live = false; };
+  }, [domain]);
 
   useEffect(() => {
     let live = true;
@@ -155,12 +175,14 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
   // ON-7b — the explorer's draft beside the map: what it proposed, and where each proposal stands now. A scope with no
   // draft — or an API older than the draft door — simply offers a first one.
   useEffect(() => {
+    // ON-8 — an explorer drafts one connection's tables and never an organisation's ontology, which people alone edit.
+    if (domain) return;
     let live = true;
     getOntologyDraft(connectionId, schema)
       .then((next) => { if (live) setDraft(next); })
       .catch(() => { if (live) setDraft(null); });
     return () => { live = false; };
-  }, [connectionId, schema, version]);
+  }, [connectionId, schema, version, domain]);
 
   // ON-7 — a part is not a card: it is folded into its parent. Memoised on the map itself, so a render that changes nothing
   // the map draws — the draft arriving, a search in the rail — hands the canvas the same map and re-lays nothing.
@@ -175,8 +197,19 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
     );
   }
   if (!map || !drawn) return <div style={{ flex: 1, padding: 24 }}><SkeletonRows rows={6} /></div>;
+  const declare = (spec: DeclaredEntitySpec) => declareEntity(connectionId, spec, schema).then((made) => {
+    setVersion((v) => v + 1);
+    setSelected(made.object_type);
+  });
   if (!selected || map.object_types.length === 0) {
-    return <EmptyState icon="node" title="This ontology has no object types yet." />;
+    if (!domain) return <EmptyState icon="node" title="This ontology has no object types yet." />;
+    // ON-8 — an organisation's ontology starts empty, so its first type is declared from here.
+    return (
+      <EmptyState icon="node" title="Nothing is declared in the organisation's ontology yet">
+        Declare a type on any connection: its rows are read and its key counted there before anything is written.
+        <DeclareEntity declare={declare} sources={sources} />
+      </EmptyState>
+    );
   }
   // ON-7 — picking a part lights its parent's card.
   const picked = map.object_types.find((t) => t.object_type === selected);
@@ -191,10 +224,8 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
           setSelected(p.entity);
           setOpenProcess(p.id);
         }}
-        declare={(spec) => declareEntity(connectionId, spec, schema).then((made) => {
-          setVersion((v) => v + 1);
-          setSelected(made.object_type);
-        })}
+        declare={declare}
+        sources={domain ? sources : undefined}
         draft={draft}
         explore={() => exploreOntology(connectionId, schema).then((next) => {
           setDraft(next);
@@ -205,13 +236,15 @@ export function EntityTypeMap({ connectionId, schema }: { connectionId: string; 
           setVersion((v) => v + 1);
           if (next.refused.length) throw new Error(next.refused.map((r) => r.why).join("; "));
         })} />
-      <MapCanvas map={drawn} selected={standing} onSelect={openType} scope={scopeOf(connectionId, schema)} />
+      <MapCanvas map={drawn} selected={standing} onSelect={openType} scope={scopeOf(connectionId, schema)}
+        sources={domain ? sources : undefined} />
       {openProcess ? (
         <ProcessPanel connectionId={connectionId} schema={schema} processId={openProcess} version={version}
           onOpenType={openType} onClose={() => setOpenProcess(null)} onChanged={() => setVersion((v) => v + 1)} />
       ) : (
         <EntityTypePanel connectionId={connectionId} schema={schema} objectType={selected} types={map.object_types}
-          version={version} onOpen={openType} onOpenProcess={setOpenProcess} onChanged={() => setVersion((v) => v + 1)} />
+          version={version} onOpen={openType} onOpenProcess={setOpenProcess} onChanged={() => setVersion((v) => v + 1)}
+          sources={domain ? sources : undefined} />
       )}
     </div>
   );
@@ -222,7 +255,7 @@ function matches(t: TypeMapRow, wanted: string): boolean {
 }
 
 function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, rules, openProcess, onPickProcess, declare,
-  draft, explore, confirm }: {
+  sources, draft, explore, confirm }: {
   types: TypeMapRow[];
   /** ON-7 — the types folded into a parent: listed under the cards, still openable by name. */
   parts: TypeMapRow[];
@@ -236,6 +269,8 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
   openProcess: string | null;
   onPickProcess: (process: ProcessRow) => void;
   declare: (spec: DeclaredEntitySpec) => Promise<void>;
+  /** ON-8 — set in an organisation's ontology: its connections by id, which each row names and a declaration picks. */
+  sources?: Record<string, string>;
   /** ON-7b — the explorer's draft, and the two doors it offers: a draft, and a confirmation. */
   draft: OntologyDraft | null;
   explore: () => Promise<void>;
@@ -256,6 +291,14 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
           <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: current ? 600 : 500 }}>
             {t.display_name}
           </span>
+          {/* ON-8 — the connection on a line of its own: a name like "LuxExperience (explorer draft)" would push the key
+              and the links off the rail's edge. */}
+          {sources && t.connection_id && (
+            <span className="aug-fs-xs" data-testid="entity-rail-connection" title={`read from ${nameOf(sources, t.connection_id)}`}
+              style={{ color: "var(--t3)", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              on {nameOf(sources, t.connection_id)}
+            </span>
+          )}
           <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>
             {part ? `part of ${t.absorbed_into}` : `${keyWords(t.key_verified)} · ${t.links} ${t.links === 1 ? "link" : "links"}`}
             {!part && t.parts?.length ? ` · ${t.parts.length} ${t.parts.length === 1 ? "part" : "parts"}` : ""}
@@ -290,8 +333,8 @@ function TypeRail({ types, parts, selected, query, onQuery, onPick, processes, r
         <DeclarationRows processes={processes} rules={rules} openProcess={openProcess} onPickProcess={onPickProcess}
           onPickType={onPick} />
       </div>
-      <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} />
-      <DeclareEntity declare={declare} />
+      {!sources && <ExplorerDraft draft={draft} explore={explore} confirm={confirm} onOpen={onPick} />}
+      <DeclareEntity declare={declare} sources={sources} />
     </nav>
   );
 }
@@ -460,7 +503,11 @@ function ExplorerDraft({ draft, explore, confirm, onOpen }: {
 /** ON-7 — declare a business entity from the rail: the noun first, then the source that holds one row per object.
  *  The server reads that source's columns and counts its key before anything is written; a table that already
  *  backs a type is refused with the reason — rename or absorb that type instead of doubling it. */
-function DeclareEntity({ declare }: { declare: (spec: DeclaredEntitySpec) => Promise<void> }) {
+function DeclareEntity({ declare, sources }: {
+  declare: (spec: DeclaredEntitySpec) => Promise<void>;
+  /** ON-8 — set in an organisation's ontology: the connections a type's rows may live on, by id. */
+  sources?: Record<string, string>;
+}) {
   const [open, setOpen] = useState(false);
   const [id, setId] = useState("");
   const [name, setName] = useState("");
@@ -468,19 +515,26 @@ function DeclareEntity({ declare }: { declare: (spec: DeclaredEntitySpec) => Pro
   const [source, setSource] = useState("");
   const [key, setKey] = useState("");
   const [domain, setDomain] = useState("");
+  const [connection, setConnection] = useState("");
+  const [schemaName, setSchemaName] = useState("");
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState("");
-  const ready = /^[A-Z][A-Za-z0-9]{0,63}$/.test(id.trim()) && !!name.trim() && !!source.trim() && !!key.trim();
+  const ready = /^[A-Z][A-Za-z0-9]{0,63}$/.test(id.trim()) && !!name.trim() && !!source.trim() && !!key.trim()
+    && (!sources || !!connection);
   const submit = async () => {
     setBusy(true);
     setProblem("");
     const spec: DeclaredEntitySpec = { id: id.trim(), display_name: name.trim(),
       backing: { primary_key: key.trim(), ...(reads === "table" ? { table: source.trim() } : { sql: source.trim() }) } };
+    if (sources) {
+      spec.backing.connection_id = connection;
+      if (reads === "table" && schemaName.trim()) spec.backing.schema_name = schemaName.trim();
+    }
     if (domain.trim()) spec.domain = domain.trim();
     try {
       await declare(spec);
       setOpen(false);
-      setId(""); setName(""); setSource(""); setKey(""); setDomain("");
+      setId(""); setName(""); setSource(""); setKey(""); setDomain(""); setConnection(""); setSchemaName("");
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e));
     } finally {
@@ -501,13 +555,29 @@ function DeclareEntity({ declare }: { declare: (spec: DeclaredEntitySpec) => Pro
     <div style={{ padding: "8px 10px 10px", borderTop: RULE, display: "flex", flexDirection: "column", gap: 6 }}
       data-testid="entity-declare">
       <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
-        A business entity, and the source whose rows are its objects. Its columns are read and its key counted
-        before anything is written.
+        {sources
+          ? "A business entity, and the source on any of the organisation's connections whose rows are its objects. " +
+            "Its columns are read and its key counted on that connection before anything is written."
+          : "A business entity, and the source whose rows are its objects. Its columns are read and its key counted " +
+            "before anything is written."}
       </p>
       <input className="aug-fs-xs" style={FIELD} value={id} placeholder="Id — PascalCase, e.g. PurchaseOrder"
         aria-label="Entity id" onChange={(e) => setId(e.target.value)} />
       <input className="aug-fs-xs" style={FIELD} value={name} placeholder="Display name" aria-label="Entity display name"
         onChange={(e) => setName(e.target.value)} />
+      {sources && (
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          <select className="aug-fs-xs" style={{ ...SELECT, flex: 1 }} value={connection} aria-label="Entity connection"
+            onChange={(e) => setConnection(e.target.value)} data-testid="entity-declare-connection">
+            <option value="">connection…</option>
+            {Object.entries(sources).map(([cid, label]) => <option key={cid} value={cid}>{label}</option>)}
+          </select>
+          {reads === "table" && (
+            <input className="aug-fs-xs" style={{ ...FIELD, width: 90 }} value={schemaName} placeholder="schema"
+              aria-label="Entity schema" onChange={(e) => setSchemaName(e.target.value)} />
+          )}
+        </div>
+      )}
       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
         <select className="aug-fs-xs" style={SELECT} value={reads} aria-label="Entity source kind"
           onChange={(e) => setReads(e.target.value as "table" | "query")}>
@@ -537,7 +607,7 @@ function DeclareEntity({ declare }: { declare: (spec: DeclaredEntitySpec) => Pro
 /** One entity type on the canvas. Handles on all four sides, invisible: a link leaves by whichever side the type
  *  it reaches actually lies on, and that is recomputed as cards move. */
 function EntityCard({ data }: NodeProps<RFNode<CardData>>) {
-  const { row, lit, picked } = data;
+  const { row, lit, picked, source } = data;
   return (
     <div className="aug-panel" data-testid="entity-map-card"
       style={{ width: CARD.w, height: CARD.h, padding: "8px 12px", display: "flex", flexDirection: "column",
@@ -570,7 +640,9 @@ function EntityCard({ data }: NodeProps<RFNode<CardData>>) {
           </span>
         ) : null}
       </span>
-      <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap" }}>
+      <span className="aug-fs-xs" style={{ color: "var(--t3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}
+        title={source ? `read from ${source}` : undefined}>
+        {source ? `on ${source} · ` : ""}
         {keyWords(row.key_verified)} · {row.traversable_links} of {row.links} {row.links === 1 ? "link" : "links"}
         {row.parts?.length ? ` · ${row.parts.length} ${row.parts.length === 1 ? "part" : "parts"}` : ""}
       </span>
@@ -582,11 +654,13 @@ const SIDES = { t: Position.Top, r: Position.Right, b: Position.Bottom, l: Posit
 const HANDLE: React.CSSProperties = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1, border: "none" };
 const NODE_TYPES = { entity: EntityCard };
 
-function MapCanvas({ map, selected, onSelect, scope }: {
+function MapCanvas({ map, selected, onSelect, scope, sources }: {
   map: TypeMap;
   selected: string;
   onSelect: (objectType: string) => void;
   scope: string;
+  /** ON-8 — set in an organisation's ontology: each card names the connection its type lives on. */
+  sources?: Record<string, string>;
 }) {
   const hub = useMemo(() => hubOf(map) ?? selected, [map, selected]);
   const start = useMemo(() => layoutMap(map, hub), [map, hub]);
@@ -621,10 +695,10 @@ function MapCanvas({ map, selected, onSelect, scope }: {
       const at = moved[node.objectType] ?? { x: node.x - CARD.w / 2, y: node.y - CARD.h / 2 };
       return [{
         id: node.objectType, type: "entity", position: at, draggable: true,
-        data: { row, lit: true, picked: false },
+        data: { row, lit: true, picked: false, source: sources ? nameOf(sources, row.connection_id) : undefined },
       } satisfies RFNode<CardData>];
     }));
-  }, [start, rows, moved, setNodes]);
+  }, [start, rows, moved, setNodes, sources]);
 
   // Lighting is a re-read of the cards already on the canvas, never a re-layout: picking a type must not move it.
   useEffect(() => {
@@ -650,12 +724,16 @@ function MapCanvas({ map, selected, onSelect, scope }: {
       const via = (link as { via?: string }).via;
       // ON-7b — a link an explorer proposed and no person has confirmed is drawn in the proposal colour and says so.
       const proposed = link.origin === "model";
+      // ON-8 — a link whose two types live on two connections is read by key, not joined: drawn dotted, and it says so.
+      const crosses = link.traversal === "cross-source";
       const ink = !link.traversable ? "var(--amb4)" : proposed ? "var(--vio4)" : "var(--blue3)";
       return [{
         id: link.relationship, source: link.from, target: link.to,
         sourceHandle: side(b.x - a.x, b.y - a.y), targetHandle: `${side(a.x - b.x, a.y - b.y)}-in`,
         // Only the picked type's links are named: every label at once is what made this map unreadable.
-        label: on ? `${verb} · ${link.cardinality}${via ? ` · via ${via}` : ""}${proposed ? " · proposed" : ""}` : undefined,
+        label: on
+          ? `${verb} · ${link.cardinality}${via ? ` · via ${via}` : ""}${crosses ? " · cross-source" : ""}${proposed ? " · proposed" : ""}`
+          : undefined,
         labelShowBg: true,
         labelBgPadding: [6, 3] as [number, number],
         labelBgBorderRadius: 4,
@@ -663,9 +741,10 @@ function MapCanvas({ map, selected, onSelect, scope }: {
         labelStyle: { fill: "var(--t2)", fontSize: "var(--aug-fs-xs)" },
         markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: ink },
         style: { stroke: ink,
-                 strokeWidth: on ? 2 : 1.25, strokeDasharray: link.traversable ? undefined : "5 4",
+                 strokeWidth: on ? 2 : 1.25, strokeDasharray: !link.traversable ? "5 4" : crosses ? "1 4" : undefined,
+                 strokeLinecap: crosses ? "round" : undefined,
                  opacity: on || lit.links.size === 0 ? 0.95 : UNLIT },
-        data: { why: link.traversable ? "" : link.why_not ?? "" },
+        data: { why: link.traversable ? "" : link.why_not ?? "", crosses },
       } satisfies RFEdge];
     }));
   }, [map.links, nodes, lit, setEdges]);

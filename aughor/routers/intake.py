@@ -10,13 +10,15 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from pydantic import BaseModel, Field
 
 from aughor.licensing import Capability, gate
 from aughor.org.context import current_org_id
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["intake"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["intake"], dependencies=[Depends(connection_owner_guard)])
 
 
 def _org() -> str:

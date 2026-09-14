@@ -284,7 +284,12 @@ def test_staleness_and_content_fingerprints_are_distinguished():
 #: The kernel itself is the registry, not a registered implementation — its own
 #: ``compose_fingerprint`` / ``classify_fingerprints`` helpers are the shared shape the
 #: ratchets exist to point new code AT, so scanning it would flag the cure as the disease.
-_RATCHET_SKIP = {REPO / "aughor" / "kernel" / "freshness.py"}
+#: The installer is outside the product altogether: `tests/unit/test_installer.py` holds it
+#: to the standard library, so it cannot import a store or a cache, and its `PYTHON_VERSION`
+#: (the Python a new .venv gets) and `build_fingerprint` (whether the web app needs
+#: rebuilding) can never reach a freshness verdict. Registering either would enter a
+#: launcher setting in the inventory of producer logic.
+_RATCHET_SKIP = {REPO / "aughor" / "kernel" / "freshness.py", REPO / "aughor" / "installer.py"}
 
 
 def _py_files():

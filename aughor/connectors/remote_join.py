@@ -85,6 +85,11 @@ def _sql_literal(v: object) -> str:
     return "'" + s.replace("'", "''") + "'"
 
 
+#: Public spelling of the canonical key, for ON-8's cross-source measurement and object query: both key on exactly the
+#: form this engine joins on, so a measured overlap and an executed join cannot disagree about which keys meet.
+canon_key = _canon_key
+
+
 def _qident(name: str) -> str:
     """Quote a table/column identifier, escaping embedded quotes, and supporting ``schema.table``."""
     return ".".join('"' + p.replace('"', '""') + '"' for p in name.split("."))
@@ -297,6 +302,42 @@ def _join_failed(err: object) -> QueryResult:
         hypothesis_id="__remote_join__", sql="-- cross-source join failed", columns=[], rows=[],
         row_count=0, error=f"cross-source join failed: right query error: {str(err)[:140]}",
     )
+
+
+def fetch_by_keys(
+    conn: "DatabaseConnection", from_clause: str, key: str, columns: list[str], keys: list[str], *,
+    label: str = "__remote_join__", key_chunk: int = _KEY_CHUNK, max_rows: int = _MAX_RIGHT_ROWS,
+) -> tuple[list[str], list[str], list[list], str | None]:
+    """ON-8 — this engine's keyed read with the values TYPED: one query per chunk of distinct keys (``WHERE key IN
+    (...)``, never one per row), returning ``(columns, types, rows, error)`` with the key projected first as ``__key``.
+
+    The cross-source object query stages these rows beside its home rows and aggregates over both, so it needs each
+    value as the source holds it rather than as text; the join itself keys on `canon_key` of each side's value, the
+    form `batched_foreach_join` keys on. ``keys`` are canonical key strings. More than ``max_rows`` rows is an error,
+    never a partial read, because a partial read would be summed as though it were the whole."""
+    rk = _qident(key)
+    select = ", ".join([f"{rk} AS __key", *(_qident(c) for c in columns)])
+    out_columns: list[str] = []
+    out_types: list[str] = []
+    out_rows: list[list] = []
+    # No key still reads once, matching nothing, so the columns arrive with their types.
+    for chunk in list(_chunks(keys, key_chunk)) or [[]]:
+        in_list = ", ".join(_sql_literal(k) for k in chunk)
+        sql = f"SELECT {select} FROM {from_clause} WHERE {f'{rk} IN ({in_list})' if chunk else '1 = 0'}"
+        try:
+            result, payload = conn.read_typed_rows(label, sql, max_rows - len(out_rows) + 1)
+        except Exception as exc:  # noqa: BLE001 — a read that raised is an error result, never an exception upward
+            return [], [], [], f"keyed read failed: {exc}"[:300]
+        if result.error:
+            return [], [], [], f"keyed read failed: {result.error}"[:300]
+        if payload is None:
+            return [], [], [], "this connector hands back no typed rows, so its values cannot be joined with another source's"
+        if payload.get("truncated") or len(out_rows) + len(payload.get("rows") or []) > max_rows:
+            return [], [], [], f"the keyed read returned more than {max_rows:,} rows"
+        if not out_columns:
+            out_columns, out_types = list(result.columns), [str(t or "") for t in payload.get("types") or []]
+        out_rows.extend(payload.get("rows") or [])
+    return out_columns, out_types, out_rows, None
 
 
 def cross_source_join(

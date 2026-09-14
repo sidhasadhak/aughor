@@ -19,13 +19,15 @@ from __future__ import annotations
 import json
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from aughor.evals import store
 from aughor.licensing import Capability, gate
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["evals"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["evals"], dependencies=[Depends(connection_owner_guard)])
 
 
 class SuiteIn(BaseModel):

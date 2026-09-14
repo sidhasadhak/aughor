@@ -1,0 +1,177 @@
+name: Install
+
+# The installer on all three operating systems. ci.yml tests the code; this tests the first
+# thing a new user runs, which nothing else exercises on Windows or macOS at all: uv, Python,
+# every dependency and the web build from nothing, then Aughor started and both servers
+# answering.
+on:
+  pull_request:
+    paths:
+      - install.sh
+      - install.ps1
+      - install.cmd
+      - start.sh
+      - aughor/installer.py
+      - aughor/cli.py
+      - pyproject.toml
+      - uv.lock
+      - web/package.json
+      - web/package-lock.json
+      - .github/workflows/install.yml
+  push:
+    branches: [main]
+    paths:
+      - install.sh
+      - install.ps1
+      - install.cmd
+      - start.sh
+      - aughor/installer.py
+      - aughor/cli.py
+      - pyproject.toml
+      - uv.lock
+      - web/package.json
+      - web/package-lock.json
+      - .github/workflows/install.yml
+  # Dependencies and runner images move even when these files do not.
+  schedule:
+    - cron: '0 7 * * 1'    # Mondays, 07:00 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: install-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: Install · ${{ matrix.os }} · ${{ matrix.node }} Node.js
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        # Every runner ships a Node.js, so without the second half the download path — the
+        # one a machine with no Node.js takes — would never run here.
+        node: [installed, downloaded]
+    env:
+      AUGHOR_NODE_DOWNLOAD: ${{ matrix.node == 'downloaded' && '1' || '' }}
+      # No monitor, automation or exploration clock in a smoke run.
+      AUGHOR_DISABLE_SCHEDULERS: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install (macOS, Linux)
+        if: runner.os != 'Windows'
+        timeout-minutes: 20
+        run: ./install.sh --no-start
+
+      - name: Install (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 25
+        shell: cmd
+        run: install.cmd --no-start
+
+      # The one-liner's path on a computer with no Git: from an empty folder, the script alone,
+      # Aughor fetched as a snapshot. A repository that cannot be cloned sends it down that
+      # path, and the snapshot is this commit, so the run tests this change rather than main.
+      - name: Fresh install from an empty folder, as a snapshot (macOS, Linux)
+        if: runner.os != 'Windows' && matrix.node == 'installed'
+        timeout-minutes: 20
+        run: |
+          git archive --format=tar.gz --prefix=aughor-main/ -o "$RUNNER_TEMP/aughor-main.tar.gz" HEAD
+          mkdir -p "$RUNNER_TEMP/fresh"
+          cd "$RUNNER_TEMP/fresh"
+          AUGHOR_REPO_URL="$RUNNER_TEMP/no-such-repo" \
+          AUGHOR_ARCHIVE_URL="file://$RUNNER_TEMP/aughor-main.tar.gz" \
+            sh -s -- --no-start < "$GITHUB_WORKSPACE/install.sh"
+          test -f "$HOME/aughor/web/.next/BUILD_ID"
+          # ...and left one command behind that starts Aughor's CLI from any folder.
+          "$HOME/.local/bin/aughor" --help
+
+      - name: Fresh install from an empty folder, as a snapshot (Windows)
+        if: runner.os == 'Windows' && matrix.node == 'installed'
+        timeout-minutes: 25
+        shell: pwsh
+        run: |
+          git archive --format=zip --prefix=aughor-main/ -o "$env:RUNNER_TEMP\aughor-main.zip" HEAD
+          New-Item -ItemType Directory -Force "$env:RUNNER_TEMP\fresh" | Out-Null
+          Copy-Item install.ps1 "$env:RUNNER_TEMP\install.ps1"
+          Set-Location "$env:RUNNER_TEMP\fresh"
+          $env:AUGHOR_REPO_URL = "$env:RUNNER_TEMP\no-such-repo"
+          $env:AUGHOR_ARCHIVE_URL = "file:///$($env:RUNNER_TEMP -replace '\\', '/')/aughor-main.zip"
+          # On the runner's D: work drive: the home folder is on C:, the system drive, where this
+          # step sat for 15 minutes on its first run. The home-folder default is covered on macOS
+          # and Linux.
+          $env:AUGHOR_DIR = "$env:RUNNER_TEMP\fresh\aughor"
+          powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$env:RUNNER_TEMP\install.ps1" --no-start
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "$env:AUGHOR_DIR\web\.next\BUILD_ID")) { exit 1 }
+          & "$HOME\.local\bin\aughor.cmd" --help
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Start, and both servers answer (macOS, Linux)
+        if: runner.os != 'Windows'
+        timeout-minutes: 10
+        run: |
+          ./install.sh --no-browser > up.log 2>&1 &
+          ready=no
+          for attempt in $(seq 1 90); do
+            if curl -fsS http://127.0.0.1:8000/health > /dev/null &&
+               curl -fsS -o /dev/null http://127.0.0.1:3000/; then
+              ready=yes
+              break
+            fi
+            sleep 2
+          done
+          # The summary prints right after both answer; a crash there would stop both servers.
+          if [ "$ready" = yes ]; then
+            sleep 8
+            { curl -fsS http://127.0.0.1:8000/health > /dev/null &&
+              curl -fsS -o /dev/null http://127.0.0.1:3000/; } || ready=no
+          fi
+          cat up.log
+          tail -n 40 .aughor/logs/*.log || true
+          [ "$ready" = yes ]
+
+      - name: Start, and both servers answer (Windows)
+        if: runner.os == 'Windows'
+        timeout-minutes: 10
+        shell: pwsh
+        run: |
+          # Actions runs pwsh with $ErrorActionPreference = 'Stop'; the diagnostics below must print
+          # even when a log is missing or still held open by the servers.
+          $ErrorActionPreference = 'Continue'
+          # Its own hidden console, so nothing the servers or their shutdown do to a console can
+          # reach this step's shell.
+          $up = Start-Process -FilePath cmd.exe -ArgumentList '/c', 'install.cmd --no-browser > up.log 2>&1' -WindowStyle Hidden -PassThru
+          $ready = $false
+          for ($attempt = 0; $attempt -lt 90 -and -not $up.HasExited; $attempt++) {
+            try {
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health | Out-Null
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
+              $ready = $true
+              break
+            } catch {
+              Start-Sleep -Seconds 2
+            }
+          }
+          # The summary prints right after both answer; a crash there would stop both servers.
+          if ($ready) {
+            Start-Sleep -Seconds 8
+            try {
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:8000/health | Out-Null
+              Invoke-WebRequest -UseBasicParsing http://127.0.0.1:3000/ | Out-Null
+            } catch {
+              $ready = $false
+            }
+          }
+          Write-Host "servers answered: $ready; installer exited: $($up.HasExited)"
+          Get-Content up.log -ErrorAction SilentlyContinue
+          Get-ChildItem .aughor/logs/*.log -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "--- $($_.Name)"
+            Get-Content $_.FullName -Tail 40 -ErrorAction SilentlyContinue
+          }
+          if (-not $ready) { exit 1 }

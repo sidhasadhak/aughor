@@ -621,9 +621,13 @@ def build_metrics_block(
 
     When ``connection_id`` is supplied, formulas are unified through that
     connection's validated ontology (M24c): corrected formulas are used and
-    formulas the validator proved wrong are dropped.
+    formulas the validator proved wrong are dropped — and the catalogue is that
+    connection's own (its scoped metrics, and the global ones it has not scoped): a
+    metric another connection scoped never reaches this prompt, even where the two
+    share a table name. The explorer's schema text is built here, and the explorer
+    does not look beyond its connection (the user's rule, 2026-09-14).
     """
-    metrics = list_metrics(path)
+    metrics = list_metrics(path, connection_id=connection_id or None)
     _tables, _cols = _schema_tables_and_columns(schema_text) if schema_text else (set(), set())
     if _tables:  # only filter when a schema actually parsed (else keep all)
         metrics = [m for m in metrics if _metric_matches_schema(m, _tables, _cols)]

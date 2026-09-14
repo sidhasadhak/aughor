@@ -18,6 +18,7 @@ from aughor.monitors.store import (
     get_alerts,
     acknowledge_alert,
 )
+from aughor.security.authz import connection_owner_guard
 
 
 def _monitor_owner_guard(request: Request) -> None:
@@ -32,7 +33,8 @@ def _monitor_owner_guard(request: Request) -> None:
         check_owner("alert", aid, principal)
 
 
-router = APIRouter(tags=["monitors"], dependencies=[Depends(_monitor_owner_guard)])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["monitors"], dependencies=[Depends(_monitor_owner_guard), Depends(connection_owner_guard)])
 
 
 # ── Request bodies ─────────────────────────────────────────────────────────────

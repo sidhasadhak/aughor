@@ -8,14 +8,16 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from aughor.licensing import Capability, gate
 from aughor.orgsettings import effective_settings, load_org_settings, save_org_settings
 from aughor.orgsettings.models import OrgSettings
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["settings"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["settings"], dependencies=[Depends(connection_owner_guard)])
 
 
 @router.get("/org-settings")

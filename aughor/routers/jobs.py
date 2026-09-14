@@ -14,14 +14,16 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
 from aughor.kernel.agents import agent_for
 from aughor.kernel.jobs import JobState, kernel
 from aughor.kernel.ledger import Ledger
+from aughor.security.authz import connection_owner_guard
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(dependencies=[Depends(connection_owner_guard)])
 
 
 def _duration_ms(job: dict) -> Optional[float]:

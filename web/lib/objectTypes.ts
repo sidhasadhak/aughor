@@ -38,6 +38,8 @@ export interface TypeMapRow {
   provenance?: string;
   /** ON-7b — what an explorer proposed on this card that no person has confirmed yet: the type itself, and its bindings. */
   unconfirmed?: number;
+  /** ON-8 — the connection this type's objects are read from; in an organisation's ontology each type names its own. */
+  connection_id?: string;
 }
 
 /** ON-7 — a type that is a part of another: an order's lines under Order. */
@@ -70,12 +72,16 @@ export interface TypeMapLink {
   origin?: "join_map" | "human" | "model";
   /** ON-7b — `model:<id>@<version>` for a link an explorer proposed. */
   provenance?: string;
+  /** ON-8 — `cross-source` when its two types live on two connections: the compiler reads the far side by key. */
+  traversal?: "join" | "cross-source";
 }
 
 export interface TypeMap {
   connection_id: string;
   schema_name: string;
   generated_at: string;
+  /** ON-8 — `org/domain` when this is an organisation's ontology rather than one connection's. */
+  domain?: string;
   object_types: TypeMapRow[];
   links: TypeMapLink[];
   /** ON-9 — every declared process and rule, one short row each. Absent on an API older than ON-9. */
@@ -156,6 +162,8 @@ export interface TypeBinding {
   frames?: Record<string, string>;
   /** ON-7 — property name → what its rollup over the rows is, in words. */
   rollups?: Record<string, string>;
+  /** ON-8 — the connection the source lives on; a further binding names one only when it is not the type's own. */
+  connection_id?: string;
 }
 
 /** ON-5 — a frame over a timeseries binding's readings: what it reads, how the readings inside the frame are
@@ -183,6 +191,9 @@ export interface BindingSpec {
   rollups?: Record<string, RollupSpec>;
   /** ON-7 — mark the bound table's own type a PART of this one; the mark holds only while the binding does. */
   absorb?: boolean;
+  /** ON-8 — in an organisation's ontology: the connection the source lives on, and the schema that qualifies its table. */
+  connection_id?: string;
+  schema_name?: string;
 }
 
 /** ON-7 — one rollup over a detail binding's rows: the column it reads and how the rows reduce to one value. */
@@ -232,6 +243,8 @@ export interface TypeLink {
   origin?: "join_map" | "human" | "model";
   /** ON-7b — `model:<id>@<version>` for a link an explorer proposed, kept once a person confirms it. */
   provenance?: string;
+  /** ON-8 — `cross-source` when the two types live on two connections. */
+  traversal?: "join" | "cross-source";
 }
 
 export interface TypeAction {
@@ -308,7 +321,9 @@ export interface DeclaredEntitySpec {
   description?: string;
   domain?: string;
   entity_type?: "reference_data" | "business_object" | "event" | "standalone";
-  backing: { table?: string; sql?: string; primary_key: string };
+  /** ON-8 — in an organisation's ontology the backing names the connection its rows live on, and the schema that
+   *  qualifies its table there. */
+  backing: { table?: string; sql?: string; primary_key: string; connection_id?: string; schema_name?: string };
 }
 
 /** ON-7 — a link a person declares between two types: a business verb and the column each side joins on. */
@@ -372,10 +387,42 @@ export interface TypeRefusal {
   schema_name: string;
 }
 
+/** ON-8 — an organisation's ontology is a scope of its own, carried where a connection id goes: `domain:<name>`. A door
+ *  that reads domains is sent `?domain=`; one that does not reads the scope as a connection nobody registered and
+ *  answers nothing, rather than another connection's graph. */
+const DOMAIN_SCOPE = "domain:";
+
+export function domainScope(name = "default"): string {
+  return `${DOMAIN_SCOPE}${name}`;
+}
+
+/** The domain a scope names, or null when the scope is a connection. */
+export function scopeDomain(connectionId: string): string | null {
+  return connectionId.startsWith(DOMAIN_SCOPE) ? connectionId.slice(DOMAIN_SCOPE.length) || "default" : null;
+}
+
 function scope(connectionId: string, schemaName?: string, extra: Record<string, string> = {}): string {
   const q = new URLSearchParams({ connection_id: connectionId, ...extra });
-  if (schemaName) q.set("schema_name", schemaName);
+  const domain = scopeDomain(connectionId);
+  if (domain) q.set("domain", domain);
+  else if (schemaName) q.set("schema_name", schemaName);
   return q.toString();
+}
+
+/** ON-8 — one of the organisation's ontologies: what it holds, and the connections it reads. */
+export interface DomainRow {
+  domain: string;
+  key: string;
+  object_types: number;
+  links: number;
+  cross_source_links: number;
+  connections: string[];
+}
+
+export async function getDomains(): Promise<{ org: string; default: string; domains: DomainRow[] }> {
+  const res = await fetch(`${getApiBase()}/ontology/domains`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
 }
 
 async function detailOf(res: Response): Promise<string> {

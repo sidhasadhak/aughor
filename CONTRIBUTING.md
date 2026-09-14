@@ -7,11 +7,13 @@ Contributions are accepted under the [Apache License 2.0](LICENSE).
 
 ## Prerequisites
 
+Git. The installer brings everything else; for reference, this is what it sets up:
+
 | Tool | Version | Why |
 |---|---|---|
-| [uv](https://docs.astral.sh/uv/) | latest | Python dependency + venv manager. The lockfile is `uv.lock`. |
-| Python | 3.11+ | `requires-python = ">=3.11"`. CI pins **3.11**. |
-| Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The frontend uses npm and `web/package-lock.json`. |
+| [uv](https://docs.astral.sh/uv/) | 0.8+ | Python dependency + venv manager. The lockfile is `uv.lock`. Installed when missing. |
+| Python | 3.11+ | `requires-python = ">=3.11"`. CI pins **3.11**, and a new `.venv` is created on 3.11 (an existing one keeps its version). |
+| Node.js | 20.9+ | `next@16` requires `>=20.9.0`. CI pins **20** (latest 20.x). The installer uses yours when it is new enough, and otherwise downloads the Node.js 24 LTS into `.aughor/node/`. The frontend uses npm and `web/package-lock.json`. |
 
 An LLM backend is only needed to *run* Aughor, not to develop against it — the
 test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
@@ -22,27 +24,30 @@ test suite is offline and hermetic, bar two tests that fetch a DuckDB extension
 ```bash
 git clone https://github.com/sidhasadhak/aughor.git
 cd aughor
-
-uv sync --all-extras          # backend deps into .venv
-cd web && npm install && cd ..  # frontend deps
-
-cp .env.example .env          # then edit: pick an LLM backend and set its key
-./start.sh                    # API on :8000, web on :3000
+./install.sh --dev            # Windows: install.cmd --dev
 ```
 
-`./start.sh` also accepts `--api-only`, `--web-only`, and `--stop`.
+That runs `uv sync --all-extras --locked` into `.venv` and `npm ci` in `web/`, then starts
+the API and the web app with hot reload and their logs in the terminal. Without `--dev` it
+also makes a production build of the web app and serves that, with the logs in
+`.aughor/logs/`; `--no-start` installs without starting. From then on, `uv run aughor up
+--dev` (or `./start.sh --dev`) starts it again, and `./start.sh --stop` stops stray servers.
 
-> **Use `--all-extras` for development.** A bare `uv sync` installs the serving core only
-> (a ~350 MB venv rather than ~1.2 GB, for size-limited deployments) and omits report export,
-> semantic search and the fast bulk reader. Nothing crashes without them — each degrades
-> with a message naming the extra — but tests that exercise those paths will skip, and you
-> will wonder why a PDF export returns 501. See **Optional extras** in the README.
+To give it a model, choose one in **Settings → Models**, or `cp .env.example .env` and set an
+LLM backend and its key.
 
-> **Note:** the `npm install` step above is optional — `./start.sh` (a thin alias
-> for `uv run aughor up`, the [README Quick Start](README.md#quick-start) path)
-> installs frontend deps on first run. It never kills a busy port's owner: if
-> `:8000`/`:3000` is already taken it reports who holds the port and exits, so
-> free it yourself or pick another with `--api-port` / `--web-port`.
+> **Use `--all-extras` for development** — the installer does. A bare `uv sync` installs the
+> serving core only (a ~350 MB venv rather than ~1.2 GB, for size-limited deployments) and
+> omits report export, semantic search and the fast bulk reader. Nothing crashes without
+> them — each degrades with a message naming the extra — but tests that exercise those paths
+> will skip, and you will wonder why a PDF export returns 501. See **Optional extras** in the
+> README.
+
+> **Note:** `aughor up` checks the web app before every start. It runs `npm ci` again when
+> `web/package-lock.json` changed and rebuilds when anything the build reads changed — and
+> says so — and otherwise starts straight away. It never kills a busy port's owner: if
+> `:8000`/`:3000` is already taken it reports who holds the port and exits, so free it
+> yourself or pick another with `--api-port` / `--web-port`.
 
 Nothing is seeded on boot. Run `uv run aughor seed` to write the synthetic DuckDB
 fixture (`data/aughor.duckdb`) when you want something to query without connecting

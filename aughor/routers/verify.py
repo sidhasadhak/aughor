@@ -8,12 +8,14 @@ from __future__ import annotations
 
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from aughor.feedback import record_verdict, verdict_stats, list_verdicts
+from aughor.security.authz import connection_owner_guard
 
-router = APIRouter(tags=["verify"])
+#: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
+router = APIRouter(tags=["verify"], dependencies=[Depends(connection_owner_guard)])
 
 
 class VerdictIn(BaseModel):
