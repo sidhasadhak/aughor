@@ -2,6 +2,7 @@ import { Button as ButtonPrimitive } from "@base-ui/react/button"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
+import { IconsBeside } from "@/components/ui/icon"
 
 /**
  * The one button system — the Instrument component sheet (web/aughor-v2/INSTRUMENT.md §4).
@@ -63,14 +64,20 @@ function Button({
   className,
   variant = "default",
   size = "default",
+  children,
   ...props
 }: ButtonPrimitive.Props & VariantProps<typeof buttonVariants>) {
+  // A labelled button's icons sit beside a 500–600 label, so they take the semibold stroke; an
+  // icon-only size has no label to match and keeps the regular one.
+  const labelled = !String(size).startsWith("icon")
   return (
     <ButtonPrimitive
       data-slot="button"
       className={cn(buttonVariants({ variant, size, className }))}
       {...props}
-    />
+    >
+      {labelled ? <IconsBeside weight="semibold">{children}</IconsBeside> : children}
+    </ButtonPrimitive>
   )
 }
 

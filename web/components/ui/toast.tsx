@@ -11,7 +11,7 @@
  * Design language: a toast is one of the three things allowed to float (.aug-toast):
  * --bg-1, a 3px left rule in its hue, radius 6, --shadow-md; a mono glyph, the title at
  * 12px, the detail at 11px. It enters with step-in. Auto-dismisses (errors linger
- * longest); hover pauses the timer; manual × dismiss. Announced via a stable aria-live
+ * longest); hover and a hidden tab pause the timer; manual × dismiss. Announced via a stable aria-live
  * region.
  */
 
@@ -95,6 +95,16 @@ function useHydrated(): boolean {
   return useSyncExternalStore(noopSubscribe, () => true, () => false);
 }
 
+// A background tab holds every timer: a toast raised while the reader is in another tab is still
+// there when they come back, and one already showing waits for them.
+function subscribeVisibility(cb: () => void) {
+  document.addEventListener("visibilitychange", cb);
+  return () => document.removeEventListener("visibilitychange", cb);
+}
+function useTabHidden(): boolean {
+  return useSyncExternalStore(subscribeVisibility, () => document.visibilityState === "hidden", () => false);
+}
+
 // ── presentation ──────────────────────────────────────────────────────────────
 // The glyphs are the guard vocabulary — ✓ passed, ◈ warned, ✕ refused — so a toast and a
 // guard chip say the same thing the same way.
@@ -105,15 +115,16 @@ const KIND: Record<ToastKind, { glyph: string; color: string }> = {
   info: { glyph: "●", color: "var(--blue4)" },
 };
 
-function ToastRow({ t }: { t: ToastData }) {
+function ToastRow({ t, tabHidden }: { t: ToastData; tabHidden: boolean }) {
   const [paused, setPaused] = useState(false);
 
-  // Each row owns its own dismiss timer; hover pauses it so a reader can finish.
+  // Each row owns its own dismiss timer; hover pauses it so a reader can finish, and so does a
+  // hidden tab. A pause restarts the full duration.
   useEffect(() => {
-    if (t.duration <= 0 || paused) return;
+    if (t.duration <= 0 || paused || tabHidden) return;
     const timer = setTimeout(() => dismissToast(t.id), t.duration);
     return () => clearTimeout(timer);
-  }, [t.id, t.duration, paused]);
+  }, [t.id, t.duration, paused, tabHidden]);
 
   const k = KIND[t.kind];
 
@@ -163,6 +174,7 @@ function ToastRow({ t }: { t: ToastData }) {
 export function Toaster() {
   const list = useToasts();
   const hydrated = useHydrated();
+  const tabHidden = useTabHidden();
   if (!hydrated || typeof document === "undefined") return null;
   return createPortal(
     <div
@@ -181,7 +193,7 @@ export function Toaster() {
       }}
     >
       {list.map((t) => (
-        <ToastRow key={t.id} t={t} />
+        <ToastRow key={t.id} t={t} tabHidden={tabHidden} />
       ))}
     </div>,
     document.body,

@@ -854,7 +854,7 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 @keyframes aug-step-in   { from { opacity: 0; translate: 0 4px } to { opacity: 1; translate: 0 0 } }
 @keyframes aug-modal-pop { from { opacity: 0; scale: .98 } to { opacity: 1; scale: 1 } }
 @keyframes aug-check-pop { 0% { scale: 1 } 50% { scale: 1.04 } 100% { scale: 1 } }
-@keyframes aug-pulse     { 0%, 100% { opacity: .55; scale: 1 } 50% { opacity: 1; scale: 1.12 } }
+@keyframes aug-pulse     { 0%, 100% { opacity: .55 } 50% { opacity: 1 } }   /* brightness only: the dot is already coloured */
 @keyframes aug-caret     { 0%, 49% { opacity: 1 } 50%, 100% { opacity: 0 } }
 @keyframes aug-shimmer   { 0% { background-position: -180px 0 } 100% { background-position: 180px 0 } }
 @keyframes aug-shimmer-text { 0% { background-position: -200% 0 } 100% { background-position: 200% 0 } }
@@ -899,11 +899,12 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
 
 /* disclosure: a trace, row group or methodology block opening. The grid-template-rows
    0fr→1fr trick: a transition, not an animation, so mounting open paints instantly and
-   only a live data-open flip moves. */
+   only a live data-open flip moves. --dur-2, a row entering: rows open many times a session and
+   reflow the layout on every frame of the opening, so it stays short. */
 .aug-disclose {
   display: grid;
   grid-template-rows: 0fr;
-  transition: grid-template-rows var(--dur-3) var(--ease-out);
+  transition: grid-template-rows var(--dur-2) var(--ease-out);
 }
 .aug-disclose[data-open="true"] { grid-template-rows: 1fr; }
 .aug-disclose > * { min-height: 0; overflow: hidden; }
@@ -916,16 +917,25 @@ button.aug-receipt-link:hover { background: var(--bg-3); }
    shape stays put and only its weight changes, so the eye reads state, not a new icon. */
 .aug-icon-filled { fill: currentColor; }
 
-/* ── Reduced motion — every fallback is the FINISHED frame, never the empty one ── */
+/* ── Reduced motion — gentler, not none ────────────────────────────────────────────────────────
+   Nothing travels, grows or loops: a transform, a row growing open, a dash running along an edge.
+   A fade or a colour change still shows what changed, so transitions keep those — at each element's
+   own duration — and an entrance that moved arrives as a fade. Every other fallback is the FINISHED
+   frame, never the empty one. */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 1ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 1ms !important;
+    transition-property: color, background-color, border-color, outline-color, text-decoration-color,
+      fill, stroke, opacity, box-shadow !important;
+  }
+  .aug-anim-fade, .aug-anim-up, .aug-step-in, .aug-stream-in, .aug-anim-pop {
+    animation-name: aug-fade-in !important;
+    animation-duration: var(--dur-2) !important;
   }
   /* The caret is solid, the pulse is its lit colour, the skeleton a flat fill. */
   .aug-caret { animation: none; opacity: 1; }
-  .aug-pulse-dot, .aug-dot-live, .aug-dot-analysing { animation: none; opacity: 1; scale: 1; }
+  .aug-pulse-dot, .aug-dot-live, .aug-dot-analysing { animation: none; opacity: 1; }
   .aug-skeleton, .aug-shimmer { animation: none; background: var(--bg-4); }
   .aug-shimmer-text { animation: none; background: none; color: var(--t2); }
   .aug-check-pop { animation: none; }
