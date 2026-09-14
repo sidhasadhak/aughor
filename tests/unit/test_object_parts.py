@@ -440,3 +440,15 @@ def test_an_entity_a_link_and_a_part_are_declared_read_back_and_withdrawn_over_h
     kept = client.delete("/ontology/entities/Order", params=PARAMS)
     assert kept.status_code == 404 and "built from its table" in kept.json()["detail"]
     assert "payment" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
+
+
+def test_the_entity_and_link_doors_keep_the_provenance_they_are_given(door, client):
+    """E5 — the entity and link doors keep `provenance`, which their request models dropped (only the explorer's own
+    calls, which skip the request model, ever wrote one)."""
+    said = "model:some-model@1"
+    declared = client.post("/ontology/entities", params=PARAMS, json={**PAYMENT, "provenance": said})
+    assert declared.status_code == 200, declared.text
+    assert declared.json()["entity"]["provenance"] == said
+    linked = client.post("/ontology/links", params=PARAMS, json={**PAYS_FOR, "provenance": said})
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["link"]["provenance"] == said

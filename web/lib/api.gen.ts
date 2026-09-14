@@ -14172,6 +14172,8 @@ export interface components {
             id: string;
             /** Origin */
             origin?: ("human" | "model") | null;
+            /** Provenance */
+            provenance?: string | null;
         };
         /**
          * _DeclaredLink
@@ -14188,6 +14190,8 @@ export interface components {
             name: string;
             /** Origin */
             origin?: ("human" | "model") | null;
+            /** Provenance */
+            provenance?: string | null;
             /** Reverse Name */
             reverse_name?: string | null;
             /** To Column */
@@ -14212,6 +14216,8 @@ export interface components {
             origin?: ("human" | "model" | "pack") | null;
             /** Owner */
             owner?: string | null;
+            /** Provenance */
+            provenance?: string | null;
             /** Stages */
             stages: components["schemas"]["_DeclaredStage"][];
         };
@@ -14263,6 +14269,8 @@ export interface components {
             owner?: string | null;
             /** Property */
             property?: string | null;
+            /** Provenance */
+            provenance?: string | null;
             /** Values */
             values?: unknown[] | null;
         };

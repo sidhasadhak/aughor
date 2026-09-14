@@ -5,7 +5,7 @@ import asyncio
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import BUILTIN_ID, get_meta
@@ -131,6 +131,9 @@ class _DeclaredEntity(BaseModel):
     entity_type: Optional[Literal["reference_data", "business_object", "event", "standalone"]] = None
     backing: _DeclaredBacking
     origin: Optional[Literal["human", "model"]] = None
+    #: who proposed it, `model:<id>@<version>` — a person confirming a model's proposal declares `origin: human`
+    #: and keeps the model's provenance beside it
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _DeclaredLink(BaseModel):
@@ -143,6 +146,7 @@ class _DeclaredLink(BaseModel):
     cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
     reverse_name: Optional[str] = None
     origin: Optional[Literal["human", "model"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _DeclaredPromise(BaseModel):
@@ -175,6 +179,7 @@ class _DeclaredProcess(BaseModel):
     stages: list[_DeclaredStage]
     owner: Optional[str] = None
     origin: Optional[Literal["human", "model", "pack"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _DeclaredRule(BaseModel):
@@ -189,6 +194,7 @@ class _DeclaredRule(BaseModel):
     conditions: Optional[list[dict]] = None
     owner: Optional[str] = None
     origin: Optional[Literal["human", "model", "pack"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _ActionOverride(BaseModel):

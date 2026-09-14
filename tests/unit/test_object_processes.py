@@ -521,3 +521,18 @@ def test_a_stage_may_be_anchored_to_a_column_named_with_a_space_but_never_to_sql
         broken = copy.deepcopy(FULFILMENT)
         broken["stages"][0]["timestamp"] = bad
         assert "property path" in process_spec_problem(broken), bad
+
+
+def test_the_process_and_rule_doors_keep_the_provenance_they_are_given(door, client):
+    """E5 — a declaration names who proposed it. The process and rule doors keep `provenance`, which their request
+    models dropped before the store ever saw it (a person confirming a model's proposal lost the model's name)."""
+    said = "model:some-model@1"
+    process = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "provenance": said})
+    assert process.status_code == 200, process.text
+    assert process.json()["process"]["provenance"] == said
+    assert client.get("/ontology/processes", params=PARAMS).json()["processes"][0]["provenance"] == said
+    rule = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "provenance": said})
+    assert rule.status_code == 200, rule.text
+    assert rule.json()["rule"]["provenance"] == said
+    too_long = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "id": "eu_core_two", "provenance": "m" * 201})
+    assert too_long.status_code == 422

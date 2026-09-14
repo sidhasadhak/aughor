@@ -744,3 +744,14 @@ def test_a_copied_column_profile_keeps_what_was_measured_and_no_words(sources):
     measure_domain(domain, open_connection_for)
     payment = OV.find_override(conn, name, "entity", "Order").binding["bindings"]["entries"]["payment"]
     assert payment["profiles"] == {"amount": {"name": "amount", "semantic_type": "measure"}}
+
+
+def test_a_declaration_that_names_a_proposer_is_refused_at_the_domain_doors(client, sources):
+    """E5 × the user's rule: now that the doors carry `provenance`, a declaration naming a proposer reaches the
+    organisation's doors — and is refused there, since an organisation's ontology is edited by people only."""
+    domain = {"domain": "provenance-t"}
+    entity = client.post("/ontology/entities", params=domain,
+                         json={**typed("Order", "orders", "order_id", sources["shop"]), "provenance": "model:some-model@1"})
+    assert entity.status_code == 400 and "edited by people only" in entity.json()["detail"]
+    link = client.post("/ontology/links", params=domain, json={**PLACED_BY, "provenance": "model:some-model@1"})
+    assert link.status_code == 400 and "edited by people only" in link.json()["detail"]
