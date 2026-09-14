@@ -81,11 +81,11 @@ def test_a_failed_step_shows_the_end_of_its_log_and_where_the_rest_is(tmp_path, 
               "sys.exit(3)")
     with pytest.raises(installer.InstallError) as caught:
         steps.run("Installing web app dependencies", "Web app dependencies installed",
-                  [sys.executable, "-c", script], cwd=tmp_path, log=log)
+                  [sys.executable, "-c", script], cwd=tmp_path, log=log, tool="npm")
     steps.failure(caught.value)
     out = capsys.readouterr().out
     assert "Installing web app dependencies failed" in out
-    assert "exited with code 3" in out
+    assert "npm exited with code 3." in out, "named for the tool, not the node running it"
     assert "npm error ERESOLVE could not resolve" in out, "the reason is in the tail"
     assert "resolving 0" not in out, "the tail, not the whole log"
     assert str(log) in out
@@ -302,6 +302,7 @@ def test_web_dependencies_install_once_per_lockfile(tmp_path, monkeypatch):
 
     def fake_run(self, label, done, cmd, **kw):
         runs.append(list(cmd))
+        assert kw.get("tool") == "npm", "a failure must name npm, not the node that ran it"
         (web / "node_modules").mkdir(exist_ok=True)
 
     monkeypatch.setattr(installer.Steps, "run", fake_run)

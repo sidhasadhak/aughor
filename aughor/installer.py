@@ -228,10 +228,13 @@ class Steps:
         self.done(done() if callable(done) else done, spinner.elapsed())
 
     def run(self, label: str, done: Label, cmd: Sequence[Union[str, Path]], *, cwd: Path,
-            log: Path, env: Optional[dict] = None, hint: str = _RETRY) -> None:
+            log: Path, env: Optional[dict] = None, hint: str = _RETRY, tool: str = "") -> None:
         """Run one command as one step: its output to `log`, a spinner on the terminal (or,
-        with `verbose`, the output as well)."""
+        with `verbose`, the output as well). `tool` names the command in a failure message
+        when the program is not it: npm and Next.js both run as `node <script>`, and "node
+        exited with code 1" would send the reader looking in the wrong place."""
         argv = [str(part) for part in cmd]
+        tool = tool or Path(argv[0]).name
         log.parent.mkdir(parents=True, exist_ok=True)
         with self.working(label, done):
             with open(log, "w", encoding="utf-8", errors="replace") as out:
@@ -254,7 +257,7 @@ class Steps:
                     stop_process_tree(proc)
                     raise
             if code != 0:
-                raise InstallError(f"{Path(argv[0]).name} exited with code {code}.", log=log, hint=hint)
+                raise InstallError(f"{tool} exited with code {code}.", log=log, hint=hint)
 
     def failure(self, error: InstallError) -> None:
         """What went wrong, the end of the log that shows why, and what to do about it."""
@@ -696,7 +699,7 @@ def ensure_web_deps(root: Path, node: Node, steps: Steps) -> bool:
               "Web app dependencies installed" if fresh else "Web app dependencies updated",
               node.npm() + ["ci", "--no-audit", "--no-fund"], cwd=web,
               log=log_dir(root) / "web-dependencies.log",
-              env=node.env(_child_env(npm_config_update_notifier="false")))
+              env=node.env(_child_env(npm_config_update_notifier="false")), tool="npm")
     _write_json(stamp, want)
     return True
 
@@ -762,7 +765,7 @@ def ensure_web_build(root: Path, node: Node, steps: Steps, env: dict) -> bool:
         steps.up_to_date("Web app up to date")
         return False
     steps.run("Building the web app", "Web app built", [node.exe, next_bin(root), "build"],
-              cwd=web, log=log_dir(root) / "web-build.log", env=node.env(env))
+              cwd=web, log=log_dir(root) / "web-build.log", env=node.env(env), tool="next build")
     # Measured AFTER the build, so a file the build itself touches cannot force a rebuild on
     # every start.
     _write_json(stamp, {"fingerprint": build_fingerprint(root, env)})
