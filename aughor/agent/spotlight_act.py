@@ -37,6 +37,21 @@ logger = logging.getLogger(__name__)
 _MAX_REASON = 400
 
 
+def _announce(emit, p) -> None:
+    """SP-9 — a staged proposal announces itself on the turn's frame channel, so the
+    chat renders the RECORD (fetched by id) as a card rather than re-parsing prose.
+    A no-op for every sync caller (MCP, Slack, the /spotlight routes, tests) — and
+    best-effort even when bound: a dropped frame loses a card, never a proposal."""
+    if emit is None:
+        return
+    try:
+        emit("proposal_staged", {"proposal_id": p.id, "kind": p.kind,
+                                 "connection_id": p.connection_id,
+                                 "action_id": p.action_id})
+    except Exception:
+        logger.debug("proposal_staged frame dropped", exc_info=True)
+
+
 def set_preference(args: dict) -> dict:
     """Apply one cosmetic, self-scoped preference — instantly, per §3.11's line."""
     from aughor.db.user_prefs import set_preference as store_set
@@ -52,8 +67,12 @@ def set_preference(args: dict) -> dict:
             **out}
 
 
-def draft_agent(connection_id: str, args: dict) -> dict:
-    """Validate and STAGE an agent draft on the one inbox — never create directly."""
+def draft_agent(connection_id: str, args: dict, *, emit=None) -> dict:
+    """Validate and STAGE an agent draft on the one inbox — never create directly.
+
+    SP-8: when ``schedule`` carries the ask's own when/where clause ("every morning at
+    9am to #ops"), the agent and its chain stage as ONE ``agent_bundle`` proposal —
+    accept creates the agent and saves the chain running as it, all or nothing."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.custom_agents.store import validate_agent_draft
     from aughor.org.context import current_org_id
@@ -82,13 +101,20 @@ def draft_agent(connection_id: str, args: dict) -> dict:
                   "than plain chat until documents are added.")
     reasoning = (str(args.get("reasoning") or "drafted from conversation")[:_MAX_REASON]
                  + disclosure)
+    agent_params = {"name": name, "instructions": instructions,
+                    "schema_scope": schema_scope, "doc_ids": doc_ids}
+
+    schedule = str(args.get("schedule") or "").strip()
+    if schedule:
+        return _stage_agent_bundle(connection_id, agent_params, schedule,
+                                   reasoning=reasoning, disclosure=disclosure, emit=emit)
 
     p = stage_proposal(StagedProposal(
         kind="agent_draft", org_id=current_org_id() or "",
         connection_id=connection_id, action_id=f"agent:{name}",
-        params={"name": name, "instructions": instructions,
-                "schema_scope": schema_scope, "doc_ids": doc_ids},
+        params=agent_params,
         reasoning=reasoning, proposer="spotlight", source="agent"))
+    _announce(emit, p)
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "documents_attached": len(doc_ids),
@@ -98,8 +124,79 @@ def draft_agent(connection_id: str, args: dict) -> dict:
     }
 
 
-def draft_automation(connection_id: str, args: dict) -> dict:
-    """Describe an outcome → DS-15 drafts and validates the chain → stage it here."""
+def _open_choice_fields(draft: dict) -> list[dict]:
+    """SP-9 — the draft's open choices as FIELDS the card can offer: [{"action", "key"}].
+    Read back through the same holes door the accept gates on, so the card's fields and
+    the accept's refusals can never name different choices."""
+    from aughor.runners import automation_payload_holes
+    from aughor.runners.automation_save import parse_hole
+    fields = []
+    for h in automation_payload_holes(dict(draft or {})):
+        parsed = parse_hole(h)
+        if parsed is not None:
+            fields.append({"action": parsed[0], "key": parsed[1]})
+    return fields
+
+
+def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *,
+                        reasoning: str, disclosure: str, emit=None) -> dict:
+    """SP-8 — ONE proposal holding both records: the agent, and the chain that runs as
+    it. The chain is drafted by DS-15's own proposer from the schedule clause, carries
+    SP-7's open choices, and names NO agent id — the agent does not exist yet, and the
+    accept sets the id from the record it just created rather than trusting a claim
+    about one yet to be born. A chain the proposer refuses refuses the whole bundle:
+    an agent staged beside a refusal would be exactly the half-married pair this kind
+    exists to prevent."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.automations.propose import propose_chain
+    from aughor.org.context import current_org_id
+
+    name = str(agent_params.get("name") or "")
+    proposal = propose_chain(schedule, conn_id=connection_id)
+    if proposal.verdict != "proposed" or not proposal.draft:
+        return {"staged": False, "verdict": proposal.verdict,
+                "reason": proposal.reason, "notes": proposal.notes,
+                "summary": (f"Nothing staged — the platform declined to draft the "
+                            f"schedule ({proposal.verdict}): "
+                            f"{proposal.reason or 'see notes'}. The agent was not "
+                            f"staged either: this ask is one thing, and half of it "
+                            f"is not it.")}
+    chain_name = str(proposal.draft.get("name") or schedule[:60])
+    to_fill = list(proposal.to_fill or [])
+    first_run = proposal.first_run or ""
+    open_note = (" OPEN CHOICES: " + "; ".join(to_fill) + "." if to_fill else "")
+    p = stage_proposal(StagedProposal(
+        kind="agent_bundle", org_id=current_org_id() or "",
+        connection_id=connection_id,
+        action_id=f"agent:{name}+automation:{chain_name}",
+        params={"agent": dict(agent_params), "automation": dict(proposal.draft)},
+        detail={"to_fill": to_fill, "open_choices": _open_choice_fields(proposal.draft),
+                "first_run": first_run,
+                "dry_run_ok": bool(proposal.dry_run), "runs_as": name},
+        reasoning=(reasoning + open_note), proposer="spotlight", source="agent"))
+    _announce(emit, p)
+    open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
+                 + " — the approver fills them on the card, or ask and draft again."
+                 if to_fill else "")
+    when_line = (f" Accepted, its first run would be {_utc_words(first_run)}."
+                 if first_run else "")
+    return {
+        "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+        "draft": proposal.draft, "dry_run": proposal.dry_run, "notes": proposal.notes,
+        "to_fill": to_fill, "first_run": first_run,
+        "summary": (f"ONE proposal staged (proposal {p.id}): agent "
+                    f"'{clip(name, NAME_CLIP)}' AND its schedule "
+                    f"'{clip(chain_name, NAME_CLIP)}', accepted or refused together — "
+                    f"accept creates the agent and saves the chain running as it, all "
+                    f"or nothing.{disclosure}{open_line}{when_line}"),
+    }
+
+
+def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
+    """Describe an outcome → DS-15 drafts and validates the chain → stage it here.
+
+    SP-8: ``run_as_agent`` names an EXISTING agent the chain runs as — its runs and
+    their spend attributed to it — so a chain can run as one without a bundle."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.automations.propose import propose_chain
     from aughor.org.context import current_org_id
@@ -109,6 +206,12 @@ def draft_automation(connection_id: str, args: dict) -> dict:
         return {"staged": False,
                 "summary": "Nothing to draft — describe the outcome the automation "
                            "should produce, in one sentence."}
+    run_as = str(args.get("run_as_agent") or "").strip()
+    agent = None
+    if run_as:
+        agent, refusal = _resolve_agent(connection_id, run_as)
+        if agent is None:
+            return {"staged": False, "summary": f"Nothing staged: {refusal}"}
 
     proposal = propose_chain(outcome, conn_id=connection_id)
     if proposal.verdict != "proposed" or not proposal.draft:
@@ -123,24 +226,36 @@ def draft_automation(connection_id: str, args: dict) -> dict:
     first_run = proposal.first_run or ""
     # SP-7 — the approver reads what is still open in the record itself, not only in chat.
     open_note = (" OPEN CHOICES: " + "; ".join(to_fill) + "." if to_fill else "")
+    params = dict(proposal.draft)
+    if agent is not None:
+        # SP-8 — the chain runs as the named agent; VA-9b's per-run attribution
+        # (`acting_agent`) reads exactly this field off the saved record.
+        params["agent_id"] = agent.id
     p = stage_proposal(StagedProposal(
         kind="automation_draft", org_id=current_org_id() or "",
         connection_id=connection_id, action_id=f"automation:{name}",
-        params=dict(proposal.draft),
+        params=params,
+        detail={"to_fill": to_fill, "open_choices": _open_choice_fields(proposal.draft),
+                "first_run": first_run,
+                "dry_run_ok": bool(proposal.dry_run),
+                "runs_as": agent.name if agent is not None else ""},
         reasoning=(str(args.get("reasoning") or outcome)[:_MAX_REASON] + open_note),
         proposer="spotlight", source="agent"))
+    _announce(emit, p)
     open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
-                 + " — ask the person, then draft it again with the choice named."
+                 + " — the approver fills them on the card, or ask and draft again."
                  if to_fill else "")
     when_line = (f" It waits for its schedule: accepted now, its first run would be "
                  f"{_utc_words(first_run)}." if first_run else "")
+    as_line = (f" It runs as agent '{clip(agent.name, NAME_CLIP)}', its runs and spend "
+               f"attributed there." if agent is not None else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "draft": proposal.draft, "dry_run": proposal.dry_run, "notes": proposal.notes,
         "to_fill": to_fill, "first_run": first_run,
         "summary": (f"Automation draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) "
                     f"with its dry-run attached — it joins the one scheduler only "
-                    f"after a human accepts it in the inbox.{open_line}{when_line}"),
+                    f"after a human accepts it in the inbox.{as_line}{open_line}{when_line}"),
     }
 
 
@@ -178,7 +293,36 @@ def _resolve_automation(connection_id: str, ref: str):
     return None, f"no automation named {clip(ref, NAME_CLIP)!r} on this connection"
 
 
-def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
+def _resolve_agent(connection_id: str, ref: str):
+    """An EXISTING agent on THIS connection (or unbound), by id or exact name —
+    ``(agent, "")`` or ``(None, refusal)``. The same binding law `_resolve_automation`
+    applies to a write's target: an agent that belongs to another connection is
+    refused with its home named, and an unknown name is a refusal, never an
+    invitation to invent one."""
+    from aughor.custom_agents.store import get_agent, list_agents
+
+    ref = str(ref or "").strip()
+    if not ref:
+        return None, "name the agent the chain should run as — its id or its exact name"
+    a = get_agent(ref)
+    if a is None:
+        matches = [x for x in list_agents() if x.name == ref]
+        if len(matches) > 1:
+            ids = ", ".join(x.id for x in matches)
+            return None, (f"{len(matches)} agents are named {clip(ref, NAME_CLIP)!r} — "
+                          f"use an id: {ids}")
+        a = matches[0] if matches else None
+    if a is None:
+        return None, (f"no agent {clip(ref, NAME_CLIP)!r} exists — to create one WITH "
+                      f"this schedule, use draft_agent with its schedule field")
+    if (a.connection_id or "") not in ("", connection_id):
+        return None, (f"agent '{clip(a.name, NAME_CLIP)}' belongs to connection "
+                      f"{a.connection_id!r}, not this conversation's — switch there "
+                      f"to run a chain as it")
+    return a, ""
+
+
+def pause_or_resume_automation(connection_id: str, args: dict, *, emit=None) -> dict:
     """Stage a pause (with its end) or a resume on the one inbox — never applied here."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.org.context import current_org_id
@@ -211,6 +355,7 @@ def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
                 **({"until": until} if action == "pause" else {})},
         reasoning=reasoning,
         proposer="spotlight", source="agent"))
+    _announce(emit, p)
     tail = f" until {until}" if action == "pause" else ""
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
@@ -221,7 +366,7 @@ def pause_or_resume_automation(connection_id: str, args: dict) -> dict:
     }
 
 
-def propose_agent_grant(connection_id: str, args: dict) -> dict:
+def propose_agent_grant(connection_id: str, args: dict, *, emit=None) -> dict:
     """Stage ONE declared action onto an agent's grant list — permission to PROPOSE."""
     from aughor.actions.inbox import StagedProposal, stage_proposal
     from aughor.custom_agents.store import get_agent, list_agents, validate_agent_grants
@@ -262,6 +407,7 @@ def propose_agent_grant(connection_id: str, args: dict) -> dict:
                    + " NOTE: a grant is permission to PROPOSE this action — every "
                      "proposal still lands in this inbox for a human."),
         proposer="spotlight", source="agent"))
+    _announce(emit, p)
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "agent_id": agent.id,
@@ -300,6 +446,15 @@ _AGENT_PARAMS = {
         "doc_ids": {"type": "array", "items": {"type": "string"},
                     "description": "Document ids to attach. Leaving this empty is "
                                    "RESTRICTIVE, not neutral — say so to the user."},
+        "schedule": {"type": "string",
+                     "description": "When the SAME ask also says when or where the "
+                                    "agent should run ('every morning at 9am to "
+                                    "#ops'), put that clause here, in the user's own "
+                                    "words. The agent and its chain then stage as ONE "
+                                    "proposal: accepting it creates both together, "
+                                    "all or nothing, the chain running as the new "
+                                    "agent. Leave empty when the user asked only for "
+                                    "an agent."},
         "reasoning": {"type": "string",
                       "description": "One sentence on why, shown to the approver."},
     },
@@ -312,6 +467,13 @@ _AUTOMATION_PARAMS = {
                     "description": "The outcome the automation should produce, in the "
                                    "user's own words (e.g. 'brief me every Monday on "
                                    "refund rate')."},
+        "run_as_agent": {"type": "string",
+                         "description": "An EXISTING agent (its id or exact name) the "
+                                        "chain runs as, when the user names one — its "
+                                        "runs and their spend are attributed to that "
+                                        "agent. Never invent one; to create a NEW "
+                                        "agent with this schedule, use draft_agent "
+                                        "with its schedule field instead."},
         "reasoning": {"type": "string",
                       "description": "One sentence on why, shown to the approver."},
     },
@@ -352,8 +514,13 @@ _GRANT_PARAMS = {
 }
 
 
-def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
-    """The Act roster — cosmetic applies, structural stages; nothing executes here."""
+def spotlight_act_tools(connection_id: str, *, session_id: str = "",
+                        emit=None) -> list[ToolSpec]:
+    """The Act roster — cosmetic applies, structural stages; nothing executes here.
+
+    ``emit`` is the streaming turn's frame channel (SP-9): a staged proposal announces
+    itself so the chat can render the record as a card. Caller-owned context, bound by
+    closure like everything else here; None from every sync transport."""
     return [
         ToolSpec(
             name="set_preference",
@@ -374,11 +541,14 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[Too
                 "human approval in the inbox — nothing is created until a person "
                 "accepts. Provide name and instructions; attach document ids when "
                 "the user names sources (an agent with no documents sees LESS than "
-                "plain chat — always disclose that). Quote the summary field "
-                "verbatim; tell the user where the approval lives."
+                "plain chat — always disclose that). When the ask ALSO says when or "
+                "where the agent should run, pass that clause as schedule — the agent "
+                "and its chain then stage as ONE proposal, accepted or refused "
+                "together. Quote the summary field verbatim; tell the user where the "
+                "approval lives."
             ),
             parameters=_AGENT_PARAMS,
-            run=lambda a: draft_agent(connection_id, a),
+            run=lambda a: draft_agent(connection_id, a, emit=emit),
         ),
         ToolSpec(
             name="draft_automation",
@@ -386,11 +556,12 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[Too
                 "Turn a described outcome into a validated automation draft (with a "
                 "dry-run receipt) and STAGE it for human approval in the inbox — it "
                 "never schedules itself. Use for 'every Monday…', 'when X happens…', "
-                "'remind/brief me…' asks. A refusal with a reason is an answer to "
-                "relay, not an error. Quote the summary field verbatim."
+                "'remind/brief me…' asks. When the user names an existing agent it "
+                "should run as, pass run_as_agent. A refusal with a reason is an "
+                "answer to relay, not an error. Quote the summary field verbatim."
             ),
             parameters=_AUTOMATION_PARAMS,
-            run=lambda a: draft_automation(connection_id, a),
+            run=lambda a: draft_automation(connection_id, a, emit=emit),
         ),
         ToolSpec(
             name="pause_or_resume_automation",
@@ -403,7 +574,7 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[Too
                 "Automations page. Quote the summary field verbatim."
             ),
             parameters=_STATE_PARAMS,
-            run=lambda a: pause_or_resume_automation(connection_id, a),
+            run=lambda a: pause_or_resume_automation(connection_id, a, emit=emit),
         ),
         ToolSpec(
             name="propose_agent_grant",
@@ -417,6 +588,6 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "") -> list[Too
                 "field verbatim."
             ),
             parameters=_GRANT_PARAMS,
-            run=lambda a: propose_agent_grant(connection_id, a),
+            run=lambda a: propose_agent_grant(connection_id, a, emit=emit),
         ),
     ]

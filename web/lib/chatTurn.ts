@@ -147,6 +147,15 @@ export interface ConverseStep {
   resultChars: number;
 }
 
+/** SP-9 — a proposal this turn STAGED, announced by the act tool that staged it. The
+ *  chat renders the record (fetched by id) as an approval card, never the prose. */
+export interface StagedProposalRef {
+  proposalId: string;
+  kind: string;
+  connectionId: string;
+  actionId: string;
+}
+
 /** The one recovery a user can perform (Wave R4). A closed set on purpose. */
 export type ErrorRecovery = "retry" | "switch_model" | "fix_config" | "";
 
@@ -181,6 +190,8 @@ export interface ChatTurn {
   /** VA-2 — delegated hops, in first-seen order. Empty for an undelegated turn. */
   delegations: DelegatedHop[];
   converseSteps: ConverseStep[];
+  /** SP-9 — proposals this turn staged, in arrival order. Empty for most turns. */
+  stagedProposals: StagedProposalRef[];
   scanItems: string[];
   scanProgress: { done: number; total: number } | null;
   /** FL-2 — the failover chain's last narrated hop; null while the primary holds. */
@@ -301,6 +312,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   guardReceipts: [],
   delegations: [],
   converseSteps: [],
+  stagedProposals: [],
   scanItems: [], scanProgress: null,
   chainState: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
@@ -405,6 +417,16 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
       ok: d.ok !== false,
       detail: (d.detail as string) ?? "",
       resultChars: (d.result_chars as number) ?? 0,
+    }];
+  },
+  proposal_staged: (t, d) => {
+    const id = (d.proposal_id as string) ?? "";
+    if (!id || t.stagedProposals.some(p => p.proposalId === id)) return;
+    t.stagedProposals = [...t.stagedProposals, {
+      proposalId: id,
+      kind: (d.kind as string) ?? "",
+      connectionId: (d.connection_id as string) ?? "",
+      actionId: (d.action_id as string) ?? "",
     }];
   },
   columns: (t, d) => { t.columns = (d.columns as string[]) ?? []; },

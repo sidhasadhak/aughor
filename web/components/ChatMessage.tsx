@@ -38,6 +38,7 @@ import { DelegationTrail } from "@/components/DelegationTrail";
 import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
 import { ToolTrail } from "@/components/ToolTrail";
+import { ProposalCardById } from "@/components/ProposalCard";
 import { FixItForm } from "@/components/FixItForm";
 import { InFlightFindings, RunProgressCard } from "@/components/RunProgressCard";
 import { ContextRibbon } from "@/components/ContextRibbon";
@@ -1589,6 +1590,17 @@ export function ChatMessage({
       {/* ── CI-6a: the converse body's tool trail — which tools the model chose this
              turn; renders nothing on quick/deep turns (no steps) ── */}
       <ToolTrail steps={turn.converseSteps} streaming={turn.status === "loading"} />
+
+      {/* ── SP-9: proposals this turn STAGED, as the same approval card the inbox and
+             Attention render — built from the record (fetched by id), never from the
+             prose, with Accept and its open-choice fields right here ── */}
+      {turn.stagedProposals.length > 0 && (
+        <div className="flex flex-col gap-2 my-2">
+          {turn.stagedProposals.map(ref => (
+            <ProposalCardById key={ref.proposalId} proposalId={ref.proposalId} actor="chat" />
+          ))}
+        </div>
+      )}
 
       {/* ── VA-2: work this turn handed to a named specialist. Sits under the tool
              trail because a delegation IS a tool call — this says who answered it.

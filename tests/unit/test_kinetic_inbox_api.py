@@ -147,3 +147,36 @@ def test_a_withdrawal_does_not_reach_another_connection_over_http():
                           params={"connection_id": "conn-withdraw-a"}).json()["edits"] != []
     finally:
         OV.purge_connections(["conn-withdraw-a", "conn-withdraw-b"])
+
+
+def test_get_one_proposal_and_a_missing_one_is_404(flag_on):
+    """SP-9 — the approval card's read: chat and Attention hold only an id."""
+    p = inbox.stage_proposal(inbox.StagedProposal(
+        connection_id="conn-api", action_id="refund", params={"order_id": "9"}))
+    body = client.get(f"/kinetic-actions/inbox/{p.id}").json()
+    assert body["proposal"]["id"] == p.id
+    assert body["proposal"]["params"] == {"order_id": "9"}
+    assert client.get("/kinetic-actions/inbox/nope-never").status_code == 404
+
+
+def test_accept_carries_fills_to_the_inbox(flag_on):
+    """SP-9 — the card's open-choice answers ride the accept body. The refusal for a
+    fill that names a non-hole comes back as the executor's own 4xx, proposal intact."""
+    import aughor.automations.store  # noqa: F401 — registers the holes door
+    p = inbox.stage_proposal(inbox.StagedProposal(
+        kind="automation_draft", connection_id="conn-api", action_id="automation:x",
+        params={"conn_id": "conn-api", "name": "x",
+                "conditions": [{"kind": "schedule", "config": {"cron": "0 9 * * *"}}],
+                "effects": [{"kind": "slack_post",
+                             "config": {"bot_id": "b", "channel": "",
+                                        "message": "m"}}]}))
+    r = client.post(f"/kinetic-actions/inbox/{p.id}/accept",
+                    json={"actor": "tester", "fills": {"1.message": "edited"}})
+    assert r.status_code == 422
+    assert "not an open choice" in str(r.json())
+    assert inbox.get_proposal(p.id).pending
+
+    r = client.post(f"/kinetic-actions/inbox/{p.id}/accept",
+                    json={"actor": "tester", "fills": {"1.channel": "#ops"}})
+    assert r.status_code == 200, r.text
+    assert inbox.get_proposal(p.id).params["effects"][0]["config"]["channel"] == "#ops"

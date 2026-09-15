@@ -22,9 +22,10 @@
 import React, { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ProposalCard } from "@/components/ProposalCard";
 import { SkeletonRows } from "@/components/ui/motion";
 import { toast } from "@/components/ui/toast";
-import { acceptProposal, getProposals, rejectProposal, type StagedProposal } from "@/lib/api";
+import { getProposals, type StagedProposal } from "@/lib/api";
 import { claimsOf, getIdToken } from "@/lib/auth";
 import { getApiBase } from "@/lib/config";
 import { countNoun, formatCount, formatTimestamp, relTime } from "@/lib/format";
@@ -338,7 +339,9 @@ function ProposeSection({ connectionId, onStaged }: { connectionId: string; onSt
                 <span className="aug-brief-meta">{p.inbox_id ? "staged · awaiting approval" : String(p.status)}</span>
               </div>
               {p.reasoning && <span className="aug-approval-why">{p.reasoning}</span>}
-              <span className="aug-approval-params">{JSON.stringify(p.params)}</span>
+              <span className="aug-approval-params">
+                {Object.entries(p.params ?? {}).map(([k, v]) => `${k}: ${String(v)}`).join(" · ") || "no parameters"}
+              </span>
               {!p.ok && p.message && <p className="aug-actions-err">{p.message}</p>}
             </div>
           ))}
@@ -357,8 +360,6 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
   const [editsErr, setEditsErr] = useState<string | null>(null);
   const [busyEdit, setBusyEdit] = useState<string | null>(null);
   const [pending, setPending] = useState<StagedProposal[] | null>(null);
-  const [busyProposal, setBusyProposal] = useState<string | null>(null);
-  const [proposalErr, setProposalErr] = useState<Record<string, string>>({});
 
   const loadActions = useCallback(() => {
     apiFetch(`/ontology/kinetic-actions?connection_id=${encodeURIComponent(connectionId)}`)
@@ -385,23 +386,6 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
       loadEdits();
     } catch (e: any) { setEditsErr(String(e.message || e)); }
     finally { setBusyEdit(null); }
-  };
-
-  const resolve = async (p: StagedProposal, how: "approve" | "reject") => {
-    setBusyProposal(p.id); setProposalErr(x => ({ ...x, [p.id]: "" }));
-    try {
-      if (how === "approve") {
-        const r = await acceptProposal(p.id, actorName());
-        toast.info(`Ran ${r.action_id}`, { description: "Approved and run once — the approval is recorded." });
-        loadEdits();
-      } else {
-        await rejectProposal(p.id, actorName());
-      }
-      loadPending();
-    } catch (e) {
-      setProposalErr(x => ({ ...x, [p.id]: e instanceof Error ? e.message : String(e) }));
-      loadPending();
-    } finally { setBusyProposal(null); }
   };
 
   if (!connectionId) {
@@ -526,27 +510,13 @@ export function KineticPanel({ connectionId }: { connectionId: string }) {
             </p>
           ) : (
             <div className="aug-approvals">
+              {/* SP-9 — the ONE approval card; what either click creates, never raw params. */}
               {pending.map(p => (
-                <div key={p.id} className="aug-approval">
-                  <div className="aug-approval-head">
-                    <span className="aug-approval-kind">{p.action_id}</span>
-                    <span className="aug-brief-meta" title={formatTimestamp(p.created_at)}>waiting {relTime(p.created_at)}</span>
-                  </div>
-                  {p.reasoning && <span className="aug-approval-why">{p.reasoning}</span>}
-                  <span className="aug-approval-params">
-                    {p.kind === "integration" && p.grant_id ? `as ${p.grant_id} · ` : ""}{JSON.stringify(p.params)}
-                  </span>
-                  <div className="aug-inspector-doors">
-                    <Button size="xs" disabled={busyProposal === p.id} onClick={() => resolve(p, "approve")}
-                      title="Approve and run it once — the approval is recorded">
-                      Approve and run
-                    </Button>
-                    <Button size="xs" variant="ghost" disabled={busyProposal === p.id} onClick={() => resolve(p, "reject")}>
-                      Reject
-                    </Button>
-                  </div>
-                  {proposalErr[p.id] && <p className="aug-actions-err">{proposalErr[p.id]}</p>}
-                </div>
+                <ProposalCard key={p.id} proposal={p} actor={actorName()}
+                  onResolved={(t, m) => {
+                    if (t === "ok") { toast.info(m); loadEdits(); }
+                    loadPending();
+                  }} />
               ))}
             </div>
           )}

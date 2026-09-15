@@ -2986,16 +2986,50 @@ the first run stated, and every label the guide quotes found in `web/`. **Needs:
 > schema), but the chain draft still names `#general` — a value, not an open choice — and would be accepted as it
 > stands, so it should be rejected by hand.
 
-**SP-8 · Agent + its schedule.** "An agent that does X every morning" stages ONE proposal holding both records; Accept
-creates the agent and then saves the chain with its `agent_id`, all or nothing. `draft_automation` may also name an
-existing agent, so a chain can run as one without a bundle. **Receipt:** one proposal for the user's sentence, and the
-first run's receipt and spend attributed to the new agent. **Needs:** SP-7.
+**SP-8 · Agent + its schedule — ✅ BUILT 2026-09-15** (session branch `claude/sp-8-9-agent-bundle-approval-card`, with
+SP-9; the live first-run receipt waits on a deployment running this code). "An agent that does X every morning" stages
+ONE proposal holding both records; Accept creates the agent and then saves the chain with its `agent_id`, all or
+nothing. `draft_automation` may also name an existing agent, so a chain can run as one without a bundle.
+**Receipt:** one proposal for the user's sentence, and the first run's receipt and spend attributed to the new agent.
+**Needs:** SP-7.
+> **Built 2026-09-15.** `draft_agent` gained `schedule` — the ask's own when/where clause — and stages the
+> `agent_bundle` kind: params hold BOTH records, the chain names NO agent id (the accept sets it from the record it
+> just created, never trusting a claim about one yet to be born), and a chain save that fails DELETES the agent it
+> just made, so a half-married pair cannot exist. A chain proposer refusal refuses the whole bundle: an agent staged
+> beside a refusal is exactly the half the kind exists to prevent. `draft_automation` gained `run_as_agent` (an
+> EXISTING agent, id or exact name; another connection's agent refused with its home named; an unknown name is a
+> refusal, never an invitation to invent one) — the saved chain carries `agent_id`, which VA-9b's `acting_agent`
+> already reads for per-run attribution and spend. Driven over real HTTP on scratch stores with only the MODEL faked:
+> the user's sentence staged one bundle, SP-7's blanking opened the unnamed channel, accept-with-fill created
+> `ua_…` and saved the chain running as it, muted until its 09:00 first run; a second accept 409'd. The LIVE first
+> run (receipt + spend on the new agent) needs a deployment on this code and a real tick — still owed.
 
-**SP-9 · The approval card.** One card per proposal kind, the same in Attention, the Automations inbox and chat: an
-agent's scope, schema and instructions; a chain drawn read-only on the canvas with its first run, destination,
-runs-as, dry run and cost per run. Accept · Open in editor · Reject, with open choices as fields to fill, and a link on
-every staged proposal. A ratchet: no proposal renderer prints raw params. **Receipt:** the user's drafts read as cards in
-all three places, and `JSON.stringify(p.params)` is gone from the approval rows. **Needs:** SP-7, SP-8.
+**SP-9 · The approval card — ✅ BUILT 2026-09-15** (same branch as SP-8). One card per proposal kind, the same in
+Attention, the Automations inbox and chat: an agent's scope, schema and instructions; a chain drawn read-only on the
+canvas with its first run, destination, runs-as, dry run and cost per run. Accept · Open in editor · Reject, with open
+choices as fields to fill, and a link on every staged proposal. A ratchet: no proposal renderer prints raw params.
+**Receipt:** the user's drafts read as cards in all three places, and `JSON.stringify(p.params)` is gone from the
+approval rows. **Needs:** SP-7, SP-8.
+> **Built 2026-09-15.** ONE `ProposalCard` (web/components/ProposalCard.tsx), kind-specific bodies, rendered in FOUR
+> places: the Automations inbox, Attention (a proposal-backed row carries the whole card, replacing the blind
+> Accept/Reject beside a title), the Actions rail, and chat — a turn that stages announces it on a new
+> `proposal_staged` frame (emitted by the act tools when the streaming caller binds `emit`; None on every sync
+> transport, declarations identical, parity held), and the chat fetches the RECORD by the new
+> `GET /kinetic-actions/inbox/{id}` and renders the card with Accept inline. Open choices render as fields; Accept
+> sends them as `fills` ({"<action>.<key>": value}) and the inbox applies a fill ONLY to a currently-open choice —
+> anything else is refused whole as an edit dressed as an answer — then persists the filled params so the record
+> shows what was ARMED. Proposals now carry stage-time `detail` (to_fill · open_choices · first_run · dry_run_ok ·
+> runs_as; inbox migration 5, numbered off the live store's `user_version`=4). The chain is drawn as a read-only
+> strip on the card (trigger → steps, the waiting step marked); "Open in editor" opens the REAL canvas seeded the
+> DS-15 way — the deltas against the spec's letter: the full ReactFlow canvas is one click away rather than embedded
+> per card, and **cost per run is NOT shown — the repo has no measured per-run cost source, and the card does not
+> invent one** (a measured source is SP-12's "each option's cost shown" prerequisite). The ratchet
+> (tests/unit/test_proposal_card_ratchet.py) bans `JSON.stringify(…params)` across web/ with one declared, checked
+> exemption (the params EDITOR's text field); both prior dumps (AutomationsPanel, KineticPanel ×2) are gone. The
+> frame-parity parser now reads the tool layer's emit sites too, so a tool-minted frame can no longer ship without a
+> consumer. Housekeeping the ratchet's own law forced: the kinetic router's prefix is spelled ONCE
+> (`APIRouter(prefix=…)`, wire identical), and the vocabulary baseline fell 328 → 319. Accept surfaces still send
+> their own actor names ("operator", "control-room", "chat") — identity lands in SP-14.
 
 **SP-10 · Show the work.** A turn that acts keeps its steps in view as they happen; the answer carries the proposal
 cards themselves, built from the tool result rather than the prose, with live status; prose renders lists, inline code

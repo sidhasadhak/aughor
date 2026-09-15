@@ -23,8 +23,14 @@ from __future__ import annotations
 from aughor.agent.tool_loop import ToolSpec
 
 
-def spotlight_roster(connection_id: str, *, session_id: str = "") -> list[ToolSpec]:
-    """Know + Act + Guide — the whole operator roster, in declaration order."""
+def spotlight_roster(connection_id: str, *, session_id: str = "",
+                     emit=None) -> list[ToolSpec]:
+    """Know + Act + Guide — the whole operator roster, in declaration order.
+
+    ``emit`` (SP-9) is a streaming turn's frame channel, handed only to the Act limb —
+    a staged proposal announces itself so chat can render the record as a card. None
+    from every sync transport, and the DECLARATIONS are identical either way, which is
+    what the parity ratchet holds."""
     from aughor.agent.object_tools import object_tools
     from aughor.agent.spotlight_act import spotlight_act_tools
     from aughor.agent.spotlight_guide import spotlight_guide_tools
@@ -32,5 +38,5 @@ def spotlight_roster(connection_id: str, *, session_id: str = "") -> list[ToolSp
 
     return (spotlight_tools(connection_id, session_id=session_id)
             + object_tools(connection_id, session_id=session_id)       # ON-3: one object, by type and key
-            + spotlight_act_tools(connection_id, session_id=session_id)
+            + spotlight_act_tools(connection_id, session_id=session_id, emit=emit)
             + spotlight_guide_tools(connection_id, session_id=session_id))

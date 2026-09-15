@@ -4612,12 +4612,20 @@ export interface StagedProposal {
   /** DS-11's completion — what accepting this RUNS. `declared_action` is every proposal
    *  written before it and stays the default; `integration` means `action_id` names a
    *  declared OPERATION and `grant_id` names the connected account whose consent it
-   *  spends. */
-  kind: "declared_action" | "integration";
+   *  spends. SP-3 added the platform-record drafts (`agent_draft`, `automation_draft`,
+   *  `automation_state`, `agent_grant`); SP-8 adds `agent_bundle` — params hold BOTH
+   *  records, and accept creates the agent then saves its chain, all or nothing. */
+  kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
+      | "agent_bundle" | "automation_state" | "agent_grant";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;
   params: Record<string, unknown>;
+  /** SP-9 — stage-time facts the card shows and params cannot carry: `to_fill` (the open
+   *  choices as sentences), `open_choices` ([{action, key}], the fillable fields),
+   *  `first_run` (ISO UTC), `dry_run_ok`, `runs_as`. Advisory — accept recomputes every
+   *  check it gates on. {} on rows staged before SP-9. */
+  detail: Record<string, unknown>;
   reasoning: string;
   proposer: string;
   source: string;
@@ -4644,11 +4652,14 @@ export interface StandingGrant {
   last_used_at: string | null;
 }
 
+/** The inbox routes' one base path — spelled once. */
+const inboxUrl = (tail = "") => `${getApiBase()}/kinetic-actions/inbox${tail}`;
+
 /** Staged proposals for a connection. [] when the inbox is off (404). */
 export async function getProposals(connId: string, status?: string): Promise<StagedProposal[]> {
   const qs = new URLSearchParams({ connection_id: connId });
   if (status) qs.set("status", status);
-  const res = await fetch(`${getApiBase()}/kinetic-actions/inbox?${qs}`);
+  const res = await fetch(inboxUrl(`?${qs}`));
   if (res.status === 404) return [];
   if (!res.ok) throw new Error("Failed to fetch proposals");
   return (await res.json()).proposals;
@@ -4657,20 +4668,34 @@ export async function getProposals(connId: string, status?: string): Promise<Sta
 export type AcceptResult = { status: string; action_id: string; outcome: Record<string, unknown>; granted_by: string; minted_grant: string };
 
 /** Accept a proposal → executes it exactly once (the accept is the approval). `mintGrant`
- *  also mints a target-bound standing grant for future unattended runs. Returns the outcome;
- *  a 409 (already resolved) or 422 (criterion failed) surfaces as a thrown Error with the body. */
-export async function acceptProposal(id: string, actor: string, mintGrant = false): Promise<AcceptResult> {
-  const res = await fetch(`${getApiBase()}/kinetic-actions/inbox/${id}/accept`, {
+ *  also mints a target-bound standing grant for future unattended runs. `fills` (SP-9) is
+ *  the approver's answers to the draft's OPEN choices — {"<action number>.<key>": value};
+ *  only an open choice may be filled, and the inbox refuses anything else whole. Returns
+ *  the outcome; a 409 (already resolved) or 422 (criterion failed) surfaces as a thrown
+ *  Error with the body. */
+export async function acceptProposal(id: string, actor: string, mintGrant = false,
+                                     fills?: Record<string, string>): Promise<AcceptResult> {
+  const res = await fetch(inboxUrl(`/${id}/accept`), {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ actor, mint_grant: mintGrant }),
+    body: JSON.stringify({ actor, mint_grant: mintGrant, ...(fills && Object.keys(fills).length ? { fills } : {}) }),
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body?.detail?.message || body?.detail || `accept failed (${res.status})`);
   return body;
 }
 
+/** ONE staged proposal by id — the approval card's read (SP-9). Chat learns the id from
+ *  the turn that staged it; Attention from the needs-human strip. null on 404: a purged
+ *  or unknown proposal renders as "gone", never as a crash. */
+export async function getProposalById(id: string): Promise<StagedProposal | null> {
+  const res = await fetch(inboxUrl(`/${encodeURIComponent(id)}`));
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch the proposal");
+  return (await res.json()).proposal;
+}
+
 export async function rejectProposal(id: string, actor: string): Promise<boolean> {
-  const res = await fetch(`${getApiBase()}/kinetic-actions/inbox/${id}/reject`, {
+  const res = await fetch(inboxUrl(`/${id}/reject`), {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ actor }),
   });
   if (!res.ok) throw new Error("Failed to reject proposal");

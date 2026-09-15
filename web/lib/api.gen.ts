@@ -5984,6 +5984,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kinetic-actions/inbox/{proposal_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Inbox Proposal
+         * @description ONE staged proposal, by id — the approval card's read (SP-9). Chat learns a
+         *     proposal's id from the turn that staged it and renders the RECORD, not the prose;
+         *     Attention holds ids from the needs-human strip. Same shape as one list row.
+         */
+        get: operations["get_inbox_proposal_kinetic_actions_inbox__proposal_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kinetic-actions/inbox/{proposal_id}/accept": {
         parameters: {
             query?: never;
@@ -10899,6 +10921,13 @@ export interface components {
              * @default
              */
             actor: string;
+            /**
+             * Fills
+             * @default {}
+             */
+            fills: {
+                [key: string]: string;
+            };
             /**
              * Mint Grant
              * @default false
@@ -25007,6 +25036,37 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_inbox_proposal_kinetic_actions_inbox__proposal_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

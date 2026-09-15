@@ -22,7 +22,10 @@ from aughor.security.authz import connection_owner_guard
 logger = logging.getLogger(__name__)
 
 #: DATA-06 — every connection a door of this router names belongs to the caller's org (identity on).
-router = APIRouter(tags=["kinetic"], dependencies=[Depends(connection_owner_guard)])
+# The prefix is spelled ONCE — every route below lives under it, and the wire paths
+# are byte-identical to the eleven that used to spell it per-decorator.
+router = APIRouter(prefix="/kinetic-actions", tags=["kinetic"],
+                   dependencies=[Depends(connection_owner_guard)])
 
 
 class ExecuteRequest(BaseModel):
@@ -47,6 +50,10 @@ class AnnotateRequest(BaseModel):
 class AcceptRequest(BaseModel):
     actor: str = ""
     mint_grant: bool = False                # also mint a target-bound standing grant on accept
+    #: SP-9 — the approver's answers to a draft's OPEN choices, from the card's own
+    #: fields: {"<action number>.<key>": value}. Only an open choice may be filled;
+    #: the inbox refuses anything else whole.
+    fills: dict[str, str] = {}
 
 
 class RejectRequest(BaseModel):
@@ -61,7 +68,7 @@ def _resolve_graph(connection_id: str, schema_name: Optional[str]):
     return graph
 
 
-@router.post("/kinetic-actions/{action_id}/execute")
+@router.post("/{action_id}/execute")
 def execute_action(
     action_id: str,
     body: ExecuteRequest,
@@ -97,7 +104,7 @@ def execute_action(
     )
 
 
-@router.post("/kinetic-actions/propose")
+@router.post("/propose")
 def propose_actions_route(
     body: ProposeRequest,
     connection_id: str = BUILTIN_ID,
@@ -171,20 +178,33 @@ def _resume_parked_run(proposal_id: str) -> None:
                        exc_info=True)
 
 
-@router.get("/kinetic-actions/inbox")
+@router.get("/inbox")
 def list_inbox(connection_id: str = BUILTIN_ID, status: Optional[str] = Query(default=None)):
     """The staged proposals for a connection (optionally filtered by status) — the review queue."""
     from aughor.actions.inbox import list_proposals
     return {"proposals": [p.model_dump() for p in list_proposals(connection_id, status)]}
 
 
-@router.post("/kinetic-actions/inbox/{proposal_id}/accept")
+@router.get("/inbox/{proposal_id}")
+def get_inbox_proposal(proposal_id: str):
+    """ONE staged proposal, by id — the approval card's read (SP-9). Chat learns a
+    proposal's id from the turn that staged it and renders the RECORD, not the prose;
+    Attention holds ids from the needs-human strip. Same shape as one list row."""
+    from aughor.actions.inbox import get_proposal
+    p = get_proposal(proposal_id)
+    if p is None:
+        raise HTTPException(status_code=404, detail="No such proposal")
+    return {"proposal": p.model_dump()}
+
+
+@router.post("/inbox/{proposal_id}/accept")
 def accept_inbox(proposal_id: str, body: AcceptRequest):
     """Accept a staged proposal and execute it — exactly once. The accept is the approval, so the
     executor bypasses the approval gate (never the criteria). A criterion failure returns 422 with
     the authored message; a re-accept of an already-resolved proposal returns 409."""
     from aughor.actions.inbox import accept_proposal
-    result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant)
+    result, grant_id = accept_proposal(proposal_id, actor=body.actor, mint_grant=body.mint_grant,
+                                       fills=body.fills or None)
     _resume_parked_run(proposal_id)
     if result.status == "not_found":
         raise HTTPException(status_code=404, detail="No such proposal")
@@ -199,7 +219,7 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
                                 "message": result.message, **result.detail})
 
 
-@router.post("/kinetic-actions/inbox/{proposal_id}/reject")
+@router.post("/inbox/{proposal_id}/reject")
 def reject_inbox(proposal_id: str, body: RejectRequest):
     """Reject a staged proposal — resolved with the actor, no side effect. A re-reject is a no-op."""
     from aughor.actions.inbox import reject_proposal
@@ -209,14 +229,14 @@ def reject_inbox(proposal_id: str, body: RejectRequest):
     return {"rejected": rejected}
 
 
-@router.get("/kinetic-actions/grants")
+@router.get("/grants")
 def list_grants_route(connection_id: str = BUILTIN_ID):
     """The target-bound standing grants on a connection — the pre-authorizations, for review/revoke."""
     from aughor.actions.grants import list_grants
     return {"grants": [g.model_dump() for g in list_grants(connection_id)]}
 
 
-@router.post("/kinetic-actions/grants/{grant_id}/revoke")
+@router.post("/grants/{grant_id}/revoke")
 def revoke_grant_route(grant_id: str):
     """Revoke a standing grant — future unattended runs of that target hit the approval gate again."""
     from aughor.actions.grants import revoke_grant
@@ -225,7 +245,7 @@ def revoke_grant_route(grant_id: str):
     return {"revoked": grant_id}
 
 
-@router.post("/kinetic-actions/annotate")
+@router.post("/annotate")
 def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
     """Wave K5 — write a human overlay annotation/correction directly (the 'annotate this cell'
     affordance). Merged onto reads by K3; never mutates source."""
@@ -239,7 +259,7 @@ def annotate(body: AnnotateRequest, connection_id: str = BUILTIN_ID):
     return {"id": edit.id, "target": edit.target()}
 
 
-@router.get("/kinetic-actions/annotations")
+@router.get("/annotations")
 def list_annotations(connection_id: str = BUILTIN_ID):
     """Wave K5 — the human overlay edits on a connection, for the review UI.
 
@@ -250,7 +270,7 @@ def list_annotations(connection_id: str = BUILTIN_ID):
     return {"edits": [e.model_dump() for e in edits_for_connection(connection_id, current_org_id() or "")]}
 
 
-@router.delete("/kinetic-actions/annotations/{edit_id}")
+@router.delete("/annotations/{edit_id}")
 def withdraw_annotation(edit_id: str, connection_id: str = BUILTIN_ID):
     """ON-4 — withdraw ONE overlay edit: an annotation on a row, or a property an accepted action set on
     an object. The next read stops merging it and the object reads as the warehouse holds it — nothing is

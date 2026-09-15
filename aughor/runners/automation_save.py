@@ -10,6 +10,7 @@ up. Nothing here imports anything.
 """
 from __future__ import annotations
 
+import re
 from typing import Any, Callable, Optional
 
 _SAVE: Optional[Callable[[dict], tuple[bool, Any]]] = None
@@ -56,3 +57,16 @@ def automation_payload_holes(params: dict) -> list[str]:
     if _HOLES is None:
         return []
     return [str(h) for h in _HOLES(dict(params or {}))]
+
+
+#: The hole sentence `fill_required_holes` writes ("Action 2 needs channel"), parsed
+#: back into its parts. ONE format with both ends here, so the writer and every reader
+#: (the inbox's accept-time fills, the card's open-choice fields) cannot drift apart —
+#: a test pins a round trip through this exact pair.
+_HOLE_RX = re.compile(r"^Action (\d+) needs (\w+)$")
+
+
+def parse_hole(sentence: str) -> Optional[tuple[int, str]]:
+    """``"Action 2 needs channel"`` → ``(2, "channel")``, or None for any other text."""
+    m = _HOLE_RX.match(str(sentence or ""))
+    return (int(m.group(1)), m.group(2)) if m else None
