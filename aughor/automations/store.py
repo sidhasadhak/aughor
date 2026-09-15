@@ -895,9 +895,73 @@ def _state_payload_for_inbox(params: dict):
         saved = pause_automation(automation_id, None)
         return True, {"automation_id": saved.id, "name": saved.name,
                       "paused_until": ""}
-    return False, f"unknown state action {action!r} — pause or resume"
+    # SP-12 — deleting by sentence rides the same staged custody as pausing: the
+    # model proposes, a human accepts, and only then does the record go. The name
+    # travels in the outcome because after the delete there is nothing left to ask.
+    if action == "delete":
+        name = a.name
+        delete_automation(automation_id)
+        return True, {"automation_id": automation_id, "name": name, "deleted": True}
+    return False, f"unknown state action {action!r} — pause, resume or delete"
 
 
-from aughor.runners.automation_state import register_automation_state  # noqa: E402
+#: SP-12 — the fields a staged edit may touch, and nothing else. `cron` reaches the
+#: ONE schedule trigger; everything structural (steps, bindings, triggers beyond the
+#: clock) stays the canvas's, where a person sees what they are changing.
+EDITABLE_FIELDS = ("name", "description", "cron", "enabled")
+
+
+def _edit_payload_for_inbox(params: dict):
+    """Apply a staged ``{automation_id, changes}`` diff — closed fields, re-validated.
+
+    The record is re-read HERE (it can change between stage and accept), the changed
+    values are applied onto a copy, and the copy goes through the model's own
+    validation before the one write door saves it — a staged edit can never save a
+    chain the editor would refuse."""
+    from pydantic import ValidationError
+
+    automation_id = str(params.get("automation_id") or "")
+    changes = dict(params.get("changes") or {})
+    a = get_automation(automation_id)
+    if a is None:
+        return False, f"automation {automation_id!r} no longer exists"
+    unknown = sorted(set(changes) - set(EDITABLE_FIELDS))
+    if unknown:
+        return False, (f"field(s) {', '.join(unknown)} are not editable by sentence — "
+                       f"editable: {', '.join(EDITABLE_FIELDS)}; the canvas edits the rest")
+    if not changes:
+        return False, "no changes to apply"
+    payload = a.model_dump()
+    changed: list[str] = []
+    if "name" in changes:
+        payload["name"] = str(changes["name"]).strip()
+        changed.append("name")
+    if "description" in changes:
+        payload["description"] = str(changes["description"]).strip()
+        changed.append("description")
+    if "enabled" in changes:
+        payload["enabled"] = bool(changes["enabled"])
+        changed.append("enabled")
+    if "cron" in changes:
+        schedules = [c for c in payload.get("conditions") or []
+                     if c.get("kind") == "schedule"]
+        if len(schedules) != 1:
+            return False, (f"this chain has {len(schedules)} schedule triggers — a "
+                           f"cron edit needs exactly one; use the canvas")
+        schedules[0].setdefault("config", {})["cron"] = str(changes["cron"]).strip()
+        changed.append("cron")
+    try:
+        updated = Automation(**payload)
+    except (ValidationError, ValueError, TypeError) as exc:
+        return False, str(exc)[:400]
+    saved = upsert_automation(updated)
+    return True, {"automation_id": saved.id, "name": saved.name, "changed": changed}
+
+
+from aughor.runners.automation_state import (  # noqa: E402
+    register_automation_edit,
+    register_automation_state,
+)
 
 register_automation_state(_state_payload_for_inbox)
+register_automation_edit(_edit_payload_for_inbox)

@@ -444,6 +444,229 @@ def propose_agent_grant(connection_id: str, args: dict, *, emit=None) -> dict:
     }
 
 
+def edit_automation(connection_id: str, args: dict, *, emit=None) -> dict:
+    """SP-12 — change what exists by sentence, staged as a BEFORE→AFTER diff.
+
+    A closed field set (name · description · cron · enabled) — structure stays the
+    canvas's, where a person sees what they are changing. ``delete: true`` stages the
+    removal instead (the same custody as a pause: proposed here, applied only on a
+    human's accept). The diff is computed against the LIVE record at stage time and
+    the door re-validates at accept, so a staged edit can never save a chain the
+    editor would refuse."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.org.context import current_org_id
+
+    a, refusal = _resolve_automation(connection_id, str(args.get("automation") or ""))
+    if a is None:
+        return {"staged": False, "summary": f"Nothing staged: {refusal}"}
+    reasoning = str(args.get("reasoning") or "edited from conversation")[:_MAX_REASON]
+
+    if bool(args.get("delete")):
+        if args.get("changes"):
+            return {"staged": False,
+                    "summary": "Nothing staged: delete OR edit — one proposal says one thing."}
+        p = stage_proposal(StagedProposal(
+            kind="automation_state", org_id=current_org_id() or "",
+            connection_id=connection_id, action_id=f"automation-delete:{clip(a.name, NAME_CLIP)}",
+            params={"automation_id": a.id, "action": "delete"},
+            reasoning=reasoning, proposer="spotlight", source="agent"))
+        _announce(emit, p)
+        return {"staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+                "summary": (f"Proposed: DELETE automation '{clip(a.name, NAME_CLIP)}' (proposal "
+                            f"{p.id}). Nothing is removed until a human accepts — and "
+                            f"a delete cannot be undone, so say that plainly.")}
+
+    from aughor.automations.store import EDITABLE_FIELDS
+    changes_in = dict(args.get("changes") or {})
+    unknown = sorted(set(changes_in) - set(EDITABLE_FIELDS))
+    if unknown:
+        return {"staged": False,
+                "summary": (f"Nothing staged: field(s) {', '.join(unknown)} are not "
+                            f"editable by sentence — editable: {', '.join(EDITABLE_FIELDS)}; "
+                            f"the canvas edits the rest.")}
+    current: dict = {"name": a.name, "description": a.description,
+                     "enabled": a.enabled}
+    schedules = [c for c in a.conditions if c.kind == "schedule"]
+    if len(schedules) == 1:
+        current["cron"] = str(schedules[0].config.get("cron") or "")
+    elif "cron" in changes_in:
+        return {"staged": False,
+                "summary": (f"Nothing staged: this chain has {len(schedules)} schedule "
+                            f"triggers — a cron edit needs exactly one; use the canvas.")}
+    diff = []
+    changes: dict = {}
+    for field, after in changes_in.items():
+        before = current.get(field)
+        after = bool(after) if field == "enabled" else str(after).strip()
+        if after == before:
+            continue
+        changes[field] = after
+        diff.append({"field": field, "before": before, "after": after})
+    if not diff:
+        return {"staged": False,
+                "summary": "Nothing staged: every named value already stands — no diff, no proposal."}
+
+    p = stage_proposal(StagedProposal(
+        kind="automation_edit", org_id=current_org_id() or "",
+        connection_id=connection_id, action_id=f"automation-edit:{clip(a.name, NAME_CLIP)}",
+        params={"automation_id": a.id, "changes": changes},
+        detail={"diff": diff, "automation_name": a.name},
+        reasoning=reasoning, proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
+    _announce(emit, p)
+    lines = "; ".join(f"{d['field']}: {d['before']!r} → {d['after']!r}" for d in diff)
+    return {"staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+            "diff": diff,
+            "summary": (f"Edit staged for '{clip(a.name, NAME_CLIP)}' (proposal {p.id}): {lines}. "
+                        f"Nothing changes until a human accepts it in the inbox.{replaced}")}
+
+
+def draft_monitor(connection_id: str, args: dict, *, emit=None) -> dict:
+    """SP-12 — an alert as a MONITOR plus the chain its breach fires: ONE proposal.
+
+    The preferred shape for "alert me when X moves": the check itself is SQL on a
+    clock and spends no model calls; the deep analysis runs only when something
+    actually moved — where a scheduled chain would spend the analysis every tick,
+    quiet days included. The monitor watches a REGISTERED metric (or explicit SQL);
+    an unknown metric is refused with known ones named, never guessed. SP-7's law
+    holds for the destination: a channel or sender the request did not name stays an
+    open choice the approver fills on the card."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.automations.models import Automation, fill_required_holes
+    from aughor.org.context import current_org_id
+    from aughor.semantic.metrics import get_metric, list_metrics
+
+    metric = str(args.get("metric") or "").strip()
+    sql = str(args.get("sql") or "").strip()
+    if not metric and not sql:
+        return {"staged": False,
+                "summary": "Nothing staged: name a registered metric to watch, or give "
+                           "the exact scalar SQL."}
+    if metric and get_metric(metric) is None:
+        known = sorted({m.name for m in list_metrics()})[:12]
+        return {"staged": False,
+                "summary": (f"Nothing staged: no registered metric {clip(metric, NAME_CLIP)!r}. "
+                            f"Known metrics: {', '.join(known) or '(none registered)'} — "
+                            f"or give explicit SQL.")}
+    try:
+        sigma = float(args.get("sigma") or 3.0)
+    except (TypeError, ValueError):
+        return {"staged": False, "summary": "Nothing staged: sigma must be a number."}
+    name = str(args.get("name") or "").strip() or f"{metric or 'custom'} anomaly watch"
+    question = (str(args.get("question") or "").strip()
+                or f"What moved {metric or 'this metric'}, and where?")
+
+    monitor = {"conn_id": connection_id, "name": name,
+               **({"metric_name": metric} if metric else {"custom_sql": sql}),
+               "alert_on": "anomaly", "sigma_threshold": sigma,
+               "check_cron": "0 * * * *"}
+    chain = {
+        "conn_id": connection_id, "name": name,
+        "description": f"Fired by the '{name}' monitor; runs the deep analysis and posts it.",
+        "conditions": [{"kind": "metric", "config": {"monitor_id": ""}}],
+        "effects": [
+            {"kind": "investigate", "config": {"question": question}},
+            {"kind": "slack_post", "config": {
+                "channel": str(args.get("channel") or "").strip(),
+                "bot_id": str(args.get("bot_id") or "").strip(),
+                "message": {"$from": "step1.answer"}}},
+        ],
+    }
+    # The save's own refusal, asked NOW: holes placeholder-filled for validation only
+    # (SP-7's split — what a person sees keeps the holes), the trigger's monitor id
+    # placeholder-filled the same way because the record it names is the accept's to
+    # create.
+    filled_effects, holes = fill_required_holes(chain["effects"])
+    checked = {**chain, "effects": filled_effects,
+               "conditions": [{"kind": "metric", "config": {"monitor_id": "…"}}]}
+    try:
+        Automation(**checked)
+    except Exception as exc:
+        return {"staged": False,
+                "summary": f"Nothing staged: the alert chain would not validate — {str(exc)[:200]}"}
+
+    open_note = (" OPEN CHOICES: " + "; ".join(holes) + "." if holes else "")
+    p = stage_proposal(StagedProposal(
+        kind="monitor_bundle", org_id=current_org_id() or "",
+        connection_id=connection_id,
+        action_id=f"monitor:{name}+automation:{name}",
+        params={"monitor": monitor, "automation": chain},
+        detail={"to_fill": holes,
+                "open_choices": _open_choice_fields(chain),
+                "watches": metric or "custom SQL", "sigma": sigma,
+                "check_cadence": "hourly"},
+        reasoning=(str(args.get("reasoning") or f"alert when {metric or 'the metric'} "
+                   f"breaks {sigma}σ")[:_MAX_REASON] + open_note),
+        proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
+    _announce(emit, p)
+    open_line = (" It cannot be accepted until these are chosen: " + "; ".join(holes)
+                 + " — the approver fills them on the card." if holes else "")
+    return {
+        "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+        "to_fill": holes,
+        "summary": (f"ONE proposal staged (proposal {p.id}): monitor '{clip(name, NAME_CLIP)}' "
+                    f"(watches {metric or 'custom SQL'}, {sigma}σ, checked hourly — the "
+                    f"check is SQL only and spends no model calls) AND the chain its "
+                    f"breach fires (deep analysis → Slack), accepted or refused "
+                    f"together. The analysis runs ONLY when something moves — a daily "
+                    f"schedule would spend it every day, quiet or not."
+                    f"{open_line}{replaced}"),
+    }
+
+
+def draft_brief(connection_id: str, args: dict, *, emit=None) -> dict:
+    """SP-12 — a recurring briefing delivery, staged. The delivery TRIGGER must exist
+    (a Notifications trigger); an unnamed or unknown one is refused with the known
+    ones listed — a subscription pointing at nothing would look scheduled and deliver
+    nowhere."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.notifications.store import list_triggers
+    from aughor.org.context import current_org_id
+
+    period = str(args.get("period") or "week").strip().lower()
+    if period not in ("day", "week"):
+        return {"staged": False,
+                "summary": "Nothing staged: period is 'day' or 'week'."}
+    triggers = {t.id: t for t in list_triggers()}
+    ref = str(args.get("trigger") or "").strip()
+    trigger = triggers.get(ref) or next(
+        (t for t in triggers.values() if getattr(t, "name", "") == ref), None)
+    if trigger is None:
+        known = ", ".join(f"{t.id} ({getattr(t, 'name', '')})" for t in
+                          list(triggers.values())[:8]) or "(none configured)"
+        return {"staged": False,
+                "summary": (f"Nothing staged: name the delivery trigger — known: "
+                            f"{known}. Create one under Notifications first if none fits.")}
+    try:
+        hour = int(args.get("hour") if args.get("hour") is not None else 9)
+    except (TypeError, ValueError):
+        return {"staged": False, "summary": "Nothing staged: hour must be 0–23 (UTC)."}
+    if not 0 <= hour <= 23:
+        return {"staged": False, "summary": "Nothing staged: hour must be 0–23 (UTC)."}
+    name = str(args.get("name") or "").strip() or f"{period}ly briefing"
+    send_cron = f"0 {hour} * * *" if period == "day" else f"0 {hour} * * 1"
+
+    p = stage_proposal(StagedProposal(
+        kind="brief_draft", org_id=current_org_id() or "",
+        connection_id=connection_id, action_id=f"brief:{name}",
+        params={"name": name, "period": period, "send_cron": send_cron,
+                "trigger_id": trigger.id},
+        detail={"delivers_via": f"{trigger.id} ({getattr(trigger, 'name', '')})",
+                "send_words": (f"every day at {hour:02d}:00 UTC" if period == "day"
+                               else f"every Monday at {hour:02d}:00 UTC")},
+        reasoning=str(args.get("reasoning") or "drafted from conversation")[:_MAX_REASON],
+        proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
+    _announce(emit, p)
+    when = ("every day" if period == "day" else "every Monday") + f" at {hour:02d}:00 UTC"
+    return {"staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+            "summary": (f"Brief subscription '{clip(name, NAME_CLIP)}' staged (proposal {p.id}) — "
+                        f"{when}, delivered through {clip(getattr(trigger, 'name', '') or trigger.id, NAME_CLIP)}. "
+                        f"It joins the schedule only after a human accepts it in the "
+                        f"inbox.{replaced}")}
+
+
 # ── the roster ───────────────────────────────────────────────────────────────────────
 
 _PREF_PARAMS = {
@@ -537,6 +760,80 @@ _STATE_PARAMS = {
     },
     "required": ["automation", "action"],
 }
+_EDIT_PARAMS = {
+    "type": "object",
+    "properties": {
+        "automation": {"type": "string",
+                       "description": "The automation's id or its exact name."},
+        "changes": {"type": "object",
+                    "description": "Only the fields that change: name, description, "
+                                   "cron (the ONE schedule trigger's expression, UTC), "
+                                   "enabled (false disables). Anything structural is "
+                                   "the canvas's."},
+        "delete": {"type": "boolean",
+                   "description": "true stages DELETION instead of an edit — "
+                                  "irreversible once a human accepts; never combined "
+                                  "with changes."},
+        "supersedes": {"type": "string",
+                       "description": "When this corrects an edit you staged earlier "
+                                      "in this conversation, its proposal id."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": ["automation"],
+}
+_MONITOR_PARAMS = {
+    "type": "object",
+    "properties": {
+        "metric": {"type": "string",
+                   "description": "The REGISTERED metric to watch (its exact name). "
+                                  "Unknown names are refused with the known ones "
+                                  "listed. Give sql instead only when the user "
+                                  "supplied the exact query."},
+        "sql": {"type": "string",
+                "description": "Explicit scalar SQL to watch, when no registered "
+                               "metric fits and the user supplied it."},
+        "sigma": {"type": "number",
+                  "description": "Standard deviations from the rolling mean that "
+                                 "count as a breach (default 3)."},
+        "name": {"type": "string", "description": "Short monitor name."},
+        "question": {"type": "string",
+                     "description": "The deep-analysis question a breach should "
+                                    "answer, in the user's own words."},
+        "channel": {"type": "string",
+                    "description": "Slack channel for the alert — ONLY if the user "
+                                   "named one; otherwise leave empty and it stays an "
+                                   "open choice the approver fills."},
+        "bot_id": {"type": "string",
+                   "description": "Sending bot — ONLY if the user named one."},
+        "supersedes": {"type": "string",
+                       "description": "When this corrects a draft you staged earlier "
+                                      "in this conversation, its proposal id."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": [],
+}
+_BRIEF_PARAMS = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Short subscription name."},
+        "period": {"type": "string", "enum": ["day", "week"],
+                   "description": "day = every day; week = every Monday."},
+        "hour": {"type": "integer",
+                 "description": "Send hour, 0-23 UTC (default 9)."},
+        "trigger": {"type": "string",
+                    "description": "The delivery trigger's id or exact name — a "
+                                   "configured Notifications trigger. Unknown ones "
+                                   "are refused with the known ones listed."},
+        "supersedes": {"type": "string",
+                       "description": "When this corrects a draft you staged earlier "
+                                      "in this conversation, its proposal id."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": ["trigger"],
+}
 _GRANT_PARAMS = {
     "type": "object",
     "properties": {
@@ -604,6 +901,48 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "",
             ),
             parameters=_AUTOMATION_PARAMS,
             run=lambda a: draft_automation(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="edit_automation",
+            description=(
+                "STAGE a change to an existing automation as a before-and-after "
+                "diff — name, description, its schedule's cron, or enabled — for "
+                "human approval in the inbox. Use for 'move the Monday brief to "
+                "8am', 'rename…', 'disable…' asks; pass delete true for 'delete…' "
+                "(irreversible once accepted — say so). Structural changes belong "
+                "to the canvas. Quote the summary field verbatim."
+            ),
+            parameters=_EDIT_PARAMS,
+            run=lambda a: edit_automation(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="draft_monitor",
+            description=(
+                "For 'alert me when X moves/breaks/spikes' asks: STAGE ONE proposal "
+                "holding a metric monitor AND the chain its breach fires (deep "
+                "analysis, then Slack) — accepted or refused together. PREFER this "
+                "over a scheduled chain for anomaly asks: the hourly check is SQL "
+                "only and spends no model calls, and the analysis runs only when "
+                "something actually moved, where a daily schedule spends it every "
+                "day. The monitor watches a REGISTERED metric; unknown names are "
+                "refused with the known ones listed. A channel the user did not "
+                "name stays an open choice. Quote the summary field verbatim."
+            ),
+            parameters=_MONITOR_PARAMS,
+            run=lambda a: draft_monitor(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="draft_brief",
+            description=(
+                "STAGE a recurring briefing delivery (daily, or weekly on Monday, "
+                "at an hour UTC) through an existing Notifications trigger, for "
+                "human approval in the inbox. Use for 'brief me every morning', "
+                "'send the weekly briefing to…' asks. The trigger must already "
+                "exist — unknown ones are refused with the known ones listed. "
+                "Quote the summary field verbatim."
+            ),
+            parameters=_BRIEF_PARAMS,
+            run=lambda a: draft_brief(connection_id, a, emit=emit),
         ),
         ToolSpec(
             name="pause_or_resume_automation",

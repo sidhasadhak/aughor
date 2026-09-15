@@ -3081,10 +3081,30 @@ leaves no duplicate. **Needs:** SP-9.
 > receipt sentence runs as a test verbatim: three follow-ups leave one pending proposal. LIVE receipt (a re-drafted
 > ⌘K ask leaving one card) waits on the next deployment.
 
-**SP-12 · Edit, monitor, brief.** Change what exists by sentence — edit, disable, delete — staged as a before-and-after
+**SP-12 · Edit, monitor, brief — ✅ BUILT 2026-09-16** (same branch as SP-11). Change what exists by sentence — edit,
+disable, delete — staged as a before-and-after
 diff; draft a monitor and a brief subscription; for anomalies, prefer a monitor trigger that starts the deep analysis
 only when something moves, with each option's cost shown. **Receipt:** "alert #ops when refund rate breaks 3σ" stages a
 monitor and its chain, and "move the Monday brief to 8am" stages a one-field diff. **Needs:** SP-11.
+> **Built 2026-09-16.** Three staged kinds, each the arc's custody unchanged (the model drafts, a person certifies):
+> **`automation_edit`** — `edit_automation` computes a BEFORE→AFTER diff against the live record over a CLOSED field
+> set (name · description · cron · enabled; structure stays the canvas's); the diff is the card; accept re-reads and
+> re-validates through a registered edit door, so a staged edit can never save a chain the editor would refuse. A
+> cron edit needs exactly ONE schedule trigger or it refuses to the canvas. `delete: true` stages removal on the
+> state door instead (irreversible once accepted, and the summary says so); disable is `enabled: false`.
+> **`monitor_bundle`** — `draft_monitor` stages ONE proposal holding the monitor (a REGISTERED metric or explicit
+> SQL; unknown metrics refused with the known ones named; anomaly at Nσ, checked hourly) AND the chain its breach
+> fires (deep analysis → Slack). Accept creates the monitor, injects its id into the chain's metric trigger and
+> saves — all or nothing, the agent bundle's law: a rollback leaves no chainless monitor breaching silently. SP-7's
+> blanking holds: an unnamed channel/sender stays an open choice the approver fills on the card. **The cost is
+> stated STRUCTURALLY, not invented** (the repo still has no measured per-run cost source): the hourly check is SQL
+> only and spends no model calls, and the analysis runs only on a breach, where a daily schedule spends it every
+> tick — said in the tool's routing description AND in the staged summary the approver reads.
+> **`brief_draft`** — `draft_brief` stages a briefing subscription (day, or week on Monday, at an hour UTC) through
+> an EXISTING Notifications trigger; unknown triggers refused with the known ones listed; accept re-checks the
+> trigger still exists before saving. Both receipt sentences run as tests verbatim. All three kinds render as card
+> bodies (the edit as strikethrough-before → after rows), take accept-time `supersedes`, and audit as
+> `spotlight.<kind>`. LIVE receipts wait on the next deployment.
 
 **SP-13 · Your timezone.** A timezone key in the settings registry and on each automation; the scheduler evaluates cron
 in it; drafts and cards speak local time, and UTC stays visible for operators. **Receipt:** a 09:00 Europe/Berlin chain

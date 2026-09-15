@@ -169,9 +169,16 @@ class StagedProposal(BaseModel):
     #: morning" — accept creates the agent and then saves the chain carrying its id, all
     #: or nothing, so the two cannot arrive half-married the way the user's own live
     #: drafts did (an agent, and a schedule that ran as nobody).
+    #: SP-12 adds three more of the same staged shape: ``automation_edit`` (params
+    #: are {automation_id, changes} over a CLOSED field set; accept applies through
+    #: the registered edit door), ``monitor_bundle`` ({"monitor", "automation"} —
+    #: accept creates the monitor, injects its id into the chain's metric trigger and
+    #: saves, all or nothing, the agent bundle's own law) and ``brief_draft`` (a
+    #: briefing subscription; accept saves it).
     kind: Literal["declared_action", "integration",
                   "agent_draft", "automation_draft", "agent_bundle",
-                  "automation_state", "agent_grant"] = "declared_action"
+                  "automation_state", "agent_grant",
+                  "automation_edit", "monitor_bundle", "brief_draft"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -537,7 +544,8 @@ def gov_action_of(p: StagedProposal) -> str:
         op = get_operation(p.action_id)
         if op is not None:
             return op.gov_action
-    if p.kind in ("agent_draft", "automation_draft", "agent_bundle"):
+    if p.kind in ("agent_draft", "automation_draft", "agent_bundle",
+                  "automation_edit", "monitor_bundle", "brief_draft"):
         return f"spotlight.{p.kind}"
     return f"kinetic.{p.action_id}"
 
@@ -628,7 +636,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     # open choice right here (``fills``), which is the person making the choice, not the
     # model — and only an open choice, so arming-time edits stay impossible.
     filled_params: Optional[dict] = None
-    if p.kind in ("automation_draft", "agent_bundle") and p.pending:
+    if p.kind in ("automation_draft", "agent_bundle", "monitor_bundle") and p.pending:
         from aughor.runners import automation_payload_holes
         chain = (dict(p.params or {}) if p.kind == "automation_draft"
                  else dict((p.params or {}).get("automation") or {}))
@@ -672,6 +680,12 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
         return _accept_automation_draft(p, actor=actor), ""
     if p.kind == "agent_bundle":
         return _accept_agent_bundle(p, actor=actor), ""
+    if p.kind == "automation_edit":
+        return _accept_automation_edit(p, actor=actor), ""
+    if p.kind == "monitor_bundle":
+        return _accept_monitor_bundle(p, actor=actor), ""
+    if p.kind == "brief_draft":
+        return _accept_brief_draft(p, actor=actor), ""
     if p.kind == "automation_state":
         return _accept_automation_state(p, actor=actor), ""
     if p.kind == "agent_grant":
@@ -862,6 +876,108 @@ def _accept_agent_bundle(p: StagedProposal, *, actor: str):
                    message=(f"agent '{agent.name}' created as {agent.id}; automation "
                             f"'{out['name']}' saved as {out['automation_id']}, running as it"),
                    outcome=outcome, detail=outcome)
+
+
+def _accept_automation_edit(p: StagedProposal, *, actor: str):
+    """Apply a staged field diff through the registered edit door (SP-12). The door
+    re-reads the record and re-validates the result — a staged edit can never save a
+    chain the editor would refuse, and a record deleted between stage and accept is
+    an honest failure, not a crash."""
+    _Result = _executor_result()
+    from aughor.runners.automation_state import edit_automation_payload
+
+    ok, out = edit_automation_payload(dict(p.params or {}))
+    if not ok:
+        _record_outcome(p.id, "failed", str(out), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"edit no longer valid: {out}")
+    _record_outcome(p.id, "executed",
+                    f"automation {out['automation_id']} edited ({', '.join(out['changed'])})", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"automation '{out['name']}' edited: {', '.join(out['changed'])}",
+                   outcome=out, detail=out)
+
+
+def _accept_monitor_bundle(p: StagedProposal, *, actor: str):
+    """Create the monitor, then save the chain its metric trigger fires — ALL OR
+    NOTHING, the agent bundle's own law. The monitor's id is set from the record just
+    created, never trusted from params (it does not exist at stage time), and a chain
+    save that fails deletes the monitor, so an alert cannot exist half-armed: a
+    monitor with no chain would breach silently, which reads as 'nothing is wrong'."""
+    _Result = _executor_result()
+    from pydantic import ValidationError
+
+    from aughor.monitors.models import Monitor
+    from aughor.monitors.store import delete_monitor, upsert_monitor
+    from aughor.runners import save_automation_payload
+
+    d = dict(p.params or {})
+    try:
+        monitor = Monitor(**dict(d.get("monitor") or {}))
+    except (ValidationError, ValueError, TypeError) as exc:
+        msg = str(exc)[:400]
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    saved_monitor = upsert_monitor(monitor)
+    chain_d = dict(d.get("automation") or {})
+    conditions = [dict(c) for c in (chain_d.get("conditions") or [])]
+    for c in conditions:
+        if c.get("kind") == "metric":
+            c["config"] = {**dict(c.get("config") or {}), "monitor_id": saved_monitor.id}
+    chain_d["conditions"] = conditions
+    ok, out = save_automation_payload(chain_d)
+    if not ok:
+        delete_monitor(saved_monitor.id)   # all or nothing — no silent, chainless monitor
+        msg = f"chain not saved ({out}); monitor creation rolled back"
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    outcome = {"monitor_id": saved_monitor.id, "monitor_name": saved_monitor.name,
+               "automation_id": out["automation_id"], "automation_name": out["name"],
+               "first_run": out.get("first_run", "")}
+    _record_outcome(p.id, "executed",
+                    f"monitor {saved_monitor.id} created; automation {out['automation_id']} saved",
+                    outcome)
+    return _Result("executed", True, p.action_id,
+                   message=(f"monitor '{saved_monitor.name}' created as {saved_monitor.id}; "
+                            f"chain '{out['name']}' saved, fired by it"),
+                   outcome=outcome, detail=outcome)
+
+
+def _accept_brief_draft(p: StagedProposal, *, actor: str):
+    """Save the drafted briefing subscription — validation re-runs HERE: the delivery
+    trigger can be deleted between stage and accept, and a subscription pointing at a
+    trigger that is gone would look scheduled and deliver nothing."""
+    _Result = _executor_result()
+    from aughor.briefing.models import BriefSubscription
+    from aughor.briefing.store import save_subscription
+    from aughor.notifications.store import get_trigger
+
+    d = dict(p.params or {})
+    trigger_id = str(d.get("trigger_id") or "")
+    if not get_trigger(trigger_id):
+        msg = f"delivery trigger {trigger_id!r} no longer exists"
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    try:
+        sub = BriefSubscription(
+            conn_id=p.connection_id, name=str(d.get("name") or ""),
+            period=str(d.get("period") or "week"),
+            send_cron=str(d.get("send_cron") or ""), trigger_id=trigger_id)
+    except (ValueError, TypeError) as exc:
+        msg = str(exc)[:400]
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    saved = save_subscription(sub)
+    out = {"subscription_id": saved.id, "name": saved.name,
+           "send_cron": saved.resolved_cron()}
+    _record_outcome(p.id, "executed", f"brief subscription {saved.id} saved", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"brief subscription '{saved.name}' saved as {saved.id}",
+                   outcome=out, detail=out)
 
 
 def _accept_automation_state(p: StagedProposal, *, actor: str):

@@ -4616,7 +4616,8 @@ export interface StagedProposal {
    *  `automation_state`, `agent_grant`); SP-8 adds `agent_bundle` — params hold BOTH
    *  records, and accept creates the agent then saves its chain, all or nothing. */
   kind: "declared_action" | "integration" | "agent_draft" | "automation_draft"
-      | "agent_bundle" | "automation_state" | "agent_grant";
+      | "agent_bundle" | "automation_state" | "agent_grant"
+      | "automation_edit" | "monitor_bundle" | "brief_draft";
   /** The connected account an `integration` proposal would act as. "" otherwise. */
   grant_id: string;
   action_id: string;
