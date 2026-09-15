@@ -34,3 +34,25 @@ def save_automation_payload(params: dict) -> tuple[bool, Any]:
         return False, ("automation write door not registered — the automations "
                        "package has not been imported in this process")
     return _SAVE(dict(params or {}))
+
+
+# SP-7 — the OPEN-CHOICES door, registered the same way. The inbox must refuse to accept an
+# automation draft that still has a choice nobody made (a Slack channel the request never
+# named), and it must say so BEFORE its resolve-once update, so the proposal stays pending
+# for a draft that fills it. The rule lives with the automation model; this only looks it up.
+_HOLES: Optional[Callable[[dict], list]] = None
+
+
+def register_automation_holes(fn: Callable[[dict], list]) -> None:
+    """Called by the automations store at import, beside the save door."""
+    global _HOLES
+    _HOLES = fn
+
+
+def automation_payload_holes(params: dict) -> list[str]:
+    """The open choices in an authoring-shaped payload ("Action 2 needs channel"), or []
+    when there are none. Also [] when no door is registered — the save door then refuses
+    the accept on its own, in its own words."""
+    if _HOLES is None:
+        return []
+    return [str(h) for h in _HOLES(dict(params or {}))]

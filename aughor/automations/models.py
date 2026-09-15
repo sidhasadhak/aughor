@@ -161,6 +161,30 @@ def required_keys(kind: str, *, family: str) -> tuple[str, ...]:
     return tuple(table.get(kind, ()))
 
 
+def fill_required_holes(effects: list) -> tuple[list[dict], list[str]]:
+    """The OPEN CHOICES in authoring-shaped steps, and a copy that can be validated anyway.
+
+    DS-16's two passes, as one body with two callers now: the import funnel (a translation
+    cannot know this deployment's bot) and SP-7's accept check (a drafted Slack channel
+    nobody named). Returns ``(filled, holes)`` — every missing required key set to a visible
+    placeholder in a COPY, so the chain validator still gets its turn (pydantic skips it
+    when a field validator fails, and a missing key would otherwise mask a broken binding),
+    and one ``"Action N needs <key>"`` sentence per hole. What a person sees keeps the
+    holes; only the validation pass sees the placeholder, because a "…" that reached a
+    saved chain would be a message posted to a real channel.
+    """
+    holes: list[str] = []
+    filled: list[dict] = []
+    for i, e in enumerate(effects or [], start=1):
+        cfg = dict(e.get("config") or {})
+        for key in required_keys(str(e.get("kind") or ""), family="effect"):
+            if not cfg.get(key):
+                holes.append(f"Action {i} needs {key}")
+                cfg[key] = "…"          # a visible placeholder, never a plausible value
+        filled.append({**e, "config": cfg})
+    return filled, holes
+
+
 class GuardClause(BaseModel):
     """W1 — one comparison in a step's ``when`` guard.
 

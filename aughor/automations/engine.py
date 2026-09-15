@@ -204,6 +204,23 @@ def claim_delivery(automation_id: str, started_at: str) -> bool:
         return False
 
 
+def cron_trigger(cron: str):
+    """The ONE reading of a cron string — in UTC, the only clock an automation has today."""
+    from apscheduler.triggers.cron import CronTrigger
+
+    return CronTrigger.from_crontab(cron, timezone="UTC")
+
+
+def next_fire_utc(cron: str, after: datetime) -> Optional[datetime]:
+    """SP-7 — when this cron next fires after ``after``, read by the trigger the scheduler
+    itself uses, so a first run a draft STATES cannot disagree with the one that happens.
+    ``None`` for a cron that does not parse or never fires again."""
+    try:
+        return cron_trigger(cron).get_next_fire_time(None, after)
+    except (ValueError, KeyError):
+        return None
+
+
 def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> tuple[bool, str]:
     """True when the cron matched at some point between the last run and ``now``.
 
@@ -211,10 +228,8 @@ def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> t
     "is it exactly the cron minute now?" makes the condition robust to a late or coalesced tick —
     a missed 08:00 that ticks at 08:04 still fires, once.
     """
-    from apscheduler.triggers.cron import CronTrigger
-
     try:
-        trigger = CronTrigger.from_crontab(cond.cron, timezone="UTC")
+        trigger = cron_trigger(cond.cron)
     except (ValueError, KeyError) as exc:
         raise ProbeUnavailable(f"invalid cron '{cond.cron}': {exc}") from exc
 

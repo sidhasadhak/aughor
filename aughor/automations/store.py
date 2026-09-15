@@ -822,18 +822,54 @@ def set_probe_baseline(automation_id: str, target: str, version: str) -> None:
 # the registry is the peer-maker. The callable builds the model (its validation
 # refusing malformed drafts) and saves through the ONE write door above.
 
+def _first_scheduled_time(automation: Automation) -> str:
+    """The next time this chain's schedule fires (ISO UTC) — only when EVERY trigger is a
+    schedule, because the mute below would also silence a webhook or a metric trigger."""
+    if not automation.conditions or any(c.kind != "schedule" for c in automation.conditions):
+        return ""
+    from datetime import datetime, timezone
+
+    from aughor.automations.engine import next_fire_utc
+
+    now = datetime.now(timezone.utc)
+    times = [t for c in automation.conditions if (t := next_fire_utc(c.cron, now)) is not None]
+    return min(times).strftime("%Y-%m-%dT%H:%M:%SZ") if times else ""
+
+
 def _save_payload_for_inbox(params: dict):
     from pydantic import ValidationError
     try:
-        saved = upsert_automation(Automation(**dict(params or {})))
+        automation = Automation(**dict(params or {}))
     except (ValidationError, ValueError, TypeError) as exc:
         return False, str(exc)[:400]
-    return True, {"automation_id": saved.id, "name": saved.name}
+    # SP-7 — an accepted draft starts at its first SCHEDULED time, not at the moment it is
+    # accepted. A new schedule has no previous run to be due since, so the scheduler fires it
+    # on its next tick (`engine._schedule_fired`): the user's 9am chain, accepted late in the
+    # evening, would have posted within a minute. The wait is the mute that already exists —
+    # it has its end, the run history reads "muted until …", and a resume lifts it.
+    first_run = _first_scheduled_time(automation)
+    if first_run and not automation.paused_until:
+        automation = automation.model_copy(update={"paused_until": first_run})
+    try:
+        saved = upsert_automation(automation)
+    except (ValidationError, ValueError, TypeError) as exc:
+        return False, str(exc)[:400]
+    return True, {"automation_id": saved.id, "name": saved.name, "first_run": first_run}
 
 
-from aughor.runners.automation_save import register_automation_save  # noqa: E402
+def _holes_for_inbox(params: dict) -> list[str]:
+    """SP-7 — the open choices an automation draft still carries, for the inbox's accept."""
+    from aughor.automations.models import fill_required_holes
+    return fill_required_holes(list((params or {}).get("effects") or []))[1]
+
+
+from aughor.runners.automation_save import (  # noqa: E402
+    register_automation_holes,
+    register_automation_save,
+)
 
 register_automation_save(_save_payload_for_inbox)
+register_automation_holes(_holes_for_inbox)
 
 
 # The state door (pause/resume), introducing itself the same way. Pause keeps its end

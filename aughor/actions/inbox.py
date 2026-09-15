@@ -524,6 +524,21 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
                              message=("This proposal's approval window closed — it was staged "
                                       "against data that has since moved. Re-propose to act on it."),
                              detail={"expires_at": p.expires_at or "", "created_at": p.created_at}), ""
+    # SP-7 — an automation draft that still carries an open choice (a Slack channel nobody
+    # named) is not acceptable yet. Checked BEFORE the resolve-once update on purpose: the
+    # proposal stays pending for a draft that fills the choice, where resolving it first would
+    # spend the proposal on a refusal — and accepting it anyway would arm a chain that posts
+    # to a placeholder.
+    if p.kind == "automation_draft" and p.pending:
+        from aughor.runners import automation_payload_holes
+        holes = automation_payload_holes(dict(p.params or {}))
+        if holes:
+            _Result = _executor_result()
+            return _Result("invalid_params", False, p.action_id,
+                                 message=("Not acceptable yet — a choice is still open: "
+                                          + "; ".join(holes) + ". Draft it again with the "
+                                          "choice named, then accept that draft."),
+                                 detail={"to_fill": holes}), ""
     if not _resolve_once(proposal_id, "accepted", actor):
         return KineticResult("already_resolved", False, p.action_id,
                              message=f"proposal already {get_proposal(proposal_id).status}"), ""

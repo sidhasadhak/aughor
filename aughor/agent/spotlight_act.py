@@ -119,19 +119,39 @@ def draft_automation(connection_id: str, args: dict) -> dict:
                             f"not an error.")}
 
     name = str(proposal.draft.get("name") or outcome[:60])
+    to_fill = list(proposal.to_fill or [])
+    first_run = proposal.first_run or ""
+    # SP-7 — the approver reads what is still open in the record itself, not only in chat.
+    open_note = (" OPEN CHOICES: " + "; ".join(to_fill) + "." if to_fill else "")
     p = stage_proposal(StagedProposal(
         kind="automation_draft", org_id=current_org_id() or "",
         connection_id=connection_id, action_id=f"automation:{name}",
         params=dict(proposal.draft),
-        reasoning=(str(args.get("reasoning") or outcome)[:_MAX_REASON]),
+        reasoning=(str(args.get("reasoning") or outcome)[:_MAX_REASON] + open_note),
         proposer="spotlight", source="agent"))
+    open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
+                 + " — ask the person, then draft it again with the choice named."
+                 if to_fill else "")
+    when_line = (f" It waits for its schedule: accepted now, its first run would be "
+                 f"{_utc_words(first_run)}." if first_run else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "draft": proposal.draft, "dry_run": proposal.dry_run, "notes": proposal.notes,
+        "to_fill": to_fill, "first_run": first_run,
         "summary": (f"Automation draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) "
                     f"with its dry-run attached — it joins the one scheduler only "
-                    f"after a human accepts it in the inbox."),
+                    f"after a human accepts it in the inbox.{open_line}{when_line}"),
     }
+
+
+def _utc_words(iso: str) -> str:
+    """``2026-09-16T09:00:00Z`` → ``Tue 16 Sep 2026, 09:00 UTC`` — the clock is always named."""
+    from datetime import datetime
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+    except ValueError:
+        return iso
+    return f"{dt:%a} {dt.day} {dt:%b %Y}, {dt:%H:%M} UTC"
 
 
 def _resolve_automation(connection_id: str, ref: str):
