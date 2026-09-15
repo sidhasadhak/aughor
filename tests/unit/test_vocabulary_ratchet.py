@@ -341,7 +341,11 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # to a neutrally-named module is a real migration step and would retire
          # this exemption, but it touches five components and belongs with the
          # reducer's retirement rather than ahead of it.
-         "web/components/chat/PartsMessage.tsx"),
+         "web/components/chat/PartsMessage.tsx",
+         # The workspace's test renders `IntelligenceWorkspace`, so it must pass the
+         # component's required `onInvestigate` prop — the shell's contract, the same case as
+         # the Overview above. That prop name is the file's one occurrence.
+         "web/components/IntelligenceWorkspace.test.tsx"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "
