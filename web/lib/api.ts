@@ -4258,6 +4258,8 @@ export interface Automation {
   expires_at: string | null;
   max_retries: number;
   retry_backoff_seconds: number;
+  /** SP-13 — the clock the schedule triggers are read in ("" = UTC). */
+  timezone?: string;
   created_at: string;
   updated_at: string;
   last_run_at: string | null;

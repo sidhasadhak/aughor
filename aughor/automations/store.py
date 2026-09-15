@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS automations (
     max_retries           INTEGER NOT NULL DEFAULT 1,
     retry_backoff_seconds REAL NOT NULL DEFAULT 30.0,
     agent_id              TEXT NOT NULL DEFAULT '',
+    timezone              TEXT NOT NULL DEFAULT '',
     scheduling            TEXT NOT NULL DEFAULT 'ordered',
     exposed_as_tool       INTEGER NOT NULL DEFAULT 0,
     created_at            TEXT NOT NULL DEFAULT '',
@@ -224,6 +225,12 @@ _MIGRATIONS: list[Migration] = [
     #: above and passes either way.
     Migration(version=6, name="run attribution (MI-1: agent_id + trace_id on runs)",
               apply=_add_run_attribution),
+    #: Version 7, read off the LIVE store exactly as its predecessors were:
+    #: `PRAGMA user_version` on the deployed `data/automations.db` returned 6 on
+    #: 2026-09-16, so 7 is the next one that will actually execute.
+    Migration(version=7, name="automation clock (SP-13: cron in the chain's timezone)",
+              apply=lambda conn: add_column_if_missing(
+                  conn, "automations", "timezone", "TEXT NOT NULL DEFAULT ''")),
 ]
 
 
@@ -370,12 +377,12 @@ def upsert_automation(automation: Automation) -> Automation:
                 INSERT INTO automations (
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
-                    retry_backoff_seconds, agent_id, scheduling, exposed_as_tool,
+                    retry_backoff_seconds, agent_id, timezone, scheduling, exposed_as_tool,
                     created_at, updated_at, last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
-                    :retry_backoff_seconds, :agent_id, :scheduling, :exposed_as_tool,
+                    :retry_backoff_seconds, :agent_id, :timezone, :scheduling, :exposed_as_tool,
                     :created_at, :updated_at, :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET
@@ -398,6 +405,7 @@ def upsert_automation(automation: Automation) -> Automation:
                     max_retries=excluded.max_retries,
                     retry_backoff_seconds=excluded.retry_backoff_seconds,
                     agent_id=excluded.agent_id,
+                    timezone=excluded.timezone,
                     scheduling=excluded.scheduling,
                     exposed_as_tool=excluded.exposed_as_tool,
                     updated_at=excluded.updated_at,
@@ -832,7 +840,8 @@ def _first_scheduled_time(automation: Automation) -> str:
     from aughor.automations.engine import next_fire_utc
 
     now = datetime.now(timezone.utc)
-    times = [t for c in automation.conditions if (t := next_fire_utc(c.cron, now)) is not None]
+    times = [t for c in automation.conditions
+             if (t := next_fire_utc(c.cron, now, automation.timezone)) is not None]
     return min(times).strftime("%Y-%m-%dT%H:%M:%SZ") if times else ""
 
 
@@ -908,7 +917,7 @@ def _state_payload_for_inbox(params: dict):
 #: SP-12 — the fields a staged edit may touch, and nothing else. `cron` reaches the
 #: ONE schedule trigger; everything structural (steps, bindings, triggers beyond the
 #: clock) stays the canvas's, where a person sees what they are changing.
-EDITABLE_FIELDS = ("name", "description", "cron", "enabled")
+EDITABLE_FIELDS = ("name", "description", "cron", "enabled", "timezone")
 
 
 def _edit_payload_for_inbox(params: dict):
@@ -942,6 +951,9 @@ def _edit_payload_for_inbox(params: dict):
     if "enabled" in changes:
         payload["enabled"] = bool(changes["enabled"])
         changed.append("enabled")
+    if "timezone" in changes:
+        payload["timezone"] = str(changes["timezone"]).strip()
+        changed.append("timezone")
     if "cron" in changes:
         schedules = [c for c in payload.get("conditions") or []
                      if c.get("kind") == "schedule"]

@@ -19,7 +19,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { acceptProposal, getProposalById, rejectProposal, type StagedProposal } from "@/lib/api";
-import { relTime } from "@/lib/format";
+import { relTime, zonedTimeWords } from "@/lib/format";
 
 /** "2026-09-16T09:00:00Z" → "Tue, 16 Sep 2026 09:00 UTC" — the clock is always named. */
 export function utcWords(iso: string): string {
@@ -27,6 +27,10 @@ export function utcWords(iso: string): string {
   if (isNaN(d.getTime())) return iso;
   return d.toUTCString().replace(/:\d{2} GMT$/, " UTC");
 }
+
+/** SP-13 — the card speaks the chain's own clock, UTC visible (lib/format owns the
+ *  Intl primitive; this is the one name the card renders by). */
+export const whenWords = zonedTimeWords;
 
 type OpenChoice = { action: number; key: string };
 
@@ -179,7 +183,9 @@ function AutomationBody({ chain, detail, openKeys }: {
       {chain.description ? <Row label="Does">{String(chain.description)}</Row> : null}
       <ChainStrip chain={chain} openKeys={openKeys} />
       {runsAs && <Row label="Runs as">{runsAs}</Row>}
-      {firstRun && <Row label="First run">{utcWords(firstRun)}</Row>}
+      {firstRun && (
+        <Row label="First run">{whenWords(firstRun, String(detail.timezone ?? "") || undefined)}</Row>
+      )}
       {detail.dry_run_ok === true && (
         <Row label="Dry run">walked without dispatching — the draft validates end to end</Row>
       )}

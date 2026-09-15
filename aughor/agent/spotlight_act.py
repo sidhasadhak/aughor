@@ -196,6 +196,7 @@ def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *
         params={"agent": dict(agent_params), "automation": dict(proposal.draft)},
         detail={"to_fill": to_fill, "open_choices": _open_choice_fields(proposal.draft),
                 "first_run": first_run,
+                "timezone": str(proposal.draft.get("timezone") or ""),
                 "dry_run_ok": bool(proposal.dry_run), "runs_as": name},
         reasoning=(reasoning + open_note), proposer="spotlight", source="agent"))
     replaced = _supersede_prior(p, supersedes)
@@ -203,7 +204,8 @@ def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *
     open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
                  + " — the approver fills them on the card, or ask and draft again."
                  if to_fill else "")
-    when_line = (f" Accepted, its first run would be {_utc_words(first_run)}."
+    when_line = (f" Accepted, its first run would be "
+                 f"{_when_words(first_run, str(proposal.draft.get('timezone') or ''))}."
                  if first_run else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
@@ -262,6 +264,7 @@ def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
         params=params,
         detail={"to_fill": to_fill, "open_choices": _open_choice_fields(proposal.draft),
                 "first_run": first_run,
+                "timezone": str(proposal.draft.get("timezone") or ""),
                 "dry_run_ok": bool(proposal.dry_run),
                 "runs_as": agent.name if agent is not None else ""},
         reasoning=(str(args.get("reasoning") or outcome)[:_MAX_REASON] + open_note),
@@ -272,7 +275,8 @@ def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
                  + " — the approver fills them on the card, or ask and draft again."
                  if to_fill else "")
     when_line = (f" It waits for its schedule: accepted now, its first run would be "
-                 f"{_utc_words(first_run)}." if first_run else "")
+                 f"{_when_words(first_run, str(proposal.draft.get('timezone') or ''))}."
+                 if first_run else "")
     as_line = (f" It runs as agent '{clip(agent.name, NAME_CLIP)}', its runs and spend "
                f"attributed there." if agent is not None else "")
     return {
@@ -293,6 +297,23 @@ def _utc_words(iso: str) -> str:
     except ValueError:
         return iso
     return f"{dt:%a} {dt.day} {dt:%b %Y}, {dt:%H:%M} UTC"
+
+
+def _when_words(iso: str, tz: str = "") -> str:
+    """SP-13 — the draft speaks LOCAL time and UTC stays visible for operators:
+    ``Wed 16 Sep 2026, 09:00 Europe/Berlin (07:00 UTC)``. With no zone (or an
+    unreadable one), the UTC words alone — exactly what every pre-SP-13 draft said."""
+    if not tz:
+        return _utc_words(iso)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        local = dt.astimezone(ZoneInfo(tz))
+    except Exception:
+        return _utc_words(iso)
+    return (f"{local:%a} {local.day} {local:%b %Y}, {local:%H:%M} {tz} "
+            f"({dt:%H:%M} UTC)")
 
 
 def _resolve_automation(connection_id: str, ref: str):
@@ -485,7 +506,7 @@ def edit_automation(connection_id: str, args: dict, *, emit=None) -> dict:
                             f"editable by sentence — editable: {', '.join(EDITABLE_FIELDS)}; "
                             f"the canvas edits the rest.")}
     current: dict = {"name": a.name, "description": a.description,
-                     "enabled": a.enabled}
+                     "enabled": a.enabled, "timezone": a.timezone}
     schedules = [c for c in a.conditions if c.kind == "schedule"]
     if len(schedules) == 1:
         current["cron"] = str(schedules[0].config.get("cron") or "")
@@ -767,9 +788,11 @@ _EDIT_PARAMS = {
                        "description": "The automation's id or its exact name."},
         "changes": {"type": "object",
                     "description": "Only the fields that change: name, description, "
-                                   "cron (the ONE schedule trigger's expression, UTC), "
-                                   "enabled (false disables). Anything structural is "
-                                   "the canvas's."},
+                                   "cron (the ONE schedule trigger's expression, read "
+                                   "in the chain's own timezone), timezone (an IANA "
+                                   "name like Europe/Berlin — the clock the schedule "
+                                   "is read in), enabled (false disables). Anything "
+                                   "structural is the canvas's."},
         "delete": {"type": "boolean",
                    "description": "true stages DELETION instead of an edit — "
                                   "irreversible once a human accepts; never combined "

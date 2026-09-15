@@ -3106,9 +3106,24 @@ monitor and its chain, and "move the Monday brief to 8am" stages a one-field dif
 > bodies (the edit as strikethrough-before → after rows), take accept-time `supersedes`, and audit as
 > `spotlight.<kind>`. LIVE receipts wait on the next deployment.
 
-**SP-13 · Your timezone.** A timezone key in the settings registry and on each automation; the scheduler evaluates cron
+**SP-13 · Your timezone — ✅ BUILT 2026-09-16** (same branch as SP-11/SP-12). A timezone key in the settings registry
+and on each automation; the scheduler evaluates cron
 in it; drafts and cards speak local time, and UTC stays visible for operators. **Receipt:** a 09:00 Europe/Berlin chain
 fires at 07:00Z in summer and 08:00Z in winter, pinned by a test across the clock change. **Needs:** nothing.
+> **Built 2026-09-16.** The receipt sentence is pinned VERBATIM, including the clock-change morning itself (Berlin
+> falls back 2026-10-25; Saturday fires at 07:00Z, Sunday at 08:00Z, one day apart, no arithmetic of ours between).
+> The ONE cron factory (`engine.cron_trigger`) takes the chain's clock and APScheduler owns DST; `next_fire_utc`
+> ALWAYS returns UTC whatever zone evaluates, because every consumer stamps ISO with a Z and a Berlin-local datetime
+> wearing a Z is the lie this wave exists to end. `Automation.timezone` ("" = UTC, every pre-SP-13 chain; IANA name
+> validated at CONSTRUCTION — a typo'd clock refuses, never arms a 9am that fires at 7; migration 7, numbered off
+> the live store's 6). The scheduler's due-ness, the store's first-run mute and the draft's stated first run all
+> read the same factory. `timezone` joined the settings registry (drafts default to the caller's chosen clock) and
+> the edit door's closed field set — "switch it to Europe/Berlin" is a one-field diff. Drafts speak local with UTC
+> in parens; the card's First run row does the same (the Intl primitive lives in lib/format, REC-U8); the schedule
+> editor labels the chain's real clock and suppresses its client-side next-run guess for any non-UTC zone — exact
+> arithmetic only, DST is the server's. **Open, recorded:** the canvas SEED carries conditions/effects only, so
+> finishing a zoned draft in the form saves a UTC chain (the same seed already drops a drafted runs-as — one gap,
+> SP-11-adjacent); and SP-14's "drafts and cards" leftovers (Slack approval identity) are unchanged.
 
 **SP-14 · On by default.** `ask.converse` graduates on its receipt; approval from Slack buttons, recorded against the
 approver's linked identity; Accept records the signed-in person rather than the name a page sends; MCP clients see new
