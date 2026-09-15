@@ -2945,7 +2945,8 @@ a person certifies · one inbox, one scheduler loop, one declared roster, with r
 descriptions and no intent classifier · an agent stays a form, never a canvas (§4.1); only the chain is drawn ·
 credentials never travel through chat · no model id in `aughor/`, and no model grades its own drafts.
 
-**SP-7 · Honest drafts — ⏳ STARTED 2026-09-15.** A draft may only say what is true on this deployment.
+**SP-7 · Honest drafts — ✅ BUILT 2026-09-15** (session branch `claude/aughor-nlang-automations-roadmap-3ffcee`,
+not merged; the live receipt waits on the user). A draft may only say what is true on this deployment.
 - A drafted agent names a schema its connection has, or none. It is refused where the schemas are KNOWN — the
   connection pins one (the catalogue's own filter, `routers/catalog.py:46`), or the caller holds the measured
   catalogue; with neither, nothing is refused, because a failed probe is not an absence.
@@ -2960,6 +2961,30 @@ credentials never travel through chat · no model id in `aughor/`, and no model 
 - The guide names what is on screen, and a parity test pins every quoted label to `web/`.
 **Receipt:** the user's sentence asked again — no `public`, no `#general`, Accept refused while the channel is open,
 the first run stated, and every label the guide quotes found in `web/`. **Needs:** nothing.
+
+> **Built 2026-09-15 (five commits on the session branch).** Measured at the start and folded into the wave: a
+> new schedule fires on the scheduler's NEXT TICK, not at its cron time — `engine._schedule_fired` answers "first
+> run" when there is no previous run — so the user's 9am chain would have posted within a minute of Accept. An
+> accepted all-schedule draft now waits for its first scheduled time through the mute that already exists
+> (`paused_until`), stated in UTC by the scheduler's own trigger (`engine.next_fire_utc`). What landed:
+> - **Schema** — `custom_agents.store.schema_scope_problem`, in the one validation body every door runs
+>   (Spotlight's stage, the inbox accept, create, patch, from-template); it refuses only where the connection pins
+>   its schema or the caller holds the catalogue.
+> - **Open choices** — the drafter blanks a Slack channel the request did not name, and a sender when more than one
+>   bot could post; `fill_required_holes` (now shared with the import funnel) names them; the inbox refuses Accept
+>   BEFORE its resolve-once update, so the proposal stays pending; Propose and Spotlight return `to_fill` and
+>   `first_run`.
+> - **Drafted writes wait** — a declared write a model drafts carries `require_approval`, and the executor asks a
+>   person on every run whatever `AUGHOR_ACTION_APPROVAL` says; an accept or a standing grant still satisfies it.
+> - **The guide** quotes real labels (“Agent Ops” → “+ Create agent” → “Describe”, approvals under “Attention”,
+>   “Catalog”, ⌘K's “Add a data source”), held by a parity test over `web/`.
+> **Receipts:** `test_sp7_honest_drafts.py`, `test_sp7_drafted_writes_wait.py` and `test_sp7_guide_labels.py`, with
+> the neighbouring suites and every ratchet green; the full backend suite ran once on `53047981` — **10,165 passed,
+> 5 skipped**. **Open:** the live receipt — the user's sentence asked again through
+> the running product, which needs the API restarted on this code and spends model calls, so it waits on the user's
+> word. The user's two drafts of 2026-09-14 predate this code: after a restart the agent draft refuses at Accept (its
+> schema), but the chain draft still names `#general` — a value, not an open choice — and would be accepted as it
+> stands, so it should be rejected by hand.
 
 **SP-8 · Agent + its schedule.** "An agent that does X every morning" stages ONE proposal holding both records; Accept
 creates the agent and then saves the chain with its `agent_id`, all or nothing. `draft_automation` may also name an
@@ -5512,7 +5537,8 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
         ⚠ cross-user Know waits on VA-10's auth decision
         SECOND MOVEMENT ✅ ADOPTED 2026-09-15 (§6 item 22 (a)) — authoring by sentence: the user's own
              ⌘K turn measured six breaks between a draft and an agent that runs
-        SP-7 ⏳ STARTED 2026-09-15 — honest drafts: a real schema or none · a channel or sender the
+        SP-7 ✅ BUILT 2026-09-15 (session branch, unmerged; live receipt waits on the user) — honest
+             drafts: a real schema or none · a channel or sender the
              request did not name stays open, and Accept refuses until it is filled · the first
              run stated · drafted declared writes wait for a person · the guide's labels pinned
         SP-8 agent + its schedule, one proposal (needs SP-7) → SP-9 the approval card → SP-10 show
