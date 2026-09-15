@@ -478,4 +478,19 @@ describe("proposal_staged reaches the turn THROUGH the adapter (SP-9)", () => {
       connectionId: "conn-x", actionId: "agent:a+automation:b",
     }]);
   });
+
+  it("answer_parts rides the same whole path, and a re-present REPLACES", async () => {
+    const msg = await messageFrom([
+      { event: "start", data: {} },
+      { event: "answer_parts", data: { version: 1, parts: [
+        { kind: "status", label: "first", tone: "info" }] } },
+      { event: "answer_parts", data: { version: 1, parts: [
+        { kind: "fact_set", facts: [{ label: "a", value: "b" }] }] } },
+      { event: "headline", data: { text: "Done." } },
+      { event: "done", data: {} },
+    ]);
+    expect(msg.parts.map(p => p.type)).not.toContain("data-unknown_frame");
+    const t = projectTurn("q", msg);
+    expect(t.answerParts).toEqual([{ kind: "fact_set", facts: [{ label: "a", value: "b" }] }]);
+  });
 });

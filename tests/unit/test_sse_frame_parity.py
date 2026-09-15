@@ -41,6 +41,8 @@ _BACKEND = _ROOT / "aughor" / "routers" / "investigations.py"
 _TOOL_SOURCES = [
     _ROOT / "aughor" / "agent" / "converse_tools.py",
     _ROOT / "aughor" / "agent" / "spotlight_act.py",
+    # AV-2 — `present` mints `answer_parts`, the answer vocabulary's frame.
+    _ROOT / "aughor" / "agent" / "present_tool.py",
 ]
 # CA-1 retired the 107-case reducer; the consumer side is now three artifacts.
 # `chatTurn.ts` PROJECTS a frame into the turn, `uiMessageAdapter.ts` routes the

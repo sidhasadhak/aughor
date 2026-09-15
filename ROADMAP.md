@@ -3093,6 +3093,50 @@ cost; staged → accepted → finished in the form → lapsed, counted weekly; S
 **Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
 auto-accepting anything structural · a canvas for agents · a model grading its own drafts.
 
+#### The third movement — the answer vocabulary (adopted 2026-09-15, §6 item 23; AV-0…AV-2 first slice STARTED the same night)
+
+> **Origin.** The user, 2026-09-15, with Microsoft's Adaptive Cards catalog on screen: *"there are so many ways of
+> making the chat interface interactive… Why don't we consider introducing such UI elements? We have been calling
+> ourselves Agentic forever without the very important UI elements that make it so."* The reading this movement takes:
+> Adaptive Cards is not a widget library, it is a CLOSED, versioned vocabulary of parts an agent may emit as its
+> answer, plus a fixed set of typed actions the host executes. The agent composes an interface; the host guarantees
+> what any click can do.
+>
+> **Measured before adopting:** the pipeline is already this shape in embryo — frames → declared typed parts →
+> projectors → organs — and real cards exist (the ProposalCard is an action set with inputs, the clarify and plan
+> gates are choice sets, the run card is a progress bar with a real denominator, answers carry tables and charts, and
+> `web/components/ui/` already holds badge, progress, tooltip, tabs, dialog). The gap in one sentence: every
+> interactive element is hard-wired to ONE backend event, so the model has no vocabulary to compose an answer from
+> parts — it can only write prose and hope.
+>
+> **The refused shape:** an open UI language rendered from model output — an injection surface, a slop machine, and a
+> custody bypass (a button the model defines must never execute anything). Every part is validated against a closed
+> schema, and an action names an EXISTING governed door and nothing else; the model chooses which door to offer,
+> never what a click does.
+
+**AV-0 · The vocabulary, written down.** Closed part kinds v1 — `fact_set` · `status` · `progress` (a real
+denominator, FL-5's law) · `section` (markdown body through AnswerProse) · `action_set` (door-bound) ·
+`proposal_ref` — versioned and validated server-side; a parts list that fails validation is refused WHOLE with
+sentences, never rendered broken. Tables and charts stay the figure's. **Receipt:** the schema and its refusal tests.
+
+**AV-1 · The organs, by promotion.** One `AnswerParts` renderer in chat and the ⌘K overlay: the ProposalCard's labeled
+rows become the general fact set, the status chip becomes the badge, `ui/progress` the bar, sections collapse.
+**Receipt:** every declared kind renders in jsdom; no declared part ever reaches the raw fallback.
+
+**AV-2 · The agent composes.** Converse gains ONE tool, `present` — offered only on a streaming turn (a sync caller
+has nowhere to render), it validates the parts and emits them as an `answer_parts` frame; a refusal returns the
+sentences so the model falls back to prose. Nothing stages, nothing executes — presentation only. The
+propose-chain pattern applied to presentation. **Receipt:** a live turn answering in fact rows and badges where
+tonight's screenshot answered in paragraphs.
+
+**AV-3 · Doors as actions.** An action names an existing door only: v1 ships `follow_up` (the same ask path the
+follow-up chips already ride) and `proposal_ref` (the real approval card, rendered in place). Open-a-screen and
+run-a-trusted-query actions wait on a deep-link registry — recorded open, not drifted into. **Receipt:** a click asks
+the follow-up through the same path a typed question takes.
+
+**AV-M · Measure alongside.** Parts-versus-prose per converse turn, counted from the session log; the baseline is the
+2026-09-15 screenshot's all-prose turn. **Needs:** nothing.
+
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
 > **Origin.** The user's 2026-09-07 directive, given while wiring Google sign-in:
@@ -6354,6 +6398,14 @@ the browser** · **measure the premise before building.**
     ⏳ **(d) Graduating `ask.converse`** — its code default is off and the user's deployment runs it through a runtime
     override, so a fresh install cannot draft from chat, ⌘K or Slack. *Recommended: when SP-M's scored set passes, not
     before; meanwhile the Quick chip says that setting things up needs the conversation.* Needed by SP-14.
+
+23. ✅ **DECIDED 2026-09-15 (the user) — the answer vocabulary (§3.11, third movement).** The user, with the Adaptive
+    Cards catalog on screen: *"Why don't we consider introducing such UI elements? We have been calling ourselves
+    Agentic forever without the very important UI elements that make it so."* The builder's assessment (the closed
+    vocabulary + door-bound actions reading, the open-UI-DSL shape refused, waves AV-0…AV-M) was adopted in the user's
+    own sentence: *"Add it to the roadmap and let's start working on it right away."* Rendered in the platform's own
+    design system, never the Teams card aesthetic — the user's standing rule that chat feels like a frontier-LLM
+    conversation points the same way.
 
 ---
 

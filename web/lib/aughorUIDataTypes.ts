@@ -111,6 +111,11 @@ export type AughorProgressData = {
   // "unrecognised: proposal_staged", which is exactly how the user's first live
   // bundle rendered (2026-09-15).
   "proposal_staged": unknown;
+  // AV-2 — the answer's structured half: the closed part vocabulary the `present`
+  // tool validated. Declared here for the same reason as its sibling above: both
+  // chat surfaces ride the adapter's parts, and a frame absent from this list
+  // reaches them as a raw labelled block.
+  "answer_parts": unknown;
 }
 
 /**
@@ -176,7 +181,7 @@ const DECLARED = [
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",
-  "chain_state", "proposal_staged",
+  "chain_state", "proposal_staged", "answer_parts",
   "explore_plan", "subq_answer",
   "inspect_warning",
   "error", "done",

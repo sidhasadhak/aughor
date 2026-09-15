@@ -39,6 +39,7 @@ import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
 import { ToolTrail } from "@/components/ToolTrail";
 import { ProposalCardById } from "@/components/ProposalCard";
+import { AnswerParts } from "@/components/chat/AnswerParts";
 import { FixItForm } from "@/components/FixItForm";
 import { InFlightFindings, RunProgressCard } from "@/components/RunProgressCard";
 import { ContextRibbon } from "@/components/ContextRibbon";
@@ -1600,6 +1601,11 @@ export function ChatMessage({
       {/* ── CI-6a: the converse body's tool trail — which tools the model chose this
              turn; renders nothing on quick/deep turns (no steps) ── */}
       <ToolTrail steps={turn.converseSteps} streaming={turn.status === "loading"} />
+
+      {/* ── AV-1/AV-2: the answer's structured half — the parts the model composed
+             through `present`, validated server-side, each an established organ.
+             An action is a door: follow_up rides the same path as the chips below. ── */}
+      <AnswerParts parts={turn.answerParts} onFollowUp={onFollowUp} />
 
       {/* ── SP-9: proposals this turn STAGED, as the same approval card the inbox and
              Attention render — built from the record (fetched by id), never from the

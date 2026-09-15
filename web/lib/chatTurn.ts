@@ -156,6 +156,19 @@ export interface StagedProposalRef {
   actionId: string;
 }
 
+/** AV-1 — one part of an answer's structured half (§3.11, third movement). The
+ *  vocabulary is CLOSED and validated server-side; the union here mirrors it, and a
+ *  kind the client does not know renders as its label, never as raw JSON. */
+export type AnswerPart =
+  | { kind: "fact_set"; title?: string;
+      facts: { label: string; value: string; status?: string }[] }
+  | { kind: "status"; label: string; tone: string }
+  | { kind: "progress"; label: string; done: number; total: number }
+  | { kind: "section"; title: string; body: string; collapsed?: boolean }
+  | { kind: "action_set";
+      actions: { action: string; label: string; question: string }[] }
+  | { kind: "proposal_ref"; proposal_id: string };
+
 /** The one recovery a user can perform (Wave R4). A closed set on purpose. */
 export type ErrorRecovery = "retry" | "switch_model" | "fix_config" | "";
 
@@ -192,6 +205,9 @@ export interface ChatTurn {
   converseSteps: ConverseStep[];
   /** SP-9 — proposals this turn staged, in arrival order. Empty for most turns. */
   stagedProposals: StagedProposalRef[];
+  /** AV-2 — the answer's structured half. Each `present` call REPLACES the set, so a
+   *  corrected re-present never doubles the parts. */
+  answerParts: AnswerPart[];
   scanItems: string[];
   scanProgress: { done: number; total: number } | null;
   /** FL-2 — the failover chain's last narrated hop; null while the primary holds. */
@@ -313,6 +329,7 @@ export const EMPTY_TURN: Omit<ChatTurn, "id" | "question" | "mode"> = {
   delegations: [],
   converseSteps: [],
   stagedProposals: [],
+  answerParts: [],
   scanItems: [], scanProgress: null,
   chainState: null,
   sql: null, columns: [], rows: [], headline: null, headlineStream: null, chartType: null,
@@ -418,6 +435,10 @@ const PART_PROJECTORS: Record<string, (t: ChatTurn, d: Payload) => void> = {
       detail: (d.detail as string) ?? "",
       resultChars: (d.result_chars as number) ?? 0,
     }];
+  },
+  answer_parts: (t, d) => {
+    const parts = Array.isArray(d.parts) ? (d.parts as AnswerPart[]) : [];
+    t.answerParts = parts.filter(p => p && typeof p === "object" && "kind" in p);
   },
   proposal_staged: (t, d) => {
     const id = (d.proposal_id as string) ?? "";
