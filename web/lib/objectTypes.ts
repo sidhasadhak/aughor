@@ -858,6 +858,30 @@ export async function declareProcess(
   return (await res.json()).process;
 }
 
+/** ON-9 — a rule a person declares: a value set (one property's values grouped under one name) or conditions in the
+ *  object door's shape — and the verified metrics of its type it scopes. */
+export interface DeclaredRuleSpec {
+  id: string;
+  display_name?: string;
+  description?: string;
+  entity: string;
+  kind: "value_set" | "condition";
+  property?: string;
+  values?: string[];
+  conditions?: { path: string; op: string; value?: unknown; values?: unknown[] }[];
+  scopes?: string[];
+  owner?: string;
+}
+
+/** ON-9 — declare a rule. It is compiled and counted before anything is written; a rule the data cannot hold is refused
+ *  with the reason. Returns the rule as the panel shows it. */
+export async function declareRule(connectionId: string, spec: DeclaredRuleSpec, schemaName?: string): Promise<RuleDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/rules?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).rule;
+}
+
 /** ON-9 — withdraw a declared process; every name it derives stops resolving on the next read. */
 export async function deleteProcess(connectionId: string, processId: string, schemaName?: string): Promise<void> {
   const res = await fetch(

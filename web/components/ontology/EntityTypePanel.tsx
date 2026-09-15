@@ -26,6 +26,8 @@ import {
   confirmProposals,
   declareDisplayProperty,
   declareLink,
+  declareProcess,
+  declareRule,
   deleteEntity,
   deleteLink,
   getObjectType,
@@ -38,6 +40,8 @@ import {
   type BindingSpec,
   type ConfirmTarget,
   type DeclaredLinkSpec,
+  type DeclaredProcessSpec,
+  type DeclaredRuleSpec,
   type FrameSpec,
   type ObjectTypeDetail,
   type PropertySource,
@@ -48,6 +52,7 @@ import {
   type TypeMapRow,
   type TypePath,
   type TypePaths,
+  type TypeProperty,
   type TypeRefusal,
 } from "@/lib/objectTypes";
 
@@ -192,7 +197,8 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         inDomain={inDomain} />
       {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
       <MetricsSection detail={detail} />
-      <ProcessesSection detail={detail} onOpenProcess={onOpenProcess} />
+      <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+        onChanged={onChanged} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
     </>
   );
@@ -200,14 +206,17 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
 
 /** ON-9 — the processes this type takes part in, and every name a declared process or rule derives on it: a segment,
  *  a lag, a breach rate — each read by the compiler once its declaration is measured, and refused with the reason
- *  until then. Nothing shows for a type no declaration touches. */
-function ProcessesSection({ detail, onOpenProcess }: {
+ *  until then. A process the type goes through and a rule over it are declared here, and counted before anything is
+ *  written. */
+function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChanged }: {
   detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
   onOpenProcess?: (processId: string) => void;
+  onChanged: () => void;
 }) {
   const processes = detail.processes ?? [];
   const derived = detail.derived ? [...detail.derived.segments, ...detail.derived.metrics, ...detail.derived.properties] : [];
-  if (!processes.length && !derived.length) return null;
   return (
     <Section title="Processes and rules" aside="what declarations derive here">
       {processes.map((p) => (
@@ -221,7 +230,257 @@ function ProcessesSection({ detail, onOpenProcess }: {
         </div>
       ))}
       {derived.length > 0 && <DerivedList rows={derived} />}
+      {!processes.length && !derived.length && (
+        <p className="aug-fs-xs" style={{ margin: "0 0 6px", color: "var(--t3)" }}>
+          No declared process or rule touches this type yet.
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+        <DeclareProcess detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+          onChanged={onChanged} />
+        <DeclareRule detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      </div>
     </Section>
+  );
+}
+
+const SNAKE = /^[a-z][a-z0-9_]{0,63}$/;
+
+function isMoment(p: TypeProperty): boolean {
+  return p.role === "timestamp" || /DATE|TIME/i.test(p.data_type);
+}
+
+function listOf(text: string): string[] {
+  return text.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+type StageDraft = { name: string; timestamp: string; terms: "" | "within_days" | "within_hours"; amount: string };
+const NO_STAGE: StageDraft = { name: "", timestamp: "", terms: "", amount: "" };
+
+/** ON-9 — declare a process the type goes through: its stages in order, each at the moment an object reaches it, and on
+ *  a stage after the first the promise about reaching it — within N calendar days, or N hours, of the stage before.
+ *  The server resolves every moment and counts the whole process before anything is written. A deadline promise, kept
+ *  per another type, is declared through the API. */
+function DeclareProcess({ detail, connectionId, schema, onOpenProcess, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onOpenProcess?: (processId: string) => void;
+  onChanged: () => void;
+}) {
+  const moments = detail.properties.filter(isMoment);
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [stages, setStages] = useState<StageDraft[]>([NO_STAGE, NO_STAGE]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const edit = (i: number, change: Partial<StageDraft>) =>
+    setStages((all) => all.map((s, j) => (j === i ? { ...s, ...change } : s)));
+  const ready = SNAKE.test(id.trim()) && stages.length >= 2 && stages.every((s, i) =>
+    SNAKE.test(s.name.trim()) && !!s.timestamp && (!s.terms || (i > 0 && /^\d+$/.test(s.amount.trim()))));
+  const submit = async () => {
+    setBusy(true);
+    setProblem("");
+    const spec: DeclaredProcessSpec = {
+      id: id.trim(), entity: detail.id, ...(name.trim() ? { display_name: name.trim() } : {}),
+      stages: stages.map((s) => ({
+        name: s.name.trim(), timestamp: s.timestamp,
+        ...(s.terms === "within_hours" ? { promise: { within_hours: Number(s.amount.trim()) } }
+          : s.terms === "within_days" ? { promise: { within_days: Number(s.amount.trim()) } } : {}),
+      })),
+    };
+    try {
+      const made = await declareProcess(connectionId, spec, schema);
+      setOpen(false);
+      setId(""); setName(""); setStages([NO_STAGE, NO_STAGE]);
+      onChanged();
+      onOpenProcess?.(made.id);
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <Button variant="outline" size="xs" onClick={() => setOpen(true)} disabled={moments.length < 2}
+        title={moments.length < 2 ? "A process runs between two moments of this type, and it has fewer"
+          : "Declare a process this type goes through — its stages, and the promises about reaching them"}>
+        <Icon name="plus" size={12} /> Declare a process
+      </Button>
+    );
+  }
+  return (
+    <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "8px 0", borderTop: RULE }}
+      data-testid="process-declare">
+      <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
+        A process {detail.display_name} goes through: its stages in order, each at the moment an object reaches it. Every
+        moment is resolved and the whole process counted before anything is written.
+      </p>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — order_fulfilment"
+          aria-label="Process id" onChange={(e) => setId(e.target.value)} />
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={name} placeholder="Display name (optional)"
+          aria-label="Process display name" onChange={(e) => setName(e.target.value)} />
+      </div>
+      {stages.map((s, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <input className="aug-fs-xs" style={{ ...FIELD, width: 110 }} value={s.name} placeholder={i ? "shipped" : "placed"}
+            aria-label={`Stage ${i + 1} name`} onChange={(e) => edit(i, { name: e.target.value })} />
+          <select className="aug-fs-xs" style={SELECT} value={s.timestamp} aria-label={`Stage ${i + 1} moment`}
+            onChange={(e) => edit(i, { timestamp: e.target.value })}>
+            <option value="">moment…</option>
+            {moments.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+          </select>
+          {i > 0 && (
+            <select className="aug-fs-xs" style={SELECT} value={s.terms} aria-label={`Stage ${i + 1} promise`}
+              onChange={(e) => edit(i, { terms: e.target.value as StageDraft["terms"] })}>
+              <option value="">no promise</option>
+              <option value="within_days">within days</option>
+              <option value="within_hours">within hours</option>
+            </select>
+          )}
+          {i > 0 && s.terms && (
+            <input className="aug-fs-xs" style={{ ...FIELD, width: 56 }} value={s.amount} inputMode="numeric"
+              placeholder={s.terms === "within_hours" ? "24" : "2"}
+              aria-label={`Stage ${i + 1} promise ${s.terms === "within_hours" ? "hours" : "days"}`}
+              onChange={(e) => edit(i, { amount: e.target.value })} />
+          )}
+          {i > 1 && (
+            <Button variant="ghost" size="xs" disabled={busy}
+              onClick={() => setStages((all) => all.filter((_, j) => j !== i))}>Remove</Button>
+          )}
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setStages((all) => [...all, NO_STAGE])}>
+          Add a stage
+        </Button>
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={submit}>
+          {busy ? "Counting…" : "Declare the process"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {problem && <p className="aug-fs-xs" style={{ margin: 0, color: "var(--red5)", lineHeight: 1.45 }}>{problem}</p>}
+    </div>
+  );
+}
+
+const OPS = ["=", "!=", "in", "not_in", ">", ">=", "<", "<=", "is_null", "not_null"];
+const NO_VALUE = new Set(["is_null", "not_null"]);
+const LISTED = new Set(["in", "not_in"]);
+
+/** ON-9 — declare a rule over the type: a value set — the values of one property grouped under one name — or a
+ *  condition, and the verified metrics of the type it scopes, each read within the rule wherever it is read. Compiled
+ *  and counted before anything is written; the object door reads the rule as a segment named by its id. */
+function DeclareRule({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const groupable = detail.properties.filter((p) => !p.is_key && !isMoment(p));
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState("");
+  const [kind, setKind] = useState<"value_set" | "condition">("condition");
+  const [property, setProperty] = useState("");
+  const [values, setValues] = useState("");
+  const [op, setOp] = useState("=");
+  const [value, setValue] = useState("");
+  const [scopes, setScopes] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const ready = SNAKE.test(id.trim()) && !!property && (kind === "value_set" ? listOf(values).length > 0
+    : NO_VALUE.has(op) || (LISTED.has(op) ? listOf(value).length > 0 : !!value.trim()));
+  const submit = async () => {
+    setBusy(true);
+    setProblem("");
+    const condition = { path: property, op,
+      ...(NO_VALUE.has(op) ? {} : LISTED.has(op) ? { values: listOf(value) } : { value: value.trim() }) };
+    const spec: DeclaredRuleSpec = { id: id.trim(), entity: detail.id, kind,
+      ...(kind === "value_set" ? { property, values: listOf(values) } : { conditions: [condition] }),
+      ...(scopes.length ? { scopes } : {}) };
+    try {
+      await declareRule(connectionId, spec, schema);
+      setOpen(false);
+      setId(""); setProperty(""); setValues(""); setOp("="); setValue(""); setScopes([]);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <Button variant="outline" size="xs" onClick={() => setOpen(true)}
+        title="Declare a rule over this type — a value set or a condition, and the metrics it scopes">
+        <Icon name="plus" size={12} /> Declare a rule
+      </Button>
+    );
+  }
+  return (
+    <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "8px 0", borderTop: RULE }}
+      data-testid="rule-declare">
+      <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
+        A rule over {detail.display_name}: the values of one property grouped under one name, or a condition. It is
+        compiled and counted before anything is written, and read as a segment named by its id.
+      </p>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — fulfilled_orders"
+          aria-label="Rule id" onChange={(e) => setId(e.target.value)} />
+        <select className="aug-fs-xs" style={SELECT} value={kind} aria-label="Rule kind"
+          onChange={(e) => { setKind(e.target.value as "value_set" | "condition"); setProperty(""); }}>
+          <option value="condition">condition</option>
+          <option value="value_set">value set</option>
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <select className="aug-fs-xs" style={SELECT} value={property} aria-label="Rule property"
+          onChange={(e) => setProperty(e.target.value)}>
+          <option value="">property…</option>
+          {(kind === "value_set" ? groupable : detail.properties).map((p) => (
+            <option key={p.name} value={p.name}>{p.name}</option>
+          ))}
+        </select>
+        {kind === "value_set" ? (
+          <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={values} placeholder="DE, AT, CH"
+            aria-label="Rule values" onChange={(e) => setValues(e.target.value)} />
+        ) : (
+          <>
+            <select className="aug-fs-xs" style={SELECT} value={op} aria-label="Rule operator"
+              onChange={(e) => setOp(e.target.value)}>
+              {OPS.map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
+            </select>
+            {!NO_VALUE.has(op) && (
+              <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={value}
+                placeholder={LISTED.has(op) ? "cancelled, refunded" : "value"} aria-label="Rule value"
+                onChange={(e) => setValue(e.target.value)} />
+            )}
+          </>
+        )}
+      </div>
+      {detail.metrics.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>scopes</span>
+          {detail.metrics.map((m) => (
+            <label key={m.id} className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--t2)" }}>
+              <input type="checkbox" checked={scopes.includes(m.id)}
+                onChange={(e) => setScopes((all) => (e.target.checked ? [...all, m.id] : all.filter((s) => s !== m.id)))} />
+              {m.display_name || m.id}
+            </label>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={submit}>
+          {busy ? "Counting…" : "Declare the rule"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {problem && <p className="aug-fs-xs" style={{ margin: 0, color: "var(--red5)", lineHeight: 1.45 }}>{problem}</p>}
+    </div>
   );
 }
 
