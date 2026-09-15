@@ -154,7 +154,8 @@ def _classify_guarded(score: dict, sql: str | None, fired: list[str]) -> str:
     return "caught" if fired else "silent-wrong"    # flagged (safe) vs slipped past every guard (dangerous)
 
 
-ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "injected", "objects")
+#: `framed_guarded` — the framed arm's SQL through the guard battery, as the product ships a framed answer.
+ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "framed_guarded", "injected", "objects")
 _NO_SQL = {"error": "Generation failed", "execution_success": 0.0}
 
 
@@ -349,9 +350,12 @@ def _frame_summary(frame: Optional[dict]) -> Optional[dict]:
 def _arms_after_frame_check(arms: tuple[str, ...], graph) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Drop the framed arm when the ontology declares nothing to frame: every question would get no frame and the arm
     would be raw under another name."""
-    if "framed" not in arms or (graph is not None and (getattr(graph, "processes", None) or getattr(graph, "rules", None))):
+    framing = ("framed", "framed_guarded")
+    if not any(a in arms for a in framing) or (graph is not None and (getattr(graph, "processes", None)
+                                                                       or getattr(graph, "rules", None))):
         return arms, ()
-    return tuple(a for a in arms if a != "framed"), ("framed",)
+    dropped = tuple(a for a in framing if a in arms)
+    return tuple(a for a in arms if a not in dropped), dropped
 
 
 def check_references(db, records: list[dict]) -> tuple[list[dict], list[dict]]:
@@ -457,6 +461,8 @@ def run(dataset: str, limit: int | None, output: str | None,
     if limit:
         records = records[:limit]
     arms = tuple(a for a in ARMS if a in arms)          # canonical order, unknown names dropped
+    if "framed_guarded" in arms and "framed" not in arms:
+        arms = tuple(a for a in ARMS if a in arms or a == "framed")
     if ("guarded" in arms or "framed" in arms) and "raw" not in arms:
         arms = ("raw",) + arms
     if "ontology_guarded" in arms and "ontology" not in arms:
@@ -577,6 +583,14 @@ def run(dataset: str, limit: int | None, output: str | None,
                 # nothing declared was reached: the product adds nothing, so the arm is raw — scored, never spent on
                 row["framed"] = {**row["raw"], "via": "raw (the question reached nothing declared)",
                                  "frame": _frame_summary(frame)}
+            if "framed_guarded" in arms:
+                # the product ships a framed answer through the guard battery too: framed SQL guarded as raw SQL is
+                framed_sql = row["framed"].get("sql")
+                fg_sql, fg_fired = apply_guards(framed_sql, db, tcols) if framed_sql else (None, [])
+                fg_score = score_single(db, rec, fg_sql) if fg_sql else dict(_NO_SQL)
+                row["framed_guarded"] = {"sql": fg_sql, "class": _classify_guarded(fg_score, fg_sql, fg_fired),
+                                         "guards_fired": fg_fired, "match": round(fg_score.get("result_set_match", 0.0), 3),
+                                         **({"via": row["framed"]["via"]} if row["framed"].get("via") else {})}
 
         if "injected" in arms:
             inj_sql = _quiet(lambda: generate_sql_full_pipeline(q, conn_id, db), None)
@@ -656,6 +670,10 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
         out["framed_gains"] = [r["id"] for r in rows if r["raw"]["class"] != "correct" and r["framed"]["class"] == "correct"]
         out["framed_losses"] = [r["id"] for r in rows if r["raw"]["class"] == "correct" and r["framed"]["class"] != "correct"]
         out["framed_no_frame"] = [r["id"] for r in rows if r["framed"].get("via")]
+        if "framed_guarded" in arms:
+            fgc = counts["framed_guarded"]
+            out["framed_guarded_safe_rate"] = round((fgc["correct"] + fgc["caught"]) / n, 3)
+            out["framed_guarded_silent_wrong"] = fgc["silent-wrong"]
         # the movement's falsifier (ROADMAP §3.15 ON-10): on the questions whose definition is declared and NOT in the
         # schema, the framed arm must answer more of them correctly than raw — or the framing is retired
         by_definition: dict = {}
@@ -666,6 +684,8 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
                      "framed_correct": sum(r["framed"]["class"] == "correct" for r in subset)}
             if "guarded" in arms:
                 entry["guarded_safe"] = sum(r["guarded"]["class"] in ("correct", "caught") for r in subset)
+            if "framed_guarded" in arms:
+                entry["framed_guarded_safe"] = sum(r["framed_guarded"]["class"] in ("correct", "caught") for r in subset)
             by_definition[label] = entry
         out["by_definition"] = by_definition
         declared = by_definition.get("declared")
@@ -674,6 +694,9 @@ def _summarize(rows: list[dict], arms: tuple[str, ...] = ARMS) -> dict:
             "declared": declared, "controls_lost": [r["id"] for r in rows if r.get("definition") == "schema"
                                                     and r["raw"]["class"] == "correct"
                                                     and r["framed"]["class"] != "correct"]}
+        if out["falsifier"] is not None and "framed_guarded_safe" in declared and "guarded_safe" in declared:
+            # framing must not make the guarded product less safe on what it frames
+            out["falsifier"]["framed_guarded_keeps_guarded_safety"] = declared["framed_guarded_safe"] >= declared["guarded_safe"]
     if "injected" in arms:
         ic = counts["injected"]
         out["injected_accuracy"] = round(ic["correct"] / n, 3)
