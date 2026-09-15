@@ -4,8 +4,8 @@
  * Arc ON leftovers — the two declaration doors the panel was missing.
  *
  * The panel could BIND what the builder proposed and REMOVE what a person set, and that was all. A
- * timeseries binding is never proposed (many rows per object is what the proposal check rejects) and
- * neither is a keyed SELECT, so both were API-only; and a link kept the builder's generic name because
+ * timeseries binding was never proposed then (many rows per object was what the proposal check rejected)
+ * and a keyed SELECT never is, so both were API-only; and a link kept the builder's generic name because
  * no web door named one. These pin what the forms HAND the doors — the spec and the name — because
  * that is where the bug would live: a form that looks right and posts a static binding with no time
  * column is refused by the server, silently, one round trip later.

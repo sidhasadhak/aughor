@@ -432,6 +432,40 @@ def test_proposals_name_tables_that_carry_a_key_one_row_per_object_and_change_no
     assert not any(p["kind"] == "static" for p in describe_object_type(graph, "order")["proposed_bindings"])   # and no longer proposed
 
 
+def test_a_table_of_readings_is_proposed_as_a_timeseries_and_a_table_of_objects_as_a_part(db, graph):
+    """R4 — a key that repeats is many rows per object. Placed in time and with no identity of their own, those rows
+    are READINGS of the object (ON-5), proposed as a timeseries binding; rows that are objects of their own — an order
+    line, a review, even one with a date — stay a part. The clock is the type's declared event time, or its one
+    timestamp: several and none declared is no clock at all."""
+    def stamp(name: str) -> EntityProperty:
+        return EntityProperty(name=name, data_type="TIMESTAMP", semantic_type="timestamp")
+
+    graph.entities["OrderEvent"] = OntologyEntity(
+        id="OrderEvent", display_name="Order event", source_tables=["order_events"], identity_key="order_id",
+        grain_verified=False, created_at_col="event_at",
+        properties={"order_id": EntityProperty(name="order_id", data_type="VARCHAR", semantic_type="key"),
+                    "event_at": stamp("event_at"), "logged_at": stamp("logged_at"),
+                    "event": EntityProperty(name="event", data_type="VARCHAR", semantic_type="dimension")})
+    apply_backing_measurements(graph, db)
+    propose_bindings(graph, db)
+    by_name = {p.name: p for p in graph.entities["Order"].proposed_bindings}
+    events = by_name["order_events"]
+    (distinct,) = ints(db, "SELECT COUNT(DISTINCT order_id) FROM order_events")
+    assert (events.kind, events.time_column, events.verified, events.covered) == ("timeseries", "event_at", True, distinct)
+    assert (by_name["order_items"].kind, by_name["reviews"].kind) == ("detail", "detail")    # objects of their own
+    spec = next(p for p in describe_object_type(graph, "order")["proposed_bindings"] if p["name"] == "order_events")["spec"]
+    assert spec == {"kind": "timeseries", "key": "order_id", "table": "order_events", "time_column": "event_at"}
+
+    graph.entities["OrderEvent"].created_at_col = None                    # two clocks, and neither declared
+    propose_bindings(graph, db)
+    assert {p.name: p.kind for p in graph.entities["Order"].proposed_bindings}["order_events"] == "detail"
+
+    bind(graph, db, "Order", "order_events", spec)                        # bound as proposed, it reads the latest row
+    compiled = compile_({"object_type": "order", "filters": [{"path": "event", "value": "packed"}],
+                         "measures": [{"agg": "count"}]}, graph)
+    assert compiled.bindings[0]["treatment"] == "latest"
+
+
 # ── what a person and the agent read ────────────────────────────────────────────────────────
 
 def test_the_type_lists_every_binding_and_every_property_with_its_source(db, graph):

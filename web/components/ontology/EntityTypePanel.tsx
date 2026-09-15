@@ -930,6 +930,13 @@ function BindingRow({ binding: b, first, busy, onRemove, confirm, source }: {
   );
 }
 
+/** What a proposal's kind says about its rows, beside what it would supply. */
+function proposalShape(p: ProposedBinding): string {
+  if (p.kind === "detail") return " — many rows per object: a part";
+  if (p.kind === "timeseries") return ` — readings over ${p.spec.time_column ?? "time"}: read as each object's latest`;
+  return "";
+}
+
 function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding; busy: boolean; onBind: () => void }) {
   return (
     <div style={{ padding: "7px 0", borderTop: RULE }} data-testid="entity-binding-proposal">
@@ -945,7 +952,7 @@ function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding;
         <span style={MONO}>{p.key} → {p.object_key}</span> · {p.note}
       </p>
       <p className="aug-fs-xs" style={{ ...MONO, margin: "3px 0 0", color: "var(--t2)", overflowWrap: "anywhere" }}>
-        would supply {p.supplies.join(", ")}{p.kind === "detail" ? " — many rows per object: a part" : ""}
+        would supply {p.supplies.join(", ")}{proposalShape(p)}
       </p>
     </div>
   );
@@ -993,8 +1000,8 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
       {proposals.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            Proposed from the data — another table carries the {detail.key.property} key, one row per object. Nothing
-            reads a proposal until it is bound.
+            Proposed from the data — another table carries the {detail.key.property} key. Nothing reads a proposal
+            until it is bound.
           </div>
           {proposals.map((p) => (
             <ProposalRow key={p.name} proposal={p} busy={busy === p.name}
@@ -1009,12 +1016,12 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
   );
 }
 
-/** ON-1b/ON-5 — declare a binding the data did not propose. The builder proposes only what it can see: another
- *  table carrying this type's key, one row per object. A TIMESERIES source is never proposed — many rows per object
- *  is exactly what the proposal check rejects — and neither is a keyed SELECT, so until this form both were
- *  API-only, and the live Lux price history had to be bound with a hand-written PUT. The server reads the source's
- *  columns and counts it against the objects before it answers; a spec that does not bind is refused with the
- *  reason and nothing is written. */
+/** ON-1b/ON-5 — declare a binding the data did not propose. The builder proposes only what another table carrying
+ *  this type's key shows it: one row per object (static), many rows that are objects of their own (a part), or many
+ *  rows placed in time with no identity of their own (a timeseries). A keyed SELECT is never proposed, and a
+ *  timeseries source used to be API-only too — the live Lux price history had to be bound with a hand-written PUT.
+ *  The server reads the source's columns and counts it against the objects before it answers; a spec that does not
+ *  bind is refused with the reason and nothing is written. */
 function DeclareBinding({ detail, busy, onDeclare, sources }: {
   detail: ObjectTypeDetail;
   busy: boolean;
