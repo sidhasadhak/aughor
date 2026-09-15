@@ -8287,7 +8287,8 @@ export interface paths {
         put?: never;
         /**
          * Export Ontology Tree
-         * @description Write the live ontology to a readable, version-controllable YAML tree.
+         * @description Write the live ontology to a readable, version-controllable YAML tree — each declaration (a declared type,
+         *     link, process or rule) under `declared/`, as the spec its door takes.
          */
         post: operations["export_ontology_tree_ontology_export_post"];
         delete?: never;
@@ -8335,10 +8336,13 @@ export interface paths {
         put?: never;
         /**
          * Import Ontology Tree
-         * @description Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides.
+         * @description Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides, and each declaration in it.
          *
          *     Edits are diffed against the PRE-override auto-built graph, so re-importing an
-         *     unedited export is a no-op and only changed fields become overrides.
+         *     unedited export is a no-op and only changed fields become overrides. A declaration — a declared type, link,
+         *     process or rule, under `declared/` — is declared again through its own door, counted and refused with the
+         *     reason; one the overrides tree already holds unchanged is left as it is. A declared type's later edits are not
+         *     in its file: each is made again through its own door.
          */
         post: operations["import_ontology_tree_ontology_import_post"];
         delete?: never;

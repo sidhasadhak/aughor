@@ -7,13 +7,18 @@ re-imports on-disk edits as overrides — so the editing surface is plain files
 under git, and only the fields a human CHANGED become overrides (override-wins).
 
 Round-trip:
-    export_tree(root, graph)              # engine ontology -> readable YAML files
+    export_tree(root, graph, declarations)  # engine ontology -> readable YAML files
     # ...human edits a file on disk, or git-reviews a PR...
-    import_tree(root, base_graph)         # changed editable fields -> OntologyOverride[]
-    # caller EXPLAIN-binds + save_override()s them; load_latest_ontology applies them.
+    import_tree(root, base_graph)           # changed editable fields -> OntologyOverride[]
+    read_declarations(root)                 # declared types, links, processes, rules -> their doors' specs
+    # caller EXPLAIN-binds + save_override()s the edits, and declares each declaration through its own door
+    # (counted, refused with the reason); load_latest_ontology applies them.
 
 Diffing against ``base_graph`` (the pre-override, auto-built graph) is what keeps
 re-importing an unedited export a no-op: unchanged fields produce no overrides.
+A DECLARATION is not a diff — the built graph never held it — so it is written
+whole, as the spec its door takes, under ``declared/``, and imported by declaring
+it again: an unchanged one is left as it is.
 """
 from __future__ import annotations
 
@@ -37,14 +42,21 @@ def export_root(conn: str, schema: str) -> Path:
 
 # ── export: ontology -> readable YAML tree ──────────────────────────────────
 
-#: The part of a backing a human edits — never its measured verdict.
-_BACKING_EDITABLE = ("kind", "table", "sql", "primary_key")
+#: The part of a backing a human edits — never its measured verdict. ON-8 — `connection_id` is where its rows live, so
+#: a tree never moves a type's rows to the graph's own connection.
+_BACKING_EDITABLE = ("kind", "table", "sql", "primary_key", "connection_id")
+
+#: The kinds a person DECLARES whole — ON-7's types and links, ON-9's processes and rules — in the order they can be
+#: declared again: a link names its two types, and a process or a rule names its type.
+DECLARED_KINDS = ("entity", "link", "process", "rule")
+#: An entity's declaration: the fields its door reads. Anything else on its override is an edit made after it.
+_ENTITY_DECLARATION = ("display_name", "backing", "description", "domain", "entity_type", "origin", "provenance")
 
 
 def _editable_value(obj, field: str):
     """The on-disk form of an editable field. ON-1's `backing` is a model, so it is written
-    as its editable spec (kind/table/sql/primary_key) and compared the same way on import —
-    an unedited file must round-trip as a no-op, and the measured verdict is not an edit."""
+    as its editable spec (kind/table/sql/primary_key/connection_id) and compared the same way on
+    import — an unedited file must round-trip as a no-op, and the measured verdict is not an edit."""
     value = getattr(obj, field, None)
     if field == "backing" and value is not None:
         return {k: getattr(value, k) for k in _BACKING_EDITABLE}
@@ -56,17 +68,47 @@ def _editable_value(obj, field: str):
     return value
 
 
-def export_tree(root: Path, graph: OntologyGraph) -> list[str]:
+def declaration_spec(ov: OntologyOverride) -> dict:
+    """The spec a declaration's door takes, from the override that door wrote — declaring it again stores the same
+    fields, because every door's ``*_fields`` is idempotent. An entity's later edits (a binding, a display property,
+    a part mark) are not its declaration; `declaration_edits` names them."""
+    fields = ov.fields
+    if ov.target_kind == "entity":
+        spec = {k: fields[k] for k in _ENTITY_DECLARATION if k in fields}
+        spec["backing"] = {k: v for k, v in dict(spec.get("backing") or {}).items() if k != "kind"}  # the door derives it
+    else:
+        spec = {k: v for k, v in fields.items() if k != "declared"}
+    return {"id": ov.target_id, **spec}
+
+
+def declaration_edits(ov: OntologyOverride) -> list[str]:
+    """The fields on a declared entity's override that its declaration does not hold — edits made after it, which a
+    declaration from a file does not carry: each is made again through its own door."""
+    if ov.target_kind != "entity":
+        return []
+    return sorted(k for k in ov.fields if k not in (*_ENTITY_DECLARATION, "declared"))
+
+
+def export_tree(root: Path, graph: OntologyGraph,
+                declarations: Optional[list[OntologyOverride]] = None) -> list[str]:
     """Write the ontology to ``root`` as per-entity and per-metric YAML. Returns paths.
 
     Each file separates an ``editable:`` block (the fields a human may change —
     the same whitelist the override store accepts) from read-only context
     (columns, verified flags) so it's obvious what an edit will affect.
+
+    ``declarations`` are the scope's overrides: each one a person DECLARED whole is written under ``declared/`` as the
+    spec its door takes — and a declared type there only, one file per thing. ``declared/`` mirrors the declarations
+    exactly, so a declaration withdrawn since the last export leaves no file behind to be declared again.
     """
     root = Path(root)
     written: list[str] = []
+    declared = [ov for ov in declarations or [] if ov.target_kind in DECLARED_KINDS and ov.fields.get("declared")]
+    declared_types = {ov.target_id for ov in declared if ov.target_kind == "entity"}
 
     for e in graph.entities.values():
+        if e.id in declared_types:
+            continue
         doc = {
             "_kind": "entity",
             "id": e.id,
@@ -98,6 +140,15 @@ def export_tree(root: Path, graph: OntologyGraph) -> list[str]:
         }
         written.append(_write(root / "metrics" / f"{_safe(m.id)}.yaml", doc))
 
+    for stale in sorted((root / "declared").glob("*/*.yaml")):
+        stale.unlink()
+    for ov in declared:
+        doc = {"_kind": f"declared_{ov.target_kind}", "id": ov.target_id, "spec": declaration_spec(ov)}
+        edits = declaration_edits(ov)
+        if edits:
+            doc["_edits_not_carried"] = edits
+        written.append(_write(root / "declared" / f"{ov.target_kind}s" / f"{_safe(ov.target_id)}.yaml", doc))
+
     return written
 
 
@@ -114,7 +165,8 @@ def import_tree(root: Path, base_graph: OntologyGraph) -> list[OntologyOverride]
 
     Only whitelisted editable fields are considered; ``_readonly_*`` and
     ``_verified`` markers are ignored. A metric file with an id absent from the
-    base graph is treated as a newly-authored metric.
+    base graph is treated as a newly-authored metric. A declared type is not in
+    the base graph and is not diffed here: `read_declarations` reads it.
     """
     root = Path(root)
     out: list[OntologyOverride] = []
@@ -128,7 +180,7 @@ def import_tree(root: Path, base_graph: OntologyGraph) -> list[OntologyOverride]
             eid = doc.get("id")
             base = base_graph.entities.get(eid)
             if base is None:
-                continue  # can't author a brand-new entity from disk in v1
+                continue  # a type the built graph never held is a declaration: `read_declarations`
             out.extend(_entity_overrides(eid, doc, base))
 
     met_dir = root / "metrics"
@@ -142,11 +194,31 @@ def import_tree(root: Path, base_graph: OntologyGraph) -> list[OntologyOverride]
     return out
 
 
+def read_declarations(root: Path) -> tuple[list[tuple[str, str, dict, list[str]]], list[str]]:
+    """``(declarations, unreadable)``: each declaration file under ``declared/`` as ``(kind, id, spec, edits not
+    carried)``, in the order they can be declared again — types, then links, processes and rules — and the relative
+    path of every file there that is not one, so a broken file is reported rather than silently read as nothing."""
+    root = Path(root)
+    declarations: list[tuple[str, str, dict, list[str]]] = []
+    unreadable: list[str] = []
+    for kind in DECLARED_KINDS:
+        for f in sorted((root / "declared" / f"{kind}s").glob("*.yaml")):
+            doc = _read(f)
+            spec = (doc or {}).get("spec")
+            if not isinstance(spec, dict) or doc.get("_kind") != f"declared_{kind}" or not doc.get("id"):
+                unreadable.append(str(f.relative_to(root)))
+                continue
+            edits = doc.get("_edits_not_carried")
+            declarations.append((kind, str(doc["id"]), spec, [str(e) for e in edits] if isinstance(edits, list) else []))
+    return declarations, unreadable
+
+
 def _read(path: Path) -> Optional[dict]:
     try:
-        return yaml.safe_load(path.read_text()) or {}
+        doc = yaml.safe_load(path.read_text()) or {}
     except Exception:
         return None
+    return doc if isinstance(doc, dict) else None
 
 
 def _entity_overrides(eid: str, doc: dict, base) -> list[OntologyOverride]:

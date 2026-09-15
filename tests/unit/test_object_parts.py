@@ -484,6 +484,41 @@ def test_an_entity_a_link_and_a_part_are_declared_read_back_and_withdrawn_over_h
     assert "payment" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
 
 
+def test_a_declared_type_and_link_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
+    import aughor.routers.ontology as onto
+    monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
+    assert client.post("/ontology/entities", params=PARAMS, json=PAYMENT).status_code == 200
+    assert client.post("/ontology/links", params=PARAMS, json=PAYS_FOR).status_code == 200
+    exported = client.post("/ontology/export", params=PARAMS)
+    assert exported.status_code == 200, exported.text
+
+    # The overrides tree is lost — a new deployment, a wiped disk — and the exported tree is all that is left.
+    assert OV.delete_override(CONN, "ecommerce", "link", "Payment_pays_for_Order")
+    assert OV.delete_override(CONN, "ecommerce", "entity", "Payment")
+    assert "payment" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
+
+    imported = client.post("/ontology/import", params=PARAMS)
+    assert imported.status_code == 200, imported.text
+    assert [(d["kind"], d["target"], d["declared"]) for d in imported.json()["declared"]] == [
+        ("entity", "Payment", True), ("link", "Payment_pays_for_Order", True)]
+    assert imported.json()["unreadable"] == []
+    shown = client.get("/object-types", params=PARAMS).json()
+    assert {t["object_type"]: t for t in shown["object_types"]}["payment"]["origin"] == "human"
+    assert next(e for e in shown["links"] if e["relationship"] == "Payment_pays_for_Order")["origin"] == "human"
+    visa = client.post("/objects/query", params=PARAMS, json={
+        "object_type": "payment", "filters": [{"path": "psp", "value": "visa"}], "measures": [{"agg": "count"}]}).json()
+    conn = door()
+    try:
+        (expected,) = ints(conn, "SELECT COUNT(*) FROM payments WHERE psp = 'visa'")
+    finally:
+        conn.close()
+    assert visa["path"] == "compiled" and int(visa["rows"][0][0]) == expected
+
+    again = client.post("/ontology/import", params=PARAMS).json()
+    assert [(d["target"], d["declared"], d["note"]) for d in again["declared"]] == [
+        ("Payment", False, "unchanged"), ("Payment_pays_for_Order", False, "unchanged")]
+
+
 def test_the_entity_and_link_doors_keep_the_provenance_they_are_given(door, client):
     """E5 — the entity and link doors keep `provenance`, which their request models dropped (only the explorer's own
     calls, which skip the request model, ever wrote one)."""

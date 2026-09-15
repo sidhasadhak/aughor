@@ -2471,14 +2471,16 @@ def export_ontology_tree(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Write the live ontology to a readable, version-controllable YAML tree."""
+    """Write the live ontology to a readable, version-controllable YAML tree — each declaration (a declared type,
+    link, process or rule) under `declared/`, as the spec its door takes."""
     from aughor.ontology.filetree import export_tree, export_root
+    from aughor.ontology.overrides import load_overrides
     effective = _resolve_schema(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
     root = export_root(connection_id, effective)
-    paths = export_tree(root, graph)
+    paths = export_tree(root, graph, load_overrides(connection_id, effective))
     return {"root": str(root), "files": len(paths)}
 
 
@@ -2487,18 +2489,21 @@ def import_ontology_tree(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides.
+    """Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides, and each declaration in it.
 
     Edits are diffed against the PRE-override auto-built graph, so re-importing an
-    unedited export is a no-op and only changed fields become overrides.
+    unedited export is a no-op and only changed fields become overrides. A declaration — a declared type, link,
+    process or rule, under `declared/` — is declared again through its own door, counted and refused with the
+    reason; one the overrides tree already holds unchanged is left as it is. A declared type's later edits are not
+    in its file: each is made again through its own door.
     """
     # G1: an import writes overrides in BULK — the same governed semantic edit the two
     # single-field override endpoints above have always gated, arriving by the door that
     # was never locked.
     from aughor import govern
     govern.guard("ontology.import", connection_id)
-    from aughor.ontology.filetree import import_tree, export_root
-    from aughor.ontology.overrides import bind_overrides, save_override
+    from aughor.ontology.filetree import declaration_spec, export_root, import_tree, read_declarations
+    from aughor.ontology.overrides import bind_overrides, find_override, save_override
     from aughor.ontology.store import load_ontology
     effective = _resolve_schema(connection_id, schema_name)
     fingerprint = _latest_fingerprint(connection_id, effective)
@@ -2508,18 +2513,40 @@ def import_ontology_tree(
     if base is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
 
-    candidates = import_tree(export_root(connection_id, effective), base)
-    explain, close = _explain_for(connection_id)
+    root = export_root(connection_id, effective)
+    declarations, unreadable = read_declarations(root)
+    doors = {"entity": _declare_entity_core, "link": _declare_link_core, "process": _declare_process_core,
+             "rule": _declare_rule_core}
+    declared = []
+    for kind, target, spec, edits in declarations:
+        row = {"kind": kind, "target": target, "declared": False, "note": ""}
+        existing = find_override(connection_id, effective, kind, target)
+        if existing is not None and existing.fields.get("declared") and declaration_spec(existing) == spec:
+            row["note"] = "unchanged"
+        else:
+            try:
+                doors[kind](spec, connection_id, effective)
+            except HTTPException as exc:
+                row["note"] = str(exc.detail)
+            else:
+                row["declared"] = True
+                if edits:
+                    row["note"] = f"declared; its later edits ({', '.join(edits)}) are made again through their own doors"
+        declared.append(row)
+
+    candidates = import_tree(root, base)
     saved = []
-    try:
-        for ov in candidates:
-            bind_overrides(ov, base, explain)
-            save_override(connection_id, effective, ov)
-            saved.append({"kind": ov.target_kind, "target": ov.target_id,
-                          "bound": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True})
-    finally:
-        close()
-    return {"imported": len(saved), "overrides": saved}
+    if candidates:
+        explain, close = _explain_for(connection_id)
+        try:
+            for ov in candidates:
+                bind_overrides(ov, base, explain)
+                save_override(connection_id, effective, ov)
+                saved.append({"kind": ov.target_kind, "target": ov.target_id,
+                              "bound": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True})
+        finally:
+            close()
+    return {"imported": len(saved), "overrides": saved, "declared": declared, "unreadable": unreadable}
 
 
 # ── R11: per-column {visible, sample, index} config ─────────────────────────

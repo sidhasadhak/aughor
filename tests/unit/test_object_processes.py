@@ -662,6 +662,29 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
         "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": []}
 
 
+def test_a_declared_process_and_rule_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
+    import aughor.routers.ontology as onto
+    from aughor.ontology import overrides as overrides_tree
+    monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
+    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
+    assert client.post("/ontology/rules", params=PARAMS, json=FULFILLED).status_code == 200
+    assert client.post("/ontology/export", params=PARAMS).status_code == 200
+    targets = (("process", "order_fulfilment"), ("rule", "fulfilled_orders"))
+    stored = {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields for kind, target in targets}
+    for kind, target in targets:
+        assert overrides_tree.delete_override(CONN, "ecommerce", kind, target)
+
+    imported = client.post("/ontology/import", params=PARAMS)
+    assert imported.status_code == 200, imported.text
+    assert [(d["kind"], d["target"], d["declared"]) for d in imported.json()["declared"]] == [
+        ("process", "order_fulfilment", True), ("rule", "fulfilled_orders", True)]
+    assert {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields
+            for kind, target in targets} == stored                     # declared again, the same fields stored
+    listed = client.get("/ontology/processes", params=PARAMS).json()
+    assert ([p["id"] for p in listed["processes"]], [r["id"] for r in listed["rules"]]) == (
+        ["order_fulfilment"], ["fulfilled_orders"])
+
+
 # ── the boundary of "already past it" and the names a path may hold ─────────────────────────
 
 @pytest.mark.parametrize("as_of", ["2024-01-10 13:00:00", "2024-01-10"])
