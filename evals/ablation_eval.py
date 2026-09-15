@@ -82,13 +82,14 @@ if not os.environ.get("AUGHOR_SKIP_DOTENV"):
     except ImportError:
         pass
 
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from evals.run_golden import generate_sql_chat, generate_sql_full_pipeline
 from evals.sql_accuracy import score_single
 from aughor.db.connection import open_connection_for, open_connection_for_with_schema
+from aughor.semantic.object_query import FilterOp
 
 _MATCH = 0.99  # result-set match threshold for "correct"
 
@@ -173,18 +174,27 @@ _OBJECTS_NOT_ANSWERED = ("refused", "declined", "error")
 
 class _FillFilter(BaseModel):
     path: str = ""
-    op: str = "="
+    op: FilterOp = "="
     value: str = ""
     values: list[str] = Field(default_factory=list)
 
 
+_FillAgg = Literal["count", "count_distinct", "sum", "avg", "min", "max"]
+
+
 class _FillMeasure(BaseModel):
     name: str = ""
-    agg: str = "count"
+    #: A measure is ONE of two kinds, and only that kind's fields are sent: `aggregate` — agg over path, with its where
+    #: — or `metric` — a listed metric alone, which carries its own formula. A flat fill let a model set a metric AND a
+    #: path, and the compiler refused it as malformed (the ON-2 run: 5 of 26 fills).
+    kind: Literal["aggregate", "metric"] = "aggregate"
+    agg: _FillAgg = "count"
     path: str = ""
     metric: str = ""
     where: list[_FillFilter] = Field(default_factory=list)
-    divide_by_agg: str = ""
+    #: The ratio's denominator, of either kind — "" for no ratio.
+    divide_by_kind: Literal["", "aggregate", "metric"] = ""
+    divide_by_agg: _FillAgg = "count"
     divide_by_path: str = ""
     divide_by_metric: str = ""
     divide_by_where: list[_FillFilter] = Field(default_factory=list)
@@ -195,8 +205,10 @@ class _FillMeasure(BaseModel):
 class ObjectQueryFill(BaseModel):
     """What the model returns. Every field is typed text, a number or a list — no free-typed
     value and no optional sub-object — so the structured-output schema survives any provider;
-    `to_query` rebuilds the compiler's IR, which types each value by the column it meets."""
-    object_type: str = ""
+    `to_query` rebuilds the compiler's IR, which types each value by the column it meets. `object_type` is required
+    (empty still declines) and `op` an enum, so a fill can no longer leave out what the compiler needs or spell an
+    operator it does not know."""
+    object_type: str
     segment: str = ""
     filters: list[_FillFilter] = Field(default_factory=list)
     measures: list[_FillMeasure] = Field(default_factory=list)
@@ -208,6 +220,16 @@ class ObjectQueryFill(BaseModel):
     order_by: str = ""
     descending: bool = True
     limit: int = 0
+
+    def form_problem(self) -> str:
+        """Why the fill's shape is malformed before any name is read, or "" — a metric measure, or a ratio of that
+        kind, that names no metric."""
+        for m in self.measures:
+            if m.kind == "metric" and not m.metric.strip():
+                return f"measure '{m.name or '?'}' is a metric measure that names no metric"
+            if m.divide_by_kind == "metric" and not m.divide_by_metric.strip():
+                return f"measure '{m.name or '?'}' divides by a metric measure that names no metric"
+        return ""
 
     def to_query(self) -> dict:
         def conditions(items: list[_FillFilter]) -> list[dict]:
@@ -221,15 +243,20 @@ class ObjectQueryFill(BaseModel):
                 out.append(cond)
             return out
 
+        def term(kind: str, agg: str, path: str, metric: str, where: list[_FillFilter]) -> dict:
+            # a metric carries its own formula: it is sent alone, so a stray agg, path or where is never read beside it
+            if kind == "metric":
+                return {"metric": metric}
+            return {"agg": agg or "count", "path": path, "where": conditions(where)}
+
         measures = []
         for m in self.measures:
-            measure: dict = {"name": m.name, "agg": m.agg or "count", "path": m.path, "metric": m.metric,
-                             "where": conditions(m.where), "scale": m.scale or 1.0}
+            measure: dict = {"name": m.name, **term(m.kind, m.agg, m.path, m.metric, m.where), "scale": m.scale or 1.0}
             if m.decimals >= 0:
                 measure["decimals"] = m.decimals
-            if m.divide_by_agg or m.divide_by_path or m.divide_by_metric:
-                measure["divide_by"] = {"agg": m.divide_by_agg or "count", "path": m.divide_by_path,
-                                        "metric": m.divide_by_metric, "where": conditions(m.divide_by_where)}
+            if m.divide_by_kind:
+                measure["divide_by"] = term(m.divide_by_kind, m.divide_by_agg, m.divide_by_path, m.divide_by_metric,
+                                            m.divide_by_where)
             measures.append(measure)
         query = {"object_type": self.object_type, "segment": self.segment, "filters": conditions(self.filters),
                  "measures": measures, "by": list(self.by), "time": self.time, "grain": self.grain,
@@ -248,16 +275,27 @@ _OBJECTS_SYSTEM = (
     "- A path is a property (`status`), a property through links (`customer.country`), or — for op exists "
     "/ not_exists — a link (`shipment`). A condition through a to-many link keeps the objects that have a "
     "matching linked row.\n"
-    "- A measure is agg (count, count_distinct, sum, avg, min, max) over a path, or a listed metric. count "
-    "with an empty path counts the objects; count over a link counts the linked objects. A to-many link "
-    "inside a measure path is pre-aggregated for you, so measure across it freely.\n"
+    "- A measure is ONE of two kinds. kind 'aggregate': agg (count, count_distinct, sum, avg, min, max) over a "
+    "path, with its where — count with an empty path counts the objects; count over a link counts the linked "
+    "objects; a to-many link inside a path is pre-aggregated for you, so measure across it freely. kind "
+    "'metric': a listed metric ALONE — it carries its own formula, so it takes no agg, path or where. Fill "
+    "only the fields of the kind you chose.\n"
     "- A measure's `where` restricts the rows THAT measure aggregates (a share is count where status = "
     "'x', divided by count); `filters` restrict the objects for every measure.\n"
-    "- A ratio: fill divide_by_agg with divide_by_path (or divide_by_metric) and divide_by_where; scale "
-    "100 for a percentage; decimals to round (-1 for none).\n"
+    "- A ratio: set divide_by_kind ('aggregate' or 'metric') and fill that kind's divide_by_ fields; leave "
+    "divide_by_kind empty for no ratio. scale 100 for a percentage.\n"
+    "- Rounding: decimals 2 for an average, a ratio, a percentage or an amount of money unless the question "
+    "asks for another precision; -1 (none) for a count.\n"
     "- Values are text, spelled exactly as the data stores them — the SCHEMA shows sample values.\n"
     "- Use ONLY names that appear in the CATALOG. If the question cannot be expressed, return an empty "
-    "object_type."
+    "object_type.\n\n"
+    "WORKED EXAMPLES (the names are illustrative — use the CATALOG's):\n"
+    "Q: What share of orders were cancelled? → object_type order; measures [{name cancelled_pct, kind aggregate, "
+    "agg count, where [status = cancelled], divide_by_kind aggregate, divide_by_agg count, scale 100, decimals 2}]\n"
+    "Q: Revenue by customer country, where the catalog lists a metric revenue → object_type order; measures "
+    "[{name revenue, kind metric, metric revenue, decimals 2}]; by [customer.country]\n"
+    "Q: Average units per order line in each product category → object_type order_item; measures [{name "
+    "avg_units, kind aggregate, agg avg, path quantity, decimals 2}]; by [product.category]"
 )
 
 
@@ -283,6 +321,9 @@ def objects_arm(question: str, record: dict, db, graph, schema_text: str, catalo
         return {"class": "error", "error": f"fill failed: {exc}"[:300]}
     if not filled.object_type.strip():
         return {"class": "declined", "query": filled.model_dump()}
+    problem = filled.form_problem()
+    if problem:
+        return {"class": "refused", "refused": problem, "refusal_kind": "form", "query": filled.model_dump()}
     query = filled.to_query()
     try:
         compiled = compile_object_query(query, graph, dialect=getattr(db, "dialect", "") or "duckdb",

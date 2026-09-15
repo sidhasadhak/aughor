@@ -483,7 +483,9 @@ _MEASURE_TERM = {
     "path": {"type": "string", "description": (
         "The property to aggregate (`total_amount`), through links (`order_item.unit_price` — a to-many "
         "link is pre-aggregated for you), or a link to count its objects. Empty with count counts the objects.")},
-    "metric": {"type": "string", "description": "A verified named metric of the object type, instead of agg + path."},
+    "metric": {"type": "string", "description": (
+        "A verified named metric of the object type. EXCLUSIVE of `agg`, `path` and `where`: a metric carries its "
+        "own formula, so give it alone.")},
     "where": {"type": "array", "items": _OBJECT_FILTER, "description": (
         "Restricts the rows THIS measure aggregates, read from the object it aggregates — never the object set.")},
 }
