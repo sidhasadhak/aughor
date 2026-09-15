@@ -20,7 +20,7 @@ import {
   BriefMeta,
   type BriefMetric,
 } from "@/components/brief/Brief";
-import { hasProseBlocks, renderProseBlocks } from "@/components/brief/BriefProse";
+import { AnswerProse, readsAsProse } from "@/components/chat/AnswerProse";
 import { safePartial } from "@/lib/useReveal";
 import { Button } from "@/components/ui/button";
 import { ErrorState } from "@/components/ui/states";
@@ -1086,15 +1086,19 @@ function NarrativeBrief({
       )}
 
       {/* A conversational answer lands on `headline`, and it is not always one line: a
-          turn that tabulates its result puts a markdown table there, and the headline
-          organ renders it pipe by literal pipe. Block-structured text takes the block
-          renderer; a one-line conclusion keeps the headline treatment it was built for. */}
-      {turn.headline && hasProseBlocks(turn.headline)
-        ? <div className="flex flex-col gap-1">{renderProseBlocks(turn.headline)}</div>
+          multi-paragraph or markdown-structured answer reads as PROSE through the
+          markdown renderer (SP-10 / decision 22(b)) — lists render, backticks become
+          copyable chips, ids and dates are never tinted as figures, and nothing wears
+          the display type at paragraph length. A one-line conclusion keeps the
+          headline treatment it was built for. */}
+      {turn.headline && readsAsProse(turn.headline)
+        ? <AnswerProse text={turn.headline} />
         : turn.headline
         ? <BriefHeadline animate={turn.startedAt > 0}>{turn.headline}</BriefHeadline>
         : streamingHeadline != null
-          ? <BriefHeadline animate={false} className="aug-stream-in">{safePartial(streamingHeadline)}</BriefHeadline>
+          ? readsAsProse(streamingHeadline)
+            ? <AnswerProse className="aug-stream-in" text={safePartial(streamingHeadline)} caret />
+            : <BriefHeadline animate={false} className="aug-stream-in">{safePartial(streamingHeadline)}</BriefHeadline>
           : streaming ? <HeadlineSkeleton /> : null}
 
       {inspect && inspect.issues.length > 0 && (
@@ -1129,11 +1133,17 @@ function NarrativeBrief({
               the partial is still arriving, trail a pulsing caret and settle the block in
               with a one-time blur-lift; both vanish the instant the terminal narrative lands. */}
           {(streamingProse || proseText) && (
-            <BriefProse
-              className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
-              text={streamingProse != null ? safePartial(streamingProse) : proseText}
-              caret={streamingProse != null}
-            />
+            readsAsProse(streamingProse != null ? streamingProse : proseText)
+              ? <AnswerProse
+                  className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
+                  text={streamingProse != null ? safePartial(streamingProse) : proseText}
+                  caret={streamingProse != null}
+                />
+              : <BriefProse
+                  className={`${fadeCls} ${streamingProse != null ? "aug-stream-in" : ""}`}
+                  text={streamingProse != null ? safePartial(streamingProse) : proseText}
+                  caret={streamingProse != null}
+                />
           )}
           {streamingProse == null && anomalies.length > 0 && <BriefBullets className={fadeCls} items={anomalies} />}
         </>

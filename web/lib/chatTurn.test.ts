@@ -461,7 +461,7 @@ describe("proposal_staged reaches the turn THROUGH the adapter (SP-9)", () => {
   // frame → adapter → SDK accumulator → projection — not the projector alone.
   it("adapts to a typed part, never the unknown-frame escape hatch", async () => {
     const msg = await messageFrom([
-      { event: "start", data: { investigation_id: "inv-1" } },
+      { event: "start", data: {} },
       { event: "proposal_staged", data: {
         proposal_id: "prop-9", kind: "agent_bundle",
         connection_id: "conn-x", action_id: "agent:a+automation:b" } },

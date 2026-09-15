@@ -3031,11 +3031,39 @@ approval rows. **Needs:** SP-7, SP-8.
 > (`APIRouter(prefix=…)`, wire identical), and the vocabulary baseline fell 328 → 319. Accept surfaces still send
 > their own actor names ("operator", "control-room", "chat") — identity lands in SP-14.
 
-**SP-10 · Show the work.** A turn that acts keeps its steps in view as they happen; the answer carries the proposal
+**SP-10 · Show the work — ✅ BUILT 2026-09-15** (branch `claude/sp-9-overlay-card-declaration`, with the SP-9
+parts-path fix). A turn that acts keeps its steps in view as they happen; the answer carries the proposal
 cards themselves, built from the tool result rather than the prose, with live status; prose renders lists, inline code
 and ids as copyable mono chips, and ids and dates are never tinted as figures; the honest caveats stay, as flags on the
 card. **Receipt:** the user's ⌘K turn before and after, screenshotted — a visible trail, cards with Accept inline, no
 literal backticks, no red hyphens. **Needs:** SP-9 and §6 item 22 (b).
+> **Built 2026-09-15, the same evening the user photographed the overlay** ("The size of the Text the quality of the
+> Text the overall interactive capabilities are absolutely terrible"). Three fixes, three causes:
+> **(1) The card was invisible on the parts path.** Both chat surfaces (ChatPanel and the ⌘K overlay) render through
+> `uiMessageAdapter`'s parts, whose own DECLARED list is a second gate the frame-parity test never read — the
+> `proposal_staged` frame rode the escape hatch as "UNRECOGNISED: PROPOSAL_STAGED" with a projector sitting unused.
+> Declared as a typed progress part; a regression test drives the WHOLE path (frame → adapter → SDK accumulator →
+> projection), because the projector-level test could not fail on this.
+> **(2) Prose.** Decision 22(b) taken as recommended: `AnswerProse` (react-markdown + remark-gfm — a maintained
+> renderer, per the user's library-defaults rule) with a designed, allowlisted surface: lists render, headings become
+> bold paragraphs (one type scale in an answer), inline code and bare ids are copyable mono chips, raw HTML and images
+> never render, tables keep BriefProse's treatment. A multi-paragraph or markdown-structured answer now reads at body
+> size (`readsAsProse`); a one-line conclusion keeps the display headline. The Briefing keeps `BriefProse`; both share
+> ONE inline-figure rule.
+> **(3) Red hyphens.** `renderEmphasis`'s signed-delta rule is bounded on both sides, so `-3f4d` inside a proposal id
+> or a date's `-09` never again reads as a loss — a real `-$2.1M` still does. The chat card also polls while pending,
+> so a proposal resolved on another surface settles on the card in chat (live status).
+> **LIVE RECEIPT, the user's own hands, 2026-09-15 ~21:40:** minutes after the parts fix reached their dev server, the
+> user's bundle `c0e1c05a` was accepted FROM THE ATTENTION CARD (resolved_by control-room): both open choices filled on
+> the card (channel `all-luxexperience`, sender `tl_123`), agent `ua_6d903822bb54` "Anomaly Scout" created AND its
+> chain `7082045c` saved running as it, muted until its first run 2026-09-16T09:00Z — SP-8's bundle and SP-9's
+> fills-at-accept, exercised end to end on the live deployment. Still owed: the first TICK's receipt and spend
+> attributed to the agent (09:00 UTC next morning; the drafted slack_post waits for a person on that run per SP-7 —
+> approving it with "always allow" makes later mornings unattended), and the after-screenshot of a fresh ⌘K turn.
+> **Also closed in passing:** `scripts/dump_openapi._isolate_stores` was missing FIVE stores (AGENTS · AGENT_ALERTS ·
+> EVALS · MATCACHE · ORGS) — latent for the spec dump, but the helper also isolates live drives, and an SP-8 drive
+> wrote two scratch agents into the live `data/agents.db` (found on the live roster; both deleted the same hour, the
+> user's own records untouched). The list now carries the measured union and says to diff, not trust.
 
 **SP-11 · Revise in place.** A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
 Open in editor loads the draft into the real form, and saving there resolves the proposal instead of creating a second
@@ -6317,9 +6345,9 @@ the browser** · **measure the premise before building.**
     movement) found the drafts real and the path short of an agent that runs. Four clauses, each with the builder's
     recommendation:
     ✅ **(a) Adoption** — SP-7…SP-14, with SP-M alongside. *The user, verbatim: "yes add it to the roadmap and start SP-7".*
-    ⏳ **(b) Chat prose** — a maintained markdown renderer for prose plus structured cards for acts, or cards only.
-    *Recommended: both — FL-3 measured backend markdown as inert in `web/`, and the user prefers library defaults.*
-    Needed by SP-10.
+    ✅ **(b) DECIDED 2026-09-15 (the user) — both, as recommended.** Asked as "markdown renderer plus cards, or cards
+    only" with the recommendation stated; the user answered "Go for SP-10" on it. react-markdown + remark-gfm carry
+    the prose behind an allowlisted, designed surface (§3.11 SP-10); the cards carry the acts.
     ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
     refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
     built on the recommendation; the call stays the user's.

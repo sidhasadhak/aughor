@@ -205,6 +205,9 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
   const [mint, setMint] = useState(false);
   const [fills, setFills] = useState<Record<string, string>>({});
   const [status, setStatus] = useState<string>(p.status);
+  // The record can settle from OUTSIDE this card (another surface, or the
+  // by-id wrapper's pending poll) — the rendered status follows the prop.
+  useEffect(() => { setStatus(p.status); }, [p.status]);
 
   const choices = useMemo(() => openChoicesOf(p), [p]);
   const openKeys = useMemo(
@@ -373,10 +376,21 @@ export function ProposalCardById({ proposalId, actor, onResolved, onOpenInEditor
   const [p, setP] = useState<StagedProposal | null | undefined>(undefined);
   useEffect(() => {
     let live = true;
-    getProposalById(proposalId)
+    const read = () => getProposalById(proposalId)
       .then(x => { if (live) setP(x); })
-      .catch(() => { if (live) setP(null); });
-    return () => { live = false; };
+      .catch(() => { if (live) setP(prev => prev ?? null); });
+    read();
+    // SP-10 — live status: a proposal resolved on ANOTHER surface (the inbox,
+    // Attention, Slack) settles on this card too. A modest poll only while the
+    // record is still pending; a settled card stops asking.
+    const iv = setInterval(() => {
+      setP(prev => {
+        if (prev && prev.status !== "pending") { clearInterval(iv); return prev; }
+        void read();
+        return prev;
+      });
+    }, 15_000);
+    return () => { live = false; clearInterval(iv); };
   }, [proposalId]);
   if (p === undefined) {
     return <span className="aug-text-xs" style={{ color: "var(--t3)" }}>loading proposal…</span>;

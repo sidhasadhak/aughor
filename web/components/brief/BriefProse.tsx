@@ -21,8 +21,13 @@
 import React from "react";
 import { localizeCurrency } from "@/lib/orgSettings";
 
+// The signed-delta alternatives are BOUNDED on both sides: a `-3` inside
+// `c0e1c05a-3f4d-…` or a date's `2026-09-15` is an id fragment, not a loss, and it
+// rendered in the adverse red until SP-10 (the user's first live bundle showed its
+// proposal id in red pieces). A real delta stands alone: preceded and followed by
+// nothing wordish or hyphen-joined.
 const EMPHASIS_RE =
-  /(\*\*[^*]+\*\*|\*[^*\n]+\*|[+]\$?[\d,]+(?:\.\d+)?[KMBk]?%?|-\$?[\d,]+(?:\.\d+)?[KMBk]?%?|\$[\d,]+(?:\.\d+)?[KMBk]?|\d+(?:\.\d+)?%|\b\d{4,}(?:,\d{3})*\b)/g;
+  /(\*\*[^*]+\*\*|\*[^*\n]+\*|(?<![\w-])[+]\$?[\d,]+(?:\.\d+)?[KMBk]?%?(?![\w-])|(?<![\w-])-\$?[\d,]+(?:\.\d+)?[KMBk]?%?(?![\w-])|\$[\d,]+(?:\.\d+)?[KMBk]?|\d+(?:\.\d+)?%|\b\d{4,}(?:,\d{3})*\b)/g;
 
 /** Parse a narrative string into emphasized inline nodes. Reused by bullets. */
 export function renderEmphasis(text: string): React.ReactNode[] {
