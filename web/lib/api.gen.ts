@@ -14284,6 +14284,8 @@ export interface components {
             property?: string | null;
             /** Provenance */
             provenance?: string | null;
+            /** Scopes */
+            scopes?: string[] | null;
             /** Values */
             values?: unknown[] | null;
         };

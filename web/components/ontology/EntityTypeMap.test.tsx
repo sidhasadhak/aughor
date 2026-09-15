@@ -175,6 +175,20 @@ describe("EntityTypeMap", () => {
     await waitFor(() => expect(handoff.edges.every((e) => e.label === undefined)).toBe(true));
   });
 
+  it("lists each declared rule with what it admits and the metrics it scopes", async () => {
+    served.map = { ...map, processes: [], rules: [
+      { id: "fulfilled_orders", display_name: "Fulfilled orders", entity: "order", kind: "condition", origin: "human",
+        verified: true, admitted: 3900, objects: 5000, flags: 0, scopes: ["revenue", "aov"] },
+      { id: "dach", display_name: "DACH", entity: "country", kind: "value_set", origin: "human",
+        verified: true, admitted: 2, objects: 3, flags: 1 },
+    ] };
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    const [scoping, grouping] = await screen.findAllByTestId("entity-rail-rule");
+    expect(scoping.textContent).toContain("scopes revenue, aov");
+    expect(grouping.textContent).toContain("1 flagged");
+    expect(grouping.textContent).not.toContain("scopes");
+  });
+
   it("keeps where a person drags a card in the preference store, and opens there next time", async () => {
     const { unmount } = render(<EntityTypeMap connectionId="c1" schema="s" />);
     await waitFor(() => expect(handoff.nodes.length).toBe(4));

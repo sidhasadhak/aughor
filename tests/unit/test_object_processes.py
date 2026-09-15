@@ -512,6 +512,74 @@ def test_the_overlay_rebuilds_a_measured_rule(db, graph):
     assert edited.verified is None and edited.observed == {}
 
 
+# ── a rule that scopes a metric ─────────────────────────────────────────────────────────────
+
+FULFILLED = {"id": "fulfilled_orders", "entity": "Order", "kind": "condition", "owner": "finance",
+             "conditions": [{"path": "status", "op": "not_in", "values": ["cancelled", "refunded"]}], "scopes": ["revenue"]}
+KEPT = "status NOT IN ('cancelled', 'refunded')"
+
+
+def test_a_rule_scopes_a_metric_wherever_it_is_read_and_nothing_measured_beside_it(db, graph):
+    fields, rule = declare_rule(graph, db, FULFILLED)
+    [(total, kept, orders, average)] = rows(db, (f"SELECT SUM(total_amount), SUM(total_amount) FILTER (WHERE {KEPT}), "
+                                                 "COUNT(*), AVG(total_amount) FROM ecommerce.orders"))
+    assert fields["scopes"] == ["revenue"] and rule.verified is True
+    assert ((float(rule.scoped["revenue"]["without"]), float(rule.scoped["revenue"]["within"]))
+            == (float(total), float(kept)))
+    compiled = compile_({"object_type": "order", "measures": [{"metric": "revenue"}, {"metric": "aov"}, {"agg": "count"}]},
+                        graph)
+    assert any(line.startswith("metric revenue (verified), within fulfilled_orders") for line in compiled.plan)
+    [(revenue, aov, count)] = rows(db, compiled.sql)
+    assert (float(revenue), count) == (float(kept), orders)             # the count beside it is every order
+    assert abs(float(aov) - float(average)) < 1e-9                      # a metric the rule does not scope reads as it is
+    by = dict(rows(db, compile_({"object_type": "order", "by": ["status"], "measures": [{"metric": "revenue"}]}, graph).sql))
+    assert by["cancelled"] in (None, "NULL") and by["refunded"] in (None, "NULL") and by["delivered"] not in (None, "NULL")
+    [(distinct_kept, counted_kept)] = rows(db, (f"SELECT COUNT(DISTINCT customer_id) FILTER (WHERE {KEPT}), "
+                                                f"COUNT(*) FILTER (WHERE {KEPT}) FROM ecommerce.orders"))
+    for metric_id, formula in (("buyers", "COUNT(DISTINCT customer_id)"), ("counted", "COUNT(*)")):
+        graph.metrics[metric_id] = graph.metrics["revenue"].model_copy(update={"id": metric_id, "display_name": metric_id,
+                                                                              "formula_sql": formula})
+    graph.rules["fulfilled_orders"] = rule.model_copy(update={"scopes": ["revenue", "buyers", "counted"]})
+    [(buyers, counted)] = rows(db, compile_({"object_type": "order",
+                                             "measures": [{"metric": "buyers"}, {"metric": "counted"}]}, graph).sql)
+    assert (buyers, counted) == (distinct_kept, counted_kept)           # inside a DISTINCT, and a COUNT(*) of its rows
+
+    def revenue_read() -> float:
+        [(value,)] = rows(db, compile_({"object_type": "order", "measures": [{"metric": "revenue"}]}, graph).sql)
+        return float(value)
+    graph.rules["fulfilled_orders"] = rule.model_copy(update={"verified": None})
+    assert revenue_read() == float(total)                               # an uncounted rule scopes nothing
+    graph.rules["fulfilled_orders"] = rule.model_copy(update={"entity": "Customer"})
+    assert revenue_read() == float(total)                               # nor does a rule on another type
+
+
+def test_a_rule_scopes_only_a_verified_metric_of_its_own_type(graph):
+    problem, _ = resolve_rule(graph, "r", rule_fields({**FULFILLED, "id": "r", "scopes": ["gross_margin"]}))
+    assert "no metric 'gross_margin'" in problem
+    problem, _ = resolve_rule(graph, "r", rule_fields({**EU_CORE, "id": "r", "scopes": ["revenue"]}))
+    assert "is defined on Order, not Customer" in problem
+    _, canonical = resolve_rule(graph, "r", rule_fields({**FULFILLED, "id": "r", "scopes": ["REVENUE"]}))
+    assert canonical["scopes"] == ["revenue"]
+    graph.metrics["aov"].verified = False
+    problem, _ = resolve_rule(graph, "r", rule_fields({**FULFILLED, "id": "r", "scopes": ["aov"]}))
+    assert "is not verified" in problem
+    assert "each metric it scopes once" in rule_spec_problem({**FULFILLED, "scopes": ["revenue", "revenue"]})
+    assert "`scopes`" in rule_spec_problem({**FULFILLED, "scopes": "revenue"})
+
+
+def test_the_overlay_keeps_what_a_scoping_rule_measured_until_what_it_scopes_changes(db, graph):
+    fields, rule = declare_rule(graph, db, FULFILLED)
+    ov = OntologyOverride(target_kind="rule", target_id="fulfilled_orders", fields=fields,
+                          binding={"rule": rule_entry(fields, rule)})
+    kept = declared_rule(ov, fresh_graph())
+    assert (kept.scopes, kept.scoped, kept.verified) == (["revenue"], rule.scoped, True)
+    moved = declared_rule(OntologyOverride(target_kind="rule", target_id="fulfilled_orders",
+                                           fields={**fields, "scopes": ["aov"]}, binding=ov.binding), fresh_graph())
+    assert (moved.verified, moved.scoped) == (None, {})
+    again = measure_rule(db, graph, "fulfilled_orders", fields)        # counted again with the rule already on the graph
+    assert again.scoped == rule.scoped
+
+
 # ── the doors ───────────────────────────────────────────────────────────────────────────────
 
 CONN = "object-processes-door-t"
@@ -570,6 +638,10 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     rule = client.post("/ontology/rules", params=PARAMS, json=EU_CORE)
     assert rule.status_code == 200, rule.text
     assert (rule.json()["rule"]["missing"], rule.json()["rule"]["verified"]) == (["XX"], True)
+    scoping = client.post("/ontology/rules", params=PARAMS, json=FULFILLED)
+    assert scoping.status_code == 200 and scoping.json()["rule"]["scopes"] == ["revenue"], scoping.text
+    rail = client.get("/object-types", params=PARAMS).json()["rules"]
+    assert next(r for r in rail if r["id"] == "fulfilled_orders")["scopes"] == ["revenue"]
     shadow = client.post("/ontology/rules", params=PARAMS, json={
         "id": "active_orders", "entity": "Order", "conditions": [{"path": "status", "op": "=", "value": "shipped"}]})
     assert shadow.status_code == 400 and "already has a segment" in shadow.json()["detail"]
@@ -577,7 +649,7 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     measured = client.post("/ontology/measure", params=PARAMS).json()
     assert [(p["process"], p["verified"]) for p in measured["processes"]] == [("order_fulfilment", True)]
     assert measured["processes"][0]["promises"][0]["breached"] == shipping["breached"]
-    assert [r["rule"] for r in measured["rules"]] == ["eu_core"]
+    assert [r["rule"] for r in measured["rules"]] == ["eu_core", "fulfilled_orders"]
 
     assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 200
     assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 404
@@ -585,6 +657,7 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
         "object_type": "order_item", "segment": "late_shipping", "measures": [{"agg": "count"}]}).json()
     assert gone["path"] == "refused" and "no segment 'late_shipping'" in gone["refused"]
     assert client.delete("/ontology/rules/eu_core", params=PARAMS).status_code == 200
+    assert client.delete("/ontology/rules/fulfilled_orders", params=PARAMS).status_code == 200
     assert client.get("/ontology/processes", params=PARAMS).json() == {
         "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": []}
 

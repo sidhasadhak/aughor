@@ -358,7 +358,7 @@ def object_type_map(graph: OntologyGraph, *, overlay: Optional[list] = None) -> 
                  for p in sorted((graph.processes or {}).values(), key=lambda x: x.id)]
     rules = [{"id": r.id, "display_name": r.display_name or r.id, "entity": api(r.entity), "kind": r.kind,
               "origin": r.origin, "verified": r.verified, "admitted": r.admitted, "objects": r.objects,
-              "flags": len(r.flags)}
+              "flags": len(r.flags), "scopes": list(r.scopes or [])}
              for r in sorted((graph.rules or {}).values(), key=lambda x: x.id)]
     return {"connection_id": graph.connection_id, "schema_name": graph.schema_name,
             "generated_at": graph.generated_at, "object_types": types, "links": edges,

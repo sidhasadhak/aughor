@@ -462,6 +462,26 @@ def _qualify(fragment: str, alias: str, read: str, *, what: str, expression: boo
     return node.sql(dialect="duckdb")
 
 
+def _within(formula: str, condition: str) -> str:
+    """A measure's formula with every aggregate restricted to the rows ``condition`` admits (ON-9 — a rule that scopes a
+    metric): COUNT(*) counts only them, and every other aggregate reads its argument on them alone, so the rule scopes
+    this measure and nothing else the query measures beside it."""
+    import sqlglot
+    from sqlglot import exp
+    node = sqlglot.parse_one(f"SELECT {formula} FROM _t", read="duckdb").expressions[0]
+    admitted = sqlglot.parse_one(f"SELECT 1 FROM _t WHERE {condition}", read="duckdb").args["where"].this
+    for agg in [a for a in node.find_all(exp.AggFunc) if a.find_ancestor(exp.AggFunc) is None]:
+        argument = agg.this
+        if isinstance(argument, exp.Distinct):
+            argument.set("expressions", [exp.Case(ifs=[exp.If(this=admitted.copy(), true=e.copy())])
+                                         for e in argument.expressions])
+        elif argument is None or isinstance(argument, exp.Star):
+            agg.set("this", exp.Case(ifs=[exp.If(this=admitted.copy(), true=exp.Literal.number(1))]))
+        else:
+            agg.set("this", exp.Case(ifs=[exp.If(this=admitted.copy(), true=argument.copy())]))
+    return node.sql(dialect="duckdb")
+
+
 def backing_from(entity: OntologyEntity, alias: str) -> str:
     source = object_from(entity, alias)
     if not source:
@@ -1353,8 +1373,21 @@ class _Compiler:
         if not metric_on(m, scope.entity):
             raise ObjectQueryRefused(f"metric '{m.id}' is defined on {m.entity or ', '.join(m.tables)}, not "
                                      f"{scope.entity.id} — anchor the query on its object type", mine)
-        self.plan.append(f"metric {m.id} (verified): {m.formula_sql}")
-        return _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
+        formula = _qualify(m.formula_sql, scope.alias, self.dialect, what=f"metric {m.id}", expression=True)
+        # ON-9 — a verified rule on this type that scopes the metric restricts every aggregate its formula holds
+        scoping = [r for _, r in sorted((self.g.rules or {}).items())
+                   if r.verified is True and r.entity == scope.entity.id and m.id in (r.scopes or [])]
+        if not scoping:
+            self.plan.append(f"metric {m.id} (verified): {m.formula_sql}")
+            return formula
+        from aughor.ontology.derived import rule_filters
+        try:
+            filters = [ObjectFilter.model_validate(f) for r in scoping for f in rule_filters(r)]
+        except ValidationError as exc:
+            raise ObjectQueryRefused(f"metric '{m.id}' is scoped by a rule whose filters are malformed "
+                                     f"({exc.errors()[0]['msg']})") from exc
+        self.plan.append(f"metric {m.id} (verified), within {', '.join(r.id for r in scoping)}: {m.formula_sql}")
+        return _within(formula, self.where(scope, filters))
 
     def _derived_filters(self, d, filters, what: str) -> list[ObjectFilter]:
         try:

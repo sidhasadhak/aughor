@@ -671,6 +671,8 @@ export interface RuleRow {
   admitted: number | null;
   objects: number | null;
   flags: number;
+  /** The metrics the rule scopes: each read within it wherever it is read. */
+  scopes?: string[];
 }
 
 /** ON-9 — a name a declared process or rule derives on a type, and whether the compiler reads it yet. */
@@ -793,6 +795,9 @@ export interface RuleDetail {
   flags: string[];
   note: string;
   segment: string;
+  /** The metrics the rule scopes, and each one's value as measured without the rule and within it. */
+  scopes?: string[];
+  scoped?: Record<string, { without: string | null; within: string | null }>;
 }
 
 export interface ProcessesAndRules {

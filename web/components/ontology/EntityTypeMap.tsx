@@ -385,6 +385,7 @@ function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickT
             <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>{r.display_name}</span>
             <span className="aug-fs-xs" style={{ color: r.verified === false ? "var(--red5)" : "var(--t3)" }}>
               {r.entity} · {r.admitted == null ? "not counted" : `admits ${formatCount(r.admitted)}`}
+              {r.scopes?.length ? ` · scopes ${r.scopes.join(", ")}` : ""}
               {r.flags ? ` · ${r.flags} flagged` : ""}
             </span>
           </span>

@@ -195,6 +195,8 @@ class _DeclaredRule(BaseModel):
     property: Optional[str] = None
     values: Optional[list] = None
     conditions: Optional[list[dict]] = None
+    #: The verified metrics on its type the rule scopes: each read within it wherever it is read.
+    scopes: Optional[list[str]] = None
     owner: Optional[str] = None
     origin: Optional[Literal["human", "model", "pack"]] = None
     provenance: Optional[str] = Field(default=None, max_length=200)

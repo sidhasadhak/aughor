@@ -705,6 +705,9 @@ class BusinessRule(BaseModel):
     values: list[str] = Field(default_factory=list)
     #: condition: filters in the object door's shape (`{path, op, value | values | value_path}`), all of which hold.
     conditions: list[dict] = Field(default_factory=list)
+    #: The metrics the rule SCOPES — each a verified metric on its type, read within the rule wherever the object door
+    #: reads it ("revenue excludes the cancelled and the refunded").
+    scopes: list[str] = Field(default_factory=list)
     origin: Literal["human", "model", "pack"] = "human"
     provenance: str = ""
     #: Measured: the type's objects, those the rule admits, rows per declared value, declared values no row holds.
@@ -712,6 +715,8 @@ class BusinessRule(BaseModel):
     admitted: Optional[int] = None
     observed: dict[str, int] = Field(default_factory=dict)
     missing: list[str] = Field(default_factory=list)
+    #: Measured: each scoped metric's value as the door reads it without the rule and within it (text, as counted).
+    scoped: dict[str, dict] = Field(default_factory=dict)
     verified: Optional[bool] = None
     flags: list[str] = Field(default_factory=list)
     note: str = ""
