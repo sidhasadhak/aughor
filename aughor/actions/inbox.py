@@ -87,6 +87,10 @@ _MIGRATIONS: list = [
     Migration(4, "proposal trace key (MI-2: a verdict can pin its evidence)",
               lambda c: add_column_if_missing(c, "staged_proposals", "trace_id",
                                               "TEXT NOT NULL DEFAULT ''")),
+    #: 5 — measured against the live store on 2026-09-15, which sat at 4.
+    Migration(5, "proposal detail (SP-9: the card's stage-time facts)",
+              lambda c: add_column_if_missing(c, "staged_proposals", "detail",
+                                              "TEXT NOT NULL DEFAULT '{}'")),
 ]
 
 #: Terminal statuses — a proposal in any of these is resolved and cannot be re-resolved.
@@ -159,9 +163,13 @@ class StagedProposal(BaseModel):
     #: ``automation_state`` (params name an automation and pause/resume; accept applies
     #: it through the registered state door) and ``agent_grant`` (params name an agent
     #: and ONE declared action; accept appends it to the agent's grants — which is still
-    #: only permission to PROPOSE, never to execute).
+    #: only permission to PROPOSE, never to execute). SP-8 adds ``agent_bundle``: params
+    #: hold BOTH records ({"agent": …, "automation": …}) for "an agent that does X every
+    #: morning" — accept creates the agent and then saves the chain carrying its id, all
+    #: or nothing, so the two cannot arrive half-married the way the user's own live
+    #: drafts did (an agent, and a schedule that ran as nobody).
     kind: Literal["declared_action", "integration",
-                  "agent_draft", "automation_draft",
+                  "agent_draft", "automation_draft", "agent_bundle",
                   "automation_state", "agent_grant"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
@@ -174,6 +182,11 @@ class StagedProposal(BaseModel):
     grant_id: str = ""
     action_id: str
     params: dict = Field(default_factory=dict)          # the coerced, criteria-passing params
+    #: SP-9 — what the approval card shows that ``params`` cannot carry: the draft's open
+    #: choices, its first scheduled run, whether the dry run walked, the agent it runs as.
+    #: Stamped at stage time and ADVISORY only — accept recomputes every check it gates
+    #: on, so a stale detail can never arm anything.
+    detail: dict = Field(default_factory=dict)
     reasoning: str = ""
     proposer: str = "agent"                             # model/role that produced it
     source: str = "agent"                               # "agent" | "automation:<id>" | "investigation:<id>"
@@ -248,6 +261,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
             grant_id       TEXT NOT NULL DEFAULT '',
             action_id      TEXT NOT NULL,
             params         TEXT NOT NULL DEFAULT '{}',
+            detail         TEXT NOT NULL DEFAULT '{}',
             reasoning      TEXT NOT NULL DEFAULT '',
             proposer       TEXT NOT NULL DEFAULT 'agent',
             source         TEXT NOT NULL DEFAULT 'agent',
@@ -279,6 +293,7 @@ def _ensure_schema(c: sqlite3.Connection) -> None:
 def _row(r: sqlite3.Row) -> StagedProposal:
     d = dict(r)
     d["params"] = json.loads(d["params"] or "{}")
+    d["detail"] = json.loads(d.get("detail") or "{}")
     d["outcome"] = json.loads(d["outcome"] or "{}")
     return StagedProposal(**d)
 
@@ -315,11 +330,12 @@ def stage_proposal(p: StagedProposal) -> StagedProposal:
             c.execute("""
                 INSERT INTO staged_proposals (
                     id, org_id, connection_id, schema_name, kind, grant_id, action_id,
-                    params, reasoning, proposer, source, run_id, call_id, status,
+                    params, detail, reasoning, proposer, source, run_id, call_id, status,
                     status_message, outcome, created_at, expires_at, trace_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (p.id, p.org_id, p.connection_id, p.schema_name, p.kind, p.grant_id,
-                  p.action_id, json.dumps(p.params), p.reasoning, p.proposer, p.source,
+                  p.action_id, json.dumps(p.params), json.dumps(p.detail), p.reasoning,
+                  p.proposer, p.source,
                   p.run_id, p.call_id, p.status, p.status_message, json.dumps(p.outcome),
                   p.created_at, p.expires_at, p.trace_id))
             c.commit()
@@ -378,6 +394,50 @@ def _record_outcome(proposal_id: str, status: str, message: str, outcome: dict) 
 
 
 # ── queries ──────────────────────────────────────────────────────────────────────
+
+def _update_params(proposal_id: str, params: dict) -> None:
+    """Persist accept-time fills onto the row the audit will read back (SP-9)."""
+    with _LOCK:
+        c = _conn()
+        try:
+            c.execute("UPDATE staged_proposals SET params=? WHERE id=?",
+                      (json.dumps(params), proposal_id))
+            c.commit()
+        finally:
+            c.close()
+
+
+def _fill_open_choices(chain: dict, holes: list[str],
+                       fills: dict) -> tuple[dict, str]:
+    """Apply the approver's answers to a draft's OPEN choices — and only those.
+
+    ``fills`` maps ``"<action number>.<key>"`` (1-based, the same numbering the hole
+    sentences use) to the chosen value. Refused whole on the first fill that names
+    anything not currently open: the card offers exactly the open fields, so a fill
+    outside them is either a stale card or an edit dressed as an answer — and editing a
+    draft is a re-draft, never part of arming one. Returns ``(filled chain, "")`` or
+    ``(chain unchanged, refusal)``.
+    """
+    from aughor.runners.automation_save import parse_hole
+    open_keys = {parsed for h in holes if (parsed := parse_hole(h)) is not None}
+    effects = [dict(e, config=dict(e.get("config") or {}))
+               for e in (chain.get("effects") or [])]
+    for spec, value in fills.items():
+        try:
+            n_s, key = str(spec).split(".", 1)
+            n = int(n_s)
+        except ValueError:
+            return chain, (f"unreadable fill {spec!r} — expected "
+                           f"'<action number>.<key>', e.g. '2.channel'")
+        if (n, key) not in open_keys:
+            return chain, (f"{spec!r} is not an open choice on this draft — only an "
+                           f"open choice can be filled at accept; changing anything "
+                           f"else is a re-draft")
+        if not str(value or "").strip():
+            return chain, f"the fill for {spec!r} is empty — an open choice needs a real value"
+        effects[n - 1]["config"][key] = str(value).strip()
+    return {**chain, "effects": effects}, ""
+
 
 def get_proposal(proposal_id: str) -> Optional[StagedProposal]:
     with _LOCK:
@@ -473,7 +533,7 @@ def gov_action_of(p: StagedProposal) -> str:
         op = get_operation(p.action_id)
         if op is not None:
             return op.gov_action
-    if p.kind in ("agent_draft", "automation_draft"):
+    if p.kind in ("agent_draft", "automation_draft", "agent_bundle"):
         return f"spotlight.{p.kind}"
     return f"kinetic.{p.action_id}"
 
@@ -493,7 +553,8 @@ def reject_proposal(proposal_id: str, *, actor: str) -> bool:
     return resolved
 
 
-def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
+def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
+                    fills: Optional[dict] = None):
     """Accept a pending proposal and execute it — EXACTLY once.
 
     The accept is the human's approval act, so the executor runs with ``approved=True`` (bypassing
@@ -501,6 +562,12 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
     ``KineticResult('already_resolved', ...)`` — never a second dispatch. When ``mint_grant`` and the
     action is single-target eligible, a target-bound standing grant is minted so future UNATTENDED
     executions of this exact target auto-allow (``actions/grants.py``).
+
+    ``fills`` (SP-9) is the approver answering a draft's OPEN choices at the card —
+    ``{"<action number>.<key>": value}``, e.g. ``{"2.channel": "#ops"}``. A fill may only
+    close a choice that is open right now; anything else is refused whole (that is an edit,
+    and editing is a re-draft). The filled params are persisted onto the row, so the record
+    shows exactly what was armed.
 
     Returns ``(KineticResult, grant_id_or_empty)``.
     """
@@ -528,20 +595,41 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
     # named) is not acceptable yet. Checked BEFORE the resolve-once update on purpose: the
     # proposal stays pending for a draft that fills the choice, where resolving it first would
     # spend the proposal on a refusal — and accepting it anyway would arm a chain that posts
-    # to a placeholder.
-    if p.kind == "automation_draft" and p.pending:
+    # to a placeholder. SP-9 adds the other half of that bargain: the approver may CLOSE an
+    # open choice right here (``fills``), which is the person making the choice, not the
+    # model — and only an open choice, so arming-time edits stay impossible.
+    filled_params: Optional[dict] = None
+    if p.kind in ("automation_draft", "agent_bundle") and p.pending:
         from aughor.runners import automation_payload_holes
-        holes = automation_payload_holes(dict(p.params or {}))
+        chain = (dict(p.params or {}) if p.kind == "automation_draft"
+                 else dict((p.params or {}).get("automation") or {}))
+        holes = automation_payload_holes(chain)
+        if fills:
+            chain, refusal = _fill_open_choices(chain, holes, dict(fills))
+            if refusal:
+                _Result = _executor_result()
+                return _Result("invalid_params", False, p.action_id,
+                               message=f"Nothing armed: {refusal}",
+                               detail={"to_fill": holes}), ""
+            holes = automation_payload_holes(chain)
+            filled_params = (chain if p.kind == "automation_draft"
+                             else {**dict(p.params or {}), "automation": chain})
         if holes:
             _Result = _executor_result()
             return _Result("invalid_params", False, p.action_id,
                                  message=("Not acceptable yet — a choice is still open: "
-                                          + "; ".join(holes) + ". Draft it again with the "
-                                          "choice named, then accept that draft."),
+                                          + "; ".join(holes) + ". Fill it on the card, or "
+                                          "draft it again with the choice named."),
                                  detail={"to_fill": holes}), ""
     if not _resolve_once(proposal_id, "accepted", actor):
         return KineticResult("already_resolved", False, p.action_id,
                              message=f"proposal already {get_proposal(proposal_id).status}"), ""
+    if filled_params is not None:
+        # The record must show what was ARMED, not what was drafted — the fill is part of
+        # the human's accept, and an audit that reads back the placeholder would say a
+        # channel nobody chose. Written after resolve-once so a losing racer cannot edit.
+        _update_params(proposal_id, filled_params)
+        p = get_proposal(proposal_id) or p
 
     # DS-11's completion — the ONE branch, and it sits AFTER the resolve-once UPDATE on
     # purpose: expiry, the acceptance window, first-responder-wins and the audit trail are
@@ -553,6 +641,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False):
         return _accept_agent_draft(p, actor=actor), ""
     if p.kind == "automation_draft":
         return _accept_automation_draft(p, actor=actor), ""
+    if p.kind == "agent_bundle":
+        return _accept_agent_bundle(p, actor=actor), ""
     if p.kind == "automation_state":
         return _accept_automation_state(p, actor=actor), ""
     if p.kind == "agent_grant":
@@ -671,7 +761,7 @@ def _accept_agent_draft(p: StagedProposal, *, actor: str):
     _record_outcome(p.id, "executed", f"agent {agent.id} created", outcome)
     return _Result("executed", True, p.action_id,
                    message=f"agent '{agent.name}' created as {agent.id}",
-                   detail=outcome)
+                   outcome=outcome, detail=outcome)
 
 
 def _accept_automation_draft(p: StagedProposal, *, actor: str):
@@ -692,7 +782,57 @@ def _accept_automation_draft(p: StagedProposal, *, actor: str):
     _record_outcome(p.id, "executed", f"automation {out['automation_id']} saved", out)
     return _Result("executed", True, p.action_id,
                    message=f"automation '{out['name']}' saved as {out['automation_id']}",
-                   detail=out)
+                   outcome=out, detail=out)
+
+
+def _accept_agent_bundle(p: StagedProposal, *, actor: str):
+    """SP-8 — create the agent, then save its chain carrying the agent's id: ALL OR
+    NOTHING. The failure that motivates the rollback is the user's own live pair — an
+    agent, and a schedule that ran as the default agent because nothing married them.
+    Validation re-runs HERE for both halves (data moves between stage and accept), and a
+    chain save that fails deletes the agent it just created, so a half-arrived bundle
+    cannot exist. The chain's ``agent_id`` is set from the CREATED agent, never trusted
+    from params: the agent does not exist at stage time, and a staged id would be a
+    forgeable claim about a record yet to be born."""
+    _Result = _executor_result()
+    from aughor.custom_agents.store import create_agent, delete_agent, validate_agent_draft
+    from aughor.runners import save_automation_payload
+
+    d = dict(p.params or {})
+    agent_d = dict(d.get("agent") or {})
+    chain_d = dict(d.get("automation") or {})
+    problems = validate_agent_draft(
+        name=agent_d.get("name"), instructions=agent_d.get("instructions"),
+        connection_id=p.connection_id, doc_ids=agent_d.get("doc_ids") or [],
+        schema_scope=agent_d.get("schema_scope") or None)
+    if problems:
+        msg = "; ".join(problems)
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    agent = create_agent(
+        str(agent_d.get("name") or ""),
+        instructions=str(agent_d.get("instructions") or ""),
+        connection_id=p.connection_id,
+        schema_scope=str(agent_d.get("schema_scope") or ""),
+        doc_ids=list(agent_d.get("doc_ids") or []), owner=p.org_id)
+    chain_d["agent_id"] = agent.id
+    ok, out = save_automation_payload(chain_d)
+    if not ok:
+        delete_agent(agent.id)          # all or nothing — no agent without its schedule
+        msg = f"chain not saved ({out}); agent creation rolled back"
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    outcome = {"agent_id": agent.id, "agent_name": agent.name,
+               "automation_id": out["automation_id"], "automation_name": out["name"],
+               "first_run": out.get("first_run", "")}
+    _record_outcome(p.id, "executed",
+                    f"agent {agent.id} created; automation {out['automation_id']} saved", outcome)
+    return _Result("executed", True, p.action_id,
+                   message=(f"agent '{agent.name}' created as {agent.id}; automation "
+                            f"'{out['name']}' saved as {out['automation_id']}, running as it"),
+                   outcome=outcome, detail=outcome)
 
 
 def _accept_automation_state(p: StagedProposal, *, actor: str):
@@ -713,7 +853,7 @@ def _accept_automation_state(p: StagedProposal, *, actor: str):
     _record_outcome(p.id, "executed", f"automation {out['automation_id']} {verb}", out)
     return _Result("executed", True, p.action_id,
                    message=f"automation '{out['name']}' {verb}",
-                   detail=out)
+                   outcome=out, detail=out)
 
 
 def _accept_agent_grant(p: StagedProposal, *, actor: str):
@@ -745,14 +885,14 @@ def _accept_agent_grant(p: StagedProposal, *, actor: str):
         return _Result("executed", True, p.action_id,
                        message=f"agent '{agent.name}' already holds the {action_id} "
                                f"grant — nothing changed",
-                       detail=out)
+                       outcome=out, detail=out)
     update_agent(agent_id, tool_grants=[*agent.tool_grants, action_id])
     out = {"agent_id": agent.id, "action_id": action_id, "already_granted": False}
     _record_outcome(p.id, "executed", f"agent {agent.id} granted {action_id}", out)
     return _Result("executed", True, p.action_id,
                    message=f"agent '{agent.name}' may now PROPOSE {action_id} — "
                            f"proposals still land in this inbox for a human",
-                   detail=out)
+                   outcome=out, detail=out)
 
 
 def _owner_of(source: str) -> tuple[str, str]:

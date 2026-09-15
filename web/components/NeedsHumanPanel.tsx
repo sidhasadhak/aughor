@@ -7,18 +7,19 @@
  * through a native surface removes the row here because there is one store per
  * source and no copies.
  *
- * Inbox rows and agent alerts resolve inline (accept/reject and acknowledge are
- * each one POST with no follow-up stream); paused runs and automation approvals
+ * Proposal-backed rows render the ONE approval card (SP-9) and resolve through it;
+ * agent alerts acknowledge inline; paused runs and automation approvals also
  * deep-link to their native surfaces, where resume/inspection already work.
  */
 import { useCallback, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { ProposalCardById } from "@/components/ProposalCard";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { AgentAlertRulesPanel } from "@/components/agentops/AgentAlertRulesPanel";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import {
-  acceptProposal, acknowledgeAgentAlert, getNeedsHuman, rejectProposal,
+  acknowledgeAgentAlert, getNeedsHuman,
   type NeedsHuman, type NeedsHumanRow,
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
@@ -84,19 +85,6 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
     }
   };
 
-  const resolveInbox = async (row: NeedsHumanRow, action: "accept" | "reject") => {
-    setBusy(row.id);
-    try {
-      if (action === "accept") await acceptProposal(row.id, "control-room");
-      else await rejectProposal(row.id, "control-room");
-      load();
-    } catch (e) {
-      setError(String((e as Error)?.message || e));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   if (error && !data) {
     return <div className="aug-fs-sm" style={{ padding: 24, color: "var(--red4)" }}>{error}</div>;
   }
@@ -145,9 +133,16 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {data.rows.map(row => {
             const chip = chipFor(row);
+            // SP-9 — a row that IS a staged proposal renders the full approval card:
+            // what either click creates, its open choices as fields, never a bare
+            // Accept beside a one-line title (the measured break: "Accept and Reject
+            // with no view of what either creates"). Resolving through the card hits
+            // the same resolve-once inbox; `load()` then drops the row here.
+            const proposalId = row.source === "kinetic_inbox" ? row.id
+              : row.source === "automation_approval" ? (row.resolve?.proposal_id ?? "") : "";
             return (
               <div key={`${row.source}:${row.id}`}
-                style={{ display: "flex", alignItems: "center", gap: 12,
+                style={{ display: "flex", alignItems: "flex-start", gap: 12,
                   background: "var(--bg-2)", border: "1px solid var(--b1)",
                   borderRadius: "var(--r3)", padding: "10px 14px" }}>
                 <StatusChip hue={chip.hue} strength="soft">{chip.label}</StatusChip>
@@ -159,32 +154,16 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                     {row.since_basis === "started_at" && " (since start — pause event aged out)"}
                     {row.connection_id ? ` · ${row.connection_id}` : ""}
                   </div>
+                  {proposalId && (
+                    <div style={{ marginTop: 8 }}>
+                      <ProposalCardById proposalId={proposalId} actor="control-room"
+                        onResolved={load} />
+                    </div>
+                  )}
                 </div>
-                {row.source === "kinetic_inbox" && (
-                  <>
-                    <Button variant="secondary" size="xs" disabled={busy === row.id}
-                      onClick={() => resolveInbox(row, "accept")}>Accept</Button>
-                    <Button variant="ghost" size="xs" disabled={busy === row.id}
-                      onClick={() => resolveInbox(row, "reject")}>Reject</Button>
-                  </>
-                )}
                 {row.source === "paused_run" && onOpenInvestigation && (
                   <Button variant="secondary" size="xs"
                     onClick={() => onOpenInvestigation(row.id)}>Open & resume</Button>
-                )}
-                {/* DS-8 — an automation's approval is resolved the same way an agent's is,
-                    because it IS the same proposal in the same resolve-once inbox. Before
-                    the pause was durable this row could only offer "Open automation", which
-                    led to a panel with nothing on it that could approve anything: the row
-                    named a decision and then had no door for it. Accepting here resumes the
-                    parked chain from its checkpoint. */}
-                {row.source === "automation_approval" && row.resolve?.proposal_id && (
-                  <>
-                    <Button variant="secondary" size="xs" disabled={busy === row.id}
-                      onClick={() => resolveInbox(row, "accept")}>Accept</Button>
-                    <Button variant="ghost" size="xs" disabled={busy === row.id}
-                      onClick={() => resolveInbox(row, "reject")}>Reject</Button>
-                  </>
                 )}
                 {row.source === "automation_approval" && onOpenAutomations && (
                   <Button variant="ghost" size="xs"

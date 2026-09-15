@@ -653,7 +653,7 @@ def converse_tools(connection_id: str, *, emit: Optional[Emit] = None,
                                         session_id=session_id, canvas_id=canvas_id),
         ),
     ] + action_tools(connection_id, agent=agent) + platform_tools(connection_id, session_id=session_id) + spotlight_roster(
-        connection_id, session_id=session_id) + delegation_tools(
+        connection_id, session_id=session_id, emit=emit) + delegation_tools(
         connection_id, emit=emit, session_id=session_id)
 
 

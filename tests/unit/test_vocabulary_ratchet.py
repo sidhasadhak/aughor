@@ -470,7 +470,9 @@ BASELINE: dict[str, int] = {
     # 2026-09-06: 348 → 347. SP-1/SP-3 leftovers: the inbox's four accept bodies now
     # share ONE lazy import of the executor's result type (`_executor_result`), so
     # two new accept kinds arrived while the count still fell by one.
-    "kinetic": 328,   # lowered 2026-09-12 with ON-4's withdrawal door: its HTTP suite, the panel's
+    "kinetic": 319,   # lowered 2026-09-15: SP-9 hoisted the route prefix onto the router
+                      # (spelled once, wire identical) — the ratchet's own law, applied.
+                      # previously 328, lowered 2026-09-12 with ON-4's withdrawal door: its HTTP suite, the panel's
                       # test and the object client are exempt above (frozen route, real component name),
                       # so the counted population shrank and the baseline follows it down.
                       # 2026-09-13: 333 → 328. Instrument's Actions layer dropped the panel's direct

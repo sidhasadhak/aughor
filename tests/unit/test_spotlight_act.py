@@ -289,3 +289,176 @@ def test_act_roster_names_and_conversation_wiring():
     got = {t.name for t in converse_tools("c1")}
     assert {"set_preference", "draft_agent", "draft_automation",
             "pause_or_resume_automation", "propose_agent_grant"} <= got
+
+
+# ── SP-8 — the chain runs as a named agent; the bundle stages ONE proposal ─────────
+
+def _slack_draft(channel=""):
+    """An authoring-shaped chain with a slack step — `channel=""` is SP-7's open choice."""
+    return {
+        "conn_id": "conn-x", "name": "morning anomalies",
+        "conditions": [{"kind": "schedule", "config": {"cron": "0 9 * * *"}}],
+        "effects": [{"kind": "slack_post",
+                     "config": {"bot_id": "bot-1", "channel": channel,
+                                "message": "anomalies"}}],
+    }
+
+
+def test_automation_draft_runs_as_a_named_existing_agent(monkeypatch):
+    from aughor.automations.store import get_automation
+    from aughor.custom_agents.store import create_agent
+    agent = create_agent("runsas-anomaly-watch", instructions="watch", connection_id="conn-x")
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops"), dry_run={"ok": True}))
+
+    out = act.draft_automation("conn-x", {"outcome": "anomalies every morning",
+                                          "run_as_agent": "runsas-anomaly-watch"})
+    assert out["staged"] is True
+    assert "runs as agent" in out["summary"]
+    p = get_proposal(out["proposal_id"])
+    assert p.params["agent_id"] == agent.id
+    assert p.detail["runs_as"] == "runsas-anomaly-watch"
+
+    result, _ = accept_proposal(p.id, actor="tester")
+    assert result.ok, result.message
+    saved = get_automation(result.detail["automation_id"])
+    assert saved.agent_id == agent.id           # VA-9b attribution reads this field
+
+
+def test_run_as_agent_refuses_unknown_and_foreign(monkeypatch):
+    from aughor.custom_agents.store import create_agent
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops")))
+
+    out = act.draft_automation("conn-x", {"outcome": "x", "run_as_agent": "nobody-here"})
+    assert out["staged"] is False and "no agent" in out["summary"]
+    # An unknown agent is a refusal to STAGE, never an invitation to invent one.
+    assert "draft_agent" in out["summary"]
+
+    create_agent("runsas-foreign", instructions="elsewhere", connection_id="conn-OTHER")
+    out = act.draft_automation("conn-x", {"outcome": "x", "run_as_agent": "runsas-foreign"})
+    assert out["staged"] is False and "conn-OTHER" in out["summary"]
+
+
+def test_bundle_stages_one_proposal_and_accept_creates_both(monkeypatch):
+    from aughor.actions.inbox import list_proposals
+    from aughor.automations.store import get_automation
+    from aughor.custom_agents.store import get_agent
+    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops"), dry_run={"ok": True},
+                            first_run="2026-09-16T09:00:00Z"))
+    before = {p.id for p in list_proposals("conn-x")}
+
+    out = act.draft_agent("conn-x", {
+        "name": "bundle-watch", "instructions": "Deliver anomalies.",
+        "schedule": "every morning at 9am to #ops"})
+    assert out["staged"] is True and "all or nothing" in out["summary"]
+    staged_now = [p for p in list_proposals("conn-x") if p.id not in before]
+    assert len(staged_now) == 1                 # ONE proposal holding both records
+    p = staged_now[0]
+    assert p.kind == "agent_bundle"
+    assert p.detail["first_run"] == "2026-09-16T09:00:00Z"
+    assert p.detail["runs_as"] == "bundle-watch"
+    assert "agent_id" not in p.params["automation"]   # the id is the accept's to mint
+
+    result, _ = accept_proposal(p.id, actor="tester")
+    assert result.ok and result.status == "executed"
+    agent = get_agent(result.detail["agent_id"])
+    saved = get_automation(result.detail["automation_id"])
+    assert agent is not None and saved is not None
+    assert saved.agent_id == agent.id           # married: the chain runs as the new agent
+
+
+def test_bundle_accept_rolls_back_the_agent_when_the_chain_save_fails(monkeypatch):
+    from aughor.custom_agents.store import list_agents
+    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops")))
+    out = act.draft_agent("conn-x", {"name": "bundle-halfway",
+                                     "instructions": "Never half-born.",
+                                     "schedule": "every morning"})
+    assert out["staged"] is True
+    before = {a.id for a in list_agents()}
+
+    monkeypatch.setattr("aughor.runners.automation_save._SAVE",
+                        lambda params: (False, "the store said no"))
+    result, _ = accept_proposal(out["proposal_id"], actor="tester")
+    assert not result.ok and result.status == "dispatch_error"
+    assert "rolled back" in result.message
+    assert {a.id for a in list_agents()} == before      # all or nothing, honoured
+    assert get_proposal(out["proposal_id"]).status == "failed"
+
+
+def test_bundle_refusal_stages_nothing_at_all(monkeypatch):
+    from aughor.actions.inbox import list_proposals
+    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            verdict="unbuildable", reason="no matching trigger"))
+    before = {p.id for p in list_proposals("conn-x")}
+    out = act.draft_agent("conn-x", {"name": "bundle-refused",
+                                     "instructions": "One ask, one answer.",
+                                     "schedule": "teleport the warehouse"})
+    assert out["staged"] is False
+    assert "half of it" in out["summary"]       # the agent was not staged beside a refusal
+    assert {p.id for p in list_proposals("conn-x")} == before
+
+
+# ── SP-9 — the approver fills an OPEN choice at accept, and only an open choice ────
+
+def test_bundle_open_choice_blocks_accept_until_filled(monkeypatch):
+    import aughor.automations.store  # noqa: F401 — registers the save + holes doors
+    from aughor.automations.store import get_automation
+    monkeypatch.setattr("aughor.custom_agents.store.validate_agent_draft", lambda **kw: [])
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel=""),
+                            to_fill=["Action 1 needs a Slack channel — the request names no Slack channel"]))
+    out = act.draft_agent("conn-x", {"name": "bundle-open-choice",
+                                     "instructions": "Waits for its channel.",
+                                     "schedule": "every morning, somewhere"})
+    assert out["staged"] is True
+    p = get_proposal(out["proposal_id"])
+    assert p.detail["open_choices"] == [{"action": 1, "key": "channel"}]
+
+    refused, _ = accept_proposal(p.id, actor="tester")
+    assert refused.status == "invalid_params"
+    assert get_proposal(p.id).pending            # the refusal spent nothing
+
+    result, _ = accept_proposal(p.id, actor="tester", fills={"1.channel": "#ops"})
+    assert result.ok, result.message
+    saved = get_automation(result.detail["automation_id"])
+    assert saved.effects[0].config["channel"] == "#ops"
+    # the record shows what was ARMED — the fill is part of the accept
+    assert get_proposal(p.id).params["automation"]["effects"][0]["config"]["channel"] == "#ops"
+
+
+def test_accept_fill_may_only_close_an_open_choice(monkeypatch):
+    import aughor.automations.store  # noqa: F401 — registers the holes door
+    p = stage_proposal(StagedProposal(
+        kind="automation_draft", connection_id="conn-x", action_id="automation:fills",
+        params=_slack_draft(channel="")))
+
+    result, _ = accept_proposal(p.id, actor="tester", fills={"1.message": "edited!"})
+    assert result.status == "invalid_params" and "not an open choice" in result.message
+    assert get_proposal(p.id).pending
+
+    result, _ = accept_proposal(p.id, actor="tester", fills={"nonsense": "#x"})
+    assert result.status == "invalid_params" and "unreadable fill" in result.message
+    assert get_proposal(p.id).pending
+
+
+def test_hole_sentence_round_trips_through_the_shared_parser():
+    """The writer (`fill_required_holes`) and the reader (`parse_hole`) are one format —
+    pinned as a ROUND TRIP so a rewording on either end fails here, not silently in a
+    card that stops offering its fields."""
+    from aughor.automations.models import fill_required_holes
+    from aughor.runners.automation_save import parse_hole
+    _, holes = fill_required_holes([{"kind": "slack_post", "config": {"bot_id": "b"}}])
+    assert holes and parse_hole(holes[0]) == (1, "channel")
+    assert parse_hole("Anything else at all") is None

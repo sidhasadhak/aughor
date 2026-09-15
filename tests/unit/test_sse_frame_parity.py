@@ -33,6 +33,15 @@ from pathlib import Path
 
 _ROOT = Path(__file__).resolve().parents[2]
 _BACKEND = _ROOT / "aughor" / "routers" / "investigations.py"
+#: The tool layer emits too (SP-9). The converse relay's `_forward` claims every frame it
+#: carries "was declared literally at an emit call the parser already read" — these files
+#: are where a TOOL's own frames are declared, so the parser must actually read them or
+#: the claim quietly stops being checked. `converse_tools` re-emits the core's names
+#: (sql/columns/rows/…); `spotlight_act` mints `proposal_staged`, the approval card's cue.
+_TOOL_SOURCES = [
+    _ROOT / "aughor" / "agent" / "converse_tools.py",
+    _ROOT / "aughor" / "agent" / "spotlight_act.py",
+]
 # CA-1 retired the 107-case reducer; the consumer side is now three artifacts.
 # `chatTurn.ts` PROJECTS a frame into the turn, `uiMessageAdapter.ts` routes the
 # prose frames to text channels, and `aughorUIDataTypes.ts` declares the frames
@@ -71,6 +80,8 @@ def _emitted_frames() -> set[str]:
     frames = set(re.findall(rf'{_EMIT}\(\s*"({_NAME})"', src))
     for var in _dynamic_vars(src):
         frames |= _DYNAMIC_SITES[var]        # KeyError is impossible: the test below gates it
+    for tool_src in _TOOL_SOURCES:
+        frames |= set(re.findall(rf'{_EMIT}\(\s*"({_NAME})"', tool_src.read_text()))
     return frames
 
 
@@ -118,6 +129,8 @@ def test_no_unreadable_emission_sites():
     unguarded seam, which is worse than no guard at all.
     """
     undeclared = _dynamic_vars(_BACKEND.read_text()) - set(_DYNAMIC_SITES)
+    for tool_src in _TOOL_SOURCES:
+        undeclared |= _dynamic_vars(tool_src.read_text()) - set(_DYNAMIC_SITES)
     assert not undeclared, (
         f"_sse() called with undeclared variable(s) {sorted(undeclared)}. Register the frame "
         "names in _DYNAMIC_SITES, or pass a string literal so the contract stays readable."
