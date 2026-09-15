@@ -3031,11 +3031,39 @@ approval rows. **Needs:** SP-7, SP-8.
 > (`APIRouter(prefix=…)`, wire identical), and the vocabulary baseline fell 328 → 319. Accept surfaces still send
 > their own actor names ("operator", "control-room", "chat") — identity lands in SP-14.
 
-**SP-10 · Show the work.** A turn that acts keeps its steps in view as they happen; the answer carries the proposal
+**SP-10 · Show the work — ✅ BUILT 2026-09-15** (branch `claude/sp-9-overlay-card-declaration`, with the SP-9
+parts-path fix). A turn that acts keeps its steps in view as they happen; the answer carries the proposal
 cards themselves, built from the tool result rather than the prose, with live status; prose renders lists, inline code
 and ids as copyable mono chips, and ids and dates are never tinted as figures; the honest caveats stay, as flags on the
 card. **Receipt:** the user's ⌘K turn before and after, screenshotted — a visible trail, cards with Accept inline, no
 literal backticks, no red hyphens. **Needs:** SP-9 and §6 item 22 (b).
+> **Built 2026-09-15, the same evening the user photographed the overlay** ("The size of the Text the quality of the
+> Text the overall interactive capabilities are absolutely terrible"). Three fixes, three causes:
+> **(1) The card was invisible on the parts path.** Both chat surfaces (ChatPanel and the ⌘K overlay) render through
+> `uiMessageAdapter`'s parts, whose own DECLARED list is a second gate the frame-parity test never read — the
+> `proposal_staged` frame rode the escape hatch as "UNRECOGNISED: PROPOSAL_STAGED" with a projector sitting unused.
+> Declared as a typed progress part; a regression test drives the WHOLE path (frame → adapter → SDK accumulator →
+> projection), because the projector-level test could not fail on this.
+> **(2) Prose.** Decision 22(b) taken as recommended: `AnswerProse` (react-markdown + remark-gfm — a maintained
+> renderer, per the user's library-defaults rule) with a designed, allowlisted surface: lists render, headings become
+> bold paragraphs (one type scale in an answer), inline code and bare ids are copyable mono chips, raw HTML and images
+> never render, tables keep BriefProse's treatment. A multi-paragraph or markdown-structured answer now reads at body
+> size (`readsAsProse`); a one-line conclusion keeps the display headline. The Briefing keeps `BriefProse`; both share
+> ONE inline-figure rule.
+> **(3) Red hyphens.** `renderEmphasis`'s signed-delta rule is bounded on both sides, so `-3f4d` inside a proposal id
+> or a date's `-09` never again reads as a loss — a real `-$2.1M` still does. The chat card also polls while pending,
+> so a proposal resolved on another surface settles on the card in chat (live status).
+> **LIVE RECEIPT, the user's own hands, 2026-09-15 ~21:40:** minutes after the parts fix reached their dev server, the
+> user's bundle `c0e1c05a` was accepted FROM THE ATTENTION CARD (resolved_by control-room): both open choices filled on
+> the card (channel `all-luxexperience`, sender `tl_123`), agent `ua_6d903822bb54` "Anomaly Scout" created AND its
+> chain `7082045c` saved running as it, muted until its first run 2026-09-16T09:00Z — SP-8's bundle and SP-9's
+> fills-at-accept, exercised end to end on the live deployment. Still owed: the first TICK's receipt and spend
+> attributed to the agent (09:00 UTC next morning; the drafted slack_post waits for a person on that run per SP-7 —
+> approving it with "always allow" makes later mornings unattended), and the after-screenshot of a fresh ⌘K turn.
+> **Also closed in passing:** `scripts/dump_openapi._isolate_stores` was missing FIVE stores (AGENTS · AGENT_ALERTS ·
+> EVALS · MATCACHE · ORGS) — latent for the spec dump, but the helper also isolates live drives, and an SP-8 drive
+> wrote two scratch agents into the live `data/agents.db` (found on the live roster; both deleted the same hour, the
+> user's own records untouched). The list now carries the measured union and says to diff, not trust.
 
 **SP-11 · Revise in place.** A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
 Open in editor loads the draft into the real form, and saving there resolves the proposal instead of creating a second
@@ -3064,6 +3092,50 @@ cost; staged → accepted → finished in the form → lapsed, counted weekly; S
 
 **Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
 auto-accepting anything structural · a canvas for agents · a model grading its own drafts.
+
+#### The third movement — the answer vocabulary (adopted 2026-09-15, §6 item 23; AV-0…AV-2 first slice STARTED the same night)
+
+> **Origin.** The user, 2026-09-15, with Microsoft's Adaptive Cards catalog on screen: *"there are so many ways of
+> making the chat interface interactive… Why don't we consider introducing such UI elements? We have been calling
+> ourselves Agentic forever without the very important UI elements that make it so."* The reading this movement takes:
+> Adaptive Cards is not a widget library, it is a CLOSED, versioned vocabulary of parts an agent may emit as its
+> answer, plus a fixed set of typed actions the host executes. The agent composes an interface; the host guarantees
+> what any click can do.
+>
+> **Measured before adopting:** the pipeline is already this shape in embryo — frames → declared typed parts →
+> projectors → organs — and real cards exist (the ProposalCard is an action set with inputs, the clarify and plan
+> gates are choice sets, the run card is a progress bar with a real denominator, answers carry tables and charts, and
+> `web/components/ui/` already holds badge, progress, tooltip, tabs, dialog). The gap in one sentence: every
+> interactive element is hard-wired to ONE backend event, so the model has no vocabulary to compose an answer from
+> parts — it can only write prose and hope.
+>
+> **The refused shape:** an open UI language rendered from model output — an injection surface, a slop machine, and a
+> custody bypass (a button the model defines must never execute anything). Every part is validated against a closed
+> schema, and an action names an EXISTING governed door and nothing else; the model chooses which door to offer,
+> never what a click does.
+
+**AV-0 · The vocabulary, written down.** Closed part kinds v1 — `fact_set` · `status` · `progress` (a real
+denominator, FL-5's law) · `section` (markdown body through AnswerProse) · `action_set` (door-bound) ·
+`proposal_ref` — versioned and validated server-side; a parts list that fails validation is refused WHOLE with
+sentences, never rendered broken. Tables and charts stay the figure's. **Receipt:** the schema and its refusal tests.
+
+**AV-1 · The organs, by promotion.** One `AnswerParts` renderer in chat and the ⌘K overlay: the ProposalCard's labeled
+rows become the general fact set, the status chip becomes the badge, `ui/progress` the bar, sections collapse.
+**Receipt:** every declared kind renders in jsdom; no declared part ever reaches the raw fallback.
+
+**AV-2 · The agent composes.** Converse gains ONE tool, `present` — offered only on a streaming turn (a sync caller
+has nowhere to render), it validates the parts and emits them as an `answer_parts` frame; a refusal returns the
+sentences so the model falls back to prose. Nothing stages, nothing executes — presentation only. The
+propose-chain pattern applied to presentation. **Receipt:** a live turn answering in fact rows and badges where
+tonight's screenshot answered in paragraphs.
+
+**AV-3 · Doors as actions.** An action names an existing door only: v1 ships `follow_up` (the same ask path the
+follow-up chips already ride) and `proposal_ref` (the real approval card, rendered in place). Open-a-screen and
+run-a-trusted-query actions wait on a deep-link registry — recorded open, not drifted into. **Receipt:** a click asks
+the follow-up through the same path a typed question takes.
+
+**AV-M · Measure alongside.** Parts-versus-prose per converse turn, counted from the session log; the baseline is the
+2026-09-15 screenshot's all-prose turn. **Needs:** nothing.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
@@ -6317,15 +6389,23 @@ the browser** · **measure the premise before building.**
     movement) found the drafts real and the path short of an agent that runs. Four clauses, each with the builder's
     recommendation:
     ✅ **(a) Adoption** — SP-7…SP-14, with SP-M alongside. *The user, verbatim: "yes add it to the roadmap and start SP-7".*
-    ⏳ **(b) Chat prose** — a maintained markdown renderer for prose plus structured cards for acts, or cards only.
-    *Recommended: both — FL-3 measured backend markdown as inert in `web/`, and the user prefers library defaults.*
-    Needed by SP-10.
+    ✅ **(b) DECIDED 2026-09-15 (the user) — both, as recommended.** Asked as "markdown renderer plus cards, or cards
+    only" with the recommendation stated; the user answered "Go for SP-10" on it. react-markdown + remark-gfm carry
+    the prose behind an allowlisted, designed surface (§3.11 SP-10); the cards carry the acts.
     ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
     refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
     built on the recommendation; the call stays the user's.
     ⏳ **(d) Graduating `ask.converse`** — its code default is off and the user's deployment runs it through a runtime
     override, so a fresh install cannot draft from chat, ⌘K or Slack. *Recommended: when SP-M's scored set passes, not
     before; meanwhile the Quick chip says that setting things up needs the conversation.* Needed by SP-14.
+
+23. ✅ **DECIDED 2026-09-15 (the user) — the answer vocabulary (§3.11, third movement).** The user, with the Adaptive
+    Cards catalog on screen: *"Why don't we consider introducing such UI elements? We have been calling ourselves
+    Agentic forever without the very important UI elements that make it so."* The builder's assessment (the closed
+    vocabulary + door-bound actions reading, the open-UI-DSL shape refused, waves AV-0…AV-M) was adopted in the user's
+    own sentence: *"Add it to the roadmap and let's start working on it right away."* Rendered in the platform's own
+    design system, never the Teams card aesthetic — the user's standing rule that chat feels like a frontier-LLM
+    conversation points the same way.
 
 ---
 

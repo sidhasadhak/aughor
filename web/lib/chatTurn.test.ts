@@ -452,3 +452,45 @@ describe("FL-5: the wave path narrates its wait (explore_plan + subq_answer)", (
     expect(t.queryMode).toBe("explore");
   });
 });
+
+describe("proposal_staged reaches the turn THROUGH the adapter (SP-9)", () => {
+  // The regression this pins: the projector existed and the frame still rendered
+  // as "unrecognised: proposal_staged" in the overlay, because the adapter's own
+  // DECLARED list is a second gate the frame-parity test does not read. The user's
+  // first live bundle hit exactly that. So this test drives the WHOLE path —
+  // frame → adapter → SDK accumulator → projection — not the projector alone.
+  it("adapts to a typed part, never the unknown-frame escape hatch", async () => {
+    const msg = await messageFrom([
+      { event: "start", data: {} },
+      { event: "proposal_staged", data: {
+        proposal_id: "prop-9", kind: "agent_bundle",
+        connection_id: "conn-x", action_id: "agent:a+automation:b" } },
+      { event: "headline", data: { text: "Staged." } },
+      { event: "done", data: {} },
+    ]);
+    const types = msg.parts.map(p => p.type);
+    expect(types).toContain("data-proposal_staged");
+    expect(types).not.toContain("data-unknown_frame");
+
+    const t = projectTurn("create an agent…", msg);
+    expect(t.stagedProposals).toEqual([{
+      proposalId: "prop-9", kind: "agent_bundle",
+      connectionId: "conn-x", actionId: "agent:a+automation:b",
+    }]);
+  });
+
+  it("answer_parts rides the same whole path, and a re-present REPLACES", async () => {
+    const msg = await messageFrom([
+      { event: "start", data: {} },
+      { event: "answer_parts", data: { version: 1, parts: [
+        { kind: "status", label: "first", tone: "info" }] } },
+      { event: "answer_parts", data: { version: 1, parts: [
+        { kind: "fact_set", facts: [{ label: "a", value: "b" }] }] } },
+      { event: "headline", data: { text: "Done." } },
+      { event: "done", data: {} },
+    ]);
+    expect(msg.parts.map(p => p.type)).not.toContain("data-unknown_frame");
+    const t = projectTurn("q", msg);
+    expect(t.answerParts).toEqual([{ kind: "fact_set", facts: [{ label: "a", value: "b" }] }]);
+  });
+});

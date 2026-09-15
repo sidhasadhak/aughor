@@ -33,12 +33,19 @@ def _isolate_stores() -> None:
     tmp = tempfile.mkdtemp(prefix="aughor-openapi-")
     os.environ.setdefault("AUGHOR_SYSTEM_DB", os.path.join(tmp, "system.db"))
     os.environ.setdefault("AUGHOR_REGISTRY_DB", os.path.join(tmp, "connections.db"))
+    # Kept equal to tests/conftest.py's allowlist BY MEASUREMENT, not by memory: diff
+    # every `resolve_db_path("AUGHOR_*_DB")` in aughor/ against this list before trusting
+    # it. Five stores were missing until 2026-09-15 (AGENTS · AGENT_ALERTS · EVALS ·
+    # MATCACHE · ORGS) — latent for the spec dump itself, but this helper is also the
+    # isolation for LIVE DRIVES, and a drive that created agents wrote them into the
+    # running deployment's data/agents.db.
     for name in (
         "HISTORY", "METASTORE", "WORKSPACES", "AUDIT", "CANVAS", "ARTIFACTS",
         "EVIDENCE", "MONITORS", "ORGSETTINGS", "SAVEDQUERY", "VOLUMES",
         "VERDICTS", "PACK_DELTAS", "PACK_BINDINGS", "CHECKPOINTS",
         "IDEMPOTENCY", "RBAC", "AUTOMATIONS", "KINETIC_INBOX", "KINETIC_GRANTS",
         "LEARNING", "INTAKE", "USER_PREFS",
+        "AGENTS", "AGENT_ALERTS", "EVALS", "MATCACHE", "ORGS",
     ):
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))

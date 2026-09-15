@@ -318,6 +318,10 @@ LOGIC_VERSIONS: dict[str, LogicVersionSpec] = {
                          "the frozen API-response recording the hosted demo serves; the "
                          "route handler refuses a recording newer than it understands "
                          "rather than answering from a format it cannot read."),
+        LogicVersionSpec("answer_vocabulary", "aughor.agent.present_tool", "VOCABULARY_VERSION",
+                         "AV-0's closed part vocabulary — carried on every answer_parts frame "
+                         "so a client can refuse a shape newer than it understands. Nothing is "
+                         "stored under it: an answer's parts live only in the turn."),
         LogicVersionSpec("ontology_explorer", "aughor.ontology.explorer", "EXPLORER_VERSION",
                          "ON-7b's prompt and draft schema — the `@<version>` in every explorer proposal's "
                          "provenance. A bump rebuilds nothing: it names which explorer said a claim, and a "
