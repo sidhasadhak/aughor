@@ -34,9 +34,13 @@ import {
   getTypePaths,
   measureOntology,
   nameLink,
+  previewBacking,
   removeBinding,
   scopeDomain,
   setPartOf,
+  setQueryBacking,
+  withdrawBacking,
+  type BackingPreview,
   type BindingSpec,
   type ConfirmTarget,
   type DeclaredLinkSpec,
@@ -958,6 +962,114 @@ function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding;
   );
 }
 
+/** ON-1 — read this type from a keyed SELECT. The preview says, before anything is written, whether the SELECT reads,
+ *  how many rows it holds, whether its key is unique over them, and which of the type's properties it keeps, drops —
+ *  the compiler reads every property from the backing, so a dropped one would stop resolving — and adds. It is set
+ *  only when its key is unique and it drops nothing; withdrawn, the type reads its table again. */
+function BackingEditor({ detail, busy, onPreview, onSet, onWithdraw }: {
+  detail: ObjectTypeDetail;
+  busy: boolean;
+  onPreview: (sql: string, key: string) => Promise<BackingPreview>;
+  onSet: (sql: string, key: string) => void;
+  onWithdraw: () => void;
+}) {
+  const primary = detail.bindings.find((b) => b.primary);
+  const readsQuery = primary?.reads === "query";
+  const [open, setOpen] = useState(false);
+  const [sql, setSql] = useState(readsQuery ? primary?.sql ?? "" : "");
+  const [key, setKey] = useState(detail.key.property);
+  const [preview, setPreview] = useState<BackingPreview | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [problem, setProblem] = useState("");
+  const look = async () => {
+    setLooking(true);
+    setProblem("");
+    try {
+      setPreview(await onPreview(sql.trim(), key.trim()));
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setLooking(false);
+    }
+  };
+  const blocked = !preview ? "preview it first"
+    : !preview.readable ? preview.note
+    : preview.dropped.length > 0
+      ? `it drops ${preview.dropped.join(", ")} — select ${preview.dropped.length === 1 ? "it" : "them"} too`
+    : preview.unique !== true ? (preview.note || preview.unique_note || "its key is not unique over these rows")
+    : "";
+  const term: React.CSSProperties = { color: "var(--t3)" };
+  if (!open) {
+    return (
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <Button variant="minimal" size="xs" onClick={() => setOpen(true)}>
+          {readsQuery ? "Edit its SELECT" : "Read from a SELECT"}
+        </Button>
+        {readsQuery && (
+          <Button variant="minimal" size="xs" disabled={busy} onClick={onWithdraw}
+            title="Withdraw the SELECT — the type reads its table again, and its other edits stay">
+            Read its table again
+          </Button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: RULE }} data-testid="backing-editor">
+      <p className="aug-fs-xs" style={{ margin: "0 0 6px", color: "var(--t3)", lineHeight: 1.45 }}>
+        Read {detail.display_name} from a keyed SELECT: its rows are the objects, and every property is read from it.
+        Nothing is written until it is set.
+      </p>
+      <textarea className="aug-fs-xs" style={{ ...FIELD, ...MONO, width: "100%", minHeight: 64 }} value={sql}
+        aria-label="Backing SELECT" placeholder="SELECT c.customer_id, c.name, p.lifetime_spend FROM …"
+        onChange={(e) => { setSql(e.target.value); setPreview(null); }} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+        <span className="aug-fs-xs" style={term}>key</span>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={key} aria-label="Backing key"
+          onChange={(e) => { setKey(e.target.value); setPreview(null); }} />
+        <Button variant="outline" size="xs" disabled={looking || !sql.trim() || !key.trim()} onClick={look}>
+          {looking ? "Reading…" : "Preview"}
+        </Button>
+        <Button variant="outline" size="xs" disabled={busy || !!blocked} onClick={() => onSet(sql.trim(), key.trim())}
+          title={blocked || "Read the type from this SELECT"}>
+          {busy ? "Setting…" : "Set as backing"}
+        </Button>
+      </div>
+      {preview && preview.readable && (
+        <dl className="aug-fs-xs" data-testid="backing-preview"
+          style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 12, rowGap: 3, margin: "6px 0 0" }}>
+          <dt style={term}>Now</dt>
+          <dd style={{ margin: 0, ...MONO, overflowWrap: "anywhere" }}>
+            {preview.current.source} · {preview.current.rows == null ? "rows not yet measured" : `${formatCount(preview.current.rows)} rows`}
+          </dd>
+          <dt style={term}>Rows</dt>
+          <dd style={{ margin: 0 }}>
+            {preview.rows == null ? "not counted" : formatCount(preview.rows)} · key{" "}
+            {preview.unique === true ? "unique" : preview.unique === false ? "NOT unique" : "not counted"}
+          </dd>
+          <dt style={term}>Keeps</dt>
+          <dd style={{ margin: 0 }}>{countNoun(preview.kept.length, "property", "properties")}</dd>
+          {preview.dropped.length > 0 && (
+            <>
+              <dt style={term}>Drops</dt>
+              <dd style={{ margin: 0, ...MONO, color: "var(--red5)" }}>{preview.dropped.join(", ")}</dd>
+            </>
+          )}
+          {preview.added.length > 0 && (
+            <>
+              <dt style={term}>Adds</dt>
+              <dd style={{ margin: 0, ...MONO }}>{preview.added.join(", ")}</dd>
+            </>
+          )}
+        </dl>
+      )}
+      {(problem || (preview && blocked)) && (
+        <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--red5)", lineHeight: 1.45 }}>{problem || blocked}</p>
+      )}
+    </div>
+  );
+}
+
 function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
   detail: ObjectTypeDetail;
   connectionId: string;
@@ -1011,6 +1123,12 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
       )}
       <DeclareBinding detail={detail} busy={!!busy} sources={sources} onDeclare={(name, spec) =>
         act(name, () => addBinding(connectionId, detail.id, name, spec, schema))} />
+      {!sources && (
+        <BackingEditor detail={detail} busy={busy === "backing"}
+          onPreview={(sql, key) => previewBacking(connectionId, detail.id, sql, key, schema)}
+          onSet={(sql, key) => act("backing", () => setQueryBacking(connectionId, detail.id, sql, key, schema))}
+          onWithdraw={() => act("backing", () => withdrawBacking(connectionId, detail.id, schema))} />
+      )}
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
   );

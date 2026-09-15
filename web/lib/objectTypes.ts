@@ -553,6 +553,52 @@ export async function setPartOf(
   if (!res.ok) throw new Error(await detailOf(res));
 }
 
+/** What a keyed SELECT would change if it became a type's backing — read, never written: whether it reads, its rows
+ *  and whether its key is unique over them, and the type's properties it keeps, drops (they would stop resolving) and
+ *  adds, beside what the type is read from now. */
+export interface BackingPreview {
+  readable: boolean;
+  note: string;
+  rows: number | null;
+  unique: boolean | null;
+  unique_note: string;
+  columns: string[];
+  kept: string[];
+  dropped: string[];
+  added: string[];
+  current: { reads: "table" | "query"; source: string; key: string; rows: number | null; unique: boolean | null };
+}
+
+export async function previewBacking(
+  connectionId: string, entityId: string, sql: string, primaryKey: string, schemaName?: string,
+): Promise<BackingPreview> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/backing/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, primary_key: primaryKey }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Read a type from a keyed SELECT (ON-1). It binds by a dry run now; its key is counted on the measure door. */
+export async function setQueryBacking(
+  connectionId: string, entityId: string, sql: string, primaryKey: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backing: { kind: "query", sql, primary_key: primaryKey } }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Withdraw the backing a person set: the type is read from its table again, and its other edits stay. */
+export async function withdrawBacking(connectionId: string, entityId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/backing?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 /** ON-7b — where an explorer's proposal stands NOW, read from the served graph; `refused` is what the data said when it
  *  was proposed. */
 export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" | "refused";

@@ -11,10 +11,10 @@
  * column is refused by the server, silently, one round trip later.
  */
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { ObjectTypeDetail } from "@/lib/objectTypes";
+import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
@@ -22,6 +22,9 @@ const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareProcess = vi.fn(async (..._args: unknown[]) => ({ id: "order_fulfilment" }));
 const declareRule = vi.fn(async (..._args: unknown[]) => ({ id: "shipped_orders" }));
 const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ confirmed: [], refused: [] as { why: string }[] }));
+const previewBacking = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined);
+const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
+const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
 /** The type the panel reads — the fixture below, unless a test shows another. */
 const shown: { detail?: ObjectTypeDetail } = {};
 
@@ -34,6 +37,9 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   declareProcess: (...a: unknown[]) => declareProcess(...a),
   declareRule: (...a: unknown[]) => declareRule(...a),
   confirmProposals: (...a: unknown[]) => confirmProposals(...a),
+  previewBacking: (...a: unknown[]) => previewBacking(...a),
+  setQueryBacking: (...a: unknown[]) => setQueryBacking(...a),
+  withdrawBacking: (...a: unknown[]) => withdrawBacking(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -453,5 +459,44 @@ describe("EntityTypePanel — ON-9: a process and a rule declared from the type 
     panel();
     expect(await screen.findByRole("button", { name: "Declare a process" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Declare a rule" })).toBeEnabled();
+  });
+});
+
+describe("EntityTypePanel — reading a type from a keyed SELECT", () => {
+  beforeEach(() => {
+    previewBacking.mockReset();
+    setQueryBacking.mockClear();
+    withdrawBacking.mockClear();
+    shown.detail = undefined;
+  });
+
+  const preview = (over: Partial<BackingPreview>): BackingPreview => ({
+    readable: true, note: "", rows: 3, unique: true, unique_note: "", columns: ["product_id", "name"],
+    kept: ["product_id", "name"], dropped: [], added: [],
+    current: { reads: "table", source: "products", key: "product_id", rows: 3, unique: true }, ...over,
+  });
+
+  it("previews the SELECT and sets it only when its key is unique and it drops nothing", async () => {
+    const user = userEvent.setup();
+    previewBacking.mockResolvedValueOnce(preview({ dropped: ["price"] }))
+      .mockResolvedValueOnce(preview({ added: ["avg_rating"] }));
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={() => {}} />);
+    await user.click(await screen.findByRole("button", { name: "Read from a SELECT" }));
+    await user.type(screen.getByLabelText("Backing SELECT"), "SELECT product_id, name FROM products");
+    await user.clear(screen.getByLabelText("Backing key"));
+    await user.type(screen.getByLabelText("Backing key"), "product_id");
+    expect(screen.getByRole("button", { name: "Set as backing" })).toBeDisabled();       // never before a preview
+
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(within(await screen.findByTestId("backing-preview")).getByText("price")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set as backing" })).toBeDisabled();       // it drops a property
+    expect(screen.getByText("it drops price — select it too")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(within(await screen.findByTestId("backing-preview")).getByText("avg_rating")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Set as backing" }));
+    expect(previewBacking).toHaveBeenLastCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
+    expect(setQueryBacking).toHaveBeenCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
   });
 });

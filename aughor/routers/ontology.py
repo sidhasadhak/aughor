@@ -64,6 +64,12 @@ class _BackingSpec(BaseModel):
     primary_key: str
 
 
+class _BackingPreview(BaseModel):
+    """A keyed SELECT a person considers as a type's backing, previewed before anything is written."""
+    sql: str
+    primary_key: str
+
+
 class _BindingSpec(BaseModel):
     """ON-1b — a further binding: a table or keyed SELECT joined to the object on its key."""
     table: Optional[str] = None
@@ -1275,6 +1281,61 @@ def _absorb_after_bind(connection_id: str, schema: str, parent_id: str, table: O
         return None, f"absorb: {problem}"
     _merge_entity_fields(connection_id, schema, other.id, {"absorbed_into": parent_id})
     return other.id, ""
+
+
+@router.post("/ontology/entities/{entity_id}/backing/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_ontology_backing(
+    entity_id: str,
+    body: _BackingPreview,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """What a keyed SELECT would change if it became this type's backing — read, never written: whether it reads, its
+    rows and whether its key is unique over them, and the type's properties it keeps, drops (they would stop
+    resolving) and adds, beside what the type is read from now. Setting it is `PUT /ontology/entities/{id}` with
+    `backing`; `DELETE /ontology/entities/{id}/backing` reads the table again."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.backing import preview_backing
+    from aughor.ontology.bindings import describe_with
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        return preview_backing(db, entity, body.sql, body.primary_key, describe_with(db))
+    finally:
+        db.close()
+
+
+@router.delete("/ontology/entities/{entity_id}/backing", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_ontology_backing(
+    entity_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw the backing a person set on a type: it is read from its table again, and every other edit on it
+    stays. 404 when the type has no backing a person set. A declared type's backing IS its declaration, so it is
+    refused here — `DELETE /ontology/entities/{id}` withdraws the type."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    if existing is None or "backing" not in existing.fields:
+        raise HTTPException(status_code=404, detail=f"{entity_id} has no backing a person set")
+    if existing.fields.get("declared"):
+        raise HTTPException(status_code=400, detail=(
+            f"{entity_id} is a declared type: its backing is its declaration — DELETE /ontology/entities/{entity_id} "
+            "withdraws the type"))
+    fields = {k: v for k, v in existing.fields.items() if k != "backing"}
+    if fields:
+        binding = {k: v for k, v in existing.binding.items() if k != "backing"}
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields, "binding": binding}))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    return {"withdrawn": "backing", "entity": entity_id, "kept": sorted(fields)}
 
 
 @router.delete("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

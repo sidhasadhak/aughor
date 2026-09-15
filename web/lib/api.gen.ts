@@ -8018,6 +8018,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ontology/entities/{entity_id}/backing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw Ontology Backing
+         * @description Withdraw the backing a person set on a type: it is read from its table again, and every other edit on it
+         *     stays. 404 when the type has no backing a person set. A declared type's backing IS its declaration, so it is
+         *     refused here — `DELETE /ontology/entities/{id}` withdraws the type.
+         */
+        delete: operations["withdraw_ontology_backing_ontology_entities__entity_id__backing_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/backing/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Ontology Backing
+         * @description What a keyed SELECT would change if it became this type's backing — read, never written: whether it reads, its
+         *     rows and whether its key is unique over them, and the type's properties it keeps, drops (they would stop
+         *     resolving) and adds, beside what the type is read from now. Setting it is `PUT /ontology/entities/{id}` with
+         *     `backing`; `DELETE /ontology/entities/{id}/backing` reads the table again.
+         */
+        post: operations["preview_ontology_backing_ontology_entities__entity_id__backing_preview_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ontology/entities/{entity_id}/bindings/{name}": {
         parameters: {
             query?: never;
@@ -13926,6 +13971,16 @@ export interface components {
             question: string;
             /** Reconcile */
             reconcile?: boolean | null;
+        };
+        /**
+         * _BackingPreview
+         * @description A keyed SELECT a person considers as a type's backing, previewed before anything is written.
+         */
+        _BackingPreview: {
+            /** Primary Key */
+            primary_key: string;
+            /** Sql */
+            sql: string;
         };
         /**
          * _BackingSpec
@@ -28689,6 +28744,78 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_ontology_backing_ontology_entities__entity_id__backing_delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_ontology_backing_ontology_entities__entity_id__backing_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_BackingPreview"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
