@@ -40,6 +40,10 @@ _PAYLOAD_FIELDS = {
     # A field on every entry `list_packs` returns. The tool's prose has to name it,
     # because a pack listed with it false is one the model must NOT then try to read.
     "applies_to_this_connection",
+    # SP-8 — draft_automation's own parameter. Its prose has to name it, because the
+    # routing lives in the description: "when the user names an existing agent it
+    # should run as, pass run_as_agent".
+    "run_as_agent",
 }
 
 
