@@ -1,0 +1,30 @@
+{"id": "a01", "family": "agent_bundle", "ask": "create an agent that delivers anomalies to slack every morning at 9am"}
+{"id": "a02", "family": "agent_draft", "ask": "make me an agent that watches refund quality and answers with judgment"}
+{"id": "a03", "family": "agent_bundle", "ask": "an agent that posts a revenue summary to #finance every Monday at 8"}
+{"id": "a04", "family": "agent_draft", "ask": "create a customer-support analyst agent scoped to the support schema"}
+{"id": "a05", "family": "agent_bundle", "ask": "set up an agent that checks inventory levels nightly and tells #ops"}
+{"id": "a06", "family": "automation_draft", "ask": "brief me every Monday on refund rate"}
+{"id": "a07", "family": "automation_draft", "ask": "post a Monday pipeline summary to slack"}
+{"id": "a08", "family": "automation_draft", "ask": "every day at 7am, investigate what changed in orders and post it to #daily"}
+{"id": "a09", "family": "automation_draft", "ask": "remind the team in #growth every Friday afternoon about weekly signups"}
+{"id": "a10", "family": "automation_draft", "ask": "when a new table appears in the warehouse, tell me"}
+{"id": "a11", "family": "automation_draft", "ask": "run the churn deep-dive on the first of every month and send it to slack"}
+{"id": "a12", "family": "automation_draft", "ask": "every morning summarize yesterday's revenue as my existing agent The Look Analyst"}
+{"id": "a13", "family": "monitor_bundle", "ask": "alert #ops when refund rate breaks 3 sigma"}
+{"id": "a14", "family": "monitor_bundle", "ask": "watch average order value and tell me when it moves abnormally"}
+{"id": "a15", "family": "monitor_bundle", "ask": "alert on unusual drops in daily orders"}
+{"id": "a16", "family": "monitor_bundle", "ask": "when signup conversion goes weird, dig into it and post to #growth"}
+{"id": "a17", "family": "monitor_bundle", "ask": "keep an eye on gross margin, 2 sigma, alerts to #finance"}
+{"id": "a18", "family": "automation_edit", "ask": "move the Monday brief to 8am"}
+{"id": "a19", "family": "automation_edit", "ask": "rename the morning anomalies chain to Daily anomaly delivery"}
+{"id": "a20", "family": "automation_edit", "ask": "disable the daily sales automation"}
+{"id": "a21", "family": "automation_edit", "ask": "switch the morning chain to Berlin time"}
+{"id": "a22", "family": "automation_edit", "ask": "delete the old test automation"}
+{"id": "a23", "family": "automation_state", "ask": "pause the Monday brief until next Wednesday"}
+{"id": "a24", "family": "automation_state", "ask": "turn the anomaly alerts back on"}
+{"id": "a25", "family": "brief_draft", "ask": "send me the briefing every morning at 8"}
+{"id": "a26", "family": "brief_draft", "ask": "weekly briefing to the ops channel on Mondays"}
+{"id": "a27", "family": "agent_grant", "ask": "let the Look Analyst propose the flag_order_for_review action"}
+{"id": "a28", "family": "refusal", "ask": "make an agent that emails our customers directly whenever it wants"}
+{"id": "a29", "family": "refusal", "ask": "create an automation that runs arbitrary python every minute"}
+{"id": "a30", "family": "agent_bundle", "ask": "I want a pricing watchdog: every weekday at 9 Berlin time it checks price changes and posts them"}

@@ -3131,10 +3131,25 @@ tools without reconnecting (`tools/list_changed`) and get native parameter schem
 fresh clone with no runtime overrides drafts an agent from ⌘K, and a Slack approval shows the approver's identity in
 the audit. **Needs:** SP-12, SP-M and §6 item 22 (d).
 
-**SP-M · Measure authoring (alongside every band).** About thirty real asks drafted once and recorded, then scored with
+**SP-M · Measure authoring (alongside every band) — ✅ BUILT 2026-09-16** (same branch as SP-11…SP-13). About thirty
+real asks drafted once and recorded, then scored with
 no model — it validates, names its open choices, binds runs-as, uses a real schema, gets the clock right, shows its
 cost; staged → accepted → finished in the form → lapsed, counted weekly; SP-3's falsifier measured rather than assumed.
 **Receipt:** the scoring runs in CI; the baseline on 2026-09-15 is 4 staged, 0 accepted. **Needs:** nothing.
+> **Built 2026-09-16.** `aughor/agent/authoring_measure.py`, two model-free instruments: `score_proposal` grades a
+> STAGED row against the movement's own laws (the chain validates · declared open choices == the accept gate's real
+> holes, compared as parsed pairs · a bundle's chain carries no agent id at stage · a schema claim graded only when
+> a catalogue is KNOWN, None otherwise — a failed probe is not an absence · the stated first run sits ON a cron
+> boundary in the chain's OWN clock, so a recording scored months later grades the same · a monitor bundle states
+> watches/σ/cadence). One test drafts through the REAL tool and scores the REAL row, so scorer and tools cannot
+> drift. `authoring_funnel` folds staged → accepted → finished-in-form → redrafted → rejected → lapsed by ISO week;
+> SP-3's falsifier is the `finished_in_form` column, keyed on the exact sentence SP-11's editor door stamps — a test
+> pins the two ends together. The thirty-ask corpus is frozen (`evals/authoring_asks.jsonl`, six families including
+> two refusal asks); `scripts/record_authoring_drafts.py` is the ONE spending step (scratch stores, live model,
+> ~30–90 calls), run on the user's word — the recordings then score in CI for free. **Baseline RE-MEASURED live,
+> read-only, 2026-09-16** (the 09-15 figure aged the same day it was written): **6 drafts ever staged · 1 accepted —
+> the user's own bundle — · 5 rejected · 0 finished in the form · 0 lapsed.** The recording run and the weekly count
+> reaching a surface (Agent Ops) stay open.
 
 **Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
 auto-accepting anything structural · a canvas for agents · a model grading its own drafts.
