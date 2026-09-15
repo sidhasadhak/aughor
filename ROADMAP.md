@@ -4176,7 +4176,9 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   layout defects, each fixed: the canvas centred before its layer had a width, labels sat under the centred card,
   and property sources wrapped a few characters a line. Suite 9,698 passed; of eleven mutations of the new guards
   ten failed a test, and the survivor exposed an alias written for a reason that was not true — removed, and its
-  test re-pinned on the real mechanism. **Still open:** a label can still clip a card on a sideways link in a narrow pane.
+  test re-pinned on the real mechanism. ~~**Still open:** a label can still clip a card on a sideways link in a narrow pane.~~
+  ✅ **Closed 2026-09-15:** a sideways link's label is lifted clear above its two cards (the map draws its links with its
+  own edge, `linkLabelY`); an upright link keeps the middle — checked in the browser on TheLook's map, Order picked.
   ✅ **Closed 2026-09-12:** the answer table, the Source data drawer, the object page's linked lists, its to-one
   links and its action cards read objects by NAME. `POST /objects/titles` resolves a page of keys in ONE query
   over the backing (a table of 200 costs one round trip, not 200); a type named by its own key resolves nothing
@@ -4413,7 +4415,7 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   a key was printed, and a name may live on a static binding; **a frame over the readings** reaches the
   object door. What is deliberately still open, and why, is on each wave: a correction that rewrites a
   source value (a different write), ~~`dedup.merge_entities` as "two tables, one binding", a query backing's
-  UI and diff view~~ (both closed 2026-09-15), a label clipping a card in a narrow pane, and the parked `ask.query_objects` fill —
+  UI and diff view~~ (both closed 2026-09-15), ~~a label clipping a card in a narrow pane~~ (closed 2026-09-15), and the parked `ask.query_objects` fill —
   which is §6 item 15's decision and costs model tokens to re-measure, not an oversight.
 
 **Deliberately not ported (re-read §4.2's law: the grammar, never the codebase):** an

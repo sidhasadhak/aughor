@@ -145,6 +145,8 @@ describe("EntityTypeMap", () => {
     await waitFor(() => expect(handoff.edges.length).toBe(2));
     expect(handoff.nodes.map((n) => n.id).sort()).toEqual(["country", "order", "order_item", "product"]);
     expect(handoff.edges.map((e) => e.id).sort()).toEqual(["oi_order", "oi_product"]);
+    // drawn by the map's own edge, which lifts a sideways link's label clear of the cards it would lie under
+    expect(handoff.edges.every((e) => e.type === "link")).toBe(true);
     expect(handoff.nodes.every((n) => n.draggable && n.type === "entity")).toBe(true);
   });
 
