@@ -3148,8 +3148,20 @@ cost; staged → accepted → finished in the form → lapsed, counted weekly; S
 > two refusal asks); `scripts/record_authoring_drafts.py` is the ONE spending step (scratch stores, live model,
 > ~30–90 calls), run on the user's word — the recordings then score in CI for free. **Baseline RE-MEASURED live,
 > read-only, 2026-09-16** (the 09-15 figure aged the same day it was written): **6 drafts ever staged · 1 accepted —
-> the user's own bundle — · 5 rejected · 0 finished in the form · 0 lapsed.** The recording run and the weekly count
-> reaching a surface (Agent Ops) stay open.
+> the user's own bundle — · 5 rejected · 0 finished in the form · 0 lapsed.** The weekly count
+> reaching a surface (Agent Ops) stays open.
+> **THE RECORDING RAN 2026-09-16** (the user's word, ~60 model calls, scratch stores + live coder;
+> `evals/authoring/recorded.jsonl` committed — scored in CI free forever). **The scored set's verdict:** every draft
+> that STAGED is honest — 10 proposals across 5 kinds, zero check failures (validates 4/4 · open-choices 4/4 ·
+> runs-as 1/1 · clock 1/1 · cost 3/3). The funnel's real leak is UPSTREAM: 21 of 30 asks staged nothing, in three
+> measured classes — (1) honest refusals doing their job (both red-team asks refused; the pricing watchdog checked
+> the warehouse FIRST and found no price data — exemplary); (2) considered proposer refusals on the sparse fixture
+> (the brief/agent families — a fixture with bots and a briefing would move these); (3) ONE real defect, closed the
+> same hour: exact-name resolution refused "Monday brief" against "The Monday brief" WITHOUT naming the candidates,
+> so the model wandered the platform reads until the turn's budget died (a23 ended answerless at 8 steps) — the
+> not-found refusals now list the connection's own automation/agent names, the movement's convention everywhere
+> else. Open questions the numbers raise for SP-14's gate: the agent_bundle family staged 0/5 on the fixture (each a
+> stated refusal, not silence) — re-record on a seeded richer fixture before reading that as the tools' failure.
 
 **Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
 auto-accepting anything structural · a canvas for agents · a model grading its own drafts.

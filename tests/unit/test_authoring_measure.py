@@ -160,3 +160,25 @@ def test_the_live_baseline_of_2026_09_16_is_written_down():
     assert set(baseline) <= {"staged", "accepted", "finished_in_form",
                              "redrafted", "rejected", "lapsed", "pending"}
     assert DRAFT_KINDS  # and the population the numbers were counted over exists
+
+
+def test_recordings_score_in_ci_when_present():
+    """The receipt's letter: the scoring RUNS in CI. A report, not a gate — a check
+    that fails on model behavior would make CI flaky on purpose, so this asserts the
+    scorer produces a verdict for every staged row, never that the model was good.
+    Skips cleanly until the recording run has happened."""
+    import pytest
+    path = Path("evals/authoring/recorded.jsonl")
+    if not path.exists():
+        pytest.skip("no recordings yet — scripts/record_authoring_drafts.py is the spending step")
+    rows = [json.loads(l) for l in path.read_text().splitlines() if l.strip()]
+    assert rows, "an empty recording file is a failed run, not a corpus"
+    scored = 0
+    for r in rows:
+        for p in r.get("staged", []):
+            out = score_proposal(p)
+            assert set(out["checks"]) == {"validates", "open_choices_honest",
+                                          "runs_as_bound", "schema_real",
+                                          "clock_right", "cost_shown"}
+            scored += 1
+    assert scored > 0, "thirty asks staged nothing — the recording measured a broken fixture"

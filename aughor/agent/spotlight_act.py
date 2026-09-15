@@ -331,13 +331,20 @@ def _resolve_automation(connection_id: str, ref: str):
             return None, (f"automation '{clip(a.name, NAME_CLIP)}' belongs to connection "
                           f"{a.conn_id!r}, not this conversation's — switch there to act on it")
         return a, ""
-    matches = [x for x in list_automations(conn_id=connection_id) if x.name == ref]
+    rows = list_automations(conn_id=connection_id)
+    matches = [x for x in rows if x.name == ref]
     if len(matches) == 1:
         return matches[0], ""
     if len(matches) > 1:
         ids = ", ".join(x.id for x in matches)
         return None, f"{len(matches)} automations are named {clip(ref, NAME_CLIP)!r} — use an id: {ids}"
-    return None, f"no automation named {clip(ref, NAME_CLIP)!r} on this connection"
+    # SP-M's first measured drop: "move the Monday brief to 8am" failed against a chain
+    # named "The Monday brief", and a bare not-found gave the model nothing to correct
+    # with — it wandered the platform reads until the turn's budget died. A refusal
+    # NAMES THE KNOWN ONES, the movement's own convention everywhere else.
+    known = ", ".join(sorted(clip(x.name, NAME_CLIP) for x in rows)[:12]) or "(none)"
+    return None, (f"no automation named {clip(ref, NAME_CLIP)!r} on this connection — "
+                  f"the automations here are: {known}. Use the exact name or an id.")
 
 
 def _resolve_agent(connection_id: str, ref: str):
@@ -360,8 +367,10 @@ def _resolve_agent(connection_id: str, ref: str):
                           f"use an id: {ids}")
         a = matches[0] if matches else None
     if a is None:
-        return None, (f"no agent {clip(ref, NAME_CLIP)!r} exists — to create one WITH "
-                      f"this schedule, use draft_agent with its schedule field")
+        known = ", ".join(sorted(clip(x.name, NAME_CLIP) for x in list_agents())[:12]) or "(none)"
+        return None, (f"no agent {clip(ref, NAME_CLIP)!r} exists — the agents here are: "
+                      f"{known}. To create one WITH this schedule, use draft_agent "
+                      f"with its schedule field")
     if (a.connection_id or "") not in ("", connection_id):
         return None, (f"agent '{clip(a.name, NAME_CLIP)}' belongs to connection "
                       f"{a.connection_id!r}, not this conversation's — switch there "

@@ -652,3 +652,14 @@ def test_brief_draft_names_known_triggers_and_accept_saves(tmp_path, monkeypatch
     from aughor.briefing.store import get_subscription
     sub = get_subscription(result.detail["subscription_id"])
     assert sub is not None and sub.send_cron == "0 8 * * *" and sub.trigger_id == "trig-slack"
+
+
+def test_a_not_found_refusal_names_the_known_automations():
+    """SP-M's first measured drop, closed: 'Monday brief' against 'The Monday brief'
+    left the model nothing to correct with. The refusal now lists the connection's
+    own names — one retry instead of a wandered-out budget."""
+    _seed_monday_brief()
+    out = act.edit_automation("conn-x", {"automation": "Monday brief",
+                                         "changes": {"cron": "0 8 * * 1"}})
+    assert out["staged"] is False
+    assert "The Monday brief" in out["summary"]

@@ -28,6 +28,43 @@ sys.path.insert(0, str(Path(__file__).parent))
 from dump_openapi import _isolate_stores  # noqa: E402
 
 
+def _seed(connection_id: str) -> None:
+    """The records the corpus's edit/state/brief asks refer to — a scratch deployment
+    with nothing on it would turn every one of them into a not-found refusal, which
+    measures the fixture, not the drafting."""
+    from aughor.automations.models import Automation, Condition, Effect
+    from aughor.automations.store import upsert_automation
+    from aughor.custom_agents.store import create_agent
+    from aughor.notifications.models import ActionTrigger
+    from aughor.notifications.store import save_trigger
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+
+    save_trigger(ActionTrigger(id="trig-slack", name="Ops Slack", type="slack",
+                               url="https://hooks.example/ops", channel="#ops"))
+    for name, sql in (("refund_rate", "SUM(refunded)/COUNT(*)"),
+                      ("aov", "AVG(order_total)"),
+                      ("gross_margin", "SUM(margin)/SUM(revenue)"),
+                      ("signup_conversion", "SUM(signed_up)/COUNT(*)"),
+                      ("daily_orders", "COUNT(*)")):
+        save_metric(MetricDefinition(name=name, label=name.replace("_", " "),
+                                     sql=sql, connection=connection_id))
+    for name, cron, effect in (
+            ("The Monday brief", "0 9 * * 1",
+             Effect(kind="notify", config={"trigger_id": "trig-slack"})),
+            ("morning anomalies", "0 9 * * *",
+             Effect(kind="notify", config={"trigger_id": "trig-slack"})),
+            ("daily sales", "0 7 * * *",
+             Effect(kind="notify", config={"trigger_id": "trig-slack"})),
+            ("old test automation", "0 3 * * *",
+             Effect(kind="notify", config={"trigger_id": "trig-slack"}))):
+        upsert_automation(Automation(
+            conn_id=connection_id, name=name,
+            conditions=[Condition(kind="schedule", config={"cron": cron})],
+            effects=[effect]))
+    create_agent("The Look Analyst", instructions="Analyse theLook with judgment.",
+                 connection_id=connection_id)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--yes-spend", action="store_true",
@@ -41,6 +78,15 @@ def main() -> int:
         return 2
 
     _isolate_stores()
+    # The live model's credentials ride the project .env (the API loads it the same
+    # way at import). Loaded AFTER isolation: load_dotenv never overrides an existing
+    # variable, so every scratch store path set above stays scratch.
+    try:
+        from dotenv import load_dotenv
+        load_dotenv(Path(__file__).parent.parent / ".env")
+    except ImportError:
+        pass
+    _seed(args.connection)
     from aughor.actions.inbox import list_proposals
     from aughor.agent.converse_tools import converse
 
