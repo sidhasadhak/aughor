@@ -19,13 +19,20 @@ import yaml
 from aughor.db.connection import open_connection
 from aughor.ontology import drafts as DR
 from aughor.ontology import overrides as OV
-from aughor.ontology.explorer import BusinessDraft, compare_groupings, entity_key, source_catalogue
+from aughor.ontology.explorer import (
+    BusinessDraft,
+    compare_groupings,
+    entity_key,
+    process_key,
+    rule_key,
+    source_catalogue,
+)
 from aughor.ontology.models import OntologyGraph
 from tests.unit.test_object_bindings import GRAPH, ints, seed
 
 CONN = "explorer-door-t"
 PARAMS = {"connection_id": CONN, "schema_name": "ecommerce"}
-PROVENANCE = "model:faux-coder@1"
+PROVENANCE = "model:faux-coder@2"
 
 CATEGORY_SQL = "SELECT DISTINCT category FROM products"
 BUYER_SQL = "SELECT customer_id, order_id FROM orders"
@@ -59,7 +66,31 @@ DRAFT = {
         {"from_entity": "Order", "to_entity": "Customer", "verb": "placed_by", "from_column": "customer_id",
          "to_column": "customer_id", "reason": "the builder already joined these"},
     ],
+    "processes": [
+        {"id": "OrderFulfilment", "entity": "Order", "display_name": "Order fulfilment", "reason": "orders ship, then arrive",
+         "stages": [{"name": "placed", "timestamp": "order_date"}, {"name": "shipped", "timestamp": "shipped_at"},
+                    {"name": "delivered", "timestamp": "delivered_at"}]},
+        # a stage no order ever reaches: the data refuses it
+        {"id": "order_returns", "entity": "Order", "reason": "a mistake: no order is returned",
+         "stages": [{"name": "placed", "timestamp": "order_date"},
+                    {"name": "returned", "state": ["returned"], "property": "status"}]},
+    ],
+    "rules": [
+        {"id": "fulfilled_orders", "entity": "Order", "kind": "condition", "reason": "what finance counts",
+         "conditions": [{"path": "status", "op": "not_in", "values": ["cancelled", "refunded"]}]},
+        {"id": "eu_customers", "entity": "Customer", "kind": "value_set", "property": "country",
+         "values": ["DE", "FR", "GB"], "reason": "the EU markets"},
+        # two spellings the data does not hold, and a condition that excludes nothing
+        {"id": "dach", "entity": "Customer", "kind": "value_set", "property": "country", "values": ["DE", "AT", "CH"],
+         "reason": "the DACH markets"},
+        {"id": "any_order", "entity": "Order", "kind": "condition", "reason": "every order",
+         "conditions": [{"path": "order_date", "op": "not_null"}]},
+    ],
 }
+FULFILMENT = process_key("Order", DRAFT["processes"][0]["stages"])
+RETURNS = process_key("Order", DRAFT["processes"][1]["stages"])
+RULES = {r["id"]: rule_key(r["entity"], r["kind"], r.get("property", ""), r.get("values"), r.get("conditions"))
+         for r in DRAFT["rules"]}
 LINES, PAYMENT, REFUNDS, EVENTS = "part:Order:order_items", "part:Order:payments", "part:Order:refunds", "part:Order:order_events"
 REVIEW_LINK = "link:Order.order_id=Review.order_id"
 NEVER_MEET = "link:Product.product_id=Review.customer_id"
@@ -109,11 +140,12 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
     (call,) = faux_llm.calls()
     assert "SOURCE CATALOGUE" in call.user and "order_items.order_id → orders.order_id" in call.user
     assert "PARTS  (parts)" in call.user and call.response_model is BusinessDraft
+    assert "PROCESSES  (processes)" in call.user and "RULES  (rules)" in call.user
 
     run = body["run"]
-    assert (run["written"], run["refused"], run["already"], run["withdrawn"]) == (6, 4, 1, 0)
+    assert (run["written"], run["refused"], run["already"], run["withdrawn"]) == (9, 7, 1, 0)
     assert (run["provenance"], run["backend"], run["fallback"]) == (PROVENANCE, "faux", False)
-    assert run["said"] == {"entities": 2, "parts": 6, "links": 3}
+    assert run["said"] == {"entities": 2, "parts": 6, "links": 3, "processes": 2, "rules": 4}
     # the run's model call is recorded under the run's own trace — the session log drops an event with no trace, so an
     # untraced door spends where no Spend or Activity view can see it
     from aughor.obs.session_log import recover_session
@@ -168,8 +200,32 @@ def test_a_draft_is_measured_before_it_lands_and_what_survives_is_read_at_once(d
         conn.close()
     assert int(compiled["rows"][0][0]) == expected
 
+    # ON-9 — a process and the rules the data holds land as proposals; what it refutes is refused with the reason
+    assert {k: outcome[k]["outcome"] for k in (FULFILMENT, RETURNS, *RULES.values())} == {
+        FULFILMENT: "written", RETURNS: "refused", RULES["fulfilled_orders"]: "written", RULES["eu_customers"]: "written",
+        RULES["dach"]: "refused", RULES["any_order"]: "refused"}
+    assert outcome[RETURNS]["note"] and "never observed: AT, CH" in outcome[RULES["dach"]]["note"]
+    assert "excludes nothing" in outcome[RULES["any_order"]]["note"]
+    declared = client.get("/ontology/processes", params=PARAMS).json()
+    assert [(p["id"], p["origin"], p["provenance"], p["verified"]) for p in declared["processes"]] == [
+        ("order_fulfilment", "model", PROVENANCE, True)]
+    assert [(r["id"], r["origin"], r["provenance"]) for r in declared["rules"]] == [
+        ("eu_customers", "model", PROVENANCE), ("fulfilled_orders", "model", PROVENANCE)]
+    fulfilled = client.post("/objects/query", params=PARAMS, json={
+        "object_type": "order", "segment": "fulfilled_orders", "measures": [{"agg": "count"}]}).json()
+    conn = door()
+    try:
+        (kept,) = ints(conn, "SELECT COUNT(*) FROM orders WHERE status NOT IN ('cancelled', 'refunded')")
+    finally:
+        conn.close()
+    assert (fulfilled["path"], int(fulfilled["rows"][0][0])) == ("compiled", kept)
+    from aughor.routers.ontology import served_ontology_graph
+    catalogue = source_catalogue(served_ontology_graph(CONN, "ecommerce"))   # the next run reads what this one declared
+    assert "process order_fulfilment on Order: placed → shipped → delivered (proposed by a model" in catalogue
+    assert "rule fulfilled_orders on Order (condition, proposed by a model" in catalogue
+
     view = client.get("/ontology/draft", params=PARAMS).json()
-    assert view["counts"] == {"proposed": 6, "confirmed": 0, "released": 0, "withdrawn": 0, "refused": 4}
+    assert view["counts"] == {"proposed": 9, "confirmed": 0, "released": 0, "withdrawn": 0, "refused": 7}
     assert view["grouping"]["Order"] == ["order_events", "order_items", "orders", "payments", "refunds"]
     assert "OrderItem" not in view["grouping"] and [r["id"] for r in view["runs"]] == [run["id"]]
 
@@ -179,20 +235,23 @@ def test_a_second_run_writes_nothing_twice_and_a_withdrawn_proposal_is_not_propo
     explore(client)
     before = tree()
     again = explore(client)["run"]
-    assert (again["written"], again["already"], again["refused"]) == (0, 7, 4)
+    assert (again["written"], again["already"], again["refused"]) == (0, 10, 7)
     assert tree() == before                                            # not one override file touched
 
     assert client.delete("/ontology/entities/Category", params=PARAMS).status_code == 200
     assert client.delete("/ontology/entities/Order/bindings/refunds", params=PARAMS).status_code == 200
     assert client.put("/ontology/entities/OrderItem", params=PARAMS, json={"absorbed_into": ""}).status_code == 200
+    assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 200
     tiers = {p["key"]: p["tier"] for p in client.get("/ontology/draft", params=PARAMS).json()["proposals"]}
-    assert (tiers[CATEGORY], tiers[REFUNDS], tiers[LINES], tiers[PAYMENT]) == ("withdrawn", "withdrawn", "released", "proposed")
+    assert (tiers[CATEGORY], tiers[REFUNDS], tiers[LINES], tiers[PAYMENT], tiers[FULFILMENT]) == (
+        "withdrawn", "withdrawn", "released", "proposed", "withdrawn")
 
     third = explore(client)
     outcome = {o["key"]: o for o in third["outcomes"]}
     assert {k: outcome[k]["outcome"] for k in (CATEGORY, REFUNDS, LINES)} == dict.fromkeys((CATEGORY, REFUNDS, LINES),
                                                                                          "withdrawn")
     assert third["run"]["written"] == 0 and "withdrew" in outcome[CATEGORY]["note"] and "released" in outcome[LINES]["note"]
+    assert outcome[FULFILMENT]["outcome"] == "withdrawn"                # a withdrawn process is not proposed again
     assert "category" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
     order = client.get("/object-types/order", params=PARAMS).json()
     assert "refunds" not in {b["name"] for b in order["bindings"]} and order["parts"] == []
@@ -214,8 +273,10 @@ def test_a_person_confirms_a_proposal_and_it_keeps_who_proposed_it(door, client,
     assert twice["confirmed"] == [] and "bound by a person" in twice["refused"][0]["why"]
 
     everything = client.post("/ontology/draft/confirm", params=PARAMS, json={"all": True}).json()
-    assert len(everything["confirmed"]) == 5 and everything["refused"] == []
-    assert everything["counts"] == {"proposed": 0, "confirmed": 6, "released": 0, "withdrawn": 0, "refused": 4}
+    assert len(everything["confirmed"]) == 8 and everything["refused"] == []
+    assert everything["counts"] == {"proposed": 0, "confirmed": 9, "released": 0, "withdrawn": 0, "refused": 7}
+    declared = client.get("/ontology/processes", params=PARAMS).json()
+    assert {(d["origin"], d["provenance"]) for d in [*declared["processes"], *declared["rules"]]} == {("human", PROVENANCE)}
     category = client.get("/object-types/category", params=PARAMS).json()
     assert (category["origin"], category["provenance"]) == ("human", PROVENANCE)
     link = next(link for link in client.get("/object-types/review", params=PARAMS).json()["links"]

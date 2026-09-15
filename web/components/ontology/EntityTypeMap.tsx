@@ -404,6 +404,8 @@ const TIER_TAG: Record<ProposalTier, string> = {
 function targetOf(p: DraftProposal): ConfirmTarget {
   if (p.kind === "entity") return { kind: "entity", entity: p.target.entity };
   if (p.kind === "link") return { kind: "link", relationship: p.target.relationship };
+  if (p.kind === "process") return { kind: "process", process: p.target.process };
+  if (p.kind === "rule") return { kind: "rule", rule: p.target.rule };
   return { kind: "binding", entity: p.target.entity, binding: p.target.binding };
 }
 
@@ -447,14 +449,15 @@ function ExplorerDraft({ draft, explore, confirm, onOpen }: {
         </p>
       ) : (
         <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
-          An explorer reads these tables and proposes the business: which tables are one entity, and the links between
-          them. One model call. Every claim is measured before it lands and stays proposed until you confirm it.
+          An explorer reads these tables and proposes the business: which tables are one entity, the links between them,
+          the processes its objects go through and the sets of objects it names. One model call. Every claim is measured
+          before it lands and stays proposed until you confirm it.
         </p>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <Button variant="outline" size="xs" disabled={!!busy} onClick={() => act("explore", explore)}
           data-testid="explorer-draft-run"
-          title="One model call: an explorer proposes entities, parts and links, and the data measures each before it lands">
+          title="One model call: an explorer proposes entities, parts, links, processes and rules, and the data measures each before it lands">
           {busy === "explore" ? "Drafting…" : run ? "Draft again" : "Draft the business"}
         </Button>
         {counts && counts.proposed > 0 && (

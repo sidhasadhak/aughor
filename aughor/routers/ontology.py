@@ -1866,12 +1866,14 @@ def name_ontology_link(
 
 
 class _ConfirmTarget(BaseModel):
-    """One declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read
-    through."""
-    kind: Literal["entity", "binding", "link"]
+    """One declaration a person makes theirs: a declared entity, a declared link, the binding a part is read through,
+    or a declared process or rule (ON-9)."""
+    kind: Literal["entity", "binding", "link", "process", "rule"]
     entity: Optional[str] = None
     binding: Optional[str] = None
     relationship: Optional[str] = None
+    process: Optional[str] = None
+    rule: Optional[str] = None
 
 
 class _ConfirmRequest(BaseModel):
@@ -1900,7 +1902,8 @@ def explore_ontology(
     schema_name: Optional[str] = Query(default=None),
 ):
     """ON-7b — an explorer drafts the BUSINESS ontology over this scope in ONE model call: which tables are one business
-    thing (an entity and its parts), the links the business names, and — rarely — an entity no table stands for. Every
+    thing (an entity and its parts), the links the business names, the processes its objects go through and the sets of
+    objects it names (ON-9: stages without promises, rules without scopes), and — rarely — an entity no table stands for. Every
     proposal is measured before it lands — a part's key counted against its entity's objects, the data deciding static,
     detail or timeseries; a link's sides counted and keys that never meet refused; a declared entity's key unique — and
     what survives is written through ON-7's doors with `origin: model` and `model:<id>@<version>` provenance: read at
@@ -1944,7 +1947,9 @@ def explore_ontology(
             entity_id, name, {**spec, "absorb": absorb}, connection_id, effective,
             origin="model", provenance=answerer.provenance)),
         declare_link=lambda spec: _through_door(lambda: _declare_link_core(spec, connection_id, effective)),
-        served=lambda: _get_ontology_graph(connection_id, effective))
+        served=lambda: _get_ontology_graph(connection_id, effective),
+        declare_process=lambda spec: _through_door(lambda: _declare_process_core(spec, connection_id, effective)),
+        declare_rule=lambda spec: _through_door(lambda: _declare_rule_core(spec, connection_id, effective)))
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
         outcomes = apply_draft(said, graph, db, provenance=answerer.provenance, draft=draft, writers=writers)
@@ -2037,8 +2042,8 @@ def _confirm_proposal(connection_id: str, schema: str, target: dict, actor: str)
     kind = target.get("kind")
     now = datetime.now(timezone.utc).isoformat()
     who = actor or "a person"
-    if kind in ("entity", "link"):
-        ident = str((target.get("entity") if kind == "entity" else target.get("relationship")) or "")
+    if kind in ("entity", "link", "process", "rule"):
+        ident = str(target.get({"entity": "entity", "link": "relationship"}.get(kind, kind)) or "")
         ov = find_override(connection_id, schema, kind, ident)
         if ov is None or not ov.fields.get("declared"):
             return f"no declared {kind} '{ident}'"

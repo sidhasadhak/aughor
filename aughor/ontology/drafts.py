@@ -42,12 +42,13 @@ class DraftProposal(BaseModel):
     """One proposal, keyed by its SUBSTANCE (`explorer.part_key`, `link_key`, `entity_key`) — so the model spelling a
     binding differently on a second run is the same proposal, not a new one."""
     key: str
-    kind: Literal["entity", "part", "link"]
+    kind: Literal["entity", "part", "link", "process", "rule"]
     #: What the data said when it was proposed: `proposed` (measured, and written through a door) or `refused`.
     status: Literal["proposed", "refused"]
     sentence: str
     note: str = ""
-    #: Where the declaration lives: {entity} · {entity, binding, table, part} · {relationship}.
+    #: Where the declaration lives: {entity} · {entity, binding, table, part} · {relationship} · {process, entity} ·
+    #: {rule, entity}.
     target: dict = Field(default_factory=dict)
     #: The spec the door was sent.
     spec: dict = Field(default_factory=dict)

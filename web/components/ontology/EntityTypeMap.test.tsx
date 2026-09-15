@@ -341,6 +341,34 @@ describe("EntityTypeMap — ON-7b: the explorer's draft", () => {
       "c1", { targets: [{ kind: "link", relationship: "order_ships_to_country" }] }, "s"));
   });
 
+  it("confirms a proposed process and a proposed rule by the declaration each was written as", async () => {
+    const user = userEvent.setup();
+    draftState.value = {
+      ...emptyDraft,
+      runs: drafted.runs,
+      proposals: [
+        { key: "process:Order:order_date>shipped_at", kind: "process", tier: "proposed",
+          sentence: "Order goes through placed → shipped", note: "5,000 Order objects; 2 of 2 stages reached",
+          reason: "orders ship", provenance: "model:m@2", target: { process: "order_fulfilment", entity: "Order" },
+          object_type: "order" },
+        { key: "rule:Order:status not_in", kind: "rule", tier: "proposed",
+          sentence: "fulfilled_orders on Order: status not_in cancelled, refunded", note: "admits 3,900 of 5,000",
+          reason: "what finance counts", provenance: "model:m@2", target: { rule: "fulfilled_orders", entity: "Order" },
+          object_type: "order" },
+      ],
+      counts: { proposed: 2, confirmed: 0, released: 0, withdrawn: 0, refused: 0 },
+    };
+    render(<EntityTypeMap connectionId="c1" schema="s" />);
+    await user.click(await screen.findByRole("button", { name: "Review" }));
+    const [process, rule] = screen.getAllByTestId("explorer-proposal");
+    await user.click(within(process).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(confirmProposals).toHaveBeenLastCalledWith(
+      "c1", { targets: [{ kind: "process", process: "order_fulfilment" }] }, "s"));
+    await user.click(within(rule).getByRole("button", { name: "Confirm" }));
+    await waitFor(() => expect(confirmProposals).toHaveBeenLastCalledWith(
+      "c1", { targets: [{ kind: "rule", rule: "fulfilled_orders" }] }, "s"));
+  });
+
   it("marks what an explorer proposed on its card and on its link", async () => {
     served.map = {
       ...map,

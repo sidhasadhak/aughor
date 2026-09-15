@@ -8255,7 +8255,8 @@ export interface paths {
         /**
          * Explore Ontology
          * @description ON-7b — an explorer drafts the BUSINESS ontology over this scope in ONE model call: which tables are one business
-         *     thing (an entity and its parts), the links the business names, and — rarely — an entity no table stands for. Every
+         *     thing (an entity and its parts), the links the business names, the processes its objects go through and the sets of
+         *     objects it names (ON-9: stages without promises, rules without scopes), and — rarely — an entity no table stands for. Every
          *     proposal is measured before it lands — a part's key counted against its entity's objects, the data deciding static,
          *     detail or timeseries; a link's sides counted and keys that never meet refused; a declared entity's key unique — and
          *     what survives is written through ON-7's doors with `origin: model` and `model:<id>@<version>` provenance: read at
@@ -14094,8 +14095,8 @@ export interface components {
         };
         /**
          * _ConfirmTarget
-         * @description One declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read
-         *     through.
+         * @description One declaration a person makes theirs: a declared entity, a declared link, the binding a part is read through,
+         *     or a declared process or rule (ON-9).
          */
         _ConfirmTarget: {
             /** Binding */
@@ -14106,9 +14107,13 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "entity" | "binding" | "link";
+            kind: "entity" | "binding" | "link" | "process" | "rule";
+            /** Process */
+            process?: string | null;
             /** Relationship */
             relationship?: string | null;
+            /** Rule */
+            rule?: string | null;
         };
         /** _ConnectionSettings */
         _ConnectionSettings: {

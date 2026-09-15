@@ -560,7 +560,7 @@ export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" |
 /** ON-7b — one thing an explorer proposed: an entity, a part (a table read under an entity), or a link. */
 export interface DraftProposal {
   key: string;
-  kind: "entity" | "part" | "link";
+  kind: "entity" | "part" | "link" | "process" | "rule";
   tier: ProposalTier;
   sentence: string;
   /** What the measurement said — the counts it rests on, or why it was refused. */
@@ -568,7 +568,8 @@ export interface DraftProposal {
   /** The model's own reason. */
   reason: string;
   provenance: string;
-  target: { entity?: string; binding?: string; table?: string; part?: string; relationship?: string };
+  target: { entity?: string; binding?: string; table?: string; part?: string; relationship?: string; process?: string;
+            rule?: string };
   /** The type to open to see it where it lives ("" when nothing was written). */
   object_type: string;
 }
@@ -605,10 +606,12 @@ export interface OntologyDraft {
 
 /** ON-7b — a declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read through. */
 export interface ConfirmTarget {
-  kind: "entity" | "binding" | "link";
+  kind: "entity" | "binding" | "link" | "process" | "rule";
   entity?: string;
   binding?: string;
   relationship?: string;
+  process?: string;
+  rule?: string;
 }
 
 export interface ConfirmResult extends OntologyDraft {
