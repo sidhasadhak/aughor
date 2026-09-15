@@ -4640,7 +4640,7 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   closed 2026-09-15 (`3207f413`: processes and rules, measured before they land; live on LuxExperience's explorer record
   the same day, one call: two processes, two rules and a link written, one rule refused for an `=` given a list — and one
   process reads payment STATES as stages, captured → refunded → failed, which counting the objects in each state does not
-  refute: a person's to withdraw) · the explorer does not name the
+  refute — withdrawn by the user the same day, so the explorer does not propose it again) · the explorer does not name the
   builder's found links — kept open ON PURPOSE: a model-written name would read as a person's, because a link carries no
   origin for its name and the confirm door no link-name target; that field is the next slice · two model-proposed links
   between one pair of types collide on the default reverse name (the explorer proposes none) · the §6 item 18(b)
