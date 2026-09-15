@@ -219,6 +219,29 @@ def schema_slice(question: str, connection_id: str, *, schema: str = "") -> str:
         return schema
 
 
+def writer_dialect(db: Optional[object]) -> str:
+    """The dialect the SQL writer writes for ``db``: its own when the connection runs SQL as written, else DuckDB's (a
+    translating connection is handed DuckDB SQL and translates it)."""
+    if db is not None and getattr(db, "writes_native_sql", False):
+        return str(getattr(db, "dialect", "") or "duckdb")
+    return "duckdb"
+
+
+def question_frame(question: str, connection_id: str, *, schema_name: str = "", dialect: str = "duckdb") -> str:
+    """ON-10 — the question's business terms resolved against the DECLARED ontology (a promise, a lag, a rule, a stage's
+    moment) with the SQL the object door compiles for each: the frame the deep investigation reads, given to the quick
+    answer too. No model call — where the words fit several declared definitions the block lists them all and the SQL
+    writer reads the one the question means. Data-gated: a question that reaches nothing declared renders nothing, so
+    the prompt is byte-identical where nothing was declared."""
+    def build() -> str:
+        from aughor.agent.framing import resolve_frame
+        from aughor.ontology.framing import render_frame_block
+        frame = resolve_frame(question, connection_id, schema_name or None, dialect=dialect, choose=False)
+        block = render_frame_block(frame) if frame is not None else ""
+        return (block + "\n\n") if block else ""
+    return _safe(build, "grounding: question frame")
+
+
 # The receipt's block order (prepends first, then the template body) with titles.
 # ``needs_schema`` blocks are computed only when the caller resolved a schema.
 _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
@@ -231,6 +254,9 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
      lambda q, c, **k: custom_instructions(c, k.get("canvas_id") or ""), False),
     ("trusted", "Trusted query templates", lambda q, c, **k: trusted_templates(q, c), False),
     ("corrections", "Ambiguity-ledger priors (corrections)", lambda q, c, **k: correction_priors(q, c), False),
+    ("question_frame", "Question frame (declared definitions)",
+     lambda q, c, **k: question_frame(q, c, schema_name=k.get("eff_schema") or "", dialect=writer_dialect(k.get("db"))),
+     False),
     ("governed_metrics", "Governed-metric bindings",
      lambda q, c, **k: governed_metrics(q, c, db=k.get("db"), schema=k.get("schema", ""),
                                         eff_schema=k.get("eff_schema")), True),
