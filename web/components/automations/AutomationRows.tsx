@@ -27,6 +27,7 @@ import {
   type IntegrationOperation, type SlackBotSummary, type UserAgent,
 } from "@/lib/api";
 import { CASTS, seedConfig, upstreamKeys } from "@/lib/automationFlow";
+import { ScheduleEditor } from "@/components/automations/ScheduleEditor";
 
 export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: string }[] = [
   { value: "schedule",       label: "Schedule",       desc: "Fire on a cron cadence" },
@@ -55,13 +56,6 @@ export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] 
     desc: "Read a metric by its approved definition — the number the registry defines, filters and caveats included" },
   { value: "trusted_query", label: "Trusted query",
     desc: "Run a vetted query and publish its rows — the one output in this plane a step can run once per item of" },
-];
-
-export const CRON_PRESETS = [
-  { label: "Hourly",  cron: "0 * * * *" },
-  { label: "Daily",   cron: "0 9 * * *" },
-  { label: "Weekly",  cron: "0 9 * * 1" },
-  { label: "Custom",  cron: "" },
 ];
 
 export const inputStyle: React.CSSProperties = {
@@ -462,23 +456,21 @@ export function ConditionRow({ c, onChange, onRemove }: {
 }) {
   const set = (patch: Record<string, unknown>) => onChange({ ...c, config: { ...c.config, ...patch } });
   return (
-    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", marginBottom: 8 }}>
-      <select value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
-        aria-label="Trigger kind"
-        style={{ ...inputStyle, width: 150 }}>
-        {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
-      </select>
-      <div style={{ flex: 1 }}>
+    // A column, not a squeeze: the schedule editor needs the drawer's full width, and
+    // the old side-by-side layout is what clipped a time down to a bare "0 9".
+    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12,
+      paddingBottom: 10, borderBottom: "1px solid var(--b1)" }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        <select value={c.kind} onChange={e => onChange({ kind: e.target.value as ConditionKind, config: {} })}
+          aria-label="Trigger kind"
+          style={{ ...inputStyle, flex: 1 }}>
+          {CONDITION_KINDS.map(k => <option key={k.value} value={k.value}>{k.label}</option>)}
+        </select>
+        {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
+      </div>
+      <div>
         {c.kind === "schedule" && (
-          <div style={{ display: "flex", gap: 6 }}>
-            <select value={CRON_PRESETS.find(p => p.cron === c.config.cron)?.cron ?? ""}
-              aria-label="Cron preset"
-              onChange={e => e.target.value && set({ cron: e.target.value })}
-              style={{ ...inputStyle, width: 110 }}>
-              {CRON_PRESETS.map(p => <option key={p.label} value={p.cron}>{p.label}</option>)}
-            </select>
-            <input style={inputStyle} value={String(c.config.cron ?? "")} onChange={e => set({ cron: e.target.value })} placeholder="cron e.g. 0 9 * * *" />
-          </div>
+          <ScheduleEditor cron={String(c.config.cron ?? "")} onCron={cron => set({ cron })} />
         )}
         {c.kind === "metric" && (
           <input style={inputStyle} value={String(c.config.monitor_id ?? "")} onChange={e => set({ monitor_id: e.target.value })} placeholder="monitor id" />
@@ -495,7 +487,6 @@ export function ConditionRow({ c, onChange, onRemove }: {
           </span>
         )}
       </div>
-      {onRemove && <Button variant="ghost" onClick={onRemove} className="h-auto font-normal" aria-label="Remove trigger" style={{ ...ghostBtn, color: "var(--red3)", padding: "6px 4px" }}>✕</Button>}
     </div>
   );
 }
