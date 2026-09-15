@@ -3966,7 +3966,9 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   seen. Fixable without new theory: `object_type` required and `op` an enum in the
   fill schema, `metric` exclusive of `path`, a rounding convention, worked examples in the prompt, a
   stronger model — then re-measure. ✅ **Built 2026-09-15** (`af2dad1c`), all but the stronger model: a measure is
-  `kind` aggregate or metric and sends only that kind's fields; the re-measure is owed (model calls). Found by the same run: the first refusal classifier had no
+  `kind` aggregate or metric and sends only that kind's fields. Re-measured 2026-09-15 in the ON-10 re-runs: objects 7 of
+  15 on Olist and 10 of 16 on LuxExperience (declared 4 of 12 and 7 of 13, against framed 11 and 13), no fill refused as
+  malformed (was 5 of 26) — its misses are compiled wrong answers, so `ask.query_objects` stays parked. Found by the same run: the first refusal classifier had no
   `form` kind and filed a malformed fill as `ir`, which reads as "the algebra is too narrow";
   relabelled in the stored results, where the relabelling is recorded.
   **Not built, honestly:** the semiadditive law has nothing to bind to — O5's
@@ -4635,7 +4637,10 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   wrong once and not re-proposed~~ — closed 2026-09-15 (`8e442d4a`: a link whose keys never meet is counted again on
   the name its target is known by, when that name is measured one object per row) · run-to-run variance means a second
   draft ADDS rather than repeats (inherent to one call; recorded) · ~~the explorer proposes no processes yet (ON-9)~~ —
-  closed 2026-09-15 (`3207f413`: processes and rules, measured before they land) · the explorer does not name the
+  closed 2026-09-15 (`3207f413`: processes and rules, measured before they land; live on LuxExperience's explorer record
+  the same day, one call: two processes, two rules and a link written, one rule refused for an `=` given a list — and one
+  process reads payment STATES as stages, captured → refunded → failed, which counting the objects in each state does not
+  refute: a person's to withdraw) · the explorer does not name the
   builder's found links — kept open ON PURPOSE: a model-written name would read as a person's, because a link carries no
   origin for its name and the confirm door no link-name target; that field is the next slice · two model-proposed links
   between one pair of types collide on the default reverse name (the explorer proposes none) · the §6 item 18(b)
@@ -4949,14 +4954,25 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   defect: the VIP GMV question starts from Order, "Return the country" names `ship_country`, controllable returns and
   high-risk payments now frame, the carrier is named once; no Olist frame moved. 12 guard mutations, every one caught.
   **Open on this wave** (the leftovers' second round, 2026-09-15, closed most of it): ~~a frame that states its rate's
-  unit~~ — built (`e29fb3e9`: "is a FRACTION of 1 … multiply by 100 when the question asks for a percentage"); its
-  measurement on a NEW set is owed (model calls) · ~~a rule read alone that counts ITS OWN type while the question names
+  unit~~ — built (`e29fb3e9`: "is a FRACTION of 1 … multiply by 100 when the question asks for a percentage") and
+  measured 2026-09-15 on a NEW set of six rate questions (`evals/ablation_*_rate_units.jsonl` →
+  `evals/ablation_rate_units_results.json`; openrouter `deepseek/deepseek-v4.1-flash`, 12 generation calls): framed 5 of 6
+  against raw 2 of 6, every framed answer a percentage — raw's four misses were definitions (all lines as the denominator,
+  14 days counted from the request), framed's one a numerator slip · ~~a rule read alone that counts ITS OWN type while the question names
   another that reaches it~~ and ~~rules alone that tie still send the model to choose~~ — closed (`b159888a`, measured on
   8 matcher items committed before the change, `0a805eee`: dev 33/33, test 27/27) · a definition asked in words nobody
   declared needs a person's synonym (by design) · ~~the declare doors drop `provenance`~~ — closed (`4eb8230b`) ·
   ~~the framed arm is not guarded in the harness~~ — closed (`0ea46cc2`: the `framed_guarded` arm, held to the safety
-  guarding already keeps) · a second run of either set for stability, and a live deep analysis showing the frame in the
-  web — owed (model calls) · ~~the frame is not yet a phase of compiled breakdowns~~ — a first slice built
+  guarding already keeps) · a second run of both sets and a live deep analysis showing the frame in the web — done 2026-09-15 on the model the
+  platform is set to now (`deepseek/deepseek-v4.1-flash`, not the first runs' gemini flash-lite: a replication across
+  models, not same-model noise): Olist declared raw 4 · framed 11 of 12 (first run 3 · 8), LuxExperience raw 2 · framed 13
+  of 13 (first run 1 · 9), controls kept, the guarded framed arm as safe as framed, every earlier framed miss now correct
+  and one new Olist miss (ob09); 93 generation calls (`evals/ablation_on10_*_business_rerun_results.json`). The web
+  chat's deep analysis on LuxExperience shows the frame live: "Read as" the declared refund promise with its measurement,
+  and "How the question was framed" — definition, start, the drivers the declared links reach, and a note on a type they
+  do not. The run itself (8 minutes, 7 steps) found where refund breaches concentrate and said plainly that no query returned
+  the carrier its question named: it took the scan route, where breakdowns by the frame's drivers are still the next
+  slice · ~~the frame is not yet a phase of compiled breakdowns~~ — a first slice built
   (`e29fb3e9`: the deep analysis's named breakdown runs the breakdown the frame compiled for its chosen promise or lag);
   breakdowns by UNNAMED candidate drivers are the next slice · the model does not word the frame — kept ON PURPOSE: the
   deterministic reading is free, exact and says only what was declared and measured, where a model-worded one would
