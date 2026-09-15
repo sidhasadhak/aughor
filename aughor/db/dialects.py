@@ -112,3 +112,20 @@ def writer_rules(db: object) -> str:
         avoid = avoid_line(dialect)
         return rules_for_dialect(dialect) + (f"\n- {avoid}" if avoid else "")
     return DUCKDB_RULES if dialect == "duckdb" else DUCKDB_RULES + _TRANSPILE_NOTE
+
+
+def native_sql(db: object, sql: str) -> str:
+    """Platform SQL written in DuckDB's dialect — a measurement probe, a keyed read, an object page's read — in the
+    dialect ``db`` runs. A connection that runs SQL as it is written (`writes_native_sql`: BigQuery, MySQL, Snowflake,
+    Exasol) is handed it translated, since on the backtick engines a double-quoted identifier is a string literal and a
+    read written for DuckDB matches nothing there, silently. One that translates from DuckDB itself, DuckDB included,
+    is handed it as written. A statement that cannot be translated is handed as written, and the engine refuses it with
+    its own reason."""
+    dialect = str(getattr(db, "dialect", "") or "")
+    if not getattr(db, "writes_native_sql", False) or dialect in ("", "duckdb"):
+        return sql
+    try:
+        import sqlglot
+        return sqlglot.transpile(sql, read="duckdb", write=dialect)[0]
+    except Exception:  # noqa: BLE001 — the engine's refusal names what it could not run
+        return sql

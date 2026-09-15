@@ -329,6 +329,7 @@ def fetch_by_keys(
     value as the source holds it rather than as text; the join itself keys on `canon_key` of each side's value, the
     form `batched_foreach_join` keys on. ``keys`` are canonical key strings. More than ``max_rows`` rows is an error,
     never a partial read, because a partial read would be summed as though it were the whole."""
+    from aughor.db.dialects import native_sql
     rk = _qident(key)
     select = ", ".join([f"{rk} AS __key", *(_qident(c) for c in columns)])
     out_columns: list[str] = []
@@ -339,7 +340,8 @@ def fetch_by_keys(
         in_list = ", ".join(_sql_literal(k) for k in chunk)
         sql = f"SELECT {select} FROM {from_clause} WHERE {f'{rk} IN ({in_list})' if chunk else '1 = 0'}"
         try:
-            result, payload = conn.read_typed_rows(label, sql, max_rows - len(out_rows) + 1)
+            # written for DuckDB: a connection that runs SQL as written reads it in its own dialect
+            result, payload = conn.read_typed_rows(label, native_sql(conn, sql), max_rows - len(out_rows) + 1)
         except Exception as exc:  # noqa: BLE001 — a read that raised is an error result, never an exception upward
             return [], [], [], f"keyed read failed: {exc}"[:300]
         if result.error:

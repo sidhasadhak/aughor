@@ -948,6 +948,203 @@ def test_the_home_cap_counts_groups_so_more_objects_than_it_holds_are_answered_f
     assert (timings[0]["read"], timings[0]["rows"], timings[0]["objects"]) == ("home", customers, orders)
 
 
+# ── a source that runs SQL as it is written, in its own dialect (O1b) ───────────────────────────────────────────
+
+
+class ReadAsBigQuery:
+    """A connection that runs every statement as BigQuery reads it, over a DuckDB file. BigQuery, MySQL, Snowflake and
+    Exasol run the SQL they are handed as written (`writes_native_sql`), and on the backtick engines a double-quoted
+    identifier is a string literal — so SQL written for DuckDB reads nothing there, silently."""
+    dialect, writes_native_sql = "bigquery", True
+
+    def __init__(self, inner):
+        self.inner = inner
+        if hasattr(inner, "execute_typed"):
+            self.execute_typed = lambda label, sql: inner.execute_typed(label, self.read(sql))
+
+    @staticmethod
+    def read(sql: str) -> str:
+        """The statement as BigQuery takes it: a double-quoted token names nothing there (sqlglot's reader lets one stand
+        for a table's name, which BigQuery never does), so one is refused before anything is read."""
+        import re
+
+        import sqlglot
+        if '"' in re.sub(r"'(?:[^']|'')*'", "", sql):
+            raise ValueError(f"BigQuery reads a double-quoted token as a string, never as a name: {sql[:120]}")
+        return sqlglot.transpile(sql, read="bigquery", write="duckdb")[0]
+
+    def execute(self, label, sql):
+        return self.inner.execute(label, self.read(sql))
+
+    def execute_bounded(self, label, sql, max_rows):
+        return self.inner.execute_bounded(label, self.read(sql), max_rows)
+
+    def read_typed_rows(self, label, sql, max_rows):
+        return self.inner.read_typed_rows(label, self.read(sql), max_rows)
+
+    def close(self):
+        self.inner.close()
+
+
+#: One customer's segment — from a table and columns whose names need quoting, which only a builder's catalogue reaches
+#: (a declaration names identifiers alone), and the same rows under plain names, for a declaration to bind.
+SEGMENTS = """
+CREATE SCHEMA ecommerce;
+CREATE TABLE ecommerce."customer segments" AS
+SELECT printf('C%05d', i) AS "customer id", CASE WHEN i % 3 = 0 THEN 'Gold' ELSE 'Blue' END AS "Segment Name"
+FROM range(1, 501) t(i);
+CREATE TABLE ecommerce.customer_segments AS
+SELECT "customer id" AS customer_id, "Segment Name" AS segment_name FROM ecommerce."customer segments";
+"""
+
+
+@pytest.fixture(scope="module")
+def segments(tmp_path_factory):
+    """A registered DuckDB file holding `SEGMENTS`."""
+    path = tmp_path_factory.mktemp("segments") / "segments.duckdb"
+    con = duckdb.connect(str(path))
+    con.execute(SEGMENTS)
+    con.close()
+    return registry.add_connection("on8-segments", "duckdb", str(path))
+
+
+def reading_as_bigquery(*connection_ids):
+    """An opener that hands back the named connections read as BigQuery reads SQL, and every other as it is."""
+    def open_source(connection_id: str):
+        db = open_connection_for(connection_id)
+        return ReadAsBigQuery(db) if connection_id in connection_ids else db
+    return open_source
+
+
+def answered(domain, query: dict, open_source) -> list[tuple]:
+    """`answer`, compiled in the dialect of the connection its anchor lives on, as the object door compiles it."""
+    graph = domain_graph(domain)
+    home = entity_source(graph, find_object_type(graph, query["object_type"]))
+    db = open_source(home)
+    try:
+        compiled = compile_object_query(query, graph, dialect=db.dialect, fiscal_start_month=1)
+        if compiled.cross_source is not None:
+            result, _ = XS.execute_plan(compiled.cross_source, home_connection_id=home, home_db=db,
+                                        open_source=open_source, display_sql=compiled.sql)
+        else:
+            result = db.execute("objects", compiled.sql)
+    finally:
+        db.close()
+    assert result.error is None, result.error
+    return normal(result.rows)
+
+
+def test_sources_that_run_sql_as_bigquery_reads_it_are_measured_bound_and_read_in_their_own_dialect(sources, segments):
+    open_source = reading_as_bigquery(sources["crm"], segments)
+    domain = resolve_domain("native")
+    declare_entity(domain, typed("Order", "orders", "order_id", sources["shop"]), open_source)
+    declare_entity(domain, typed("Customer", "customers", "customer_id", sources["crm"]), open_source)
+    declare_link(domain, PLACED_BY, open_source)
+    bind_source(domain, "Order", "payment", {**PAYMENT, "connection_id": sources["crm"]}, open_source)
+    bind_source(domain, "Customer", "segment", {"schema_name": "ecommerce", "table": "customer_segments",
+                                                "key": "customer_id", "properties": {"segment": "segment_name"},
+                                                "connection_id": segments}, open_source)
+    set_display_property(domain, "Customer", "segment", open_source)
+    graph = domain_graph(domain)
+    customer, placed = graph.entities["Customer"], graph.relationships["Order_placed_by_Customer"]
+    bound = {b.name: b.verified for b in [*graph.entities["Order"].bindings, *customer.bindings]}
+    assert (customer.backing.verified, placed.measured_cardinality, placed.value_overlap, bound) == (
+        True, "N:1", 1.0, {"payment": True, "segment": True})
+    assert customer.display_property.distinct == 2                        # counted on the segments source, as BigQuery
+
+    [(gold, blue)] = normal(duckdb.connect().execute(
+        "SELECT COUNT(*) FILTER (WHERE i % 3 = 0), COUNT(*) FILTER (WHERE i % 3 <> 0) FROM range(1, 501) t(i)").fetchall())
+    assert answered(domain, QUERIES["orders by customer country"], open_source) == reference(sources, (
+        "SELECT c.country, COUNT(*) FROM ecommerce.orders o LEFT JOIN ecommerce.customers c "
+        "ON o.customer_id = c.customer_id GROUP BY 1"))                    # Customer read by key where BigQuery reads it
+    assert answered(domain, {"object_type": "Customer", "measures": [{"agg": "count"}], "by": ["segment"]},
+                    open_source) == normal([["Gold", gold], ["Blue", blue]])  # a BigQuery home, and a far read on it
+
+    opened: dict = {}
+
+    def source_db(connection_id: str):
+        if connection_id not in opened:
+            opened[connection_id] = open_source(connection_id)
+        return opened[connection_id]
+    try:
+        page = get_object(graph, None, "Customer", "C00003", source_db=source_db).to_dict()
+        order = get_object(graph, None, "Order", "O000002", source_db=source_db).to_dict()
+    finally:
+        for db in opened.values():
+            db.close()
+    [(psp,)] = reference(sources, "SELECT psp FROM ecommerce.payments WHERE order_id = 'O000002'")
+    assert (page["title"], {p["name"]: p["value"] for p in order["properties"]}["psp"]) == ("Gold", psp)
+
+
+def test_every_measurement_probe_reads_a_source_that_runs_sql_as_bigquery_reads_it(segments):
+    from aughor.ontology.backing import measure_key
+    from aughor.ontology.bindings import describe_with, measure_binding
+    from aughor.ontology.cardinality import measure_side
+    from aughor.ontology.declared import _count_side, measure_declared_link
+    from aughor.ontology.display import measure_display
+    from aughor.ontology.lifecycle import observed_states
+    from aughor.ontology.models import Backing, Binding, EntityProperty, OntologyEntity
+    from aughor.ontology.sources import distinct_keys
+    from aughor.semantic.object_instances import _read
+
+    source = 'ecommerce."customer segments"'
+    columns = {"customer id": EntityProperty(name="customer id", data_type="VARCHAR", semantic_type="key"),
+               "Segment Name": EntityProperty(name="Segment Name", data_type="VARCHAR", semantic_type="dimension")}
+
+    def segment_type(type_id: str) -> OntologyEntity:
+        return OntologyEntity(id=type_id, display_name=type_id, source_tables=["ecommerce.customer segments"],
+                              properties=dict(columns), identity_key="customer id", grain_verified=True,
+                              backing=Backing(kind="table", table="ecommerce.customer segments", primary_key="customer id"))
+    entity = segment_type("Segment")
+    graph = OntologyGraph(connection_id=segments, schema_name="ecommerce", schema_fingerprint="",
+                          entities={"Segment": entity, "Tier": segment_type("Tier")})
+    tier = Binding(name="tier", kind="static", table="ecommerce.customer segments", key="customer id",
+                   properties={"tier": EntityProperty(name="tier", data_type="VARCHAR")},
+                   columns={"tier": "Segment Name"}, verified=True, note="one row per Segment")
+
+    class Beside:
+        """Another connection object over the same connection, as a binding's objects on a second one are read."""
+        def __init__(self, inner):
+            self.inner = inner
+
+        def __getattr__(self, name):
+            return getattr(self.inner, name)
+
+    def beside(db):
+        return ReadAsBigQuery(db.inner) if isinstance(db, ReadAsBigQuery) else Beside(db)
+
+    def probes(db) -> dict:
+        return {"side": measure_side(db, "ecommerce.customer segments", "customer id"),
+                "key": measure_key(db, source, "customer id"),
+                "states": observed_states(db, "ecommerce.customer segments", "Segment Name"),
+                "keys": distinct_keys(db, f"{source} AS s", "s", "customer id"),
+                "columns": describe_with(db)(source),
+                "display": measure_display(db, entity, "Segment Name", "human"),
+                "binding": measure_binding(db, entity, tier),
+                "binding across": measure_binding(db, entity, tier, object_db=beside(db)),
+                "link side": _count_side(db, entity, "customer id"),
+                "link": measure_declared_link(db, graph, {"from_entity": "Segment", "to_entity": "Tier", "name": "is",
+                                                          "from_column": "customer id", "to_column": "customer id"}),
+                "page": list(_read(db, f'SELECT s."Segment Name" FROM {source} AS s WHERE s."customer id" = \'C00003\'',
+                                   "a segment").rows)}
+    plain = open_connection_for(segments)
+    try:
+        expected = probes(plain)
+    finally:
+        plain.close()
+    native = ReadAsBigQuery(open_connection_for(segments))
+    try:
+        read = probes(native)
+    finally:
+        native.close()
+    assert read == expected
+    assert (expected["side"].distinct, expected["key"][0], expected["states"], len(expected["keys"][0])) == (
+        500, (500, 500, 500), {"Blue": 334, "Gold": 166}, 500)
+    assert set(expected["columns"][0]) == {"customer id", "Segment Name"} and expected["page"] == [["Gold"]]
+    assert (expected["binding"].covered, expected["binding across"].covered, expected["link side"],
+            expected["link"]["value_overlap"]) == (500, 500, (500, 500, 500), 1.0)
+
+
 # ── the doors ───────────────────────────────────────────────────────────────────────────────────
 
 

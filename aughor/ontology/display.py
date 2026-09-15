@@ -110,8 +110,9 @@ def measure_display(db: Any, entity: OntologyEntity, name: str, source: str = "p
         return m
     col = quote_ident(column)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {from_clause}"
+    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__display_probe__", sql)
+        result = db.execute("__display_probe__", native_sql(db, sql))
     except Exception as exc:  # noqa: BLE001 — an unprobeable property is unmeasured, not a failure
         m.note = f"probe raised: {exc}"[:200]
         return m
