@@ -137,7 +137,8 @@ EXPLORE_BUSINESS_PROMPT = """\
 You are mapping the BUSINESS behind a data warehouse — the things the business speaks of and how they relate — on top
 of a catalogue of its tables. Today every table is its own entity, because the platform made one per table. A business
 does not speak that way: an order HAS lines, a payment and a shipment; a return HAS its logistics record; a customer
-HAS support tickets; a product HAS a price history. Say which tables are one business thing, and which things relate.
+HAS support tickets; a product HAS a price history. Say which tables are one business thing, and which things relate —
+then the processes the business's objects go through, and the sets of objects it names.
 
 You PROPOSE. The platform measures every proposal against the data before it lands — whether a column really carries
 an entity's key, how many of its objects it reaches, whether two columns ever hold the same values — and refuses what
@@ -180,6 +181,33 @@ ships_from a warehouse. For each:
 Skip any pair of columns the JOINS list already joins.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+PROCESSES  (processes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A PROCESS is the stages one entity's objects move through, in order: an order is placed, then shipped, then delivered.
+For each:
+  • id — snake_case: order_fulfilment
+  • entity — the entity whose objects go through it, from the catalogue
+  • display_name — how the business names it
+  • stages — in order, at least two; each {{"name": snake_case, "timestamp": a date or timestamp column of the entity}},
+    or where only the lifecycle records it {{"name": ..., "state": [values], "property": the lifecycle column}} —
+    spelling each state exactly as the lifecycle line lists it
+  • reason — one short sentence
+Propose the stages alone: how fast the business promises to move through them is the business's to say.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+RULES  (rules)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+A RULE is a set of objects the business names. Two kinds:
+  • value_set — the values of one dimension column grouped under one name:
+    {{"id": "dach", "entity": "Customer", "kind": "value_set", "property": "country", "values": ["DE", "AT", "CH"]}} —
+    spelling every value exactly as the column's sample values spell them
+  • condition — filters on the entity's columns:
+    {{"id": "fulfilled_orders", "entity": "Order", "kind": "condition",
+      "conditions": [{{"path": "status", "op": "not_in", "values": ["cancelled", "refunded"]}}]}};
+    op is =, !=, >, >=, <, <=, in, not_in, is_null or not_null
+Each with a reason — one short sentence. A rule that admits no object, or every object, is refused.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 ENTITIES  (entities) — rarely needed
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Only for a business thing NO table stands for yet, read through ONE SELECT that returns one row per object:
@@ -193,5 +221,6 @@ Most catalogues need none. Never declare an entity over a table the catalogue al
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 {catalogue}
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Return three flat lists — entities, parts, links. Omit rather than guess: a proposal the data refutes is refused.
+Return five flat lists — entities, parts, links, processes, rules. Omit rather than guess: a proposal the data refutes
+is refused.
 """

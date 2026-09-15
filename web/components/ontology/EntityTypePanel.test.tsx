@@ -4,22 +4,27 @@
  * Arc ON leftovers — the two declaration doors the panel was missing.
  *
  * The panel could BIND what the builder proposed and REMOVE what a person set, and that was all. A
- * timeseries binding is never proposed (many rows per object is what the proposal check rejects) and
- * neither is a keyed SELECT, so both were API-only; and a link kept the builder's generic name because
+ * timeseries binding was never proposed then (many rows per object was what the proposal check rejected)
+ * and a keyed SELECT never is, so both were API-only; and a link kept the builder's generic name because
  * no web door named one. These pin what the forms HAND the doors — the spec and the name — because
  * that is where the bug would live: a form that looks right and posts a static binding with no time
  * column is refused by the server, silently, one round trip later.
  */
 import { afterEach, describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 
-import type { ObjectTypeDetail } from "@/lib/objectTypes";
+import type { BackingPreview, ObjectTypeDetail } from "@/lib/objectTypes";
 
 const addBinding = vi.fn(async (..._args: unknown[]) => undefined);
 const nameLink = vi.fn(async (..._args: unknown[]) => undefined);
 const declareLink = vi.fn(async (..._args: unknown[]) => undefined);
+const declareProcess = vi.fn(async (..._args: unknown[]) => ({ id: "order_fulfilment" }));
+const declareRule = vi.fn(async (..._args: unknown[]) => ({ id: "shipped_orders" }));
 const confirmProposals = vi.fn(async (..._args: unknown[]) => ({ confirmed: [], refused: [] as { why: string }[] }));
+const previewBacking = vi.fn(async (..._args: unknown[]): Promise<unknown> => undefined);
+const setQueryBacking = vi.fn(async (..._args: unknown[]) => undefined);
+const withdrawBacking = vi.fn(async (..._args: unknown[]) => undefined);
 /** The type the panel reads — the fixture below, unless a test shows another. */
 const shown: { detail?: ObjectTypeDetail } = {};
 
@@ -29,7 +34,12 @@ vi.mock("@/lib/objectTypes", async (importOriginal) => ({
   addBinding: (...a: unknown[]) => addBinding(...a),
   nameLink: (...a: unknown[]) => nameLink(...a),
   declareLink: (...a: unknown[]) => declareLink(...a),
+  declareProcess: (...a: unknown[]) => declareProcess(...a),
+  declareRule: (...a: unknown[]) => declareRule(...a),
   confirmProposals: (...a: unknown[]) => confirmProposals(...a),
+  previewBacking: (...a: unknown[]) => previewBacking(...a),
+  setQueryBacking: (...a: unknown[]) => setQueryBacking(...a),
+  withdrawBacking: (...a: unknown[]) => withdrawBacking(...a),
 }));
 
 import { EntityTypePanel } from "@/components/ontology/EntityTypePanel";
@@ -375,5 +385,118 @@ describe("EntityTypePanel — ON-8: a type of the organisation's ontology", () =
     await user.click(screen.getByRole("button", { name: "Bind" }));
     await waitFor(() => expect(addBinding).toHaveBeenCalled());
     expect(addBinding.mock.calls[0][3]).toEqual({ kind: "static", key: "product_id", table: "stock" });
+  });
+});
+
+describe("EntityTypePanel — ON-9: a process and a rule declared from the type they are about", () => {
+  const property = (name: string, role: string, dataType: string) => ({
+    name, display_name: name, role, data_type: dataType, unit: "", is_key: false, null_rate: 0, description: "",
+    source: { binding: "products", table: "products", column: name } });
+  const timed: ObjectTypeDetail = {
+    ...detail,
+    properties: [...detail.properties, property("created_at", "timestamp", "TIMESTAMP"),
+                 property("shipped_at", "timestamp", "DATE"), property("status", "dimension", "VARCHAR")],
+    metrics: [{ id: "revenue", display_name: "Revenue", unit: "EUR", formula_sql: "SUM(total)" }],
+  };
+  beforeEach(() => {
+    shown.detail = timed;
+    declareProcess.mockClear();
+    declareRule.mockClear();
+  });
+  afterEach(() => { shown.detail = undefined; });
+
+  it("declares a process in stages at the type's moments, with a promise in hours on a stage after the first", async () => {
+    const user = userEvent.setup();
+    const onOpenProcess = vi.fn();
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={onOpenProcess} />);
+    await user.click(await screen.findByRole("button", { name: "Declare a process" }));
+    const declare = screen.getByRole("button", { name: "Declare the process" });
+    await user.type(screen.getByLabelText("Process id"), "order_fulfilment");
+    await user.type(screen.getByLabelText("Stage 1 name"), "placed");
+    await user.selectOptions(screen.getByLabelText("Stage 1 moment"), "created_at");
+    await user.type(screen.getByLabelText("Stage 2 name"), "shipped");
+    await user.selectOptions(screen.getByLabelText("Stage 2 moment"), "shipped_at");
+    expect(declare).toBeEnabled();
+    await user.selectOptions(screen.getByLabelText("Stage 2 promise"), "within_hours");
+    expect(declare).toBeDisabled();                                  // a promise names its hours first
+    await user.type(screen.getByLabelText("Stage 2 promise hours"), "48");
+    await user.click(declare);
+    await waitFor(() => expect(declareProcess).toHaveBeenCalled());
+    expect(declareProcess.mock.calls[0]).toEqual(["c1", { id: "order_fulfilment", entity: "products", stages: [
+      { name: "placed", timestamp: "created_at" },
+      { name: "shipped", timestamp: "shipped_at", promise: { within_hours: 48 } }] }, "s"]);
+    await waitFor(() => expect(onOpenProcess).toHaveBeenCalledWith("order_fulfilment"));
+  });
+
+  it("declares a condition rule that scopes a metric, and a value set by its values", async () => {
+    const user = userEvent.setup();
+    panel();
+    await user.click(await screen.findByRole("button", { name: "Declare a rule" }));
+    await user.type(screen.getByLabelText("Rule id"), "shipped_orders");
+    await user.selectOptions(screen.getByLabelText("Rule property"), "status");
+    await user.selectOptions(screen.getByLabelText("Rule operator"), "not_in");
+    await user.type(screen.getByLabelText("Rule value"), "cancelled, refunded");
+    await user.click(screen.getByRole("checkbox", { name: "Revenue" }));
+    await user.click(screen.getByRole("button", { name: "Declare the rule" }));
+    await waitFor(() => expect(declareRule).toHaveBeenCalled());
+    expect(declareRule.mock.calls[0]).toEqual(["c1", { id: "shipped_orders", entity: "products", kind: "condition",
+      conditions: [{ path: "status", op: "not_in", values: ["cancelled", "refunded"] }], scopes: ["revenue"] }, "s"]);
+
+    await user.click(await screen.findByRole("button", { name: "Declare a rule" }));
+    await user.type(screen.getByLabelText("Rule id"), "dach");
+    await user.selectOptions(screen.getByLabelText("Rule kind"), "value_set");
+    await user.selectOptions(screen.getByLabelText("Rule property"), "status");
+    await user.type(screen.getByLabelText("Rule values"), "DE, AT , CH");
+    await user.click(screen.getByRole("button", { name: "Declare the rule" }));
+    await waitFor(() => expect(declareRule).toHaveBeenCalledTimes(2));
+    expect(declareRule.mock.calls[1]).toEqual(["c1", { id: "dach", entity: "products", kind: "value_set",
+      property: "status", values: ["DE", "AT", "CH"] }, "s"]);
+  });
+
+  it("offers no process on a type with fewer than two moments to run between", async () => {
+    shown.detail = undefined;
+    panel();
+    expect(await screen.findByRole("button", { name: "Declare a process" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Declare a rule" })).toBeEnabled();
+  });
+});
+
+describe("EntityTypePanel — reading a type from a keyed SELECT", () => {
+  beforeEach(() => {
+    previewBacking.mockReset();
+    setQueryBacking.mockClear();
+    withdrawBacking.mockClear();
+    shown.detail = undefined;
+  });
+
+  const preview = (over: Partial<BackingPreview>): BackingPreview => ({
+    readable: true, note: "", rows: 3, unique: true, unique_note: "", columns: ["product_id", "name"],
+    kept: ["product_id", "name"], dropped: [], added: [],
+    current: { reads: "table", source: "products", key: "product_id", rows: 3, unique: true }, ...over,
+  });
+
+  it("previews the SELECT and sets it only when its key is unique and it drops nothing", async () => {
+    const user = userEvent.setup();
+    previewBacking.mockResolvedValueOnce(preview({ dropped: ["price"] }))
+      .mockResolvedValueOnce(preview({ added: ["avg_rating"] }));
+    render(<EntityTypePanel connectionId="c1" schema="s" objectType="product" types={rows} version={0}
+      onOpen={() => {}} onChanged={() => {}} onOpenProcess={() => {}} />);
+    await user.click(await screen.findByRole("button", { name: "Read from a SELECT" }));
+    await user.type(screen.getByLabelText("Backing SELECT"), "SELECT product_id, name FROM products");
+    await user.clear(screen.getByLabelText("Backing key"));
+    await user.type(screen.getByLabelText("Backing key"), "product_id");
+    expect(screen.getByRole("button", { name: "Set as backing" })).toBeDisabled();       // never before a preview
+
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(within(await screen.findByTestId("backing-preview")).getByText("price")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Set as backing" })).toBeDisabled();       // it drops a property
+    expect(screen.getByText("it drops price — select it too")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Preview" }));
+    expect(within(await screen.findByTestId("backing-preview")).getByText("avg_rating")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Set as backing" }));
+    expect(previewBacking).toHaveBeenLastCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
+    expect(setQueryBacking).toHaveBeenCalledWith("c1", "products", "SELECT product_id, name FROM products", "product_id", "s");
   });
 });

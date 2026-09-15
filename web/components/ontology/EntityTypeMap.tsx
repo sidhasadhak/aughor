@@ -18,13 +18,16 @@
  */
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  BaseEdge,
   Controls,
+  getBezierPath,
   Handle,
   MarkerType,
   Panel,
   Position,
   ReactFlow,
   type Edge as RFEdge,
+  type EdgeProps,
   type Node as RFNode,
   type NodeProps,
   useEdgesState,
@@ -41,7 +44,7 @@ import { Input } from "@/components/ui/input";
 import { SkeletonRows } from "@/components/ui/motion";
 import { getConnections, getMyPreferences, putMyPreference } from "@/lib/api";
 import { formatCount } from "@/lib/format";
-import { CARD, collapseParts, hubOf, layoutMap, litBy } from "@/lib/entityMapLayout";
+import { CARD, collapseParts, hubOf, layoutMap, linkLabelY, litBy } from "@/lib/entityMapLayout";
 import {
   confirmProposals,
   declareEntity,
@@ -385,6 +388,7 @@ function DeclarationRows({ processes, rules, openProcess, onPickProcess, onPickT
             <span className="aug-fs-sm" style={{ color: "var(--t1)", fontWeight: 500 }}>{r.display_name}</span>
             <span className="aug-fs-xs" style={{ color: r.verified === false ? "var(--red5)" : "var(--t3)" }}>
               {r.entity} · {r.admitted == null ? "not counted" : `admits ${formatCount(r.admitted)}`}
+              {r.scopes?.length ? ` · scopes ${r.scopes.join(", ")}` : ""}
               {r.flags ? ` · ${r.flags} flagged` : ""}
             </span>
           </span>
@@ -403,6 +407,8 @@ const TIER_TAG: Record<ProposalTier, string> = {
 function targetOf(p: DraftProposal): ConfirmTarget {
   if (p.kind === "entity") return { kind: "entity", entity: p.target.entity };
   if (p.kind === "link") return { kind: "link", relationship: p.target.relationship };
+  if (p.kind === "process") return { kind: "process", process: p.target.process };
+  if (p.kind === "rule") return { kind: "rule", rule: p.target.rule };
   return { kind: "binding", entity: p.target.entity, binding: p.target.binding };
 }
 
@@ -446,14 +452,15 @@ function ExplorerDraft({ draft, explore, confirm, onOpen }: {
         </p>
       ) : (
         <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
-          An explorer reads these tables and proposes the business: which tables are one entity, and the links between
-          them. One model call. Every claim is measured before it lands and stays proposed until you confirm it.
+          An explorer reads these tables and proposes the business: which tables are one entity, the links between them,
+          the processes its objects go through and the sets of objects it names. One model call. Every claim is measured
+          before it lands and stays proposed until you confirm it.
         </p>
       )}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         <Button variant="outline" size="xs" disabled={!!busy} onClick={() => act("explore", explore)}
           data-testid="explorer-draft-run"
-          title="One model call: an explorer proposes entities, parts and links, and the data measures each before it lands">
+          title="One model call: an explorer proposes entities, parts, links, processes and rules, and the data measures each before it lands">
           {busy === "explore" ? "Drafting…" : run ? "Draft again" : "Draft the business"}
         </Button>
         {counts && counts.proposed > 0 && (
@@ -654,6 +661,21 @@ const SIDES = { t: Position.Top, r: Position.Right, b: Position.Bottom, l: Posit
 const HANDLE: React.CSSProperties = { opacity: 0, width: 1, height: 1, minWidth: 1, minHeight: 1, border: "none" };
 const NODE_TYPES = { entity: EntityCard };
 
+/** A link between two cards, drawn as React Flow's default edge draws it — except where its label goes: on a sideways
+ *  link the label is lifted clear above its two cards, which would otherwise clip it (`linkLabelY`). */
+function LinkEdge({ id, sourceX, sourceY, targetX, targetY, sourcePosition, targetPosition, style, markerEnd, label,
+  labelStyle, labelShowBg, labelBgStyle, labelBgPadding, labelBgBorderRadius, interactionWidth }: EdgeProps) {
+  const [path, labelX, labelY] = getBezierPath({ sourceX, sourceY, sourcePosition, targetX, targetY, targetPosition });
+  return (
+    <BaseEdge id={id} path={path} style={style} markerEnd={markerEnd} interactionWidth={interactionWidth}
+      label={label} labelX={labelX} labelY={linkLabelY(sourcePosition, sourceY, targetY, labelY)} labelStyle={labelStyle}
+      labelShowBg={labelShowBg} labelBgStyle={labelBgStyle} labelBgPadding={labelBgPadding}
+      labelBgBorderRadius={labelBgBorderRadius} />
+  );
+}
+
+const EDGE_TYPES = { link: LinkEdge };
+
 function MapCanvas({ map, selected, onSelect, scope, sources }: {
   map: TypeMap;
   selected: string;
@@ -728,7 +750,7 @@ function MapCanvas({ map, selected, onSelect, scope, sources }: {
       const crosses = link.traversal === "cross-source";
       const ink = !link.traversable ? "var(--amb4)" : proposed ? "var(--vio4)" : "var(--blue3)";
       return [{
-        id: link.relationship, source: link.from, target: link.to,
+        id: link.relationship, type: "link", source: link.from, target: link.to,
         sourceHandle: side(b.x - a.x, b.y - a.y), targetHandle: `${side(a.x - b.x, a.y - b.y)}-in`,
         // Only the picked type's links are named: every label at once is what made this map unreadable.
         label: on
@@ -771,6 +793,7 @@ function MapCanvas({ map, selected, onSelect, scope, sources }: {
         nodes={nodes}
         edges={edges}
         nodeTypes={NODE_TYPES}
+        edgeTypes={EDGE_TYPES}
         onNodesChange={onNodesChange}
         onNodeClick={(_e, node) => onSelect(node.id)}
         onNodeDragStop={drop}

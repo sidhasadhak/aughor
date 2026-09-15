@@ -246,7 +246,7 @@ function DuplicatesDrawer({ connId, schema, onClose, onMerged }: {
               ))}
             </ul>
             <div className="flex flex-col gap-1 pt-0.5">
-              <span className="aug-fs-xs text-zinc-500">Merge all into:</span>
+              <span className="aug-fs-xs text-zinc-500">Merge all into (the others become its parts):</span>
               <div className="flex flex-wrap gap-1">
                 {c.entities.map(e => (
                   <button key={e.id} onClick={() => doMerge(c, e.id)} disabled={merging !== null}

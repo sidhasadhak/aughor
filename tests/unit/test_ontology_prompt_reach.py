@@ -112,6 +112,9 @@ REACH_BASELINE: dict[str, set[str]] = {
     "processes.*.stages[].timestamp": {'question_frame'},
     "processes.*.stages[].promise.name": {'question_frame'},
     "processes.*.stages[].promise.within_days": {'question_frame'},
+    # ON-9 leftovers (2026-09-15): a promise kept within hours reaches the question frame as within_days does
+    "processes.*.stages[].promise.within_hours": {'question_frame'},
+    "processes.*.stages[].promise.breach_rate": {'question_frame'},  # ON-10 — the frame states a promise rate's unit with the measured value
     "processes.*.stages[].promise.deadline": {'question_frame'},
     "processes.*.stages[].promise.grain": {'question_frame'},
     "processes.*.stages[].promise.via": {'question_frame'},

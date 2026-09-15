@@ -1478,7 +1478,7 @@ export async function getDuplicateEntities(
 
 export async function mergeOntologyEntities(
   connectionId: string, mergeIds: string[], canonicalId: string, schemaName?: string,
-): Promise<{ merged_into: string; removed: string[]; entity_count: number }> {
+): Promise<{ merged_into: string; absorbed: string[]; warnings: string[] }> {
   const q = new URLSearchParams({ connection_id: connectionId });
   if (schemaName) q.set("schema_name", schemaName);
   const res = await fetch(`${getApiBase()}/ontology/entities/merge?${q}`, {

@@ -192,8 +192,9 @@ def measure_binding(db: Any, entity: OntologyEntity, binding: Binding, *, object
            "(SELECT COUNT(DISTINCT k) FROM bound_keys), (SELECT COUNT(*) FROM object_keys), "
            "(SELECT COUNT(*) FROM object_keys WHERE k IN (SELECT k FROM bound_keys WHERE k IS NOT NULL)), "
            "(SELECT COUNT(DISTINCT k) FROM bound_keys WHERE k IS NOT NULL AND k NOT IN (SELECT k FROM object_keys))")
+    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__binding_probe__", sql)
+        result = db.execute("__binding_probe__", native_sql(db, sql))
     except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
         m.note = f"probe raised: {exc}"[:200]
         return m
@@ -218,8 +219,10 @@ def _measure_across(db: Any, object_db: Any, entity: OntologyEntity, binding: Bi
     from aughor.ontology.sources import distinct_keys
     source, objects = binding_from(binding, "b"), object_from(entity, "o")
     bk = quote_ident(binding.key)
+    from aughor.db.dialects import native_sql
+    counts = f"SELECT COUNT(*), COUNT(b.{bk}), COUNT(DISTINCT b.{bk}) FROM {source}"
     try:
-        result = db.execute("__binding_probe__", f"SELECT COUNT(*), COUNT(b.{bk}), COUNT(DISTINCT b.{bk}) FROM {source}")
+        result = db.execute("__binding_probe__", native_sql(db, counts))
     except Exception as exc:  # noqa: BLE001 — an unprobeable binding is unmeasured, not refuted
         m.note = f"probe raised: {exc}"[:200]
         return m
@@ -722,7 +725,8 @@ def describe_with(db: Any) -> Describe:
     so no row is fetched and the security gate still sees it — or ``""`` for every column where a connector reports no
     types. ``({}, error)`` when the source cannot be read."""
     def describe(source: str) -> tuple[dict[str, str], Optional[str]]:
-        sql = f"SELECT * FROM {source} LIMIT 0"
+        from aughor.db.dialects import native_sql
+        sql = native_sql(db, f"SELECT * FROM {source} LIMIT 0")
         typed = getattr(db, "execute_typed", None)
         result, payload = typed("binding_columns", sql) if callable(typed) else (db.execute("binding_columns", sql), None)
         if getattr(result, "error", None):
@@ -932,11 +936,25 @@ def _free_name(table: str, used: set[str]) -> str:
     return name
 
 
+def _clock(entity: OntologyEntity) -> str:
+    """The column that places one of ``entity``'s rows in time: its declared event time, else its one timestamp
+    property — "" when it has neither, or several and none declared (a clock is never guessed)."""
+    props = entity.properties or {}
+    wanted = (entity.created_at_col or "").lower()
+    declared = next((name for name in props if wanted and name.lower() == wanted), None)
+    if declared is not None:
+        return declared
+    stamps = [name for name, p in props.items() if (p.semantic_type or "") == "timestamp"]
+    return stamps[0] if len(stamps) == 1 else ""
+
+
 def propose_bindings(graph: OntologyGraph, db: Any) -> list[BindingMeasurement]:
     """Propose a static binding wherever another type's table carries a type's key and the data proves it one row
     per object — the builder's half of ON-1b. Only a type whose own key was measured unique is proposed for; each
     candidate is counted, and the verified ones replace the type's `proposed_bindings`. Every candidate's
-    measurement is returned, so a report can say how many were asked about and not proposed."""
+    measurement is returned, so a report can say how many were asked about and not proposed. A key that REPEATS
+    proposes a part (a detail binding, ON-7) — or, where those rows are placed in time and have no identity of their
+    own, readings of the object (a timeseries binding, ON-5)."""
     asked: list[BindingMeasurement] = []
     for entity in sorted(graph.entities.values(), key=lambda e: e.id):
         entity.proposed_bindings = []
@@ -966,6 +984,20 @@ def propose_bindings(graph: OntologyGraph, db: Any) -> list[BindingMeasurement]:
                 entity.proposed_bindings.append(binding)
                 used.add(name)
             elif m.covered and m.non_null and m.distinct is not None and m.distinct != m.non_null:
+                # R4 — many rows per object, placed in time, with no identity of their own: READINGS of the object
+                # (ON-5), proposed as a timeseries binding, read as each object's latest row once a person binds it.
+                # Rows that are objects of their own — an order line, a review, even one with a date — stay a part.
+                clock = _clock(other)
+                if clock and other.backing is not None and other.backing.verified is False:
+                    readings = Binding(name=name, kind="timeseries", table=table, key=column, time_column=clock,
+                                       properties=properties, columns=renamed, skipped=skipped, source="proposed")
+                    mt = measure_binding(db, entity, readings)
+                    mt.stamp(readings)
+                    asked.append(mt)
+                    if mt.verified is True and properties:
+                        entity.proposed_bindings.append(readings)
+                        used.add(name)
+                    continue
                 # ON-7 — the key repeats: many rows per object, no clock — a PART. Proposed as a detail binding
                 # with the one rollup the data can vouch for, how many rows each object has; a person adds the rest.
                 part_key = key_of(other) or column

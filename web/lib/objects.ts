@@ -7,6 +7,7 @@
  * A refusal and a 404 are answers here, not errors: the page renders what they say.
  */
 import { getApiBase } from "@/lib/config";
+import { scopeDomain } from "@/lib/objectTypes";
 
 export interface ObjectProperty {
   name: string;
@@ -155,6 +156,8 @@ export interface ObjectPage {
   path: "object";
   connection_id: string;
   schema_name: string;
+  /** ON-8 — `org/domain` when the object is of an organisation's ontology; `connection_id` is where its rows live. */
+  domain?: string;
   object_type: string;
   type_id: string;
   type_name: string;
@@ -174,8 +177,9 @@ export interface ObjectRefusal {
   path: "refused";
   refused: string;
   available: string[];
-  connection_id: string;
-  schema_name: string;
+  connection_id?: string;
+  schema_name?: string;
+  domain?: string;
 }
 
 /** 404 — no object has that key, or no ontology is built for the scope. */
@@ -188,6 +192,7 @@ export interface LinkedObjectsPage {
   path: "links";
   connection_id: string;
   schema_name: string;
+  domain?: string;
   link: string;
   object_type: string;
   type_id: string;
@@ -224,6 +229,10 @@ export interface ObjectCatalogType {
   metrics: string[];
   /** ON-4 — properties accepted edits set on this type's objects. */
   overlay_properties?: string[];
+  /** A part stays a type by name and is listed under its parent: the parent's object_type while the mark holds. */
+  part_of?: string | null;
+  /** The types that are parts of this one, each with the binding it is read through. */
+  parts?: { object_type: string; binding: string }[];
 }
 
 export interface ObjectCatalog {
@@ -232,11 +241,14 @@ export interface ObjectCatalog {
   object_types: ObjectCatalogType[];
 }
 
-/** An omitted connection is the server's default, never an empty `connection_id=`. */
+/** An omitted connection is the server's default, never an empty `connection_id=`. ON-8 — an organisation's ontology
+ *  travels as `domain:<name>` where a connection goes, and is sent `?domain=` beside it. */
 function scope(connectionId?: string, schemaName?: string, extra: Record<string, string> = {}): string {
   const q = new URLSearchParams(extra);
   if (connectionId) q.set("connection_id", connectionId);
-  if (schemaName) q.set("schema_name", schemaName);
+  const domain = connectionId ? scopeDomain(connectionId) : null;
+  if (domain) q.set("domain", domain);
+  else if (schemaName) q.set("schema_name", schemaName);
   const s = q.toString();
   return s ? `?${s}` : "";
 }
@@ -312,6 +324,7 @@ export interface ObjectTitles {
   path: "titles";
   connection_id: string;
   schema_name: string;
+  domain?: string;
   object_type: string;
   type_id: string;
   key: string;

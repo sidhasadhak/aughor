@@ -167,6 +167,8 @@ def answer_federated(question: str, conn_ids: list[str], *, reconcile: bool = Fa
         return FederatedAnswer(_error_result("plan failed validation: " + "; ".join(issues)), plan, issues)
 
     # Fold the steps: execute the driver, then join each subsequent source onto the assembled result.
+    import time
+    started = time.monotonic()
     driver = plan.steps[0]
     result = open_connection_for(conn_ids[driver.source]).execute_bounded("__fed_driver__", driver.sql, _DRIVER_CAP)
     if result.error:
@@ -179,6 +181,13 @@ def answer_federated(question: str, conn_ids: list[str], *, reconcile: bool = Fa
         if result.error:
             return FederatedAnswer(result, plan, [f"step {i} join failed: {result.error}"])
 
+    # Every read of the fold ran under a plumbing label, which skips the post-execution gate, so the answer passes it
+    # here for every connection it read: PII redaction, the strictest row budget, and an audit record on each.
+    from aughor.db.connection import security_post
+    read_from = list(dict.fromkeys(conn_ids[step.source] for step in plan.steps))
+    statements = "\n".join(f"-- step {i} on {conn_ids[step.source]}\n{step.sql}" for i, step in enumerate(plan.steps))
+    result = security_post(read_from[0], "federated_planner", statements, result, (time.monotonic() - started) * 1000,
+                           also_read=read_from[1:])
     from aughor.stats import bump
     bump("federation.planner.executed")
     return FederatedAnswer(result, plan, [])

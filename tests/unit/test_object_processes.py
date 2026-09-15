@@ -170,6 +170,99 @@ def test_a_promise_within_days_counts_calendar_days_from_the_previous_stage(db, 
     assert promise.open_overdue == overdue
 
 
+# ── a promise in hours ──────────────────────────────────────────────────────────────────────
+
+#: Each order placed at an hour of its day and packed 0–60 hours later (never, on every ninth), odd orders at minutes past
+#: the hour: the samples' moments are dates, and a promise in hours is about the hours that pass between two moments —
+#: an order placed at 10:05 and packed at 10:40 the next day took more than 24 hours though 24 hour marks passed.
+_MOMENTS = """
+CREATE TABLE ecommerce.orders_with_moments AS
+SELECT o.*,
+       CAST(o.order_date AS TIMESTAMP) + to_hours(n % 24) + to_minutes(CASE WHEN n % 2 = 1 THEN (n * 13) % 60 ELSE 0 END)
+           AS placed_at,
+       CASE WHEN n % 9 = 0 THEN NULL
+            ELSE CAST(o.order_date AS TIMESTAMP) + to_hours(n % 24 + (n * 7) % 61)
+                 + to_minutes(CASE WHEN n % 2 = 1 THEN (n * 29) % 60 ELSE 0 END) END AS packed_at
+FROM (SELECT *, CAST(substr(order_id, 2) AS INTEGER) AS n FROM ecommerce.orders) o;
+ALTER TABLE ecommerce.orders_with_moments DROP COLUMN n;
+DROP TABLE ecommerce.orders;
+ALTER TABLE ecommerce.orders_with_moments RENAME TO orders;
+"""
+PACKING = {"id": "order_packing", "entity": "Order", "stages": [
+    {"name": "placed", "timestamp": "placed_at"},
+    {"name": "packed", "timestamp": "packed_at", "promise": {"name": "packing", "within_hours": 24}},
+]}
+
+
+@pytest.fixture(scope="module")
+def hours_db(tmp_path_factory):
+    path = tmp_path_factory.mktemp("hours") / "samples.duckdb"
+    seed(path)
+    con = duckdb.connect(str(path))
+    con.execute(_MOMENTS)
+    con.close()
+    conn = open_connection("duckdb", str(path), schema_name="ecommerce", connection_id="processes-hours-t")
+    yield conn
+    conn.close()
+
+
+def hours_graph() -> OntologyGraph:
+    g = fresh_graph()
+    for name in ("placed_at", "packed_at"):
+        g.entities["Order"].properties[name] = EntityProperty(name=name, data_type="TIMESTAMP", semantic_type="timestamp",
+                                                              null_rate=0.1)
+    return g
+
+
+def test_a_promise_within_hours_counts_the_hours_that_pass_not_the_calendar_days_they_touch(hours_db):
+    graph = hours_graph()
+    _, p = declare(graph, hours_db, PACKING)
+    promise = p.stages[1].promise
+    seconds = "date_diff('second', placed_at, packed_at)"
+    reached, breached, exactly, still_open, by_days = ints(hours_db, (
+        "SELECT COUNT(*) FILTER (WHERE placed_at IS NOT NULL AND packed_at IS NOT NULL), "
+        f"COUNT(*) FILTER (WHERE {seconds} > 24 * 3600), COUNT(*) FILTER (WHERE {seconds} = 24 * 3600), "
+        "COUNT(*) FILTER (WHERE placed_at IS NOT NULL AND packed_at IS NULL), "
+        "COUNT(*) FILTER (WHERE date_diff('day', CAST(placed_at AS DATE), CAST(packed_at AS DATE)) > 1) "
+        "FROM ecommerce.orders"))
+    assert (promise.reached, promise.breached, promise.open) == (reached, breached, still_open)
+    (marks,) = ints(hours_db, "SELECT COUNT(*) FROM ecommerce.orders WHERE date_diff('hour', placed_at, packed_at) > 24")
+    assert 0 < breached < reached and exactly > 0 and by_days != breached     # 24 hours to the second keeps it
+    assert marks != breached                                                    # hours that pass, not hour marks crossed
+    (overdue,) = ints(hours_db, "SELECT COUNT(*) FROM ecommerce.orders WHERE placed_at IS NOT NULL AND packed_at IS NULL "
+                                f"AND placed_at < TIMESTAMP '{promise.as_of}' - INTERVAL 24 HOUR")
+    assert promise.open_overdue == overdue
+    assert run(hours_db, {"object_type": "order", "segment": "late_packing", "measures": [{"agg": "count"}]}, graph) == [
+        (breached,)]
+    [(mean,)] = rows(hours_db, f"SELECT AVG({seconds} / 3600.0) FROM ecommerce.orders WHERE packed_at IS NOT NULL")
+    [(lag,)] = run(hours_db, {"object_type": "order", "measures": [{"agg": "avg", "path": "packing_lag_hours"}]}, graph)
+    assert abs(float(lag) - float(mean)) < 1e-6
+    described = describe_process(graph, p)["stages"][1]["promise"]
+    assert (described["kind"], described["within_hours"], described["segment"], described["metric"]) == (
+        "within_hours", 24, "late_packing", "packing_breach_rate")
+
+
+@pytest.mark.parametrize("as_of, cutoff", [("2024-01-10 13:00:00", "2024-01-09 13:00:00"),
+                                           ("2024-01-10T13:30:15+00:00", "2024-01-09 13:30:15"),
+                                           ("2024-01-10", "2024-01-09 00:00:00")])
+def test_an_open_object_is_past_a_within_hours_promise_exactly_when_more_than_n_hours_have_gone(as_of, cutoff):
+    from aughor.ontology.processes import _cutoff_hours
+    assert _cutoff_hours(as_of, 24) == cutoff
+
+
+def test_a_within_hours_promise_is_a_whole_number_of_hours_after_the_moment_before():
+    assert process_spec_problem(PACKING) == ""
+    first = copy.deepcopy(PACKING)
+    first["stages"][0]["promise"] = {"name": "instant", "within_hours": 4}
+    assert "first stage" in process_spec_problem(first)
+    for bad in (0, 2.5, True, 24 * 3650 + 1):
+        wrong = copy.deepcopy(PACKING)
+        wrong["stages"][1]["promise"]["within_hours"] = bad
+        assert "`within_hours` is a whole number of hours" in process_spec_problem(wrong), bad
+    kept = process_fields(PACKING)["stages"][1]["promise"]
+    assert kept == {"name": "packing", "within_hours": 24}
+
+
 # ── what a promise derives, compiled ────────────────────────────────────────────────────────
 
 def test_what_a_promise_derives_compiles_through_the_object_door_and_equals_its_reference(db, graph):
@@ -242,6 +335,7 @@ def test_a_promise_never_or_always_broken_is_flagged_rather_than_trusted(db, gra
     (lambda s: s["stages"][2].update(name="shipped"), "named twice"),
     (lambda s: s["stages"][0].update(promise={"target": 0.9}), "exactly one of `within_days`"),
     (lambda s: s["stages"][1]["promise"].update(within_days=2), "exactly one of `within_days`"),
+    (lambda s: s["stages"][2]["promise"].update(within_hours=48), "exactly one of `within_days`"),
     (lambda s: s["stages"][2]["promise"].update(target=1.5), "`target`"),
     (lambda s: s["stages"][1]["promise"].pop("grain") and s["stages"][1]["promise"].update(via="order_item_to_order"),
      "needs a `grain`"),
@@ -418,6 +512,74 @@ def test_the_overlay_rebuilds_a_measured_rule(db, graph):
     assert edited.verified is None and edited.observed == {}
 
 
+# ── a rule that scopes a metric ─────────────────────────────────────────────────────────────
+
+FULFILLED = {"id": "fulfilled_orders", "entity": "Order", "kind": "condition", "owner": "finance",
+             "conditions": [{"path": "status", "op": "not_in", "values": ["cancelled", "refunded"]}], "scopes": ["revenue"]}
+KEPT = "status NOT IN ('cancelled', 'refunded')"
+
+
+def test_a_rule_scopes_a_metric_wherever_it_is_read_and_nothing_measured_beside_it(db, graph):
+    fields, rule = declare_rule(graph, db, FULFILLED)
+    [(total, kept, orders, average)] = rows(db, (f"SELECT SUM(total_amount), SUM(total_amount) FILTER (WHERE {KEPT}), "
+                                                 "COUNT(*), AVG(total_amount) FROM ecommerce.orders"))
+    assert fields["scopes"] == ["revenue"] and rule.verified is True
+    assert ((float(rule.scoped["revenue"]["without"]), float(rule.scoped["revenue"]["within"]))
+            == (float(total), float(kept)))
+    compiled = compile_({"object_type": "order", "measures": [{"metric": "revenue"}, {"metric": "aov"}, {"agg": "count"}]},
+                        graph)
+    assert any(line.startswith("metric revenue (verified), within fulfilled_orders") for line in compiled.plan)
+    [(revenue, aov, count)] = rows(db, compiled.sql)
+    assert (float(revenue), count) == (float(kept), orders)             # the count beside it is every order
+    assert abs(float(aov) - float(average)) < 1e-9                      # a metric the rule does not scope reads as it is
+    by = dict(rows(db, compile_({"object_type": "order", "by": ["status"], "measures": [{"metric": "revenue"}]}, graph).sql))
+    assert by["cancelled"] in (None, "NULL") and by["refunded"] in (None, "NULL") and by["delivered"] not in (None, "NULL")
+    [(distinct_kept, counted_kept)] = rows(db, (f"SELECT COUNT(DISTINCT customer_id) FILTER (WHERE {KEPT}), "
+                                                f"COUNT(*) FILTER (WHERE {KEPT}) FROM ecommerce.orders"))
+    for metric_id, formula in (("buyers", "COUNT(DISTINCT customer_id)"), ("counted", "COUNT(*)")):
+        graph.metrics[metric_id] = graph.metrics["revenue"].model_copy(update={"id": metric_id, "display_name": metric_id,
+                                                                              "formula_sql": formula})
+    graph.rules["fulfilled_orders"] = rule.model_copy(update={"scopes": ["revenue", "buyers", "counted"]})
+    [(buyers, counted)] = rows(db, compile_({"object_type": "order",
+                                             "measures": [{"metric": "buyers"}, {"metric": "counted"}]}, graph).sql)
+    assert (buyers, counted) == (distinct_kept, counted_kept)           # inside a DISTINCT, and a COUNT(*) of its rows
+
+    def revenue_read() -> float:
+        [(value,)] = rows(db, compile_({"object_type": "order", "measures": [{"metric": "revenue"}]}, graph).sql)
+        return float(value)
+    graph.rules["fulfilled_orders"] = rule.model_copy(update={"verified": None})
+    assert revenue_read() == float(total)                               # an uncounted rule scopes nothing
+    graph.rules["fulfilled_orders"] = rule.model_copy(update={"entity": "Customer"})
+    assert revenue_read() == float(total)                               # nor does a rule on another type
+
+
+def test_a_rule_scopes_only_a_verified_metric_of_its_own_type(graph):
+    problem, _ = resolve_rule(graph, "r", rule_fields({**FULFILLED, "id": "r", "scopes": ["gross_margin"]}))
+    assert "no metric 'gross_margin'" in problem
+    problem, _ = resolve_rule(graph, "r", rule_fields({**EU_CORE, "id": "r", "scopes": ["revenue"]}))
+    assert "is defined on Order, not Customer" in problem
+    _, canonical = resolve_rule(graph, "r", rule_fields({**FULFILLED, "id": "r", "scopes": ["REVENUE"]}))
+    assert canonical["scopes"] == ["revenue"]
+    graph.metrics["aov"].verified = False
+    problem, _ = resolve_rule(graph, "r", rule_fields({**FULFILLED, "id": "r", "scopes": ["aov"]}))
+    assert "is not verified" in problem
+    assert "each metric it scopes once" in rule_spec_problem({**FULFILLED, "scopes": ["revenue", "revenue"]})
+    assert "`scopes`" in rule_spec_problem({**FULFILLED, "scopes": "revenue"})
+
+
+def test_the_overlay_keeps_what_a_scoping_rule_measured_until_what_it_scopes_changes(db, graph):
+    fields, rule = declare_rule(graph, db, FULFILLED)
+    ov = OntologyOverride(target_kind="rule", target_id="fulfilled_orders", fields=fields,
+                          binding={"rule": rule_entry(fields, rule)})
+    kept = declared_rule(ov, fresh_graph())
+    assert (kept.scopes, kept.scoped, kept.verified) == (["revenue"], rule.scoped, True)
+    moved = declared_rule(OntologyOverride(target_kind="rule", target_id="fulfilled_orders",
+                                           fields={**fields, "scopes": ["aov"]}, binding=ov.binding), fresh_graph())
+    assert (moved.verified, moved.scoped) == (None, {})
+    again = measure_rule(db, graph, "fulfilled_orders", fields)        # counted again with the rule already on the graph
+    assert again.scoped == rule.scoped
+
+
 # ── the doors ───────────────────────────────────────────────────────────────────────────────
 
 CONN = "object-processes-door-t"
@@ -453,6 +615,8 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     assert (process["verified"], shipping["grain"], shipping["segment"], shipping["verified"]) == (
         True, "order_item", "late_shipping", True)
     assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 409
+    hours = client.post("/ontology/processes", params=PARAMS, json=PACKING)   # the door's model carries `within_hours`
+    assert hours.status_code == 400 and "placed_at" in hours.json()["detail"], hours.text
     unknown = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "id": "other", "entity": "Shipment"})
     assert unknown.status_code == 400 and "no object type 'Shipment'" in unknown.json()["detail"]
     malformed = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "id": "Bad Id"})
@@ -474,6 +638,10 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     rule = client.post("/ontology/rules", params=PARAMS, json=EU_CORE)
     assert rule.status_code == 200, rule.text
     assert (rule.json()["rule"]["missing"], rule.json()["rule"]["verified"]) == (["XX"], True)
+    scoping = client.post("/ontology/rules", params=PARAMS, json=FULFILLED)
+    assert scoping.status_code == 200 and scoping.json()["rule"]["scopes"] == ["revenue"], scoping.text
+    rail = client.get("/object-types", params=PARAMS).json()["rules"]
+    assert next(r for r in rail if r["id"] == "fulfilled_orders")["scopes"] == ["revenue"]
     shadow = client.post("/ontology/rules", params=PARAMS, json={
         "id": "active_orders", "entity": "Order", "conditions": [{"path": "status", "op": "=", "value": "shipped"}]})
     assert shadow.status_code == 400 and "already has a segment" in shadow.json()["detail"]
@@ -481,7 +649,7 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
     measured = client.post("/ontology/measure", params=PARAMS).json()
     assert [(p["process"], p["verified"]) for p in measured["processes"]] == [("order_fulfilment", True)]
     assert measured["processes"][0]["promises"][0]["breached"] == shipping["breached"]
-    assert [r["rule"] for r in measured["rules"]] == ["eu_core"]
+    assert [r["rule"] for r in measured["rules"]] == ["eu_core", "fulfilled_orders"]
 
     assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 200
     assert client.delete("/ontology/processes/order_fulfilment", params=PARAMS).status_code == 404
@@ -489,8 +657,32 @@ def test_a_process_and_a_rule_are_declared_counted_read_back_and_withdrawn_over_
         "object_type": "order_item", "segment": "late_shipping", "measures": [{"agg": "count"}]}).json()
     assert gone["path"] == "refused" and "no segment 'late_shipping'" in gone["refused"]
     assert client.delete("/ontology/rules/eu_core", params=PARAMS).status_code == 200
+    assert client.delete("/ontology/rules/fulfilled_orders", params=PARAMS).status_code == 200
     assert client.get("/ontology/processes", params=PARAMS).json() == {
         "connection_id": CONN, "schema_name": "ecommerce", "processes": [], "rules": []}
+
+
+def test_a_declared_process_and_rule_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
+    import aughor.routers.ontology as onto
+    from aughor.ontology import overrides as overrides_tree
+    monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
+    assert client.post("/ontology/processes", params=PARAMS, json=FULFILMENT).status_code == 200
+    assert client.post("/ontology/rules", params=PARAMS, json=FULFILLED).status_code == 200
+    assert client.post("/ontology/export", params=PARAMS).status_code == 200
+    targets = (("process", "order_fulfilment"), ("rule", "fulfilled_orders"))
+    stored = {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields for kind, target in targets}
+    for kind, target in targets:
+        assert overrides_tree.delete_override(CONN, "ecommerce", kind, target)
+
+    imported = client.post("/ontology/import", params=PARAMS)
+    assert imported.status_code == 200, imported.text
+    assert [(d["kind"], d["target"], d["declared"]) for d in imported.json()["declared"]] == [
+        ("process", "order_fulfilment", True), ("rule", "fulfilled_orders", True)]
+    assert {kind: overrides_tree.find_override(CONN, "ecommerce", kind, target).fields
+            for kind, target in targets} == stored                     # declared again, the same fields stored
+    listed = client.get("/ontology/processes", params=PARAMS).json()
+    assert ([p["id"] for p in listed["processes"]], [r["id"] for r in listed["rules"]]) == (
+        ["order_fulfilment"], ["fulfilled_orders"])
 
 
 # ── the boundary of "already past it" and the names a path may hold ─────────────────────────
@@ -521,3 +713,18 @@ def test_a_stage_may_be_anchored_to_a_column_named_with_a_space_but_never_to_sql
         broken = copy.deepcopy(FULFILMENT)
         broken["stages"][0]["timestamp"] = bad
         assert "property path" in process_spec_problem(broken), bad
+
+
+def test_the_process_and_rule_doors_keep_the_provenance_they_are_given(door, client):
+    """E5 — a declaration names who proposed it. The process and rule doors keep `provenance`, which their request
+    models dropped before the store ever saw it (a person confirming a model's proposal lost the model's name)."""
+    said = "model:some-model@1"
+    process = client.post("/ontology/processes", params=PARAMS, json={**FULFILMENT, "provenance": said})
+    assert process.status_code == 200, process.text
+    assert process.json()["process"]["provenance"] == said
+    assert client.get("/ontology/processes", params=PARAMS).json()["processes"][0]["provenance"] == said
+    rule = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "provenance": said})
+    assert rule.status_code == 200, rule.text
+    assert rule.json()["rule"]["provenance"] == said
+    too_long = client.post("/ontology/rules", params=PARAMS, json={**EU_CORE, "id": "eu_core_two", "provenance": "m" * 201})
+    assert too_long.status_code == 422

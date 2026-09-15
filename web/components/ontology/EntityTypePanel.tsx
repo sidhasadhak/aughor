@@ -26,18 +26,26 @@ import {
   confirmProposals,
   declareDisplayProperty,
   declareLink,
+  declareProcess,
+  declareRule,
   deleteEntity,
   deleteLink,
   getObjectType,
   getTypePaths,
   measureOntology,
   nameLink,
+  previewBacking,
   removeBinding,
   scopeDomain,
   setPartOf,
+  setQueryBacking,
+  withdrawBacking,
+  type BackingPreview,
   type BindingSpec,
   type ConfirmTarget,
   type DeclaredLinkSpec,
+  type DeclaredProcessSpec,
+  type DeclaredRuleSpec,
   type FrameSpec,
   type ObjectTypeDetail,
   type PropertySource,
@@ -48,6 +56,7 @@ import {
   type TypeMapRow,
   type TypePath,
   type TypePaths,
+  type TypeProperty,
   type TypeRefusal,
 } from "@/lib/objectTypes";
 
@@ -192,7 +201,8 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
         inDomain={inDomain} />
       {!inDomain && <ActionsSection detail={detail} connectionId={connectionId} />}
       <MetricsSection detail={detail} />
-      <ProcessesSection detail={detail} onOpenProcess={onOpenProcess} />
+      <ProcessesSection detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+        onChanged={onChanged} />
       <PathFinder detail={detail} types={types} connectionId={connectionId} schema={schema} onOpen={onOpen} />
     </>
   );
@@ -200,14 +210,17 @@ function TypeDetail({ detail, connectionId, schema, types, onOpen, onOpenProcess
 
 /** ON-9 — the processes this type takes part in, and every name a declared process or rule derives on it: a segment,
  *  a lag, a breach rate — each read by the compiler once its declaration is measured, and refused with the reason
- *  until then. Nothing shows for a type no declaration touches. */
-function ProcessesSection({ detail, onOpenProcess }: {
+ *  until then. A process the type goes through and a rule over it are declared here, and counted before anything is
+ *  written. */
+function ProcessesSection({ detail, connectionId, schema, onOpenProcess, onChanged }: {
   detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
   onOpenProcess?: (processId: string) => void;
+  onChanged: () => void;
 }) {
   const processes = detail.processes ?? [];
   const derived = detail.derived ? [...detail.derived.segments, ...detail.derived.metrics, ...detail.derived.properties] : [];
-  if (!processes.length && !derived.length) return null;
   return (
     <Section title="Processes and rules" aside="what declarations derive here">
       {processes.map((p) => (
@@ -221,7 +234,257 @@ function ProcessesSection({ detail, onOpenProcess }: {
         </div>
       ))}
       {derived.length > 0 && <DerivedList rows={derived} />}
+      {!processes.length && !derived.length && (
+        <p className="aug-fs-xs" style={{ margin: "0 0 6px", color: "var(--t3)" }}>
+          No declared process or rule touches this type yet.
+        </p>
+      )}
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+        <DeclareProcess detail={detail} connectionId={connectionId} schema={schema} onOpenProcess={onOpenProcess}
+          onChanged={onChanged} />
+        <DeclareRule detail={detail} connectionId={connectionId} schema={schema} onChanged={onChanged} />
+      </div>
     </Section>
+  );
+}
+
+const SNAKE = /^[a-z][a-z0-9_]{0,63}$/;
+
+function isMoment(p: TypeProperty): boolean {
+  return p.role === "timestamp" || /DATE|TIME/i.test(p.data_type);
+}
+
+function listOf(text: string): string[] {
+  return text.split(",").map((v) => v.trim()).filter(Boolean);
+}
+
+type StageDraft = { name: string; timestamp: string; terms: "" | "within_days" | "within_hours"; amount: string };
+const NO_STAGE: StageDraft = { name: "", timestamp: "", terms: "", amount: "" };
+
+/** ON-9 — declare a process the type goes through: its stages in order, each at the moment an object reaches it, and on
+ *  a stage after the first the promise about reaching it — within N calendar days, or N hours, of the stage before.
+ *  The server resolves every moment and counts the whole process before anything is written. A deadline promise, kept
+ *  per another type, is declared through the API. */
+function DeclareProcess({ detail, connectionId, schema, onOpenProcess, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onOpenProcess?: (processId: string) => void;
+  onChanged: () => void;
+}) {
+  const moments = detail.properties.filter(isMoment);
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState("");
+  const [name, setName] = useState("");
+  const [stages, setStages] = useState<StageDraft[]>([NO_STAGE, NO_STAGE]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const edit = (i: number, change: Partial<StageDraft>) =>
+    setStages((all) => all.map((s, j) => (j === i ? { ...s, ...change } : s)));
+  const ready = SNAKE.test(id.trim()) && stages.length >= 2 && stages.every((s, i) =>
+    SNAKE.test(s.name.trim()) && !!s.timestamp && (!s.terms || (i > 0 && /^\d+$/.test(s.amount.trim()))));
+  const submit = async () => {
+    setBusy(true);
+    setProblem("");
+    const spec: DeclaredProcessSpec = {
+      id: id.trim(), entity: detail.id, ...(name.trim() ? { display_name: name.trim() } : {}),
+      stages: stages.map((s) => ({
+        name: s.name.trim(), timestamp: s.timestamp,
+        ...(s.terms === "within_hours" ? { promise: { within_hours: Number(s.amount.trim()) } }
+          : s.terms === "within_days" ? { promise: { within_days: Number(s.amount.trim()) } } : {}),
+      })),
+    };
+    try {
+      const made = await declareProcess(connectionId, spec, schema);
+      setOpen(false);
+      setId(""); setName(""); setStages([NO_STAGE, NO_STAGE]);
+      onChanged();
+      onOpenProcess?.(made.id);
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <Button variant="outline" size="xs" onClick={() => setOpen(true)} disabled={moments.length < 2}
+        title={moments.length < 2 ? "A process runs between two moments of this type, and it has fewer"
+          : "Declare a process this type goes through — its stages, and the promises about reaching them"}>
+        <Icon name="plus" size={12} /> Declare a process
+      </Button>
+    );
+  }
+  return (
+    <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "8px 0", borderTop: RULE }}
+      data-testid="process-declare">
+      <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
+        A process {detail.display_name} goes through: its stages in order, each at the moment an object reaches it. Every
+        moment is resolved and the whole process counted before anything is written.
+      </p>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — order_fulfilment"
+          aria-label="Process id" onChange={(e) => setId(e.target.value)} />
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={name} placeholder="Display name (optional)"
+          aria-label="Process display name" onChange={(e) => setName(e.target.value)} />
+      </div>
+      {stages.map((s, i) => (
+        <div key={i} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+          <input className="aug-fs-xs" style={{ ...FIELD, width: 110 }} value={s.name} placeholder={i ? "shipped" : "placed"}
+            aria-label={`Stage ${i + 1} name`} onChange={(e) => edit(i, { name: e.target.value })} />
+          <select className="aug-fs-xs" style={SELECT} value={s.timestamp} aria-label={`Stage ${i + 1} moment`}
+            onChange={(e) => edit(i, { timestamp: e.target.value })}>
+            <option value="">moment…</option>
+            {moments.map((p) => <option key={p.name} value={p.name}>{p.name}</option>)}
+          </select>
+          {i > 0 && (
+            <select className="aug-fs-xs" style={SELECT} value={s.terms} aria-label={`Stage ${i + 1} promise`}
+              onChange={(e) => edit(i, { terms: e.target.value as StageDraft["terms"] })}>
+              <option value="">no promise</option>
+              <option value="within_days">within days</option>
+              <option value="within_hours">within hours</option>
+            </select>
+          )}
+          {i > 0 && s.terms && (
+            <input className="aug-fs-xs" style={{ ...FIELD, width: 56 }} value={s.amount} inputMode="numeric"
+              placeholder={s.terms === "within_hours" ? "24" : "2"}
+              aria-label={`Stage ${i + 1} promise ${s.terms === "within_hours" ? "hours" : "days"}`}
+              onChange={(e) => edit(i, { amount: e.target.value })} />
+          )}
+          {i > 1 && (
+            <Button variant="ghost" size="xs" disabled={busy}
+              onClick={() => setStages((all) => all.filter((_, j) => j !== i))}>Remove</Button>
+          )}
+        </div>
+      ))}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setStages((all) => [...all, NO_STAGE])}>
+          Add a stage
+        </Button>
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={submit}>
+          {busy ? "Counting…" : "Declare the process"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {problem && <p className="aug-fs-xs" style={{ margin: 0, color: "var(--red5)", lineHeight: 1.45 }}>{problem}</p>}
+    </div>
+  );
+}
+
+const OPS = ["=", "!=", "in", "not_in", ">", ">=", "<", "<=", "is_null", "not_null"];
+const NO_VALUE = new Set(["is_null", "not_null"]);
+const LISTED = new Set(["in", "not_in"]);
+
+/** ON-9 — declare a rule over the type: a value set — the values of one property grouped under one name — or a
+ *  condition, and the verified metrics of the type it scopes, each read within the rule wherever it is read. Compiled
+ *  and counted before anything is written; the object door reads the rule as a segment named by its id. */
+function DeclareRule({ detail, connectionId, schema, onChanged }: {
+  detail: ObjectTypeDetail;
+  connectionId: string;
+  schema?: string;
+  onChanged: () => void;
+}) {
+  const groupable = detail.properties.filter((p) => !p.is_key && !isMoment(p));
+  const [open, setOpen] = useState(false);
+  const [id, setId] = useState("");
+  const [kind, setKind] = useState<"value_set" | "condition">("condition");
+  const [property, setProperty] = useState("");
+  const [values, setValues] = useState("");
+  const [op, setOp] = useState("=");
+  const [value, setValue] = useState("");
+  const [scopes, setScopes] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState("");
+  const ready = SNAKE.test(id.trim()) && !!property && (kind === "value_set" ? listOf(values).length > 0
+    : NO_VALUE.has(op) || (LISTED.has(op) ? listOf(value).length > 0 : !!value.trim()));
+  const submit = async () => {
+    setBusy(true);
+    setProblem("");
+    const condition = { path: property, op,
+      ...(NO_VALUE.has(op) ? {} : LISTED.has(op) ? { values: listOf(value) } : { value: value.trim() }) };
+    const spec: DeclaredRuleSpec = { id: id.trim(), entity: detail.id, kind,
+      ...(kind === "value_set" ? { property, values: listOf(values) } : { conditions: [condition] }),
+      ...(scopes.length ? { scopes } : {}) };
+    try {
+      await declareRule(connectionId, spec, schema);
+      setOpen(false);
+      setId(""); setProperty(""); setValues(""); setOp("="); setValue(""); setScopes([]);
+      onChanged();
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  if (!open) {
+    return (
+      <Button variant="outline" size="xs" onClick={() => setOpen(true)}
+        title="Declare a rule over this type — a value set or a condition, and the metrics it scopes">
+        <Icon name="plus" size={12} /> Declare a rule
+      </Button>
+    );
+  }
+  return (
+    <div style={{ flexBasis: "100%", display: "flex", flexDirection: "column", gap: 6, padding: "8px 0", borderTop: RULE }}
+      data-testid="rule-declare">
+      <p className="aug-fs-xs" style={{ margin: 0, color: "var(--t3)", lineHeight: 1.45 }}>
+        A rule over {detail.display_name}: the values of one property grouped under one name, or a condition. It is
+        compiled and counted before anything is written, and read as a segment named by its id.
+      </p>
+      <div style={{ display: "flex", gap: 6 }}>
+        <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={id} placeholder="id — fulfilled_orders"
+          aria-label="Rule id" onChange={(e) => setId(e.target.value)} />
+        <select className="aug-fs-xs" style={SELECT} value={kind} aria-label="Rule kind"
+          onChange={(e) => { setKind(e.target.value as "value_set" | "condition"); setProperty(""); }}>
+          <option value="condition">condition</option>
+          <option value="value_set">value set</option>
+        </select>
+      </div>
+      <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap" }}>
+        <select className="aug-fs-xs" style={SELECT} value={property} aria-label="Rule property"
+          onChange={(e) => setProperty(e.target.value)}>
+          <option value="">property…</option>
+          {(kind === "value_set" ? groupable : detail.properties).map((p) => (
+            <option key={p.name} value={p.name}>{p.name}</option>
+          ))}
+        </select>
+        {kind === "value_set" ? (
+          <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={values} placeholder="DE, AT, CH"
+            aria-label="Rule values" onChange={(e) => setValues(e.target.value)} />
+        ) : (
+          <>
+            <select className="aug-fs-xs" style={SELECT} value={op} aria-label="Rule operator"
+              onChange={(e) => setOp(e.target.value)}>
+              {OPS.map((o) => <option key={o} value={o}>{o.replace("_", " ")}</option>)}
+            </select>
+            {!NO_VALUE.has(op) && (
+              <input className="aug-fs-xs" style={{ ...FIELD, flex: 1 }} value={value}
+                placeholder={LISTED.has(op) ? "cancelled, refunded" : "value"} aria-label="Rule value"
+                onChange={(e) => setValue(e.target.value)} />
+            )}
+          </>
+        )}
+      </div>
+      {detail.metrics.length > 0 && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <span className="aug-fs-xs" style={{ color: "var(--t3)" }}>scopes</span>
+          {detail.metrics.map((m) => (
+            <label key={m.id} className="aug-fs-xs" style={{ display: "inline-flex", alignItems: "center", gap: 4, color: "var(--t2)" }}>
+              <input type="checkbox" checked={scopes.includes(m.id)}
+                onChange={(e) => setScopes((all) => (e.target.checked ? [...all, m.id] : all.filter((s) => s !== m.id)))} />
+              {m.display_name || m.id}
+            </label>
+          ))}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <Button variant="outline" size="xs" disabled={busy || !ready} onClick={submit}>
+          {busy ? "Counting…" : "Declare the rule"}
+        </Button>
+        <Button variant="ghost" size="xs" disabled={busy} onClick={() => setOpen(false)}>Cancel</Button>
+      </div>
+      {problem && <p className="aug-fs-xs" style={{ margin: 0, color: "var(--red5)", lineHeight: 1.45 }}>{problem}</p>}
+    </div>
   );
 }
 
@@ -671,6 +934,13 @@ function BindingRow({ binding: b, first, busy, onRemove, confirm, source }: {
   );
 }
 
+/** What a proposal's kind says about its rows, beside what it would supply. */
+function proposalShape(p: ProposedBinding): string {
+  if (p.kind === "detail") return " — many rows per object: a part";
+  if (p.kind === "timeseries") return ` — readings over ${p.spec.time_column ?? "time"}: read as each object's latest`;
+  return "";
+}
+
 function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding; busy: boolean; onBind: () => void }) {
   return (
     <div style={{ padding: "7px 0", borderTop: RULE }} data-testid="entity-binding-proposal">
@@ -686,8 +956,116 @@ function ProposalRow({ proposal: p, busy, onBind }: { proposal: ProposedBinding;
         <span style={MONO}>{p.key} → {p.object_key}</span> · {p.note}
       </p>
       <p className="aug-fs-xs" style={{ ...MONO, margin: "3px 0 0", color: "var(--t2)", overflowWrap: "anywhere" }}>
-        would supply {p.supplies.join(", ")}{p.kind === "detail" ? " — many rows per object: a part" : ""}
+        would supply {p.supplies.join(", ")}{proposalShape(p)}
       </p>
+    </div>
+  );
+}
+
+/** ON-1 — read this type from a keyed SELECT. The preview says, before anything is written, whether the SELECT reads,
+ *  how many rows it holds, whether its key is unique over them, and which of the type's properties it keeps, drops —
+ *  the compiler reads every property from the backing, so a dropped one would stop resolving — and adds. It is set
+ *  only when its key is unique and it drops nothing; withdrawn, the type reads its table again. */
+function BackingEditor({ detail, busy, onPreview, onSet, onWithdraw }: {
+  detail: ObjectTypeDetail;
+  busy: boolean;
+  onPreview: (sql: string, key: string) => Promise<BackingPreview>;
+  onSet: (sql: string, key: string) => void;
+  onWithdraw: () => void;
+}) {
+  const primary = detail.bindings.find((b) => b.primary);
+  const readsQuery = primary?.reads === "query";
+  const [open, setOpen] = useState(false);
+  const [sql, setSql] = useState(readsQuery ? primary?.sql ?? "" : "");
+  const [key, setKey] = useState(detail.key.property);
+  const [preview, setPreview] = useState<BackingPreview | null>(null);
+  const [looking, setLooking] = useState(false);
+  const [problem, setProblem] = useState("");
+  const look = async () => {
+    setLooking(true);
+    setProblem("");
+    try {
+      setPreview(await onPreview(sql.trim(), key.trim()));
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setLooking(false);
+    }
+  };
+  const blocked = !preview ? "preview it first"
+    : !preview.readable ? preview.note
+    : preview.dropped.length > 0
+      ? `it drops ${preview.dropped.join(", ")} — select ${preview.dropped.length === 1 ? "it" : "them"} too`
+    : preview.unique !== true ? (preview.note || preview.unique_note || "its key is not unique over these rows")
+    : "";
+  const term: React.CSSProperties = { color: "var(--t3)" };
+  if (!open) {
+    return (
+      <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
+        <Button variant="minimal" size="xs" onClick={() => setOpen(true)}>
+          {readsQuery ? "Edit its SELECT" : "Read from a SELECT"}
+        </Button>
+        {readsQuery && (
+          <Button variant="minimal" size="xs" disabled={busy} onClick={onWithdraw}
+            title="Withdraw the SELECT — the type reads its table again, and its other edits stay">
+            Read its table again
+          </Button>
+        )}
+      </div>
+    );
+  }
+  return (
+    <div style={{ marginTop: 10, paddingTop: 8, borderTop: RULE }} data-testid="backing-editor">
+      <p className="aug-fs-xs" style={{ margin: "0 0 6px", color: "var(--t3)", lineHeight: 1.45 }}>
+        Read {detail.display_name} from a keyed SELECT: its rows are the objects, and every property is read from it.
+        Nothing is written until it is set.
+      </p>
+      <textarea className="aug-fs-xs" style={{ ...FIELD, ...MONO, width: "100%", minHeight: 64 }} value={sql}
+        aria-label="Backing SELECT" placeholder="SELECT c.customer_id, c.name, p.lifetime_spend FROM …"
+        onChange={(e) => { setSql(e.target.value); setPreview(null); }} />
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 6 }}>
+        <span className="aug-fs-xs" style={term}>key</span>
+        <input className="aug-fs-xs" style={{ ...FIELD, width: 150 }} value={key} aria-label="Backing key"
+          onChange={(e) => { setKey(e.target.value); setPreview(null); }} />
+        <Button variant="outline" size="xs" disabled={looking || !sql.trim() || !key.trim()} onClick={look}>
+          {looking ? "Reading…" : "Preview"}
+        </Button>
+        <Button variant="outline" size="xs" disabled={busy || !!blocked} onClick={() => onSet(sql.trim(), key.trim())}
+          title={blocked || "Read the type from this SELECT"}>
+          {busy ? "Setting…" : "Set as backing"}
+        </Button>
+      </div>
+      {preview && preview.readable && (
+        <dl className="aug-fs-xs" data-testid="backing-preview"
+          style={{ display: "grid", gridTemplateColumns: "max-content minmax(0, 1fr)", columnGap: 12, rowGap: 3, margin: "6px 0 0" }}>
+          <dt style={term}>Now</dt>
+          <dd style={{ margin: 0, ...MONO, overflowWrap: "anywhere" }}>
+            {preview.current.source} · {preview.current.rows == null ? "rows not yet measured" : `${formatCount(preview.current.rows)} rows`}
+          </dd>
+          <dt style={term}>Rows</dt>
+          <dd style={{ margin: 0 }}>
+            {preview.rows == null ? "not counted" : formatCount(preview.rows)} · key{" "}
+            {preview.unique === true ? "unique" : preview.unique === false ? "NOT unique" : "not counted"}
+          </dd>
+          <dt style={term}>Keeps</dt>
+          <dd style={{ margin: 0 }}>{countNoun(preview.kept.length, "property", "properties")}</dd>
+          {preview.dropped.length > 0 && (
+            <>
+              <dt style={term}>Drops</dt>
+              <dd style={{ margin: 0, ...MONO, color: "var(--red5)" }}>{preview.dropped.join(", ")}</dd>
+            </>
+          )}
+          {preview.added.length > 0 && (
+            <>
+              <dt style={term}>Adds</dt>
+              <dd style={{ margin: 0, ...MONO }}>{preview.added.join(", ")}</dd>
+            </>
+          )}
+        </dl>
+      )}
+      {(problem || (preview && blocked)) && (
+        <p className="aug-fs-xs" style={{ margin: "4px 0 0", color: "var(--red5)", lineHeight: 1.45 }}>{problem || blocked}</p>
+      )}
     </div>
   );
 }
@@ -734,8 +1112,8 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
       {proposals.length > 0 && (
         <div style={{ marginTop: 10 }}>
           <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
-            Proposed from the data — another table carries the {detail.key.property} key, one row per object. Nothing
-            reads a proposal until it is bound.
+            Proposed from the data — another table carries the {detail.key.property} key. Nothing reads a proposal
+            until it is bound.
           </div>
           {proposals.map((p) => (
             <ProposalRow key={p.name} proposal={p} busy={busy === p.name}
@@ -745,17 +1123,23 @@ function BindingsSection({ detail, connectionId, schema, onChanged, sources }: {
       )}
       <DeclareBinding detail={detail} busy={!!busy} sources={sources} onDeclare={(name, spec) =>
         act(name, () => addBinding(connectionId, detail.id, name, spec, schema))} />
+      {!sources && (
+        <BackingEditor detail={detail} busy={busy === "backing"}
+          onPreview={(sql, key) => previewBacking(connectionId, detail.id, sql, key, schema)}
+          onSet={(sql, key) => act("backing", () => setQueryBacking(connectionId, detail.id, sql, key, schema))}
+          onWithdraw={() => act("backing", () => withdrawBacking(connectionId, detail.id, schema))} />
+      )}
       {problem && <p className="aug-fs-xs" style={{ margin: "6px 0 0", color: "var(--red5)" }}>{problem}</p>}
     </Section>
   );
 }
 
-/** ON-1b/ON-5 — declare a binding the data did not propose. The builder proposes only what it can see: another
- *  table carrying this type's key, one row per object. A TIMESERIES source is never proposed — many rows per object
- *  is exactly what the proposal check rejects — and neither is a keyed SELECT, so until this form both were
- *  API-only, and the live Lux price history had to be bound with a hand-written PUT. The server reads the source's
- *  columns and counts it against the objects before it answers; a spec that does not bind is refused with the
- *  reason and nothing is written. */
+/** ON-1b/ON-5 — declare a binding the data did not propose. The builder proposes only what another table carrying
+ *  this type's key shows it: one row per object (static), many rows that are objects of their own (a part), or many
+ *  rows placed in time with no identity of their own (a timeseries). A keyed SELECT is never proposed, and a
+ *  timeseries source used to be API-only too — the live Lux price history had to be bound with a hand-written PUT.
+ *  The server reads the source's columns and counts it against the objects before it answers; a spec that does not
+ *  bind is refused with the reason and nothing is written. */
 function DeclareBinding({ detail, busy, onDeclare, sources }: {
   detail: ObjectTypeDetail;
   busy: boolean;

@@ -52,10 +52,11 @@ def distinct_keys(db: Any, from_clause: str, alias: str, column: str) -> tuple[O
     not all be read: a probe that failed, more than `MAX_KEYS` of them, or a connection that returned fewer rows than
     it held (a partial key set would measure a coverage that is not there)."""
     from aughor.connectors.remote_join import canon_key
+    from aughor.db.dialects import native_sql
     col = f"{alias}.{quote_ident(column)}"
     sql = f"SELECT DISTINCT {col} FROM {from_clause} WHERE {col} IS NOT NULL"
     try:
-        result = db.execute_bounded("__source_keys__", sql, MAX_KEYS + 1)
+        result = db.execute_bounded("__source_keys__", native_sql(db, sql), MAX_KEYS + 1)
     except Exception as exc:  # noqa: BLE001 — a side that cannot be read is unmeasured, not refuted
         return None, f"its keys could not be read: {exc}"[:200]
     if getattr(result, "error", None):
@@ -65,6 +66,6 @@ def distinct_keys(db: Any, from_clause: str, alias: str, column: str) -> tuple[O
         return None, f"more than {MAX_KEYS:,} distinct keys on one side — too many to meet across two connections"
     held = int(getattr(result, "row_count", 0) or 0)
     if held > len(rows):
-        return None, (f"its connection returned {len(rows):,} of {held:,} distinct keys, and a partial key set would "
+        return None, (f"its connection returned {len(rows):,} of at least {held:,} distinct keys, and a partial key set would "
                       "measure a coverage that is not there")
     return {canon_key(str(row[0])) for row in rows}, ""

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { CARD, collapseParts, hubOf, layoutMap, litBy, ringsOf, unlinkedTypes } from "@/lib/entityMapLayout";
+import { CARD, collapseParts, hubOf, LABEL_LIFT, layoutMap, linkLabelY, litBy, ringsOf, unlinkedTypes } from "@/lib/entityMapLayout";
 import type { TypeMap, TypeMapLink, TypeMapRow } from "@/lib/objectTypes";
 
 const link = (from: string, to: string): TypeMapLink => ({
@@ -158,3 +158,13 @@ describe("collapseParts — ON-7: a part is not a card", () => {
     expect(collapseParts(older).links.map((l) => l.relationship)).toEqual(["customer_order"]);
   });
 });
+
+describe("where a link's label sits", () => {
+  it("lifts a sideways link's label clear above the higher of its two cards, and keeps an upright one at the middle", () => {
+    expect(linkLabelY("right", 300, 320, 310)).toBe(300 - CARD.h / 2 - LABEL_LIFT);
+    expect(linkLabelY("left", 320, 300, 310)).toBe(300 - CARD.h / 2 - LABEL_LIFT);
+    expect(linkLabelY("bottom", 100, 400, 250)).toBe(250);
+    expect(linkLabelY("top", 400, 100, 250)).toBe(250);
+  });
+});
+

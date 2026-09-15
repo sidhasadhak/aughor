@@ -1334,6 +1334,14 @@ class LocalUploadConnection(Connector):
 
     def execute(self, hypothesis_id: str, sql: str,
                 params: dict | None = None) -> QueryResult:
+        return self._execute(hypothesis_id, sql, params, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Up to ``max_rows`` rows. Without it the Workspace connection read every cross-source key set and keyed
+        read through its 2,000-row cap, so a measurement or a join past it was refused."""
+        return self._execute(hypothesis_id, sql, None, max(1, max_rows))
+
+    def _execute(self, hypothesis_id: str, sql: str, params: dict | None, max_rows: int) -> QueryResult:
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
 
         sql = sql.strip().rstrip(";")
@@ -1356,13 +1364,13 @@ class LocalUploadConnection(Connector):
                 columns = [d[0] for d in self._duckdb.description] if self._duckdb.description else []
                 from aughor.db.connection import offer_typed_rows
                 offer_typed_rows(
-                    rows_raw[:MAX_ROWS],
-                    truncated=len(rows_raw) > MAX_ROWS,
+                    rows_raw[:max_rows],
+                    truncated=len(rows_raw) > max_rows,
                     types=[str(d[1]) for d in self._duckdb.description] if self._duckdb.description else [],
                 )
                 rows = [
                     [str(v) if v is not None else "NULL" for v in row]
-                    for row in rows_raw[:MAX_ROWS]
+                    for row in rows_raw[:max_rows]
                 ]
                 return QueryResult(
                     hypothesis_id=hypothesis_id, sql=statement,

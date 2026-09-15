@@ -1,0 +1,432 @@
+{
+  "datasets": [
+    {
+      "results": [
+        {
+          "id": "or01_dispatch_breach_pct_2017",
+          "trap": "promise",
+          "question": "What percentage of order lines on orders placed in 2017 broke the dispatch promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE o.order_delivered_carrier_date > oi.shipping_limit_date) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_order_lines_broke_dispatch_promise FROM ecommerce.order_items oi JOIN ecommerce.orders o ON o.order_id = oi.order_id WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2017",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "guarded": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE o.order_delivered_carrier_date > oi.shipping_limit_date) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_order_lines_broke_dispatch_promise FROM ecommerce.order_items oi JOIN ecommerce.orders o ON o.order_id = oi.order_id WHERE EXTRACT(YEAR FROM o.order_purchase_timestamp) = 2017",
+            "class": "silent-wrong",
+            "guards_fired": [],
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN j1.order_delivered_carrier_date > t0.shipping_limit_date THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.order_delivered_carrier_date IS NOT NULL AND t0.shipping_limit_date IS NOT NULL THEN 1 END), 0), 2) AS dispatch_breach_rate_pct FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id WHERE date_part('year', j1.order_purchase_timestamp) = 2017",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [
+                "placed"
+              ],
+              "start": "OrderItem",
+              "drivers": []
+            },
+            "block_chars": 2023
+          },
+          "framed_guarded": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN j1.order_delivered_carrier_date > t0.shipping_limit_date THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.order_delivered_carrier_date IS NOT NULL AND t0.shipping_limit_date IS NOT NULL THEN 1 END), 0), 2) AS dispatch_breach_rate_pct FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.orders AS j1 ON t0.order_id = j1.order_id WHERE date_part('year', j1.order_purchase_timestamp) = 2017",
+            "class": "correct",
+            "guards_fired": [
+              "fanout"
+            ],
+            "match": 1.0
+          },
+          "latency_s": 31.8,
+          "definition": "declared"
+        },
+        {
+          "id": "or02_dispatch_breach_pct_cama_mesa_banho",
+          "trap": "promise",
+          "question": "What percentage of order lines in the product category 'cama_mesa_banho' broke the dispatch promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE o.order_delivered_carrier_date > oi.shipping_limit_date) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broken_dispatch_promise FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id JOIN ecommerce.orders o ON oi.order_id = o.order_id WHERE p.product_category_name = 'cama_mesa_banho'",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "guarded": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE o.order_delivered_carrier_date > oi.shipping_limit_date) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broken_dispatch_promise FROM ecommerce.order_items oi JOIN ecommerce.products p ON oi.product_id = p.product_id JOIN ecommerce.orders o ON oi.order_id = o.order_id WHERE p.product_category_name = 'cama_mesa_banho'",
+            "class": "silent-wrong",
+            "guards_fired": [],
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN j2.order_delivered_carrier_date > t0.shipping_limit_date THEN 1 END) / NULLIF(COUNT(CASE WHEN j2.order_delivered_carrier_date IS NOT NULL AND t0.shipping_limit_date IS NOT NULL THEN 1 END), 0), 2) AS dispatch_breach_rate_pct FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.products AS j1 ON t0.product_id = j1.product_id LEFT JOIN ecommerce.orders AS j2 ON t0.order_id = j2.order_id WHERE j1.product_category_name = 'cama_mesa_banho'",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "dispatch_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "dispatch_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "OrderItem",
+              "drivers": [
+                "order_item_to_product.product_category_name"
+              ]
+            },
+            "block_chars": 2529
+          },
+          "framed_guarded": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN j2.order_delivered_carrier_date > t0.shipping_limit_date THEN 1 END) / NULLIF(COUNT(CASE WHEN j2.order_delivered_carrier_date IS NOT NULL AND t0.shipping_limit_date IS NOT NULL THEN 1 END), 0), 2) AS dispatch_breach_rate_pct FROM ecommerce.order_items AS t0 LEFT JOIN ecommerce.products AS j1 ON t0.product_id = j1.product_id LEFT JOIN ecommerce.orders AS j2 ON t0.order_id = j2.order_id WHERE j1.product_category_name = 'cama_mesa_banho'",
+            "class": "correct",
+            "guards_fired": [
+              "fanout"
+            ],
+            "match": 1.0
+          },
+          "latency_s": 11.3,
+          "definition": "declared"
+        },
+        {
+          "id": "or03_delivery_breach_pct_2018",
+          "trap": "promise",
+          "question": "What percentage of orders placed in 2018 broke the delivery promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE order_delivered_customer_date > order_estimated_delivery_date) * 100.0 / NULLIF(COUNT(*), 0), 2) AS late_delivery_pct FROM ecommerce.orders WHERE order_purchase_timestamp >= DATE '2018-01-01' AND order_purchase_timestamp < DATE '2019-01-01' AND order_delivered_customer_date IS NOT NULL",
+            "class": "correct",
+            "match": 1.0
+          },
+          "guarded": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE order_delivered_customer_date > order_estimated_delivery_date) * 100.0 / NULLIF(COUNT(*), 0), 2) AS late_delivery_pct FROM ecommerce.orders WHERE order_purchase_timestamp >= DATE '2018-01-01' AND order_purchase_timestamp < DATE '2019-01-01' AND order_delivered_customer_date IS NOT NULL",
+            "class": "correct",
+            "guards_fired": [],
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1 END) / NULLIF(COUNT(CASE WHEN order_delivered_customer_date IS NOT NULL AND order_estimated_delivery_date IS NOT NULL THEN 1 END), 0), 2) AS delivery_breach_pct FROM ecommerce.orders WHERE order_purchase_timestamp >= '2018-01-01' AND order_purchase_timestamp < '2019-01-01'",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "delivery_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "delivery_breach_rate"
+              ],
+              "rules": [],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": []
+            },
+            "block_chars": 1715
+          },
+          "framed_guarded": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN order_delivered_customer_date > order_estimated_delivery_date THEN 1 END) / NULLIF(COUNT(CASE WHEN order_delivered_customer_date IS NOT NULL AND order_estimated_delivery_date IS NOT NULL THEN 1 END), 0), 2) AS delivery_breach_pct FROM ecommerce.orders WHERE order_purchase_timestamp >= '2018-01-01' AND order_purchase_timestamp < '2019-01-01'",
+            "class": "correct",
+            "guards_fired": [],
+            "match": 1.0
+          },
+          "latency_s": 12.2,
+          "definition": "declared"
+        },
+        {
+          "id": "or04_worst_customer_state_delivery_2017",
+          "trap": "promise",
+          "question": "Which customer state had the worst delivery promise record on orders placed in 2017, among states with at least 1,000 orders placed that year? Return the state and its breach percentage rounded to two decimals.",
+          "raw": {
+            "sql": "WITH base AS (\n  SELECT c.customer_state,\n         COUNT(*) AS total_orders,\n         SUM(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END) AS breached\n  FROM ecommerce.orders o\n  JOIN ecommerce.customer c ON o.customer_id = c.customer_id\n  WHERE o.order_purchase_timestamp >= TIMESTAMP '2017-01-01'\n    AND o.order_purchase_timestamp < TIMESTAMP '2018-01-01'\n    AND o.order_delivered_customer_date IS NOT NULL\n  GROUP BY c.customer_state\n  HAVING COUNT(*) >= 1000\n)\nSELECT customer_state,\n       ROUND(breached * 100.0 / NULLIF(total_orders, 0), 2) AS breach_pct\nFROM base\nORDER BY breach_pct DESC\nLIMIT 1",
+            "class": "correct",
+            "match": 1.0
+          },
+          "guarded": {
+            "sql": "WITH base AS (\n  SELECT c.customer_state,\n         COUNT(*) AS total_orders,\n         SUM(CASE WHEN o.order_delivered_customer_date > o.order_estimated_delivery_date THEN 1 ELSE 0 END) AS breached\n  FROM ecommerce.orders o\n  JOIN ecommerce.customer c ON o.customer_id = c.customer_id\n  WHERE o.order_purchase_timestamp >= TIMESTAMP '2017-01-01'\n    AND o.order_purchase_timestamp < TIMESTAMP '2018-01-01'\n    AND o.order_delivered_customer_date IS NOT NULL\n  GROUP BY c.customer_state\n  HAVING COUNT(*) >= 1000\n)\nSELECT customer_state,\n       ROUND(breached * 100.0 / NULLIF(total_orders, 0), 2) AS breach_pct\nFROM base\nORDER BY breach_pct DESC\nLIMIT 1",
+            "class": "correct",
+            "guards_fired": [],
+            "match": 1.0
+          },
+          "framed": {
+            "sql": "WITH base AS (\n  SELECT c.customer_state AS customer_state,\n         COUNT(*) * 100.0 / NULLIF(COUNT(CASE WHEN o.order_delivered_customer_date IS NOT NULL AND o.order_estimated_delivery_date IS NOT NULL THEN 1 END), 0) AS breach_pct,\n         COUNT(*) AS placed_orders\n  FROM ecommerce.orders o\n  JOIN ecommerce.customer c ON o.customer_id = c.customer_id\n  WHERE o.order_purchase_timestamp >= TIMESTAMP '2017-01-01 00:00:00'\n    AND o.order_purchase_timestamp < TIMESTAMP '2018-01-01 00:00:00'\n  GROUP BY c.customer_state\n  HAVING COUNT(*) >= 1000\n), ranked AS (\n  SELECT customer_state, ROUND(breach_pct, 2) AS breach_pct, RANK() OVER (ORDER BY breach_pct DESC) AS rnk\n  FROM base\n)\nSELECT customer_state, breach_pct\nFROM ranked\nWHERE rnk = 1\nORDER BY customer_state",
+            "class": "silent-wrong",
+            "match": 0.0,
+            "frame": {
+              "defines": true,
+              "outcome": "delivery_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "delivery_breach_rate"
+              ],
+              "rules": [],
+              "moments": [
+                "placed"
+              ],
+              "start": "Order",
+              "drivers": [
+                "order_to_customer.customer_state"
+              ]
+            },
+            "block_chars": 2249
+          },
+          "framed_guarded": {
+            "sql": "WITH base AS (\n  SELECT c.customer_state AS customer_state,\n         COUNT(*) * 100.0 / NULLIF(COUNT(CASE WHEN o.order_delivered_customer_date IS NOT NULL AND o.order_estimated_delivery_date IS NOT NULL THEN 1 END), 0) AS breach_pct,\n         COUNT(*) AS placed_orders\n  FROM ecommerce.orders o\n  JOIN ecommerce.customer c ON o.customer_id = c.customer_id\n  WHERE o.order_purchase_timestamp >= TIMESTAMP '2017-01-01 00:00:00'\n    AND o.order_purchase_timestamp < TIMESTAMP '2018-01-01 00:00:00'\n  GROUP BY c.customer_state\n  HAVING COUNT(*) >= 1000\n), ranked AS (\n  SELECT customer_state, ROUND(breach_pct, 2) AS breach_pct, RANK() OVER (ORDER BY breach_pct DESC) AS rnk\n  FROM base\n)\nSELECT customer_state, breach_pct\nFROM ranked\nWHERE rnk = 1\nORDER BY customer_state",
+            "class": "silent-wrong",
+            "guards_fired": [],
+            "match": 0.0
+          },
+          "latency_s": 17.0,
+          "definition": "declared"
+        }
+      ],
+      "summary": {
+        "n": 4,
+        "arms": [
+          "raw",
+          "guarded",
+          "framed",
+          "framed_guarded"
+        ],
+        "raw": {
+          "silent-wrong": 2,
+          "correct": 2
+        },
+        "guarded": {
+          "silent-wrong": 2,
+          "correct": 2
+        },
+        "framed": {
+          "correct": 3,
+          "silent-wrong": 1
+        },
+        "framed_guarded": {
+          "correct": 3,
+          "silent-wrong": 1
+        },
+        "raw_accuracy": 0.5,
+        "raw_silent_wrong": 2,
+        "guarded_safe_rate": 0.5,
+        "guarded_silent_wrong": 2,
+        "saves": [],
+        "regressions": [],
+        "framed_accuracy": 0.75,
+        "framed_silent_wrong": 1,
+        "framed_gains": [
+          "or01_dispatch_breach_pct_2017",
+          "or02_dispatch_breach_pct_cama_mesa_banho"
+        ],
+        "framed_losses": [
+          "or04_worst_customer_state_delivery_2017"
+        ],
+        "framed_no_frame": [],
+        "framed_guarded_safe_rate": 0.75,
+        "framed_guarded_silent_wrong": 1,
+        "by_definition": {
+          "declared": {
+            "n": 4,
+            "raw_correct": 2,
+            "framed_correct": 3,
+            "guarded_safe": 2,
+            "framed_guarded_safe": 3
+          }
+        },
+        "falsifier": {
+          "framed_beats_raw_on_declared": true,
+          "declared": {
+            "n": 4,
+            "raw_correct": 2,
+            "framed_correct": 3,
+            "guarded_safe": 2,
+            "framed_guarded_safe": 3
+          },
+          "controls_lost": [],
+          "framed_guarded_keeps_guarded_safety": true
+        },
+        "dataset": "evals/ablation_olist_rate_units.jsonl",
+        "connection": "baef6c3e/ecommerce",
+        "reference_failed": [],
+        "llm": {
+          "backend": "openrouter",
+          "model": "deepseek/deepseek-v4.1-flash",
+          "role": "coder",
+          "fallback_chain": []
+        },
+        "ontology_available": null,
+        "ontology_source": "file:evals/ablation_olist_business_ontology.json",
+        "ontology_context_chars": 0,
+        "arms_dropped": [],
+        "framing_model_calls": 0
+      }
+    },
+    {
+      "results": [
+        {
+          "id": "lr01_refund_breach_pct_2025",
+          "trap": "promise",
+          "question": "What percentage of returns requested in 2025 broke the refund promise? Round to two decimals.",
+          "raw": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE rl.refund_completed_date IS NULL OR date_diff('day', rl.received_date, rl.refund_completed_date) > 14) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broke_refund_promise FROM luxexperience.returns r JOIN luxexperience.return_logistics rl ON r.return_id = rl.return_id WHERE r.return_date >= DATE '2025-01-01' AND r.return_date < DATE '2026-01-01'",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "guarded": {
+            "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE rl.refund_completed_date IS NULL OR date_diff('day', rl.received_date, rl.refund_completed_date) > 14) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broke_refund_promise FROM luxexperience.returns r JOIN luxexperience.return_logistics rl ON r.return_id = rl.return_id WHERE r.return_date >= DATE '2025-01-01' AND r.return_date < DATE '2026-01-01'",
+            "class": "silent-wrong",
+            "guards_fired": [],
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN DATE_DIFF('DAY', j1.received_date, j1.refund_completed_date) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id WHERE t0.return_date >= DATE '2025-01-01' AND t0.return_date < DATE '2026-01-01'",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "refund_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "refund_breach_rate"
+              ],
+              "rules": [],
+              "moments": [
+                "requested"
+              ],
+              "start": "Return",
+              "drivers": []
+            },
+            "block_chars": 2040
+          },
+          "framed_guarded": {
+            "sql": "SELECT ROUND(100.0 * COUNT(CASE WHEN DATE_DIFF('DAY', j1.received_date, j1.refund_completed_date) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id WHERE t0.return_date >= DATE '2025-01-01' AND t0.return_date < DATE '2026-01-01'",
+            "class": "correct",
+            "guards_fired": [],
+            "match": 1.0
+          },
+          "latency_s": 29.2,
+          "definition": "declared"
+        },
+        {
+          "id": "lr02_refund_breach_by_reason",
+          "trap": "promise",
+          "question": "For each return reason, what percentage of its returns broke the refund promise? Return the reason and the percentage rounded to two decimals, worst first.",
+          "raw": {
+            "sql": "WITH base AS (\n  SELECT r.reason,\n         CASE WHEN date_diff('day', rl.received_date, rl.refund_completed_date) > 14 THEN 1 ELSE 0 END AS breached\n  FROM luxexperience.returns r\n  JOIN luxexperience.return_logistics rl\n    ON rl.return_id = r.return_id\n)\nSELECT reason,\n       ROUND(SUM(breached) * 100.0 / NULLIF(COUNT(*), 0), 2) AS refund_breach_pct\nFROM base\nGROUP BY reason\nORDER BY refund_breach_pct DESC",
+            "class": "silent-wrong",
+            "match": 0.0
+          },
+          "guarded": {
+            "sql": "WITH base AS (\n  SELECT r.reason,\n         CASE WHEN date_diff('day', rl.received_date, rl.refund_completed_date) > 14 THEN 1 ELSE 0 END AS breached\n  FROM luxexperience.returns r\n  JOIN luxexperience.return_logistics rl\n    ON rl.return_id = r.return_id\n)\nSELECT reason,\n       ROUND(SUM(breached) * 100.0 / NULLIF(COUNT(*), 0), 2) AS refund_breach_pct\nFROM base\nGROUP BY reason\nORDER BY refund_breach_pct DESC",
+            "class": "silent-wrong",
+            "guards_fired": [],
+            "match": 0.0
+          },
+          "framed": {
+            "sql": "SELECT t0.reason AS reason, ROUND(100.0 * COUNT(CASE WHEN DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id GROUP BY t0.reason ORDER BY refund_breach_pct DESC",
+            "class": "correct",
+            "match": 1.0,
+            "frame": {
+              "defines": true,
+              "outcome": "refund_breach_rate",
+              "chosen_by": "names",
+              "candidates": [
+                "refund_breach_rate"
+              ],
+              "rules": [],
+              "moments": [],
+              "start": "Return",
+              "drivers": [
+                "reason"
+              ]
+            },
+            "block_chars": 2457
+          },
+          "framed_guarded": {
+            "sql": "SELECT t0.reason AS reason, ROUND(100.0 * COUNT(CASE WHEN DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id GROUP BY t0.reason ORDER BY refund_breach_pct DESC",
+            "class": "correct",
+            "guards_fired": [],
+            "match": 1.0
+          },
+          "latency_s": 41.3,
+          "definition": "declared"
+        }
+      ],
+      "summary": {
+        "n": 2,
+        "arms": [
+          "raw",
+          "guarded",
+          "framed",
+          "framed_guarded"
+        ],
+        "raw": {
+          "silent-wrong": 2
+        },
+        "guarded": {
+          "silent-wrong": 2
+        },
+        "framed": {
+          "correct": 2
+        },
+        "framed_guarded": {
+          "correct": 2
+        },
+        "raw_accuracy": 0.0,
+        "raw_silent_wrong": 2,
+        "guarded_safe_rate": 0.0,
+        "guarded_silent_wrong": 2,
+        "saves": [],
+        "regressions": [],
+        "framed_accuracy": 1.0,
+        "framed_silent_wrong": 0,
+        "framed_gains": [
+          "lr01_refund_breach_pct_2025",
+          "lr02_refund_breach_by_reason"
+        ],
+        "framed_losses": [],
+        "framed_no_frame": [],
+        "framed_guarded_safe_rate": 1.0,
+        "framed_guarded_silent_wrong": 0,
+        "by_definition": {
+          "declared": {
+            "n": 2,
+            "raw_correct": 0,
+            "framed_correct": 2,
+            "guarded_safe": 0,
+            "framed_guarded_safe": 2
+          }
+        },
+        "falsifier": {
+          "framed_beats_raw_on_declared": true,
+          "declared": {
+            "n": 2,
+            "raw_correct": 0,
+            "framed_correct": 2,
+            "guarded_safe": 0,
+            "framed_guarded_safe": 2
+          },
+          "controls_lost": [],
+          "framed_guarded_keeps_guarded_safety": true
+        },
+        "dataset": "evals/ablation_luxexperience_rate_units.jsonl",
+        "connection": "914df862/luxexperience",
+        "reference_failed": [],
+        "llm": {
+          "backend": "openrouter",
+          "model": "deepseek/deepseek-v4.1-flash",
+          "role": "coder",
+          "fallback_chain": []
+        },
+        "ontology_available": null,
+        "ontology_source": "file:evals/ablation_luxexperience_business_ontology.json",
+        "ontology_context_chars": 0,
+        "arms_dropped": [],
+        "framing_model_calls": 0
+      }
+    }
+  ]
+}

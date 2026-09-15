@@ -279,8 +279,9 @@ def link_problem_on_graph(graph: OntologyGraph, fields: dict) -> str:
 def _count_side(db: Any, entity: OntologyEntity, column: str) -> Optional[tuple[int, int, int]]:
     col = quote_ident(_has_column(entity, column) or column)
     sql = f"SELECT COUNT(*), COUNT(o.{col}), COUNT(DISTINCT o.{col}) FROM {object_from(entity, 'o')}"
+    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__link_probe__", sql)
+        result = db.execute("__link_probe__", native_sql(db, sql))
     except Exception as exc:  # noqa: BLE001 — an unprobeable side is unmeasured, not refuted
         logger.debug("link probe raised on %s.%s: %s", entity.id, column, exc)
         return None
@@ -322,8 +323,9 @@ def measure_declared_link(db: Any, graph: OntologyGraph, fields: dict, *, to_db:
         overlap_sql = (f"SELECT COUNT(DISTINCT a.{quote_ident(fa)}) FROM {object_from(a, 'a')} "
                        f"WHERE a.{quote_ident(fa)} IS NOT NULL AND a.{quote_ident(fa)} IN "
                        f"(SELECT b.{quote_ident(tb)} FROM {object_from(b, 'b')} WHERE b.{quote_ident(tb)} IS NOT NULL)")
+        from aughor.db.dialects import native_sql
         try:
-            result = db.execute("__link_probe__", overlap_sql)
+            result = db.execute("__link_probe__", native_sql(db, overlap_sql))
             if not getattr(result, "error", None) and getattr(result, "rows", None):
                 overlap = round(int(result.rows[0][0]) / fc[2], 4) if fc[2] else 0.0
         except Exception as exc:  # noqa: BLE001

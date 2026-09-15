@@ -46,7 +46,7 @@ from aughor.ontology.declared import (
     measure_declared_backing,
     measure_declared_link,
 )
-from aughor.ontology.display import key_of
+from aughor.ontology.display import display_of, key_of
 from aughor.ontology.drafts import MAX_RUNS, DraftProposal, DraftRun, OntologyDraft
 from aughor.ontology.models import Binding, OntologyEntity, OntologyGraph, Rollup, snake_name
 from aughor.ontology.parts import backing_table, part_of, parts_of
@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 #: Bump when the prompt or the output schema changes meaningfully — it is the `@<version>` of every proposal's
 #: provenance, so a draft says which explorer said it.
-EXPLORER_VERSION = 1
+EXPLORER_VERSION = 2
 #: Columns one entity shows, sample values one column shows, and the catalogue's length — a wide warehouse is cut, and
 #: the cut is said.
 _MAX_COLUMNS = 48
@@ -165,6 +165,12 @@ def source_catalogue(graph: OntologyGraph, *, glossary: Optional[dict] = None) -
         if r.origin != "join_map":
             declared.append(f"- link {r.from_entity} {r.name or snake_name(r.verb)} {r.to_entity} on "
                             f"{r.from_col} = {r.to_col} ({_who(r.origin)})")
+    for proc in sorted((graph.processes or {}).values(), key=lambda x: x.id):
+        declared.append(f"- process {proc.id} on {proc.entity}: " + " → ".join(s.name for s in proc.stages)
+                        + (f" ({_who(proc.origin)})" if _who(proc.origin) else ""))
+    for rule in sorted((graph.rules or {}).values(), key=lambda x: x.id):
+        declared.append(f"- rule {rule.id} on {rule.entity} ({rule.kind}" + (f", {_who(rule.origin)})" if _who(rule.origin)
+                                                                              else ")"))
     out += ["", "ALREADY DECLARED — do not propose these again", *(declared or ["- nothing yet"])]
 
     tables = {backing_table(e).lower() for e in graph.entities.values() if backing_table(e)}
@@ -239,13 +245,67 @@ class ProposedEntity(BaseModel):
     reason: str = ""
 
 
+class ProposedStage(BaseModel):
+    name: str
+    timestamp: str = ""
+    state: list[str] = Field(default_factory=list)
+    property: str = ""
+
+    @field_validator("state", mode="before")
+    @classmethod
+    def _states(cls, v: Any) -> Any:
+        v = _coerce_json(v)
+        return [str(s) for s in v] if isinstance(v, list) else ([] if v is None else v)
+
+
+class ProposedProcess(BaseModel):
+    """ON-9 — the stages one entity's objects move through. No promise: how fast the business promises to move is the
+    business's to say."""
+    id: str
+    entity: str
+    display_name: str = ""
+    stages: list[ProposedStage] = Field(default_factory=list)
+    reason: str = ""
+
+    @field_validator("stages", mode="before")
+    @classmethod
+    def _stages(cls, v: Any) -> Any:
+        v = _coerce_json(v)
+        return v if v is not None else []
+
+
+class ProposedRule(BaseModel):
+    """ON-9 — a set of objects the business names: a value set or a condition. Never a metric's scope."""
+    id: str
+    entity: str
+    kind: str = "condition"
+    property: str = ""
+    values: list[str] = Field(default_factory=list)
+    conditions: list[dict] = Field(default_factory=list)
+    reason: str = ""
+
+    @field_validator("values", mode="before")
+    @classmethod
+    def _values(cls, v: Any) -> Any:
+        v = _coerce_json(v)
+        return [str(x) for x in v] if isinstance(v, list) else ([] if v is None else v)
+
+    @field_validator("conditions", mode="before")
+    @classmethod
+    def _conditions(cls, v: Any) -> Any:
+        v = _coerce_json(v)
+        return v if v is not None else []
+
+
 class BusinessDraft(BaseModel):
-    """The explorer's answer: three FLAT lists (a flat list of flat objects is what local models emit reliably)."""
+    """The explorer's answer: five FLAT lists (a flat list of flat objects is what local models emit reliably)."""
     entities: list[ProposedEntity] = Field(default_factory=list)
     parts: list[ProposedPart] = Field(default_factory=list)
     links: list[ProposedLink] = Field(default_factory=list)
+    processes: list[ProposedProcess] = Field(default_factory=list)
+    rules: list[ProposedRule] = Field(default_factory=list)
 
-    @field_validator("entities", "parts", "links", mode="before")
+    @field_validator("entities", "parts", "links", "processes", "rules", mode="before")
     @classmethod
     def _lists(cls, v: Any) -> Any:
         v = _coerce_json(v)
@@ -306,13 +366,16 @@ class DraftWriters:
     declare_link: Callable[[dict], Any]
     #: The served graph, re-read — so each proposal is judged against what the previous writes made true.
     served: Callable[[], Optional[OntologyGraph]]
+    #: ON-9's doors; an explorer handed none writes no processes or rules and says so.
+    declare_process: Optional[Callable[[dict], Any]] = None
+    declare_rule: Optional[Callable[[dict], Any]] = None
 
 
 @dataclass
 class Outcome:
     """What became of one proposal on one run."""
     key: str
-    kind: str                     # entity · part · link
+    kind: str                     # entity · part · link · process · rule
     outcome: str                  # written · refused · already · withdrawn
     sentence: str
     note: str = ""
@@ -344,6 +407,29 @@ def entity_key(table: str = "", sql: str = "", primary_key: str = "") -> str:
     return f"entity:sql:{hashlib.sha1(normal.encode()).hexdigest()[:12]}:{(primary_key or '').lower()}"
 
 
+def _anchor(stage: dict) -> str:
+    if stage.get("timestamp"):
+        return str(stage["timestamp"]).strip().lower()
+    states = ",".join(sorted(str(s).strip().lower() for s in stage.get("state") or []))
+    return f"{str(stage.get('property') or '').strip().lower()}={states}"
+
+
+def process_key(entity_id: str, stages: list[dict]) -> str:
+    """A process by its substance: the type and each stage's moment or states, in order."""
+    return f"process:{entity_id}:" + ">".join(_anchor(s) for s in stages)
+
+
+def rule_key(entity_id: str, kind: str, prop: str = "", values: Optional[list] = None,
+             conditions: Optional[list[dict]] = None) -> str:
+    """A rule by its substance: a value set's property and values, or a condition's filters — never its name."""
+    if kind == "value_set":
+        return f"rule:{entity_id}:{str(prop).strip().lower()}=" + ",".join(sorted(str(v).strip().lower() for v in values or []))
+    held = sorted(f"{str(c.get('path') or '').strip().lower()} {c.get('op') or '='} "
+                  f"{json.dumps(c.get('values') if c.get('values') is not None else c.get('value'), sort_keys=True, default=str)}"
+                  for c in conditions or [])
+    return f"rule:{entity_id}:" + " and ".join(held)
+
+
 def _entity_key_of(entity: OntologyEntity) -> str:
     b = entity.backing
     if b is not None and b.kind == "query" and b.sql:
@@ -363,6 +449,17 @@ def _type(graph: OntologyGraph, name: str) -> Optional[OntologyEntity]:
 def _named(names: Any, wanted: str) -> Optional[str]:
     low = (wanted or "").strip().lower()
     return next((str(n) for n in names if str(n).lower() == low), None) if low else None
+
+
+def _name_column(entity: OntologyEntity, column: str) -> Optional[str]:
+    """The column ``entity`` is known by — its display property, measured to name one object per row — when it is
+    neither ``column`` nor the key: the one other column a link's from-side may hold in place of the key (shipments that
+    carry the warehouse's name, not its id)."""
+    shown = display_of(entity)
+    if shown.get("verified") is not True or shown.get("is_key"):
+        return None
+    name = _named(entity.properties or {}, str(shown.get("property") or ""))
+    return name if name is not None and name.lower() != (column or "").lower() else None
 
 
 def proposal_tier(graph: Optional[OntologyGraph], proposal: DraftProposal) -> str:
@@ -385,6 +482,11 @@ def proposal_tier(graph: Optional[OntologyGraph], proposal: DraftProposal) -> st
         if rel is None or rel.origin == "join_map":
             return "withdrawn"
         return "proposed" if rel.origin == "model" else "confirmed"
+    if proposal.kind in ("process", "rule"):
+        declared = (graph.processes if proposal.kind == "process" else graph.rules or {}).get(str(t.get(proposal.kind) or ""))
+        if declared is None:
+            return "withdrawn"
+        return "proposed" if declared.origin == "model" else "confirmed"
     parent = graph.entities.get(str(t.get("entity") or ""))
     bound = next((b for b in (parent.bindings if parent is not None else None) or []
                   if b.name == t.get("binding") and bare(b.table or "").lower() == str(t.get("table") or "").lower()),
@@ -434,6 +536,10 @@ def apply_draft(said: BusinessDraft, graph: OntologyGraph, db: Any, *, provenanc
         settle(_part_outcome(p, current, db, describe, earlier, writers))
     for p in said.links[:MAX_PER_KIND]:
         settle(_link_outcome(p, current, db, earlier, writers, provenance))
+    for p in said.processes[:MAX_PER_KIND]:
+        settle(_process_outcome(p, current, db, earlier, writers, provenance))
+    for p in said.rules[:MAX_PER_KIND]:
+        settle(_rule_outcome(p, current, db, earlier, writers, provenance))
     return outcomes
 
 
@@ -623,8 +729,10 @@ def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[
     if why:
         return done("withdrawn", why)
     ours = {(a.id, a_col.lower()), (b.id, b_col.lower())}
+    name_col = _name_column(b, b_col)
+    by_name = {(a.id, a_col.lower()), (b.id, name_col.lower())} if name_col is not None else None
     same = next((r for r in graph.relationships.values()
-                 if {(r.from_entity, r.from_col.lower()), (r.to_entity, r.to_col.lower())} == ours), None)
+                 if {(r.from_entity, r.from_col.lower()), (r.to_entity, r.to_col.lower())} in (ours, by_name)), None)
     if same is not None:
         return done("already", f"{same.id} already joins these columns", target={"relationship": same.id})
     spec = {"from_entity": a.id, "to_entity": b.id, "name": verb, "from_column": a_col, "to_column": b_col,
@@ -646,6 +754,22 @@ def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[
     if overlap is None:
         return done("refused", "how many of its keys meet could not be counted", spec=spec, measured=measured)
     if overlap <= 0:
+        # A key-for-a-name mistake: the from-side may hold the name the target is known by. Counted again on that one
+        # column — measured to name one object per row — and written only when its keys meet; otherwise refused as said.
+        if name_col is not None:
+            retried = {**spec, "to_column": name_col}
+            again = measure_declared_link(db, graph, link_fields(retried))
+            if (again.get("bound") and (again.get("value_overlap") or 0) > 0
+                    and not link_problem_on_graph(graph, link_fields(retried))):
+                counted = {k: again.get(k) for k in ("bound", "measured_cardinality", "value_overlap", "note")}
+                note = (f"its keys never met on {b.id}.{b_col}; {a.id}.{a_col} holds the name {b.id} is known by, so "
+                        f"the link was counted on {name_col} — {again.get('note')}")
+                try:
+                    writers.declare_link(retried)
+                except ExplorerRefused as exc:
+                    return done("refused", str(exc), spec=retried, measured=counted)
+                return done("written", note, spec=retried, measured=counted,
+                            target={"relationship": link_id(link_fields(retried))})
         return done("refused", f"the keys never meet — {entry.get('note')}", spec=spec, measured=measured)
     try:
         writers.declare_link(spec)
@@ -653,6 +777,128 @@ def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[
         return done("refused", str(exc), spec=spec, measured=measured)
     return done("written", str(entry.get("note") or ""), spec=spec, measured=measured,
                 target={"relationship": link_id(fields)})
+
+
+def _process_outcome(p: ProposedProcess, graph: OntologyGraph, db: Any, earlier: dict[str, str], writers: DraftWriters,
+                     provenance: str) -> Outcome:
+    """ON-9 — a process the model proposes: its stages resolved on the type and COUNTED before anything is written, and
+    one whose stage no object reaches refused. The model proposes stages alone — how fast the business promises to move
+    through them is the business's to say."""
+    from aughor.ontology.processes import (
+        NotMeasurable, measure_process, process_fields, process_spec_problem, resolve_process,
+    )
+    said = p.model_dump()
+    entity = _type(graph, p.entity)
+    stages = [{k: v for k, v in s.model_dump().items() if v not in ("", [], None)} for s in p.stages]
+    owner = entity.id if entity is not None else (p.entity or "?")
+    key = process_key(owner, stages)
+    sentence = f"{owner} goes through " + " → ".join(str(s.get("name") or "?") for s in stages)
+
+    def done(outcome: str, note: str = "", **extra: Any) -> Outcome:
+        return Outcome(key=key, kind="process", outcome=outcome, sentence=sentence, note=note, said=said, **extra)
+
+    if entity is None:
+        return done("refused", f"no entity '{p.entity}' in this ontology")
+    why = _withdrawn(earlier, key)
+    if why:
+        return done("withdrawn", why)
+    same = next((x for x in (graph.processes or {}).values()
+                 if x.entity == entity.id and process_key(x.entity, [s.model_dump() for s in x.stages]) == key), None)
+    if same is not None:
+        return done("already", f"{same.id} already declares these stages", target={"process": same.id, "entity": entity.id})
+    process_id = snake_name(p.id)[:64]
+    spec: dict = {"id": process_id, "entity": entity.id, "stages": stages, "origin": "model", "provenance": provenance}
+    if p.display_name.strip():
+        spec["display_name"] = p.display_name.strip()
+    problem = process_spec_problem(spec)
+    if problem:
+        return done("refused", problem, spec=spec)
+    if process_id in (graph.processes or {}):
+        return done("refused", f"a process '{process_id}' already goes through other stages", spec=spec)
+    problem, fields = resolve_process(graph, process_id, process_fields(spec))
+    if problem:
+        return done("refused", problem, spec=spec)
+    try:
+        measured = measure_process(db, graph, process_id, fields)
+    except NotMeasurable as exc:
+        return done("refused", f"it could not be counted: {exc}", spec=spec)
+    counts = {"objects": measured.objects, "verified": measured.verified,
+              "reached": {s.name: s.reached for s in measured.stages}}
+    if measured.verified is not True:
+        return done("refused", measured.note or "the data does not hold it", spec=spec, measured=counts)
+    if writers.declare_process is None:
+        return done("refused", "this explorer writes no processes", spec=spec, measured=counts)
+    try:
+        writers.declare_process(spec)
+    except ExplorerRefused as exc:
+        return done("refused", str(exc), spec=spec, measured=counts)
+    return done("written", measured.note, spec=spec, measured=counts, target={"process": process_id, "entity": entity.id})
+
+
+def _rule_outcome(p: ProposedRule, graph: OntologyGraph, db: Any, earlier: dict[str, str], writers: DraftWriters,
+                  provenance: str) -> Outcome:
+    """ON-9 — a rule the model proposes: counted before anything is written. One that admits no object, a value set that
+    spells a value no row holds, or a condition that admits every object — so excludes nothing — is refused. The model
+    never scopes a metric with a rule: what a metric means is a person's to change."""
+    from aughor.ontology.business_rules import measure_rule, resolve_rule, rule_fields, rule_spec_problem
+    from aughor.ontology.processes import NotMeasurable
+    said = p.model_dump()
+    entity = _type(graph, p.entity)
+    owner = entity.id if entity is not None else (p.entity or "?")
+    kind = p.kind if p.kind in ("value_set", "condition") else "condition"
+    key = rule_key(owner, kind, p.property, p.values, p.conditions)
+    rule_id = snake_name(p.id)[:64]
+    words = (f"{p.property} in {', '.join(p.values)}" if kind == "value_set" else " and ".join(
+        f"{c.get('path')} {c.get('op') or '='} {c.get('values') if c.get('values') is not None else c.get('value')}"
+        for c in p.conditions))
+    sentence = f"{rule_id or '?'} on {owner}: {words}"
+
+    def done(outcome: str, note: str = "", **extra: Any) -> Outcome:
+        return Outcome(key=key, kind="rule", outcome=outcome, sentence=sentence, note=note, said=said, **extra)
+
+    if entity is None:
+        return done("refused", f"no entity '{p.entity}' in this ontology")
+    why = _withdrawn(earlier, key)
+    if why:
+        return done("withdrawn", why)
+    same = next((r for r in (graph.rules or {}).values() if r.entity == entity.id
+                 and rule_key(r.entity, r.kind, r.property, r.values, r.conditions) == key), None)
+    if same is not None:
+        return done("already", f"{same.id} already names these objects", target={"rule": same.id, "entity": entity.id})
+    spec: dict = {"id": rule_id, "entity": entity.id, "kind": kind, "origin": "model", "provenance": provenance}
+    if kind == "value_set":
+        spec.update({"property": p.property, "values": list(p.values)})
+    else:
+        spec["conditions"] = [dict(c) for c in p.conditions]
+    problem = rule_spec_problem(spec)
+    if problem:
+        return done("refused", problem, spec=spec)
+    if rule_id in (graph.rules or {}):
+        return done("refused", f"a rule '{rule_id}' already names other objects", spec=spec)
+    problem, fields = resolve_rule(graph, rule_id, rule_fields(spec))
+    if problem:
+        return done("refused", problem, spec=spec)
+    try:
+        measured = measure_rule(db, graph, rule_id, fields)
+    except NotMeasurable as exc:
+        return done("refused", f"it could not be counted: {exc}", spec=spec)
+    counts = {"objects": measured.objects, "admitted": measured.admitted, "observed": dict(measured.observed)}
+    if not measured.verified:
+        return done("refused", measured.note, spec=spec, measured=counts)
+    if measured.missing:
+        return done("refused", f"never observed: {', '.join(measured.missing)} — no {entity.id} holds "
+                               f"{'that value' if len(measured.missing) == 1 else 'those values'} in {p.property}",
+                    spec=spec, measured=counts)
+    if kind == "condition" and measured.admitted == measured.objects:
+        return done("refused", f"admits every one of the {measured.objects:,} {entity.id} objects — it excludes nothing",
+                    spec=spec, measured=counts)
+    if writers.declare_rule is None:
+        return done("refused", "this explorer writes no rules", spec=spec, measured=counts)
+    try:
+        writers.declare_rule(spec)
+    except ExplorerRefused as exc:
+        return done("refused", str(exc), spec=spec, measured=counts)
+    return done("written", measured.note, spec=spec, measured=counts, target={"rule": rule_id, "entity": entity.id})
 
 
 # ── the record, and what a person reads ────────────────────────────────────────────────────
@@ -666,7 +912,8 @@ def record_run(draft: OntologyDraft, outcomes: list[Outcome], answerer: Answerer
     run = DraftRun(id=uuid.uuid4().hex[:12], at=datetime.now(timezone.utc).isoformat(), backend=answerer.backend,
                    model=answerer.model, fallback=answerer.fallback, version=EXPLORER_VERSION,
                    provenance=answerer.provenance, catalogue_chars=catalogue_chars, trace_id=trace_id,
-                   said={"entities": len(said.entities), "parts": len(said.parts), "links": len(said.links)},
+                   said={"entities": len(said.entities), "parts": len(said.parts), "links": len(said.links),
+                         "processes": len(said.processes), "rules": len(said.rules)},
                    written=tally["written"], refused=tally["refused"], already=tally["already"],
                    withdrawn=tally["withdrawn"])
     for o in outcomes:
@@ -686,7 +933,7 @@ def record_run(draft: OntologyDraft, outcomes: list[Outcome], answerer: Answerer
     return run
 
 
-_KIND_ORDER = {"entity": 0, "part": 1, "link": 2}
+_KIND_ORDER = {"entity": 0, "part": 1, "link": 2, "process": 3, "rule": 4}
 
 
 def _opens(graph: Optional[OntologyGraph], proposal: DraftProposal) -> str:
@@ -728,6 +975,8 @@ def confirm_targets(graph: Optional[OntologyGraph], draft: OntologyDraft) -> lis
             out.append({"kind": "entity", "entity": t["entity"]})
         elif p.kind == "link":
             out.append({"kind": "link", "relationship": t["relationship"]})
+        elif p.kind in ("process", "rule"):
+            out.append({"kind": p.kind, p.kind: t[p.kind]})
         else:
             out.append({"kind": "binding", "entity": t["entity"], "binding": t["binding"]})
     return out

@@ -1,12 +1,17 @@
 """Embedding-similarity dedup for ontology entities — surface near-duplicate entities (e.g.
-``Customer`` vs ``Client``, ``Order`` vs ``SalesOrder``) so the board can offer a merge.
+``Customer`` vs ``Client``, ``Order`` vs ``SalesOrder``) so the board can offer a merge, and plan the
+merge a person confirms.
 
-**DETECTION ONLY — this never mutates the graph.** A wrong merge would corrupt the ontology (and the
-SQL built on it), so collapsing entities stays an explicit, user-confirmed action; this finds the
-candidates via an embedding self-similarity join + connected-components clustering and returns them as
-*suggestions*. Conservative by default (high threshold → only near-identical entities cluster).
-Fail-open: if embeddings are unavailable (no Ollama / embed model), it returns no suggestions rather
-than raising.
+**DETECTION NEVER MUTATES THE GRAPH.** A wrong merge would corrupt the ontology (and the SQL built on
+it), so collapsing entities stays an explicit, user-confirmed action; this finds the candidates via an
+embedding self-similarity join + connected-components clustering and returns them as *suggestions*.
+Conservative by default (high threshold → only near-identical entities cluster). Fail-open: if
+embeddings are unavailable (no Ollama / embed model), it returns no suggestions rather than raising.
+
+**A merge is "two tables, one binding"** (ROADMAP §3.15): the survivor binds each other type's table on
+its key, counted one row per object, and the other type becomes its PART (`aughor.ontology.parts`).
+Nothing is deleted and nothing is repointed — ``merge_plan`` plans and counts it, and the merge door
+writes it through the bind door into the overrides tree, so a rebuild keeps it.
 
 The clustering core (``cluster_by_similarity``) is pure — it takes precomputed vectors — so it's
 trivially testable with hand-made embeddings, no model required.
@@ -15,7 +20,8 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable, Sequence
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, Optional
 
 DEFAULT_THRESHOLD = 0.85  # conservative — suggestions only, so prefer fewer, higher-confidence pairs
 
@@ -63,102 +69,83 @@ def cluster_by_similarity(
     return [sorted(g) for g in groups.values() if len(g) > 1]
 
 
-def merge_entities(graph: Any, merge_ids: list[str], canonical_id: str) -> Any:
-    """Merge ``merge_ids`` into ``canonical_id``, returning a NEW graph with every cross-reference
-    repointed consistently — relationships (from/to, regenerated id, self-loops dropped, deduped),
-    interfaces' ``implementing_entities``, metrics' / actions' ``entity``, and the three reverse maps
-    (``entity_to_tables`` / ``table_to_entity`` / ``relationship_index``). The canonical entity absorbs
-    the others' ``source_tables`` / ``properties`` / ``segments`` (deduped by name); all other fields
-    are the canonical's. Deterministic, no LLM. Raises ``ValueError`` for an unknown entity id."""
-    entities = getattr(graph, "entities", {})
-    if canonical_id not in entities:
-        raise ValueError(f"canonical entity {canonical_id!r} is not in the graph")
-    unknown = [e for e in merge_ids if e not in entities]
-    if unknown:
-        raise ValueError(f"unknown entities: {unknown}")
-    remove = set(merge_ids) - {canonical_id}
-    if not remove:
-        return graph  # nothing to merge
+@dataclass
+class MergeStep:
+    """One other type of a merge cluster, as the survivor will read it: the table its binding reads, the binding's
+    name and spec (``spec`` None when the survivor already binds that table), what the count found, and why the step
+    cannot be taken — "" when it can."""
+    member: str
+    table: str = ""
+    name: str = ""
+    spec: Optional[dict] = None
+    note: str = ""
+    problem: str = ""
 
-    def repoint(eid: str) -> str:
-        return canonical_id if eid in remove else eid
 
-    g = graph.model_copy(deep=True)
+def merge_plan(graph: Any, canonical_id: str, member_ids: Sequence[str], keys: Optional[dict[str, str]],
+               describe: Callable, db: Any) -> list[MergeStep]:
+    """How ``member_ids`` merge into ``canonical_id`` — "two tables, one binding" (ROADMAP §3.15): each other type's
+    table is bound onto the survivor as a static binding on the survivor's key, counted one row per object, and the
+    type becomes a PART of the survivor. Nothing is deleted and nothing is repointed: a part keeps its objects, links
+    and pages by its name, and removing the binding releases it.
 
-    # 1) entities — canonical absorbs the others' tables/properties/segments, then drop the rest
-    canon = g.entities[canonical_id]
-    tables = list(canon.source_tables)
-    prop_names = {p.name for p in canon.properties}
-    set_names = {s.name for s in canon.segments}
-    for m in merge_ids:
-        if m == canonical_id:
+    ``keys`` names, per type, the column of its table that holds the survivor's key when that is not the type's own
+    key. Planned against ``graph`` (the served graph) with each earlier step's binding attached, so the doors that
+    apply it meet what was planned; one step with a ``problem`` refuses the whole merge before anything is written."""
+    from aughor.ontology.bindings import bind_binding, declared_bindings, measure_binding
+    from aughor.ontology.display import key_of
+    from aughor.ontology.models import snake_name
+    from aughor.ontology.parts import absorb_problem, backing_table, part_binding, parts_of
+
+    survivor = graph.entities[canonical_id].model_copy(deep=True)
+    planned = graph.model_copy(update={"entities": {**graph.entities, canonical_id: survivor}})
+    steps: list[MergeStep] = []
+    for member_id in dict.fromkeys(member_ids):
+        if member_id == canonical_id:
             continue
-        me = g.entities[m]
-        for t in me.source_tables:
-            if t not in tables:
-                tables.append(t)
-        for p in me.properties:
-            if p.name not in prop_names:
-                canon.properties.append(p); prop_names.add(p.name)
-        for s in me.segments:
-            if s.name not in set_names:
-                canon.segments.append(s); set_names.add(s.name)
-    canon.source_tables = tables
-    g.entities = {eid: e for eid, e in g.entities.items() if eid not in remove}
-    g.entities[canonical_id] = canon
-
-    # 2) relationships — repoint, drop self-loops, regenerate id, dedup
-    new_rels: dict = {}
-    for rel in graph.relationships.values():
-        fe, te = repoint(rel.from_entity), repoint(rel.to_entity)
-        if fe == te:
-            continue  # now internal to the merged entity
-        r = rel.model_copy(deep=True)
-        r.from_entity, r.to_entity = fe, te
-        r.id = f"{fe}_RELATES_TO_{te}"
-        new_rels.setdefault(r.id, r)
-    g.relationships = new_rels
-
-    # 3) interfaces — repoint implementing_entities (dedup, preserve order)
-    for iface in g.interfaces.values():
-        seen: list[str] = []
-        for eid in iface.implementing_entities:
-            r = repoint(eid)
-            if r not in seen:
-                seen.append(r)
-        iface.implementing_entities = seen
-
-    # 4/5) metrics & actions — repoint .entity
-    for m in g.metrics.values():
-        m.entity = repoint(m.entity)
-    for a in g.actions.values():
-        a.entity = repoint(a.entity)
-
-    # 6) entity_to_tables — union under canonical, drop removed keys
-    e2t: dict[str, list[str]] = {}
-    for eid, tbls in graph.entity_to_tables.items():
-        tgt = repoint(eid)
-        bucket = e2t.setdefault(tgt, [])
-        for t in tbls:
-            if t not in bucket:
-                bucket.append(t)
-    g.entity_to_tables = e2t
-
-    # 7) table_to_entity — repoint values
-    g.table_to_entity = {t: repoint(eid) for t, eid in graph.table_to_entity.items()}
-
-    # 8) relationship_index — rebuild from the rewritten relationships
-    idx: dict[str, list[str]] = {eid: [] for eid in g.entities}
-    for rel in g.relationships.values():
-        idx.setdefault(rel.from_entity, [])
-        if rel.to_entity not in idx[rel.from_entity]:
-            idx[rel.from_entity].append(rel.to_entity)
-        idx.setdefault(rel.to_entity, [])
-        if rel.from_entity not in idx[rel.to_entity]:
-            idx[rel.to_entity].append(rel.from_entity)
-    g.relationship_index = idx
-
-    return g
+        member = graph.entities[member_id]
+        step = MergeStep(member=member_id, table=backing_table(member))
+        steps.append(step)
+        own_parts = [part.id for part, _ in parts_of(graph, member)]
+        if own_parts:
+            step.problem = (f"{member_id} has parts of its own ({', '.join(own_parts)}) — a part of a part is not a "
+                            f"shape the map draws; merge them into {canonical_id} too, or release them first")
+            continue
+        bound = part_binding(survivor, member) if step.table else None
+        if step.table and bound is None:
+            step.name = snake_name(step.table)
+            if any(b.name == step.name for b in survivor.bindings or []):
+                step.problem = (f"{canonical_id} already has a binding named {step.name} over another source — "
+                                "remove or rename it first")
+                continue
+            spec = {"kind": "static", "table": step.table, "key": (keys or {}).get(member_id) or key_of(member)}
+            entry = bind_binding(survivor, step.name, spec, planned, describe)
+            if not entry["bound"]:
+                step.problem = entry["note"]
+                continue
+            built, _ = declared_bindings(survivor.model_copy(update={"bindings": []}), {step.name: entry["spec"]},
+                                         {"entries": {step.name: entry}}, planned)
+            if not built:
+                step.problem = f"{step.table} bound, but not as the overlay reads it back"
+                continue
+            binding = built[0]
+            measured = measure_binding(db, survivor, binding)
+            if measured.verified is not True:
+                step.problem = f"{step.table} counted against {canonical_id}: {measured.note or 'not measurable'}"
+                continue
+            measured.stamp(binding)
+            survivor.bindings = [*(survivor.bindings or []), binding]
+            step.spec, step.note = entry["spec"], measured.note
+        elif bound is not None:
+            if bound.verified is not True:
+                step.problem = (f"{canonical_id}'s binding {bound.name} over {step.table} is not counted one row per "
+                                f"{canonical_id} ({bound.note or 'uncounted'})")
+                continue
+            step.name, step.note = bound.name, bound.note
+        problem = absorb_problem(planned, canonical_id, member)
+        if problem:
+            step.problem = problem
+    return steps
 
 
 def _entity_text(e: Any) -> str:
@@ -172,6 +159,14 @@ def _entity_text(e: Any) -> str:
     return " — ".join(p for p in parts if p)
 
 
+def _is_part(graph: Any, entity: Any) -> bool:
+    """Whether ``entity`` is already a part of another type — its mark holds — and so no duplicate to offer again."""
+    if not getattr(entity, "absorbed_into", None):
+        return False
+    from aughor.ontology.parts import part_of
+    return part_of(graph, entity) is not None
+
+
 def detect_duplicate_entities(
     graph: Any,
     *,
@@ -181,8 +176,10 @@ def detect_duplicate_entities(
     """Near-duplicate entity clusters in an OntologyGraph, as merge *suggestions* (never applied).
 
     Returns a list of ``{"entities": [{id, display_name, source_tables}, ...], "similarity": float}``,
-    strongest first. ``[]`` when there are < 2 entities or embeddings are unavailable (fail-open)."""
-    entities = list(getattr(graph, "entities", {}).values())
+    strongest first. ``[]`` when there are < 2 entities or embeddings are unavailable (fail-open). A type
+    that is already a part of another is left out: it was merged (or read as a part), and offering it
+    again would bind its table twice."""
+    entities = [e for e in getattr(graph, "entities", {}).values() if not _is_part(graph, e)]
     if len(entities) < 2:
         return []
 

@@ -5,7 +5,7 @@ import asyncio
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from aughor.db.connection import open_connection_for
 from aughor.db.registry import BUILTIN_ID, get_meta
@@ -26,11 +26,12 @@ def refuse_organisation_scope(request: Request) -> None:
     take none: the explorer drafts one connection's ontology and reads nothing beyond it (the user's rule, 2026-09-14)."""
     route = request.scope.get("route")
     params = getattr(getattr(route, "dependant", None), "query_params", None) or []
-    takes_domain = any(getattr(p, "alias", "") == "domain" for p in params)
+    # the carrier reaches an organisation's ontology only beside the ?domain= that names it, on a door that takes one
+    names_domain = any(getattr(p, "alias", "") == "domain" for p in params) and "domain" in request.query_params
     for name, value in request.query_params.multi_items():
         if name != "connection_id" and not name.endswith("_connection_id"):
             continue
-        if value.startswith(ORGANISATION_SEGMENT) or (value.startswith(DOMAIN_CARRIER) and not takes_domain):
+        if value.startswith(ORGANISATION_SEGMENT) or (value.startswith(DOMAIN_CARRIER) and not names_domain):
             explorer = str(getattr(route, "path", "")).startswith(("/ontology/explore", "/ontology/draft"))
             raise HTTPException(status_code=400, detail=(
                 f"'{value}' is an organisation's ontology, not a connection — "
@@ -60,6 +61,12 @@ class _BackingSpec(BaseModel):
     kind: Literal["table", "query"] = "query"
     table: Optional[str] = None
     sql: Optional[str] = None
+    primary_key: str
+
+
+class _BackingPreview(BaseModel):
+    """A keyed SELECT a person considers as a type's backing, previewed before anything is written."""
+    sql: str
     primary_key: str
 
 
@@ -131,6 +138,9 @@ class _DeclaredEntity(BaseModel):
     entity_type: Optional[Literal["reference_data", "business_object", "event", "standalone"]] = None
     backing: _DeclaredBacking
     origin: Optional[Literal["human", "model"]] = None
+    #: who proposed it, `model:<id>@<version>` — a person confirming a model's proposal declares `origin: human`
+    #: and keeps the model's provenance beside it
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _DeclaredLink(BaseModel):
@@ -143,13 +153,16 @@ class _DeclaredLink(BaseModel):
     cardinality: Optional[Literal["1:1", "1:N", "N:1", "N:N"]] = None
     reverse_name: Optional[str] = None
     origin: Optional[Literal["human", "model"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _DeclaredPromise(BaseModel):
-    """ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, or by
-    a deadline property of the object that carries it (`grain`, reached from it through `via`)."""
+    """ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, within N
+    hours of its moment, or by a deadline property of the object that carries it (`grain`, reached from it through
+    `via`)."""
     name: Optional[str] = None
     within_days: Optional[int] = None
+    within_hours: Optional[int] = None
     deadline: Optional[str] = None
     grain: Optional[str] = None
     via: Optional[str] = None
@@ -175,6 +188,7 @@ class _DeclaredProcess(BaseModel):
     stages: list[_DeclaredStage]
     owner: Optional[str] = None
     origin: Optional[Literal["human", "model", "pack"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _DeclaredRule(BaseModel):
@@ -187,8 +201,11 @@ class _DeclaredRule(BaseModel):
     property: Optional[str] = None
     values: Optional[list] = None
     conditions: Optional[list[dict]] = None
+    #: The verified metrics on its type the rule scopes: each read within it wherever it is read.
+    scopes: Optional[list[str]] = None
     owner: Optional[str] = None
     origin: Optional[Literal["human", "model", "pack"]] = None
+    provenance: Optional[str] = Field(default=None, max_length=200)
 
 
 class _ActionOverride(BaseModel):
@@ -217,6 +234,8 @@ class _KineticActionBody(BaseModel):
 class _MergeEntitiesRequest(BaseModel):
     merge_ids: list[str]      # the cluster of entity ids to merge (must include canonical_id)
     canonical_id: str         # the survivor — others are merged into it
+    #: Per other type, the column of its table that holds the survivor's key — when that is not the type's own key.
+    keys: dict[str, str] = Field(default_factory=dict)
 
 
 class _ColumnConfigEdit(BaseModel):
@@ -1083,32 +1102,15 @@ def _override_result(ov) -> dict:
 
 def _display_property_or_error(connection_id: str, schema: str, entity_id: str, name: str) -> str:
     """ON-3b — the property a display-property edit names, spelled as the type spells it: 404 when the type is not
-    in the served graph, 400 naming its properties when it has no such property.
-
-    A property a STATIC binding supplies may name objects too (ON-1b): the binding holds one row per object, so
-    the name is as single-valued as any column of the backing. A TIMESERIES binding is refused with its reason —
-    it is read as the object's latest row, so a title taken from it would change under the reader, and a title
-    that moves is not a name."""
-    from aughor.ontology.bindings import property_binding
+    in the served graph, 400 with the reason when it cannot name objects (`display.display_property_problem`)."""
+    from aughor.ontology.display import display_property_problem
     graph = _get_ontology_graph(connection_id, schema)
     entity = graph.entities.get(entity_id) if graph is not None else None
     if entity is None:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
-    wanted = str(name or "").strip()
-    bound = {p: b for b in (entity.bindings or []) for p in b.properties}
-    match = next((k for k in (entity.properties or {}) if k.lower() == wanted.lower()), None)
-    if match is None:
-        match = next((k for k in bound if k.lower() == wanted.lower()), None)
-    if match is None:
-        available = sorted({*(entity.properties or {}), *bound})
-        raise HTTPException(status_code=400, detail=(f"{entity_id} has no property '{wanted}' — its properties: "
-                                                     f"{', '.join(available) or 'none'}"))
-    binding = property_binding(entity, match)
-    if binding is not None and binding.kind == "timeseries":
-        raise HTTPException(status_code=400, detail=(
-            f"'{match}' is read from the timeseries binding {binding.name}, as this object's latest value — a "
-            f"title taken from it would change when the next reading lands. Name objects by a property of the "
-            f"backing or of a static binding."))
+    match, problem = display_property_problem(entity, name)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
     return match
 
 
@@ -1118,9 +1120,13 @@ def override_ontology_entity(
     body: _EntityOverride,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None, description="ON-8 — name the objects of a type of an organisation's ontology"),
 ):
-    # ON-8 — the scope the web carries an organisation's ontology in never reaches this door: it takes no ?domain=, so
-    # `refuse_organisation_scope` answers 400 first, and the store refuses the write besides.
+    # ON-8 — with ``domain``, a declared type of the organisation's ontology takes its display property here and nothing
+    # else. The scope the web carries that ontology in reaches this door only beside the ?domain= that names it
+    # (`refuse_organisation_scope`), and the store refuses a write to it through one connection's writer besides.
+    if domain is not None:
+        return _domain_edit_entity(entity_id, body, domain)
     from aughor import govern
     govern.guard("ontology.override", connection_id)  # P4: mutating the semantic layer
     from aughor.ontology.overrides import OntologyOverride, find_override
@@ -1146,6 +1152,25 @@ def override_ontology_entity(
     if graph is not None and entity_id not in graph.entities:
         raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
     return _override_result(ov)
+
+
+def _domain_edit_entity(entity_id: str, body: _EntityOverride, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import domain_graph, set_display_property
+    from aughor.semantic.object_types import describe_object_type
+    fields = {k: v for k, v in body.model_dump().items() if v is not None}
+    other = sorted(set(fields) - {"display_property"})
+    if other or not fields:
+        raise HTTPException(status_code=400, detail=(
+            "a type of an organisation's ontology takes its display property through this door"
+            + (f", not {', '.join(other)}" if other else ", and none was given")
+            + " — the type is declared with POST /ontology/entities?domain= and its sources bound with "
+              "PUT /ontology/entities/{id}/bindings/{name}?domain="))
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: set_display_property(scope, entity_id, fields["display_property"], _open_source))
+    served = domain_graph(scope)
+    return {**_override_result(ov), "entity": describe_object_type(served, entity_id), "domain": scope.key}
 
 
 @router.put("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -1256,6 +1281,61 @@ def _absorb_after_bind(connection_id: str, schema: str, parent_id: str, table: O
         return None, f"absorb: {problem}"
     _merge_entity_fields(connection_id, schema, other.id, {"absorbed_into": parent_id})
     return other.id, ""
+
+
+@router.post("/ontology/entities/{entity_id}/backing/preview", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def preview_ontology_backing(
+    entity_id: str,
+    body: _BackingPreview,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """What a keyed SELECT would change if it became this type's backing — read, never written: whether it reads, its
+    rows and whether its key is unique over them, and the type's properties it keeps, drops (they would stop
+    resolving) and adds, beside what the type is read from now. Setting it is `PUT /ontology/entities/{id}` with
+    `backing`; `DELETE /ontology/entities/{id}/backing` reads the table again."""
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.backing import preview_backing
+    from aughor.ontology.bindings import describe_with
+    effective = _resolve_schema(connection_id, schema_name)
+    graph = _get_ontology_graph(connection_id, effective)
+    entity = graph.entities.get(entity_id) if graph is not None else None
+    if entity is None:
+        raise HTTPException(status_code=404, detail=f"Entity '{entity_id}' not found")
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        return preview_backing(db, entity, body.sql, body.primary_key, describe_with(db))
+    finally:
+        db.close()
+
+
+@router.delete("/ontology/entities/{entity_id}/backing", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
+def withdraw_ontology_backing(
+    entity_id: str,
+    connection_id: str = BUILTIN_ID,
+    schema_name: Optional[str] = Query(default=None),
+):
+    """Withdraw the backing a person set on a type: it is read from its table again, and every other edit on it
+    stays. 404 when the type has no backing a person set. A declared type's backing IS its declaration, so it is
+    refused here — `DELETE /ontology/entities/{id}` withdraws the type."""
+    from aughor import govern
+    govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
+    from aughor.ontology.overrides import delete_override, find_override, save_override
+    effective = _resolve_schema(connection_id, schema_name)
+    existing = find_override(connection_id, effective, "entity", entity_id)
+    if existing is None or "backing" not in existing.fields:
+        raise HTTPException(status_code=404, detail=f"{entity_id} has no backing a person set")
+    if existing.fields.get("declared"):
+        raise HTTPException(status_code=400, detail=(
+            f"{entity_id} is a declared type: its backing is its declaration — DELETE /ontology/entities/{entity_id} "
+            "withdraws the type"))
+    fields = {k: v for k, v in existing.fields.items() if k != "backing"}
+    if fields:
+        binding = {k: v for k, v in existing.binding.items() if k != "backing"}
+        save_override(connection_id, effective, existing.model_copy(update={"fields": fields, "binding": binding}))
+    else:
+        delete_override(connection_id, effective, "entity", entity_id)
+    return {"withdrawn": "backing", "entity": entity_id, "kept": sorted(fields)}
 
 
 @router.delete("/ontology/entities/{entity_id}/bindings/{name}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
@@ -1548,16 +1628,23 @@ def _domain_declare_link(spec: dict, domain: str) -> dict:
 def list_ontology_processes(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Every declared process (ON-9) with what its measurement counted — each stage and how many objects reach it,
-    each transition timed, each promise with its breaches and the names it derives — and every declared rule."""
+    each transition timed, each promise with its breaches and the names it derives — and every declared rule. ON-8 —
+    with ``domain``, the organisation's ontology's."""
     from aughor.ontology.business_rules import describe_rule
     from aughor.ontology.processes import describe_process
-    graph = _get_ontology_graph(connection_id, schema_name)
-    if graph is None:
-        raise HTTPException(status_code=404, detail="Ontology not available")
-    return {"connection_id": connection_id, "schema_name": graph.schema_name,
-            "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
+    if domain is not None:
+        from aughor.ontology.domains import domain_graph
+        scope = _domain_scope(domain)
+        graph, where = domain_graph(scope), {"domain": scope.key}
+    else:
+        graph = _get_ontology_graph(connection_id, schema_name)
+        if graph is None:
+            raise HTTPException(status_code=404, detail="Ontology not available")
+        where = {"connection_id": connection_id, "schema_name": graph.schema_name}
+    return {**where, "processes": [describe_process(graph, p) for _, p in sorted(graph.processes.items())],
             "rules": [describe_rule(graph, r) for _, r in sorted(graph.rules.items())]}
 
 
@@ -1585,6 +1672,7 @@ def frame_ontology_question(
     body: _FrameQuestion,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Frame a question against the declared ontology (ON-10): its business terms resolved — deterministically,
     against the declared names, a person's synonyms, the processes with their stages and promises, what each promise
@@ -1592,11 +1680,22 @@ def frame_ontology_question(
     where to start, the rules and stage moments it names, and the drivers reachable from the start by measured
     to-one links, each definition compiled by the object door. When the words fit several declared definitions
     equally they are all returned and none is chosen. No model call, no warehouse: the investigation frames every
-    question this way before its intake reads it, and this door shows the same frame."""
+    question this way before its intake reads it, and this door shows the same frame. ON-8 — with ``domain``, against
+    the organisation's ontology: what people declared there alone. A person's synonyms are recorded on one connection
+    and name its tables and columns, so none of them widens the words of an ontology whose types live on several."""
     from aughor.ontology.framing import DEFAULT_HOPS, frame_question
     question = (body.question or "").strip()
     if not question:
         raise HTTPException(status_code=400, detail="a question is required")
+    if domain is not None:
+        from aughor.ontology.domains import connections_of, domain_graph
+        scope = _domain_scope(domain)
+        graph = domain_graph(scope)
+        # the dialect the object door compiles in on the connections the domain reads: theirs when they share one
+        dialects = {_frame_dialect(c) for c in connections_of(graph)}
+        frame = frame_question(question[:2000], graph, hops=body.hops or DEFAULT_HOPS,
+                               dialect=dialects.pop() if len(dialects) == 1 else "duckdb")
+        return {"domain": scope.key, "frame": frame.model_dump(mode="json")}
     graph = _get_ontology_graph(connection_id, schema_name)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
@@ -1615,6 +1714,7 @@ def declare_ontology_process(
     body: _DeclaredProcess,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Declare a process (ON-9): the type that goes through it, its stages in order — each anchored to the moment an
     object reaches it or to the states that place it there — and on a stage the promise about reaching it: within N
@@ -1622,7 +1722,10 @@ def declare_ontology_process(
     resolved by the object door's own path law and the whole declaration is COUNTED through its compiler before
     anything is written (400 with the reason when it cannot be); the count rides the override file and is taken again
     on every measure pass. The door then compiles what each promise derives — `late_<name>`, `<name>_breach_rate`,
-    `<name>_lag_days`. No model call."""
+    `<name>_lag_days`. No model call. ON-8 — with ``domain``, into the organisation's ontology, where a stage may be
+    anchored on a type or binding on another connection and is counted across the two."""
+    if domain is not None:
+        return _domain_declare_process(body.model_dump(exclude_none=True), domain)
     return _declare_process_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1664,20 +1767,39 @@ def _declare_process_core(spec: dict, connection_id: str, schema_name: Optional[
     return {**_override_result(ov), "process": describe_process(served, served.processes[process_id])}
 
 
+def _domain_declare_process(spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.domains import declare_process, domain_graph
+    from aughor.ontology.processes import describe_process
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: declare_process(scope, spec, _open_source))
+    served = domain_graph(scope)
+    if ov.target_id not in served.processes:
+        raise HTTPException(status_code=500, detail=f"{ov.target_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "process": describe_process(served, served.processes[ov.target_id]),
+            "domain": scope.key}
+
+
 @router.delete("/ontology/processes/{process_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def delete_declared_process(
     process_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
-    """Withdraw a declared process (ON-9) — its override file, and with it every name it derived."""
+    """Withdraw a declared process (ON-9) — its override file, and with it every name it derived. ON-8 — with
+    ``domain``, from the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override, find_override
+    from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
+    remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
     effective = _resolve_schema(connection_id, schema_name)
     if find_override(connection_id, effective, "process", process_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared process '{process_id}'")
-    delete_override(connection_id, effective, "process", process_id)
+    remove(connection_id, effective, "process", process_id)
     return {"removed": True, "process": process_id}
 
 
@@ -1686,11 +1808,15 @@ def declare_ontology_rule(
     body: _DeclaredRule,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
     """Declare a named business rule (ON-9): a value set — the values of one property the business groups under one
     name, "DACH is DE, AT and CH" — or conditions in the object door's shape. Compiled and COUNTED before it is
     written: how many objects it admits, and for a value set the rows per value, a value no row holds flagged. The
-    object door reads it as a segment named by its id. No model call."""
+    object door reads it as a segment named by its id. No model call. ON-8 — with ``domain``, into the organisation's
+    ontology, where a condition may read a type on another connection through a to-one link."""
+    if domain is not None:
+        return _domain_declare_rule(body.model_dump(exclude_none=True), domain)
     return _declare_rule_core(body.model_dump(exclude_none=True), connection_id, schema_name)
 
 
@@ -1732,20 +1858,38 @@ def _declare_rule_core(spec: dict, connection_id: str, schema_name: Optional[str
     return {**_override_result(ov), "rule": describe_rule(served, served.rules[rule_id])}
 
 
+def _domain_declare_rule(spec: dict, domain: str) -> dict:
+    from aughor import govern
+    from aughor.ontology.business_rules import describe_rule
+    from aughor.ontology.domains import declare_rule, domain_graph
+    scope = _domain_scope(domain)
+    govern.guard("ontology.override", scope.key)  # P4: mutating the semantic layer
+    ov = _domain_door(lambda: declare_rule(scope, spec, _open_source))
+    served = domain_graph(scope)
+    if ov.target_id not in served.rules:
+        raise HTTPException(status_code=500, detail=f"{ov.target_id} was written but does not read back — see the overlay report")
+    return {**_override_result(ov), "rule": describe_rule(served, served.rules[ov.target_id]), "domain": scope.key}
+
+
 @router.delete("/ontology/rules/{rule_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def delete_declared_rule(
     rule_id: str,
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
+    domain: Optional[str] = Query(default=None),
 ):
-    """Withdraw a declared rule (ON-9) — its override file, and with it the segment it named."""
+    """Withdraw a declared rule (ON-9) — its override file, and with it the segment it named. ON-8 — with ``domain``,
+    from the organisation's ontology."""
+    if domain is not None:
+        connection_id, schema_name = _domain_scope(domain).tree
     from aughor import govern
     govern.guard("ontology.delete_override", connection_id)  # P4: reverts a governed semantic edit
-    from aughor.ontology.overrides import delete_override, find_override
+    from aughor.ontology.overrides import delete_organisation_override, delete_override, find_override
+    remove = delete_organisation_override if domain is not None else delete_override  # ON-8 — its own writer
     effective = _resolve_schema(connection_id, schema_name)
     if find_override(connection_id, effective, "rule", rule_id) is None:
         raise HTTPException(status_code=404, detail=f"no declared rule '{rule_id}'")
-    delete_override(connection_id, effective, "rule", rule_id)
+    remove(connection_id, effective, "rule", rule_id)
     return {"removed": True, "rule": rule_id}
 
 
@@ -1785,12 +1929,14 @@ def name_ontology_link(
 
 
 class _ConfirmTarget(BaseModel):
-    """One declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read
-    through."""
-    kind: Literal["entity", "binding", "link"]
+    """One declaration a person makes theirs: a declared entity, a declared link, the binding a part is read through,
+    or a declared process or rule (ON-9)."""
+    kind: Literal["entity", "binding", "link", "process", "rule"]
     entity: Optional[str] = None
     binding: Optional[str] = None
     relationship: Optional[str] = None
+    process: Optional[str] = None
+    rule: Optional[str] = None
 
 
 class _ConfirmRequest(BaseModel):
@@ -1819,7 +1965,8 @@ def explore_ontology(
     schema_name: Optional[str] = Query(default=None),
 ):
     """ON-7b — an explorer drafts the BUSINESS ontology over this scope in ONE model call: which tables are one business
-    thing (an entity and its parts), the links the business names, and — rarely — an entity no table stands for. Every
+    thing (an entity and its parts), the links the business names, the processes its objects go through and the sets of
+    objects it names (ON-9: stages without promises, rules without scopes), and — rarely — an entity no table stands for. Every
     proposal is measured before it lands — a part's key counted against its entity's objects, the data deciding static,
     detail or timeseries; a link's sides counted and keys that never meet refused; a declared entity's key unique — and
     what survives is written through ON-7's doors with `origin: model` and `model:<id>@<version>` provenance: read at
@@ -1863,7 +2010,9 @@ def explore_ontology(
             entity_id, name, {**spec, "absorb": absorb}, connection_id, effective,
             origin="model", provenance=answerer.provenance)),
         declare_link=lambda spec: _through_door(lambda: _declare_link_core(spec, connection_id, effective)),
-        served=lambda: _get_ontology_graph(connection_id, effective))
+        served=lambda: _get_ontology_graph(connection_id, effective),
+        declare_process=lambda spec: _through_door(lambda: _declare_process_core(spec, connection_id, effective)),
+        declare_rule=lambda spec: _through_door(lambda: _declare_rule_core(spec, connection_id, effective)))
     db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
     try:
         outcomes = apply_draft(said, graph, db, provenance=answerer.provenance, draft=draft, writers=writers)
@@ -1956,8 +2105,8 @@ def _confirm_proposal(connection_id: str, schema: str, target: dict, actor: str)
     kind = target.get("kind")
     now = datetime.now(timezone.utc).isoformat()
     who = actor or "a person"
-    if kind in ("entity", "link"):
-        ident = str((target.get("entity") if kind == "entity" else target.get("relationship")) or "")
+    if kind in ("entity", "link", "process", "rule"):
+        ident = str(target.get({"entity": "entity", "link": "relationship"}.get(kind, kind)) or "")
         ov = find_override(connection_id, schema, kind, ident)
         if ov is None or not ov.fields.get("declared"):
             return f"no declared {kind} '{ident}'"
@@ -2383,14 +2532,16 @@ def export_ontology_tree(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Write the live ontology to a readable, version-controllable YAML tree."""
+    """Write the live ontology to a readable, version-controllable YAML tree — each declaration (a declared type,
+    link, process or rule) under `declared/`, as the spec its door takes."""
     from aughor.ontology.filetree import export_tree, export_root
+    from aughor.ontology.overrides import load_overrides
     effective = _resolve_schema(connection_id, schema_name)
     graph = _get_ontology_graph(connection_id, effective)
     if graph is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
     root = export_root(connection_id, effective)
-    paths = export_tree(root, graph)
+    paths = export_tree(root, graph, load_overrides(connection_id, effective))
     return {"root": str(root), "files": len(paths)}
 
 
@@ -2399,18 +2550,21 @@ def import_ontology_tree(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides.
+    """Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides, and each declaration in it.
 
     Edits are diffed against the PRE-override auto-built graph, so re-importing an
-    unedited export is a no-op and only changed fields become overrides.
+    unedited export is a no-op and only changed fields become overrides. A declaration — a declared type, link,
+    process or rule, under `declared/` — is declared again through its own door, counted and refused with the
+    reason; one the overrides tree already holds unchanged is left as it is. A declared type's later edits are not
+    in its file: each is made again through its own door.
     """
     # G1: an import writes overrides in BULK — the same governed semantic edit the two
     # single-field override endpoints above have always gated, arriving by the door that
     # was never locked.
     from aughor import govern
     govern.guard("ontology.import", connection_id)
-    from aughor.ontology.filetree import import_tree, export_root
-    from aughor.ontology.overrides import bind_overrides, save_override
+    from aughor.ontology.filetree import declaration_spec, export_root, import_tree, read_declarations
+    from aughor.ontology.overrides import bind_overrides, find_override, save_override
     from aughor.ontology.store import load_ontology
     effective = _resolve_schema(connection_id, schema_name)
     fingerprint = _latest_fingerprint(connection_id, effective)
@@ -2420,18 +2574,40 @@ def import_ontology_tree(
     if base is None:
         raise HTTPException(status_code=404, detail="Ontology not available")
 
-    candidates = import_tree(export_root(connection_id, effective), base)
-    explain, close = _explain_for(connection_id)
+    root = export_root(connection_id, effective)
+    declarations, unreadable = read_declarations(root)
+    doors = {"entity": _declare_entity_core, "link": _declare_link_core, "process": _declare_process_core,
+             "rule": _declare_rule_core}
+    declared = []
+    for kind, target, spec, edits in declarations:
+        row = {"kind": kind, "target": target, "declared": False, "note": ""}
+        existing = find_override(connection_id, effective, kind, target)
+        if existing is not None and existing.fields.get("declared") and declaration_spec(existing) == spec:
+            row["note"] = "unchanged"
+        else:
+            try:
+                doors[kind](spec, connection_id, effective)
+            except HTTPException as exc:
+                row["note"] = str(exc.detail)
+            else:
+                row["declared"] = True
+                if edits:
+                    row["note"] = f"declared; its later edits ({', '.join(edits)}) are made again through their own doors"
+        declared.append(row)
+
+    candidates = import_tree(root, base)
     saved = []
-    try:
-        for ov in candidates:
-            bind_overrides(ov, base, explain)
-            save_override(connection_id, effective, ov)
-            saved.append({"kind": ov.target_kind, "target": ov.target_id,
-                          "bound": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True})
-    finally:
-        close()
-    return {"imported": len(saved), "overrides": saved}
+    if candidates:
+        explain, close = _explain_for(connection_id)
+        try:
+            for ov in candidates:
+                bind_overrides(ov, base, explain)
+                save_override(connection_id, effective, ov)
+                saved.append({"kind": ov.target_kind, "target": ov.target_id,
+                              "bound": all(b.get("bound") for b in ov.binding.values()) if ov.binding else True})
+        finally:
+            close()
+    return {"imported": len(saved), "overrides": saved, "declared": declared, "unreadable": unreadable}
 
 
 # ── R11: per-column {visible, sample, index} config ─────────────────────────
@@ -2492,32 +2668,65 @@ def merge_ontology_entities(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`). Collapses
-    `merge_ids` into `canonical_id`, repointing every cross-reference, and persists. Gated + explicit —
-    never automatic, because a wrong merge would corrupt the ontology."""
+    """Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`) as "two tables, one
+    binding" (ROADMAP §3.15): each other type's table is bound onto `canonical_id` on its key — a static binding,
+    counted one row per object — and the type becomes a PART of it, hidden from the map and listed under it. Nothing
+    is deleted and nothing is repointed: a part keeps its objects, links and pages by its name, and removing the
+    binding releases it. `keys` names, per type, the column of its table that holds the survivor's key when that is
+    not the type's own key. The whole cluster is planned and counted first, and one step the data does not hold
+    refuses the merge (400, every reason named) before anything is written. Written through the bind door into the
+    overrides tree, so a rebuild keeps it. Gated + explicit — never automatic, because a wrong merge would corrupt
+    the ontology."""
     if len(set(body.merge_ids)) < 2:
         raise HTTPException(status_code=400, detail="merge_ids must list at least 2 distinct entities")
     if body.canonical_id not in body.merge_ids:
         raise HTTPException(status_code=400, detail="canonical_id must be one of merge_ids")
 
-    from aughor.ontology.store import apply_entity_merge
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.bindings import describe_with
+    from aughor.ontology.dedup import merge_plan
+    from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
-    fingerprint = _latest_fingerprint(connection_id, effective)
-    if not fingerprint:
-        graph = _get_ontology_graph(connection_id, effective)
-        if graph is None:
-            raise HTTPException(status_code=404, detail="Ontology not available")
-        fingerprint = graph.schema_fingerprint
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    unknown = [e for e in body.merge_ids if e not in graph.entities]
+    if unknown:
+        raise HTTPException(status_code=404, detail=f"unknown entities: {', '.join(unknown)}")
 
-    merged = apply_entity_merge(connection_id, effective, fingerprint, body.merge_ids, body.canonical_id)
-    if merged is None:
-        raise HTTPException(status_code=404, detail="Ontology not available, or an entity id was unknown")
-    return {
-        "merged_into": body.canonical_id,
-        "removed": [e for e in body.merge_ids if e != body.canonical_id],
-        "entity": merged.entities[body.canonical_id].model_dump(),
-        "entity_count": len(merged.entities),
-    }
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        steps = merge_plan(graph, body.canonical_id, body.merge_ids, body.keys, describe_with(db), db)
+    finally:
+        db.close()
+    refused = [f"{s.member}: {s.problem}" for s in steps if s.problem]
+    if refused:
+        raise HTTPException(status_code=400,
+                            detail=f"nothing was merged into {body.canonical_id} — " + "; ".join(refused))
+
+    absorbed: list[str] = []
+    bindings: list[dict] = []
+    warnings: list[str] = []
+    for step in steps:
+        if step.spec is not None:
+            done = _bind_entity_core(body.canonical_id, step.name, {**step.spec, "absorb": True}, connection_id,
+                                     effective)
+            warnings.extend(done["warnings"])
+            if done.get("binding"):
+                bindings.append(done["binding"])
+            if done.get("absorbed"):
+                absorbed.append(done["absorbed"])
+        else:
+            got, why = _absorb_after_bind(connection_id, effective, body.canonical_id, step.table)
+            if why:
+                warnings.append(why)
+            if got:
+                absorbed.append(got)
+    served = _get_ontology_graph(connection_id, effective)
+    described = (describe_object_type(served, body.canonical_id)
+                 if served is not None and body.canonical_id in served.entities else {})
+    return {"merged_into": body.canonical_id, "absorbed": absorbed, "bindings": bindings,
+            "parts": described.get("parts", []), "warnings": warnings}
 
 
 @router.put("/ontology/actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])

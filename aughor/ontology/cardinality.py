@@ -67,8 +67,9 @@ def measure_side(db: Any, table: str, column: str) -> Optional[SideCount]:
     """Count one side; None when the probe fails (missing table/column, dialect refusal)."""
     col = quote_ident(column)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {quote_table(table)}"
+    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__cardinality_probe__", sql)
+        result = db.execute("__cardinality_probe__", native_sql(db, sql))
     except Exception as exc:  # noqa: BLE001 — a probe that raises is an unmeasurable side, not a build failure
         logger.debug("cardinality probe raised on %s.%s: %s", table, column, exc)
         return None

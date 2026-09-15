@@ -7359,7 +7359,8 @@ export interface paths {
          * Post Object Titles
          * @description The name of each object a set of keys names — one query over the backing, so a table of keys costs one
          *     round trip. A type named by its own key resolves nothing and says so; a key nothing matches is absent from
-         *     the map rather than guessed at. An unknown type is `path: refused`. No model call.
+         *     the map rather than guessed at. An unknown type is `path: refused`. No model call. ON-8 — with ``domain``, a
+         *     type of the organisation's ontology, its names read where they live.
          */
         post: operations["post_object_titles_objects_titles_post"];
         delete?: never;
@@ -7380,7 +7381,8 @@ export interface paths {
          * @description ON-3: one object, resolved live through its backing — its properties, and its links resolved
          *     to the linked object's key (to-one) or a count of the linked objects (to-many). A link the
          *     compiler refuses is listed with its reason and never traversed. 404 when no object has that key;
-         *     an unknown type is `path: refused` with the types that exist.
+         *     an unknown type is `path: refused` with the types that exist. ON-8 — with ``domain``, an object of the
+         *     organisation's ontology: its row, each binding and each linked type read on the connection it lives on.
          */
         get: operations["get_object_page_objects__object_type___pk__get"];
         put?: never;
@@ -7401,7 +7403,8 @@ export interface paths {
         /**
          * Get Object Links Page
          * @description ON-3: one page of the objects a link reaches from one object, ordered by their key — refused
-         *     when the link is (unmeasured, N:N, or touching a query backing).
+         *     when the link is (unmeasured, N:N, or touching a query backing). ON-8 — with ``domain``, in the organisation's
+         *     ontology: the object read where it lives, and the linked objects where theirs do.
          */
         get: operations["get_object_links_page_objects__object_type___pk__links__link__get"];
         put?: never;
@@ -7974,9 +7977,15 @@ export interface paths {
         put?: never;
         /**
          * Merge Ontology Entities
-         * @description Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`). Collapses
-         *     `merge_ids` into `canonical_id`, repointing every cross-reference, and persists. Gated + explicit —
-         *     never automatic, because a wrong merge would corrupt the ontology.
+         * @description Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`) as "two tables, one
+         *     binding" (ROADMAP §3.15): each other type's table is bound onto `canonical_id` on its key — a static binding,
+         *     counted one row per object — and the type becomes a PART of it, hidden from the map and listed under it. Nothing
+         *     is deleted and nothing is repointed: a part keeps its objects, links and pages by its name, and removing the
+         *     binding releases it. `keys` names, per type, the column of its table that holds the survivor's key when that is
+         *     not the type's own key. The whole cluster is planned and counted first, and one step the data does not hold
+         *     refuses the merge (400, every reason named) before anything is written. Written through the bind door into the
+         *     overrides tree, so a rebuild keeps it. Gated + explicit — never automatic, because a wrong merge would corrupt
+         *     the ontology.
          */
         post: operations["merge_ontology_entities_ontology_entities_merge_post"];
         delete?: never;
@@ -8004,6 +8013,51 @@ export interface paths {
          *     ``domain``, from the organisation's ontology.
          */
         delete: operations["delete_declared_entity_ontology_entities__entity_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/backing": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Withdraw Ontology Backing
+         * @description Withdraw the backing a person set on a type: it is read from its table again, and every other edit on it
+         *     stays. 404 when the type has no backing a person set. A declared type's backing IS its declaration, so it is
+         *     refused here — `DELETE /ontology/entities/{id}` withdraws the type.
+         */
+        delete: operations["withdraw_ontology_backing_ontology_entities__entity_id__backing_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/ontology/entities/{entity_id}/backing/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Preview Ontology Backing
+         * @description What a keyed SELECT would change if it became this type's backing — read, never written: whether it reads, its
+         *     rows and whether its key is unique over them, and the type's properties it keeps, drops (they would stop
+         *     resolving) and adds, beside what the type is read from now. Setting it is `PUT /ontology/entities/{id}` with
+         *     `backing`; `DELETE /ontology/entities/{id}/backing` reads the table again.
+         */
+        post: operations["preview_ontology_backing_ontology_entities__entity_id__backing_preview_post"];
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -8252,7 +8306,8 @@ export interface paths {
         /**
          * Explore Ontology
          * @description ON-7b — an explorer drafts the BUSINESS ontology over this scope in ONE model call: which tables are one business
-         *     thing (an entity and its parts), the links the business names, and — rarely — an entity no table stands for. Every
+         *     thing (an entity and its parts), the links the business names, the processes its objects go through and the sets of
+         *     objects it names (ON-9: stages without promises, rules without scopes), and — rarely — an entity no table stands for. Every
          *     proposal is measured before it lands — a part's key counted against its entity's objects, the data deciding static,
          *     detail or timeseries; a link's sides counted and keys that never meet refused; a declared entity's key unique — and
          *     what survives is written through ON-7's doors with `origin: model` and `model:<id>@<version>` provenance: read at
@@ -8277,7 +8332,8 @@ export interface paths {
         put?: never;
         /**
          * Export Ontology Tree
-         * @description Write the live ontology to a readable, version-controllable YAML tree.
+         * @description Write the live ontology to a readable, version-controllable YAML tree — each declaration (a declared type,
+         *     link, process or rule) under `declared/`, as the spec its door takes.
          */
         post: operations["export_ontology_tree_ontology_export_post"];
         delete?: never;
@@ -8303,7 +8359,9 @@ export interface paths {
          *     where to start, the rules and stage moments it names, and the drivers reachable from the start by measured
          *     to-one links, each definition compiled by the object door. When the words fit several declared definitions
          *     equally they are all returned and none is chosen. No model call, no warehouse: the investigation frames every
-         *     question this way before its intake reads it, and this door shows the same frame.
+         *     question this way before its intake reads it, and this door shows the same frame. ON-8 — with ``domain``, against
+         *     the organisation's ontology: what people declared there alone. A person's synonyms are recorded on one connection
+         *     and name its tables and columns, so none of them widens the words of an ontology whose types live on several.
          */
         post: operations["frame_ontology_question_ontology_frame_post"];
         delete?: never;
@@ -8323,10 +8381,13 @@ export interface paths {
         put?: never;
         /**
          * Import Ontology Tree
-         * @description Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides.
+         * @description Re-import on-disk edits to the exported tree as EXPLAIN-bound overrides, and each declaration in it.
          *
          *     Edits are diffed against the PRE-override auto-built graph, so re-importing an
-         *     unedited export is a no-op and only changed fields become overrides.
+         *     unedited export is a no-op and only changed fields become overrides. A declaration — a declared type, link,
+         *     process or rule, under `declared/` — is declared again through its own door, counted and refused with the
+         *     reason; one the overrides tree already holds unchanged is left as it is. A declared type's later edits are not
+         *     in its file: each is made again through its own door.
          */
         post: operations["import_ontology_tree_ontology_import_post"];
         delete?: never;
@@ -8605,7 +8666,8 @@ export interface paths {
         /**
          * List Ontology Processes
          * @description Every declared process (ON-9) with what its measurement counted — each stage and how many objects reach it,
-         *     each transition timed, each promise with its breaches and the names it derives — and every declared rule.
+         *     each transition timed, each promise with its breaches and the names it derives — and every declared rule. ON-8 —
+         *     with ``domain``, the organisation's ontology's.
          */
         get: operations["list_ontology_processes_ontology_processes_get"];
         put?: never;
@@ -8617,7 +8679,8 @@ export interface paths {
          *     resolved by the object door's own path law and the whole declaration is COUNTED through its compiler before
          *     anything is written (400 with the reason when it cannot be); the count rides the override file and is taken again
          *     on every measure pass. The door then compiles what each promise derives — `late_<name>`, `<name>_breach_rate`,
-         *     `<name>_lag_days`. No model call.
+         *     `<name>_lag_days`. No model call. ON-8 — with ``domain``, into the organisation's ontology, where a stage may be
+         *     anchored on a type or binding on another connection and is counted across the two.
          */
         post: operations["declare_ontology_process_ontology_processes_post"];
         delete?: never;
@@ -8638,7 +8701,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Declared Process
-         * @description Withdraw a declared process (ON-9) — its override file, and with it every name it derived.
+         * @description Withdraw a declared process (ON-9) — its override file, and with it every name it derived. ON-8 — with
+         *     ``domain``, from the organisation's ontology.
          */
         delete: operations["delete_declared_process_ontology_processes__process_id__delete"];
         options?: never;
@@ -8784,7 +8848,8 @@ export interface paths {
          * @description Declare a named business rule (ON-9): a value set — the values of one property the business groups under one
          *     name, "DACH is DE, AT and CH" — or conditions in the object door's shape. Compiled and COUNTED before it is
          *     written: how many objects it admits, and for a value set the rows per value, a value no row holds flagged. The
-         *     object door reads it as a segment named by its id. No model call.
+         *     object door reads it as a segment named by its id. No model call. ON-8 — with ``domain``, into the organisation's
+         *     ontology, where a condition may read a type on another connection through a to-one link.
          */
         post: operations["declare_ontology_rule_ontology_rules_post"];
         delete?: never;
@@ -8805,7 +8870,8 @@ export interface paths {
         post?: never;
         /**
          * Delete Declared Rule
-         * @description Withdraw a declared rule (ON-9) — its override file, and with it the segment it named.
+         * @description Withdraw a declared rule (ON-9) — its override file, and with it the segment it named. ON-8 — with ``domain``,
+         *     from the organisation's ontology.
          */
         delete: operations["delete_declared_rule_ontology_rules__rule_id__delete"];
         options?: never;
@@ -13907,6 +13973,16 @@ export interface components {
             reconcile?: boolean | null;
         };
         /**
+         * _BackingPreview
+         * @description A keyed SELECT a person considers as a type's backing, previewed before anything is written.
+         */
+        _BackingPreview: {
+            /** Primary Key */
+            primary_key: string;
+            /** Sql */
+            sql: string;
+        };
+        /**
          * _BackingSpec
          * @description ON-1: what an object is read from — a keyed SELECT whose rows are its instances.
          */
@@ -14084,8 +14160,8 @@ export interface components {
         };
         /**
          * _ConfirmTarget
-         * @description One declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read
-         *     through.
+         * @description One declaration a person makes theirs: a declared entity, a declared link, the binding a part is read through,
+         *     or a declared process or rule (ON-9).
          */
         _ConfirmTarget: {
             /** Binding */
@@ -14096,9 +14172,13 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "entity" | "binding" | "link";
+            kind: "entity" | "binding" | "link" | "process" | "rule";
+            /** Process */
+            process?: string | null;
             /** Relationship */
             relationship?: string | null;
+            /** Rule */
+            rule?: string | null;
         };
         /** _ConnectionSettings */
         _ConnectionSettings: {
@@ -14172,6 +14252,8 @@ export interface components {
             id: string;
             /** Origin */
             origin?: ("human" | "model") | null;
+            /** Provenance */
+            provenance?: string | null;
         };
         /**
          * _DeclaredLink
@@ -14188,6 +14270,8 @@ export interface components {
             name: string;
             /** Origin */
             origin?: ("human" | "model") | null;
+            /** Provenance */
+            provenance?: string | null;
             /** Reverse Name */
             reverse_name?: string | null;
             /** To Column */
@@ -14212,13 +14296,16 @@ export interface components {
             origin?: ("human" | "model" | "pack") | null;
             /** Owner */
             owner?: string | null;
+            /** Provenance */
+            provenance?: string | null;
             /** Stages */
             stages: components["schemas"]["_DeclaredStage"][];
         };
         /**
          * _DeclaredPromise
-         * @description ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, or by
-         *     a deadline property of the object that carries it (`grain`, reached from it through `via`).
+         * @description ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, within N
+         *     hours of its moment, or by a deadline property of the object that carries it (`grain`, reached from it through
+         *     `via`).
          */
         _DeclaredPromise: {
             /** Deadline */
@@ -14233,6 +14320,8 @@ export interface components {
             via?: string | null;
             /** Within Days */
             within_days?: number | null;
+            /** Within Hours */
+            within_hours?: number | null;
         };
         /**
          * _DeclaredRule
@@ -14263,6 +14352,10 @@ export interface components {
             owner?: string | null;
             /** Property */
             property?: string | null;
+            /** Provenance */
+            provenance?: string | null;
+            /** Scopes */
+            scopes?: string[] | null;
             /** Values */
             values?: unknown[] | null;
         };
@@ -14421,6 +14514,10 @@ export interface components {
         _MergeEntitiesRequest: {
             /** Canonical Id */
             canonical_id: string;
+            /** Keys */
+            keys?: {
+                [key: string]: string;
+            };
             /** Merge Ids */
             merge_ids: string[];
         };
@@ -27543,6 +27640,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -27579,6 +27677,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -27616,6 +27715,7 @@ export interface operations {
                 schema_name?: string | null;
                 limit?: number;
                 offset?: number;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -28595,6 +28695,8 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                /** @description ON-8 — name the objects of a type of an organisation's ontology */
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -28642,6 +28744,78 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    withdraw_ontology_backing_ontology_entities__entity_id__backing_delete: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    preview_ontology_backing_ontology_entities__entity_id__backing_preview_post: {
+        parameters: {
+            query?: {
+                connection_id?: string | null;
+                schema_name?: string | null;
+            };
+            header?: never;
+            path: {
+                entity_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["_BackingPreview"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -29134,6 +29308,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29622,6 +29797,7 @@ export interface operations {
             query?: {
                 connection_id?: string;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29654,6 +29830,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29690,6 +29867,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {
@@ -29921,6 +30099,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path?: never;
@@ -29957,6 +30136,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
+                domain?: string | null;
             };
             header?: never;
             path: {

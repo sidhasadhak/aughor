@@ -29,6 +29,7 @@ logger = logging.getLogger(__name__)
 KINDS = ("value_set", "condition")
 _MAX_VALUES = 1000
 _MAX_CONDITIONS = 10
+_MAX_SCOPES = 20
 _OPS = ("=", "!=", ">", ">=", "<", "<=", "in", "not_in", "between", "is_null", "not_null", "exists", "not_exists")
 
 
@@ -45,6 +46,12 @@ def rule_spec_problem(spec: Any) -> str:
         return f"a rule's kind is one of {', '.join(KINDS)}"
     if spec.get("origin") and spec["origin"] not in ORIGINS:
         return f"a rule's origin is one of {', '.join(ORIGINS)}"
+    scopes = spec.get("scopes")
+    if scopes is not None and (not isinstance(scopes, list) or len(scopes) > _MAX_SCOPES
+                               or not all(isinstance(s, str) and PATH_PATTERN.match(s.strip()) for s in scopes)):
+        return f"a rule's `scopes` lists up to {_MAX_SCOPES} metric names it scopes — revenue, aov"
+    if scopes and len({s.strip().lower() for s in scopes}) != len(scopes):
+        return "a rule names each metric it scopes once"
     if kind == "value_set":
         if not PATH_PATTERN.match(str(spec.get("property") or "")):
             return "a value set names the property its values are read from in `property`"
@@ -83,6 +90,8 @@ def rule_fields(spec: dict) -> dict:
                               and v not in (None, "", [])} for c in spec["conditions"]]
         for c in out["conditions"]:
             c.setdefault("op", "=")
+    if spec.get("scopes"):
+        out["scopes"] = [str(s).strip() for s in spec["scopes"]]
     for key in ("display_name", "description", "owner", "provenance"):
         if str(spec.get(key) or "").strip():
             out[key] = str(spec[key]).strip()
@@ -95,6 +104,7 @@ def rule_from_fields(rule_id: str, fields: dict) -> BusinessRule:
                         entity=fields["entity"], kind=fields.get("kind") or "condition",
                         property=fields.get("property") or "", values=list(fields.get("values") or []),
                         conditions=[dict(c) for c in fields.get("conditions") or []],
+                        scopes=list(fields.get("scopes") or []),
                         origin=fields.get("origin") or "human", provenance=fields.get("provenance") or "")
 
 
@@ -121,6 +131,22 @@ def resolve_rule(graph: OntologyGraph, rule_id: str, fields: dict) -> tuple[str,
                               "measures": [{"agg": "count"}]}, graph, fiscal_start_month=1)
     except ObjectQueryRefused as exc:
         return f"rule {rule_id}: {exc.reason}", fields
+    if rule.scopes:
+        from aughor.semantic.object_query import metric_on
+        canonical = []
+        for name in rule.scopes:
+            low = name.lower()
+            metric = next((m for mid, m in (graph.metrics or {}).items()
+                           if low in (mid.lower(), m.id.lower(), (m.display_name or "").lower())), None)
+            if metric is None:
+                return f"rule {rule_id}: no metric '{name}' on this ontology to scope", fields
+            if not metric.verified:
+                return (f"rule {rule_id}: metric '{metric.id}' is not verified ({metric.verification_note or 'no note'}) "
+                        "— a rule scopes only a metric the compiler measures"), fields
+            if not metric_on(metric, entity):
+                return f"rule {rule_id}: metric '{metric.id}' is defined on {metric.entity}, not {entity.id}", fields
+            canonical.append(metric.id)
+        out["scopes"] = canonical
     if rule_id.lower() in {k.lower() for k in entity.segments or {}}:
         return f"rule {rule_id}: {entity.id} already has a segment {rule_id} — a rule is read as the segment it names", fields
     others = derivations(graph, except_rule=rule_id)
@@ -129,14 +155,15 @@ def resolve_rule(graph: OntologyGraph, rule_id: str, fields: dict) -> tuple[str,
     return "", out
 
 
-def measure_rule(db: Any, graph: OntologyGraph, rule_id: str, fields: dict) -> BusinessRule:
+def measure_rule(db: Any, graph: OntologyGraph, rule_id: str, fields: dict, *,
+                 open_source: Any = None) -> BusinessRule:
     """Count a (resolved) rule through the object door's compiler: the type's objects, the ones it admits, and for a
     value set the rows holding each declared value. Raises `NotMeasurable` when a count cannot be taken."""
     rule = rule_from_fields(rule_id, fields)
     entity = graph.entities.get(rule.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{rule.entity}' in this ontology")
-    counter = ObjectCounter(db, graph)
+    counter = ObjectCounter(db, graph, open_source)
     filters = list(rule_filters(rule))
     counts = counter.one(entity.api_name, [{"name": "objects", "agg": "count"},
                                            {"name": "admitted", "agg": "count", "where": filters}])
@@ -156,6 +183,20 @@ def measure_rule(db: Any, graph: OntologyGraph, rule_id: str, fields: dict) -> B
     rule.verified = rule.admitted > 0
     rule.note = (f"admits {rule.admitted:,} of {rule.objects:,} {entity.id} objects" if rule.admitted
                  else f"admits none of the {rule.objects:,} {entity.id} objects")
+    rule.scoped = {}
+    if rule.scopes:
+        # each scoped metric as the door reads it without this rule, and within it — through the very law that scopes it
+        without = graph.model_copy()
+        without.rules = {k: r for k, r in (graph.rules or {}).items() if k != rule_id}
+        within = without.model_copy()
+        within.rules = {**without.rules, rule_id: rule.model_copy(update={"verified": True})}
+        measures = [{"name": f"m{i}", "metric": name} for i, name in enumerate(rule.scopes)]
+        before = ObjectCounter(db, without, open_source).one(entity.api_name, measures)
+        after = ObjectCounter(db, within, open_source).one(entity.api_name, measures)
+        rule.scoped = {name: {"without": cell_text(before.get(f"m{i}")), "within": cell_text(after.get(f"m{i}"))}
+                       for i, name in enumerate(rule.scopes)}
+        rule.note += "; " + "; ".join(f"{name} {v['without']} without it, {v['within']} within it"
+                                      for name, v in rule.scoped.items())
     return rule
 
 
@@ -165,7 +206,7 @@ def rule_entry(fields: dict, measured: BusinessRule) -> dict:
 
 
 def _substance(fields: dict) -> dict:
-    return {k: fields.get(k) for k in ("entity", "kind", "property", "values", "conditions")}
+    return {k: fields.get(k) for k in ("entity", "kind", "property", "values", "conditions", "scopes")}
 
 
 def declared_rule(ov, graph: Optional[OntologyGraph]) -> Optional[BusinessRule]:
@@ -190,8 +231,11 @@ def declared_rule(ov, graph: Optional[OntologyGraph]) -> Optional[BusinessRule]:
 
 
 def measure_override_rules(connection_id: str, schema_name: Optional[str], db: Any,
-                           graph: Optional[OntologyGraph]) -> list[dict]:
-    """Re-resolve and re-count every declared rule against the served graph; one summary row per rule."""
+                           graph: Optional[OntologyGraph], *, open_source: Any = None,
+                           save: Any = None) -> list[dict]:
+    """Re-resolve and re-count every declared rule against the served graph; one summary row per rule. On an
+    organisation's ontology (ON-8) ``db`` is None, ``open_source`` opens each count's connection, and ``save`` is the
+    organisation's own writer."""
     out: list[dict] = []
     if graph is None:
         return out
@@ -200,6 +244,7 @@ def measure_override_rules(connection_id: str, schema_name: Optional[str], db: A
         overrides = load_overrides(connection_id, schema_name or "default")
     except Exception:  # noqa: BLE001
         return out
+    save = save or save_override
     for ov in overrides:
         if ov.target_kind != "rule" or not ov.fields.get("declared"):
             continue
@@ -209,14 +254,14 @@ def measure_override_rules(connection_id: str, schema_name: Optional[str], db: A
             measured.verified, measured.note = False, f"no longer resolves on this graph: {problem}"[:500]
         else:
             try:
-                measured = measure_rule(db, graph, ov.target_id, resolved)
+                measured = measure_rule(db, graph, ov.target_id, resolved, open_source=open_source)
                 ov.fields = resolved
             except NotMeasurable as exc:
                 measured = rule_from_fields(ov.target_id, ov.fields)
                 measured.note = f"not measurable on this pass: {exc}"[:500]
         ov.binding["rule"] = rule_entry(ov.fields, measured)
         try:
-            save_override(connection_id, schema_name or "default", ov)
+            save(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001
             logger.debug("rule measurement not saved for %s: %s", ov.target_id, exc)
         out.append({"rule": ov.target_id, "verified": measured.verified, "admitted": measured.admitted,
@@ -233,4 +278,5 @@ def describe_rule(graph: OntologyGraph, rule: BusinessRule) -> dict:
             "conditions": [dict(c) for c in rule.conditions], "origin": rule.origin, "provenance": rule.provenance,
             "objects": rule.objects, "admitted": rule.admitted, "observed": dict(rule.observed),
             "missing": list(rule.missing), "verified": rule.verified, "flags": list(rule.flags), "note": rule.note,
+            "scopes": list(rule.scopes), "scoped": dict(rule.scoped),
             "segment": rule.id, "derived": rows_of(rule_derivations(rule))}

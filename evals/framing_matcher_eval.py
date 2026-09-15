@@ -50,6 +50,8 @@ def score(frame: dict, expect: dict) -> dict:
         checks["start"] = start == expect["start"]
     if expect.get("named"):
         checks["named"] = bool(set(named) & set(expect["named"]))
+    if "ambiguous" in expect:
+        checks["ambiguous"] = bool(frame.get("ambiguous")) == bool(expect["ambiguous"])
     for text in expect.get("absent_terms") or []:
         checks[f"absent {text!r}"] = not any(t.get("text") == text for t in frame.get("terms", []))
     return {"ok": all(checks.values()), "checks": checks,

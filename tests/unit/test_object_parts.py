@@ -33,7 +33,13 @@ from aughor.ontology.models import OntologyGraph
 from aughor.ontology.overrides import OntologyOverride, apply_overrides, save_override
 from aughor.ontology.parts import absorb_problem, detail_from, lapsed_parts, part_of, parts_of
 from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import link_problem, object_links
+from aughor.semantic.object_query import (
+    catalog_names,
+    link_problem,
+    object_catalog,
+    object_links,
+    render_object_catalog,
+)
 from aughor.semantic.object_types import describe_object_type, object_type_map
 from aughor.db.connection import open_connection
 from tests.unit.test_object_bindings import GRAPH, LUX, bind, compile_, ints, payment_type, refusal, rows, seed
@@ -112,8 +118,17 @@ def test_a_detail_binding_never_multiplies_the_objects_and_its_rows_are_not_a_re
     counted = compile_({"object_type": "order", "filters": [{"path": "units", "op": ">=", "value": 1}],
                         "measures": [{"agg": "count"}]}, graph)
     assert ints(db, counted.sql) == ints(db, "SELECT COUNT(DISTINCT order_id) FROM order_items")
-    why = refusal({"object_type": "order", "measures": [{"agg": "sum", "path": "lines.quantity"}]}, graph).reason
-    assert "detail binding" in why and "link" in why
+    # The binding's name reaches its rows at their own grain, through the one link to the type they are.
+    through_name = compile_({"object_type": "order", "measures": [{"agg": "sum", "path": "lines.quantity"}]}, graph)
+    through_link = compile_({"object_type": "order", "measures": [{"agg": "sum", "path": "order_to_order_item.quantity"}]},
+                            graph)
+    assert rows(db, through_name.sql) == rows(db, through_link.sql) == rows(
+        db, "SELECT SUM(i.quantity) FROM order_items i JOIN orders o ON o.order_id = i.order_id")
+    assert any("detail binding over OrderItem's rows" in line for line in through_name.plan)
+    bind(graph, db, "Order", "events", {"kind": "detail", "table": "order_events", "key": "order_id",
+                                        "rollups": {"event_count": {"column": "event", "agg": "count"}}})
+    why = refusal({"object_type": "order", "measures": [{"agg": "count", "path": "events.event"}]}, graph).reason
+    assert "detail binding" in why and "link" in why            # its rows are no type's: nothing reaches them
 
 
 def test_a_detail_spec_is_refused_without_rollups_and_a_static_one_with_them():
@@ -191,6 +206,42 @@ def test_a_type_is_a_part_only_while_its_parent_binds_its_table(db, graph):
     assert object_type_map(graph)["object_types"] and {t["object_type"]: t["absorbed_into"]
                                                        for t in object_type_map(graph)["object_types"]}["order_item"] == ""
     assert "cannot be a part of itself" in absorb_problem(graph, "OrderItem", item)
+
+
+REVIEWS = {"kind": "detail", "table": "reviews", "key": "customer_id",
+           "rollups": {"review_count": {"column": "review_id", "agg": "count"}}}
+
+
+def test_the_agent_catalogue_names_a_part_under_its_parent_and_reads_as_before_without_one(db, graph):
+    bind(graph, db, "Customer", "reviews", REVIEWS)
+    unmarked = render_object_catalog(object_catalog(graph))
+    assert catalog_names(graph) == "customer, order, order_item, product, review"
+    review = graph.entities["Review"]
+    review.absorbed_into = "Customer"
+    parent_name = graph.entities["Customer"].display_name or "Customer"
+
+    catalog = object_catalog(graph)
+    by_type = {t["object_type"]: t for t in catalog["object_types"]}
+    assert (by_type["review"]["part_of"], by_type["customer"]["parts"]) == (
+        "customer", [{"object_type": "review", "binding": "reviews"}])
+    assert (by_type["product"]["part_of"], by_type["product"]["parts"]) == (None, [])
+    text = render_object_catalog(catalog).splitlines()
+    heads = [line.split(" (")[0] for line in text if not line.startswith(" ")]
+    assert heads == ["customer", "review", "order", "order_item", "product"]    # the part follows its parent
+    assert next(line for line in text if line.startswith("review (")).endswith(
+        " — a part of customer, read through its binding reviews")
+    assert "  parts: review (through reviews)" in text
+    assert catalog_names(graph) == "customer (parts: review), order, order_item, product"
+    assert f"; a part of {parent_name}; " in describe_object_type(graph, "review")["summary"]
+    assert "; parts: " in describe_object_type(graph, "customer")["summary"]
+
+    review.absorbed_into = "Order"                   # a mark that does not hold names no part anywhere
+    assert render_object_catalog(object_catalog(graph)) == unmarked
+    assert catalog_names(graph) == "customer, order, order_item, product, review"
+    assert "; parts: " not in describe_object_type(graph, "order")["summary"]
+    assert "a part of" not in describe_object_type(graph, "review")["summary"]
+    review.absorbed_into = None
+    assert render_object_catalog(object_catalog(graph)) == unmarked
 
 
 # ── a declared entity ───────────────────────────────────────────────────────────────────────
@@ -440,3 +491,50 @@ def test_an_entity_a_link_and_a_part_are_declared_read_back_and_withdrawn_over_h
     kept = client.delete("/ontology/entities/Order", params=PARAMS)
     assert kept.status_code == 404 and "built from its table" in kept.json()["detail"]
     assert "payment" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
+
+
+def test_a_declared_type_and_link_survive_an_export_and_an_import_into_an_empty_tree(door, client, monkeypatch):
+    import aughor.routers.ontology as onto
+    monkeypatch.setattr(onto, "_explain_for", lambda _cid: (lambda _sql: None, lambda: None))
+    assert client.post("/ontology/entities", params=PARAMS, json=PAYMENT).status_code == 200
+    assert client.post("/ontology/links", params=PARAMS, json=PAYS_FOR).status_code == 200
+    exported = client.post("/ontology/export", params=PARAMS)
+    assert exported.status_code == 200, exported.text
+
+    # The overrides tree is lost — a new deployment, a wiped disk — and the exported tree is all that is left.
+    assert OV.delete_override(CONN, "ecommerce", "link", "Payment_pays_for_Order")
+    assert OV.delete_override(CONN, "ecommerce", "entity", "Payment")
+    assert "payment" not in {t["object_type"] for t in client.get("/object-types", params=PARAMS).json()["object_types"]}
+
+    imported = client.post("/ontology/import", params=PARAMS)
+    assert imported.status_code == 200, imported.text
+    assert [(d["kind"], d["target"], d["declared"]) for d in imported.json()["declared"]] == [
+        ("entity", "Payment", True), ("link", "Payment_pays_for_Order", True)]
+    assert imported.json()["unreadable"] == []
+    shown = client.get("/object-types", params=PARAMS).json()
+    assert {t["object_type"]: t for t in shown["object_types"]}["payment"]["origin"] == "human"
+    assert next(e for e in shown["links"] if e["relationship"] == "Payment_pays_for_Order")["origin"] == "human"
+    visa = client.post("/objects/query", params=PARAMS, json={
+        "object_type": "payment", "filters": [{"path": "psp", "value": "visa"}], "measures": [{"agg": "count"}]}).json()
+    conn = door()
+    try:
+        (expected,) = ints(conn, "SELECT COUNT(*) FROM payments WHERE psp = 'visa'")
+    finally:
+        conn.close()
+    assert visa["path"] == "compiled" and int(visa["rows"][0][0]) == expected
+
+    again = client.post("/ontology/import", params=PARAMS).json()
+    assert [(d["target"], d["declared"], d["note"]) for d in again["declared"]] == [
+        ("Payment", False, "unchanged"), ("Payment_pays_for_Order", False, "unchanged")]
+
+
+def test_the_entity_and_link_doors_keep_the_provenance_they_are_given(door, client):
+    """E5 — the entity and link doors keep `provenance`, which their request models dropped (only the explorer's own
+    calls, which skip the request model, ever wrote one)."""
+    said = "model:some-model@1"
+    declared = client.post("/ontology/entities", params=PARAMS, json={**PAYMENT, "provenance": said})
+    assert declared.status_code == 200, declared.text
+    assert declared.json()["entity"]["provenance"] == said
+    linked = client.post("/ontology/links", params=PARAMS, json={**PAYS_FOR, "provenance": said})
+    assert linked.status_code == 200, linked.text
+    assert linked.json()["link"]["provenance"] == said

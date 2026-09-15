@@ -173,8 +173,8 @@ def test_the_objects_arm_classes_each_fill_by_what_the_compiler_and_the_scorer_s
         return objects_arm("q", share, db, graph, "", "", fill=lambda *_a: fill)
 
     right = ObjectQueryFill(object_type="order", measures=[_FillMeasure(
-        name="pct", where=[_FillFilter(path="status", value="cancelled")], divide_by_agg="count",
-        scale=100, decimals=2)])
+        name="pct", where=[_FillFilter(path="status", value="cancelled")], divide_by_kind="aggregate",
+        divide_by_agg="count", scale=100, decimals=2)])
     assert arm(right)["class"] == "correct"
     misspelt = right.model_copy(deep=True)
     misspelt.measures[0].where[0].value = "canceled"
@@ -182,12 +182,38 @@ def test_the_objects_arm_classes_each_fill_by_what_the_compiler_and_the_scorer_s
     fanout = ObjectQueryFill(object_type="order_item", measures=[_FillMeasure(agg="sum", path="order.total_amount")])
     refused = arm(fanout)
     assert refused["class"] == "refused" and refused["refusal_kind"] == "law"
-    assert arm(ObjectQueryFill())["class"] == "declined"
+    assert arm(ObjectQueryFill(object_type=""))["class"] == "declined"
+    malformed = arm(ObjectQueryFill(object_type="order", measures=[_FillMeasure(name="revenue", kind="metric")]))
+    assert (malformed["class"], malformed["refusal_kind"]) == ("refused", "form")
 
     def boom(*_a):
         raise RuntimeError("provider down")
     assert objects_arm("q", share, db, graph, "", "", fill=boom)["class"] == "error"
     db.close()
+
+
+def test_the_object_fill_is_shaped_so_a_metric_and_a_path_cannot_both_be_sent():
+    """ON-2's run refused 5 of 26 fills as malformed: the model filled a named metric AND a path. The fill now says which
+    kind a measure is and sends only that kind's fields; `object_type` is required and `op` an enum."""
+    from aughor.agent.converse_tools import _MEASURE_TERM
+    from evals.ablation_eval import _OBJECTS_SYSTEM, ObjectQueryFill, _FillFilter, _FillMeasure
+    schema = ObjectQueryFill.model_json_schema()
+    assert "object_type" in schema["required"]
+    assert {"=", "in", "between", "exists"} <= set(schema["$defs"]["_FillFilter"]["properties"]["op"]["enum"])
+    assert schema["$defs"]["_FillMeasure"]["properties"]["kind"]["enum"] == ["aggregate", "metric"]
+
+    stray = ObjectQueryFill(object_type="order", measures=[_FillMeasure(
+        name="revenue", kind="metric", metric="revenue", agg="sum", path="total_amount",
+        where=[_FillFilter(path="status", value="delivered")])])
+    assert stray.to_query()["measures"] == [{"name": "revenue", "metric": "revenue", "scale": 1.0}]
+    share = ObjectQueryFill(object_type="order", measures=[_FillMeasure(
+        name="pct", metric="revenue", where=[_FillFilter(path="status", value="cancelled")],
+        divide_by_kind="aggregate", scale=100, decimals=2)]).to_query()["measures"][0]
+    assert "metric" not in share and share["divide_by"] == {"agg": "count", "path": "", "where": []}
+    assert "divide_by" not in ObjectQueryFill(object_type="order", measures=[_FillMeasure()]).to_query()["measures"][0]
+    assert "names no metric" in ObjectQueryFill(object_type="order", measures=[_FillMeasure(kind="metric")]).form_problem()
+    assert "a listed metric ALONE" in _OBJECTS_SYSTEM and "decimals 2" in _OBJECTS_SYSTEM
+    assert "WORKED EXAMPLES" in _OBJECTS_SYSTEM and "EXCLUSIVE" in _MEASURE_TERM["metric"]["description"]
 
 
 def test_the_objects_summary_reports_the_fallback_posture_and_what_it_gained_or_lost():

@@ -41,6 +41,17 @@ export const CARD_ARC = 250;
 /** Room around the outermost ring, and how far under it the unlinked row sits. */
 export const MAP_PAD = { x: CARD.w, y: CARD.h + 40 };
 export const UNLINKED_GAP = 96;
+/** How far above its cards a sideways link's label sits. */
+export const LABEL_LIFT = 14;
+
+/** Where a link's label sits, as a y. A SIDEWAYS link leaves its card by the left or right side and crosses a gap
+ *  narrower than any label, so a label at the middle of its path lies under both cards and they clip it: it is
+ *  lifted clear above the higher of the two cards. An upright link keeps the middle, where the gap is a card's height.
+ *  `sourceY` and `targetY` are the handle points React Flow hands an edge; a side handle sits at its card's middle. */
+export function linkLabelY(side: string, sourceY: number, targetY: number, middleY: number): number {
+  if (side !== "left" && side !== "right") return middleY;
+  return Math.min(sourceY, targetY) - CARD.h / 2 - LABEL_LIFT;
+}
 
 function neighboursOf(map: TypeMap): Map<string, Set<string>> {
   const out = new Map<string, Set<string>>();

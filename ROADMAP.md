@@ -3981,7 +3981,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   now reads `backing.verified = False` with the counts in its note. **Deferred from the
   draft, honestly:**
   `dedup.merge_entities` is not yet rewritten as "two tables, one backing" (it still
-  concatenates `source_tables`); a query backing has no UI and no diff view; properties
+  concatenates `source_tables`; ✅ closed 2026-09-15, `83e97c49`); a query backing has no UI and no diff view (✅ closed
+  2026-09-15, `5c3d3181`: previewed, set and withdrawn from the type panel); properties
   are still copied ColumnProfiles, not typed properties mapped to expressions.
   **The draft:** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
@@ -4097,9 +4098,12 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   🔑 **What this measures:** construction guarantees JOIN safety, not SEMANTIC correctness —
   choosing the measure, the filter and the ratio's sides stays the model's job, and on sets where raw
   is at ceiling a small model writing SQL it knows beats the same model filling an IR it has never
-  seen. Fixable without new theory, none of it built: `object_type` required and `op` an enum in the
+  seen. Fixable without new theory: `object_type` required and `op` an enum in the
   fill schema, `metric` exclusive of `path`, a rounding convention, worked examples in the prompt, a
-  stronger model — then re-measure. Found by the same run: the first refusal classifier had no
+  stronger model — then re-measure. ✅ **Built 2026-09-15** (`af2dad1c`), all but the stronger model: a measure is
+  `kind` aggregate or metric and sends only that kind's fields. Re-measured 2026-09-15 in the ON-10 re-runs: objects 7 of
+  15 on Olist and 10 of 16 on LuxExperience (declared 4 of 12 and 7 of 13, against framed 11 and 13), no fill refused as
+  malformed (was 5 of 26) — its misses are compiled wrong answers, so `ask.query_objects` stays parked. Found by the same run: the first refusal classifier had no
   `form` kind and filed a malformed fill as `ir`, which reads as "the algebra is too narrow";
   relabelled in the stored results, where the relabelling is recorded.
   **Not built, honestly:** the semiadditive law has nothing to bind to — O5's
@@ -4309,7 +4313,9 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   layout defects, each fixed: the canvas centred before its layer had a width, labels sat under the centred card,
   and property sources wrapped a few characters a line. Suite 9,698 passed; of eleven mutations of the new guards
   ten failed a test, and the survivor exposed an alias written for a reason that was not true — removed, and its
-  test re-pinned on the real mechanism. **Still open:** a label can still clip a card on a sideways link in a narrow pane.
+  test re-pinned on the real mechanism. ~~**Still open:** a label can still clip a card on a sideways link in a narrow pane.~~
+  ✅ **Closed 2026-09-15:** a sideways link's label is lifted clear above its two cards (the map draws its links with its
+  own edge, `linkLabelY`); an upright link keeps the middle — checked in the browser on TheLook's map, Order picked.
   ✅ **Closed 2026-09-12:** the answer table, the Source data drawer, the object page's linked lists, its to-one
   links and its action cards read objects by NAME. `POST /objects/titles` resolves a page of keys in ONE query
   over the backing (a table of 200 costs one round trip, not 200); a type named by its own key resolves nothing
@@ -4459,8 +4465,12 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   `amount_eur`), `paid_net_eur` (`amount_eur * 0.9`) DOUBLE with no role, and `installments_text` (a cast) VARCHAR; the
   sum of the computed and the pass-through column by the payments binding's method equalled its reference over seven
   methods, the string "1000" met `paid_eur` as a number (8,070 orders, equal), a SUM of the cast was refused, and the
-  binding was removed. **Still open:** the builder proposes static bindings only (a person declares a timeseries one
-  through the panel since 2026-09-12); `dedup.merge_entities` is not yet "two tables, one binding".
+  binding was removed. ~~**Still open:** the builder proposes static bindings only (a person declares a timeseries one
+  through the panel since 2026-09-12); `dedup.merge_entities` is not yet "two tables, one binding".~~ ✅ **Closed
+  2026-09-15 (leftovers, second round):** the builder proposes a table of READINGS — a repeated key placed in time, with
+  no identity of its own — as a timeseries binding (`4728f80d`), and a duplicate-entity merge binds the other type's
+  table onto the survivor on its key, counted one row per object, and marks the other type its part: nothing deleted,
+  written to the overrides tree (`83e97c49`; the old merge answered 500 on any real type).
   ✅ **Closed 2026-09-12:** a display property may come from a STATIC binding — the binding holds one row per
   object, so its column is as single-valued as the backing's. `display_source` measures it over the binding's own
   source, the titles door joins it on the object's key, and the object page reads it off the properties it has
@@ -4541,8 +4551,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   the authoring form — and **one accepted edit can be withdrawn**; **an object reads by its name** wherever
   a key was printed, and a name may live on a static binding; **a frame over the readings** reaches the
   object door. What is deliberately still open, and why, is on each wave: a correction that rewrites a
-  source value (a different write), `dedup.merge_entities` as "two tables, one binding", a query backing's
-  UI and diff view, a label clipping a card in a narrow pane, and the parked `ask.query_objects` fill —
+  source value (a different write), ~~`dedup.merge_entities` as "two tables, one binding", a query backing's
+  UI and diff view~~ (both closed 2026-09-15), ~~a label clipping a card in a narrow pane~~ (closed 2026-09-15), and the parked `ask.query_objects` fill —
   which is §6 item 15's decision and costs model tokens to re-measure, not an oversight.
 
 **Deliberately not ported (re-read §4.2's law: the grammar, never the codebase):** an
@@ -4683,10 +4693,15 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   first `ships_from` was declared on `warehouse = warehouse_id`; the measurement said N:1 with **0% of keys
   held** (shipments carry the warehouse's NAME), and the compiler still traversed it and answered NULL — a link
   the data refutes must be refused, not followed: `link_problem` now refuses a measured zero overlap (pinned).
-  **Open on this wave:** §6 item 18(b) — Payment and Shipment are parts on the receipt as drafted; one *Release*
-  undoes it · the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types ·
-  a declared type does not round-trip through export/import · line-grain access to a part's rows stays through
-  the measured link (`order_to_order_item.category`), not through the binding's name. `POST /ontology/entities` declares an entity (display name,
+  **Open on this wave:** ~~§6 item 18(b) — Payment and Shipment are parts on the receipt as drafted; one *Release*
+  undoes it~~ — decided 2026-09-15, entities with a link, released and linked live on LuxExperience (§6 item 18(b)) ·
+  ~~the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types~~ — closed
+  2026-09-15 (`eb663730`: the object catalog, the query tool's list of types and `describe_entity`'s summary name a part
+  under its parent; the ENTITY MODEL block renders the raw build-time graph, which never holds a part mark) ·
+  ~~a declared type does not round-trip through export/import~~ — closed 2026-09-15 (`1d4f1139`: declared types, links,
+  processes and rules are written under `declared/` as their doors' specs and declared again on import) ·
+  ~~line-grain access to a part's rows stays through the measured link (`order_to_order_item.category`), not through the
+  binding's name~~ — closed 2026-09-15 (`a3eb8ad0`: a detail binding's name walks the one link to its rows' type). `POST /ontology/entities` declares an entity (display name,
   api_name, description, domain, a key claim); `POST /ontology/links` declares a link (business
   verb, expected cardinality, the key path between two bindings); `DELETE` for both, refusing
   where a consumer depends on the id (API names are stable). A third binding kind beside static
@@ -4753,9 +4768,17 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   model call was metered and never recorded (fixed; draft 2's call is in the log under its run) · the panel
   kept offering *Bind* for four tables the draft had just bound — the builder proposes `schema.table`, the draft
   binds the bare name (fixed in code; reaches a running API on its next restart). **Open on this wave:** tickets
-  under Order is the user's call (confirm, or remove the binding) · a name join (`warehouse = name`) was guessed
-  wrong once and not re-proposed · run-to-run variance means a second draft ADDS rather than repeats · the
-  explorer proposes no processes yet (ON-9) and does not name the builder's found links · the §6 item 18(b)
+  under Order is the user's call (confirm, or remove the binding) · ~~a name join (`warehouse = name`) was guessed
+  wrong once and not re-proposed~~ — closed 2026-09-15 (`8e442d4a`: a link whose keys never meet is counted again on
+  the name its target is known by, when that name is measured one object per row) · run-to-run variance means a second
+  draft ADDS rather than repeats (inherent to one call; recorded) · ~~the explorer proposes no processes yet (ON-9)~~ —
+  closed 2026-09-15 (`3207f413`: processes and rules, measured before they land; live on LuxExperience's explorer record
+  the same day, one call: two processes, two rules and a link written, one rule refused for an `=` given a list — and one
+  process reads payment STATES as stages, captured → refunded → failed, which counting the objects in each state does not
+  refute — withdrawn by the user the same day, so the explorer does not propose it again) · the explorer does not name the
+  builder's found links — kept open ON PURPOSE: a model-written name would read as a person's, because a link carries no
+  origin for its name and the confirm door no link-name target; that field is the next slice · two model-proposed links
+  between one pair of types collide on the default reverse name (the explorer proposes none) · the §6 item 18(b)
   shape it drafted (Payment and Shipment as parts) agrees with the recommendation. When a
   connection is registered — or on demand from the map — an explorer agent reads the SOURCE
   CATALOGUE (table profiles, the join map with measured cardinality, sample values, glossary,
@@ -4832,15 +4855,34 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   1,000-key read, so it is priced by how many distinct keys the home rows carry — 30 reads by customer, 113 by order — not
   by the rows an answer returns; at 112,439 objects that is 1.4 to 5.2 seconds on one machine, and a remote warehouse adds
   its round trip to every keyed read. That is inside an interactive answer and the levers are named (fewer, larger keyed
-  reads; the home side pre-aggregated at the key's grain), so the posture holds and nothing is materialised. 🔴 **Found while building it:** the engine's older door, `POST /query/cross-source-join`, returns rows
-  read under internal labels, which skip PII redaction, audit and the row budget (a task is filed; this wave's executor gates
-  every connection and posts its answer). **Open on this wave:** a far type is read for its own columns only — no hop past
-  it, none of its bindings; to-many links, EXISTS, timeseries and detail bindings across connections; pre-aggregating the home
-  rows at the key's grain (the stage reads the object's grain, capped); the Workspace connection has no bounded read, so a
-  keyed read there stops at 500 rows and is refused; connectors with no typed capture (BigQuery, Snowflake, MySQL) are refused
-  as a side; the object page, titles, processes, rules, framing and the agent's tools do not read an organisation's
-  ontology yet — and by the user's rule the same day (§6 item 20) the explorer never will, and nothing but a person
-  edits it; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
+  reads; the home side pre-aggregated at the key's grain), so the posture holds and nothing is materialised. 🔴 **Found while building it:** the engine's older door, `POST /query/cross-source-join`, returned rows
+  the post-pass never saw. **Leftovers, second round (2026-09-15, branch `claude/on-leftovers-ii`; the user: *"Lets finish
+  Arc ON leftovers back to back.."*):** ✅ **a cross-source answer passes the security gate once, for every connection it
+  read** (`6c35fa35`) — measured first, and the premise was half wrong: the join's right reads and the federated driver
+  were audited PER READ (#135), so they were redacted and budget-cut before the join (an email key met none of its rows;
+  a right connection's row budget silently dropped joined rows), while the left read skipped the gate entirely; every
+  read is plumbing now, and the answer is redacted after the join, held to the strictest row budget of the connections
+  it read and audited on each · ✅ **the declare doors keep the provenance they are given** (`4eb8230b`; an
+  organisation's doors refuse it, by §6 item 20) · ✅ **a read its connection cut is known to be cut** (`35d67e7b`) —
+  SQLite, BigQuery, Exasol, MySQL and Snowflake reported the capped row count, so a cut key set or join input looked
+  whole; each fetches one row past its cap, the Workspace and SQLite connections read past their caps when bounded, and
+  the join refuses a cut left read and a join past its output cap, both of which it used to hand back as the whole ·
+  ✅ **every connector hands back typed values and a bounded read** (`626827b3`) — the five DuckDB-backed connectors'
+  copied execute became one shared read with typed capture and the JULIANDAY heal, and the four warehouses name their
+  column types for the stage · ✅ **a query reads past a type read by key, and to-many links, EXISTS, timeseries and
+  detail bindings cross as one row per key** (`00310eb9`) — a type or binding past a keyed read on that read's own
+  connection is joined inside it, one on another connection is read by key from that read's rows, and every other shape
+  is one row per key by construction; 13 new shapes, each equal to the single statement, 18/18 guard mutations caught.
+  ✅ **the home rows are grouped at the key's grain** (`b1f5f916`) — COUNT, SUM, MIN, MAX and AVG pushed into the home
+  read, weighted by each group's row count wherever a far value or a DISTINCT is read · ✅ **an organisation's ontology
+  takes processes, rules and the frame door** (`f261054f`) and **opens its objects where they live** — the object page,
+  the objects a link reaches, titles and a display property on a domain type (`1b1f9a3b`) · ✅ **platform SQL reaches a
+  native-SQL warehouse in its own dialect** (`1278cee5`; a DuckDB `"col"` is the STRING 'col' on BigQuery, so a keyed read
+  had matched nothing). **Still open on this wave:** a further crossing from inside a keyed EXISTS or pre-aggregation,
+  refused with the reason · a domain type's description is not editable through its PUT (a display property only) · an
+  organisation's object page reads findings from the home connection only. By the user's rule (§6 item 20) the explorer never reads
+  an organisation's ontology and only a person edits it, and by the boundary that holds that rule the agent's tools read
+  one connection's ontology; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
   The declared ontology is keyed by the organisation (or a
   named domain within it — §6 item 18), not by a schema; a binding names
   `connection_id.schema.table`; a link whose two sides live on different connections is
@@ -4901,11 +4943,14 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   and the process declared on it — cannot be opened in the web map at all (a chip is filed; the API reads it) · (2) a
   declaration path refused a column named with a space (`Order Date`) that the door itself resolves — relaxed to any
   name without a dot, a quote, a backtick or a semicolon · (3) the first mutation run found the overdue boundary
-  untested. **Open on this wave:** the explorer (ON-7b) proposes no processes yet · no web form declares a process (the
-  API does) · a `condition` rule reads as a segment and does not yet scope a metric ("revenue excludes cancelled") ·
-  derived metrics stay out of `graph.metrics` and the metric contract ON PURPOSE (no prompt reach) — ON-10 is where a
-  frame reaches the investigation · a promise in hours is not expressible · the Olist and Lux declarations are UNTRACKED
-  override files. The wave as drafted: `Process`: ordered `Stage`s, each anchored to (entity,
+  untested. **Open on this wave:** ~~the explorer (ON-7b) proposes no processes yet · no web form declares a process (the
+  API does) · a `condition` rule reads as a segment and does not yet scope a metric ("revenue excludes cancelled")~~ —
+  closed 2026-09-15: the explorer proposes processes and rules (`3207f413`), the type panel declares both (`aa0df234`),
+  a rule scopes the verified metrics it names (`89ebf974`), and the Intelligence workspace offers every schema a
+  connection's ontology is built on (`3db7a759`, the receipt's finding (1)) · derived metrics stay out of `graph.metrics`
+  and the metric contract ON PURPOSE (no prompt reach) — ON-10 is where a frame reaches the investigation ·
+  ~~a promise in hours is not expressible~~ — closed 2026-09-15 (`d1a02ce9`: the hours that pass, not the calendar days
+  they touch) · the Olist and Lux declarations are UNTRACKED override files. The wave as drafted: `Process`: ordered `Stage`s, each anchored to (entity,
   timestamp property | lifecycle state); a transition may carry a **promise** — a fixed duration
   (`within 2 days`) or a per-object deadline property (`shipping_limit_date`,
   `order_estimated_delivery_date`). `Rule`: a named, owned definition with scope and formula
@@ -5043,17 +5088,33 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   no longer held out. Paraphrases stay 0/3. On the two falsifier sets 5 of 34 frames changed, each a LuxExperience
   defect: the VIP GMV question starts from Order, "Return the country" names `ship_country`, controllable returns and
   high-risk payments now frame, the carrier is named once; no Olist frame moved. 12 guard mutations, every one caught.
-  **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
-  misses) — measured on a NEW set, never by re-running these · a rule read alone that counts ITS OWN type while the question names another that reaches it ("EU core customers
-  who placed orders") starts from the other type — the matcher set holds no such question · rules alone that tie still
-  send the model to choose between filters that both apply (a call that decides nothing) · a definition asked in words
-  nobody declared needs a person's synonym · the declare doors drop `provenance` (their request models lack the field the store
-  keeps) · the framed arm is not guarded in the harness · a second run of either set for stability (the user's go) · a
-  live deep analysis showing the frame in the web
-  (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the
-  prompts; that phase is the next slice) · the model does not word the frame (the reading is the deterministic
-  template) · the explorer proposes no processes (ON-9's open item), so an undeclared connection frames nothing · the
-  conversational agent does not frame. The wave as drafted: A `frame_question` step BEFORE the
+  **Open on this wave** (the leftovers' second round, 2026-09-15, closed most of it): ~~a frame that states its rate's
+  unit~~ — built (`e29fb3e9`: "is a FRACTION of 1 … multiply by 100 when the question asks for a percentage") and
+  measured 2026-09-15 on a NEW set of six rate questions (`evals/ablation_*_rate_units.jsonl` →
+  `evals/ablation_rate_units_results.json`; openrouter `deepseek/deepseek-v4.1-flash`, 12 generation calls): framed 5 of 6
+  against raw 2 of 6, every framed answer a percentage — raw's four misses were definitions (all lines as the denominator,
+  14 days counted from the request), framed's one a numerator slip · ~~a rule read alone that counts ITS OWN type while the question names
+  another that reaches it~~ and ~~rules alone that tie still send the model to choose~~ — closed (`b159888a`, measured on
+  8 matcher items committed before the change, `0a805eee`: dev 33/33, test 27/27) · a definition asked in words nobody
+  declared needs a person's synonym (by design) · ~~the declare doors drop `provenance`~~ — closed (`4eb8230b`) ·
+  ~~the framed arm is not guarded in the harness~~ — closed (`0ea46cc2`: the `framed_guarded` arm, held to the safety
+  guarding already keeps) · a second run of both sets and a live deep analysis showing the frame in the web — done 2026-09-15 on the model the
+  platform is set to now (`deepseek/deepseek-v4.1-flash`, not the first runs' gemini flash-lite: a replication across
+  models, not same-model noise): Olist declared raw 4 · framed 11 of 12 (first run 3 · 8), LuxExperience raw 2 · framed 13
+  of 13 (first run 1 · 9), controls kept, the guarded framed arm as safe as framed, every earlier framed miss now correct
+  and one new Olist miss (ob09); 93 generation calls (`evals/ablation_on10_*_business_rerun_results.json`). The web
+  chat's deep analysis on LuxExperience shows the frame live: "Read as" the declared refund promise with its measurement,
+  and "How the question was framed" — definition, start, the drivers the declared links reach, and a note on a type they
+  do not. The run itself (8 minutes, 7 steps) found where refund breaches concentrate and said plainly that no query returned
+  the carrier its question named: it took the scan route, where breakdowns by the frame's drivers are still the next
+  slice · ~~the frame is not yet a phase of compiled breakdowns~~ — a first slice built
+  (`e29fb3e9`: the deep analysis's named breakdown runs the breakdown the frame compiled for its chosen promise or lag);
+  breakdowns by UNNAMED candidate drivers are the next slice · the model does not word the frame — kept ON PURPOSE: the
+  deterministic reading is free, exact and says only what was declared and measured, where a model-worded one would
+  spend a call per question to paraphrase definitions it could re-derive in prose · ~~the explorer proposes no
+  processes~~ — closed (`3207f413`) · ~~the conversational agent does not frame~~ — closed (`d2173f49`: the quick answer
+  frames, and the conversation's answer tool calls that same `answer_core`) · the prompt-reach baseline grew twice, on
+  purpose and recorded: a promise within hours and a promise's measured rate reach the question frame. The wave as drafted: A `frame_question` step BEFORE the
   investigation's and the deep analysis's intake parse — today the ontology is consulted only
   after (the table above): resolve the question's terms (entity names, aliases, stage names,
   rule and metric names) → the frame: entity, process + stage, the rule or promise that defines
@@ -5113,7 +5174,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, `9a986534` on `claude/industry-playbook-packages-884f76`, not merged)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5154,8 +5215,8 @@ of the live `data/playbook.json` (nothing written, no model called):
   play. They do now, and their three swallows go through `tolerate()` (ratchet 214 → 211).
 - **The label.** The synthesis block says "proven" only when a play has a logged outcome.
 - **Receipts:** `tests/unit/test_industry_match.py` and `tests/unit/test_playbook_reads.py`; the full backend suite
-  once on the commit, 9,998 passed, 5 skipped. **To merge:** the branch is based on `0f1eb220`, and #502 edits the
-  same retriever call (`learned_rates=False`), so main goes in first.
+  once on the commit, 9,998 passed, 5 skipped. **Merged** as #503 (squash `aebe5feb`, 2026-09-14) after #502, which edits the same
+  retriever call: the explorer's read passes both `learned_rates=False` and the industry scope.
 
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
@@ -5546,7 +5607,7 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              timezone · SP-14 on by default (needs SP-12, SP-M; 22 d) · SP-M measure authoring,
              alongside every band
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
-        for the connection's own industry. IP-0 ✅ BUILT (`9a986534`, not merged): playbook reads
+        for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
         whole-word industry matching, definitional answers read plays, "proven" only with an
         outcome. Next: IP-1 the package seam → IP-2 chosen at install → IP-3 the generator
@@ -5614,6 +5675,10 @@ ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — O
         41/41 guard mutations caught; live on LuxExperience (two registrations of one file) every declaration counted
         across two equal to one connection's and five queries equal to the single statement, 1.4–5.2 s across against
         43–66 ms as one statement — about 30 ms per 1,000-key read. Order after ON-7 is the user's knob.
+        → LEFTOVERS II (2026-09-15, `claude/on-leftovers-ii`): the cross-source security gate, cut reads known to be cut,
+        typed values and bounded reads on every connector, reads past a type read by key, and to-many links, EXISTS,
+        timeseries and detail bindings across; §6 item 18(b) decided — Shipment and Payment are entities with a link,
+        applied live on LuxExperience.
 ```
 
 ### Loose-end ledger (re-swept 2026-09-04 — not a band, a debt list)
@@ -5917,6 +5982,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-15:** item 22 — Arc SP's second movement, authoring by sentence — arrived with the measured
 > trace of the user's own Spotlight turn; clause (a) was answered yes the same turn and SP-7 began. (b), (c) and (d)
 > stay open with recommendations, and none blocks SP-7. Open: 16, 18, 22(b–d).
+> **Amended 2026-09-15, later:** item 18(b) — Shipment and Payment — decided by the user, and not as recommended:
+> entities with a link, applied live on LuxExperience the same day. Open: 16, 18(c), 22(b–d).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -6110,10 +6177,20 @@ the browser** · **measure the premise before building.**
     organisation — the key is `org/domain`, and a single-domain org never sees the second segment.* The recommendation was
     put to the user before the build, and they answered *"Lets go with ON-8 then.."*: the key is `org/domain`, the domain is
     `default` until an organisation names another, and a door names one with `?domain=`.
-    **(b) Shipment and Payment: PARTS of Order, or entities of their own with a link?** Today both are
-    static 1:1 bindings on Lux's Order (ON-1b). *Recommended: parts — the business speaks of an order's
-    payment and an order's shipment; a shipment becomes an entity only where the business ships across
-    orders (consolidated freight), which a measured N:N key would show.*
+    ✅ **(b) DECIDED 2026-09-15 (the user) — entities with a link, not as recommended.** Asked with the leftovers of
+    the arc (*"Entities with a link"*). The question was: Shipment and Payment, PARTS of Order, or entities of their
+    own with a link? Both had been static 1:1 bindings on Lux's Order (ON-1b) and parts of it (ON-7). *Recommended
+    was parts — the business speaks of an order's payment and an order's shipment; a shipment becomes an entity only
+    where the business ships across orders (consolidated freight), which a measured N:N key would show.* **Applied
+    live on LuxExperience (`914df862`), through the doors, no model call:** Shipment and Payment released from Order;
+    `Shipment fulfils Order` (reverse `shipment`) and `Payment pays_for Order` (reverse `payment`) declared and
+    measured 1:1, every key held; Order's `shipments` and `payments` static bindings withdrawn; `order_to_shipment`
+    re-declared on `shipment.ship_date`, its counts unchanged (107,903 reached, 0 broken, 4,536 open, 4,528 overdue as
+    of 2025-06-30; p50/p90/p95 0/1/1 days); a measure pass left every process and rule verified; seven questions
+    that read the two tables — shipping cost by carrier, payment by method, delivery days by service level, orders
+    by payment status, shipments by warehouse country, high-risk payments, orders shipped from Italy — returned the
+    same rows through the links as they had through the bindings. The map shows ten cards where it showed eight.
+    The explorer's registration (`b428fce7`) and the organisation's `default` domain keep their own declarations.
     **(c) The host for ON-9/ON-10's receipts** — *(2026-09-13: ON-9's receipt was taken on Olist, as recommended;
     LuxExperience hosted the never-broken flag instead. ON-10's falsifier was written and run on Olist too and held
     (2026-09-13), and held again on LuxExperience through rules and a refund process declared live there with no

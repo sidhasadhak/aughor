@@ -1,0 +1,1527 @@
+{
+  "results": [
+    {
+      "id": "lb01_completed_orders_fy2024",
+      "trap": "rule",
+      "question": "How many completed orders were placed in fiscal year 2024?",
+      "raw": {
+        "sql": "SELECT COUNT(*) AS completed_orders FROM luxexperience.orders WHERE fiscal_year = 2024 AND status <> 'cancelled' AND status IS NOT NULL",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) AS completed_orders FROM luxexperience.orders WHERE fiscal_year = 2024 AND status <> 'cancelled' AND status IS NOT NULL",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "framed": {
+        "sql": "SELECT COUNT(*) AS completed_orders FROM luxexperience.orders WHERE status IN ('shipped', 'returned') AND fiscal_year = 2024",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "completed_orders",
+          "chosen_by": "names",
+          "candidates": [
+            "completed_orders"
+          ],
+          "rules": [
+            "completed_orders"
+          ],
+          "moments": [
+            "placed"
+          ],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year"
+          ]
+        },
+        "block_chars": 1249
+      },
+      "framed_guarded": {
+        "sql": "SELECT COUNT(*) AS completed_orders FROM luxexperience.orders WHERE status IN ('shipped', 'returned') AND fiscal_year = 2024",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT COUNT(*) AS completed_orders FROM luxexperience.orders AS t0 WHERE ((t0.status IN ('shipped', 'returned'))) AND (t0.fiscal_year = 2024)",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "completed_orders",
+          "filters": [
+            {
+              "path": "fiscal_year",
+              "op": "=",
+              "value": "2024"
+            }
+          ],
+          "measures": [
+            {
+              "name": "completed_orders",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from luxexperience.orders, key order_id (unique, measured)",
+          "segment completed_orders (derived from rule completed_orders (owned by finance), measured): An order counts as completed once it ships; a later return does not undo it. Only a cancelled order is not completed.",
+          "filter fiscal_year = '2024'",
+          "measure completed_orders: count of Order objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 10.3,
+      "definition": "declared"
+    },
+    {
+      "id": "lb02_completed_return_rate_fy2025",
+      "trap": "rule",
+      "question": "What percentage of completed orders placed in fiscal year 2025 had a return? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_pct FROM luxexperience.orders o LEFT JOIN luxexperience.returns r ON r.order_id = o.order_id WHERE o.fiscal_year = 2025 AND o.status <> 'cancelled'",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT r.order_id) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS return_pct FROM luxexperience.orders o LEFT JOIN luxexperience.returns r ON r.order_id = o.order_id WHERE o.fiscal_year = 2025 AND o.status <> 'cancelled'",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN r.order_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS returned_order_pct FROM luxexperience.orders o LEFT JOIN luxexperience.returns r ON r.order_id = o.order_id WHERE o.status IN ('shipped', 'returned') AND o.fiscal_year = 2025",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "completed_orders",
+          "chosen_by": "names",
+          "candidates": [
+            "completed_orders"
+          ],
+          "rules": [
+            "completed_orders"
+          ],
+          "moments": [
+            "placed"
+          ],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year"
+          ]
+        },
+        "block_chars": 1396
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(COUNT(DISTINCT CASE WHEN r.order_id IS NOT NULL THEN o.order_id END) * 100.0 / NULLIF(COUNT(DISTINCT o.order_id), 0), 2) AS returned_order_pct FROM luxexperience.orders o LEFT JOIN luxexperience.returns r ON r.order_id = o.order_id WHERE o.status IN ('shipped', 'returned') AND o.fiscal_year = 2025",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND((1.0 * (COUNT(CASE WHEN (EXISTS(SELECT 1 FROM luxexperience.order_items AS e1 WHERE e1.order_id = t0.order_id AND e1.returned = TRUE)) THEN 1 END)) / NULLIF(COUNT(*), 0)) * 100.0, 2) AS return_pct FROM luxexperience.orders AS t0 WHERE ((t0.status IN ('shipped', 'returned'))) AND (t0.fiscal_year = 2025)",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "completed_orders",
+          "filters": [
+            {
+              "path": "fiscal_year",
+              "op": "=",
+              "value": "2025"
+            }
+          ],
+          "measures": [
+            {
+              "name": "return_pct",
+              "agg": "count",
+              "path": "",
+              "where": [
+                {
+                  "path": "order_item.returned",
+                  "op": "=",
+                  "value": "True"
+                }
+              ],
+              "scale": 100.0,
+              "decimals": 2,
+              "divide_by": {
+                "agg": "count",
+                "path": "",
+                "where": []
+              }
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from luxexperience.orders, key order_id (unique, measured)",
+          "segment completed_orders (derived from rule completed_orders (owned by finance), measured): An order counts as completed once it ships; a later return does not undo it. Only a cancelled order is not completed.",
+          "filter fiscal_year = '2025'",
+          "link order_to_order_item (Order \u2192 OrderItem, 1:N): EXISTS \u2014 keeps Order objects with a matching OrderItem; the set is filtered, never multiplied",
+          "measure return_pct: count of Order objects matching its where",
+          "measure return_pct \u00f7: count of Order objects",
+          "measure return_pct: a ratio of the two aggregates, never an average of row ratios"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 23.7,
+      "definition": "declared"
+    },
+    {
+      "id": "lb03_vip_gmv_share_fy2025",
+      "trap": "rule",
+      "question": "What percentage of fiscal year 2025 GMV came from VIP customers? Count every order placed in the year. Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN c.tier = 'VIP' THEN o.gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(o.gmv_eur), 0), 2) AS vip_gmv_pct FROM luxexperience.orders o JOIN luxexperience.customers c ON o.customer_id = c.customer_id WHERE o.fiscal_year = 2025",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN c.tier = 'VIP' THEN o.gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(o.gmv_eur), 0), 2) AS vip_gmv_pct FROM luxexperience.orders o JOIN luxexperience.customers c ON o.customer_id = c.customer_id WHERE o.fiscal_year = 2025",
+        "class": "caught",
+        "guards_fired": [
+          "fanout"
+        ],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN c.tier IN ('VIP', 'Top Customer') THEN o.gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(o.gmv_eur), 0), 2) AS vip_gmv_pct\nFROM luxexperience.orders o\nJOIN luxexperience.customers c ON o.customer_id = c.customer_id\nWHERE o.fiscal_year = 2025",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "vip_customers",
+          "chosen_by": "names",
+          "candidates": [
+            "vip_customers"
+          ],
+          "rules": [
+            "vip_customers"
+          ],
+          "moments": [
+            "placed"
+          ],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year"
+          ]
+        },
+        "block_chars": 1193
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(SUM(CASE WHEN c.tier IN ('VIP', 'Top Customer') THEN o.gmv_eur ELSE 0 END) * 100.0 / NULLIF(SUM(o.gmv_eur), 0), 2) AS vip_gmv_pct\nFROM luxexperience.orders o\nJOIN luxexperience.customers c ON o.customer_id = c.customer_id\nWHERE o.fiscal_year = 2025",
+        "class": "correct",
+        "guards_fired": [
+          "fanout"
+        ],
+        "match": 1.0
+      },
+      "objects": {
+        "class": "error",
+        "error": "fill failed: structured output unavailable: the request never reached the model (rate limited) \u2014 Throttled right now \u2014 the binding is fine; retry in a moment."
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "raw"
+      },
+      "latency_s": 62.6,
+      "definition": "declared"
+    },
+    {
+      "id": "lb04_vip_customers_by_region",
+      "trap": "rule",
+      "question": "How many VIP customers are there in each customer region? Return the region and the count, largest first.",
+      "raw": {
+        "sql": "SELECT region, COUNT(*) AS vip_customer_count\nFROM luxexperience.customers\nWHERE tier = 'VIP'\nGROUP BY region\nORDER BY vip_customer_count DESC",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT region, COUNT(*) AS vip_customer_count\nFROM luxexperience.customers\nWHERE tier = 'VIP'\nGROUP BY region\nORDER BY vip_customer_count DESC",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT region, COUNT(*) AS vip_customers FROM luxexperience.customers WHERE tier IN ('VIP', 'Top Customer') GROUP BY region ORDER BY vip_customers DESC",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "vip_customers",
+          "chosen_by": "names",
+          "candidates": [
+            "vip_customers"
+          ],
+          "rules": [
+            "vip_customers"
+          ],
+          "moments": [],
+          "start": "Customer",
+          "drivers": [
+            "region"
+          ]
+        },
+        "block_chars": 1015
+      },
+      "framed_guarded": {
+        "sql": "SELECT region, COUNT(*) AS vip_customers FROM luxexperience.customers WHERE tier IN ('VIP', 'Top Customer') GROUP BY region ORDER BY vip_customers DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT t0.region AS region, COUNT(*) AS vip_customer_count FROM luxexperience.customers AS t0 WHERE ((t0.tier IN ('VIP', 'Top Customer'))) GROUP BY 1 ORDER BY vip_customer_count DESC",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "customer",
+          "segment": "vip_customers",
+          "filters": [],
+          "measures": [
+            {
+              "name": "vip_customer_count",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "region"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "vip_customer_count",
+          "descending": true
+        },
+        "plan": [
+          "objects(customer): Customer read from luxexperience.customers, key customer_id (unique, measured)",
+          "segment vip_customers (derived from rule vip_customers (owned by crm), measured): VIP customers are the VIP and Top Customer tiers.",
+          "by region",
+          "measure vip_customer_count: count of Customer objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 6.6,
+      "definition": "declared"
+    },
+    {
+      "id": "lb05_eu_market_orders_fy2025",
+      "trap": "rule",
+      "question": "How many orders placed in fiscal year 2025 were destined for EU markets? Count every order, cancelled ones included.",
+      "raw": {
+        "sql": "SELECT COUNT(*) AS order_count FROM luxexperience.orders WHERE fiscal_year = 2025 AND ship_region = 'Europe'",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) AS order_count FROM luxexperience.orders WHERE fiscal_year = 2025 AND ship_region = 'Europe'",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT COUNT(*) AS order_count FROM luxexperience.orders WHERE fiscal_year = 2025 AND ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden')",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "eu_markets",
+          "chosen_by": "names",
+          "candidates": [
+            "eu_markets"
+          ],
+          "rules": [
+            "eu_markets"
+          ],
+          "moments": [
+            "placed"
+          ],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year"
+          ]
+        },
+        "block_chars": 1545
+      },
+      "framed_guarded": {
+        "sql": "SELECT COUNT(*) AS order_count FROM luxexperience.orders WHERE fiscal_year = 2025 AND ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden')",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT COUNT(*) AS orders FROM luxexperience.orders AS t0 WHERE ((t0.ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden'))) AND (t0.fiscal_year = 2025)",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "eu_markets",
+          "filters": [
+            {
+              "path": "fiscal_year",
+              "op": "=",
+              "value": "2025"
+            }
+          ],
+          "measures": [
+            {
+              "name": "orders",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from luxexperience.orders, key order_id (unique, measured)",
+          "segment eu_markets (derived from rule eu_markets (owned by finance), measured): Orders shipped to an EU member state, the duty and VAT territory: Ireland is in; the United Kingdom, Switzerland and Norway are not.",
+          "filter fiscal_year = '2025'",
+          "measure orders: count of Order objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 9.3,
+      "definition": "declared"
+    },
+    {
+      "id": "lb06_top_eu_markets_gmv_fy2025",
+      "trap": "rule",
+      "question": "Which three EU markets had the highest GMV in fiscal year 2025? Return the country and its GMV rounded to two decimals, highest first.",
+      "raw": {
+        "sql": "WITH agg AS (\n  SELECT o.ship_country AS country,\n         SUM(o.gmv_eur) AS gmv\n  FROM luxexperience.orders o\n  JOIN luxexperience.countries c\n    ON c.country = o.ship_country\n  WHERE o.fiscal_year = 2025\n    AND c.region = 'Europe'\n  GROUP BY o.ship_country\n),\nranked AS (\n  SELECT country,\n         gmv,\n         RANK() OVER (ORDER BY gmv DESC) AS rnk\n  FROM agg\n)\nSELECT country,\n       ROUND(gmv, 2) AS gmv_eur\nFROM ranked\nWHERE rnk <= 3\nORDER BY gmv DESC",
+        "class": "silent-wrong",
+        "match": 0.5
+      },
+      "guarded": {
+        "sql": "WITH agg AS (\n  SELECT o.ship_country AS country,\n         SUM(o.gmv_eur) AS gmv\n  FROM luxexperience.orders o\n  JOIN luxexperience.countries c\n    ON c.country = o.ship_country\n  WHERE o.fiscal_year = 2025\n    AND c.region = 'Europe'\n  GROUP BY o.ship_country\n),\nranked AS (\n  SELECT country,\n         gmv,\n         RANK() OVER (ORDER BY gmv DESC) AS rnk\n  FROM agg\n)\nSELECT country,\n       ROUND(gmv, 2) AS gmv_eur\nFROM ranked\nWHERE rnk <= 3\nORDER BY gmv DESC",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.5
+      },
+      "framed": {
+        "sql": "WITH agg AS (\n  SELECT ship_country,\n         SUM(gmv_eur) AS gmv\n  FROM luxexperience.orders\n  WHERE fiscal_year = 2025\n    AND ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden')\n  GROUP BY ship_country\n),\nranked AS (\n  SELECT ship_country,\n         gmv,\n         RANK() OVER (ORDER BY gmv DESC) AS rnk\n  FROM agg\n)\nSELECT ship_country,\n       ROUND(gmv, 2) AS gmv_eur\nFROM ranked\nWHERE rnk <= 3\nORDER BY gmv_eur DESC;",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "eu_markets",
+          "chosen_by": "names",
+          "candidates": [
+            "eu_markets"
+          ],
+          "rules": [
+            "eu_markets"
+          ],
+          "moments": [],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year",
+            "ship_country"
+          ]
+        },
+        "block_chars": 1486
+      },
+      "framed_guarded": {
+        "sql": "WITH agg AS (\n  SELECT ship_country,\n         SUM(gmv_eur) AS gmv\n  FROM luxexperience.orders\n  WHERE fiscal_year = 2025\n    AND ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden')\n  GROUP BY ship_country\n),\nranked AS (\n  SELECT ship_country,\n         gmv,\n         RANK() OVER (ORDER BY gmv DESC) AS rnk\n  FROM agg\n)\nSELECT ship_country,\n       ROUND(gmv, 2) AS gmv_eur\nFROM ranked\nWHERE rnk <= 3\nORDER BY gmv_eur DESC;",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT t0.ship_country AS ship_country, ROUND(SUM(t0.gmv_eur), 2) AS gmv_eur FROM luxexperience.orders AS t0 WHERE ((t0.ship_country IN ('Austria', 'Belgium', 'Denmark', 'France', 'Germany', 'Greece', 'Ireland', 'Italy', 'Netherlands', 'Portugal', 'Spain', 'Sweden'))) AND (t0.fiscal_year = 2025) GROUP BY 1 ORDER BY gmv_eur DESC LIMIT 3",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "eu_markets",
+          "filters": [
+            {
+              "path": "fiscal_year",
+              "op": "=",
+              "value": "2025"
+            }
+          ],
+          "measures": [
+            {
+              "name": "gmv_eur",
+              "agg": "sum",
+              "path": "gmv_eur",
+              "where": [],
+              "scale": 1.0,
+              "decimals": 2
+            }
+          ],
+          "by": [
+            "ship_country"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "gmv_eur",
+          "descending": true,
+          "limit": 3
+        },
+        "plan": [
+          "objects(order): Order read from luxexperience.orders, key order_id (unique, measured)",
+          "segment eu_markets (derived from rule eu_markets (owned by finance), measured): Orders shipped to an EU member state, the duty and VAT territory: Ireland is in; the United Kingdom, Switzerland and Norway are not.",
+          "filter fiscal_year = '2025'",
+          "by ship_country",
+          "measure gmv_eur: sum(gmv_eur) over Order rows"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 18.3,
+      "definition": "declared"
+    },
+    {
+      "id": "lb07_ynap_gmv_fy2025",
+      "trap": "rule",
+      "question": "What was YNAP's total GMV in fiscal year 2025? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders WHERE \"group\" = 'Richemont (YNAP)' AND fiscal_year = 2025",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders WHERE \"group\" = 'Richemont (YNAP)' AND fiscal_year = 2025",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders WHERE platform IN ('YOOX', 'THE OUTNET', 'NET-A-PORTER', 'MR PORTER') AND platform IS NOT NULL AND fiscal_year = 2025",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "ynap_platforms",
+          "chosen_by": "names",
+          "candidates": [
+            "ynap_platforms"
+          ],
+          "rules": [
+            "ynap_platforms"
+          ],
+          "moments": [],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year"
+          ]
+        },
+        "block_chars": 1212
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(SUM(gmv_eur), 2) AS total_gmv_eur FROM luxexperience.orders WHERE platform IN ('YOOX', 'THE OUTNET', 'NET-A-PORTER', 'MR PORTER') AND platform IS NOT NULL AND fiscal_year = 2025",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND(SUM(t0.gmv_eur), 2) AS total_gmv FROM luxexperience.orders AS t0 WHERE ((t0.platform IN ('YOOX', 'THE OUTNET', 'NET-A-PORTER', 'MR PORTER'))) AND (t0.fiscal_year = 2025)",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "ynap_platforms",
+          "filters": [
+            {
+              "path": "fiscal_year",
+              "op": "=",
+              "value": "2025"
+            }
+          ],
+          "measures": [
+            {
+              "name": "total_gmv",
+              "agg": "sum",
+              "path": "gmv_eur",
+              "where": [],
+              "scale": 1.0,
+              "decimals": 2
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from luxexperience.orders, key order_id (unique, measured)",
+          "segment ynap_platforms (derived from rule ynap_platforms (owned by finance), measured): YNAP is its four platforms (YOOX, THE OUTNET, NET-A-PORTER and MR PORTER), whichever group reported the order.",
+          "filter fiscal_year = '2025'",
+          "measure total_gmv: sum(gmv_eur) over Order rows"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 8.6,
+      "definition": "declared"
+    },
+    {
+      "id": "lb08_controllable_return_share",
+      "trap": "rule",
+      "question": "What percentage of returns were controllable? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE reason IN ('size_fit', 'changed_mind')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS controllable_return_pct FROM luxexperience.returns;",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE reason IN ('size_fit', 'changed_mind')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS controllable_return_pct FROM luxexperience.returns;",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE reason IN ('quality', 'not_as_expected', 'late_delivery')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS controllable_returns_pct FROM luxexperience.returns",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "controllable_returns",
+          "chosen_by": "names",
+          "candidates": [
+            "controllable_returns"
+          ],
+          "rules": [
+            "controllable_returns"
+          ],
+          "moments": [],
+          "start": "Return",
+          "drivers": []
+        },
+        "block_chars": 1441
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE reason IN ('quality', 'not_as_expected', 'late_delivery')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS controllable_returns_pct FROM luxexperience.returns",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND((1.0 * (COUNT(*)) / NULLIF(COUNT(*), 0)) * 100.0, 2) AS controllable_pct FROM luxexperience.returns AS t0 WHERE ((t0.reason IN ('quality', 'not_as_expected', 'late_delivery')))",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "return",
+          "segment": "controllable_returns",
+          "filters": [],
+          "measures": [
+            {
+              "name": "controllable_pct",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 100.0,
+              "decimals": 2,
+              "divide_by": {
+                "agg": "count",
+                "path": "",
+                "where": []
+              }
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(return): Return read from luxexperience.returns, key return_id (unique, measured)",
+          "segment controllable_returns (derived from rule controllable_returns (owned by customer_care), measured): Returns the business caused: quality, not as expected and late delivery. Size and a change of mind are the customer's.",
+          "measure controllable_pct: count of Return objects",
+          "measure controllable_pct \u00f7: count of Return objects",
+          "measure controllable_pct: a ratio of the two aggregates, never an average of row ratios"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 57.4,
+      "definition": "declared"
+    },
+    {
+      "id": "lb09_high_risk_payment_share",
+      "trap": "rule",
+      "question": "What percentage of payments were high-risk? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE fraud_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS high_risk_payment_pct FROM luxexperience.payments",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE fraud_flag) * 100.0 / NULLIF(COUNT(*), 0), 2) AS high_risk_payment_pct FROM luxexperience.payments",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE fraud_score >= 0.2) * 100.0 / NULLIF(COUNT(*), 0), 2) AS high_risk_payment_pct FROM luxexperience.payments",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "high_risk_payments",
+          "chosen_by": "names",
+          "candidates": [
+            "high_risk_payments"
+          ],
+          "rules": [
+            "high_risk_payments"
+          ],
+          "moments": [],
+          "start": "Payment",
+          "drivers": []
+        },
+        "block_chars": 976
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE fraud_score >= 0.2) * 100.0 / NULLIF(COUNT(*), 0), 2) AS high_risk_payment_pct FROM luxexperience.payments",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND((1.0 * (COUNT(CASE WHEN (t0.fraud_flag = TRUE) THEN 1 END)) / NULLIF(COUNT(*), 0)) * 100.0, 2) AS high_risk_pct FROM luxexperience.payments AS t0",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "payment",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "high_risk_pct",
+              "agg": "count",
+              "path": "",
+              "where": [
+                {
+                  "path": "fraud_flag",
+                  "op": "=",
+                  "value": "True"
+                }
+              ],
+              "scale": 100.0,
+              "decimals": 2,
+              "divide_by": {
+                "agg": "count",
+                "path": "",
+                "where": []
+              }
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(payment): Payment read from luxexperience.payments, key payment_id (unique, measured)",
+          "measure high_risk_pct: count of Payment objects matching its where",
+          "measure high_risk_pct \u00f7: count of Payment objects",
+          "measure high_risk_pct: a ratio of the two aggregates, never an average of row ratios"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 16.6,
+      "definition": "declared"
+    },
+    {
+      "id": "lb10_accessories_division_share_fy2025",
+      "trap": "rule",
+      "question": "What percentage of the order lines on orders placed in fiscal year 2025 belong to the accessories division? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN oi.category = 'accessories' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS accessories_line_pct FROM luxexperience.order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id WHERE o.fiscal_year = 2025",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(CASE WHEN oi.category = 'accessories' THEN 1 END) * 100.0 / NULLIF(COUNT(*), 0), 2) AS accessories_line_pct FROM luxexperience.order_items oi JOIN luxexperience.orders o ON oi.order_id = o.order_id WHERE o.fiscal_year = 2025",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE oi.category IN ('bags', 'shoes', 'accessories', 'jewelry_watches')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS accessories_share_pct FROM luxexperience.order_items AS oi JOIN luxexperience.orders AS o ON oi.order_id = o.order_id WHERE o.fiscal_year = 2025",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "accessories_division",
+          "chosen_by": "names",
+          "candidates": [
+            "accessories_division"
+          ],
+          "rules": [
+            "accessories_division"
+          ],
+          "moments": [
+            "placed"
+          ],
+          "start": "OrderItem",
+          "drivers": [
+            "order_item_to_order.fiscal_year"
+          ]
+        },
+        "block_chars": 1473
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE oi.category IN ('bags', 'shoes', 'accessories', 'jewelry_watches')) * 100.0 / NULLIF(COUNT(*), 0), 2) AS accessories_share_pct FROM luxexperience.order_items AS oi JOIN luxexperience.orders AS o ON oi.order_id = o.order_id WHERE o.fiscal_year = 2025",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND((1.0 * (COUNT(CASE WHEN (t0.category IN ('bags', 'accessories', 'jewelry_watches')) THEN 1 END)) / NULLIF(COUNT(*), 0)) * 100.0, 2) AS accessories_division_pct FROM luxexperience.order_items AS t0 LEFT JOIN luxexperience.orders AS j1 ON t0.order_id = j1.order_id WHERE (j1.fiscal_year = 2025)",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "order_item",
+          "segment": "",
+          "filters": [
+            {
+              "path": "order.fiscal_year",
+              "op": "=",
+              "value": "2025"
+            }
+          ],
+          "measures": [
+            {
+              "name": "accessories_division_pct",
+              "agg": "count",
+              "path": "",
+              "where": [
+                {
+                  "path": "category",
+                  "op": "in",
+                  "values": [
+                    "bags",
+                    "accessories",
+                    "jewelry_watches"
+                  ]
+                }
+              ],
+              "scale": 100.0,
+              "decimals": 2,
+              "divide_by": {
+                "agg": "count",
+                "path": "",
+                "where": []
+              }
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order_item): OrderItem read from luxexperience.order_items, key order_item_id (unique, measured)",
+          "link order_item_to_order (OrderItem \u2192 Order, N:1): joined \u2014 to-one by measurement, so it cannot multiply OrderItem rows",
+          "filter order.fiscal_year = '2025'",
+          "measure accessories_division_pct: count of OrderItem objects matching its where",
+          "measure accessories_division_pct \u00f7: count of OrderItem objects",
+          "measure accessories_division_pct: a ratio of the two aggregates, never an average of row ratios"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 32.3,
+      "definition": "declared"
+    },
+    {
+      "id": "lb11_refund_promise_breach",
+      "trap": "promise",
+      "question": "What percentage of returns broke the refund promise? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE date_diff('day', received_date, refund_completed_date) > 14) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broke_refund_promise FROM luxexperience.return_logistics",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(COUNT(*) FILTER (WHERE date_diff('day', received_date, refund_completed_date) > 14) * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broke_refund_promise FROM luxexperience.return_logistics",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(1.0 * COUNT(CASE WHEN DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0) * 100, 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "refund_breach_rate",
+          "chosen_by": "names",
+          "candidates": [
+            "refund_breach_rate"
+          ],
+          "rules": [],
+          "moments": [],
+          "start": "Return",
+          "drivers": []
+        },
+        "block_chars": 1952
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(1.0 * COUNT(CASE WHEN DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0) * 100, 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND(1.0 * (COUNT(CASE WHEN (DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10) THEN 1 END)) / NULLIF(COUNT(CASE WHEN (NOT j1.received_date IS NULL) AND (NOT j1.refund_completed_date IS NULL) THEN 1 END), 0), 2) AS refund_breach_rate_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "return",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "refund_breach_rate_pct",
+              "metric": "refund_breach_rate",
+              "scale": 1.0,
+              "decimals": 2
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(return): Return read from luxexperience.returns, key return_id (unique, measured)",
+          "link return_to_return_logistic (Return \u2192 ReturnLogistic, 1:1): joined \u2014 to-one by measurement, so it cannot multiply Return rows",
+          "derived property refund_lag_days on Return: calendar days from received (return_to_return_logistic.received_date) to refunded (return_to_return_logistic.refund_completed_date) \u2014 from process return_to_refund, measured",
+          "metric refund_breach_rate (broke the promise): count of Return objects matching its where",
+          "metric refund_breach_rate (reached the stage with the promise in force): count of Return objects matching its where",
+          "metric refund_breach_rate (derived from the refund promise of process return_to_refund, measured): the share of the Return objects that reached refunded with the refund promise in force and broke it \u2014 a ratio of two counts"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 12.4,
+      "definition": "declared"
+    },
+    {
+      "id": "lb12_refund_promise_by_carrier",
+      "trap": "promise",
+      "question": "For each return carrier, what percentage of its returns broke the refund promise? Return the carrier and the percentage rounded to two decimals, worst first.",
+      "raw": {
+        "sql": "SELECT carrier, ROUND(COUNT(*) FILTER (WHERE refund_method = 'store_credit') * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broke_refund_promise FROM luxexperience.return_logistics WHERE refund_method IS NOT NULL GROUP BY carrier ORDER BY pct_broke_refund_promise DESC",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT carrier, ROUND(COUNT(*) FILTER (WHERE refund_method = 'store_credit') * 100.0 / NULLIF(COUNT(*), 0), 2) AS pct_broke_refund_promise FROM luxexperience.return_logistics WHERE refund_method IS NOT NULL GROUP BY carrier ORDER BY pct_broke_refund_promise DESC",
+        "class": "silent-wrong",
+        "guards_fired": [],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT j1.carrier AS carrier, ROUND(100.0 * COUNT(CASE WHEN DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id GROUP BY 1 ORDER BY 2 DESC",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "refund_breach_rate",
+          "chosen_by": "names",
+          "candidates": [
+            "refund_breach_rate"
+          ],
+          "rules": [],
+          "moments": [],
+          "start": "Return",
+          "drivers": [
+            "carrier"
+          ]
+        },
+        "block_chars": 2538
+      },
+      "framed_guarded": {
+        "sql": "SELECT j1.carrier AS carrier, ROUND(100.0 * COUNT(CASE WHEN DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE)) > 10 THEN 1 END) / NULLIF(COUNT(CASE WHEN j1.received_date IS NOT NULL AND j1.refund_completed_date IS NOT NULL THEN 1 END), 0), 2) AS refund_breach_pct FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id GROUP BY 1 ORDER BY 2 DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT b1.carrier AS carrier, ROUND(1.0 * (COUNT(CASE WHEN (DATE_DIFF('DAY', CAST(j2.received_date AS DATE), CAST(j2.refund_completed_date AS DATE)) > 10) THEN 1 END)) / NULLIF(COUNT(CASE WHEN (NOT j2.received_date IS NULL) AND (NOT j2.refund_completed_date IS NULL) THEN 1 END), 0), 2) AS refund_breach_rate FROM luxexperience.returns AS t0 LEFT JOIN return_logistics AS b1 ON t0.return_id = b1.return_id LEFT JOIN luxexperience.return_logistics AS j2 ON t0.return_id = j2.return_id GROUP BY 1 ORDER BY refund_breach_rate DESC",
+        "class": "silent-wrong",
+        "match": 0.0,
+        "query": {
+          "object_type": "return",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "refund_breach_rate",
+              "metric": "refund_breach_rate",
+              "scale": 1.0,
+              "decimals": 2
+            }
+          ],
+          "by": [
+            "carrier"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "refund_breach_rate",
+          "descending": true
+        },
+        "plan": [
+          "objects(return): Return read from luxexperience.returns, key return_id (unique, measured)",
+          "binding logistics on Return: return_logistics joined on return_id = return_id \u2014 one row per Return by measurement (return_id: 50,048 distinct over 50,048 keyed rows; covers 50,048 of 50,048 Return objects), so it cannot multiply Return rows",
+          "by carrier",
+          "link return_to_return_logistic (Return \u2192 ReturnLogistic, 1:1): joined \u2014 to-one by measurement, so it cannot multiply Return rows",
+          "derived property refund_lag_days on Return: calendar days from received (return_to_return_logistic.received_date) to refunded (return_to_return_logistic.refund_completed_date) \u2014 from process return_to_refund, measured",
+          "metric refund_breach_rate (broke the promise): count of Return objects matching its where",
+          "metric refund_breach_rate (reached the stage with the promise in force): count of Return objects matching its where",
+          "metric refund_breach_rate (derived from the refund promise of process return_to_refund, measured): the share of the Return objects that reached refunded with the refund promise in force and broke it \u2014 a ratio of two counts"
+        ]
+      },
+      "objects_fallback": {
+        "class": "silent-wrong",
+        "via": "objects"
+      },
+      "latency_s": 35.3,
+      "definition": "declared"
+    },
+    {
+      "id": "lb13_average_refund_lag",
+      "trap": "lag",
+      "question": "What is our average refund lag in days? Round to two decimals.",
+      "raw": {
+        "sql": "SELECT ROUND(AVG(date_diff('day', r.return_date, rl.refund_completed_date)), 2) AS avg_refund_lag_days FROM luxexperience.returns r JOIN luxexperience.return_logistics rl ON r.return_id = rl.return_id WHERE r.return_date IS NOT NULL AND rl.refund_completed_date IS NOT NULL",
+        "class": "silent-wrong",
+        "match": 0.0
+      },
+      "guarded": {
+        "sql": "SELECT ROUND(AVG(date_diff('day', r.return_date, rl.refund_completed_date)), 2) AS avg_refund_lag_days FROM luxexperience.returns r JOIN luxexperience.return_logistics rl ON r.return_id = rl.return_id WHERE r.return_date IS NOT NULL AND rl.refund_completed_date IS NOT NULL",
+        "class": "caught",
+        "guards_fired": [
+          "fanout"
+        ],
+        "match": 0.0
+      },
+      "framed": {
+        "sql": "SELECT ROUND(AVG(DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE))), 2) AS avg_refund_lag_days FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": "refund_lag_days",
+          "chosen_by": "names",
+          "candidates": [
+            "refund_lag_days"
+          ],
+          "rules": [],
+          "moments": [],
+          "start": "Return",
+          "drivers": []
+        },
+        "block_chars": 1155
+      },
+      "framed_guarded": {
+        "sql": "SELECT ROUND(AVG(DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE))), 2) AS avg_refund_lag_days FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT ROUND(AVG(DATE_DIFF('DAY', CAST(j1.received_date AS DATE), CAST(j1.refund_completed_date AS DATE))), 2) AS avg_refund_lag_days FROM luxexperience.returns AS t0 LEFT JOIN luxexperience.return_logistics AS j1 ON t0.return_id = j1.return_id",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "return",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "avg_refund_lag_days",
+              "agg": "avg",
+              "path": "refund_lag_days",
+              "where": [],
+              "scale": 1.0,
+              "decimals": 2
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(return): Return read from luxexperience.returns, key return_id (unique, measured)",
+          "link return_to_return_logistic (Return \u2192 ReturnLogistic, 1:1): joined \u2014 to-one by measurement, so it cannot multiply Return rows",
+          "derived property refund_lag_days on Return: calendar days from received (return_to_return_logistic.received_date) to refunded (return_to_return_logistic.refund_completed_date) \u2014 from process return_to_refund, measured",
+          "measure avg_refund_lag_days: avg(refund_lag_days) over Return rows"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 8.4,
+      "definition": "declared"
+    },
+    {
+      "id": "lc01_cancelled_orders_fy2025",
+      "trap": "control",
+      "question": "How many orders were cancelled in fiscal year 2025?",
+      "raw": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders FROM luxexperience.orders WHERE status = 'cancelled' AND fiscal_year = 2025",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders FROM luxexperience.orders WHERE status = 'cancelled' AND fiscal_year = 2025",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "framed": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders FROM luxexperience.orders WHERE status = 'cancelled' AND fiscal_year = 2025",
+        "class": "correct",
+        "match": 1.0,
+        "via": "raw (the question reached nothing declared)",
+        "frame": {
+          "defines": false,
+          "outcome": null,
+          "chosen_by": null,
+          "candidates": [],
+          "rules": [],
+          "moments": [],
+          "start": "Order",
+          "drivers": [
+            "fiscal_year"
+          ]
+        }
+      },
+      "framed_guarded": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders FROM luxexperience.orders WHERE status = 'cancelled' AND fiscal_year = 2025",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0,
+        "via": "raw (the question reached nothing declared)"
+      },
+      "objects": {
+        "sql": "SELECT COUNT(*) AS cancelled_orders FROM luxexperience.orders AS t0 WHERE (t0.status = 'cancelled') AND (t0.fiscal_year = 2025)",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "order",
+          "segment": "",
+          "filters": [
+            {
+              "path": "status",
+              "op": "=",
+              "value": "cancelled"
+            },
+            {
+              "path": "fiscal_year",
+              "op": "=",
+              "value": "2025"
+            }
+          ],
+          "measures": [
+            {
+              "name": "cancelled_orders",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "",
+          "descending": true
+        },
+        "plan": [
+          "objects(order): Order read from luxexperience.orders, key order_id (unique, measured)",
+          "filter status = 'cancelled'",
+          "filter fiscal_year = '2025'",
+          "measure cancelled_orders: count of Order objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 10.2,
+      "definition": "schema"
+    },
+    {
+      "id": "lc02_tickets_by_category",
+      "trap": "control",
+      "question": "How many customer service tickets were opened in each category? Return the category and the count, largest first.",
+      "raw": {
+        "sql": "SELECT category, COUNT(*) AS ticket_count FROM luxexperience.customer_service GROUP BY category ORDER BY ticket_count DESC",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT category, COUNT(*) AS ticket_count FROM luxexperience.customer_service GROUP BY category ORDER BY ticket_count DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "framed": {
+        "sql": "SELECT category, COUNT(*) AS ticket_count FROM luxexperience.customer_service GROUP BY category ORDER BY ticket_count DESC",
+        "class": "correct",
+        "match": 1.0,
+        "via": "raw (the question reached nothing declared)",
+        "frame": {
+          "defines": false,
+          "outcome": null,
+          "chosen_by": null,
+          "candidates": [],
+          "rules": [],
+          "moments": [],
+          "start": "CustomerService",
+          "drivers": [
+            "category"
+          ]
+        }
+      },
+      "framed_guarded": {
+        "sql": "SELECT category, COUNT(*) AS ticket_count FROM luxexperience.customer_service GROUP BY category ORDER BY ticket_count DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0,
+        "via": "raw (the question reached nothing declared)"
+      },
+      "objects": {
+        "sql": "SELECT t0.category AS category, COUNT(*) AS ticket_count FROM luxexperience.customer_service AS t0 GROUP BY 1 ORDER BY ticket_count DESC",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "customer_service",
+          "segment": "",
+          "filters": [],
+          "measures": [
+            {
+              "name": "ticket_count",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "category"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "ticket_count",
+          "descending": true
+        },
+        "plan": [
+          "objects(customer_service): CustomerService read from luxexperience.customer_service, key ticket_id (unique, measured)",
+          "by category",
+          "measure ticket_count: count of CustomerService objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 3.1,
+      "definition": "schema"
+    },
+    {
+      "id": "lc03_express_shipments_by_warehouse",
+      "trap": "control",
+      "question": "How many express shipments left each warehouse? Return the warehouse and the count, largest first.",
+      "raw": {
+        "sql": "SELECT warehouse, COUNT(*) AS express_shipment_count FROM luxexperience.shipments WHERE service_level = 'express' GROUP BY warehouse ORDER BY express_shipment_count DESC",
+        "class": "correct",
+        "match": 1.0
+      },
+      "guarded": {
+        "sql": "SELECT warehouse, COUNT(*) AS express_shipment_count FROM luxexperience.shipments WHERE service_level = 'express' GROUP BY warehouse ORDER BY express_shipment_count DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "framed": {
+        "sql": "SELECT warehouse, COUNT(*) AS express_shipment_count FROM luxexperience.shipments WHERE service_level = 'express' GROUP BY warehouse ORDER BY express_shipment_count DESC",
+        "class": "correct",
+        "match": 1.0,
+        "frame": {
+          "defines": true,
+          "outcome": null,
+          "chosen_by": null,
+          "candidates": [],
+          "rules": [],
+          "moments": [
+            "shipped"
+          ],
+          "start": "Order",
+          "drivers": []
+        },
+        "block_chars": 618
+      },
+      "framed_guarded": {
+        "sql": "SELECT warehouse, COUNT(*) AS express_shipment_count FROM luxexperience.shipments WHERE service_level = 'express' GROUP BY warehouse ORDER BY express_shipment_count DESC",
+        "class": "correct",
+        "guards_fired": [],
+        "match": 1.0
+      },
+      "objects": {
+        "sql": "SELECT t0.warehouse AS warehouse, COUNT(*) AS express_shipments FROM luxexperience.shipments AS t0 WHERE (t0.service_level = 'express') GROUP BY 1 ORDER BY express_shipments DESC",
+        "class": "correct",
+        "match": 1.0,
+        "query": {
+          "object_type": "shipment",
+          "segment": "",
+          "filters": [
+            {
+              "path": "service_level",
+              "op": "=",
+              "value": "express"
+            }
+          ],
+          "measures": [
+            {
+              "name": "express_shipments",
+              "agg": "count",
+              "path": "",
+              "where": [],
+              "scale": 1.0
+            }
+          ],
+          "by": [
+            "warehouse"
+          ],
+          "time": "",
+          "grain": "",
+          "start": "",
+          "end": "",
+          "order_by": "express_shipments",
+          "descending": true
+        },
+        "plan": [
+          "objects(shipment): Shipment read from luxexperience.shipments, key shipment_id (unique, measured)",
+          "filter service_level = 'express'",
+          "by warehouse",
+          "measure express_shipments: count of Shipment objects"
+        ]
+      },
+      "objects_fallback": {
+        "class": "correct",
+        "via": "objects"
+      },
+      "latency_s": 15.3,
+      "definition": "schema"
+    }
+  ],
+  "summary": {
+    "n": 16,
+    "arms": [
+      "raw",
+      "guarded",
+      "framed",
+      "framed_guarded",
+      "objects"
+    ],
+    "raw": {
+      "correct": 5,
+      "silent-wrong": 11
+    },
+    "guarded": {
+      "correct": 5,
+      "caught": 2,
+      "silent-wrong": 9
+    },
+    "framed": {
+      "correct": 16
+    },
+    "framed_guarded": {
+      "correct": 16
+    },
+    "objects": {
+      "correct": 10,
+      "error": 1,
+      "silent-wrong": 5
+    },
+    "raw_accuracy": 0.312,
+    "raw_silent_wrong": 11,
+    "guarded_safe_rate": 0.438,
+    "guarded_silent_wrong": 9,
+    "saves": [
+      "lb03_vip_gmv_share_fy2025",
+      "lb13_average_refund_lag"
+    ],
+    "regressions": [],
+    "framed_accuracy": 1.0,
+    "framed_silent_wrong": 0,
+    "framed_gains": [
+      "lb03_vip_gmv_share_fy2025",
+      "lb04_vip_customers_by_region",
+      "lb05_eu_market_orders_fy2025",
+      "lb06_top_eu_markets_gmv_fy2025",
+      "lb07_ynap_gmv_fy2025",
+      "lb08_controllable_return_share",
+      "lb09_high_risk_payment_share",
+      "lb10_accessories_division_share_fy2025",
+      "lb11_refund_promise_breach",
+      "lb12_refund_promise_by_carrier",
+      "lb13_average_refund_lag"
+    ],
+    "framed_losses": [],
+    "framed_no_frame": [
+      "lc01_cancelled_orders_fy2025",
+      "lc02_tickets_by_category"
+    ],
+    "framed_guarded_safe_rate": 1.0,
+    "framed_guarded_silent_wrong": 0,
+    "by_definition": {
+      "declared": {
+        "n": 13,
+        "raw_correct": 2,
+        "framed_correct": 13,
+        "guarded_safe": 4,
+        "framed_guarded_safe": 13
+      },
+      "schema": {
+        "n": 3,
+        "raw_correct": 3,
+        "framed_correct": 3,
+        "guarded_safe": 3,
+        "framed_guarded_safe": 3
+      }
+    },
+    "falsifier": {
+      "framed_beats_raw_on_declared": true,
+      "declared": {
+        "n": 13,
+        "raw_correct": 2,
+        "framed_correct": 13,
+        "guarded_safe": 4,
+        "framed_guarded_safe": 13
+      },
+      "controls_lost": [],
+      "framed_guarded_keeps_guarded_safety": true
+    },
+    "objects_accuracy": 0.625,
+    "objects_silent_wrong": 5,
+    "objects_compiled_share": 0.938,
+    "objects_refused": [],
+    "objects_declined": [],
+    "objects_fallback": {
+      "correct": 10,
+      "silent-wrong": 6
+    },
+    "objects_fallback_accuracy": 0.625,
+    "objects_fallback_silent_wrong": 6,
+    "objects_gains": [
+      "lb04_vip_customers_by_region",
+      "lb05_eu_market_orders_fy2025",
+      "lb06_top_eu_markets_gmv_fy2025",
+      "lb07_ynap_gmv_fy2025",
+      "lb13_average_refund_lag"
+    ],
+    "objects_losses": [],
+    "objects_fallback_losses": [],
+    "dataset": "evals/ablation_luxexperience_business.jsonl",
+    "connection": "914df862/luxexperience",
+    "reference_failed": [],
+    "llm": {
+      "backend": "openrouter",
+      "model": "deepseek/deepseek-v4.1-flash",
+      "role": "coder",
+      "fallback_chain": []
+    },
+    "ontology_available": null,
+    "ontology_source": "file:evals/ablation_luxexperience_business_ontology.json",
+    "ontology_context_chars": 0,
+    "arms_dropped": [],
+    "framing_model_calls": 0
+  }
+}

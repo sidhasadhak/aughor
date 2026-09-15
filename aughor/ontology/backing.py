@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 from aughor.ontology.cardinality import quote_ident, quote_table
 from aughor.ontology.models import Backing, OntologyEntity, OntologyGraph
@@ -38,8 +38,9 @@ def measure_key(db: Any, from_clause: str, primary_key: str) -> tuple[Optional[t
         return None, "no backing or no primary key to measure"
     col = quote_ident(primary_key)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {from_clause}"
+    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__backing_probe__", sql)
+        result = db.execute("__backing_probe__", native_sql(db, sql))
     except Exception as exc:  # noqa: BLE001 — an unprobeable backing is unmeasured, not a failure
         return None, f"probe raised: {exc}"[:200]
     if getattr(result, "error", None) or not getattr(result, "rows", None):
@@ -62,6 +63,51 @@ def measure_backing(db: Any, backing: Backing, entity_id: str = "") -> BackingMe
     m.note = (f"{backing.primary_key}: {m.distinct} distinct over {m.non_null} non-null rows"
               + ("" if m.unique else " — NOT unique per row"))
     return m
+
+
+def preview_backing(db: Any, entity: OntologyEntity, sql: str, primary_key: str, describe: Callable) -> dict:
+    """What a keyed SELECT would change if it became ``entity``'s backing — read, never written. Whether it can be
+    read; its rows and whether its key is unique over them (the count the measure door records); and against the
+    type's properties, the ones it keeps, the ones it drops — the compiler reads every property from the backing, so a
+    dropped one stops resolving — and the columns it adds, which the type does not hold. ``current`` is what the type
+    is read from now, so a person sees the change and not only the proposal."""
+    from aughor.ontology.bindings import SELECT_PATTERN
+    b = entity.backing
+    reads_query = b is not None and b.kind == "query" and bool(b.sql)
+    current = {"reads": "query" if reads_query else "table",
+               "source": ((b.sql if reads_query else (b.table if b is not None else None))
+                          or (entity.source_tables[0] if entity.source_tables else "")),
+               "key": (b.primary_key if b is not None else "") or entity.identity_key,
+               "rows": b.rows if b is not None else None, "unique": b.verified if b is not None else None}
+    sql, key = (sql or "").strip().rstrip(";").strip(), (primary_key or "").strip()
+    out: dict = {"readable": False, "note": "", "rows": None, "unique": None, "unique_note": "", "columns": [],
+                 "kept": [], "dropped": [], "added": [], "current": current}
+    if not sql or not key:
+        out["note"] = "a query backing needs `sql` and `primary_key`"
+        return out
+    if not SELECT_PATTERN.match(sql) or ";" in sql:
+        out["note"] = "a backing's `sql` is one SELECT"
+        return out
+    try:
+        columns, error = describe(f"({sql}) AS b")
+    except Exception as exc:  # noqa: BLE001 — an unreadable SELECT is previewed as unreadable, and says why
+        columns, error = {}, f"{type(exc).__name__}: {exc}"
+    if error or not columns:
+        out["note"] = f"its SELECT could not be read: {error or 'no columns'}"[:300]
+        return out
+    names = [str(c) for c in columns]
+    lower = {n.lower(): n for n in names}
+    properties = list((entity.properties or {}).keys())
+    held = {name.lower() for name in properties}
+    out.update(readable=True, columns=names, kept=[name for name in properties if name.lower() in lower],
+               dropped=[name for name in properties if name.lower() not in lower],
+               added=[n for n in names if n.lower() not in held])
+    if key.lower() not in lower:
+        out["note"] = f"its SELECT has no column '{key}' to be the key"
+        return out
+    m = measure_backing(db, Backing(kind="query", sql=sql, primary_key=lower[key.lower()]), entity.id)
+    out.update(rows=m.rows, unique=m.unique, unique_note=m.note)
+    return out
 
 
 @dataclass

@@ -2013,6 +2013,14 @@ def _answer_core(
         _instr_sec = _grounding_instructions(connection_id, canvas_id or "")
         if _instr_sec:
             prompt = _instr_sec + prompt
+        # ON-10 — the question framed against the DECLARED ontology, as the deep investigation frames it: each business
+        # term's declared definition with the SQL the object door compiles for it. No model call here — an ambiguous
+        # frame lists every definition the words fit. Empty where nothing declared is reached: byte-identical prompts.
+        from aughor.agent.grounding import question_frame as _grounding_frame, writer_dialect as _writer_dialect
+        _frame_sec = _grounding_frame(question, connection_id, schema_name=canvas_scope_eff_schema or "",
+                                      dialect=_writer_dialect(db))
+        if _frame_sec:
+            prompt = _frame_sec + prompt
         # Summon surface (SP-2, §3.11) — which product screen the question was asked
         # from; the ⌘K overlay sends its host tab and every other door sends ''
         # (byte-identical prompts). Whitespace-collapsed and hard-capped because it

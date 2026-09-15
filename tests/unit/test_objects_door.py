@@ -101,6 +101,19 @@ def test_query_objects_is_offered_first_only_behind_its_flag_and_only_where_an_o
         assert "query_objects" not in [t.name for t in ct.converse_tools("nothing-built-t")]
 
 
+def test_the_tool_names_a_part_under_its_parent_and_not_as_a_peer_type(warehouse, client):
+    from aughor.agent import converse_tools as ct
+    from aughor.kernel.flags import flag_overrides
+
+    bound = client.put("/ontology/entities/Customer/bindings/reviews", params=PARAMS, json={
+        "kind": "detail", "table": "reviews", "key": "customer_id",
+        "rollups": {"review_count": {"column": "review_id", "agg": "count"}}, "absorb": True})
+    assert bound.status_code == 200 and bound.json()["absorbed"] == "Review", bound.text
+    with flag_overrides({"ask.query_objects": True}):
+        [tool] = [t for t in ct.converse_tools(CONN) if t.name == "query_objects"]
+    assert "Object types here: customer (parts: review), order, order_item, product." in tool.description
+
+
 def test_the_tool_compiles_runs_discloses_and_refuses(warehouse, monkeypatch):
     from aughor.agent import converse_tools as ct
 

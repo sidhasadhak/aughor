@@ -39,13 +39,16 @@ def test_the_arm_is_dropped_where_nothing_is_declared():
     assert _arms_after_frame_check(("raw", "guarded", "framed"), bare) == (("raw", "guarded"), ("framed",))
     assert _arms_after_frame_check(("raw", "framed"), OLIST) == (("raw", "framed"), ())
     assert _arms_after_frame_check(("raw", "framed"), None) == (("raw",), ("framed",))
+    assert _arms_after_frame_check(("raw", "framed", "framed_guarded"), bare) == (("raw",), ("framed", "framed_guarded"))
 
 
-def _row(rid, definition, raw, guarded, framed, via=""):
+def _row(rid, definition, raw, guarded, framed, via="", framed_guarded=None):
     row = {"id": rid, "definition": definition, "raw": {"class": raw}, "guarded": {"class": guarded, "guards_fired": []},
            "framed": {"class": framed}}
     if via:
         row["framed"]["via"] = via
+    if framed_guarded is not None:
+        row["framed_guarded"] = {"class": framed_guarded, "guards_fired": []}
     return row
 
 
@@ -63,3 +66,16 @@ def test_the_falsifier_holds_only_when_framed_beats_raw_on_the_declared_definiti
     s = _summarize(tie, arms)
     assert s["falsifier"]["framed_beats_raw_on_declared"] is False and s["falsifier"]["controls_lost"] == ["c1"]
     assert _summarize([_row("c1", "schema", "correct", "correct", "correct")], arms)["falsifier"] is None
+
+
+def test_the_guarded_framed_arm_is_held_to_the_safety_guarding_already_keeps():
+    arms = ("raw", "guarded", "framed", "framed_guarded")
+    rows = [_row("d1", "declared", "silent-wrong", "caught", "silent-wrong", framed_guarded="caught"),
+            _row("d2", "declared", "silent-wrong", "silent-wrong", "correct", framed_guarded="correct"),
+            _row("c1", "schema", "correct", "correct", "correct", framed_guarded="correct")]
+    s = _summarize(rows, arms)
+    assert (s["framed_guarded_safe_rate"], s["framed_guarded_silent_wrong"]) == (1.0, 0)
+    assert s["by_definition"]["declared"]["framed_guarded_safe"] == 2
+    assert s["falsifier"]["framed_guarded_keeps_guarded_safety"] is True
+    worse = [_row("d1", "declared", "silent-wrong", "caught", "silent-wrong", framed_guarded="silent-wrong")]
+    assert _summarize(worse, arms)["falsifier"]["framed_guarded_keeps_guarded_safety"] is False

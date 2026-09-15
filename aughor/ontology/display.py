@@ -77,6 +77,29 @@ def display_source(entity: OntologyEntity, name: str) -> tuple[str, str, str]:
     return binding_from(binding, "d0"), column_of(binding, name), binding.name
 
 
+def display_property_problem(entity: OntologyEntity, name: str) -> tuple[str, str]:
+    """``(property, problem)`` for a display-property edit: the property it names, spelled as the type spells it, or
+    why it cannot name this type's objects — the type has no such property, or the property is read from a TIMESERIES
+    binding. A property a STATIC binding supplies names objects as surely as a column of the backing (ON-1b): the
+    binding holds one row per object. A timeseries binding is read as the object's latest row, so a title taken from it
+    would change under the reader, and a title that moves is not a name."""
+    from aughor.ontology.bindings import property_binding
+    wanted = str(name or "").strip()
+    bound = {p: b for b in (entity.bindings or []) for p in b.properties}
+    match = next((k for k in (entity.properties or {}) if k.lower() == wanted.lower()), None)
+    if match is None:
+        match = next((k for k in bound if k.lower() == wanted.lower()), None)
+    if match is None:
+        available = sorted({*(entity.properties or {}), *bound})
+        return "", f"{entity.id} has no property '{wanted}' — its properties: {', '.join(available) or 'none'}"
+    binding = property_binding(entity, match)
+    if binding is not None and binding.kind == "timeseries":
+        return "", (f"'{match}' is read from the timeseries binding {binding.name}, as this object's latest value — a "
+                    f"title taken from it would change when the next reading lands. Name objects by a property of the "
+                    f"backing or of a static binding.")
+    return match, ""
+
+
 def measure_display(db: Any, entity: OntologyEntity, name: str, source: str = "proposed") -> DisplayMeasurement:
     """Count one property over the source it is read from — the backing, or the static binding that supplies it.
     A probe that fails leaves it unmeasured, never refuted."""
@@ -87,8 +110,9 @@ def measure_display(db: Any, entity: OntologyEntity, name: str, source: str = "p
         return m
     col = quote_ident(column)
     sql = f"SELECT COUNT(*), COUNT({col}), COUNT(DISTINCT {col}) FROM {from_clause}"
+    from aughor.db.dialects import native_sql
     try:
-        result = db.execute("__display_probe__", sql)
+        result = db.execute("__display_probe__", native_sql(db, sql))
     except Exception as exc:  # noqa: BLE001 — an unprobeable property is unmeasured, not a failure
         m.note = f"probe raised: {exc}"[:200]
         return m

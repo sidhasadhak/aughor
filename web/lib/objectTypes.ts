@@ -553,6 +553,52 @@ export async function setPartOf(
   if (!res.ok) throw new Error(await detailOf(res));
 }
 
+/** What a keyed SELECT would change if it became a type's backing — read, never written: whether it reads, its rows
+ *  and whether its key is unique over them, and the type's properties it keeps, drops (they would stop resolving) and
+ *  adds, beside what the type is read from now. */
+export interface BackingPreview {
+  readable: boolean;
+  note: string;
+  rows: number | null;
+  unique: boolean | null;
+  unique_note: string;
+  columns: string[];
+  kept: string[];
+  dropped: string[];
+  added: string[];
+  current: { reads: "table" | "query"; source: string; key: string; rows: number | null; unique: boolean | null };
+}
+
+export async function previewBacking(
+  connectionId: string, entityId: string, sql: string, primaryKey: string, schemaName?: string,
+): Promise<BackingPreview> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/backing/preview?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sql, primary_key: primaryKey }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return res.json();
+}
+
+/** Read a type from a keyed SELECT (ON-1). It binds by a dry run now; its key is counted on the measure door. */
+export async function setQueryBacking(
+  connectionId: string, entityId: string, sql: string, primaryKey: string, schemaName?: string,
+): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}?${scope(connectionId, schemaName)}`,
+    { method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ backing: { kind: "query", sql, primary_key: primaryKey } }) });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
+/** Withdraw the backing a person set: the type is read from its table again, and its other edits stay. */
+export async function withdrawBacking(connectionId: string, entityId: string, schemaName?: string): Promise<void> {
+  const res = await fetch(
+    `${getApiBase()}/ontology/entities/${encodeURIComponent(entityId)}/backing?${scope(connectionId, schemaName)}`,
+    { method: "DELETE" });
+  if (!res.ok) throw new Error(await detailOf(res));
+}
+
 /** ON-7b — where an explorer's proposal stands NOW, read from the served graph; `refused` is what the data said when it
  *  was proposed. */
 export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" | "refused";
@@ -560,7 +606,7 @@ export type ProposalTier = "proposed" | "confirmed" | "released" | "withdrawn" |
 /** ON-7b — one thing an explorer proposed: an entity, a part (a table read under an entity), or a link. */
 export interface DraftProposal {
   key: string;
-  kind: "entity" | "part" | "link";
+  kind: "entity" | "part" | "link" | "process" | "rule";
   tier: ProposalTier;
   sentence: string;
   /** What the measurement said — the counts it rests on, or why it was refused. */
@@ -568,7 +614,8 @@ export interface DraftProposal {
   /** The model's own reason. */
   reason: string;
   provenance: string;
-  target: { entity?: string; binding?: string; table?: string; part?: string; relationship?: string };
+  target: { entity?: string; binding?: string; table?: string; part?: string; relationship?: string; process?: string;
+            rule?: string };
   /** The type to open to see it where it lives ("" when nothing was written). */
   object_type: string;
 }
@@ -605,10 +652,12 @@ export interface OntologyDraft {
 
 /** ON-7b — a declaration a person makes theirs: a declared entity, a declared link, or the binding a part is read through. */
 export interface ConfirmTarget {
-  kind: "entity" | "binding" | "link";
+  kind: "entity" | "binding" | "link" | "process" | "rule";
   entity?: string;
   binding?: string;
   relationship?: string;
+  process?: string;
+  rule?: string;
 }
 
 export interface ConfirmResult extends OntologyDraft {
@@ -671,6 +720,8 @@ export interface RuleRow {
   admitted: number | null;
   objects: number | null;
   flags: number;
+  /** The metrics the rule scopes: each read within it wherever it is read. */
+  scopes?: string[];
 }
 
 /** ON-9 — a name a declared process or rule derives on a type, and whether the compiler reads it yet. */
@@ -716,9 +767,11 @@ export interface ProcessTransition {
 /** A promise about reaching a stage, with what the data counted and the names it derives. */
 export interface ProcessPromise {
   name: string;
-  kind: "deadline" | "within_days";
+  kind: "deadline" | "within_days" | "within_hours";
   deadline: string;
   within_days: number | null;
+  /** Hours from the stage before, counted to the second — set when `kind` is `within_hours`. */
+  within_hours?: number | null;
   /** The api name of the type the promise is kept per, and its id. */
   grain: string;
   grain_id: string;
@@ -791,11 +844,16 @@ export interface RuleDetail {
   flags: string[];
   note: string;
   segment: string;
+  /** The metrics the rule scopes, and each one's value as measured without the rule and within it. */
+  scopes?: string[];
+  scoped?: Record<string, { without: string | null; within: string | null }>;
 }
 
 export interface ProcessesAndRules {
-  connection_id: string;
-  schema_name: string;
+  /** One connection's ontology; an organisation's names its `domain` instead (ON-8). */
+  connection_id?: string;
+  schema_name?: string;
+  domain?: string;
   processes: ProcessDetail[];
   rules: RuleDetail[];
 }
@@ -813,8 +871,22 @@ export interface DeclaredProcessSpec {
     timestamp?: string;
     state?: string[];
     property?: string;
-    promise?: { name?: string; within_days?: number; deadline?: string; grain?: string; via?: string; target?: number };
+    promise?: { name?: string; within_days?: number; within_hours?: number; deadline?: string; grain?: string; via?: string;
+                target?: number };
   }[];
+}
+
+/** The schemas of one connection that have an ontology built, beside the one its registry names — a read of the store;
+ *  no connection is opened. */
+export async function listOntologySchemas(connectionId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/ontology/schemas?${new URLSearchParams({ connection_id: connectionId })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return ((await res.json()) as { schemas?: string[] }).schemas ?? [];
+}
+
+/** A schema picker's list with `found` added after what it already offers, each once and in the order found. */
+export function withSchemas(current: string[], found: string[]): string[] {
+  return [...current, ...found.filter((name, i) => name && !current.includes(name) && found.indexOf(name) === i)];
 }
 
 /** ON-9 — every declared process and rule on the scope, with what their measurement counted. */
@@ -833,6 +905,30 @@ export async function declareProcess(
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
   if (!res.ok) throw new Error(await detailOf(res));
   return (await res.json()).process;
+}
+
+/** ON-9 — a rule a person declares: a value set (one property's values grouped under one name) or conditions in the
+ *  object door's shape — and the verified metrics of its type it scopes. */
+export interface DeclaredRuleSpec {
+  id: string;
+  display_name?: string;
+  description?: string;
+  entity: string;
+  kind: "value_set" | "condition";
+  property?: string;
+  values?: string[];
+  conditions?: { path: string; op: string; value?: unknown; values?: unknown[] }[];
+  scopes?: string[];
+  owner?: string;
+}
+
+/** ON-9 — declare a rule. It is compiled and counted before anything is written; a rule the data cannot hold is refused
+ *  with the reason. Returns the rule as the panel shows it. */
+export async function declareRule(connectionId: string, spec: DeclaredRuleSpec, schemaName?: string): Promise<RuleDetail> {
+  const res = await fetch(`${getApiBase()}/ontology/rules?${scope(connectionId, schemaName)}`,
+    { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(spec) });
+  if (!res.ok) throw new Error(await detailOf(res));
+  return (await res.json()).rule;
 }
 
 /** ON-9 — withdraw a declared process; every name it derives stops resolving on the next read. */

@@ -123,17 +123,26 @@ class SQLiteConnection(Connector):
         # survives the rewrite exactly as it does on the unparameterised path.
         cur = self._conn.execute(self.translate(sql), params)
         cols = [d[0] for d in cur.description] if cur.description else []
-        rows = cur.fetchmany(self.max_rows)
+        # One row past the cap, so a cut read is known to be cut: the shared envelope keeps
+        # `max_rows` of them and counts them all.
+        rows = cur.fetchmany(self.max_rows + 1)
         # This connector's `execute` captures typed rows, so its bound path has to as
         # well — otherwise adding a parameter to a query silently drops the per-column
         # types, which is the asymmetry the route-level fix exists to remove. Offered
         # from the same slice the result will carry: `_security_post` mirrors its budget
         # slice and PII redaction onto this sink POSITIONALLY.
         from aughor.db.connection import offer_typed_rows
-        offer_typed_rows(rows, truncated=len(rows) >= self.max_rows, types=[])
+        offer_typed_rows(rows[:self.max_rows], truncated=len(rows) > self.max_rows, types=[])
         return cols, rows
 
     def execute(self, hypothesis_id: str, sql: str) -> QueryResult:
+        return self._execute(hypothesis_id, sql, MAX_ROWS)
+
+    def execute_bounded(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
+        """Up to ``max_rows`` rows — the cross-source reads and key measurements read past the 500 cap."""
+        return self._execute(hypothesis_id, sql, max(1, max_rows))
+
+    def _execute(self, hypothesis_id: str, sql: str, max_rows: int) -> QueryResult:
         # Gate through the public security interface; the read-only connection
         # also blocks any write at the engine.
         from aughor.db.connection import enforce_row_policy, security_pre, security_post
@@ -150,18 +159,20 @@ class SQLiteConnection(Connector):
         t0 = time.monotonic()
         try:
             cur = self._conn.execute(sql)
-            rows = cur.fetchmany(MAX_ROWS)
+            # one row past the cap: a read the cap cut counts more rows than it keeps
+            fetched = cur.fetchmany(max_rows + 1)
+            rows = fetched[:max_rows]
             columns = [d[0] for d in cur.description] if cur.description else []
             from aughor.db.connection import offer_typed_rows
             # sqlite3's description carries no types (d[1] is always None) — pass
             # none and let the caller infer per-column types from the values.
-            offer_typed_rows(rows, truncated=len(rows) >= MAX_ROWS, types=[])
+            offer_typed_rows(rows, truncated=len(fetched) > max_rows, types=[])
             result = QueryResult(
                 hypothesis_id=hypothesis_id,
                 sql=sql,
                 columns=columns,
                 rows=[[str(v) if v is not None else "NULL" for v in row] for row in rows],
-                row_count=len(rows),
+                row_count=len(fetched),
             )
         except Exception as e:
             result = QueryResult(hypothesis_id=hypothesis_id, sql=sql, columns=[], rows=[], row_count=0, error=str(e))

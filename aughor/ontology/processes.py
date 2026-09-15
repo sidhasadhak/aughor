@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 ORIGINS = ("human", "model", "pack")
 _MAX_STAGES = 12
 _MAX_DAYS = 3650
+_MAX_HOURS = 24 * _MAX_DAYS
 #: A per-day histogram wider than this is not a lag between two stages — it is a declaration read wrong.
 _MAX_LAG_VALUES = 20_000
 #: A property path: a property, or up to three links then a property. Each segment is a NAME the compiler resolves
@@ -89,21 +90,25 @@ def _stage_problem(i: int, stage: Any, stages: list) -> str:
                 "reaches the stage")
     if promise.get("name") and not PROCESS_NAME_PATTERN.match(str(promise["name"])):
         return f"stage '{name}': a promise's name is snake_case — dispatch, delivery"
-    within, deadline = promise.get("within_days"), str(promise.get("deadline") or "").strip()
-    if (within is None) == (not deadline):
-        return (f"stage '{name}': a promise is exactly one of `within_days` (calendar days from the previous stage) "
-                "or `deadline` (a date or timestamp property of the object that carries it)")
-    if within is not None:
-        if isinstance(within, bool) or not isinstance(within, int) or not 0 <= within <= _MAX_DAYS:
+    within, hours = promise.get("within_days"), promise.get("within_hours")
+    deadline = str(promise.get("deadline") or "").strip()
+    if [within is not None, hours is not None, bool(deadline)].count(True) != 1:
+        return (f"stage '{name}': a promise is exactly one of `within_days` (calendar days from the previous stage), "
+                "`within_hours` (hours from the previous stage's moment) or `deadline` (a date or timestamp property of "
+                "the object that carries it)")
+    if within is not None or hours is not None:
+        if within is not None and (isinstance(within, bool) or not isinstance(within, int) or not 0 <= within <= _MAX_DAYS):
             return f"stage '{name}': `within_days` is a whole number of days from 0 to {_MAX_DAYS}"
+        if hours is not None and (isinstance(hours, bool) or not isinstance(hours, int) or not 1 <= hours <= _MAX_HOURS):
+            return f"stage '{name}': `within_hours` is a whole number of hours from 1 to {_MAX_HOURS}"
         if i == 0:
-            return f"stage '{name}' is the first stage — there is no previous stage to count days from"
+            return f"stage '{name}' is the first stage — there is no previous stage to count from"
         previous = stages[i - 1]
         if not (isinstance(previous, dict) and str(previous.get("timestamp") or "").strip()):
-            return f"stage '{name}': the previous stage is anchored to a state, which has no clock to count days from"
+            return f"stage '{name}': the previous stage is anchored to a state, which has no clock to count from"
         if promise.get("grain") or promise.get("via"):
-            return (f"stage '{name}': a promise within days of the previous stage is kept per object of the process's "
-                    "own type — `grain` and `via` go with a deadline")
+            return (f"stage '{name}': a promise within days or hours of the previous stage is kept per object of the "
+                    "process's own type — `grain` and `via` go with a deadline")
     if deadline and not PATH_PATTERN.match(deadline):
         return f"stage '{name}': a promise's `deadline` is a property path of the object that carries it"
     if promise.get("via") and not PATH_PATTERN.match(str(promise["via"])):
@@ -165,6 +170,8 @@ def _stage_fields(stage: dict) -> dict:
                 kept[key] = str(promise[key]).strip()
         if promise.get("within_days") is not None:
             kept["within_days"] = int(promise["within_days"])
+        if promise.get("within_hours") is not None:
+            kept["within_hours"] = int(promise["within_hours"])
         if promise.get("target") is not None:
             kept["target"] = float(promise["target"])
         out["promise"] = kept
@@ -366,24 +373,51 @@ def quantile_cont(histogram: list[tuple[float, int]], q: float) -> Optional[floa
 
 
 class ObjectCounter:
-    """Object queries compiled over one graph and run on one connection — the measurement's only way to the data."""
+    """Object queries compiled over one graph and run where their rows live — the measurement's only way to the data.
+    On one connection's ontology that is ``db``. On an organisation's (ON-8), ``open_source`` opens the connection each
+    query's anchor type lives on, and a query whose sources span two runs as the object door runs it, split at its keyed
+    reads (`aughor.semantic.cross_source`)."""
 
-    def __init__(self, db: Any, graph: OntologyGraph):
-        self.db, self.graph = db, graph
-        self.dialect = getattr(db, "dialect", "") or "duckdb"
+    def __init__(self, db: Any, graph: OntologyGraph, open_source: Any = None):
+        self.db, self.graph, self.open_source = db, graph, open_source
 
     def rows(self, query: dict, *, max_rows: int = 500) -> tuple[list[str], list]:
-        from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query
+        from aughor.semantic.object_query import ObjectQueryRefused, compile_object_query, find_object_type
+        home_db, home, opened = self.db, "", None
         try:
-            sql = compile_object_query(query, self.graph, dialect=self.dialect, fiscal_start_month=1).sql
-        except ObjectQueryRefused as exc:
-            raise NotMeasurable(exc.reason) from exc
-        try:
-            bounded = getattr(self.db, "execute_bounded", None)
-            result = (bounded("__process_probe__", sql, max_rows) if callable(bounded)
-                      else self.db.execute("__process_probe__", sql))
-        except Exception as exc:  # noqa: BLE001 — a failed count is an unmeasured declaration, not a crash
-            raise NotMeasurable(f"{type(exc).__name__}: {exc}") from exc
+            if self.open_source is not None:
+                from aughor.ontology.sources import entity_source
+                try:
+                    anchor = find_object_type(self.graph, str(query.get("object_type") or ""))
+                except ObjectQueryRefused as exc:
+                    raise NotMeasurable(exc.reason) from exc
+                home = entity_source(self.graph, anchor)
+                home_db = opened = self.open_source(home)
+            try:
+                compiled = compile_object_query(query, self.graph, dialect=getattr(home_db, "dialect", "") or "duckdb",
+                                                fiscal_start_month=1)
+            except ObjectQueryRefused as exc:
+                raise NotMeasurable(exc.reason) from exc
+            try:
+                if compiled.cross_source is not None:
+                    if self.open_source is None:
+                        raise NotMeasurable("the count reads sources on more than one connection, and this ontology "
+                                            "reads one")
+                    from aughor.semantic.cross_source import execute_plan
+                    result, _ = execute_plan(compiled.cross_source, home_connection_id=home, home_db=home_db,
+                                             open_source=self.open_source, label="__process_probe__",
+                                             display_sql=compiled.sql)
+                else:
+                    bounded = getattr(home_db, "execute_bounded", None)
+                    result = (bounded("__process_probe__", compiled.sql, max_rows) if callable(bounded)
+                              else home_db.execute("__process_probe__", compiled.sql))
+            except NotMeasurable:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a failed count is an unmeasured declaration, not a crash
+                raise NotMeasurable(f"{type(exc).__name__}: {exc}") from exc
+        finally:
+            if opened is not None:
+                opened.close()
         if getattr(result, "error", None):
             raise NotMeasurable(str(result.error)[:300])
         return list(getattr(result, "columns", None) or []), list(getattr(result, "rows", None) or [])
@@ -423,6 +457,12 @@ def _cutoff(as_of: str, days: int) -> str:
     return (day - timedelta(days=days)).isoformat()
 
 
+def _cutoff_hours(as_of: str, hours: int) -> str:
+    """The moment ``hours`` hours before ``as_of``: a moment before it is more than ``hours`` hours back."""
+    moment = datetime.fromisoformat(as_of.replace("Z", "+00:00").replace("T", " ")).replace(tzinfo=None)
+    return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
+
+
 def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
     spec = promise_filters(work.processes[process.id], index)
     stage = measured.stages[index]
@@ -444,11 +484,14 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
     promise.open_overdue = None
     if promise.as_of and promise.open:
         overdue = ([{"path": spec["deadline"], "op": "<", "value": promise.as_of}] if spec.get("deadline")
+                   else [{"path": spec["start"], "op": "<", "value": _cutoff_hours(promise.as_of, spec["within_hours"])}]
+                   if spec.get("within_hours") is not None
                    else [{"path": spec["start"], "op": "<", "value": _cutoff(promise.as_of, spec["within_days"])}])
         promise.open_overdue = cell_int(counter.one(grain.api_name, [
             {"name": "overdue", "agg": "count", "where": list(spec["open"]) + overdue}]).get("overdue")) or 0
     noun = promise_noun(stage)
-    what = f"the {promise.deadline} deadline" if promise.deadline else f"{promise.within_days} calendar days"
+    what = (f"the {promise.deadline} deadline" if promise.deadline else
+            f"{promise.within_hours} hours" if promise.within_hours is not None else f"{promise.within_days} calendar days")
     check = (f"check {spec['deadline']} and the moment it is compared with, {spec['moment']}" if spec.get("deadline")
              else f"check the two moments the days are counted between, {spec['start']} and {spec['moment']}")
     promise.flags = []
@@ -470,16 +513,17 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
                        if promise.open_overdue is not None else ""))
 
 
-def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict) -> Process:
+def measure_process(db: Any, graph: OntologyGraph, process_id: str, fields: dict, *, open_source: Any = None) -> Process:
     """Count a (resolved) declaration against the warehouse through the object door's compiler and return the process
-    with every number and verdict stamped. Raises `NotMeasurable` when a count cannot be taken."""
+    with every number and verdict stamped. Raises `NotMeasurable` when a count cannot be taken. On an organisation's
+    ontology ``db`` is None and ``open_source`` opens each count's connection (`ObjectCounter`)."""
     process = process_from_fields(process_id, fields)
     work = graph.model_copy()
     work.processes = {**(graph.processes or {}), process_id: _provisional(process)}
     entity = work.entities.get(process.entity)
     if entity is None:
         raise NotMeasurable(f"no object type '{process.entity}' in this ontology")
-    counter = ObjectCounter(db, work)
+    counter = ObjectCounter(db, work, open_source)
     measures: list[dict] = [{"name": "objects", "agg": "count"}]
     for i, stage in enumerate(process.stages):
         measures.append({"name": f"reached_{i}", "agg": "count", "where": _reached_filters(stage)})
@@ -576,10 +620,13 @@ def declared_process(ov, graph: Optional[OntologyGraph]) -> Optional[Process]:
 
 
 def measure_override_processes(connection_id: str, schema_name: Optional[str], db: Any,
-                               graph: Optional[OntologyGraph]) -> list[dict]:
+                               graph: Optional[OntologyGraph], *, open_source: Any = None,
+                               save: Any = None) -> list[dict]:
     """Re-resolve and re-count every declared process against the SERVED graph (declared types, links and bindings in
     it) and record what was counted on its override file. A process whose anchors no longer resolve is measured-false
-    with the reason; one that cannot be counted on this pass keeps no verdict. One summary row per process."""
+    with the reason; one that cannot be counted on this pass keeps no verdict. One summary row per process. On an
+    organisation's ontology (ON-8) ``db`` is None, ``open_source`` opens each count's connection, and ``save`` is the
+    organisation's own writer."""
     out: list[dict] = []
     if graph is None:
         return out
@@ -588,6 +635,7 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
         overrides = load_overrides(connection_id, schema_name or "default")
     except Exception:  # noqa: BLE001
         return out
+    save = save or save_override
     for ov in overrides:
         if ov.target_kind != "process" or not ov.fields.get("declared"):
             continue
@@ -598,14 +646,14 @@ def measure_override_processes(connection_id: str, schema_name: Optional[str], d
             measured.measured_at = datetime.now(timezone.utc).isoformat(timespec="seconds")
         else:
             try:
-                measured = measure_process(db, graph, ov.target_id, resolved)
+                measured = measure_process(db, graph, ov.target_id, resolved, open_source=open_source)
                 ov.fields = resolved
             except NotMeasurable as exc:
                 measured = process_from_fields(ov.target_id, ov.fields)
                 measured.note = f"not measurable on this pass: {exc}"[:500]
         ov.binding["process"] = process_entry(ov.fields, measured)
         try:
-            save_override(connection_id, schema_name or "default", ov)
+            save(connection_id, schema_name or "default", ov)
         except Exception as exc:  # noqa: BLE001
             logger.debug("process measurement not saved for %s: %s", ov.target_id, exc)
         out.append({"process": ov.target_id, "verified": measured.verified, "objects": measured.objects,
@@ -642,8 +690,10 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
         if promise is not None:
             spec = promise_filters(process, i)
             grain = spec["grain"] if spec else (promise.grain or process.entity)
-            row["promise"] = {"name": promise_noun(stage), "kind": "deadline" if promise.deadline else "within_days",
-                              "deadline": promise.deadline, "within_days": promise.within_days,
+            kind = ("deadline" if promise.deadline else
+                    "within_hours" if promise.within_hours is not None else "within_days")
+            row["promise"] = {"name": promise_noun(stage), "kind": kind, "deadline": promise.deadline,
+                              "within_days": promise.within_days, "within_hours": promise.within_hours,
                               "grain": api(grain), "grain_id": grain, "via": promise.via, "target": promise.target,
                               "objects": promise.objects, "reached": promise.reached, "breached": promise.breached,
                               "kept": promise.kept, "open": promise.open, "open_overdue": promise.open_overdue,
