@@ -151,10 +151,12 @@ class _DeclaredLink(BaseModel):
 
 
 class _DeclaredPromise(BaseModel):
-    """ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, or by
-    a deadline property of the object that carries it (`grain`, reached from it through `via`)."""
+    """ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, within N
+    hours of its moment, or by a deadline property of the object that carries it (`grain`, reached from it through
+    `via`)."""
     name: Optional[str] = None
     within_days: Optional[int] = None
+    within_hours: Optional[int] = None
     deadline: Optional[str] = None
     grain: Optional[str] = None
     via: Optional[str] = None

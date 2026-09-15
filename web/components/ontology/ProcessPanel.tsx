@@ -216,7 +216,9 @@ function PromiseBlock({ promise: p, stage, onOpenType }: {
 }) {
   const terms = p.kind === "deadline"
     ? `by ${p.deadline}`
-    : `within ${p.within_days} calendar day${p.within_days === 1 ? "" : "s"} of the stage before`;
+    : p.kind === "within_hours"
+      ? `within ${p.within_hours} hour${p.within_hours === 1 ? "" : "s"} of the stage before`
+      : `within ${p.within_days} calendar day${p.within_days === 1 ? "" : "s"} of the stage before`;
   return (
     <div className="aug-panel" data-testid="process-promise" style={{ marginTop: 6, padding: "6px 8px" }}>
       <div className="aug-fs-xs" style={{ color: "var(--t1)", fontWeight: 600 }}>The {p.name} promise — {terms}</div>

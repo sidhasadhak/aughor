@@ -644,7 +644,8 @@ class _Compiler:
         d = find_derived_property(self.g, entity, name)
         if d is None:
             return None
-        return EntityProperty(name=d.name, display_name=d.name, data_type="BIGINT", semantic_type="measure", unit="days",
+        return EntityProperty(name=d.name, display_name=d.name, data_type="DOUBLE" if d.unit == "hours" else "BIGINT",
+                              semantic_type="measure", unit=d.unit,
                               is_derived=True, description=f"{d.description} — derived from {d.source}")
 
     def colref(self, scope: _Scope, alias: str, entity: OntologyEntity, p: EntityProperty) -> str:
@@ -703,11 +704,14 @@ class _Compiler:
             self._deriving.discard(slot)
         for path, q in ((d.start, sp), (d.end, ep)):
             if not _is_temporal(q):
-                raise ObjectQueryRefused(f"{entity.id}.{d.name} counts days to '{path}', which is not a date or "
+                raise ObjectQueryRefused(f"{entity.id}.{d.name} counts {d.unit} to '{path}', which is not a date or "
                                          f"timestamp ({q.data_type or q.semantic_type or 'untyped'})")
         if slot not in self._derived_noted:
             self._derived_noted.add(slot)
             self.plan.append(f"derived property {d.name} on {entity.id}: {d.description} — from {d.source}, measured")
+        if d.unit == "hours":
+            # the hours that pass between the two moments, to the second — never the hour boundaries they cross
+            return f"DATE_DIFF('second', CAST({start} AS TIMESTAMP), CAST({end} AS TIMESTAMP)) / 3600.0"
         return f"DATE_DIFF('day', CAST({start} AS DATE), CAST({end} AS DATE))"
 
     def binding_column(self, scope: _Scope, alias: str, entity: OntologyEntity, binding: Binding,

@@ -587,7 +587,9 @@ class Promise(BaseModel):
     """ON-9 — what the business promises about reaching one stage of a process (ROADMAP §3.15, the second movement).
 
     Two shapes. A FIXED duration — `within_days`: the stage is reached within N calendar days of the previous one
-    ("dispatched within two days"). A per-object DEADLINE — `deadline`: a date or timestamp property of the object
+    ("dispatched within two days"); `within_hours`: within N hours of the previous one's moment ("packed within 24
+    hours" — the hours that pass, not the calendar days they touch). A per-object DEADLINE — `deadline`: a date or
+    timestamp property of the object
     that carries it (an order line's `shipping_limit_date`, an order's `order_estimated_delivery_date`), broken when
     the stage's moment falls after it. A deadline promise is kept per object of its `grain` — the type the deadline
     is a property of — which reaches the process's type through measured to-one links (`via`), so a marketplace's
@@ -604,6 +606,9 @@ class Promise(BaseModel):
     #: the stage's name.
     name: str = ""
     within_days: Optional[int] = None
+    #: Hours from the previous stage's moment, counted to the second. Exactly one of `within_days`, `within_hours` and
+    #: `deadline` is set.
+    within_hours: Optional[int] = None
     deadline: str = ""
     #: The type the promise is kept per — the one its deadline is a property of. Empty: the process's own type.
     grain: str = ""

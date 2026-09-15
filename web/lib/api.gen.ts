@@ -14233,8 +14233,9 @@ export interface components {
         };
         /**
          * _DeclaredPromise
-         * @description ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, or by
-         *     a deadline property of the object that carries it (`grain`, reached from it through `via`).
+         * @description ON-9 — what the business promises about reaching a stage: within N calendar days of the previous stage, within N
+         *     hours of its moment, or by a deadline property of the object that carries it (`grain`, reached from it through
+         *     `via`).
          */
         _DeclaredPromise: {
             /** Deadline */
@@ -14249,6 +14250,8 @@ export interface components {
             via?: string | null;
             /** Within Days */
             within_days?: number | null;
+            /** Within Hours */
+            within_hours?: number | null;
         };
         /**
          * _DeclaredRule

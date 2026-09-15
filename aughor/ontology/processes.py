@@ -46,6 +46,7 @@ logger = logging.getLogger(__name__)
 ORIGINS = ("human", "model", "pack")
 _MAX_STAGES = 12
 _MAX_DAYS = 3650
+_MAX_HOURS = 24 * _MAX_DAYS
 #: A per-day histogram wider than this is not a lag between two stages — it is a declaration read wrong.
 _MAX_LAG_VALUES = 20_000
 #: A property path: a property, or up to three links then a property. Each segment is a NAME the compiler resolves
@@ -89,21 +90,25 @@ def _stage_problem(i: int, stage: Any, stages: list) -> str:
                 "reaches the stage")
     if promise.get("name") and not PROCESS_NAME_PATTERN.match(str(promise["name"])):
         return f"stage '{name}': a promise's name is snake_case — dispatch, delivery"
-    within, deadline = promise.get("within_days"), str(promise.get("deadline") or "").strip()
-    if (within is None) == (not deadline):
-        return (f"stage '{name}': a promise is exactly one of `within_days` (calendar days from the previous stage) "
-                "or `deadline` (a date or timestamp property of the object that carries it)")
-    if within is not None:
-        if isinstance(within, bool) or not isinstance(within, int) or not 0 <= within <= _MAX_DAYS:
+    within, hours = promise.get("within_days"), promise.get("within_hours")
+    deadline = str(promise.get("deadline") or "").strip()
+    if [within is not None, hours is not None, bool(deadline)].count(True) != 1:
+        return (f"stage '{name}': a promise is exactly one of `within_days` (calendar days from the previous stage), "
+                "`within_hours` (hours from the previous stage's moment) or `deadline` (a date or timestamp property of "
+                "the object that carries it)")
+    if within is not None or hours is not None:
+        if within is not None and (isinstance(within, bool) or not isinstance(within, int) or not 0 <= within <= _MAX_DAYS):
             return f"stage '{name}': `within_days` is a whole number of days from 0 to {_MAX_DAYS}"
+        if hours is not None and (isinstance(hours, bool) or not isinstance(hours, int) or not 1 <= hours <= _MAX_HOURS):
+            return f"stage '{name}': `within_hours` is a whole number of hours from 1 to {_MAX_HOURS}"
         if i == 0:
-            return f"stage '{name}' is the first stage — there is no previous stage to count days from"
+            return f"stage '{name}' is the first stage — there is no previous stage to count from"
         previous = stages[i - 1]
         if not (isinstance(previous, dict) and str(previous.get("timestamp") or "").strip()):
-            return f"stage '{name}': the previous stage is anchored to a state, which has no clock to count days from"
+            return f"stage '{name}': the previous stage is anchored to a state, which has no clock to count from"
         if promise.get("grain") or promise.get("via"):
-            return (f"stage '{name}': a promise within days of the previous stage is kept per object of the process's "
-                    "own type — `grain` and `via` go with a deadline")
+            return (f"stage '{name}': a promise within days or hours of the previous stage is kept per object of the "
+                    "process's own type — `grain` and `via` go with a deadline")
     if deadline and not PATH_PATTERN.match(deadline):
         return f"stage '{name}': a promise's `deadline` is a property path of the object that carries it"
     if promise.get("via") and not PATH_PATTERN.match(str(promise["via"])):
@@ -165,6 +170,8 @@ def _stage_fields(stage: dict) -> dict:
                 kept[key] = str(promise[key]).strip()
         if promise.get("within_days") is not None:
             kept["within_days"] = int(promise["within_days"])
+        if promise.get("within_hours") is not None:
+            kept["within_hours"] = int(promise["within_hours"])
         if promise.get("target") is not None:
             kept["target"] = float(promise["target"])
         out["promise"] = kept
@@ -450,6 +457,12 @@ def _cutoff(as_of: str, days: int) -> str:
     return (day - timedelta(days=days)).isoformat()
 
 
+def _cutoff_hours(as_of: str, hours: int) -> str:
+    """The moment ``hours`` hours before ``as_of``: a moment before it is more than ``hours`` hours back."""
+    moment = datetime.fromisoformat(as_of.replace("Z", "+00:00").replace("T", " ")).replace(tzinfo=None)
+    return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
+
+
 def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
     spec = promise_filters(work.processes[process.id], index)
     stage = measured.stages[index]
@@ -471,11 +484,14 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
     promise.open_overdue = None
     if promise.as_of and promise.open:
         overdue = ([{"path": spec["deadline"], "op": "<", "value": promise.as_of}] if spec.get("deadline")
+                   else [{"path": spec["start"], "op": "<", "value": _cutoff_hours(promise.as_of, spec["within_hours"])}]
+                   if spec.get("within_hours") is not None
                    else [{"path": spec["start"], "op": "<", "value": _cutoff(promise.as_of, spec["within_days"])}])
         promise.open_overdue = cell_int(counter.one(grain.api_name, [
             {"name": "overdue", "agg": "count", "where": list(spec["open"]) + overdue}]).get("overdue")) or 0
     noun = promise_noun(stage)
-    what = f"the {promise.deadline} deadline" if promise.deadline else f"{promise.within_days} calendar days"
+    what = (f"the {promise.deadline} deadline" if promise.deadline else
+            f"{promise.within_hours} hours" if promise.within_hours is not None else f"{promise.within_days} calendar days")
     check = (f"check {spec['deadline']} and the moment it is compared with, {spec['moment']}" if spec.get("deadline")
              else f"check the two moments the days are counted between, {spec['start']} and {spec['moment']}")
     promise.flags = []
@@ -674,8 +690,10 @@ def describe_process(graph: OntologyGraph, process: Process) -> dict:
         if promise is not None:
             spec = promise_filters(process, i)
             grain = spec["grain"] if spec else (promise.grain or process.entity)
-            row["promise"] = {"name": promise_noun(stage), "kind": "deadline" if promise.deadline else "within_days",
-                              "deadline": promise.deadline, "within_days": promise.within_days,
+            kind = ("deadline" if promise.deadline else
+                    "within_hours" if promise.within_hours is not None else "within_days")
+            row["promise"] = {"name": promise_noun(stage), "kind": kind, "deadline": promise.deadline,
+                              "within_days": promise.within_days, "within_hours": promise.within_hours,
                               "grain": api(grain), "grain_id": grain, "via": promise.via, "target": promise.target,
                               "objects": promise.objects, "reached": promise.reached, "breached": promise.breached,
                               "kept": promise.kept, "open": promise.open, "open_overdue": promise.open_overdue,

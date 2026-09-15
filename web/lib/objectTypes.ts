@@ -716,9 +716,11 @@ export interface ProcessTransition {
 /** A promise about reaching a stage, with what the data counted and the names it derives. */
 export interface ProcessPromise {
   name: string;
-  kind: "deadline" | "within_days";
+  kind: "deadline" | "within_days" | "within_hours";
   deadline: string;
   within_days: number | null;
+  /** Hours from the stage before, counted to the second — set when `kind` is `within_hours`. */
+  within_hours?: number | null;
   /** The api name of the type the promise is kept per, and its id. */
   grain: string;
   grain_id: string;
@@ -815,7 +817,8 @@ export interface DeclaredProcessSpec {
     timestamp?: string;
     state?: string[];
     property?: string;
-    promise?: { name?: string; within_days?: number; deadline?: string; grain?: string; via?: string; target?: number };
+    promise?: { name?: string; within_days?: number; within_hours?: number; deadline?: string; grain?: string; via?: string;
+                target?: number };
   }[];
 }
 

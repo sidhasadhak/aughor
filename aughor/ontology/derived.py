@@ -33,7 +33,8 @@ class DerivedSegment:
 
 @dataclass(frozen=True)
 class DerivedProperty:
-    """A property of `entity`: the calendar days from the moment at `start` to the moment at `end` (paths from it)."""
+    """A property of `entity`: the calendar days — or, when `unit` is hours, the hours — from the moment at `start` to the
+    moment at `end` (paths from it)."""
     name: str
     entity: str
     start: str
@@ -42,6 +43,7 @@ class DerivedProperty:
     description: str
     usable: bool
     why_not: str = ""
+    unit: str = "days"
 
 
 @dataclass(frozen=True)
@@ -83,6 +85,11 @@ def lag_name(stage: ProcessStage) -> str:
     return f"{promise_noun(stage)}_lag_days"
 
 
+def lag_hours_name(stage: ProcessStage) -> str:
+    """The lag an hours promise is read by: the hours, to the second, from the previous stage's moment."""
+    return f"{promise_noun(stage)}_lag_hours"
+
+
 def late_name(stage: ProcessStage) -> str:
     return f"late_{promise_noun(stage)}"
 
@@ -93,6 +100,10 @@ def rate_name(stage: ProcessStage) -> str:
 
 def _days(n: int) -> str:
     return f"{n} calendar day{'' if n == 1 else 's'}"
+
+
+def _hours(n: int) -> str:
+    return f"{n} hour{'' if n == 1 else 's'}"
 
 
 def promise_filters(process: Process, index: int) -> Optional[dict]:
@@ -112,6 +123,12 @@ def promise_filters(process: Process, index: int) -> Optional[dict]:
                 "reached": ({"path": moment, "op": "not_null"}, {"path": promise.deadline, "op": "not_null"}),
                 "open": ({"path": moment, "op": "is_null"}, {"path": promise.deadline, "op": "not_null"}),
                 "words": f"{stage.name} ({moment}) after the deadline {promise.deadline}"}
+    if promise.within_hours is not None and previous is not None and previous.timestamp and not promise.via:
+        return {"grain": grain, "moment": moment, "start": previous.timestamp, "within_hours": int(promise.within_hours),
+                "breach": ({"path": lag_hours_name(stage), "op": ">", "value": int(promise.within_hours)},),
+                "reached": ({"path": previous.timestamp, "op": "not_null"}, {"path": stage.timestamp, "op": "not_null"}),
+                "open": ({"path": previous.timestamp, "op": "not_null"}, {"path": stage.timestamp, "op": "is_null"}),
+                "words": f"more than {_hours(int(promise.within_hours))} from {previous.name} to {stage.name}"}
     if promise.within_days is not None and previous is not None and previous.timestamp and not promise.via:
         return {"grain": grain, "moment": moment, "start": previous.timestamp, "within_days": int(promise.within_days),
                 "breach": ({"path": lag_name(stage), "op": ">", "value": int(promise.within_days)},),
@@ -152,6 +169,12 @@ def process_derivations(process: Process) -> Derivations:
                 source=f"process {process.id}",
                 description=f"calendar days from {previous.name} ({previous.timestamp}) to {stage.name} ({stage.timestamp})",
                 usable=usable, why_not="" if usable else _stage_why(previous, stage)))
+            if stage.promise is not None and stage.promise.within_hours is not None:
+                out.properties.append(DerivedProperty(
+                    name=lag_hours_name(stage), entity=process.entity, start=previous.timestamp, end=stage.timestamp,
+                    source=f"process {process.id}",
+                    description=f"hours from {previous.name} ({previous.timestamp}) to {stage.name} ({stage.timestamp})",
+                    usable=usable, why_not="" if usable else _stage_why(previous, stage), unit="hours"))
         spec = promise_filters(process, i)
         if spec is None:
             continue

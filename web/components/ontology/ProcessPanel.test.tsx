@@ -99,6 +99,14 @@ describe("ProcessPanel — a process as the data counted it", () => {
     expect((await screen.findByTestId("process-promise-flag")).textContent).toMatch(/^never broken/);
   });
 
+  it("words a promise kept within hours as hours, not calendar days", async () => {
+    const packed = structuredClone(olist);
+    Object.assign(packed.stages[3].promise!, { kind: "within_hours", within_hours: 24, deadline: "" });
+    listed.processes = [packed];
+    panel();
+    expect(await screen.findByText("The delivery promise — within 24 hours of the stage before")).toBeTruthy();
+  });
+
   it("opens the type a promise is kept per", async () => {
     const onOpenType = vi.fn();
     panel({ onOpenType });
