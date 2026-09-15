@@ -104,6 +104,13 @@ export type AughorProgressData = {
   // real denominator; each answer lands as in-flight prose the moment it exists.
   "explore_plan": unknown;
   "subq_answer": unknown;
+  // SP-9 — a proposal this turn STAGED. The projector holds only the reference;
+  // the surfaces fetch the record by id and render the approval card. Declared
+  // here because BOTH chat surfaces (ChatPanel and the ⌘K overlay) ride the
+  // adapter's parts — a frame absent from this list reaches them as
+  // "unrecognised: proposal_staged", which is exactly how the user's first live
+  // bundle rendered (2026-09-15).
+  "proposal_staged": unknown;
 }
 
 /**
@@ -169,7 +176,7 @@ const DECLARED = [
   "clarify", "clarify_pending", "clarifying_questions", "plan_pending", "escalate",
   "followups",
   "agent", "status", "phase_complete", "phase_progress", "converse_step", "mode",
-  "chain_state",
+  "chain_state", "proposal_staged",
   "explore_plan", "subq_answer",
   "inspect_warning",
   "error", "done",
