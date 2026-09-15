@@ -118,8 +118,17 @@ def test_a_detail_binding_never_multiplies_the_objects_and_its_rows_are_not_a_re
     counted = compile_({"object_type": "order", "filters": [{"path": "units", "op": ">=", "value": 1}],
                         "measures": [{"agg": "count"}]}, graph)
     assert ints(db, counted.sql) == ints(db, "SELECT COUNT(DISTINCT order_id) FROM order_items")
-    why = refusal({"object_type": "order", "measures": [{"agg": "sum", "path": "lines.quantity"}]}, graph).reason
-    assert "detail binding" in why and "link" in why
+    # The binding's name reaches its rows at their own grain, through the one link to the type they are.
+    through_name = compile_({"object_type": "order", "measures": [{"agg": "sum", "path": "lines.quantity"}]}, graph)
+    through_link = compile_({"object_type": "order", "measures": [{"agg": "sum", "path": "order_to_order_item.quantity"}]},
+                            graph)
+    assert rows(db, through_name.sql) == rows(db, through_link.sql) == rows(
+        db, "SELECT SUM(i.quantity) FROM order_items i JOIN orders o ON o.order_id = i.order_id")
+    assert any("detail binding over OrderItem's rows" in line for line in through_name.plan)
+    bind(graph, db, "Order", "events", {"kind": "detail", "table": "order_events", "key": "order_id",
+                                        "rollups": {"event_count": {"column": "event", "agg": "count"}}})
+    why = refusal({"object_type": "order", "measures": [{"agg": "count", "path": "events.event"}]}, graph).reason
+    assert "detail binding" in why and "link" in why            # its rows are no type's: nothing reaches them
 
 
 def test_a_detail_spec_is_refused_without_rollups_and_a_static_one_with_them():

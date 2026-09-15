@@ -54,7 +54,7 @@ from pydantic import BaseModel, Field, ValidationError
 from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
 from aughor.ontology.derived import derived_for, find_derived_metric, find_derived_property, find_derived_segment
-from aughor.ontology.parts import detail_from, part_of, parts_of, rollup_note
+from aughor.ontology.parts import backing_table, detail_from, part_of, parts_of, rollup_note
 from aughor.ontology.sources import binding_source, entity_source
 from aughor.ontology.timeseries import latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
@@ -787,10 +787,12 @@ class _Compiler:
         binding = next((b for b in entity.bindings or [] if b.name.lower() == low), None)
         if binding is None:
             return None
-        if self.hop(entity, low) is not None:
+        if self._link_hop(entity, low) is not None:
             raise ObjectQueryRefused(f"'{name}' names both a link and a binding on {entity.id} — the compiler "
                                      "will not guess which one a path means; rename one of them")
         if binding.kind == "detail":
+            if self._part_hop(entity, low) is not None:
+                return None                     # its rows are a type's: the path walks the link to them (`hop`)
             supplied = ", ".join(sorted(binding.properties)) or "none"
             raise ObjectQueryRefused(f"{binding.name} on {entity.id} is a detail binding — many rows per object — "
                                      f"read at the object's grain through its rollups ({supplied}); the rows "
@@ -965,6 +967,12 @@ class _Compiler:
                                  "note": e.note, "origin": e.origin, "provenance": e.provenance()})
 
     def hop(self, entity: OntologyEntity, seg: str) -> Optional[ObjectLink]:
+        """A link by its name, its business name or the type it reaches — or, when none is, the link a detail
+        binding's name stands for: the binding reads the rows of a type the object links to, so a path through the
+        binding's name reaches those rows at their own grain, through that one link."""
+        return self._link_hop(entity, seg) or self._part_hop(entity, seg)
+
+    def _link_hop(self, entity: OntologyEntity, seg: str) -> Optional[ObjectLink]:
         hops = object_links(self.g, entity)
         low = seg.lower()
         # a link answers to its mechanical name and, beside it, to its business-verb name (ON-3b)
@@ -980,6 +988,27 @@ class _Compiler:
             raise ObjectQueryRefused(f"{len(reaching)} links reach {reaching[0].target.id} from {entity.id} — "
                                      f"name one: {', '.join(names)}", names)
         return reaching[0] if reaching else None
+
+    def _part_hop(self, entity: OntologyEntity, seg: str) -> Optional[ObjectLink]:
+        """The one link from ``entity`` to the type whose own rows the detail binding named ``seg`` reads — None when
+        no detail binding has that name, its source is no other type's table, or not exactly one link reaches it."""
+        low = (seg or "").strip().lower()
+        binding = next((b for b in entity.bindings or [] if b.kind == "detail" and b.name.lower() == low), None)
+        table = (binding.table or "").rsplit(".", 1)[-1].lower() if binding is not None else ""
+        if not table:
+            return None
+        owner = next((e for e in self.g.entities.values()
+                      if e.id != entity.id and backing_table(e).lower() == table), None)
+        if owner is None:
+            return None
+        reaching = [h for h in object_links(self.g, entity) if h.target.id == owner.id]
+        if len(reaching) != 1:
+            return None
+        if ("part", entity.id, low) not in self._noted:
+            self._noted.add(("part", entity.id, low))
+            self.plan.append(f"'{seg}' on {entity.id} is a detail binding over {owner.id}'s rows — read at their own "
+                             f"grain through the link {reaching[0].name}")
+        return reaching[0]
 
     def need_hop(self, entity: OntologyEntity, seg: str, path: str) -> ObjectLink:
         h = self.hop(entity, seg)
