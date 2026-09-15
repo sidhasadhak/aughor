@@ -4,6 +4,7 @@ import { SkeletonRows } from "@/components/ui/motion";
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import { getCatalogTree } from "@/lib/api";
+import { listOntologySchemas, withSchemas } from "@/lib/objectTypes";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
@@ -125,7 +126,13 @@ export function IntelligenceWorkspace({ connectionId, onInvestigate, layer, onLa
     const metaSchema = connections?.find(c => c.id === connectionId)?.schema_name ?? null;
     if (metaSchema) {
       setSchemas([metaSchema]); setSelectedSchema(metaSchema); setSchemaResolved(true);
-      return;
+      // The registry names one schema, and an ontology may be built on another the connection holds (the explorer's
+      // `ecommerce` beside DuckDB's `main`). Those join the picker behind the instant answer; the selection stays.
+      let live = true;
+      listOntologySchemas(connectionId)
+        .then(found => { if (live) setSchemas(current => withSchemas(current, found)); })
+        .catch(() => undefined);   // the picker keeps the registry's schema
+      return () => { live = false; };
     }
     let alive = true;
     setSchemaResolved(false);   // re-gate while this connection's schemas resolve

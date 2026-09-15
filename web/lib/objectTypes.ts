@@ -819,6 +819,19 @@ export interface DeclaredProcessSpec {
   }[];
 }
 
+/** The schemas of one connection that have an ontology built, beside the one its registry names — a read of the store;
+ *  no connection is opened. */
+export async function listOntologySchemas(connectionId: string): Promise<string[]> {
+  const res = await fetch(`${getApiBase()}/ontology/schemas?${new URLSearchParams({ connection_id: connectionId })}`);
+  if (!res.ok) throw new Error(await detailOf(res));
+  return ((await res.json()) as { schemas?: string[] }).schemas ?? [];
+}
+
+/** A schema picker's list with `found` added after what it already offers, each once and in the order found. */
+export function withSchemas(current: string[], found: string[]): string[] {
+  return [...current, ...found.filter((name, i) => name && !current.includes(name) && found.indexOf(name) === i)];
+}
+
 /** ON-9 — every declared process and rule on the scope, with what their measurement counted. */
 export async function getProcesses(connectionId: string, schemaName?: string): Promise<ProcessesAndRules> {
   const res = await fetch(`${getApiBase()}/ontology/processes?${scope(connectionId, schemaName)}`);
