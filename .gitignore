@@ -14,6 +14,8 @@ data/connections.db
 # The serving process's pid marker (db/serving.py). Runtime state of ONE machine —
 # meaningless anywhere else, and this repo is public.
 data/.serving.pid
+# The restart mutex (scripts/restart_api.py). Same story: one machine's runtime state.
+data/.restart.lock
 data/.hermes_key
 data/.aughor_key
 data/hermes.duckdb
