@@ -1131,6 +1131,12 @@ def _compiled_lines(frame: Frame, o: FrameOutcome) -> list[str]:
             lines.append(f"  {key}, compiled by the object door:\n{sql}")
         elif entry.get("refused"):
             lines.append(f"  {key}: the object door refused it — {entry['refused']}")
+    # A promise's rate compiles to a FRACTION while its measured note reads a percentage: the model once rounded 0.1109
+    # to 0.11 where the question asked for 11.09%. Said once, beside the SQL that returns it.
+    if o.kind == "promise" and any(frame.compiled[k].get("sql") for k in keys if k == o.metric or k.startswith("by ")):
+        example = (f"the measured {o.rate:.4f} is {o.rate * 100:.2f}%" if o.rate is not None else "0.0935 is 9.35%")
+        lines.append(f"  unit: {o.metric} is a FRACTION of 1 ({example}) — multiply by 100 when the question asks "
+                     "for a percentage")
     return lines
 
 

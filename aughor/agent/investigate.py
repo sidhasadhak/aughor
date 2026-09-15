@@ -84,7 +84,10 @@ def _named_breakdown_findings(state: "AgentState", conn, intake_data: dict) -> l
     dims = [d for d in (intake_data.get("named_dimensions") or []) if d]
     metric_sql = (intake_data.get("metric_sql") or "").strip()
     table = (intake_data.get("metric_table") or "").strip()
-    if not dims or not metric_sql or not table:
+    # ON-10 — a driver the frame reached is broken down by the DECLARED definition, compiled by the object door, never
+    # by the intake's re-derived metric: the grouped rate then counts only what the declared definition counts.
+    declared = _frame_breakdowns(intake_data.get("ontology_frame"), state.get("schema_context") or "")
+    if not dims or (not (metric_sql and table) and not declared):
         return []
 
     label = intake_data.get("metric_label") or "value"
@@ -107,6 +110,23 @@ def _named_breakdown_findings(state: "AgentState", conn, intake_data: dict) -> l
     out = []
     for i, dim in enumerate(dims[:2]):          # the question rarely names more
         col = dim.split(".")[-1]
+        compiled = declared.get(dim.lower())
+        if compiled is not None:
+            r = _execute_safe(conn, f"named_breakdown_{i}_declared", compiled["sql"],
+                              schema=state.get("schema_context"))
+            if not getattr(r, "error", None) and getattr(r, "rows", None):
+                out.append(InvestigationFinding(
+                    finding_id=f"named_breakdown_{i}",
+                    title=f"{compiled['label']} by {col} (declared)",
+                    sql=r.sql, columns=r.columns, rows=r.rows[:50],
+                    row_count=r.row_count, error=None,
+                    interpretation="", key_numbers=[], chart_type="auto",
+                    stat_note=None, is_significant=False,
+                ))
+                continue
+            # a compiled breakdown that does not run falls back to the intake's metric, as every other cut does
+        if not (metric_sql and table):
+            continue
 
         def _run(clause: str, attempt: str):
             return _execute_safe(
@@ -1465,6 +1485,30 @@ def _frame_named_dimensions(frame, schema: str = "") -> list[str]:
             table = mapping.get(_bare(d.table), d.table)
             out.append(f"{table}.{d.property}")
     return list(dict.fromkeys(out))
+
+
+def _frame_breakdowns(frame_dump, schema: str = "") -> dict:
+    """ON-10 — ``{table.column: {sql, label}}`` for each breakdown the frame compiled for its chosen, usable promise or
+    lag by a driver the question named — keyed the way `_frame_named_dimensions` names that dimension. Empty when the
+    run carries no such frame."""
+    if not isinstance(frame_dump, dict):
+        return {}
+    try:
+        from aughor.ontology.framing import Frame
+        frame = Frame.model_validate(frame_dump)
+    except Exception:  # noqa: BLE001 — a frame that does not read is no declared definition to break down by
+        return {}
+    chosen = frame.outcome
+    if chosen is None or not chosen.usable or chosen.kind not in ("promise", "lag"):
+        return {}
+    mapping = _extract_qualified_tables(schema) if schema else {}
+    out = {}
+    for d in frame.drivers or []:
+        entry = frame.compiled.get(f"by {d.path}") or {}
+        if d.named and d.table and entry.get("sql"):
+            table = mapping.get(_bare(d.table), d.table)
+            out[f"{table}.{d.property}".lower()] = {"sql": entry["sql"], "label": chosen.metric or chosen.lag or chosen.name}
+    return out
 
 
 def _qualify_intake_table_names(intake, schema: str) -> None:
