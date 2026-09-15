@@ -79,3 +79,37 @@ def test_converse_offers_present_only_with_a_channel():
     with_channel = {t.name for t in converse_tools("conn-x", emit=lambda t, p: None)}
     without = {t.name for t in converse_tools("conn-x")}
     assert "present" in with_channel and "present" not in without
+
+
+def test_the_whole_converse_path_renders_parts(monkeypatch):
+    """The receipt, spend-free: the REAL converse body (roster assembly, the loop,
+    validation, the frame) with only the model scripted — it calls `present` with a
+    fact set and an action, and the turn's frame channel carries the validated parts
+    the web's own adapter-path test picks up from the other side."""
+    from aughor.agent.converse_tools import converse
+    from aughor.llm.faux import FauxToolCall, set_responses
+    from aughor.llm.provider import LLMProvider
+
+    monkeypatch.delenv("AUGHOR_MAX_OUTPUT_TOKENS", raising=False)
+    monkeypatch.delenv("AUGHOR_TOOL_LOOP_STEPS", raising=False)
+    provider = LLMProvider(backend="faux", role="coder")
+    set_responses([
+        FauxToolCall(name="present", payload={"parts": [
+            {"kind": "fact_set", "title": "Automations",
+             "facts": [{"label": "Morning anomalies", "value": "daily at 09:00 UTC",
+                        "status": "warn"}]},
+            {"kind": "action_set", "actions": [
+                {"action": "follow_up", "label": "Why muted?",
+                 "question": "Why is the morning chain muted?"}]},
+        ]}),
+        "The roster is on screen above.",
+    ])
+    frames: list = []
+    result = converse("conn-x", "status of my automations?", provider=provider,
+                      tool_emit=lambda t, p: frames.append((t, p)))
+
+    assert result.answer == "The roster is on screen above."
+    parts_frames = [p for t, p in frames if t == "answer_parts"]
+    assert len(parts_frames) == 1
+    assert [p["kind"] for p in parts_frames[0]["parts"]] == ["fact_set", "action_set"]
+    assert parts_frames[0]["parts"][1]["actions"][0]["question"] == "Why is the morning chain muted?"
