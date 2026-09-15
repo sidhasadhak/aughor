@@ -533,7 +533,8 @@ def _query_objects_tools(connection_id: str, *, emit: Optional[Emit] = None, use
         graph = None
     if graph is None or not graph.entities:
         return []
-    names = ", ".join(sorted(e.api_name for e in graph.entities.values())[:30])
+    from aughor.semantic.object_query import catalog_names
+    names = catalog_names(graph)
     return [ToolSpec(
         name="query_objects",
         description=(

@@ -54,7 +54,7 @@ from pydantic import BaseModel, Field, ValidationError
 from aughor.ontology.backing import object_from
 from aughor.ontology.bindings import binding_from, binding_problem, column_of, property_binding
 from aughor.ontology.derived import derived_for, find_derived_metric, find_derived_property, find_derived_segment
-from aughor.ontology.parts import detail_from, rollup_note
+from aughor.ontology.parts import detail_from, part_of, parts_of, rollup_note
 from aughor.ontology.sources import binding_source, entity_source
 from aughor.ontology.timeseries import latest_from, latest_note
 from aughor.ontology.cardinality import quote_ident
@@ -1784,6 +1784,8 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
         for d in derived.properties:
             if d.usable:
                 roles.setdefault("measure", []).append(d.name)
+        # R2 — a part stays a type the compiler accepts by name, and is listed under its parent as the map lists it.
+        parent = part_of(graph, e)
         b = e.backing
         types.append({
             "object_type": e.api_name, "id": e.id, "display_name": e.display_name,
@@ -1799,16 +1801,57 @@ def object_catalog(graph: OntologyGraph, overlay: Optional[list] = None) -> dict
             "metrics": (sorted(mid for mid, m in graph.metrics.items() if m.verified and metric_on(m, e))
                         + sorted(d.name for d in derived.metrics if d.usable)),
             "overlay_properties": sorted(edits[0].column for edits in overlay_properties(e, overlay).values()),
+            "part_of": parent.api_name if parent is not None else None,
+            "parts": [{"object_type": part.api_name, "binding": through.name} for part, through in parts_of(graph, e)],
         })
     return {"connection_id": graph.connection_id, "schema_name": graph.schema_name, "object_types": types}
 
 
+def catalog_names(graph: OntologyGraph, *, limit: int = 30) -> str:
+    """The object types a tool description names, in api-name order — a part listed under its parent (`order (parts:
+    order_item)`) as the map lists it, and still a name the compiler accepts. Reads as before where nothing is a part."""
+    names = []
+    for e in sorted(graph.entities.values(), key=lambda x: x.api_name):
+        if part_of(graph, e) is not None:
+            continue
+        parts = [part.api_name for part, _ in parts_of(graph, e)]
+        names.append(f"{e.api_name} (parts: {', '.join(parts)})" if parts else e.api_name)
+    return ", ".join(names[:limit])
+
+
+def _parts_after_parents(types: list[dict]) -> list[dict]:
+    """The catalog's types in its own order, each part moved to follow its parent. A part whose parent the catalog does
+    not hold keeps its place."""
+    present = {t["object_type"] for t in types}
+    under: dict[str, list[dict]] = {}
+    for t in types:
+        if t.get("part_of") in present:
+            under.setdefault(t["part_of"], []).append(t)
+    out: list[dict] = []
+    for t in types:
+        if t.get("part_of") in present:
+            continue
+        out.append(t)
+        out.extend(under.get(t["object_type"], []))
+    return out
+
+
 def render_object_catalog(catalog: dict, *, max_chars: int = 8000) -> str:
-    """The catalog as compact text for a model: one block per object type."""
+    """The catalog as compact text for a model: one block per object type, each part right after its parent and
+    marked as one (R2) — a model reads a part as the map shows it, not as a peer type."""
     lines: list[str] = []
-    for t in catalog.get("object_types", []):
+    types = catalog.get("object_types", [])
+    through = {p["object_type"]: p["binding"] for t in types for p in t.get("parts") or []}
+    for t in _parts_after_parents(types):
         key = f"key {t['key']}" + (" ✓unique" if t.get("key_unique") else "")
-        lines.append(f"{t['object_type']} ({t['id']}; {key}" + (f"; time {t['time']}" if t.get("time") else "") + ")")
+        head = f"{t['object_type']} ({t['id']}; {key}" + (f"; time {t['time']}" if t.get("time") else "") + ")"
+        if t.get("part_of"):
+            head += f" — a part of {t['part_of']}" + (f", read through its binding {through[t['object_type']]}"
+                                                     if t["object_type"] in through else "")
+        lines.append(head)
+        if t.get("parts"):
+            listed = ", ".join(f"{p['object_type']} (through {p['binding']})" for p in t["parts"])
+            lines.append(f"  parts: {listed}")
         for role in ("measure", "ordinal", "flag", "dimension", "timestamp", "key"):
             if t["properties"].get(role):
                 lines.append(f"  {role}: {', '.join(t['properties'][role][:24])}")

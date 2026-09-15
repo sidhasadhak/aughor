@@ -229,6 +229,10 @@ export interface ObjectCatalogType {
   metrics: string[];
   /** ON-4 — properties accepted edits set on this type's objects. */
   overlay_properties?: string[];
+  /** A part stays a type by name and is listed under its parent: the parent's object_type while the mark holds. */
+  part_of?: string | null;
+  /** The types that are parts of this one, each with the binding it is read through. */
+  parts?: { object_type: string; binding: string }[];
 }
 
 export interface ObjectCatalog {

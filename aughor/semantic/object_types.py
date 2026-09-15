@@ -218,8 +218,14 @@ def _summary(d: dict) -> str:
                if b["kind"] == "timeseries" else "a static binding")
         read += (f", {b['supplies']:,} from {b.get('table') or 'a keyed SELECT'} ({how}"
                  + ("" if b["usable"] else " the compiler does not read yet") + ")")
+    # R2 — a part is quoted as a part, and a parent names its parts, as the map shows them.
+    part = ""
+    if (d.get("part_of") or {}).get("holds"):
+        part = f"a part of {d['part_of']['display_name']}; "
+    elif d.get("parts"):
+        part = "parts: " + ", ".join(f"{p['display_name']} (through {p['binding']})" for p in d["parts"]) + "; "
     return (f"{d['display_name']} ({d['object_type']}): key {key['property']} — {verdict}{rows}; named by {named}; "
-            f"{read}"
+            f"{part}{read}"
             + (f" and {_count(overlay, 'overlay property', 'overlay properties')} set by accepted actions"
                if overlay else "")
             + f"; {_count(counts['links'], 'link', 'links')}, {counts['traversable_links']:,} followed by the "

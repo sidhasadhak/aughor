@@ -33,7 +33,13 @@ from aughor.ontology.models import OntologyGraph
 from aughor.ontology.overrides import OntologyOverride, apply_overrides, save_override
 from aughor.ontology.parts import absorb_problem, detail_from, lapsed_parts, part_of, parts_of
 from aughor.semantic.object_instances import get_object
-from aughor.semantic.object_query import link_problem, object_links
+from aughor.semantic.object_query import (
+    catalog_names,
+    link_problem,
+    object_catalog,
+    object_links,
+    render_object_catalog,
+)
 from aughor.semantic.object_types import describe_object_type, object_type_map
 from aughor.db.connection import open_connection
 from tests.unit.test_object_bindings import GRAPH, LUX, bind, compile_, ints, payment_type, refusal, rows, seed
@@ -191,6 +197,42 @@ def test_a_type_is_a_part_only_while_its_parent_binds_its_table(db, graph):
     assert object_type_map(graph)["object_types"] and {t["object_type"]: t["absorbed_into"]
                                                        for t in object_type_map(graph)["object_types"]}["order_item"] == ""
     assert "cannot be a part of itself" in absorb_problem(graph, "OrderItem", item)
+
+
+REVIEWS = {"kind": "detail", "table": "reviews", "key": "customer_id",
+           "rollups": {"review_count": {"column": "review_id", "agg": "count"}}}
+
+
+def test_the_agent_catalogue_names_a_part_under_its_parent_and_reads_as_before_without_one(db, graph):
+    bind(graph, db, "Customer", "reviews", REVIEWS)
+    unmarked = render_object_catalog(object_catalog(graph))
+    assert catalog_names(graph) == "customer, order, order_item, product, review"
+    review = graph.entities["Review"]
+    review.absorbed_into = "Customer"
+    parent_name = graph.entities["Customer"].display_name or "Customer"
+
+    catalog = object_catalog(graph)
+    by_type = {t["object_type"]: t for t in catalog["object_types"]}
+    assert (by_type["review"]["part_of"], by_type["customer"]["parts"]) == (
+        "customer", [{"object_type": "review", "binding": "reviews"}])
+    assert (by_type["product"]["part_of"], by_type["product"]["parts"]) == (None, [])
+    text = render_object_catalog(catalog).splitlines()
+    heads = [line.split(" (")[0] for line in text if not line.startswith(" ")]
+    assert heads == ["customer", "review", "order", "order_item", "product"]    # the part follows its parent
+    assert next(line for line in text if line.startswith("review (")).endswith(
+        " — a part of customer, read through its binding reviews")
+    assert "  parts: review (through reviews)" in text
+    assert catalog_names(graph) == "customer (parts: review), order, order_item, product"
+    assert f"; a part of {parent_name}; " in describe_object_type(graph, "review")["summary"]
+    assert "; parts: " in describe_object_type(graph, "customer")["summary"]
+
+    review.absorbed_into = "Order"                   # a mark that does not hold names no part anywhere
+    assert render_object_catalog(object_catalog(graph)) == unmarked
+    assert catalog_names(graph) == "customer, order, order_item, product, review"
+    assert "; parts: " not in describe_object_type(graph, "order")["summary"]
+    assert "a part of" not in describe_object_type(graph, "review")["summary"]
+    review.absorbed_into = None
+    assert render_object_catalog(object_catalog(graph)) == unmarked
 
 
 # ── a declared entity ───────────────────────────────────────────────────────────────────────
