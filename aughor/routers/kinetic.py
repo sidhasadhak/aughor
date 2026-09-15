@@ -60,6 +60,12 @@ class RejectRequest(BaseModel):
     actor: str = ""
 
 
+class SupersedeRequest(BaseModel):
+    actor: str = ""
+    #: What replaced the draft — shown as the resolved row's message.
+    note: str = ""
+
+
 def _resolve_graph(connection_id: str, schema_name: Optional[str]):
     from aughor.ontology.store import load_latest_ontology
     graph = load_latest_ontology(connection_id, schema_name or None)
@@ -217,6 +223,17 @@ def accept_inbox(proposal_id: str, body: AcceptRequest):
     raise HTTPException(status_code=result.http_status(),
                         detail={"status": result.status, "action_id": result.action_id,
                                 "message": result.message, **result.detail})
+
+
+@router.post("/inbox/{proposal_id}/supersede")
+def supersede_inbox(proposal_id: str, body: SupersedeRequest):
+    """Resolve a pending draft as REPLACED (SP-11) — a person finished the same ask in
+    the real editor, so the staged draft must not sit beside the saved record looking
+    like separate work. No side effect, first-responder-wins; a re-supersede is a
+    no-op, and an already-accepted draft stays what it is."""
+    from aughor.actions.inbox import supersede_proposal
+    return {"superseded": supersede_proposal(proposal_id, actor=body.actor,
+                                             note=body.note)}
 
 
 @router.post("/inbox/{proposal_id}/reject")

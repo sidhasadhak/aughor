@@ -53,7 +53,7 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
 const STATUS_TONE: Record<string, string> = {
   executed: "var(--grn4)", accepted: "var(--grn4)",
   failed: "var(--red4)", rejected: "var(--t3)",
-  expired: "var(--t3)", uncertain: "var(--amb4)",
+  expired: "var(--t3)", uncertain: "var(--amb4)", superseded: "var(--t3)",
 };
 
 /** One labeled fact. The card is built from these instead of a JSON dump. */

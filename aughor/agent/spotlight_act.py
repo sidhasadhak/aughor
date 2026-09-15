@@ -37,6 +37,27 @@ logger = logging.getLogger(__name__)
 _MAX_REASON = 400
 
 
+def _supersede_prior(new_p, supersedes: str) -> str:
+    """SP-11 — a corrected re-draft REPLACES the pending draft it follows, so the
+    inbox holds one pending proposal per ask. Guarded, never trusted: only a PENDING
+    proposal on the SAME connection is resolved, so a model cannot retire another
+    conversation's work by naming its id. Returns the sentence for the summary
+    ("" when nothing was superseded — the new draft stands either way)."""
+    from aughor.actions.inbox import get_proposal, supersede_proposal
+
+    old_id = str(supersedes or "").strip()
+    if not old_id or old_id == new_p.id:
+        return ""
+    old = get_proposal(old_id)
+    if old is None or not old.pending or old.connection_id != new_p.connection_id:
+        return (f" NOTE: {old_id} was not superseded — it is not a pending draft on "
+                f"this connection; both records stand.")
+    if supersede_proposal(old_id, actor="spotlight:redraft",
+                          note=f"superseded by {new_p.id}"):
+        return f" It replaces {old_id}, which is now resolved as superseded."
+    return ""
+
+
 def _announce(emit, p) -> None:
     """SP-9 — a staged proposal announces itself on the turn's frame channel, so the
     chat renders the RECORD (fetched by id) as a card rather than re-parsing prose.
@@ -107,20 +128,22 @@ def draft_agent(connection_id: str, args: dict, *, emit=None) -> dict:
     schedule = str(args.get("schedule") or "").strip()
     if schedule:
         return _stage_agent_bundle(connection_id, agent_params, schedule,
-                                   reasoning=reasoning, disclosure=disclosure, emit=emit)
+                                   reasoning=reasoning, disclosure=disclosure,
+                                   supersedes=str(args.get("supersedes") or ""), emit=emit)
 
     p = stage_proposal(StagedProposal(
         kind="agent_draft", org_id=current_org_id() or "",
         connection_id=connection_id, action_id=f"agent:{name}",
         params=agent_params,
         reasoning=reasoning, proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
     _announce(emit, p)
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "documents_attached": len(doc_ids),
         "summary": (f"Agent draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) — "
                     f"nothing exists yet; a human accepts it in the inbox and only "
-                    f"then is the agent created.{disclosure}"),
+                    f"then is the agent created.{disclosure}{replaced}"),
     }
 
 
@@ -139,7 +162,8 @@ def _open_choice_fields(draft: dict) -> list[dict]:
 
 
 def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *,
-                        reasoning: str, disclosure: str, emit=None) -> dict:
+                        reasoning: str, disclosure: str, supersedes: str = "",
+                        emit=None) -> dict:
     """SP-8 — ONE proposal holding both records: the agent, and the chain that runs as
     it. The chain is drafted by DS-15's own proposer from the schedule clause, carries
     SP-7's open choices, and names NO agent id — the agent does not exist yet, and the
@@ -174,6 +198,7 @@ def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *
                 "first_run": first_run,
                 "dry_run_ok": bool(proposal.dry_run), "runs_as": name},
         reasoning=(reasoning + open_note), proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, supersedes)
     _announce(emit, p)
     open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
                  + " — the approver fills them on the card, or ask and draft again."
@@ -188,7 +213,7 @@ def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *
                     f"'{clip(name, NAME_CLIP)}' AND its schedule "
                     f"'{clip(chain_name, NAME_CLIP)}', accepted or refused together — "
                     f"accept creates the agent and saves the chain running as it, all "
-                    f"or nothing.{disclosure}{open_line}{when_line}"),
+                    f"or nothing.{disclosure}{open_line}{when_line}{replaced}"),
     }
 
 
@@ -241,6 +266,7 @@ def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
                 "runs_as": agent.name if agent is not None else ""},
         reasoning=(str(args.get("reasoning") or outcome)[:_MAX_REASON] + open_note),
         proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
     _announce(emit, p)
     open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
                  + " — the approver fills them on the card, or ask and draft again."
@@ -255,7 +281,7 @@ def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
         "to_fill": to_fill, "first_run": first_run,
         "summary": (f"Automation draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) "
                     f"with its dry-run attached — it joins the one scheduler only "
-                    f"after a human accepts it in the inbox.{as_line}{open_line}{when_line}"),
+                    f"after a human accepts it in the inbox.{as_line}{open_line}{when_line}{replaced}"),
     }
 
 
@@ -446,6 +472,12 @@ _AGENT_PARAMS = {
         "doc_ids": {"type": "array", "items": {"type": "string"},
                     "description": "Document ids to attach. Leaving this empty is "
                                    "RESTRICTIVE, not neutral — say so to the user."},
+        "supersedes": {"type": "string",
+                       "description": "When this draft CORRECTS one you staged earlier "
+                                      "in this conversation, its proposal id — the old "
+                                      "pending draft is resolved as superseded, so the "
+                                      "inbox holds one proposal per ask. Leave empty "
+                                      "for a new ask."},
         "schedule": {"type": "string",
                      "description": "When the SAME ask also says when or where the "
                                     "agent should run ('every morning at 9am to "
@@ -467,6 +499,12 @@ _AUTOMATION_PARAMS = {
                     "description": "The outcome the automation should produce, in the "
                                    "user's own words (e.g. 'brief me every Monday on "
                                    "refund rate')."},
+        "supersedes": {"type": "string",
+                        "description": "When this draft CORRECTS one you staged earlier "
+                                       "in this conversation, its proposal id — the old "
+                                       "pending draft is resolved as superseded, so the "
+                                       "inbox holds one proposal per ask. Leave empty "
+                                       "for a new ask."},
         "run_as_agent": {"type": "string",
                          "description": "An EXISTING agent (its id or exact name) the "
                                         "chain runs as, when the user names one — its "
@@ -544,8 +582,10 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "",
                 "plain chat — always disclose that). When the ask ALSO says when or "
                 "where the agent should run, pass that clause as schedule — the agent "
                 "and its chain then stage as ONE proposal, accepted or refused "
-                "together. Quote the summary field verbatim; tell the user where the "
-                "approval lives."
+                "together. Re-drafting after feedback? Pass supersedes with the "
+                "earlier proposal id so the inbox holds ONE pending draft per ask. "
+                "Quote the summary field verbatim; tell the user where the approval "
+                "lives."
             ),
             parameters=_AGENT_PARAMS,
             run=lambda a: draft_agent(connection_id, a, emit=emit),
@@ -557,8 +597,10 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "",
                 "dry-run receipt) and STAGE it for human approval in the inbox — it "
                 "never schedules itself. Use for 'every Monday…', 'when X happens…', "
                 "'remind/brief me…' asks. When the user names an existing agent it "
-                "should run as, pass run_as_agent. A refusal with a reason is an "
-                "answer to relay, not an error. Quote the summary field verbatim."
+                "should run as, pass run_as_agent. Re-drafting after feedback? Pass "
+                "supersedes with the earlier proposal id so the inbox holds ONE "
+                "pending draft per ask. A refusal with a reason is an answer to "
+                "relay, not an error. Quote the summary field verbatim."
             ),
             parameters=_AUTOMATION_PARAMS,
             run=lambda a: draft_automation(connection_id, a, emit=emit),

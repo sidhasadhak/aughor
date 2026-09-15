@@ -4630,7 +4630,7 @@ export interface StagedProposal {
   proposer: string;
   source: string;
   status: "pending" | "accepted" | "rejected" | "executed" | "failed"
-        | "approval_required" | "uncertain";
+        | "approval_required" | "uncertain" | "superseded";
   status_message: string;
   outcome: Record<string, unknown>;
   created_at: string;
@@ -4692,6 +4692,18 @@ export async function getProposalById(id: string): Promise<StagedProposal | null
   if (res.status === 404) return null;
   if (!res.ok) throw new Error("Failed to fetch the proposal");
   return (await res.json()).proposal;
+}
+
+/** Resolve a pending draft as REPLACED (SP-11) — a person finished the same ask in
+ *  the real editor, so the staged draft must not sit beside the saved record looking
+ *  like separate work. False when it was already settled: a harmless no-op. */
+export async function supersedeProposal(id: string, actor: string, note = ""): Promise<boolean> {
+  const res = await fetch(inboxUrl(`/${id}/supersede`), {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ actor, note }),
+  });
+  if (!res.ok) throw new Error("Failed to supersede the draft");
+  return (await res.json()).superseded;
 }
 
 export async function rejectProposal(id: string, actor: string): Promise<boolean> {

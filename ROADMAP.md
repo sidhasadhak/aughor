@@ -3065,10 +3065,21 @@ literal backticks, no red hyphens. **Needs:** SP-9 and §6 item 22 (b).
 > wrote two scratch agents into the live `data/agents.db` (found on the live roster; both deleted the same hour, the
 > user's own records untouched). The list now carries the measured union and says to diff, not trust.
 
-**SP-11 · Revise in place.** A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
+**SP-11 · Revise in place — ✅ BUILT 2026-09-16** (branch `claude/graph-finding-hygiene`, with the question-echo
+finding fix). A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
 Open in editor loads the draft into the real form, and saving there resolves the proposal instead of creating a second
 record. **Receipt:** three follow-ups leave one pending proposal carrying all three changes, and finishing in the form
 leaves no duplicate. **Needs:** SP-9.
+> **Built 2026-09-16.** The inbox gains its fourth resolve verb: `superseded`, terminal, first-responder-wins like
+> every resolve — a settled draft stays what a human made it. The drafting tools (`draft_agent`, `draft_automation`,
+> the bundle) take `supersedes`: a corrected re-draft resolves the earlier PENDING draft on the SAME connection and
+> says so in the summary; a settled or foreign id is refused with both records left standing, so a model cannot
+> retire another conversation's work by naming its id. The editor's half: "Open in editor" carries the draft's
+> proposal id, and the canvas's save resolves it as "finished in the editor as <automation id>" through the new
+> supersede route — for a PLAIN automation draft only, because saving the canvas creates the chain alone and
+> superseding a bundle would silently drop its agent half (a bundle's proposal stays pending for the card). The
+> receipt sentence runs as a test verbatim: three follow-ups leave one pending proposal. LIVE receipt (a re-drafted
+> ⌘K ask leaving one card) waits on the next deployment.
 
 **SP-12 · Edit, monitor, brief.** Change what exists by sentence — edit, disable, delete — staged as a before-and-after
 diff; draft a monitor and a brief subscription; for anomalies, prefer a monitor trigger that starts the deep analysis

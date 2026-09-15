@@ -462,3 +462,63 @@ def test_hole_sentence_round_trips_through_the_shared_parser():
     _, holes = fill_required_holes([{"kind": "slack_post", "config": {"bot_id": "b"}}])
     assert holes and parse_hole(holes[0]) == (1, "channel")
     assert parse_hole("Anything else at all") is None
+
+
+# ── SP-11 — a follow-up supersedes the pending draft; one ask, one proposal ────────
+
+def test_three_follow_ups_leave_one_pending_proposal(monkeypatch):
+    """The wave's own receipt sentence, as a test."""
+    from aughor.actions.inbox import list_proposals
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops")))
+    before = {p.id for p in list_proposals("conn-x")}
+
+    first = act.draft_automation("conn-x", {"outcome": "anomalies at 9"})
+    second = act.draft_automation("conn-x", {"outcome": "anomalies at 8, not 9",
+                                             "supersedes": first["proposal_id"]})
+    third = act.draft_automation("conn-x", {"outcome": "anomalies at 8 to #alerts",
+                                            "supersedes": second["proposal_id"]})
+    assert "replaces" in third["summary"]
+
+    new = [p for p in list_proposals("conn-x") if p.id not in before]
+    pending = [p for p in new if p.pending]
+    assert [p.id for p in pending] == [third["proposal_id"]]
+    resolved = {p.id: p for p in new if not p.pending}
+    assert resolved[first["proposal_id"]].status == "superseded"
+    assert third["proposal_id"] in resolved[second["proposal_id"]].status_message
+
+
+def test_supersede_cannot_retire_another_connections_or_settled_work(monkeypatch):
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops")))
+    # Another connection's pending draft: named, NOT superseded, both records stand.
+    foreign = stage_proposal(StagedProposal(
+        kind="automation_draft", connection_id="conn-OTHER",
+        action_id="automation:foreign", params=_slack_draft(channel="#x")))
+    out = act.draft_automation("conn-x", {"outcome": "x", "supersedes": foreign.id})
+    assert "was not superseded" in out["summary"]
+    assert get_proposal(foreign.id).pending
+
+    # A settled draft stays settled — first-responder-wins protects the human's act.
+    settled = act.draft_automation("conn-x", {"outcome": "y"})
+    assert reject_proposal(settled["proposal_id"], actor="tester") is True
+    out = act.draft_automation("conn-x", {"outcome": "y again",
+                                          "supersedes": settled["proposal_id"]})
+    assert "was not superseded" in out["summary"]
+    assert get_proposal(settled["proposal_id"]).status == "rejected"
+
+
+def test_finishing_in_the_editor_resolves_the_draft():
+    """SP-11's second half at the inbox seam: the editor's save supersedes with the
+    saved record named, and a second call is a harmless no-op."""
+    from aughor.actions.inbox import supersede_proposal
+    p = stage_proposal(StagedProposal(
+        kind="automation_draft", connection_id="conn-x",
+        action_id="automation:editor", params=_slack_draft(channel="#ops")))
+    assert supersede_proposal(p.id, actor="editor",
+                              note="finished in the editor as automation abc123") is True
+    row = get_proposal(p.id)
+    assert row.status == "superseded" and "abc123" in row.status_message
+    assert supersede_proposal(p.id, actor="editor") is False

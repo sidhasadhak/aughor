@@ -96,7 +96,8 @@ _MIGRATIONS: list = [
 #: Terminal statuses — a proposal in any of these is resolved and cannot be re-resolved.
 #: ``expired`` joins them: a lapsed proposal is resolved BY TIME, and re-opening it would
 #: hand back the acceptance window the expiry exists to close.
-_TERMINAL = {"accepted", "rejected", "executed", "failed", "approval_required", "expired"}
+_TERMINAL = {"accepted", "rejected", "executed", "failed", "approval_required", "expired",
+             "superseded"}
 
 #: How long a staged proposal stays acceptable, in hours. Read per call, never frozen at
 #: import, so a test (or an operator) can shorten it without reloading the module.
@@ -204,9 +205,12 @@ class StagedProposal(BaseModel):
     #: carry one).
     trace_id: str = ""
     #: pending | accepted | rejected | executed | failed | approval_required | expired |
-    #: uncertain. `uncertain` (DS-11's completion) is an accepted write whose transport
-    #: broke: it MAY have arrived, and the resumed run carries the word rather than
-    #: flattening it to `failed`, which would license the retry that duplicates it.
+    #: uncertain | superseded. `uncertain` (DS-11's completion) is an accepted write whose
+    #: transport broke: it MAY have arrived, and the resumed run carries the word rather
+    #: than flattening it to `failed`, which would license the retry that duplicates it.
+    #: `superseded` (SP-11) is a draft REPLACED — by a corrected re-draft from the same
+    #: conversation, or by a person finishing it in the real editor — so one ask never
+    #: piles up pending duplicates; the message names what replaced it.
     status: str = "pending"
     status_message: str = ""                            # authored criterion / approval message, verbatim
     outcome: dict = Field(default_factory=dict)         # what the executed write returned
@@ -550,6 +554,31 @@ def reject_proposal(proposal_id: str, *, actor: str) -> bool:
         if p:
             govern.audit(gov_action_of(p), p.connection_id, "proposal_rejected",
                          actor=actor, detail=f"proposal {proposal_id}")
+    return resolved
+
+
+def supersede_proposal(proposal_id: str, *, actor: str, note: str = "") -> bool:
+    """Resolve a PENDING draft as replaced — no side effect, like reject, but honest
+    about WHY: a corrected re-draft or the real editor finished the same ask, and
+    leaving the old draft pending would offer an approver a stale record beside the
+    live one (SP-11's duplicate). First-responder-wins like every resolve: a draft
+    already accepted or rejected stays what it is, and False says so."""
+    resolved = _resolve_once(proposal_id, "superseded", actor)
+    if resolved:
+        if note:
+            with _LOCK:
+                c = _conn()
+                try:
+                    c.execute("UPDATE staged_proposals SET status_message=? WHERE id=?",
+                              (note[:400], proposal_id))
+                    c.commit()
+                finally:
+                    c.close()
+        from aughor.govern import actions as govern
+        p = get_proposal(proposal_id)
+        if p:
+            govern.audit(gov_action_of(p), p.connection_id, "proposal_superseded",
+                         actor=actor, detail=f"proposal {proposal_id}: {note or 'replaced'}")
     return resolved
 
 
