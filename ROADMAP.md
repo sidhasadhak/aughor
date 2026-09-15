@@ -2896,6 +2896,141 @@ exchange feeds Arc MI's funnel; VA-10 gates cross-user Know. CI-2/CI-3 (the plat
 identity and first roster) are, in hindsight, SP's Phase 0 — this arc aims what they
 began.
 
+#### The second movement — authoring by sentence (adopted 2026-09-15, §6 item 22 (a); SP-7 STARTED the same day)
+
+> **Origin.** The user, 2026-09-15: *"Tell me if I can create automations or agents via natural language on
+> Aughor.. and if not draw me a proper roadmap"* — then drove the answer themselves through ⌘K, *"create an agent
+> that delivers anomalies to slack every morning at 9am"*, and sent the transcript with a screenshot: *"the
+> formatting in the spotlight is not very great as well as the presentation... must feel agentic.. it is honest -
+> which is nice"*. The measured answer and this plan were published as the artifact "Authoring by Sentence"
+> (https://claude.ai/artifact/Eiw3AWUFrizWGS783fZmdf); the user adopted it in one sentence: *"yes add it to the
+> roadmap and start SP-7"*.
+
+**What is true today (measured 2026-09-15 — read-only against the running API, main `61cba06a`, no model calls):**
+
+- **Four doors draft from words; none creates.** Create agent → Describe (`CreateAgentFlow.tsx:58` →
+  `POST /agents/custom/propose`, drafted inside the connection's real catalogue) · Automations → Propose
+  (`automations/propose.py:234`, validated and dry-run) · Spotlight's `draft_agent`, `draft_automation`,
+  `pause_or_resume_automation` and `propose_agent_grant`, staged on the one inbox — from chat, ⌘K and Slack only while
+  `ask.converse` is on (code default OFF, `kernel/flags.py:270`; ON at the user's deployment by a runtime override),
+  and from any MCP client through `/spotlight/tools` with no flag. The Quick chip posts `/chat`, which has no tools.
+- **The user's sentence staged two proposals** on theLook (`8233e4fd`): `b101b8ed` (agent draft) and `ce470b60`
+  (automation draft). Read from the live inbox and left untouched, they carry six breaks:
+  1. the answer is a wall of prose — `web/` has no markdown renderer, so lists run inline and backticks print, and
+     hyphen-digit runs inside the proposal id and the date render in the adverse red; the drafts are described, not
+     handed over as things to open or approve;
+  2. the approval rows print `JSON.stringify(p.params)` (`AutomationsPanel.tsx:749`), and the Attention row offers
+     Accept and Reject with no view of what either creates;
+  3. the agent is pinned to schema `public` on a connection whose schema is `thelook` — `validate_agent_draft`
+     (`custom_agents/store.py:147`) never reads `schema_scope`, and `_apply_agent_bindings`
+     (`routers/investigations.py:5486`) forces every ask made as the agent onto it;
+  4. the agent and its schedule never meet — `draft_automation` takes only an outcome, so the chain's investigate step
+     carries no `agent_id` and runs as the default agent;
+  5. Accept arms, on a UTC clock — the draft carries no `enabled`, `Automation(**params)` defaults it to True
+     (`automations/models.py:407`), cron is read in UTC and an automation has no timezone; and a declared write inside
+     a chain runs unattended unless `AUGHOR_ACTION_APPROVAL` is set (`govern/actions.py:71`);
+  6. a placeholder validates — channel `#general`, sender TheLook Analyst. Spotlight asked the user to confirm both
+     "before arming", and Accept does not wait for that.
+- **Also measured:** the guide sends a person to an "Agents page → New agent" (`agent/spotlight_guide.py:146`) where
+  the rail says Agent Ops and the button "+ Create agent", and to a "Connections page (the plug icon in the sidebar)"
+  the rail does not have — connections live in the Catalog, and the plug is Integrations; Accept records the name the
+  page sends (`body.actor`: "operator", "control-room"), not the signed-in person; no tool drafts a monitor or a brief
+  subscription; there is no email sender.
+- **Adoption, measured:** across nine connections' inboxes, four Spotlight drafts ever — the two 2026-09-06 receipts
+  (both rejected) and the user's two — and none accepted. The user's follow-up, *"Take me to the agent ops.. I will
+  enter the details there"*, is SP-3's own falsifier arriving as data: a draft abandoned for the form.
+
+**The laws the movement keeps** are the arc's, unchanged: every structural write stays a proposal — the model drafts,
+a person certifies · one inbox, one scheduler loop, one declared roster, with routing left to the tools' own
+descriptions and no intent classifier · an agent stays a form, never a canvas (§4.1); only the chain is drawn ·
+credentials never travel through chat · no model id in `aughor/`, and no model grades its own drafts.
+
+**SP-7 · Honest drafts — ✅ BUILT 2026-09-15** (session branch `claude/aughor-nlang-automations-roadmap-3ffcee`,
+not merged; the live receipt waits on the user). A draft may only say what is true on this deployment.
+- A drafted agent names a schema its connection has, or none. It is refused where the schemas are KNOWN — the
+  connection pins one (the catalogue's own filter, `routers/catalog.py:46`), or the caller holds the measured
+  catalogue; with neither, nothing is refused, because a failed probe is not an absence.
+- A choice only the person can make stays open instead of being guessed: a Slack channel the request did not name, and
+  a sender when more than one bot could post. The chain still validates (the import funnel's two passes,
+  `routers/automations.py:283`), is staged with its open choices listed, and Accept refuses — leaving the proposal
+  pending — until a draft fills them.
+- The first run is stated with its date, in UTC. *Re-scoped at the start: local time moves to SP-13, because the
+  reader's timezone is not known on the server — the settings registry has no such key.*
+- A declared write drafted into a chain waits for a person on every run, whatever `AUGHOR_ACTION_APPROVAL` says; a
+  person's standing grant for that exact target still satisfies it.
+- The guide names what is on screen, and a parity test pins every quoted label to `web/`.
+**Receipt:** the user's sentence asked again — no `public`, no `#general`, Accept refused while the channel is open,
+the first run stated, and every label the guide quotes found in `web/`. **Needs:** nothing.
+
+> **Built 2026-09-15 (five commits on the session branch).** Measured at the start and folded into the wave: a
+> new schedule fires on the scheduler's NEXT TICK, not at its cron time — `engine._schedule_fired` answers "first
+> run" when there is no previous run — so the user's 9am chain would have posted within a minute of Accept. An
+> accepted all-schedule draft now waits for its first scheduled time through the mute that already exists
+> (`paused_until`), stated in UTC by the scheduler's own trigger (`engine.next_fire_utc`). What landed:
+> - **Schema** — `custom_agents.store.schema_scope_problem`, in the one validation body every door runs
+>   (Spotlight's stage, the inbox accept, create, patch, from-template); it refuses only where the connection pins
+>   its schema or the caller holds the catalogue.
+> - **Open choices** — the drafter blanks a Slack channel the request did not name, and a sender when more than one
+>   bot could post; `fill_required_holes` (now shared with the import funnel) names them; the inbox refuses Accept
+>   BEFORE its resolve-once update, so the proposal stays pending; Propose and Spotlight return `to_fill` and
+>   `first_run`.
+> - **Drafted writes wait** — a declared write a model drafts carries `require_approval`, and the executor asks a
+>   person on every run whatever `AUGHOR_ACTION_APPROVAL` says; an accept or a standing grant still satisfies it.
+> - **The guide** quotes real labels (“Agent Ops” → “+ Create agent” → “Describe”, approvals under “Attention”,
+>   “Catalog”, ⌘K's “Add a data source”), held by a parity test over `web/`.
+> **Receipts:** `test_sp7_honest_drafts.py`, `test_sp7_drafted_writes_wait.py` and `test_sp7_guide_labels.py`, with
+> the neighbouring suites and every ratchet green; the full backend suite ran once on `53047981` — **10,165 passed,
+> 5 skipped**. **Open:** the live receipt — the user's sentence asked again through
+> the running product, which needs the API restarted on this code and spends model calls, so it waits on the user's
+> word. The user's two drafts of 2026-09-14 predate this code: after a restart the agent draft refuses at Accept (its
+> schema), but the chain draft still names `#general` — a value, not an open choice — and would be accepted as it
+> stands, so it should be rejected by hand.
+
+**SP-8 · Agent + its schedule.** "An agent that does X every morning" stages ONE proposal holding both records; Accept
+creates the agent and then saves the chain with its `agent_id`, all or nothing. `draft_automation` may also name an
+existing agent, so a chain can run as one without a bundle. **Receipt:** one proposal for the user's sentence, and the
+first run's receipt and spend attributed to the new agent. **Needs:** SP-7.
+
+**SP-9 · The approval card.** One card per proposal kind, the same in Attention, the Automations inbox and chat: an
+agent's scope, schema and instructions; a chain drawn read-only on the canvas with its first run, destination,
+runs-as, dry run and cost per run. Accept · Open in editor · Reject, with open choices as fields to fill, and a link on
+every staged proposal. A ratchet: no proposal renderer prints raw params. **Receipt:** the user's drafts read as cards in
+all three places, and `JSON.stringify(p.params)` is gone from the approval rows. **Needs:** SP-7, SP-8.
+
+**SP-10 · Show the work.** A turn that acts keeps its steps in view as they happen; the answer carries the proposal
+cards themselves, built from the tool result rather than the prose, with live status; prose renders lists, inline code
+and ids as copyable mono chips, and ids and dates are never tinted as figures; the honest caveats stay, as flags on the
+card. **Receipt:** the user's ⌘K turn before and after, screenshotted — a visible trail, cards with Accept inline, no
+literal backticks, no red hyphens. **Needs:** SP-9 and §6 item 22 (b).
+
+**SP-11 · Revise in place.** A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
+Open in editor loads the draft into the real form, and saving there resolves the proposal instead of creating a second
+record. **Receipt:** three follow-ups leave one pending proposal carrying all three changes, and finishing in the form
+leaves no duplicate. **Needs:** SP-9.
+
+**SP-12 · Edit, monitor, brief.** Change what exists by sentence — edit, disable, delete — staged as a before-and-after
+diff; draft a monitor and a brief subscription; for anomalies, prefer a monitor trigger that starts the deep analysis
+only when something moves, with each option's cost shown. **Receipt:** "alert #ops when refund rate breaks 3σ" stages a
+monitor and its chain, and "move the Monday brief to 8am" stages a one-field diff. **Needs:** SP-11.
+
+**SP-13 · Your timezone.** A timezone key in the settings registry and on each automation; the scheduler evaluates cron
+in it; drafts and cards speak local time, and UTC stays visible for operators. **Receipt:** a 09:00 Europe/Berlin chain
+fires at 07:00Z in summer and 08:00Z in winter, pinned by a test across the clock change. **Needs:** nothing.
+
+**SP-14 · On by default.** `ask.converse` graduates on its receipt; approval from Slack buttons, recorded against the
+approver's linked identity; Accept records the signed-in person rather than the name a page sends; MCP clients see new
+tools without reconnecting (`tools/list_changed`) and get native parameter schemas (SP-5's open note). **Receipt:** a
+fresh clone with no runtime overrides drafts an agent from ⌘K, and a Slack approval shows the approver's identity in
+the audit. **Needs:** SP-12, SP-M and §6 item 22 (d).
+
+**SP-M · Measure authoring (alongside every band).** About thirty real asks drafted once and recorded, then scored with
+no model — it validates, names its open choices, binds runs-as, uses a real schema, gets the clock right, shows its
+cost; staged → accepted → finished in the form → lapsed, counted weekly; SP-3's falsifier measured rather than assumed.
+**Receipt:** the scoring runs in CI; the baseline on 2026-09-15 is 4 staged, 0 accepted. **Needs:** nothing.
+
+**Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
+auto-accepting anything structural · a canvas for agents · a model grading its own drafts.
+
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
 > **Origin.** The user's 2026-09-07 directive, given while wiring Google sign-in:
@@ -5400,6 +5535,16 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              accepted-proposal receipt (waits for a natural evidence-backed
              occasion), periodic live red-team drives
         ⚠ cross-user Know waits on VA-10's auth decision
+        SECOND MOVEMENT ✅ ADOPTED 2026-09-15 (§6 item 22 (a)) — authoring by sentence: the user's own
+             ⌘K turn measured six breaks between a draft and an agent that runs
+        SP-7 ✅ BUILT 2026-09-15 (session branch, unmerged; live receipt waits on the user) — honest
+             drafts: a real schema or none · a channel or sender the
+             request did not name stays open, and Accept refuses until it is filled · the first
+             run stated · drafted declared writes wait for a person · the guide's labels pinned
+        SP-8 agent + its schedule, one proposal (needs SP-7) → SP-9 the approval card → SP-10 show
+             the work (22 b) · SP-11 revise in place → SP-12 edit, monitor, brief · SP-13 your
+             timezone · SP-14 on by default (needs SP-12, SP-M; 22 d) · SP-M measure authoring,
+             alongside every band
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
         for the connection's own industry. IP-0 ✅ BUILT (`9a986534`, not merged): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
@@ -5769,6 +5914,9 @@ the browser** · **measure the premise before building.**
 > open. Still two open: 16, 18.
 > **Amended 2026-09-14, later:** item 20 — the user's two rules on an organisation's ontology and the explorer's
 > reach, and the three questions they raised, answered the same turn. Still two open: 16, 18.
+> **Amended 2026-09-15:** item 22 — Arc SP's second movement, authoring by sentence — arrived with the measured
+> trace of the user's own Spotlight turn; clause (a) was answered yes the same turn and SP-7 began. (b), (c) and (d)
+> stay open with recommendations, and none blocks SP-7. Open: 16, 18, 22(b–d).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -6050,6 +6198,23 @@ the browser** · **measure the premise before building.**
     **(8) Ablation spend** — gate 5 for the reference package; later packages only where gate 4 is ambiguous. *As
     recommended.*
     **(9) Record the arc here** — yes: §3.17, this item and the §5 band.
+
+22. ✅ **(a) DECIDED 2026-09-15 (the user) — Arc SP's second movement: authoring by sentence (§3.11).** The user asked
+    whether agents and automations can be created in natural language, then drove the answer themselves — *"create an
+    agent that delivers anomalies to slack every morning at 9am"* — and sent the transcript and a screenshot of the
+    overlay: *"it is honest - which is nice"*, and the presentation *"must feel agentic"*. The trace (§3.11, second
+    movement) found the drafts real and the path short of an agent that runs. Four clauses, each with the builder's
+    recommendation:
+    ✅ **(a) Adoption** — SP-7…SP-14, with SP-M alongside. *The user, verbatim: "yes add it to the roadmap and start SP-7".*
+    ⏳ **(b) Chat prose** — a maintained markdown renderer for prose plus structured cards for acts, or cards only.
+    *Recommended: both — FL-3 measured backend markdown as inert in `web/`, and the user prefers library defaults.*
+    Needed by SP-10.
+    ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
+    refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
+    built on the recommendation; the call stays the user's.
+    ⏳ **(d) Graduating `ask.converse`** — its code default is off and the user's deployment runs it through a runtime
+    override, so a fresh install cannot draft from chat, ⌘K or Slack. *Recommended: when SP-M's scored set passes, not
+    before; meanwhile the Quick chip says that setting things up needs the conversation.* Needed by SP-14.
 
 ---
 

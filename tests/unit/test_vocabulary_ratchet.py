@@ -161,6 +161,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # imported router is bound as `actions_router` — so what is left cannot be reworded
          # without spelling the wire differently from the way the wire is spelled.
          "tests/unit/test_automations_pause.py",
+         # SP-7's drafted-writes suite (2026-09-15), same ground: every hit is a frozen
+         # identifier — the `kinetic_action` effect kind a drafted write carries, the
+         # `execute_kinetic_action` executor the gate lives in, the `KineticAction` model the
+         # fixture builds and the `kinetic_actions` attribute its fake graph carries. Its prose
+         # says "declared write" and "a person" throughout.
+         "tests/unit/test_sp7_drafted_writes_wait.py",
          # DS-11's completion, same ground once more. Every hit in this file is a name the
          # running system uses and none is prose: `KineticAction` (the ontology model the
          # fixtures build), `graph.kinetic_actions` (the attribute the loader reads),

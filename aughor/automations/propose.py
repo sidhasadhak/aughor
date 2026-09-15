@@ -27,7 +27,9 @@ drafted; the human who reads the dry run is the whole point.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field
@@ -77,6 +79,11 @@ class ChainProposal:
     draft: Optional[dict] = None       # the CreateAutomationRequest-shaped payload
     dry_run: dict = field(default_factory=dict)
     notes: str = ""
+    #: SP-7 — the choices the request did not make, left OPEN in ``draft`` rather than guessed.
+    to_fill: list[str] = field(default_factory=list)
+    #: SP-7 — when the first run would be if the draft were accepted now (ISO UTC), read by the
+    #: scheduler's own trigger; "" for a chain with no schedule.
+    first_run: str = ""
 
 
 _SYS = """\
@@ -96,6 +103,9 @@ Rules that decide whether your proposal is accepted at all:
   — that posts the literal characters. A field is EITHER a whole binding or a plain
   string; a binding cannot be embedded in a sentence.
 - Only a key marked as a list may be used as a `for_each` source.
+- A Slack channel is the person's to name. If the request names none, leave `channel`
+  empty — never pick one. When more than one Slack bot could send it and the request
+  names none, leave `bot_id` empty too. An empty choice is shown to the person to fill.
 - If the request cannot be built from what is available, return no effects and explain in
   `notes`. A partial chain that silently drops half the request is worse than a refusal.
 
@@ -231,6 +241,95 @@ def _repair_bindings(drafted: "ProposedChain") -> None:
         step.config = walk(step.config)
 
 
+#: How an open choice reads to a person, by the key it leaves empty.
+_CHOICE_WORDS = {"channel": "a Slack channel", "bot_id": "a Slack bot to send it"}
+
+
+def _named_in(text: str, value: str) -> bool:
+    """Does the request itself name ``value`` — a channel with or without its ``#``, or a bot
+    by its name or id? Whole words only, so ``#general`` is not named by "generally"."""
+    v = (value or "").strip().lstrip("#").strip().lower()
+    if not v:
+        return False
+    return re.search(rf"(?<![\w-])#?{re.escape(v)}(?![\w-])", (text or "").lower()) is not None
+
+
+def _enabled_bots() -> list[tuple[str, str]]:
+    """``(id, name)`` of every enabled Slack bot — the senders a ``slack_post`` could name."""
+    try:
+        from aughor.slackbots.store import list_bots
+        return [(str(b.id), str(getattr(b, "name", "") or "")) for b in list_bots()
+                if getattr(b, "enabled", True)]
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "the bot roster is advisory for whether a sender is ambiguous",
+                 counter="chain_propose.bots")
+        return []
+
+
+def _open_unnamed_choices(drafted: "ProposedChain", outcome: str) -> list[tuple[int, str, str]]:
+    """SP-7 — blank, in place, every deployment choice the REQUEST did not make.
+
+    Found in the user's own staged draft: asked for "anomalies to slack every morning at
+    9am", the model posted to ``#general`` as whichever bot it saw first, and nothing could
+    refuse either — both are legal values, and the approver would have had to notice the
+    channel was invented. So the rule is deterministic rather than prompted: a Slack channel
+    stays only if the request names it, and a sender stays only if the request names it or it
+    is the one bot there is. Returns ``(action number, key, why)`` for each blanked key.
+    """
+    opened: list[tuple[int, str, str]] = []
+    bots = _enabled_bots()
+    for i, step in enumerate(drafted.effects, start=1):
+        if step.kind != "slack_post":
+            continue
+        cfg = step.config
+        if not _named_in(outcome, str(cfg.get("channel") or "")):
+            cfg["channel"] = ""
+            opened.append((i, "channel", "the request names no Slack channel"))
+        chosen = str(cfg.get("bot_id") or "")
+        if len(bots) == 1:
+            cfg["bot_id"] = bots[0][0]          # one sender: nothing to choose
+        elif len(bots) > 1 and not any(
+                chosen == bid and (_named_in(outcome, name) or _named_in(outcome, bid))
+                for bid, name in bots):
+            cfg["bot_id"] = ""
+            opened.append((i, "bot_id",
+                           "more than one Slack bot could send it and the request names none"))
+    return opened
+
+
+def _hold_drafted_writes(drafted: "ProposedChain") -> list[int]:
+    """SP-7 — a declared write a model drafts into a chain waits for a person on every run.
+
+    The approval switch (``AUGHOR_ACTION_APPROVAL``) is off by default, and with it off a
+    declared write inside an armed chain runs unattended. A chain a PERSON builds by hand is
+    that person's decision; one a model drafted from a sentence is not, so each of its write
+    steps carries ``require_approval`` and the executor asks whatever the switch says.
+    Returns the action numbers held.
+    """
+    from aughor.automations.dataflow import DECLARED_WRITE_KIND
+
+    held: list[int] = []
+    for i, step in enumerate(drafted.effects, start=1):
+        if step.kind == DECLARED_WRITE_KIND:
+            step.config["require_approval"] = True
+            held.append(i)
+    return held
+
+
+def _first_run(conditions: list, now: datetime) -> str:
+    """The earliest next fire of the draft's schedule triggers (ISO UTC), or ""."""
+    from aughor.automations.engine import next_fire_utc
+    times = []
+    for c in conditions:
+        if c.get("kind") != "schedule":
+            continue
+        t = next_fire_utc(str((c.get("config") or {}).get("cron") or ""), now)
+        if t is not None:
+            times.append(t)
+    return min(times).strftime("%Y-%m-%dT%H:%M:%SZ") if times else ""
+
+
 def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainProposal:
     """Draft a chain for ``outcome``, validate it, dry-run it. Never saves.
 
@@ -265,6 +364,8 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
                              reason=drafted.notes or "nothing on this deployment can do that")
 
     _repair_bindings(drafted)
+    opened = _open_unnamed_choices(drafted, outcome)
+    held = _hold_drafted_writes(drafted)
 
     payload = {
         "conn_id": conn_id,
@@ -278,8 +379,15 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
     # The SAME refusal a save performs. A draft that could not be saved must not be drawn:
     # a canvas showing a chain the Save button will reject is worse than a refusal, because
     # it looks like work that is nearly done.
+    # SP-7 — only the choices opened above are placeholder-filled for validation; any OTHER
+    # missing key is still the model's failure and still refuses, exactly as before. The draft
+    # a person sees keeps its open choices empty.
+    checked = {**payload, "effects": [dict(e, config=dict(e.get("config") or {}))
+                                      for e in payload["effects"]]}
+    for number, key, _why in opened:
+        checked["effects"][number - 1]["config"][key] = "…"
     try:
-        automation = Automation(**payload)
+        automation = Automation(**checked)
     except Exception as exc:
         return ChainProposal(verdict="refused", notes=drafted.notes,
                              reason=f"the drafted chain is not valid here: {exc}",
@@ -296,4 +404,12 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
         logger.warning("dry run of a proposed chain failed: %s", exc)
         dry = {}
 
-    return ChainProposal(verdict="proposed", draft=payload, dry_run=dry, notes=drafted.notes)
+    to_fill = [f"Action {number} needs {_CHOICE_WORDS.get(key, key)} — {why}"
+               for number, key, why in opened]
+    held_note = ("" if not held else
+                 f"Action {', '.join(str(n) for n in held)} waits for a person on every run: a "
+                 f"write drafted from a sentence is never unattended. ")
+    return ChainProposal(verdict="proposed", draft=payload, dry_run=dry,
+                         notes=held_note + (drafted.notes or ""),
+                         to_fill=to_fill,
+                         first_run=_first_run(payload["conditions"], datetime.now(timezone.utc)))

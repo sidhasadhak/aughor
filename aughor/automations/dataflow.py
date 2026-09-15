@@ -1100,3 +1100,9 @@ def validate_chain(effects: list) -> Optional[str]:
         if guard_clauses(effect):
             guarded.add(alias)
     return None
+
+
+#: SP-7 — the declared-write effect kind, spelled once here where the wire is spelled, so a
+#: module that must recognise it (the chain drafter holds such steps for a person) reads the
+#: name from this file instead of spelling the wire literal a second time.
+DECLARED_WRITE_KIND = "kinetic_action"

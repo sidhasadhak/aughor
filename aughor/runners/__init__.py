@@ -12,7 +12,7 @@ lived inside ``automations/engine.py``, wiring kinetic to it would have made K i
 inverting the wave dependency, since A already routes its ``kinetic_action`` effect
 through K's executor. A module that imports neither makes both callers peers.
 """
-from aughor.runners.automation_save import save_automation_payload
+from aughor.runners.automation_save import automation_payload_holes, save_automation_payload
 from aughor.runners.automation_state import set_automation_state_payload
 from aughor.runners.investigation import (
     InvestigationRequest,
@@ -23,6 +23,7 @@ from aughor.runners.investigation import (
 
 __all__ = [
     "InvestigationRequest",
+    "automation_payload_holes",
     "InvestigationRun",
     "refusal_for",
     "run_investigation",

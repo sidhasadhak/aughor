@@ -577,6 +577,7 @@ def execute_kinetic_action(
     approved: bool = False,
     schema_name: str = "",
     resolver: Optional[ObjectResolver] = None,
+    require_approval: bool = False,
 ) -> KineticResult:
     """Run one declared action through the full governed pipeline. ``scope`` is the connection
     id (the grain the approval allowlist is keyed on). Returns a :class:`KineticResult`; never
@@ -586,8 +587,13 @@ def execute_kinetic_action(
     ``approved`` (A4) marks that a human accepted this run (``inbox.accept_proposal``) — the accept
     IS the graduated-approval act, so the approval gate is skipped. It is BYPASS-APPROVAL-ONLY: the
     submission criteria at step 2 have already run, so an accepted proposal can never push a value the
-    criteria reject. A standing grant (``kinetic/grants.py``) does the same for an UNATTENDED run —
-    consulted only when ``automations.proposals`` is on, so this path is byte-identical otherwise."""
+    criteria reject. A standing grant (``actions/grants.py``) does the same for an UNATTENDED run —
+    consulted only when ``automations.proposals`` is on, so this path is byte-identical otherwise.
+
+    ``require_approval`` (SP-7) makes the gate ask a person whatever the deployment's approval
+    switch says: a write a model drafted into a chain from a sentence is never unattended. A human
+    accept or a standing grant — a person's prior approval of that exact target — still satisfies
+    it; only the switch's silence no longer does."""
     from aughor.govern import actions as govern
 
     gov_action = f"kinetic.{action.id}"
@@ -639,6 +645,16 @@ def execute_kinetic_action(
                      detail=f"standing grant {grant_id}", risk=risk)
     else:
         try:
+            if require_approval:
+                # SP-7 — the verdict the gate gives when the switch is on, audited the same way
+                # and returned through the one return below.
+                govern.audit(gov_action, scope, "blocked", actor=actor, risk=risk,
+                             detail="a drafted write waits for a person on every run")
+                raise HTTPException(status_code=428, detail={
+                    "error": "approval_required", "action": gov_action, "scope": scope,
+                    "risk": getattr(risk, "value", risk),
+                    "hint": ("this step waits for a person on every run — it was drafted "
+                             "from a sentence, and a drafted write is never unattended")})
             govern.guard(gov_action, scope, actor=actor, risk=risk)
         except HTTPException as e:
             body = e.detail if isinstance(e.detail, dict) else {"hint": str(e.detail)}
