@@ -46,6 +46,14 @@ semantics, not just governs them.** The moat is the ontology→agent loop.
 it is shipped when something *consumes* it. Repeatedly, the gap has been a complete and inert
 plane — see §7.
 
+**Amended 2026-09-16 — the hub (§3.18; §6 item 24).** The three planes are the platform's infrastructure. Its
+purpose, in the user's own definition, is two-sided: every reason to come to the platform stays — ask, run your own
+SQL, read the Briefing, open an object, approve a change — and the platform also **receives** data, documents,
+definitions and what people say where they already work, and **exports** findings, analyses, Briefings and proposals
+to the groups that watch the things they are about, each with its receipt. What leaves is information the platform
+has measured, never the data. The airport is the analogy — the map, the tower, customs, the schedule — and the
+nomenclature does not change.
+
 ---
 
 ## 1 · What is true today (measured 2026-08-30; amended 2026-08-31 after Arc DS Phase 1)
@@ -131,6 +139,15 @@ seven rules and a refund process were declared live for it and the matcher met q
 framed 9 of 13, raw 1, one loss, all 3 controls kept — so the framing stays; the matcher gaps that run found were then
 fixed and measured with no model on a new set of 54 questions, 51 of 51 in scope) and fixed ON-7
 first; §6 item 18 holds its two remaining shape questions (the first, ON-8's scope key, was taken as recommended).
+
+**The hub, measured 2026-09-15 (§3.18).** Receives: seven warehouse kinds, uploads, Sheets, PDFs and scans, Confluence
+and Notion definitions through KI's review lane, a Slack @mention, one inbound hook per automation, an allowlisted MCP
+server's tools. Exports: Slack, webhook, Jira, the MCP server, proposals. **No email either way.** Five triggers and
+twelve effects, and neither a promise nor a finding is a trigger; nothing links a thread, a ticket or an email to an
+object; nothing routes — a `BriefSubscription` has no subject and no reader, and the Briefing's lead is ranked by one
+profile's north stars for a reader that is always the company; `Principal` is a user and an org and there are **no
+groups**; the grant store holds one privilege on one securable kind; `owner` is free text; row policies ship empty; a
+metric's quality tests run only when someone clicks, so a failing tie-out never holds a number out of the Briefing.
 
 ---
 
@@ -5385,6 +5402,222 @@ quarries, as §3.15 ON-0a says); a registry or any second distribution channel; 
 organisation's ontology; a table name inside a package.
 
 
+### 3.18 · Arc HB — the hub: people still come to the platform, and the platform also receives data and exports intelligence (drafted 2026-09-16 at the user's direction — §6 item 24; the shape decided in conversation 2026-09-15; **NOTHING BUILT**, no wave started)
+
+> **Origin.** The user, 2026-09-15, after asking how a CEO, a supply-chain head, a pricing analyst and a finance
+> controller should each benefit: *"think even bigger.. beyond roles.. the entire platform is a collection of moving
+> parts. Everything is modular, everything can be Agent driven and everything is composable and communications can
+> happen across platform such as Slack Gmail confluence jira etc.. imagine that it's the biggest airport and hub for
+> company functions where informations flows from & to.."* Then, in order: *"I like the airport analogy.. but let's not
+> change the nomenclature that we already have"*; *"I want to know the cost of doing so. Cost not in terms of tokens
+> but the value that we were delivering earlier and the value that we will end up delivering"*; the four people *"are
+> just examples. The idea is to have features that will serve for every layer in the organisation"*; *"the layer
+> structure is very rigid.. one person cannot be a function head and an operator by your definition. I rather like the
+> approach that Databricks has"* — their workspace access-control page: persona groups, permission levels per object,
+> custom permissions on top, additive, a service principal as owner; *"I like the ideas of personas. The
+> organisation's functions such as supply chain finance pricing can be achieved through creating groups of users within
+> the platform"*; and the definition, confirmed: *"the reason why people should come to the platform remain but it will
+> also act as a hub that receives data and exports information, intelligence, analysis, etc."* Companion page (the
+> user's, private): https://claude.ai/artifact/Sa9iBaxHPnfPaGKgUKp6Na.
+
+**What the hub is — and the one word that keeps it from becoming a pipe.** Every reason to open the platform stays:
+ask, run your own SQL, read the Briefing, open an object, approve a change. The hub is where those things now also
+*leave from* and *return to*. It **receives** data (the warehouse, read-only), documents, definitions, ticket state and
+what people say in the channels they already use; it **exports** findings, analyses, Briefings and proposals — each with
+its receipt, to the group that watches the thing it is about, gated harder than the screen. What leaves is
+*information the platform has measured*, never the data: the warehouse stays where it is and the hub sends the finding
+about it. The airport is an analogy and nothing more (the user's rule): an airport owns no aircraft and no cities — it
+owns the map (the ontology), the tower (governance and Spotlight), customs (the guards, PII, receipts, KI's review
+lane) and the schedule (automations). The product's words do not change: automation, notification, monitor, Briefing,
+subscription, grant, group, connection, approval, action.
+
+**The premise, measured on main `61cba06a` (2026-09-15) — most of the airport is standing; the traffic system is
+not.**
+- **Receives:** seven warehouse kinds, uploads and Sheets; PDFs and scans (§3.13); Confluence and Notion definitions
+  through KI-3's review lane; a Slack @mention (Socket Mode); one inbound hook per automation
+  (`POST /hooks/{automation_id}`, DS-17); an allowlisted MCP server's tools (`aughor/mcpservers/` — a write needs OUR
+  grant and a changed declaration revokes it, `call.py:74`, `discover.py:85`).
+- **Exports:** Slack (`slack_post`), webhook and Jira (`notifications/models.py:22`), the MCP server (18 tools plus
+  automations), proposals into approvals. **No email in either direction.**
+- **The schedule:** five triggers — `schedule · metric · source_change · entity_appears · webhook`
+  (`automations/models.py:75`) — and twelve effect kinds (`:263`); an automation runs as a named agent (VA-9b). A
+  promise or a finding is not a trigger. Packs carry no automations.
+- **Nothing links a thread, a ticket or an email to an ontology object** (zero files); findings, notes and declared
+  actions attach to an object (ON-3) and nothing else does.
+- **Nothing routes:** a `BriefSubscription` has a connection and a cadence, no subject and no reader
+  (`briefing/models.py:19`); a monitor has a channel; the Briefing's lead is ranked by ONE `BusinessProfile`'s north
+  stars (`knowledge/triage.py:402`) and its narrator addresses the organisation (`knowledge/briefing.py:358`) — the
+  reader is the company everywhere.
+- **Access:** `Principal` is a user id and an org id (`security/authz.py:39`); **no groups anywhere**; three roles × ten
+  permissions with an endpoint→permission table (`rbac/policy.py`) and capability ceilings;
+  `metastore.Grant(principal, securable, privilege)` holds one privilege, `USAGE`, on one securable kind,
+  workspace→catalog (`metastore/models.py:124`); securable strings are `catalog | schema | table | artifact` with
+  governed tags whose only load-bearing keys are `tier` and `pii` (`govern/tags.py:46`); `owner` is free text on
+  metrics, processes, rules and agents; `StandingGrant` is a per-action, per-target grant (`actions/grants.py`); row
+  filters compile (`sql/rls.py`) and `ROW_POLICIES` ships empty; `RolesPanel.tsx` assigns the three roles.
+- **Accuracy at the edge:** a metric's `quality_tests` ("failure = metric flagged unreliable") run through ONE
+  on-demand caller (`routers/metrics.py:211`) — a failing tie-out never holds a number out of the Briefing; the
+  Briefing re-runs a cited number only when a reader clicks it.
+- **Pricing knowledge exists and nothing looks for it:** price realisation and discount depth in the deep KB
+  (`data/kb/fin_revenue_level_2.json`, `ec_orders_revenue_level_2.json`), no pricing angle in the Explorer's defaults
+  (`explorer/agent.py:2247`), no pricing function in §3.17.
+
+**The cost, in value — the user's question, answered before anything is built.** Today's value is *pull*: a person
+asks and gets a right answer with its receipt beside it (Olist: framed 8/12 against raw 3/12; the guards 100% safe).
+The hub's value is *push and return*, and its price is paid in the currency the platform earns today — trust and
+attention:
+- A wrong push is negative value, not zero: a wrong tile waits on a screen; a wrong finding lands in `#ops` with a
+  ticket proposed.
+- Fan-out amplifies every error, and the receipt is one link away for a reader who did not ask — so the departure gate
+  must be stricter than the screen, and the hub will hold back things the Briefing shows.
+- The hub cannot close the last mile alone: agents propose, people ratify. Said plainly it is a strength; unsaid it is
+  a broken promise.
+- An inbound channel is an attack surface (email is untrusted text into the agent) and customs is human labour (KI's
+  review lane is a person approving).
+- Value becomes contingent on other systems' uptime and other people's approvals — the email channel has waited on one
+  Google OAuth client since VA-11.
+- Push is worth its uptime: a hub asleep on a laptop delivers nothing. Arc MT was dropped because hosting does not work
+  well enough (§6 item 17); this arc does not reverse that — it exports only from where the platform actually runs.
+- The value shows at organisational scale, across several readers in several channels — a J-curve; **where the
+  platform runs today, one analyst and local, the hub's value is unobservable**, and §7's failure (tested, not
+  leveraged) becomes MORE likely with every channel built ahead of traffic.
+- Every channel built is an ontology wave not built; channels are commodity (Zapier, n8n, Slack apps, Atlassian's own
+  MCP server), the ontology→agent loop is not (§0).
+
+What the hub adds that pull cannot: **outcomes** (nothing today records whether a finding was worth acting on — MI's
+graded ledger gets its missing ground truth), **context from people** (the warehouse does not hold "carrier X was on
+strike last week"; caught in Slack and filed on the promise, it makes the core answer better), **reach** (the same
+measured correctness for people who never open the app) and **memory** ("why did we decide that in March?" with a
+chain).
+
+**Five laws, each an extension of one the platform already keeps.** (1) *The hub owns meaning, not data or work* —
+the warehouse stays read-only, nothing is copied in, Slack, Jira and email stay where the work happens. (2) *Every
+automation declares its plan* — its trigger, its steps, its destinations, its cap; it runs as a named agent under a
+grant; it appears on one map. (3) *Customs both ways* — in: measured before believed (KI's lane, ON's claims); out:
+nothing leaves without a grant, a PII scrub and a receipt attached. (4) *Quiet by default* — the hub speaks by schedule
+and by exception; a run that would spend the model says so before it runs. (5) *Everything lands on the map* — a
+message, a ticket, a decision or an answer that passed through is filed against the object it is about.
+
+**Groups and grants — the answer to "every layer", with no layer.** Two kinds of group, both plain groups; a person is
+the union of their groups' defaults and their own grants, clearances the one AND; additive, no deny — the Databricks
+shape the user chose, on our own seam:
+- **Persona groups** are shipped by the platform and carry a default **level per securable kind** instead of one
+  uniform verb. The ladder is **View < Subscribe / Run < Edit < Manage < Own**; today's `viewer` / `analyst` (Editor) /
+  `owner` become the first three persona groups with their stored values unchanged, and an organisation may add a
+  persona (a Steward who manages definitions and not connections) as data. "Analyst" stays the agent's name.
+- **Function groups** are the organisation's — supply chain, finance, pricing — created by people or shipped by a pack,
+  and carry what a persona cannot: **members** (people AND agents: the supply-chain group's Watcher inherits the group's
+  grants and speaks in its channel — Databricks' service principal, in our terms); **a channel** (`#ops`, a Jira
+  project, later an email list) where a departure for that function lands; **grants by tag** (`Subscribe` on anything
+  tagged `domain=supply-chain`, `Own` on the dispatch process), so a promise declared next month is covered the day it
+  is tagged — which makes `domain` a grant-bearing tag beside `tier` and `pii`, a small explicit change and §6 item
+  24(b); **row policies keyed by group** (finance reads cost columns, ops does not — the compiler exists, the table is
+  keyed by role and empty); **a pack**.
+- **Securables** grow to the ontology's things and artifacts the way catalogs and artifacts already have strings:
+  `metric:` `promise:` `process:` `rule:` `domain:` `automation:` `agent:` `canvas:`. **Inheritance** follows meaning,
+  not storage: a grant on a domain flows to its objects, on a process to its promises; an explicit grant on a child
+  adds. **Ownership** becomes a principal — a person, a group or an agent — which is what makes routing deterministic: a
+  breach goes to the promise's owner and its subscribers, and no model decides who gets what. **One resolver** —
+  `may(principal, level, securable)` with an `explain` that names the grants — replaces the four separate checks (tier,
+  role, endpoint policy, clearance) at the existing gate sites; the clearance decision already names what blocked, and
+  the union must name what granted.
+- **Adapted, not copied:** their six personas → the organisation's own functions plus the ladder we have; Dev/UAT/Prod
+  → the propose/approve lifecycle (a draft metric IS Dev; §6 item 9's two recorded acts are their segregation of duty);
+  folders → the ontology hierarchy; Terraform → grants as pack data and the organisation's people-edited overrides
+  tree. Our one addition: a group has a channel, because we push and they do not.
+- **With identity off** `resolve_roles` returns owner and everything is allowed — enforcement is inert where the
+  platform runs today, exactly as RBAC's was. The **routing half** (groups, membership, a channel, `Subscribe` and
+  `Own`) has value with identity off because it decides where a breach *goes*, so it is built first; enforcement rides
+  the same table and switches on with OIDC, whose groups claim maps onto `group:` principals.
+
+**The departure gate and probation — what is done about accuracy.** Nothing leaves the screen that the screen would
+not show, and less: (1) **re-measured at send time** — the number that leaves is re-executed at departure, never a
+cached figure (the Briefing's "show the receipt" re-run, made the law); (2) **definition-gated** — a number leaves only
+citing a governed metric, a declared promise or a declared rule, never an inferred definition (the Briefing's trust
+gate, extended from metrics to promises and rules); (3) **tie-out gated** — `validate_metric` runs in the gate, not on
+a click; (4) **freshness-gated**, and the message says *as of*; (5) **claim-type gated** — a descriptive fact may
+leave, a causal claim only with its falsifier's verdict (`agent/claim_type.py`), a forecast never (no forecaster
+exists); (6) **disagreement holds** — where the ambiguity probe finds divergent readings a departure has no asker, so
+it asks the OWNER and sends nothing until answered; (7) **the noise band** of the triage's change term, never the same
+finding twice, monitors' anti-flap; (8) **the receipt travels** — source, definition version, as-of, guards applied and
+a link to the chain on every message. **Probation:** a new automation's departures go only to the person who declared
+it, who marks each right or wrong through the feedback plane (accept · correct · reject); it graduates to its
+subscribers at a measured precision and the ratchet holds it there — a change that lowers a departure kind's precision
+cannot ship. This is MI-1's graded ledger with an outcome column, the hub's contribution to §3.9. **Corrections
+return:** "wrong" in the thread is feedback into the closed loop and the ambiguity ledger (the mechanism measured
++0.70 on a repeat set).
+
+**Context from many sources — stored where it already belongs, ranked by no model.** No ninth store (§8): definitions
+through the review lane into the glossary and the metrics catalog; observations as notes under `agent_notes`'
+blast-radius law; verified statements in the claims ledger; documents in the documents plane; the manifest is links,
+not copies. The one new thing is a **provenance envelope** on every piece — source kind · author (person, model,
+system) · scope (object → connection → domain → organisation → industry) · observed-at with a validity window ·
+verification tier · blast radius — completing PX-5's substrate (source asset, author, verification outranks
+authority). **Ranking is deterministic on three axes and shown in the receipt:** *authority* — measured against the
+data > approved by its owner > declared by a person > mined from a document and reviewed > said in a conversation > a
+model's inference (the metric precedence catalog > north-star > verified > unverified, generalised); *scope* — this
+object > this connection > this domain > the organisation > the industry pack (the glossary's layers, the `org/domain`
+key, IP-0's industry scope); *recency per kind, never one global score* — a definition's current approved version wins
+regardless of age, an observation decays and expires unless re-affirmed, a measurement carries the data's own "as of"
+and the freshest wins. **Conflicts:** same tier — surface it, ask once, remember (the ambiguity ledger); different
+tiers — the higher wins and the lower is kept as a flag in the receipt. Every block carries its stamp
+(`[measured 2026-09-14, this connection]`, `[said by A. in #ops, 3 days ago, unverified]`); the ranker fills the Agent
+Context budget by authority × scope × recency and says what it dropped. **The measurement decides it:** the only
+ablation of injected context (R4, 2026-06-21) was a regression and ON-0 lifted nothing until the framing did, so each
+new source kind enters the prompt under its own harness arm and stays only with measured lift, per kind and per tier;
+a source that does not lift is stored and shown, not injected. What a person said in Slack is a payload under §6.4;
+the note derived from it, once accepted, is a work artifact; PII scrub at intake; the organisation's ontology stays
+human-edit (§6 item 20) — conversation-derived context is a proposal or a column-local note, never a silent write.
+
+**Waves — each built on what stands, each with a receipt and a falsifier.**
+- **HB-0 · measure** — ✅ DONE 2026-09-15 (the premise above; the value ledger; the companion page). Re-measure before
+  each wave: a catalogue has a timestamp.
+- **HB-1 · groups and grants, the routing half.** Groups and membership in the RBAC store; `group:` and `agent:`
+  principals; a group's channel; securable strings for the ontology's things; `Subscribe` and `Own` in the grant store;
+  owner as a principal on metrics, processes, promises and rules (a migration from the free-text field); `domain`
+  grant-bearing (24 b); `BriefSubscription` gains a subject and a reader; `RolesPanel.tsx` grows into groups, members
+  and grants-by-securable. *Receipt:* a person in two function groups receives, through each group's channel, exactly
+  what each group subscribes to, and `explain` names the grant. *Falsifier:* if routing by ownership sends a finding to
+  the wrong group on a measured set, the map is wrong before the code is.
+- **HB-2 · the departure gate and probation**, as above. *Receipt:* a Briefing tile the screen shows is held at
+  departure by a failing tie-out, with the reason recorded; an automation on probation reaches only its declarer until
+  its measured precision graduates it. *Falsifier:* a departure precision baseline that a later change lowers cannot
+  ship — the ratchet.
+- **HB-3 · promises and findings as triggers; outcomes and the manifest's first links.** `promise_breached` and
+  `finding_created` beside the five triggers; a proposed ticket and a Slack thread filed on the object they are about;
+  an outcome column (ticket closed, number recovered). *The first live receipt, end to end:* Olist's dispatch promise
+  (`baef6c3e/ecommerce`, 9.35% late) breaks → a framed analysis names the carrier and region → the finding lands in
+  the supply-chain group's channel with its receipt → a Jira ticket is proposed and approved in Slack → the ticket is
+  filed on the promise → its close is recorded → the Briefing reports the breach rate before and after, with the chain.
+  Four of its seven legs stand today; three are this wave. *Falsifier:* if the pushed finding is not acted on within the
+  probation window by a real reader, the automation stays on probation — a push that earns no landing is not value.
+- **HB-4 · the provenance envelope and one ranker**, as above, with the harness arm per source kind. *Receipt:* the
+  same question answered with and without conversation-derived notes on the ON-10 sets; notes stay in the prompt only
+  with measured lift. *Falsifier:* R4's — a source kind that regresses is stored and shown, never injected.
+- **HB-5 · arrivals from people and systems.** A sentence in Slack becomes a note on the object with provenance (blast
+  radius decides what applies and what waits); live Jira and Confluence state through Atlassian's MCP server on the
+  allowlist — no connector code, the write slice's grant law already governs "open a ticket"; the email channel in both
+  directions, keyed on the Google OAuth client only the user can create (24 f); one conversation record wherever it
+  moves (Slack → deep analysis → Jira comment → email). *Falsifier:* an inbound channel that carries untrusted text
+  reaches the agent only through customs — a red-team set of injected instructions must land as data, never as acts.
+- **HB-6 · the map and the packs.** Every automation on one screen — trigger, destinations, grant, owner, last run,
+  cost, probation state (Agent Ops' Map does this per agent; hub-wide does not exist); a function pack ships its group,
+  its tags, its default grants and subscriptions, and its automations (24 c). *Receipt:* installing a supply-chain pack
+  creates the group, tagged and subscribed, waiting for members.
+
+**Sequencing rules that bind the arc.** No channel is built before an automation with real traffic needs it. The
+routing half precedes enforcement. Departures are gated harder than the screen from the first one. Push only from
+where the platform runs — no hosting question is reopened here. **The arc's measure is landings, not doors:** an
+answer read in its channel, a proposal taken, a ticket closed and the number that recovered, a definition change
+acknowledged by the people it reached. A hub with forty channels and no traffic is the kinetic plane again (§7).
+
+**Not this:** a foreign flow engine as the schedule (§4.2, §4.3 — the automation engine has the primitives); a copy of
+the data or a write-back to the warehouse; an agent that executes rather than proposes; a model that decides who
+receives what or which context outranks which; a layer taxonomy of people; a ninth store for context; renamed
+nomenclature for the analogy's sake; a persona named "Analyst".
+
+---
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -5712,6 +5945,18 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              the work (22 b) · SP-11 revise in place → SP-12 edit, monitor, brief · SP-13 your
              timezone · SP-14 on by default (needs SP-12, SP-M; 22 d) · SP-M measure authoring,
              alongside every band
+ARC HB  ⏳ DRAFTED 2026-09-16 (§3.18; §6 item 24 — the shape decided in conversation, the build's
+        calls open, NOTHING BUILT) — the hub: people still come to the platform, and it also
+        receives data and exports intelligence. Measured 2026-09-15: no email either way, neither a
+        promise nor a finding is a trigger, nothing links a thread or a ticket to an object, no
+        groups, one privilege in the grant store, the reader is the company everywhere, a metric's
+        quality tests never reach the Briefing. Waves: HB-0 measure ✅ → HB-1 groups and grants, the
+        routing half (persona + function groups, Subscribe/Own, owner as a principal, `domain`
+        grant-bearing) → HB-2 the departure gate + probation → HB-3 promises and findings as
+        triggers + outcomes, first receipt on Olist's dispatch promise → HB-4 the provenance envelope
+        + one ranker (a harness arm per source kind) → HB-5 arrivals (Slack sentences → notes ·
+        Jira/Confluence through MCP · email, keyed on the user) → HB-6 the map, packs ship groups.
+        The measure is landings, not doors
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
         for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
@@ -6090,6 +6335,9 @@ the browser** · **measure the premise before building.**
 > stay open with recommendations, and none blocks SP-7. Open: 16, 18, 22(b–d).
 > **Amended 2026-09-15, later:** item 18(b) — Shipment and Payment — decided by the user, and not as recommended:
 > entities with a link, applied live on LuxExperience the same day. Open: 16, 18(c), 22(b–d).
+> **Amended 2026-09-16:** item 24 (Arc HB — the hub) arrived at the user's *"Create a roadmap now"*; its shape was
+> decided in the user's own sentences the day before and is recorded in the item so it is not re-asked, and the seven
+> calls the build needs are open with recommendations. Open: 16, 18(c), 22(b–d), 24.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -6407,6 +6655,32 @@ the browser** · **measure the premise before building.**
     design system, never the Teams card aesthetic — the user's standing rule that chat feels like a frontier-LLM
     conversation points the same way.
 
+24. ⏳ **DRAFTED 2026-09-16 (the user: "Create a roadmap now") — Arc HB, the hub (§3.18): the shape decided in
+    conversation 2026-09-15; the calls the build needs are open with recommendations.** Decided in the user's own
+    words, recorded here so they are not re-asked: the nomenclature does not change — the airport stays an analogy;
+    the four people were examples, and the mechanism serves every layer with no layer taxonomy; personas as
+    platform-shipped groups carrying a level per securable kind, and the organisation's functions as groups of users
+    (people and agents) — the Databricks workspace shape on our own `Grant` seam; and the definition — people still
+    come to the platform, and it also receives data and exports information, intelligence and analysis. Open:
+    **(a) Adoption** — is §3.18 active, HB-1 first? *Recommended: yes — HB-1 is the routing half, has value with
+    identity off, and HB-2/HB-3 need owners and subscribers to send to.* The instruction to write the roadmap is read
+    as the plan, not as a start: no wave has begun.
+    **(b) `domain` becomes a grant-bearing tag** beside `tier` and `pii`. *Recommended: yes — it is what makes a
+    function group self-maintaining; tags stay human-set, so a tag cannot be granted by a model.*
+    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations.
+    *Recommended: yes; an organisation starting empty is the alternative.*
+    **(d) The persona set** — Viewer / Editor / Owner as the first persona groups; a Steward only when a deployment
+    asks. *Recommended: yes.*
+    **(e) The first live receipt's host** — Olist's dispatch promise. *Recommended: yes — real breaches, three new legs,
+    no new channel.*
+    **(f) The email channel** — keyed on the Google OAuth client (VA-11); HB-5's email half waits for it.
+    *Recommended: hold.*
+    **(g) The §0 amendment** as written — the hub as the platform's purpose, the three planes its infrastructure.
+    *Recommended: yes.*
+    Not decided here because it isn't ripe: hosting and uptime (§6 item 17 stands — the hub exports only from where the
+    platform runs); persona names beyond the three; row policies by group (HB-1's enforcement half, when identity is
+    on).
+
 ---
 
 ## 7 · Standing lessons (earned, expensive, repeatedly re-learned)
@@ -6434,7 +6708,8 @@ its *system* gets DS-5's map) · model ids hardcoded anywhere in `aughor/` · a 
 model weights in the repo or installer (Arc MI ships the ledger in the box and adapters as
 release artifacts, §3.9) · online/continual learning on live traffic · a ninth definition
 store or auto-applied imports (Arc KI reviews everything into the eight stores that exist,
-§3.10).
+§3.10) · a hub that moves rows (what leaves is measured information, never data — §3.18) · a
+model that decides who receives what, or which context outranks which (§3.18).
 
 ---
 
