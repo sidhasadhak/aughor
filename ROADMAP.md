@@ -3846,7 +3846,8 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   now reads `backing.verified = False` with the counts in its note. **Deferred from the
   draft, honestly:**
   `dedup.merge_entities` is not yet rewritten as "two tables, one backing" (it still
-  concatenates `source_tables`); a query backing has no UI and no diff view; properties
+  concatenates `source_tables`; ✅ closed 2026-09-15, `83e97c49`); a query backing has no UI and no diff view (✅ closed
+  2026-09-15, `5c3d3181`: previewed, set and withdrawn from the type panel); properties
   are still copied ColumnProfiles, not typed properties mapped to expressions.
   **The draft:** An `ObjectType` with a stable
   `api_name`, a **backing** (one table today; a SELECT with a declared primary key
@@ -3962,9 +3963,10 @@ objects and its edits are visible to the next answer (ON-3/ON-4). MotherDuck's f
   🔑 **What this measures:** construction guarantees JOIN safety, not SEMANTIC correctness —
   choosing the measure, the filter and the ratio's sides stays the model's job, and on sets where raw
   is at ceiling a small model writing SQL it knows beats the same model filling an IR it has never
-  seen. Fixable without new theory, none of it built: `object_type` required and `op` an enum in the
+  seen. Fixable without new theory: `object_type` required and `op` an enum in the
   fill schema, `metric` exclusive of `path`, a rounding convention, worked examples in the prompt, a
-  stronger model — then re-measure. Found by the same run: the first refusal classifier had no
+  stronger model — then re-measure. ✅ **Built 2026-09-15** (`af2dad1c`), all but the stronger model: a measure is
+  `kind` aggregate or metric and sends only that kind's fields; the re-measure is owed (model calls). Found by the same run: the first refusal classifier had no
   `form` kind and filed a malformed fill as `ir`, which reads as "the algebra is too narrow";
   relabelled in the stored results, where the relabelling is recorded.
   **Not built, honestly:** the semiadditive law has nothing to bind to — O5's
@@ -4324,8 +4326,12 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   `amount_eur`), `paid_net_eur` (`amount_eur * 0.9`) DOUBLE with no role, and `installments_text` (a cast) VARCHAR; the
   sum of the computed and the pass-through column by the payments binding's method equalled its reference over seven
   methods, the string "1000" met `paid_eur` as a number (8,070 orders, equal), a SUM of the cast was refused, and the
-  binding was removed. **Still open:** the builder proposes static bindings only (a person declares a timeseries one
-  through the panel since 2026-09-12); `dedup.merge_entities` is not yet "two tables, one binding".
+  binding was removed. ~~**Still open:** the builder proposes static bindings only (a person declares a timeseries one
+  through the panel since 2026-09-12); `dedup.merge_entities` is not yet "two tables, one binding".~~ ✅ **Closed
+  2026-09-15 (leftovers, second round):** the builder proposes a table of READINGS — a repeated key placed in time, with
+  no identity of its own — as a timeseries binding (`4728f80d`), and a duplicate-entity merge binds the other type's
+  table onto the survivor on its key, counted one row per object, and marks the other type its part: nothing deleted,
+  written to the overrides tree (`83e97c49`; the old merge answered 500 on any real type).
   ✅ **Closed 2026-09-12:** a display property may come from a STATIC binding — the binding holds one row per
   object, so its column is as single-valued as the backing's. `display_source` measures it over the binding's own
   source, the titles door joins it on the object's key, and the object page reads it off the properties it has
@@ -4406,8 +4412,8 @@ reached as tools.** *(The user: "Write the amendments into the roadmap.")*
   the authoring form — and **one accepted edit can be withdrawn**; **an object reads by its name** wherever
   a key was printed, and a name may live on a static binding; **a frame over the readings** reaches the
   object door. What is deliberately still open, and why, is on each wave: a correction that rewrites a
-  source value (a different write), `dedup.merge_entities` as "two tables, one binding", a query backing's
-  UI and diff view, a label clipping a card in a narrow pane, and the parked `ask.query_objects` fill —
+  source value (a different write), ~~`dedup.merge_entities` as "two tables, one binding", a query backing's
+  UI and diff view~~ (both closed 2026-09-15), a label clipping a card in a narrow pane, and the parked `ask.query_objects` fill —
   which is §6 item 15's decision and costs model tokens to re-measure, not an oversight.
 
 **Deliberately not ported (re-read §4.2's law: the grammar, never the codebase):** an
@@ -4550,9 +4556,13 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   the data refutes must be refused, not followed: `link_problem` now refuses a measured zero overlap (pinned).
   **Open on this wave:** ~~§6 item 18(b) — Payment and Shipment are parts on the receipt as drafted; one *Release*
   undoes it~~ — decided 2026-09-15, entities with a link, released and linked live on LuxExperience (§6 item 18(b)) ·
-  the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types ·
-  a declared type does not round-trip through export/import · line-grain access to a part's rows stays through
-  the measured link (`order_to_order_item.category`), not through the binding's name. `POST /ontology/entities` declares an entity (display name,
+  ~~the agent's catalogue (`describe_entity`'s list, the prompt blocks) still names parts as types~~ — closed
+  2026-09-15 (`eb663730`: the object catalog, the query tool's list of types and `describe_entity`'s summary name a part
+  under its parent; the ENTITY MODEL block renders the raw build-time graph, which never holds a part mark) ·
+  ~~a declared type does not round-trip through export/import~~ — closed 2026-09-15 (`1d4f1139`: declared types, links,
+  processes and rules are written under `declared/` as their doors' specs and declared again on import) ·
+  ~~line-grain access to a part's rows stays through the measured link (`order_to_order_item.category`), not through the
+  binding's name~~ — closed 2026-09-15 (`a3eb8ad0`: a detail binding's name walks the one link to its rows' type). `POST /ontology/entities` declares an entity (display name,
   api_name, description, domain, a key claim); `POST /ontology/links` declares a link (business
   verb, expected cardinality, the key path between two bindings); `DELETE` for both, refusing
   where a consumer depends on the id (API names are stable). A third binding kind beside static
@@ -4619,9 +4629,14 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   model call was metered and never recorded (fixed; draft 2's call is in the log under its run) · the panel
   kept offering *Bind* for four tables the draft had just bound — the builder proposes `schema.table`, the draft
   binds the bare name (fixed in code; reaches a running API on its next restart). **Open on this wave:** tickets
-  under Order is the user's call (confirm, or remove the binding) · a name join (`warehouse = name`) was guessed
-  wrong once and not re-proposed · run-to-run variance means a second draft ADDS rather than repeats · the
-  explorer proposes no processes yet (ON-9) and does not name the builder's found links · the §6 item 18(b)
+  under Order is the user's call (confirm, or remove the binding) · ~~a name join (`warehouse = name`) was guessed
+  wrong once and not re-proposed~~ — closed 2026-09-15 (`8e442d4a`: a link whose keys never meet is counted again on
+  the name its target is known by, when that name is measured one object per row) · run-to-run variance means a second
+  draft ADDS rather than repeats (inherent to one call; recorded) · ~~the explorer proposes no processes yet (ON-9)~~ —
+  closed 2026-09-15 (`3207f413`: processes and rules, measured before they land) · the explorer does not name the
+  builder's found links — kept open ON PURPOSE: a model-written name would read as a person's, because a link carries no
+  origin for its name and the confirm door no link-name target; that field is the next slice · two model-proposed links
+  between one pair of types collide on the default reverse name (the explorer proposes none) · the §6 item 18(b)
   shape it drafted (Payment and Shipment as parts) agrees with the recommendation. When a
   connection is registered — or on demand from the map — an explorer agent reads the SOURCE
   CATALOGUE (table profiles, the join map with measured cardinality, sample values, glossary,
@@ -4716,10 +4731,14 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   detail bindings cross as one row per key** (`00310eb9`) — a type or binding past a keyed read on that read's own
   connection is joined inside it, one on another connection is read by key from that read's rows, and every other shape
   is one row per key by construction; 13 new shapes, each equal to the single statement, 18/18 guard mutations caught.
-  **Still open on this wave:** pre-aggregating the home rows at the key's grain; the object page, titles, processes,
-  rules and the frame door on an organisation's ontology; plumbing SQL in a native-SQL connector's own dialect
-  (BigQuery, MySQL, Snowflake and Exasol run it as written, and it is written for DuckDB); a further crossing from inside
-  a keyed EXISTS or pre-aggregation, refused with the reason. By the user's rule (§6 item 20) the explorer never reads
+  ✅ **the home rows are grouped at the key's grain** (`b1f5f916`) — COUNT, SUM, MIN, MAX and AVG pushed into the home
+  read, weighted by each group's row count wherever a far value or a DISTINCT is read · ✅ **an organisation's ontology
+  takes processes, rules and the frame door** (`f261054f`) and **opens its objects where they live** — the object page,
+  the objects a link reaches, titles and a display property on a domain type (`1b1f9a3b`) · ✅ **platform SQL reaches a
+  native-SQL warehouse in its own dialect** (`1278cee5`; a DuckDB `"col"` is the STRING 'col' on BigQuery, so a keyed read
+  had matched nothing). **Still open on this wave:** a further crossing from inside a keyed EXISTS or pre-aggregation,
+  refused with the reason · a domain type's description is not editable through its PUT (a display property only) · an
+  organisation's object page reads findings from the home connection only. By the user's rule (§6 item 20) the explorer never reads
   an organisation's ontology and only a person edits it, and by the boundary that holds that rule the agent's tools read
   one connection's ontology; domain declarations are untracked override files, like LuxExperience's. The wave as drafted:
   The declared ontology is keyed by the organisation (or a
@@ -4782,11 +4801,14 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   and the process declared on it — cannot be opened in the web map at all (a chip is filed; the API reads it) · (2) a
   declaration path refused a column named with a space (`Order Date`) that the door itself resolves — relaxed to any
   name without a dot, a quote, a backtick or a semicolon · (3) the first mutation run found the overdue boundary
-  untested. **Open on this wave:** the explorer (ON-7b) proposes no processes yet · no web form declares a process (the
-  API does) · a `condition` rule reads as a segment and does not yet scope a metric ("revenue excludes cancelled") ·
-  derived metrics stay out of `graph.metrics` and the metric contract ON PURPOSE (no prompt reach) — ON-10 is where a
-  frame reaches the investigation · a promise in hours is not expressible · the Olist and Lux declarations are UNTRACKED
-  override files. The wave as drafted: `Process`: ordered `Stage`s, each anchored to (entity,
+  untested. **Open on this wave:** ~~the explorer (ON-7b) proposes no processes yet · no web form declares a process (the
+  API does) · a `condition` rule reads as a segment and does not yet scope a metric ("revenue excludes cancelled")~~ —
+  closed 2026-09-15: the explorer proposes processes and rules (`3207f413`), the type panel declares both (`aa0df234`),
+  a rule scopes the verified metrics it names (`89ebf974`), and the Intelligence workspace offers every schema a
+  connection's ontology is built on (`3db7a759`, the receipt's finding (1)) · derived metrics stay out of `graph.metrics`
+  and the metric contract ON PURPOSE (no prompt reach) — ON-10 is where a frame reaches the investigation ·
+  ~~a promise in hours is not expressible~~ — closed 2026-09-15 (`d1a02ce9`: the hours that pass, not the calendar days
+  they touch) · the Olist and Lux declarations are UNTRACKED override files. The wave as drafted: `Process`: ordered `Stage`s, each anchored to (entity,
   timestamp property | lifecycle state); a transition may carry a **promise** — a fixed duration
   (`within 2 days`) or a per-object deadline property (`shipping_limit_date`,
   `order_estimated_delivery_date`). `Rule`: a named, owned definition with scope and formula
@@ -4924,17 +4946,22 @@ carry the falsifier; ON-8 is shape work that changes no answer by itself) — th
   no longer held out. Paraphrases stay 0/3. On the two falsifier sets 5 of 34 frames changed, each a LuxExperience
   defect: the VIP GMV question starts from Order, "Return the country" names `ship_country`, controllable returns and
   high-risk payments now frame, the carrier is named once; no Olist frame moved. 12 guard mutations, every one caught.
-  **Open on this wave:** a frame that states its rate's unit (Olist's two ×100
-  misses) — measured on a NEW set, never by re-running these · a rule read alone that counts ITS OWN type while the question names another that reaches it ("EU core customers
-  who placed orders") starts from the other type — the matcher set holds no such question · rules alone that tie still
-  send the model to choose between filters that both apply (a call that decides nothing) · a definition asked in words
-  nobody declared needs a person's synonym · the declare doors drop `provenance` (their request models lack the field the store
-  keeps) · the framed arm is not guarded in the harness · a second run of either set for stability (the user's go) · a
-  live deep analysis showing the frame in the web
-  (model calls) · the frame is not yet a phase of compiled breakdowns by its candidate drivers (the definitions ride the
-  prompts; that phase is the next slice) · the model does not word the frame (the reading is the deterministic
-  template) · the explorer proposes no processes (ON-9's open item), so an undeclared connection frames nothing · the
-  conversational agent does not frame. The wave as drafted: A `frame_question` step BEFORE the
+  **Open on this wave** (the leftovers' second round, 2026-09-15, closed most of it): ~~a frame that states its rate's
+  unit~~ — built (`e29fb3e9`: "is a FRACTION of 1 … multiply by 100 when the question asks for a percentage"); its
+  measurement on a NEW set is owed (model calls) · ~~a rule read alone that counts ITS OWN type while the question names
+  another that reaches it~~ and ~~rules alone that tie still send the model to choose~~ — closed (`b159888a`, measured on
+  8 matcher items committed before the change, `0a805eee`: dev 33/33, test 27/27) · a definition asked in words nobody
+  declared needs a person's synonym (by design) · ~~the declare doors drop `provenance`~~ — closed (`4eb8230b`) ·
+  ~~the framed arm is not guarded in the harness~~ — closed (`0ea46cc2`: the `framed_guarded` arm, held to the safety
+  guarding already keeps) · a second run of either set for stability, and a live deep analysis showing the frame in the
+  web — owed (model calls) · ~~the frame is not yet a phase of compiled breakdowns~~ — a first slice built
+  (`e29fb3e9`: the deep analysis's named breakdown runs the breakdown the frame compiled for its chosen promise or lag);
+  breakdowns by UNNAMED candidate drivers are the next slice · the model does not word the frame — kept ON PURPOSE: the
+  deterministic reading is free, exact and says only what was declared and measured, where a model-worded one would
+  spend a call per question to paraphrase definitions it could re-derive in prose · ~~the explorer proposes no
+  processes~~ — closed (`3207f413`) · ~~the conversational agent does not frame~~ — closed (`d2173f49`: the quick answer
+  frames, and the conversation's answer tool calls that same `answer_core`) · the prompt-reach baseline grew twice, on
+  purpose and recorded: a promise within hours and a promise's measured rate reach the question frame. The wave as drafted: A `frame_question` step BEFORE the
   investigation's and the deep analysis's intake parse — today the ontology is consulted only
   after (the table above): resolve the question's terms (entity names, aliases, stage names,
   rule and metric names) → the frame: entity, process + stage, the rule or promise that defines
