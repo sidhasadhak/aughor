@@ -64,7 +64,8 @@ def draft_agent(connection_id: str, args: dict) -> dict:
     doc_ids = [str(d) for d in (args.get("doc_ids") or []) if str(d).strip()]
 
     problems = validate_agent_draft(name=name or None, instructions=instructions,
-                                    connection_id=connection_id, doc_ids=doc_ids)
+                                    connection_id=connection_id, doc_ids=doc_ids,
+                                    schema_scope=schema_scope or None)
     if not name:
         problems.insert(0, "name is required")
     if not instructions:
@@ -273,7 +274,9 @@ _AGENT_PARAMS = {
                          "description": "The agent's pinned instructions — its scope "
                                         "and stance, in full sentences."},
         "schema_scope": {"type": "string",
-                         "description": "Optional schema to pin the agent to."},
+                         "description": "Leave empty unless the user named a schema. It "
+                                        "must be one this connection has — a schema it "
+                                        "does not have is refused."},
         "doc_ids": {"type": "array", "items": {"type": "string"},
                     "description": "Document ids to attach. Leaving this empty is "
                                    "RESTRICTIVE, not neutral — say so to the user."},

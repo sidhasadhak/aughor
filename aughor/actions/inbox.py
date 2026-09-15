@@ -641,7 +641,8 @@ def _accept_agent_draft(p: StagedProposal, *, actor: str):
     d = dict(p.params or {})
     problems = validate_agent_draft(
         name=d.get("name"), instructions=d.get("instructions"),
-        connection_id=p.connection_id, doc_ids=d.get("doc_ids") or [])
+        connection_id=p.connection_id, doc_ids=d.get("doc_ids") or [],
+        schema_scope=d.get("schema_scope") or None)
     if problems:
         msg = "; ".join(problems)
         _record_outcome(p.id, "failed", msg, {})
