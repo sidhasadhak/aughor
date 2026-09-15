@@ -475,6 +475,8 @@ def _dispatch_kinetic(effect: Effect, automation: Automation) -> EffectOutcome:
     result = execute_kinetic_action(
         action, effect.params,
         actor=acting_agent_ref(effect, automation), scope=automation.conn_id,
+        # SP-7 — a write drafted into this chain from a sentence asks a person on every run.
+        require_approval=bool(effect.config.get("require_approval")),
     )
     # DS-7 — `parallel_refused` is R5's verdict (this action is not declared
     # parallel-safe, and the run is inside a declared fan-out), first reachable from an

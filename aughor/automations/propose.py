@@ -298,6 +298,25 @@ def _open_unnamed_choices(drafted: "ProposedChain", outcome: str) -> list[tuple[
     return opened
 
 
+def _hold_drafted_writes(drafted: "ProposedChain") -> list[int]:
+    """SP-7 — a declared write a model drafts into a chain waits for a person on every run.
+
+    The approval switch (``AUGHOR_ACTION_APPROVAL``) is off by default, and with it off a
+    declared write inside an armed chain runs unattended. A chain a PERSON builds by hand is
+    that person's decision; one a model drafted from a sentence is not, so each of its write
+    steps carries ``require_approval`` and the executor asks whatever the switch says.
+    Returns the action numbers held.
+    """
+    from aughor.automations.dataflow import DECLARED_WRITE_KIND
+
+    held: list[int] = []
+    for i, step in enumerate(drafted.effects, start=1):
+        if step.kind == DECLARED_WRITE_KIND:
+            step.config["require_approval"] = True
+            held.append(i)
+    return held
+
+
 def _first_run(conditions: list, now: datetime) -> str:
     """The earliest next fire of the draft's schedule triggers (ISO UTC), or ""."""
     from aughor.automations.engine import next_fire_utc
@@ -346,6 +365,7 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
 
     _repair_bindings(drafted)
     opened = _open_unnamed_choices(drafted, outcome)
+    held = _hold_drafted_writes(drafted)
 
     payload = {
         "conn_id": conn_id,
@@ -386,6 +406,10 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
 
     to_fill = [f"Action {number} needs {_CHOICE_WORDS.get(key, key)} — {why}"
                for number, key, why in opened]
-    return ChainProposal(verdict="proposed", draft=payload, dry_run=dry, notes=drafted.notes,
+    held_note = ("" if not held else
+                 f"Action {', '.join(str(n) for n in held)} waits for a person on every run: a "
+                 f"write drafted from a sentence is never unattended. ")
+    return ChainProposal(verdict="proposed", draft=payload, dry_run=dry,
+                         notes=held_note + (drafted.notes or ""),
                          to_fill=to_fill,
                          first_run=_first_run(payload["conditions"], datetime.now(timezone.utc)))
