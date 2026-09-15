@@ -749,6 +749,10 @@ def _choose(outcomes: list[FrameOutcome], choice: str) -> tuple[Optional[int], s
         return None, ""
     top = outcomes[usable[0]].score
     tied = [i for i in usable if outcomes[i].score == top]
+    if len(tied) > 1 and all(outcomes[i].kind == "rule" for i in tied):
+        # rules named together are filters that all apply from where the reading starts — never definitions to choose
+        # between — so no choice is asked for, and the first named reads as the outcome
+        return usable[0], ""
     return (usable[0] if len(tied) == 1 else None), ""
 
 
@@ -827,18 +831,33 @@ def _start_entity(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm]) ->
     return graph.entities.get(widest.target) if widest is not None else None
 
 
+#: The words that head a count: what they name first is what the question counts.
+_COUNT_HEADS = {("how", "many"), ("number", "of"), ("count", "of")}
+
+
 def _filtered_start(graph: OntologyGraph, frame: Frame, terms: list[FrameTerm],
                     rules: list[BusinessRule]) -> Optional[OntologyEntity]:
-    """Where a reading of rules alone starts: a type the question names that reaches every rule's type by measured to-one
-    links — the objects the rules filter, so "orders placed by VIP customers" counts orders — preferring a type that is no
-    rule's own; else the first rule's type that reaches the others; else the first rule's type. (A question that counts
-    a rule's own type while naming another that reaches it — "EU core customers who placed orders" — reads from the
-    other.)"""
+    """Where a reading of rules alone starts. A question that asks how many of a rule, or of a type a rule is defined on —
+    "How many VIP customers placed an order" — counts that type, and reads from it when it reaches every rule's type.
+    Otherwise: a type the question names that reaches every rule's type by measured to-one links — the objects the rules
+    filter, so "orders placed by VIP customers" counts orders, and "Which EU core customer wrote the most reviews" counts
+    reviews — preferring a type that is no rule's own; else the first rule's type that reaches the others; else the first
+    rule's type."""
     kinds = list(dict.fromkeys(r.entity for r in rules))
 
     def reaches_all(entity: OntologyEntity) -> bool:
         reach = {e.id for e, _chain in _to_one_paths(graph, entity, frame.hops)}
         return all(k in reach for k in kinds)
+
+    lowered = [w.lower() for w in words_of(frame.question)]
+    heads = [i + 2 for i in range(len(lowered) - 1) if (lowered[i], lowered[i + 1]) in _COUNT_HEADS]
+    if heads:
+        # what a count's head names first is what the question counts, when a rule is defined on it
+        first = min((t for t in terms if t.start >= heads[0] and ((t.kind == "entity" and t.target in graph.entities)
+                     or (t.kind == "rule" and t.target in (graph.rules or {})))), key=lambda t: t.start, default=None)
+        counted = "" if first is None else (graph.rules[first.target].entity if first.kind == "rule" else first.target)
+        if counted in kinds and counted in graph.entities and reaches_all(graph.entities[counted]):
+            return graph.entities[counted]
 
     named = sorted((t for t in terms if t.kind == "entity" and t.target in graph.entities),
                    key=lambda t: (t.target in kinds, -(t.end - t.start), t.start))

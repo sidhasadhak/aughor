@@ -358,9 +358,25 @@ def test_rules_read_alone_start_from_the_type_the_question_names_that_they_filte
     assert frame_question("How many EU core customers are there?", declared).start["entity"] == "Customer"
     # the type the rules filter is where the counting starts, even when the rule's own type is named first
     assert frame_question("Which EU core customer wrote the most reviews?", declared).start["entity"] == "Review"
+    # …but a question that asks how many of the rule's own type counts that type
+    own = frame_question("How many EU core customers placed an order?", declared)
+    assert (own.outcome.name, own.start["entity"]) == ("eu_core", "Customer")
+    assert frame_question("How many orders did EU core customers place?", declared).start["entity"] == "Order"
+    # a rule named before the count's head is not what it counts; a counted type that cannot reach every rule's type is
+    # not where the reading starts
+    assert frame_question("For EU core customers, how many orders did they place?", declared).start["entity"] == "Order"
+    assert frame_question("How many EU core customers have five-star reviews?", declared).start["entity"] == "Review"
     both = frame_question("How many open orders did EU core customers place?", declared)
-    assert both.ambiguous and both.start["entity"] == "Order"             # two rules: the named type that reaches both
+    assert both.start["entity"] == "Order"                               # two rules: the named type that reaches both
     assert [(r.id, r.via) for r in both.rules] == [("open_orders", ""), ("eu_core", "order_to_customer")]
+
+
+def test_rules_named_together_are_filters_that_all_apply_and_ask_for_no_choice(declared):
+    both = frame_question("How many open orders did EU core customers place?", declared)
+    assert (both.ambiguous, both.chosen_by, both.outcome.name) == (False, "names", "open_orders")
+    assert {r.id for r in both.rules if r.usable} == {"open_orders", "eu_core"}
+    block = render_frame_block(both)
+    assert "rule open_orders" in block and "rule eu_core" in block and "declared definitions" not in block
 
 
 def test_a_word_that_fits_several_properties_is_narrowed_only_where_the_question_says_which():
