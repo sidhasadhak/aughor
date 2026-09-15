@@ -7,9 +7,12 @@ as it stands, timeseries as its latest row, detail as its rollups); a to-many li
 per key; the keys an EXISTS tests — hanging off the query's own FROM level, or off another keyed read's rows when a path
 continues past a type read by key. This module runs what it assembled in three parts:
 
-1. **Home.** Everything that does not touch another connection runs on the anchor's connection as one statement, at
-   the object's grain: the filters, the joins and pre-aggregated links that stay on that connection, and each value an
-   aggregate or a group reads, computed per row — with the keys every keyed read needs projected beside them.
+1. **Home.** Everything that does not touch another connection runs on the anchor's connection as one statement: the
+   filters, the joins and pre-aggregated links that stay on that connection, and each value an aggregate or a group
+   reads, computed per row — with the keys every keyed read needs projected beside them. When the answer aggregates,
+   those rows are grouped there at the key's grain (`_pre_aggregate`): every value the stage reads outside an
+   aggregate, and every key, keys a group; an aggregate over home values alone is computed per group and rolled up in
+   the stage, and one that reads a far value is weighted by how many rows its group holds.
 2. **Keyed reads.** Each far source is read through the batched-foreach engine by exactly the distinct keys the home
    rows hold — or, past a type read by key, the keys that read's rows hold — one query per chunk of keys
    (`remote_join.fetch_by_keys`), every value typed as its source holds it. A type or binding a path reaches past a
@@ -23,7 +26,11 @@ measured N:1 or 1:1 from where the query stands, a binding measured one row per 
 pre-aggregation or distinct keys by construction — so the stage's join cannot multiply the home rows, and a far key that now meets two rows is refused rather than joined. The aggregation is the
 compiler's own over the same rows, so an average is still a ratio of sums and a distinct count still counts values.
 
-Bounded and honest: the home rows (`MAX_HOME_ROWS`) and a keyed read's rows (`MAX_KEYED_ROWS`) are capped, and a query
+Grouping is correct for the same reason the join is: a group holds one value of every key, and a keyed read is one
+row per key, so every far value is constant inside a group — a far condition keeps or drops a whole group, and a count
+or sum weighted by the group's rows is the count or sum over those rows.
+
+Bounded and honest: the home rows (`MAX_HOME_ROWS`, groups when grouped) and a keyed read's rows (`MAX_KEYED_ROWS`) are capped, and a query
 that would pass a cap is answered with the reason and its count, never from part of its data; a connector that hands
 back no typed values is answered the same way. Nothing is kept — the stage is dropped once the answer is read (§3.15's
 law: live resolution, never a copy of the warehouse) — and the answer passes the PII, audit and budget post-pass a
@@ -131,9 +138,11 @@ class CrossSourcePlan:
     #: The answer's aggregation, in DuckDB, over `__home` and `__far_<alias>`.
     stage_sql: str
     reads: list[KeyedRead]
+    #: Whether the home rows arrive grouped at the key's grain, each with how many rows it holds in `__n`.
+    grouped: bool = False
 
     def to_dict(self) -> dict:
-        return {"home_sql": self.home_sql, "stage_sql": self.stage_sql,
+        return {"home_sql": self.home_sql, "stage_sql": self.stage_sql, "grouped": self.grouped,
                 "reads": [{"alias": r.alias, "kind": r.kind, "label": r.label, "connection_id": r.connection_id,
                            "source": r.table or "a keyed SELECT", "key": r.key, "by": r.local,
                            "columns": list(r.columns)} for r in self.reads]}
@@ -212,11 +221,96 @@ def split(sql: str, reads: dict[str, KeyedRead], *, dialect: str, date_cols: set
     stage.set("from_", shell.args["from_"])
     stage.set("joins", shell.args.get("joins"))
     stage.set("where", exp.Where(this=exp.and_(*stage_where)) if stage_where else None)
+    grouped = _pre_aggregate(stage, far, set(key_columns.values()))
+    if grouped is not None:
+        stage, grain, partials = grouped
+        # names only: the row-level statement computes every value once, and the groups are keyed by the names it gave
+        home = exp.select(*(exp.column(name) for name in grain), *(exp.alias_(e, name) for name, e in partials),
+                          exp.alias_(exp.Count(this=exp.Star()), "__n")).from_(home.subquery("r"))
+        if grain:
+            home = home.group_by(*(exp.column(name) for name in grain))
     try:
         home_sql, stage_sql = home.sql(dialect=dialect or "duckdb"), stage.sql(dialect="duckdb")
     except Exception as exc:  # noqa: BLE001
         raise CrossSourceRefused(f"the split query could not be rendered for {dialect} ({exc})") from exc
-    return CrossSourcePlan(home_sql=home_sql, key_columns=key_columns, stage_sql=stage_sql, reads=list(reads.values()))
+    return CrossSourcePlan(home_sql=home_sql, key_columns=key_columns, stage_sql=stage_sql, reads=list(reads.values()),
+                           grouped=grouped is not None)
+
+
+def _pre_aggregate(stage: Any, far: set[str], keys: set[str]) -> Optional[tuple[Any, list[str], list[tuple[str, Any]]]]:
+    """The home rows grouped at the key's grain, when the stage can read the answer from groups (O4).
+
+    The grain is every home value the stage reads outside an aggregate — a group, an order, a condition the stage
+    applies before it aggregates — and every key a read is joined on. An aggregate over home values alone (COUNT, SUM,
+    MIN, MAX, AVG) is computed per group at home and rolled up in the stage: a count or a sum as the sum of the groups', a
+    minimum or maximum as itself, an average as the ratio of the summed sums and counts. One that reads a far value, or
+    counts distinct values, keeps its home values in the grain; inside a group every one of them is constant — and so is
+    every far value, each keyed read being one row per key — so a SUM or COUNT is weighted by the group's rows (`__n`),
+    and a MIN, MAX or distinct count reads as it stands.
+
+    Returns ``(the stage rewritten to read groups, the grain's home column names, (name, per-group aggregate) for each
+    one computed at home)``, or None — the home rows stay one per object — when the stage aggregates nothing, reads a
+    DISTINCT, a window or a FILTER clause, or holds an aggregate no group rolls up."""
+    import sqlglot
+    from sqlglot import exp
+    stage = stage.copy()
+    if stage.args.get("distinct") or stage.find(exp.Window) or stage.find(exp.Filter):
+        return None
+    rolled = (exp.Count, exp.Sum, exp.Avg, exp.Min, exp.Max)
+    aggregates = [node for node in stage.find_all(exp.AggFunc) if node.find_ancestor(exp.AggFunc) is None]
+    if not aggregates or not all(isinstance(node, rolled) for node in aggregates):
+        return None
+
+    def home_columns(node: Any) -> set[str]:
+        return {c.name for c in node.find_all(exp.Column) if c.table == "h"}
+
+    grain = set(keys)
+    for column in stage.find_all(exp.Column):
+        # a read's join key (`h.__jk_<alias>`) is staged beside the rows from the key column, which is in the grain
+        if column.table == "h" and not column.name.startswith("__jk_") and column.find_ancestor(exp.AggFunc) is None:
+            grain.add(column.name)
+    pushed, weighted = [], []
+    for node in aggregates:
+        distinct = isinstance(node, exp.Count) and isinstance(node.this, exp.Distinct)
+        if distinct or any(c.table in far for c in node.find_all(exp.Column)):
+            grain |= home_columns(node)
+            weighted.append(node)
+        else:
+            pushed.append(node)
+
+    partials: list[tuple[str, Any]] = []
+
+    def partial(expression: Any) -> str:
+        name = f"__a{len(partials) + 1}"
+        unqualified = expression.copy()
+        for column in list(unqualified.find_all(exp.Column)):
+            column.set("table", None)
+        partials.append((name, unqualified))
+        return f"h.{name}"
+
+    for node in pushed:
+        if isinstance(node, exp.Avg):
+            total, count = partial(exp.Sum(this=node.this.copy())), partial(exp.Count(this=node.this.copy()))
+            text = f"(CAST(SUM({total}) AS DOUBLE) / NULLIF(SUM({count}), 0))"
+        elif isinstance(node, exp.Count):
+            text = f"COALESCE(SUM({partial(node)}), 0)"
+        else:
+            text = f"{node.key.upper()}({partial(node)})"
+        node.replace(sqlglot.parse_one(text, read="duckdb"))
+    for node in weighted:
+        if isinstance(node, (exp.Min, exp.Max)) or (isinstance(node, exp.Count) and isinstance(node.this, exp.Distinct)):
+            continue
+        argument = node.this.sql(dialect="duckdb")
+        if isinstance(node, exp.Sum):
+            text = f"SUM(({argument}) * h.__n)"
+        elif isinstance(node, exp.Count):
+            text = f"COALESCE(SUM(CASE WHEN ({argument}) IS NOT NULL THEN h.__n END), 0)"
+        else:
+            text = (f"(CAST(SUM(({argument}) * h.__n) AS DOUBLE) / "
+                    f"NULLIF(SUM(CASE WHEN ({argument}) IS NOT NULL THEN h.__n END), 0))")
+        node.replace(sqlglot.parse_one(text, read="duckdb"))
+    order = sorted(grain, key=lambda name: (len(name), name))
+    return stage, order, partials
 
 
 def execute_plan(plan: CrossSourcePlan, *, home_connection_id: str, home_db: Any, open_source: Callable[[str], Any],
@@ -248,14 +342,20 @@ def execute_plan(plan: CrossSourcePlan, *, home_connection_id: str, home_db: Any
     rows = list(payload.get("rows") or [])
     if payload.get("truncated") or len(rows) > MAX_HOME_ROWS:
         # a connection with a cap of its own stops before MAX_HOME_ROWS, and the reason names where it stopped
-        where = (f"the objects this query reads on {home_connection_id} number more than {MAX_HOME_ROWS:,}"
+        what = "groups of the objects" if plan.grouped else "objects"
+        where = (f"the {what} this query reads on {home_connection_id} number more than {MAX_HOME_ROWS:,}"
                  if len(rows) > MAX_HOME_ROWS else
                  f"{home_connection_id} stopped at {len(rows):,} of the objects this query reads, a cap of its own")
         return _failed(label, display_sql, f"{where}, and a cross-source answer is never taken from part of them — "
                                            "narrow the query"), timings
     columns = list(result.columns)
     types = [str(t or "") for t in payload.get("types") or []]
-    timings.append({"read": "home", "connection_id": home_connection_id, "rows": len(rows), "ms": _ms(clock)})
+    home_timing = {"read": "home", "connection_id": home_connection_id, "rows": len(rows), "ms": _ms(clock)}
+    if plan.grouped:
+        # how many objects the groups hold — the rows the home read would have carried one by one
+        at_n = columns.index("__n")
+        home_timing["objects"] = sum(int(row[at_n] or 0) for row in rows)
+    timings.append(home_timing)
 
     index = {name: i for i, name in enumerate(columns)}
     staged: dict[str, tuple[list[str], list[str], list[list]]] = {}

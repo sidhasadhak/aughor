@@ -386,13 +386,14 @@ def test_the_rows_across_two_connections_equal_hand_written_references(both, sou
         "ON i.order_id = o.order_id LEFT JOIN ecommerce.customers c ON o.customer_id = c.customer_id GROUP BY 1"))
 
 
-def test_the_split_computes_row_values_at_home_and_every_aggregate_in_the_stage(both, sources):
+def test_the_split_computes_row_values_at_home_groups_them_at_the_keys_grain_and_rolls_them_up_in_the_stage(both, sources):
     across, _ = both
     compiled = compile_object_query(QUERIES["delivered revenue by country"], domain_graph(across), fiscal_start_month=1)
     plan = compiled.cross_source
     home, stage = plan.home_sql.upper(), plan.stage_sql.upper()
-    assert "GROUP BY" not in home and "SUM(" not in home and "__FAR" not in home and "'DELIVERED'" in home
-    assert "GROUP BY" in stage and "SUM(" in stage and "__FAR_" in stage and "DELIVERED" not in stage
+    assert plan.grouped and plan.to_dict()["grouped"] is True
+    assert "GROUP BY" in home and "COUNT(*) AS __N" in home and "__FAR" not in home and "'DELIVERED'" in home
+    assert "GROUP BY" in stage and "SUM(H.__A1)" in stage and "__FAR_" in stage and "DELIVERED" not in stage
     [read] = plan.reads
     assert (read.kind, read.connection_id, read.table, read.key, read.columns) == \
            ("link", sources["crm"], "ecommerce.customers", "customer_id", ["country"])
@@ -862,6 +863,89 @@ def test_a_type_is_named_by_its_row_or_by_a_binding_on_another_connection_counte
     with pytest.raises(DomainRefused) as foreign:
         set_display_property(across, "Order", "psp", open_connection_for)
     assert foreign.value.status == 403
+
+
+# ── the home rows grouped at the key's grain (O4) ───────────────────────────────────────────────────────────────
+
+#: Each way a group's rows roll up in the stage: an aggregate over home values computed per group, and one that reads a far
+#: value weighed by how many rows its group holds — over groups of one row and over groups of many.
+ROLLED = {
+    # orders over 250 only: every seeded customer placed ten orders and a status keeps the same share of each one's, so
+    # groups of one size would let an average of the groups' averages pass for the average — an amount does not
+    "the smallest, largest and average order over 250 and the orders per customer city (home values rolled up)": {
+        "object_type": "Order", "by": ["placed_by.city"], "filters": [{"path": "total_amount", "op": ">", "value": 250}],
+        "measures": [{"agg": "min", "path": "total_amount"}, {"agg": "max", "path": "total_amount"},
+                     {"agg": "avg", "path": "total_amount"}, {"agg": "count", "name": "orders"}]},
+    "delivered orders by customer country (a home condition inside a count)": {
+        "object_type": "Order", "by": ["placed_by.country"],
+        "measures": [{"agg": "count", "name": "delivered", "where": [{"path": "status", "value": "delivered"}]}]},
+    "orders of customers in a country nobody lives in (a count over no rows is zero)": {
+        "object_type": "Order", "filters": [{"path": "placed_by.country", "value": "XX"}], "measures": [{"agg": "count"}]},
+    # a far value itself is summed only where it is one per object (the compiler refuses the fan-out), so a group of many
+    # rows meets a far value through a condition: one customer's orders share their customer's country
+    "German customers' orders by status (a far condition counted over groups of many)": {
+        "object_type": "Order", "by": ["status"],
+        "measures": [{"agg": "count", "name": "german", "where": [{"path": "placed_by.country", "value": "DE"}]}]},
+    "items German customers ordered, by status (a far condition inside a sum over groups of many)": {
+        "object_type": "Order", "by": ["status"],
+        "measures": [{"agg": "sum", "path": "item_count", "where": [{"path": "placed_by.country", "value": "DE"}]}]},
+    "the average items of a German customer's order, by status (a far condition inside an average over groups of many)": {
+        "object_type": "Order", "by": ["status"],
+        "measures": [{"agg": "avg", "path": "item_count", "where": [{"path": "placed_by.country", "value": "DE"}]}]},
+    "the average paid amount by customer country (a far value averaged over groups of one)": {
+        "object_type": "Order", "by": ["placed_by.country"], "measures": [{"agg": "avg", "path": "paid_amount"}]},
+    "the latest customer signup by status (a far maximum)": {
+        "object_type": "Order", "by": ["status"], "measures": [{"agg": "max", "path": "placed_by.signup_date"}]},
+    "distinct customers per payment provider (a home value counted distinct beside a far group)": {
+        "object_type": "Order", "by": ["psp"], "measures": [{"agg": "count_distinct", "path": "customer_id"}]},
+    "revenue among captured payments by status (a far condition inside a sum of a home value)": {
+        "object_type": "Order", "by": ["status"],
+        "measures": [{"agg": "sum", "path": "total_amount", "where": [{"path": "payment_status", "value": "captured"}]}]},
+}
+
+
+@pytest.mark.parametrize("name", sorted(ROLLED))
+def test_home_rows_grouped_at_the_keys_grain_roll_up_to_exactly_the_rows_of_the_single_statement(both, name):
+    across, one = both
+    rows, compiled, result = answer(across, ROLLED[name])
+    assert result.error is None and compiled.cross_source.grouped is True, result.error
+    assert rows == answer(one, ROLLED[name])[0]
+
+
+def test_every_aggregate_shape_across_two_connections_reads_its_home_rows_in_groups(wide):
+    graph = domain_graph(wide[0])
+    shapes = {**QUERIES, **DEEPER}
+    assert [name for name, query in shapes.items()
+            if not compile_object_query(query, graph, fiscal_start_month=1).cross_source.grouped] == []
+
+
+def test_what_no_group_rolls_up_keeps_the_home_rows_one_per_object(sources):
+    read = XS.KeyedRead(alias="x1", kind="link", connection_id=sources["crm"], table="ecommerce.customers", sql=None,
+                        key="customer_id", local="t0.customer_id", label="placed_by", target="Customer",
+                        columns=["country"])
+    joined = "FROM ecommerce.orders AS t0 LEFT JOIN __far_x1 AS x1 ON x1.customer_id = t0.customer_id"
+    for select, grouped in (("x1.country, COUNT(*) AS n", True), ("x1.country, MEDIAN(t0.total_amount) AS m", False),
+                            ("x1.country, STDDEV_SAMP(t0.total_amount) AS s", False),
+                            ("x1.country, SUM(t0.total_amount) OVER () AS w", False), ("x1.country, t0.order_id", False)):
+        tail = " GROUP BY x1.country" if "(" in select and "OVER" not in select else ""
+        plan = XS.split(f"SELECT {select} {joined}{tail}", {"x1": read}, dialect="duckdb", date_cols=set())
+        assert (plan.grouped, "GROUP BY" in plan.home_sql.upper()) == (grouped, grouped), select
+
+
+def test_the_home_cap_counts_groups_so_more_objects_than_it_holds_are_answered_from_their_groups(both, sources, monkeypatch):
+    across, one = both
+    [(orders, customers)] = reference(sources, "SELECT COUNT(*), COUNT(DISTINCT customer_id) FROM ecommerce.orders")
+    monkeypatch.setattr(XS, "MAX_HOME_ROWS", int(customers))           # fewer than the orders, as many as their customers
+    query = QUERIES["orders by customer country"]
+    compiled = compile_object_query(query, domain_graph(across), fiscal_start_month=1)
+    db = open_connection_for(sources["shop"])
+    try:
+        result, timings = XS.execute_plan(compiled.cross_source, home_connection_id=sources["shop"], home_db=db,
+                                          open_source=open_connection_for, display_sql=compiled.sql)
+    finally:
+        db.close()
+    assert result.error is None and normal(result.rows) == answer(one, query)[0]
+    assert (timings[0]["read"], timings[0]["rows"], timings[0]["objects"]) == ("home", customers, orders)
 
 
 # ── the doors ───────────────────────────────────────────────────────────────────────────────────
