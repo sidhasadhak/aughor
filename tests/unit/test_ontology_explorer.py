@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 
+import duckdb
 import pytest
 import yaml
 
@@ -365,3 +366,61 @@ def test_the_grouping_comparison_names_a_fusion_as_what_keeps_a_draft_from_shipp
     assert split["fusions"] == [] and split["ships_default_on"] is True
     assert [s["reference"] for s in split["splits"]] == ["Order"] and split["only_in_draft"] == ["dim_date"]
     assert split["pair_precision"] == 1.0 and split["pair_recall"] == 0.25
+
+
+WAREHOUSES = """
+CREATE TABLE ecommerce.warehouses AS
+SELECT printf('W%02d', i) AS warehouse_id, 'Depot ' || i AS warehouse_name FROM range(1, 6) t(i);
+CREATE TABLE ecommerce.shipments AS
+SELECT printf('S%04d', i) AS shipment_id, 'Depot ' || (1 + i % 5) AS warehouse FROM range(1, 41) t(i);
+CREATE TABLE ecommerce.pickups AS
+SELECT printf('K%03d', i) AS pickup_id, 'Dock ' || (1 + i % 5) AS depot FROM range(1, 21) t(i);
+"""
+SHIPS_FROM = "link:Shipment.warehouse=Warehouse.warehouse_id"
+COLLECTED_AT = "link:Pickup.depot=Warehouse.warehouse_id"
+
+
+def test_a_link_whose_keys_never_meet_is_counted_again_on_the_name_its_target_is_known_by(door, client, faux_llm,
+                                                                                         tmp_path):
+    """The live receipt's mistake: shipments carry the warehouse's NAME, and the link was proposed on its id — its keys
+    never met. The explorer now counts it once more on the column the target is known by, when that column is measured
+    to name one object per row, and writes it only if its keys meet there; a second run finds it already joined."""
+    with duckdb.connect(str(tmp_path / "samples.duckdb")) as wh:
+        wh.execute(WAREHOUSES)
+    for spec in ({"id": "Warehouse", "display_name": "Warehouse", "backing": {"table": "warehouses", "primary_key": "warehouse_id"}},
+                 {"id": "Shipment", "display_name": "Shipment", "backing": {"table": "shipments", "primary_key": "shipment_id"}},
+                 {"id": "Pickup", "display_name": "Pickup", "backing": {"table": "pickups", "primary_key": "pickup_id"}}):
+        assert client.post("/ontology/entities", params=PARAMS, json=spec).status_code == 200
+    assert client.put("/ontology/entities/Warehouse", params=PARAMS,
+                      json={"display_property": "warehouse_name"}).status_code == 200
+    proposal = {**DRAFT, "entities": [], "parts": [], "processes": [], "rules": [], "links": [
+        {"from_entity": "Shipment", "to_entity": "Warehouse", "verb": "ships_from", "from_column": "warehouse",
+         "to_column": "warehouse_id"},
+        {"from_entity": "Pickup", "to_entity": "Warehouse", "verb": "collected_at", "from_column": "depot",
+         "to_column": "warehouse_id"}]}
+    faux_llm.set_responses([proposal, proposal, proposal])
+
+    unmeasured = {o["key"]: o for o in explore(client)["outcomes"]}[SHIPS_FROM]
+    assert unmeasured["outcome"] == "refused" and "keys never meet" in unmeasured["note"]   # a name not yet measured
+
+    assert client.post("/ontology/measure", params=PARAMS).status_code == 200
+    second = {o["key"]: o for o in explore(client)["outcomes"]}
+    written = second[SHIPS_FROM]
+    # counted again on the name too, a column that holds neither the key nor the name still meets nothing: refused
+    assert second[COLLECTED_AT]["outcome"] == "refused" and "keys never meet" in second[COLLECTED_AT]["note"]
+    assert written["outcome"] == "written", written
+    assert "holds the name Warehouse is known by" in written["note"] and "warehouse_name" in written["note"]
+    link = next(l for l in client.get("/object-types/shipment", params=PARAMS).json()["links"]
+                if l["business_name"] == "ships_from")
+    assert (link["origin"], link["traversable"]) == ("model", True)
+    counted = client.post("/objects/query", params=PARAMS, json={
+        "object_type": "shipment", "by": ["ships_from.warehouse_id"], "measures": [{"agg": "count"}]}).json()
+    assert counted["path"] == "compiled", counted
+    with duckdb.connect(str(tmp_path / "samples.duckdb")) as wh:
+        expected = wh.execute("SELECT w.warehouse_id, COUNT(*) FROM ecommerce.shipments s JOIN ecommerce.warehouses w "
+                              "ON w.warehouse_name = s.warehouse GROUP BY 1").fetchall()
+    assert sorted((str(r[0]), int(r[1])) for r in counted["rows"]) == sorted((str(k), int(n)) for k, n in expected)
+
+    again = {o["key"]: o for o in explore(client)["outcomes"]}[SHIPS_FROM]
+    assert again["outcome"] == "already"
+

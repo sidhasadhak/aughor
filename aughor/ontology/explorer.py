@@ -46,7 +46,7 @@ from aughor.ontology.declared import (
     measure_declared_backing,
     measure_declared_link,
 )
-from aughor.ontology.display import key_of
+from aughor.ontology.display import display_of, key_of
 from aughor.ontology.drafts import MAX_RUNS, DraftProposal, DraftRun, OntologyDraft
 from aughor.ontology.models import Binding, OntologyEntity, OntologyGraph, Rollup, snake_name
 from aughor.ontology.parts import backing_table, part_of, parts_of
@@ -451,6 +451,17 @@ def _named(names: Any, wanted: str) -> Optional[str]:
     return next((str(n) for n in names if str(n).lower() == low), None) if low else None
 
 
+def _name_column(entity: OntologyEntity, column: str) -> Optional[str]:
+    """The column ``entity`` is known by — its display property, measured to name one object per row — when it is
+    neither ``column`` nor the key: the one other column a link's from-side may hold in place of the key (shipments that
+    carry the warehouse's name, not its id)."""
+    shown = display_of(entity)
+    if shown.get("verified") is not True or shown.get("is_key"):
+        return None
+    name = _named(entity.properties or {}, str(shown.get("property") or ""))
+    return name if name is not None and name.lower() != (column or "").lower() else None
+
+
 def proposal_tier(graph: Optional[OntologyGraph], proposal: DraftProposal) -> str:
     """Where a recorded proposal stands NOW, read from the served graph rather than remembered: `proposed` (in the
     graph, still the model's), `confirmed` (a person made it theirs), `released` (a part whose binding stays but whose
@@ -718,8 +729,10 @@ def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[
     if why:
         return done("withdrawn", why)
     ours = {(a.id, a_col.lower()), (b.id, b_col.lower())}
+    name_col = _name_column(b, b_col)
+    by_name = {(a.id, a_col.lower()), (b.id, name_col.lower())} if name_col is not None else None
     same = next((r for r in graph.relationships.values()
-                 if {(r.from_entity, r.from_col.lower()), (r.to_entity, r.to_col.lower())} == ours), None)
+                 if {(r.from_entity, r.from_col.lower()), (r.to_entity, r.to_col.lower())} in (ours, by_name)), None)
     if same is not None:
         return done("already", f"{same.id} already joins these columns", target={"relationship": same.id})
     spec = {"from_entity": a.id, "to_entity": b.id, "name": verb, "from_column": a_col, "to_column": b_col,
@@ -741,6 +754,22 @@ def _link_outcome(p: ProposedLink, graph: OntologyGraph, db: Any, earlier: dict[
     if overlap is None:
         return done("refused", "how many of its keys meet could not be counted", spec=spec, measured=measured)
     if overlap <= 0:
+        # A key-for-a-name mistake: the from-side may hold the name the target is known by. Counted again on that one
+        # column — measured to name one object per row — and written only when its keys meet; otherwise refused as said.
+        if name_col is not None:
+            retried = {**spec, "to_column": name_col}
+            again = measure_declared_link(db, graph, link_fields(retried))
+            if (again.get("bound") and (again.get("value_overlap") or 0) > 0
+                    and not link_problem_on_graph(graph, link_fields(retried))):
+                counted = {k: again.get(k) for k in ("bound", "measured_cardinality", "value_overlap", "note")}
+                note = (f"its keys never met on {b.id}.{b_col}; {a.id}.{a_col} holds the name {b.id} is known by, so "
+                        f"the link was counted on {name_col} — {again.get('note')}")
+                try:
+                    writers.declare_link(retried)
+                except ExplorerRefused as exc:
+                    return done("refused", str(exc), spec=retried, measured=counted)
+                return done("written", note, spec=retried, measured=counted,
+                            target={"relationship": link_id(link_fields(retried))})
         return done("refused", f"the keys never meet — {entry.get('note')}", spec=spec, measured=measured)
     try:
         writers.declare_link(spec)
