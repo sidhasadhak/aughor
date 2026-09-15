@@ -120,13 +120,15 @@ def patch_agent(agent_id: str, body: AgentGovernancePatch):
 
 def _validate_agent_fields(name: Optional[str] = None, instructions: Optional[str] = None,
                            connection_id: Optional[str] = None,
-                           doc_ids: Optional[list] = None) -> None:
+                           doc_ids: Optional[list] = None,
+                           schema_scope: Optional[str] = None) -> None:
     # SP-3 extracted the body to the store (`validate_agent_draft`) so the create route
     # and the draft-staging path check with ONE set of rules; this wrapper only turns
     # problem sentences into the 422 the form renders.
     from aughor.custom_agents.store import validate_agent_draft
     problems = validate_agent_draft(name=name, instructions=instructions,
-                                    connection_id=connection_id, doc_ids=doc_ids)
+                                    connection_id=connection_id, doc_ids=doc_ids,
+                                    schema_scope=schema_scope)
     if problems:
         raise HTTPException(status_code=422, detail="; ".join(problems))
 
@@ -233,7 +235,15 @@ def create_user_agent_from_template(body: UserAgentFromTemplate):
     while they still have the domain in mind — the agent is born with a stance, and earns
     its pass chip only once real ground truth exists.
     """
+    from aughor.custom_agents.store import schema_scope_problem
     from aughor.custom_agents.templates import create_from_template
+    # SP-7 — the schema rule every other door runs, before anything is created. Called
+    # directly rather than through `_validate_agent_fields`, so this route does not start
+    # refusing connections it never checked before.
+    if body.schema_scope:
+        problem = schema_scope_problem(body.schema_scope, body.connection_id or None)
+        if problem:
+            raise HTTPException(status_code=422, detail=problem)
     made = create_from_template(body.pack_id, name=body.name,
                                 connection_id=body.connection_id,
                                 schema_scope=body.schema_scope)
@@ -305,7 +315,8 @@ async def propose_user_agent(body: AgentProposeRequest):
 
 @router.post("/agents/custom", status_code=201)
 def create_user_agent(body: UserAgentCreate):
-    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids,
+                           body.schema_scope)
     _validate_agent_packs(body.pack_ids)
     _validate_agent_grants(body.tool_grants, body.connection_id, body.schema_scope)
     from aughor.org.context import current_org_id
@@ -329,9 +340,17 @@ def get_user_agent(agent_id: str):
 
 @router.patch("/agents/custom/{agent_id}")
 def patch_user_agent(agent_id: str, body: UserAgentPatch):
-    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
-    _validate_agent_packs(body.pack_ids)
     from aughor.custom_agents import get_agent, update_agent
+    # SP-7 — a schema is checked against the connection it will be read through: the one
+    # this patch sets, or the stored one when the patch changes only the schema.
+    schema_conn = body.connection_id
+    if body.schema_scope and schema_conn is None:
+        stored_for_schema = get_agent(agent_id)
+        schema_conn = stored_for_schema.connection_id if stored_for_schema else None
+    _validate_agent_fields(body.name, body.instructions, body.connection_id, body.doc_ids)
+    if body.schema_scope:
+        _validate_agent_fields(connection_id=schema_conn, schema_scope=body.schema_scope)
+    _validate_agent_packs(body.pack_ids)
     if body.tool_grants is not None:
         # Against the EFFECTIVE binding: a patch may change grants without restating the
         # connection, and validating against "" would skip the roster check exactly when

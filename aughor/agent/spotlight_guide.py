@@ -8,7 +8,9 @@ every topic:
 
 * **The steps are the product's, not an impression of it.** Each walkthrough names
   the stations that exist in this build — the agent walkthrough is the create flow's
-  own stepper (Start · Scope · Define · Prove · Reach), quoted rather than imagined.
+  own stepper (Describe · Start · Scope · Define · Prove · Reach), quoted rather than
+  imagined. A UI label is written in “curly quotes” and nowhere else, so SP-7's parity
+  test can find every label the guide names and require it in `web/`.
   Curated text, no model, no network, exactly like the help corpus. Deeper prose
   arrives through the packs plane (the SKILL.md intake lands there), which the
   roster already serves.
@@ -143,61 +145,71 @@ _UNAVAILABLE = ("the live numbers are unavailable right now — the walkthrough 
 
 def _guide_create_agent() -> dict:
     steps = [
-        "Start (Agents page → New agent): begin from a domain pack or from scratch.",
-        "Scope: name it and say where it may look — a connection, optionally one "
+        "Open “Agent Ops” and choose “+ Create agent”. The first station is “Describe”: "
+        "say what the agent should answer, and the platform reads this connection's "
+        "catalogue and drafts the rest for you to check.",
+        "“Start”: begin from a domain pack or from scratch.",
+        "“Scope”: name it and say where it may look — a connection, optionally one "
         "schema. A narrower scope answers more reliably.",
-        "Define: write its instructions (its scope and stance, in full sentences) and "
+        "“Define”: write its instructions (its scope and stance, in full sentences) and "
         "attach documents. Attaching none is restrictive, not neutral: an agent with "
         "no documents sees NO documents — fewer than asking with no agent at all.",
-        "Prove: add golden questions and run the evaluation suite. The pass chip is "
+        "“Prove”: add golden questions and run the evaluation suite. The pass chip is "
         "earned by that exact configuration and goes stale if the configuration "
         "changes.",
-        "Reach (optional): bind a Slack bot so people can reach it outside this app.",
+        "“Reach” (optional): bind a Slack bot so people can reach it outside this app.",
     ]
     g = _agents_grounding()
     offer = {
         "tool": "draft_agent",
         "sentence": ("I can draft the agent from your description right now — it is "
-                     "staged in the approvals inbox, and nothing exists until a "
-                     "person accepts it there."),
+                     "staged for approval under “Agent Ops” → “Attention”, and nothing "
+                     "exists until a person accepts it there."),
     }
     if g is None:
-        summary = (f"To create an agent: Start → Scope → Define → Prove on the Agents "
-                   f"page — or I can draft one from your description and stage it for "
-                   f"approval. Your existing agents could not be read just now; "
-                   f"{_UNAVAILABLE}.")
+        summary = (f"To create an agent: “Agent Ops” → “+ Create agent”, then “Describe” "
+                   f"→ “Start” → “Scope” → “Define” → “Prove” — or I can draft one from "
+                   f"your description and stage it for approval. Your existing agents "
+                   f"could not be read just now; {_UNAVAILABLE}.")
     else:
         summary = (f"You have {g['total']} agents (evaluation state per agent listed). "
-                   f"To create one: Start → Scope → Define → Prove on the Agents page "
-                   f"— or I can draft it from your description now and stage it for "
-                   f"your approval.")
+                   f"To create one: “Agent Ops” → “+ Create agent”, then “Describe” → "
+                   f"“Start” → “Scope” → “Define” → “Prove” — or I can draft it from your "
+                   f"description now and stage it for your approval.")
     return {"topic": "create_agent", "steps": steps, "grounding": g,
             "offer": offer, "summary": summary}
 
 
 def _guide_create_automation() -> dict:
     steps = [
-        "Describe the outcome in one sentence — the platform drafts the chain itself, "
-        "validates it against what this deployment can actually do, and attaches a "
-        "dry-run. (You can also build it by hand on the Automations canvas.)",
-        "The draft is staged in the approvals inbox: a person accepts or rejects it "
-        "there, and acceptance re-validates before anything is saved. Nothing "
-        "schedules itself.",
-        "Once accepted, enable it and choose its doors — schedule, webhook, Slack, "
-        "MCP tool. Each door reports whether THIS deployment can open it.",
+        "Describe the outcome in one sentence — here, or in “Agent Ops” → “Automations” "
+        "with “Propose”. The platform drafts the chain, validates it against what this "
+        "deployment can actually do, and attaches a dry run. (“+ New automation” builds "
+        "one by hand.)",
+        "Name the Slack channel, and the bot when there is more than one: a choice the "
+        "request did not make stays open, and the draft cannot be accepted until it is "
+        "made.",
+        "The draft is staged in the approvals inbox, under “Agent Ops” → “Attention”: a "
+        "person accepts or rejects it there, and acceptance re-validates before anything "
+        "is saved. Nothing schedules itself.",
+        "An accepted draft is armed at once, and a scheduled one waits for its first "
+        "scheduled time (cron is read in UTC). Its other doors — webhook, Slack, MCP "
+        "tool — open from its “Deploy” menu, each saying whether THIS deployment can "
+        "open it.",
     ]
     g = _automations_grounding()
     offer = {
         "tool": "draft_automation",
-        "sentence": ("Describe the outcome and I will draft it now, with its dry-run "
-                     "attached, staged for your approval — a refusal with a reason is "
-                     "an answer, not an error."),
+        "sentence": ("Describe the outcome — with the channel it should post to — and I "
+                     "will draft it now, with its dry run attached, staged for your "
+                     "approval. A refusal with a reason is an answer, not an error."),
     }
     if g is None:
-        summary = (f"To create an automation: describe the outcome, the platform "
-                   f"drafts and dry-runs it, a person accepts it in the inbox, then "
-                   f"you enable it and pick its doors. The automations store could "
-                   f"not be read just now; {_UNAVAILABLE}.")
+        summary = (f"To create an automation: describe the outcome and name its channel, "
+                   f"the platform drafts and dry-runs it, a person accepts it under "
+                   f"“Agent Ops” → “Attention”, and a scheduled chain then waits for its "
+                   f"first scheduled time (UTC). The automations store could not be read "
+                   f"just now; {_UNAVAILABLE}.")
     else:
         clock = g["clock"]
         clock_line = ""
@@ -210,19 +222,20 @@ def _guide_create_automation() -> dict:
         err_line = (f" {err} runs errored in the last {g['window_days']} days — worth "
                     f"a look before adding more." if err else "")
         summary = (f"You have {g['total']} automations ({g['enabled']} enabled)."
-                   f"{err_line} To create one: describe the outcome, the platform "
-                   f"drafts and dry-runs it, a person accepts it in the inbox, then "
-                   f"you enable it and pick its doors.{clock_line}")
+                   f"{err_line} To create one: describe the outcome and name its "
+                   f"channel, the platform drafts and dry-runs it, a person accepts it "
+                   f"under “Agent Ops” → “Attention”, and a scheduled chain then waits for "
+                   f"its first scheduled time (UTC).{clock_line}")
     return {"topic": "create_automation", "steps": steps, "grounding": g,
             "offer": offer, "summary": summary}
 
 
 def _guide_connect_data() -> dict:
     steps = [
-        "Connections page (the plug icon in the sidebar): choose the engine — for "
-        "example Snowflake, Postgres, BigQuery or DuckDB — and supply its credentials "
-        "or connection string yourself. Credentials never pass through this chat, "
-        "deliberately.",
+        "Open “Catalog” — or press ⌘K and choose “Add a data source” — then choose the "
+        "engine, for example Snowflake, Postgres, BigQuery or DuckDB, and supply its "
+        "credentials or connection string yourself. Credentials never pass through "
+        "this chat, deliberately.",
         "Run an exploration on the new connection so the platform can profile the "
         "data and start discovering findings on its own.",
         "From then on chat answers against it, and health checks, query-pattern "
@@ -231,19 +244,21 @@ def _guide_connect_data() -> dict:
     g = _connections_grounding()
     offer = {
         "tool": "",
-        "sentence": ("This act lives on the Connections page — there is no chat door "
-                     "for credentials, by design. I can answer questions about the "
+        "sentence": ("This act lives in “Catalog” — there is no chat door for "
+                     "credentials, by design. I can answer questions about the "
                      "connections you already have."),
     }
     if g is None:
-        summary = (f"To connect data: add the warehouse on the Connections page "
-                   f"(credentials are yours to enter — never sent through chat), then "
+        summary = (f"To connect data: add the warehouse from “Catalog”, or ⌘K → “Add a "
+                   f"data source” (credentials are yours to enter — never sent through "
+                   f"chat), then "
                    f"run an exploration. The registry could not be read just now; "
                    f"{_UNAVAILABLE}.")
     else:
         engines = ", ".join(g["engine_types"]) if g["engine_types"] else "none yet"
         summary = (f"This deployment has {g['total']} connections (engines: "
-                   f"{engines}). To add one: Connections page, choose the engine, "
+                   f"{engines}). To add one: “Catalog” or ⌘K → “Add a data source”, "
+                   f"choose the engine, "
                    f"enter its credentials yourself — they never pass through chat — "
                    f"then run an exploration so the platform can profile it.")
     return {"topic": "connect_data", "steps": steps, "grounding": g,
@@ -257,7 +272,7 @@ def _guide_appearance() -> dict:
         "approval and no page visit.",
         "The preference is stored to your user, not to one browser: every surface "
         "that reads stored preferences follows it, and this screen picks it up from "
-        "its next load. The Settings page carries the same switch.",
+        "its next load. The “Settings” page carries the same switch.",
     ]
     g = _preferences_grounding()
     offer = {

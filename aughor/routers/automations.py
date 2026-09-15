@@ -241,8 +241,11 @@ def propose(body: ProposeRequest):
         # render a failure where the server produced a considered refusal.
         return {"verdict": proposal.verdict, "reason": proposal.reason,
                 "notes": proposal.notes, "draft": proposal.draft}
+    # SP-7 — the choices the request did not make stay OPEN in the draft (the canvas's
+    # incomplete gate collects them), and the first run is stated by the scheduler's clock.
     return {"verdict": "proposed", "draft": proposal.draft,
             "dry_run": proposal.dry_run, "notes": proposal.notes,
+            "to_fill": proposal.to_fill, "first_run": proposal.first_run,
             "reason": ""}
 
 
@@ -280,17 +283,9 @@ def import_foreign_flow(body: ImportFlowRequest):
     # a field validator fails, so a missing key would MASK a broken binding — the first
     # construction names the holes, the second runs with the holes placeholder-filled so
     # the chain law actually gets its turn.
-    from aughor.automations.models import required_keys
+    from aughor.automations.models import fill_required_holes
 
-    to_fill: list[str] = []
-    filled = []
-    for i, e in enumerate(result.draft["effects"], start=1):
-        cfg = dict(e.get("config") or {})
-        for key in required_keys(str(e.get("kind") or ""), family="effect"):
-            if not cfg.get(key):
-                to_fill.append(f"Action {i} needs {key}")
-                cfg[key] = "…"          # a visible placeholder, never a plausible value
-        filled.append({**e, "config": cfg})
+    filled, to_fill = fill_required_holes(result.draft["effects"])
     try:
         Automation(conn_id="import-preview", name=result.name or "Imported flow",
                    conditions=result.draft["conditions"], effects=filled)

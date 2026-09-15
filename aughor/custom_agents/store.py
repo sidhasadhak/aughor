@@ -145,11 +145,15 @@ def _now() -> str:
 
 
 def validate_agent_draft(*, name=None, instructions=None, connection_id=None,
-                         doc_ids=None) -> list[str]:
+                         doc_ids=None, schema_scope=None, known_schemas=None) -> list[str]:
     """The agent-payload checks as PROBLEM SENTENCES, no HTTP in sight — one body for
     the create route (which turns them into a 422) and SP-3's draft staging (which
     refuses to stage, and re-checks at accept, with the same words). Extracted so the
-    two callers cannot drift; the rules are the route's originals, verbatim in effect."""
+    two callers cannot drift; the rules are the route's originals, verbatim in effect.
+
+    SP-7 added the schema: ``schema_scope`` is checked against the connection it will be
+    read through (see :func:`schema_scope_problem`), and ``known_schemas`` is the measured
+    catalogue when the caller already holds one."""
     from aughor.custom_agents.models import INSTRUCTIONS_MAX, NAME_MAX
     problems: list[str] = []
     if name is not None and not (0 < len(str(name).strip()) <= NAME_MAX):
@@ -166,7 +170,46 @@ def validate_agent_draft(*, name=None, instructions=None, connection_id=None,
         missing = [d for d in doc_ids if get_document(d) is None]
         if missing:
             problems.append(f"unknown document(s): {', '.join(missing)}")
+    if schema_scope:
+        problem = schema_scope_problem(str(schema_scope), connection_id, known_schemas)
+        if problem:
+            problems.append(problem)
     return problems
+
+
+def schema_scope_problem(schema_scope: str, connection_id=None, known_schemas=None) -> str:
+    """SP-7 — a schema the connection does not have, refused only where the schemas are KNOWN.
+
+    Known means one of two measurements. The caller holds the measured catalogue (the
+    create flow's drafter reads it) and passes its names. Or the connection PINS a schema
+    (``meta.schema_name``): the catalogue then lists that schema and nothing else
+    (``routers/catalog.py`` filters on it for every engine), so any other name reads
+    nothing through this connection — the user's own draft named ``public`` on a
+    connection pinned to ``thelook``, and every ask made as that agent would have been
+    forced onto it. With neither, nothing is refused: a schema list nobody read is not an
+    absence, and refusing on one would turn a failed probe into a verdict.
+    """
+    if known_schemas is not None:
+        names = sorted({str(s) for s in known_schemas if str(s)})
+        if names and schema_scope not in names:
+            return (f"schema '{schema_scope}' is not on this connection — its schemas are: "
+                    f"{', '.join(names)}")
+        return ""
+    if not connection_id:
+        return ""
+    try:
+        from aughor.db.registry import get_meta
+        pinned = str((get_meta(connection_id) or {}).get("schema_name") or "")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a connection whose settings cannot be read has no known schemas; the "
+                      "draft is not refused on a read that failed",
+                 counter="custom_agents.schema_scope_meta")
+        return ""
+    if pinned and schema_scope != pinned:
+        return (f"schema '{schema_scope}' is not on this connection — it reads schema "
+                f"'{pinned}' only")
+    return ""
 
 
 def validate_agent_grants(tool_grants, connection_id: str,

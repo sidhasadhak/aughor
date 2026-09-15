@@ -114,9 +114,12 @@ def test_agent_draft_accept_revalidates_moved_data():
 
 # ── draft_automation — DS-15 drafts, this stages ───────────────────────────────────
 
-def _proposal(verdict="proposed", draft=None, dry_run=None, reason="", notes=None):
+def _proposal(verdict="proposed", draft=None, dry_run=None, reason="", notes=None,
+              to_fill=None, first_run=""):
+    # Mirrors `automations.propose.ChainProposal`, SP-7's two fields included.
     return SimpleNamespace(verdict=verdict, draft=draft, dry_run=dry_run or {},
-                           reason=reason, notes=notes or [])
+                           reason=reason, notes=notes or [], to_fill=to_fill or [],
+                           first_run=first_run)
 
 
 def test_automation_refusal_is_relayed_not_errored(monkeypatch):

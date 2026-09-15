@@ -103,11 +103,15 @@ def test_the_draft_carries_no_armed_state():
 
 def test_a_draft_that_would_not_save_is_refused_rather_than_drawn():
     """A canvas showing a chain the Save button will reject is worse than a refusal: it
-    looks like work that is nearly done. `slack_post` requires a channel."""
-    bad = _chain(effects=[{"kind": "slack_post", "config": {"bot_id": "b1"}}])
-    out = propose_chain("post something", conn_id=CONN, provider=_Provider(bad))
+    looks like work that is nearly done. `notify` requires its trigger.
+
+    A Slack channel is no longer the example: since SP-7 a channel the request did not name
+    is the PERSON's choice, left open in the draft and refused at Accept instead
+    (`test_sp7_honest_drafts.py`). Every other missing key still refuses here."""
+    bad = _chain(effects=[{"kind": "notify", "config": {}}])
+    out = propose_chain("tell the team", conn_id=CONN, provider=_Provider(bad))
     assert out.verdict == "refused"
-    assert "channel" in out.reason
+    assert "trigger_id" in out.reason
 
 
 def test_an_invented_effect_kind_is_refused():
