@@ -7977,9 +7977,15 @@ export interface paths {
         put?: never;
         /**
          * Merge Ontology Entities
-         * @description Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`). Collapses
-         *     `merge_ids` into `canonical_id`, repointing every cross-reference, and persists. Gated + explicit —
-         *     never automatic, because a wrong merge would corrupt the ontology.
+         * @description Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`) as "two tables, one
+         *     binding" (ROADMAP §3.15): each other type's table is bound onto `canonical_id` on its key — a static binding,
+         *     counted one row per object — and the type becomes a PART of it, hidden from the map and listed under it. Nothing
+         *     is deleted and nothing is repointed: a part keeps its objects, links and pages by its name, and removing the
+         *     binding releases it. `keys` names, per type, the column of its table that holds the survivor's key when that is
+         *     not the type's own key. The whole cluster is planned and counted first, and one step the data does not hold
+         *     refuses the merge (400, every reason named) before anything is written. Written through the bind door into the
+         *     overrides tree, so a rebuild keeps it. Gated + explicit — never automatic, because a wrong merge would corrupt
+         *     the ontology.
          */
         post: operations["merge_ontology_entities_ontology_entities_merge_post"];
         delete?: never;
@@ -14449,6 +14455,10 @@ export interface components {
         _MergeEntitiesRequest: {
             /** Canonical Id */
             canonical_id: string;
+            /** Keys */
+            keys?: {
+                [key: string]: string;
+            };
             /** Merge Ids */
             merge_ids: string[];
         };

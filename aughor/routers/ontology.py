@@ -228,6 +228,8 @@ class _KineticActionBody(BaseModel):
 class _MergeEntitiesRequest(BaseModel):
     merge_ids: list[str]      # the cluster of entity ids to merge (must include canonical_id)
     canonical_id: str         # the survivor — others are merged into it
+    #: Per other type, the column of its table that holds the survivor's key — when that is not the type's own key.
+    keys: dict[str, str] = Field(default_factory=dict)
 
 
 class _ColumnConfigEdit(BaseModel):
@@ -2578,32 +2580,65 @@ def merge_ontology_entities(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
 ):
-    """Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`). Collapses
-    `merge_ids` into `canonical_id`, repointing every cross-reference, and persists. Gated + explicit —
-    never automatic, because a wrong merge would corrupt the ontology."""
+    """Apply a duplicate-entity merge (the confirm step for `/ontology/duplicate-entities`) as "two tables, one
+    binding" (ROADMAP §3.15): each other type's table is bound onto `canonical_id` on its key — a static binding,
+    counted one row per object — and the type becomes a PART of it, hidden from the map and listed under it. Nothing
+    is deleted and nothing is repointed: a part keeps its objects, links and pages by its name, and removing the
+    binding releases it. `keys` names, per type, the column of its table that holds the survivor's key when that is
+    not the type's own key. The whole cluster is planned and counted first, and one step the data does not hold
+    refuses the merge (400, every reason named) before anything is written. Written through the bind door into the
+    overrides tree, so a rebuild keeps it. Gated + explicit — never automatic, because a wrong merge would corrupt
+    the ontology."""
     if len(set(body.merge_ids)) < 2:
         raise HTTPException(status_code=400, detail="merge_ids must list at least 2 distinct entities")
     if body.canonical_id not in body.merge_ids:
         raise HTTPException(status_code=400, detail="canonical_id must be one of merge_ids")
 
-    from aughor.ontology.store import apply_entity_merge
+    from aughor.db.connection import open_connection_for_with_schema
+    from aughor.ontology.bindings import describe_with
+    from aughor.ontology.dedup import merge_plan
+    from aughor.semantic.object_types import describe_object_type
     effective = _resolve_schema(connection_id, schema_name)
-    fingerprint = _latest_fingerprint(connection_id, effective)
-    if not fingerprint:
-        graph = _get_ontology_graph(connection_id, effective)
-        if graph is None:
-            raise HTTPException(status_code=404, detail="Ontology not available")
-        fingerprint = graph.schema_fingerprint
+    graph = _get_ontology_graph(connection_id, effective)
+    if graph is None:
+        raise HTTPException(status_code=404, detail="Ontology not available")
+    unknown = [e for e in body.merge_ids if e not in graph.entities]
+    if unknown:
+        raise HTTPException(status_code=404, detail=f"unknown entities: {', '.join(unknown)}")
 
-    merged = apply_entity_merge(connection_id, effective, fingerprint, body.merge_ids, body.canonical_id)
-    if merged is None:
-        raise HTTPException(status_code=404, detail="Ontology not available, or an entity id was unknown")
-    return {
-        "merged_into": body.canonical_id,
-        "removed": [e for e in body.merge_ids if e != body.canonical_id],
-        "entity": merged.entities[body.canonical_id].model_dump(),
-        "entity_count": len(merged.entities),
-    }
+    db = open_connection_for_with_schema(connection_id, graph.schema_name or effective)
+    try:
+        steps = merge_plan(graph, body.canonical_id, body.merge_ids, body.keys, describe_with(db), db)
+    finally:
+        db.close()
+    refused = [f"{s.member}: {s.problem}" for s in steps if s.problem]
+    if refused:
+        raise HTTPException(status_code=400,
+                            detail=f"nothing was merged into {body.canonical_id} — " + "; ".join(refused))
+
+    absorbed: list[str] = []
+    bindings: list[dict] = []
+    warnings: list[str] = []
+    for step in steps:
+        if step.spec is not None:
+            done = _bind_entity_core(body.canonical_id, step.name, {**step.spec, "absorb": True}, connection_id,
+                                     effective)
+            warnings.extend(done["warnings"])
+            if done.get("binding"):
+                bindings.append(done["binding"])
+            if done.get("absorbed"):
+                absorbed.append(done["absorbed"])
+        else:
+            got, why = _absorb_after_bind(connection_id, effective, body.canonical_id, step.table)
+            if why:
+                warnings.append(why)
+            if got:
+                absorbed.append(got)
+    served = _get_ontology_graph(connection_id, effective)
+    described = (describe_object_type(served, body.canonical_id)
+                 if served is not None and body.canonical_id in served.entities else {})
+    return {"merged_into": body.canonical_id, "absorbed": absorbed, "bindings": bindings,
+            "parts": described.get("parts", []), "warnings": warnings}
 
 
 @router.put("/ontology/actions/{action_id}", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
