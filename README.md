@@ -19,7 +19,7 @@
     <a href="FEATURES.md"><strong>Features</strong></a>
   </p>
 
-  <img src="docs/readme/briefing.png" width="900" alt="Aughor's intelligence briefing on a live BigQuery warehouse — verdict, moved numbers, and a grounded chart, every figure backed by a query" />
+  <img src="docs/readme/briefing.png" width="900" alt="Aughor's intelligence briefing on LuxExperience — the verdict, the numbers that moved, and a grounded chart, every figure backed by a query" />
 </div>
 
 ---
