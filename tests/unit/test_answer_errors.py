@@ -229,7 +229,8 @@ def test_a_failed_ask_ends_in_one_typed_error_frame(monkeypatch):
 
     from aughor.api import app
 
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    # SP-14 flipped the default ON — the pin is now an explicit off, same claim.
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
 
     r = TestClient(app).post("/ask", json={"question": "what were sales last month?",
                                            "connection_id": "no-such-connection-xyz"})

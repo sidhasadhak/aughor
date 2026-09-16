@@ -3125,11 +3125,24 @@ fires at 07:00Z in summer and 08:00Z in winter, pinned by a test across the cloc
 > finishing a zoned draft in the form saves a UTC chain (the same seed already drops a drafted runs-as — one gap,
 > SP-11-adjacent); and SP-14's "drafts and cards" leftovers (Slack approval identity) are unchanged.
 
-**SP-14 · On by default.** `ask.converse` graduates on its receipt; approval from Slack buttons, recorded against the
+**SP-14 · On by default — ✅ FIRST SLICE BUILT 2026-09-16** (same branch; §6 item 22(d) decided "Graduate as-is").
+`ask.converse` graduates on its receipt; approval from Slack buttons, recorded against the
 approver's linked identity; Accept records the signed-in person rather than the name a page sends; MCP clients see new
 tools without reconnecting (`tools/list_changed`) and get native parameter schemas (SP-5's open note). **Receipt:** a
 fresh clone with no runtime overrides drafts an agent from ⌘K, and a Slack approval shows the approver's identity in
 the audit. **Needs:** SP-12, SP-M and §6 item 22 (d).
+> **Built 2026-09-16 (the graduation + the web identity half).** `ask.converse` moved from EXPERIMENT to
+> FLAG_DEFAULT — default-ON with the flag KEPT, because its off-path is not dead code but the ineligible-turn
+> fallback every converse turn still rides; the registry's own empty-set guard was narrowed to its real claim
+> (nothing ELSE drifts back in), and every default-off contract test inverted its setup while keeping its point: an
+> operator's explicit off still means byte-for-byte off. Exit evidence recorded on the disposition itself: SP-M's
+> 26/26 honest drafts across two recordings, 81% correct behavior on the richer fixture, the step-budget residual
+> accepted by the user as a cost knob. The web accept-identity half: every surface now records the SIGNED-IN
+> person's email when identity is present (`approverName` in lib/auth), with the page's own name only as the
+> unauthenticated fallback — "operator" / "control-room" / "chat" stop masquerading as people the moment identity
+> exists. **Open, the wave's remainder:** Slack approval buttons recorded against the approver's linked identity;
+> MCP `tools/list_changed` + native parameter schemas (SP-5's note); and the fresh-clone ⌘K receipt itself, which
+> only a fresh clone can give.
 
 **SP-M · Measure authoring (alongside every band) — ✅ BUILT 2026-09-16** (same branch as SP-11…SP-13). About thirty
 real asks drafted once and recorded, then scored with

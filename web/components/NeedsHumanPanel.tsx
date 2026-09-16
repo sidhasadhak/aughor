@@ -23,6 +23,7 @@ import {
   type NeedsHuman, type NeedsHumanRow,
 } from "@/lib/api";
 import { relTime } from "@/lib/format";
+import { approverName } from "@/lib/auth";
 
 /** A duration a person reads at a glance — "2h 14m", not 8040000. */
 function humanAge(ms: number): string {
@@ -156,7 +157,7 @@ export function NeedsHumanPanel({ onOpenInvestigation, onOpenAutomations }: {
                   </div>
                   {proposalId && (
                     <div style={{ marginTop: 8 }}>
-                      <ProposalCardById proposalId={proposalId} actor="control-room"
+                      <ProposalCardById proposalId={proposalId} actor={approverName("control-room")}
                         onResolved={load} />
                     </div>
                   )}

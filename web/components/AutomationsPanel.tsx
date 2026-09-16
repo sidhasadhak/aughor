@@ -27,6 +27,7 @@ import {
 import { ghostBtn, useIntegrationGrants } from "@/components/automations/AutomationRows";
 import { ProposalCard } from "@/components/ProposalCard";
 import { bindingRefs } from "@/lib/automationFlow";
+import { approverName } from "@/lib/auth";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
@@ -520,7 +521,7 @@ export function AutomationsPanel({ connId }: Props) {
                   const pid = creating?.proposalId;
                   if (pid) {
                     try {
-                      await supersedeProposal(pid, "editor",
+                      await supersedeProposal(pid, approverName("editor"),
                         `finished in the editor as ${a.id}`);
                       void loadInbox();
                     } catch { /* the save stands; the draft expires on its own */ }
@@ -755,7 +756,7 @@ function InboxView({ conn, proposals, grants, onReload, flash, onOpenInEditor }:
         {/* SP-9 — the ONE approval card per kind; what either click creates, never raw
             params. The same component renders in Attention, the Actions rail and chat. */}
         {pending.map(p => (
-          <ProposalCard key={p.id} proposal={p} actor="operator"
+          <ProposalCard key={p.id} proposal={p} actor={approverName("operator")}
             accountLabel={accountLabel}
             onOpenInEditor={onOpenInEditor}
             onResolved={(t, m) => { flash(t, m); onReload(); }} />

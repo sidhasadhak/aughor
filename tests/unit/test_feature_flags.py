@@ -81,7 +81,10 @@ def test_specialist_packs_left_the_registry_for_good():
     so there is nothing an env var needs to kill. The registry must stay empty of
     it — a re-registration would be the drift the endgame exists to prevent."""
     assert "specialist_packs" not in FLAG_ENV
-    assert FLAG_DEFAULT == {}     # Wave 2 complete: no graduated default-ONs remain
+    # Wave 2 emptied this set; SP-14 (2026-09-16) re-entered ONE flag deliberately —
+    # ask.converse, default-ON with its off-path alive as the ineligible-turn
+    # fallback. The guard narrows to its real claim: nothing ELSE drifts back in.
+    assert set(FLAG_DEFAULT) == {"ask.converse"}
 
 
 def test_default_on_flag_env_semantics(monkeypatch, synthetic_default_on):
