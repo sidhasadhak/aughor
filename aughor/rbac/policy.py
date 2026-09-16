@@ -35,6 +35,19 @@ POLICY: dict[tuple[str, str], Optional[P]] = {
     ("GET", "/rbac/assignments"): P.ADMIN_MANAGE_ROLES,
     ("POST", "/rbac/assignments"): P.ADMIN_MANAGE_ROLES,
     ("DELETE", "/rbac/assignments"): P.ADMIN_MANAGE_ROLES,
+    # HB-1 — groups and level grants sit with role administration (they decide who
+    # receives what and who may touch what). The member and grant LISTS are gated
+    # too, like /rbac/assignments: they name people. /groups (names + channels) and
+    # the two receipts /access/explain + /access/route stay at the open-read floor —
+    # "why did I receive this" must be answerable by whoever received it.
+    ("POST", "/groups"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/groups/{group_id}"): P.ADMIN_MANAGE_ROLES,
+    ("GET", "/groups/{group_id}/members"): P.ADMIN_MANAGE_ROLES,
+    ("POST", "/groups/{group_id}/members"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/groups/{group_id}/members"): P.ADMIN_MANAGE_ROLES,
+    ("GET", "/access/grants"): P.ADMIN_MANAGE_ROLES,
+    ("POST", "/access/grants"): P.ADMIN_MANAGE_ROLES,
+    ("DELETE", "/access/grants"): P.ADMIN_MANAGE_ROLES,
     ("PUT", "/org-settings"): P.ADMIN_MANAGE_ORG,
     ("PATCH", "/agents/{agent_id}"): P.ADMIN_MANAGE_ORG,
     ("PUT", "/system/flags/{name}"): P.ADMIN_MANAGE_ORG,

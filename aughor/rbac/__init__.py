@@ -18,9 +18,16 @@ roles, roles come later" on the strength of it. Prose drifts; the route table an
 
 Wave G2 adds a THIRD axis beside these two — ``aughor/govern/tags.py`` — for what the
 *data* requires of whoever reads it, which neither a plan nor a role can express.
+
+HB-1 (§3.18) grows the package sideways rather than adding a fourth axis: groups and
+membership (``groups.py``), one level ladder with the built-in roles' defaults (``levels.py``),
+the ONE union resolver with its explain (``access.py``), and where a departure about
+a securable goes (``routing.py``). The routing half only — these decide *where things
+go* today; enforcement over the same rows switches on with identity.
 """
 from __future__ import annotations
 
+from aughor.rbac.access import Decision, may
 from aughor.rbac.capabilities import (
     ceiling_for_roles,
     effective_capabilities,
@@ -48,9 +55,24 @@ from aughor.rbac.roles import (
     role_permissions,
 )
 
+from aughor.rbac.groups import Group, groups_of, list_groups
+from aughor.rbac.levels import LADDER, level_covers, role_default_level
+from aughor.rbac.routing import Destination, owner_principal, route
+
 __all__ = [
     "Permission",
     "ALL_PERMISSIONS",
+    "Decision",
+    "may",
+    "Group",
+    "groups_of",
+    "list_groups",
+    "LADDER",
+    "level_covers",
+    "role_default_level",
+    "Destination",
+    "owner_principal",
+    "route",
     "Role",
     "BUILTIN_ROLES",
     "OWNER",

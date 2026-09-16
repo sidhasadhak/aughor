@@ -29,6 +29,11 @@ class BriefSubscription(BaseModel):
     send_cron:    str = ""                       # cron expr; derived from period if blank
     trigger_id:   str                            # Action Hub trigger that delivers it
     enabled:      bool = True
+    # HB-1 — a subscription says what it is ABOUT and who it is FOR. Both were
+    # implicit before (the whole connection, the organisation); "" keeps exactly that
+    # reading, so every stored row means what it always did.
+    subject:      str = ""                       # a securable ("promise:x", "domain:y"); "" = the connection
+    reader:       str = ""                       # a principal ("group:finance", "user:a@b"); "" = the organisation
 
     created_at:   str = Field(default_factory=_now)
     updated_at:   str = Field(default_factory=_now)

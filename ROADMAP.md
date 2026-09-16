@@ -5693,6 +5693,23 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   and grants-by-securable. *Receipt:* a person in two function groups receives, through each group's channel, exactly
   what each group subscribes to, and `explain` names the grant. *Falsifier:* if routing by ownership sends a finding to
   the wrong group on a measured set, the map is wrong before the code is.
+  > **First slice BUILT 2026-09-16.** In code the personas spell themselves **built-in groups** — the vocabulary
+  > ratchet retired `persona` (one of five words for a custom agent) and the guard is right: the concept IS the three
+  > roles wearing a level per securable kind (`rbac/levels.py`), so the code says so. What stands: `groups` +
+  > `group_members` in the SAME `rbac.db` (people AND agents as principal strings, a channel as an Action Hub trigger
+  > id); the ladder `view < subscribe/run < edit < manage < own`, additive, fail-closed on unknown words; the
+  > ontology's securable strings beside the catalog ones; `domain` grant-bearing (`GRANT_BEARING_KEYS`, tags stay
+  > human-set); level grants riding the metastore `grants` table beside USAGE; ONE resolver `may()` whose explain
+  > names what granted, walking a meaning chain the CALLER presents (parents + the domain tag — the module stays pure
+  > over stores it does not own); `route()` = owner + Subscribe-or-higher holders, each group through its channel,
+  > deduplicated; owner-as-principal by INTERPRETATION (`owner_principal` reads `group:finance` as routable and
+  > leaves "Ana (logistics)" the display text it always was — no YAML rewrite; the overrides tree stays human-edit,
+  > §6 item 20); `BriefSubscription.subject/reader` additive; doors `/groups`, `/access/grants`, `/access/explain`,
+  > `/access/route`, gated at `admin.manage_roles` for mutations and the people-naming lists, receipts at the open
+  > floor. The receipt holds as a test (two groups, two channels, one person in both — each channel gets exactly its
+  > subscriptions, the why names the grant); the wave's live receipt still wants real traffic, which is HB-3's
+  > breach. **Open in the wave:** the `RolesPanel.tsx` growth shipped as a first pass (groups, members, grants);
+  > enforcement at the four gate sites stays OFF by design (the routing half; rides identity).
 - **HB-2 · the departure gate and probation**, as above. *Receipt:* a Briefing tile the screen shows is held at
   departure by a failing tie-out, with the reason recorded; an automation on probation reaches only its declarer until
   its measured precision graduates it. *Falsifier:* a departure precision baseline that a later change lowers cannot
@@ -6059,8 +6076,8 @@ ARC SP  ✅ ADOPTED 2026-09-05 (§6 item 10, both clauses YES) — Spotlight, th
              the work (22 b) · SP-11 revise in place → SP-12 edit, monitor, brief · SP-13 your
              timezone · SP-14 on by default (needs SP-12, SP-M; 22 d) · SP-M measure authoring,
              alongside every band
-ARC HB  ⏳ DRAFTED 2026-09-16 (§3.18; §6 item 24 — the shape decided in conversation, the build's
-        calls open, NOTHING BUILT) — the hub: people still come to the platform, and it also
+ARC HB  ✅ ADOPTED 2026-09-16 (§3.18; §6 item 24 (a)(b)(d) stamped on the user's "go"; HB-1 first
+        slice started the same day) — the hub: people still come to the platform, and it also
         receives data and exports intelligence. Measured 2026-09-15: no email either way, neither a
         promise nor a finding is a trigger, nothing links a thread or a ticket to an object, no
         groups, one privilege in the grant store, the reader is the company everywhere, a metric's
@@ -6454,6 +6471,9 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-16:** item 24 (Arc HB — the hub) arrived at the user's *"Create a roadmap now"*; its shape was
 > decided in the user's own sentences the day before and is recorded in the item so it is not re-asked, and the seven
 > calls the build needs are open with recommendations. Open: 16, 18(c), 22(b–d), 24.
+> **Amended 2026-09-16, later:** item 24 (a), (b) and (d) decided on the user's *"Lets take the logical next step..
+> go.."* — §3.18 active, HB-1 first, `domain` grant-bearing, Viewer/Editor/Owner the first personas; (c) waits for
+> HB-6, (e) for HB-3, (f) holds on the OAuth client, (g) rides the arc. Open: 16, 18(c), 22(c), 24(c·e·f·g).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +

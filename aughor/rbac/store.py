@@ -28,6 +28,12 @@ _DB_PATH = resolve_db_path(
 )
 
 
+def db_path() -> Path:
+    """The RBAC store's resolved location — shared with the groups tables (HB-1)
+    so one ``AUGHOR_RBAC_DB`` override keeps every RBAC table hermetic at once."""
+    return _DB_PATH
+
+
 def _conn() -> sqlite3.Connection:
     c = connect_store(_DB_PATH)
     c.row_factory = sqlite3.Row

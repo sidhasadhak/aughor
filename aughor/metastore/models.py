@@ -50,6 +50,30 @@ def workspace_principal(workspace_id: str) -> str:
     return f"workspace:{workspace_id}"
 
 
+def user_principal(user_id: str) -> str:
+    """The grant principal string for a person."""
+    return f"user:{user_id}"
+
+
+def group_principal(group_id: str) -> str:
+    """The grant principal string for a group (HB-1) — a grant held by every member."""
+    return f"group:{group_id}"
+
+
+def agent_principal(agent_id: str) -> str:
+    """The grant principal string for an agent (HB-1) — the service-principal shape:
+    an agent in a function group inherits the group's grants like any member."""
+    return f"agent:{agent_id}"
+
+
+def principal_kind(principal: str) -> str:
+    """The leading kind of a principal string (``user`` / ``group`` / ``agent`` /
+    ``workspace``), or ``""`` when it is not one — the principal-side sibling of
+    :func:`securable_kind`, so routing can branch without a chain of prefix tests."""
+    head, sep, _ = str(principal or "").partition(":")
+    return head if sep and head in ("user", "group", "agent", "workspace") else ""
+
+
 def catalog_securable(catalog_id: str) -> str:
     """The grant securable string for a catalog."""
     return f"catalog:{catalog_id}"
@@ -108,12 +132,43 @@ def artifact_securable(kind: str, artifact_id: str) -> str:
     return f"artifact:{kind}:{artifact_id}"
 
 
+# HB-1 — the ontology's things become securables the way catalogs and artifacts already
+# are: one string vocabulary, so a grant and an access decision can never disagree about
+# which object they are talking about (the Wave G2 lesson, thirteen spellings, above).
+# ``domain:`` is the grant-bearing tag's securable (§6 item 24 (b)): a grant on
+# ``domain:supply-chain`` covers every object tagged ``domain=supply-chain`` — which is
+# what makes a function group self-maintaining when a promise is declared next month.
+
+_ONTOLOGY_SECURABLE_KINDS = (
+    "metric", "promise", "process", "rule", "domain", "automation", "agent", "canvas",
+)
+
+_ALL_SECURABLE_KINDS = ("catalog", "schema", "table", "artifact") + _ONTOLOGY_SECURABLE_KINDS
+
+
+def thing_securable(kind: str, thing_id: str) -> str:
+    """The securable string for one of the ontology's things or a runtime object —
+    ``metric: promise: process: rule: domain: automation: agent: canvas:``. Raises on a
+    kind outside the vocabulary so a typo cannot mint a securable no grant will match."""
+    k = (kind or "").strip().lower()
+    if k not in _ONTOLOGY_SECURABLE_KINDS:
+        raise ValueError(f"not a securable kind: {kind!r} (one of {_ONTOLOGY_SECURABLE_KINDS})")
+    return f"{k}:{thing_id}"
+
+
+def domain_securable(domain: str) -> str:
+    """The securable a ``domain=<value>`` tag binds its objects to (§6 item 24 (b))."""
+    return f"domain:{domain}"
+
+
 def securable_kind(securable: str) -> str:
     """The leading kind of any securable string (``catalog`` / ``schema`` / ``table`` /
-    ``artifact``), or ``""`` when it is not one. Lets a caller branch without a chain of
+    ``artifact``, and since HB-1 the ontology's things — ``metric`` / ``promise`` /
+    ``process`` / ``rule`` / ``domain`` / ``automation`` / ``agent`` / ``canvas``), or
+    ``""`` when it is not one. Lets a caller branch without a chain of
     prefix tests, and keeps the set of kinds readable in one place."""
     head, sep, _ = str(securable or "").partition(":")
-    return head if sep and head in ("catalog", "schema", "table", "artifact") else ""
+    return head if sep and head in _ALL_SECURABLE_KINDS else ""
 
 
 # The coarse, foundation-level privilege: "may access this catalog at all" — the
