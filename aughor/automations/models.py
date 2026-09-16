@@ -407,9 +407,28 @@ class Automation(BaseModel):
     #: inherits this one.
     agent_id: str = ""
 
+    #: SP-13 — the clock this chain's schedule triggers are read in. "" = UTC, which is
+    #: every chain written before the field existed. An IANA name ("Europe/Berlin")
+    #: makes the ONE cron factory evaluate in that zone, DST included — a 09:00 Berlin
+    #: chain fires at 07:00Z in summer and 08:00Z in winter. Validated at construction:
+    #: a typo'd clock must refuse, never arm a 9am that fires at 7.
+    timezone: str = ""
+
     conditions: list[Condition] = Field(min_length=1)
     condition_logic: Literal["all", "any"] = "all"
     effects: list[Effect] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _clock_is_real(self) -> "Automation":
+        if self.timezone:
+            from zoneinfo import ZoneInfo
+            try:
+                ZoneInfo(self.timezone)
+            except Exception as exc:
+                raise ValueError(
+                    f"unknown timezone {self.timezone!r} — an IANA name like Europe/Berlin"
+                ) from exc
+        return self
     #: DS-7 — how the steps are scheduled. ``ordered`` = the strictly sequential walk
     #: every automation written before DS-7 performs, byte for byte. ``parallel`` =
     #: frontier scheduling: steps run as their ARROWS allow — a step waits for every

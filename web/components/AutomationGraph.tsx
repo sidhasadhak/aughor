@@ -1929,6 +1929,7 @@ export function AutomationGraph({ automationId, automation, create, onCreated, h
             <StepInspector
               draft={draft}
               onDraft={d => setDraft(d)}
+              timezone={automation?.timezone || undefined}
               selection={selectedAlias}
               logicLabel={(automation?.condition_logic ?? "all") === "all"
                 ? "all match" : "any match"}

@@ -20,12 +20,14 @@ import {
   runAutomation,
   getAutomationRuns,
   getProposals,
+  supersedeProposal,
   getGrants,
   revokeGrant,
 } from "@/lib/api";
 import { ghostBtn, useIntegrationGrants } from "@/components/automations/AutomationRows";
 import { ProposalCard } from "@/components/ProposalCard";
 import { bindingRefs } from "@/lib/automationFlow";
+import { approverName } from "@/lib/auth";
 import { MiniStat, MiniStatRow } from "@/components/ui/MiniStat";
 import { Button } from "@/components/ui/button";
 import { EmptyState as SharedEmptyState } from "@/components/ui/empty-state";
@@ -83,7 +85,9 @@ export function AutomationsPanel({ connId }: Props) {
   // placed by default" — the user, 2026-09-02). `creating` holds the seed a new canvas
   // starts from: a DS-15 proposal's chain, or nothing for the blank canvas.
   const [creating, setCreating] =
-    useState<{ seed?: { conditions: AutoCondition[]; effects: AutoEffect[] } } | null>(null);
+    useState<{ seed?: { conditions: AutoCondition[]; effects: AutoEffect[] };
+               /** SP-11 — the staged draft this canvas is finishing; saving resolves it. */
+               proposalId?: string } | null>(null);
   const [createName, setCreateName] = useState("");
   const [outcome, setOutcome] = useState("");
   const [proposing, setProposing] = useState(false);
@@ -472,7 +476,11 @@ export function AutomationsPanel({ connId }: Props) {
               setCreating({ seed: {
                 conditions: (chain.conditions ?? []) as AutoCondition[],
                 effects: (chain.effects ?? []) as AutoEffect[],
-              } });
+              },
+              // SP-11 — only a plain automation draft: saving the canvas creates the
+              // CHAIN alone, and superseding a bundle would silently drop its agent
+              // half, so a bundle's proposal stays pending for the card to resolve.
+              proposalId: p.kind === "automation_draft" ? p.id : undefined });
               setView("canvas");
             }} />
         )}
@@ -507,6 +515,17 @@ export function AutomationsPanel({ connId }: Props) {
                   onBack: () => { setCreating(null); setView("list"); },
                 }}
                 onCreated={async (a) => {
+                  // SP-11 — finishing a staged draft in the form RESOLVES the
+                  // proposal: the saved chain is the ask's one record, and a pending
+                  // draft beside it would read as separate work still waiting.
+                  const pid = creating?.proposalId;
+                  if (pid) {
+                    try {
+                      await supersedeProposal(pid, approverName("editor"),
+                        `finished in the editor as ${a.id}`);
+                      void loadInbox();
+                    } catch { /* the save stands; the draft expires on its own */ }
+                  }
                   setCreating(null); setCanvasFor(a);
                   await load(); flash("ok", `Created "${a.name}"`);
                 }}
@@ -737,7 +756,7 @@ function InboxView({ conn, proposals, grants, onReload, flash, onOpenInEditor }:
         {/* SP-9 — the ONE approval card per kind; what either click creates, never raw
             params. The same component renders in Attention, the Actions rail and chat. */}
         {pending.map(p => (
-          <ProposalCard key={p.id} proposal={p} actor="operator"
+          <ProposalCard key={p.id} proposal={p} actor={approverName("operator")}
             accountLabel={accountLabel}
             onOpenInEditor={onOpenInEditor}
             onResolved={(t, m) => { flash(t, m); onReload(); }} />

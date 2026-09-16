@@ -126,7 +126,7 @@ def test_deep_turn_streams_through_the_analyst(client, builtin_conn_id,
 def test_flag_off_keeps_the_phase_script(client, builtin_conn_id, monkeypatch):
     """§5's ladder: with the experiment off, a deep turn reaches the phase script —
     the analyst body must not have replaced the fallback."""
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, off is explicit
     seen = {}
 
     async def _fake_job_stream(question, conn_id, request, **kw):

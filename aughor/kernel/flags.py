@@ -251,6 +251,14 @@ FLAG_DEFAULT: dict = {
     # at the former guard sites. The set stays declared so `flag_disposition`, the
     # `_env_resolved` default-on semantics and the disposition ratchet keep their
     # shape, and an empty set proves nothing quietly re-enters "default_on":
+    # NO LONGER EMPTY — "ask.converse" entered 2026-09-16 (SP-14, §6 item 22(d), the
+    # user's "Graduate as-is" with SP-M's numbers on the table). It takes this
+    # disposition rather than deletion because its off-path is ALIVE: the deterministic
+    # quick body is still what an ineligible turn runs, so the flag remains an operator
+    # kill switch while fresh installs get authoring out of the box.
+    "ask.converse": "SP-14 (2026-09-16): 26/26 staged drafts honest across SP-M's two "
+                    "recordings; 81% of real asks behaved correctly on the richer "
+                    "fixture; the residual is the step-budget knob, accepted as-is.",
     #   trust/obs/LLM group — hardwired by Wave 2 group 1 (2c981ea1);
     #   graph/ontology group — group 2 (f2dfa99f); govern/automations — group 3 (cbbf6927);
     #   the final 14 (this wave): snapshot_receipts 2dee7a36c03f · specialist_packs
@@ -364,12 +372,14 @@ EXPERIMENT: dict = {
                           "cross-source benefit — author a cross-source suite first",
     # "plan.program" left this set 2026-08-01: DELETED outright (see the FLAG_ENV
     # tombstone) — the adopt-or-kill question was settled as KILL, not measured.
-    "ask.converse": "does a conversation answer better than a compiled query spec? Exit is "
-                    "the headline receipt: a 10-turn scripted session in CI via the faux "
-                    "backend, plus the parity invariant (a converse-wrapped answer_question "
-                    "and the direct fast path agree for the same question), plus route-receipt "
-                    "data on the converse/fast-path ratio. Graduation makes converse a "
-                    "permanent third body and the flag dies",
+    # "ask.converse" left this set 2026-09-16: DEFAULT-ON (SP-14, decision 22(d)). The
+    # exit evidence was SP-M's recorded set rather than the 10-turn script this entry
+    # originally named: 26/26 staged drafts honest across two recordings (zero check
+    # failures), 21/26 real asks behaving correctly on the richer fixture, and the one
+    # residual class (step-budget deaths) accepted by the user as a cost knob, not a
+    # defect ("Graduate as-is"). The flag STAYS — its off-path is not dead code but the
+    # ineligible-turn fallback every converse turn still rides — so this is
+    # FLAG_DEFAULT, not deletion.
     "ask.query_objects": "PARKED 2026-09-11 by the user on a measured regression (ROADMAP §6 item 15): "
                          "a model filling the object query scored 1/14 and 3/12 against raw 14/14 and "
                          "12/12. The question stands — does the compiled door answer warehouse "

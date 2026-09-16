@@ -131,6 +131,13 @@ def load_investigation_findings(
         fid = str(art.get("id") or "")
         if not fid or not text:
             continue
+        # Receipts store ``headline or question`` for display, so an answer that
+        # concluded nothing carries its QUESTION here — including the scheduled-run
+        # context block, ~2KB of prompt. Skipping it at the collector cleans every
+        # REBUILD from the poisoned history: the next scheduled refresh drops the
+        # question-echo nodes already committed to live graphs.
+        if text == str(payload.get("question") or "").strip():
+            continue
         out.append({
             "id": fid,
             "text": text,

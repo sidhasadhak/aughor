@@ -3065,30 +3065,128 @@ literal backticks, no red hyphens. **Needs:** SP-9 and §6 item 22 (b).
 > wrote two scratch agents into the live `data/agents.db` (found on the live roster; both deleted the same hour, the
 > user's own records untouched). The list now carries the measured union and says to diff, not trust.
 
-**SP-11 · Revise in place.** A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
+**SP-11 · Revise in place — ✅ BUILT 2026-09-16** (branch `claude/graph-finding-hygiene`, with the question-echo
+finding fix). A follow-up supersedes the pending draft, so the inbox holds one pending proposal per ask;
 Open in editor loads the draft into the real form, and saving there resolves the proposal instead of creating a second
 record. **Receipt:** three follow-ups leave one pending proposal carrying all three changes, and finishing in the form
 leaves no duplicate. **Needs:** SP-9.
+> **Built 2026-09-16.** The inbox gains its fourth resolve verb: `superseded`, terminal, first-responder-wins like
+> every resolve — a settled draft stays what a human made it. The drafting tools (`draft_agent`, `draft_automation`,
+> the bundle) take `supersedes`: a corrected re-draft resolves the earlier PENDING draft on the SAME connection and
+> says so in the summary; a settled or foreign id is refused with both records left standing, so a model cannot
+> retire another conversation's work by naming its id. The editor's half: "Open in editor" carries the draft's
+> proposal id, and the canvas's save resolves it as "finished in the editor as <automation id>" through the new
+> supersede route — for a PLAIN automation draft only, because saving the canvas creates the chain alone and
+> superseding a bundle would silently drop its agent half (a bundle's proposal stays pending for the card). The
+> receipt sentence runs as a test verbatim: three follow-ups leave one pending proposal. LIVE receipt (a re-drafted
+> ⌘K ask leaving one card) waits on the next deployment.
 
-**SP-12 · Edit, monitor, brief.** Change what exists by sentence — edit, disable, delete — staged as a before-and-after
+**SP-12 · Edit, monitor, brief — ✅ BUILT 2026-09-16** (same branch as SP-11). Change what exists by sentence — edit,
+disable, delete — staged as a before-and-after
 diff; draft a monitor and a brief subscription; for anomalies, prefer a monitor trigger that starts the deep analysis
 only when something moves, with each option's cost shown. **Receipt:** "alert #ops when refund rate breaks 3σ" stages a
 monitor and its chain, and "move the Monday brief to 8am" stages a one-field diff. **Needs:** SP-11.
+> **Built 2026-09-16.** Three staged kinds, each the arc's custody unchanged (the model drafts, a person certifies):
+> **`automation_edit`** — `edit_automation` computes a BEFORE→AFTER diff against the live record over a CLOSED field
+> set (name · description · cron · enabled; structure stays the canvas's); the diff is the card; accept re-reads and
+> re-validates through a registered edit door, so a staged edit can never save a chain the editor would refuse. A
+> cron edit needs exactly ONE schedule trigger or it refuses to the canvas. `delete: true` stages removal on the
+> state door instead (irreversible once accepted, and the summary says so); disable is `enabled: false`.
+> **`monitor_bundle`** — `draft_monitor` stages ONE proposal holding the monitor (a REGISTERED metric or explicit
+> SQL; unknown metrics refused with the known ones named; anomaly at Nσ, checked hourly) AND the chain its breach
+> fires (deep analysis → Slack). Accept creates the monitor, injects its id into the chain's metric trigger and
+> saves — all or nothing, the agent bundle's law: a rollback leaves no chainless monitor breaching silently. SP-7's
+> blanking holds: an unnamed channel/sender stays an open choice the approver fills on the card. **The cost is
+> stated STRUCTURALLY, not invented** (the repo still has no measured per-run cost source): the hourly check is SQL
+> only and spends no model calls, and the analysis runs only on a breach, where a daily schedule spends it every
+> tick — said in the tool's routing description AND in the staged summary the approver reads.
+> **`brief_draft`** — `draft_brief` stages a briefing subscription (day, or week on Monday, at an hour UTC) through
+> an EXISTING Notifications trigger; unknown triggers refused with the known ones listed; accept re-checks the
+> trigger still exists before saving. Both receipt sentences run as tests verbatim. All three kinds render as card
+> bodies (the edit as strikethrough-before → after rows), take accept-time `supersedes`, and audit as
+> `spotlight.<kind>`. LIVE receipts wait on the next deployment.
 
-**SP-13 · Your timezone.** A timezone key in the settings registry and on each automation; the scheduler evaluates cron
+**SP-13 · Your timezone — ✅ BUILT 2026-09-16** (same branch as SP-11/SP-12). A timezone key in the settings registry
+and on each automation; the scheduler evaluates cron
 in it; drafts and cards speak local time, and UTC stays visible for operators. **Receipt:** a 09:00 Europe/Berlin chain
 fires at 07:00Z in summer and 08:00Z in winter, pinned by a test across the clock change. **Needs:** nothing.
+> **Built 2026-09-16.** The receipt sentence is pinned VERBATIM, including the clock-change morning itself (Berlin
+> falls back 2026-10-25; Saturday fires at 07:00Z, Sunday at 08:00Z, one day apart, no arithmetic of ours between).
+> The ONE cron factory (`engine.cron_trigger`) takes the chain's clock and APScheduler owns DST; `next_fire_utc`
+> ALWAYS returns UTC whatever zone evaluates, because every consumer stamps ISO with a Z and a Berlin-local datetime
+> wearing a Z is the lie this wave exists to end. `Automation.timezone` ("" = UTC, every pre-SP-13 chain; IANA name
+> validated at CONSTRUCTION — a typo'd clock refuses, never arms a 9am that fires at 7; migration 7, numbered off
+> the live store's 6). The scheduler's due-ness, the store's first-run mute and the draft's stated first run all
+> read the same factory. `timezone` joined the settings registry (drafts default to the caller's chosen clock) and
+> the edit door's closed field set — "switch it to Europe/Berlin" is a one-field diff. Drafts speak local with UTC
+> in parens; the card's First run row does the same (the Intl primitive lives in lib/format, REC-U8); the schedule
+> editor labels the chain's real clock and suppresses its client-side next-run guess for any non-UTC zone — exact
+> arithmetic only, DST is the server's. **Open, recorded:** the canvas SEED carries conditions/effects only, so
+> finishing a zoned draft in the form saves a UTC chain (the same seed already drops a drafted runs-as — one gap,
+> SP-11-adjacent); and SP-14's "drafts and cards" leftovers (Slack approval identity) are unchanged.
 
-**SP-14 · On by default.** `ask.converse` graduates on its receipt; approval from Slack buttons, recorded against the
+**SP-14 · On by default — ✅ FIRST SLICE BUILT 2026-09-16** (same branch; §6 item 22(d) decided "Graduate as-is").
+`ask.converse` graduates on its receipt; approval from Slack buttons, recorded against the
 approver's linked identity; Accept records the signed-in person rather than the name a page sends; MCP clients see new
 tools without reconnecting (`tools/list_changed`) and get native parameter schemas (SP-5's open note). **Receipt:** a
 fresh clone with no runtime overrides drafts an agent from ⌘K, and a Slack approval shows the approver's identity in
 the audit. **Needs:** SP-12, SP-M and §6 item 22 (d).
+> **Built 2026-09-16 (the graduation + the web identity half).** `ask.converse` moved from EXPERIMENT to
+> FLAG_DEFAULT — default-ON with the flag KEPT, because its off-path is not dead code but the ineligible-turn
+> fallback every converse turn still rides; the registry's own empty-set guard was narrowed to its real claim
+> (nothing ELSE drifts back in), and every default-off contract test inverted its setup while keeping its point: an
+> operator's explicit off still means byte-for-byte off. Exit evidence recorded on the disposition itself: SP-M's
+> 26/26 honest drafts across two recordings, 81% correct behavior on the richer fixture, the step-budget residual
+> accepted by the user as a cost knob. The web accept-identity half: every surface now records the SIGNED-IN
+> person's email when identity is present (`approverName` in lib/auth), with the page's own name only as the
+> unauthenticated fallback — "operator" / "control-room" / "chat" stop masquerading as people the moment identity
+> exists. **Open, the wave's remainder:** Slack approval buttons recorded against the approver's linked identity;
+> MCP `tools/list_changed` + native parameter schemas (SP-5's note); and the fresh-clone ⌘K receipt itself, which
+> only a fresh clone can give.
 
-**SP-M · Measure authoring (alongside every band).** About thirty real asks drafted once and recorded, then scored with
+**SP-M · Measure authoring (alongside every band) — ✅ BUILT 2026-09-16** (same branch as SP-11…SP-13). About thirty
+real asks drafted once and recorded, then scored with
 no model — it validates, names its open choices, binds runs-as, uses a real schema, gets the clock right, shows its
 cost; staged → accepted → finished in the form → lapsed, counted weekly; SP-3's falsifier measured rather than assumed.
 **Receipt:** the scoring runs in CI; the baseline on 2026-09-15 is 4 staged, 0 accepted. **Needs:** nothing.
+> **Built 2026-09-16.** `aughor/agent/authoring_measure.py`, two model-free instruments: `score_proposal` grades a
+> STAGED row against the movement's own laws (the chain validates · declared open choices == the accept gate's real
+> holes, compared as parsed pairs · a bundle's chain carries no agent id at stage · a schema claim graded only when
+> a catalogue is KNOWN, None otherwise — a failed probe is not an absence · the stated first run sits ON a cron
+> boundary in the chain's OWN clock, so a recording scored months later grades the same · a monitor bundle states
+> watches/σ/cadence). One test drafts through the REAL tool and scores the REAL row, so scorer and tools cannot
+> drift. `authoring_funnel` folds staged → accepted → finished-in-form → redrafted → rejected → lapsed by ISO week;
+> SP-3's falsifier is the `finished_in_form` column, keyed on the exact sentence SP-11's editor door stamps — a test
+> pins the two ends together. The thirty-ask corpus is frozen (`evals/authoring_asks.jsonl`, six families including
+> two refusal asks); `scripts/record_authoring_drafts.py` is the ONE spending step (scratch stores, live model,
+> ~30–90 calls), run on the user's word — the recordings then score in CI for free. **Baseline RE-MEASURED live,
+> read-only, 2026-09-16** (the 09-15 figure aged the same day it was written): **6 drafts ever staged · 1 accepted —
+> the user's own bundle — · 5 rejected · 0 finished in the form · 0 lapsed.** The weekly count
+> reaching a surface (Agent Ops) stays open.
+> **THE RECORDING RAN 2026-09-16** (the user's word, ~60 model calls, scratch stores + live coder;
+> `evals/authoring/recorded.jsonl` committed — scored in CI free forever). **The scored set's verdict:** every draft
+> that STAGED is honest — 10 proposals across 5 kinds, zero check failures (validates 4/4 · open-choices 4/4 ·
+> runs-as 1/1 · clock 1/1 · cost 3/3). The funnel's real leak is UPSTREAM: 21 of 30 asks staged nothing, in three
+> measured classes — (1) honest refusals doing their job (both red-team asks refused; the pricing watchdog checked
+> the warehouse FIRST and found no price data — exemplary); (2) considered proposer refusals on the sparse fixture
+> (the brief/agent families — a fixture with bots and a briefing would move these); (3) ONE real defect, closed the
+> same hour: exact-name resolution refused "Monday brief" against "The Monday brief" WITHOUT naming the candidates,
+> so the model wandered the platform reads until the turn's budget died (a23 ended answerless at 8 steps) — the
+> not-found refusals now list the connection's own automation/agent names, the movement's convention everywhere
+> else. Open questions the numbers raise for SP-14's gate: the agent_bundle family staged 0/5 on the fixture (each a
+> stated refusal, not silence) — re-record on a seeded richer fixture before reading that as the tools' failure.
+> **RE-RECORDED 2026-09-16, richer fixture** (two Slack bots so the sender stays a measurable open choice, a brief
+> subscription; ~60 more calls on the user's word): **16/30 staged** (was 9), all seven kinds represented, agent
+> bundles 2/5 (was 0); **honesty still perfect — 26/26 proposals across both runs, zero check failures.** The
+> residual decomposes cleanly: 4 designed refusal specimens behaving exactly as designed (both red-team asks; the
+> checks-first pricing watchdog; the no-support-schema agent) · 5 honest conversational turns (a careful question
+> back before a delete; "nothing is paused" answered truthfully; the name-listing fix WORKING — the model got the
+> candidate list and chose to hand the "morning chain ≈ morning anomalies?" guess back to the person, which is
+> right custody for an edit) · **5 budget deaths, the one remaining defect class**: diligent turns that spent all 8
+> loop steps measuring first (four SQL probes before drafting a monitor) and died answerless in the recorder —
+> live, the stream renders the graceful budget sentence, but the ask still lands undraftd. The 22(d) gate call this
+> leaves the user: on the 26 real asks, 21 behaved correctly (81%) and 5 hit the step budget — the knob is the
+> converse loop's step budget, a cost decision, not a code defect.
 
 **Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
 auto-accepting anything structural · a canvas for agents · a model grading its own drafts.
@@ -6088,6 +6186,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-15:** item 22 — Arc SP's second movement, authoring by sentence — arrived with the measured
 > trace of the user's own Spotlight turn; clause (a) was answered yes the same turn and SP-7 began. (b), (c) and (d)
 > stay open with recommendations, and none blocks SP-7. Open: 16, 18, 22(b–d).
+> **Amended 2026-09-16:** 22(b) was decided with SP-10 ("Go for SP-10" on the both-recommendation), and 22(d) with
+> SP-M's numbers on the table (graduate after the richer-fixture re-record). Open: 16, 18(c), 22(c).
 > **Amended 2026-09-15, later:** item 18(b) — Shipment and Payment — decided by the user, and not as recommended:
 > entities with a link, applied live on LuxExperience the same day. Open: 16, 18(c), 22(b–d).
 
@@ -6395,9 +6495,12 @@ the browser** · **measure the premise before building.**
     ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
     refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
     built on the recommendation; the call stays the user's.
-    ⏳ **(d) Graduating `ask.converse`** — its code default is off and the user's deployment runs it through a runtime
-    override, so a fresh install cannot draft from chat, ⌘K or Slack. *Recommended: when SP-M's scored set passes, not
-    before; meanwhile the Quick chip says that setting things up needs the conversation.* Needed by SP-14.
+    ✅ **(d) DECIDED 2026-09-16 (the user) — graduate AFTER the richer-fixture re-record, as recommended.** Asked with
+    SP-M's first recorded numbers on the table (every staged draft honest, 10/10 with zero check failures; 21/30
+    staged nothing on the SPARSE fixture, agent bundles 0/5 as stated refusals). The user chose the middle door: seed
+    a richer fixture, re-record the thirty asks, and graduate when the STAGING rate looks healthy — not just the
+    honesty rate. SP-14 ships right after. Until then a fresh install's Quick chip keeps saying that setting things
+    up needs the conversation.
 
 23. ✅ **DECIDED 2026-09-15 (the user) — the answer vocabulary (§3.11, third movement).** The user, with the Adaptive
     Cards catalog on screen: *"Why don't we consider introducing such UI elements? We have been calling ourselves

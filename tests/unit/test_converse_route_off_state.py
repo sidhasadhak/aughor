@@ -1,8 +1,9 @@
-"""The off-state contract for `ask.converse` — the claim that protects every current user.
+"""The off-state contract for `ask.converse` — the claim that protects the operator's OFF.
 
-`_stream_converse` is a THIRD body behind `/ask`. The flag is an EXPERIMENT and default off,
-so the only promise that matters to anyone not opted in is that the door behaves exactly as
-it did before this branch existed.
+`_stream_converse` is a THIRD body behind `/ask`. SP-14 (2026-09-16, decision 22(d))
+graduated the flag to DEFAULT-ON, so the promise this file pins inverted its setup and
+kept its point: an operator who switches the flag off must get the pre-converse door,
+byte for byte — the off-path is the ineligible-turn fallback and stays alive.
 
 The pre-existing `test_converse_is_off_by_default` checks that `converse_available()` returns
 False. That is the flag, not the door — it would keep passing if the route branched on
@@ -31,7 +32,8 @@ def _route(depth="quick", forced=None):
 
 @pytest.fixture(autouse=True)
 def _flag_off(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    # Default-ON since SP-14: the off state is now an OPERATOR'S explicit choice.
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
 
 
 def test_the_flag_off_makes_converse_unreachable(monkeypatch):
@@ -57,7 +59,7 @@ def test_the_flag_is_read_per_call_not_per_process(monkeypatch):
     monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
     assert _converse_eligible(_req(), _route("quick")) is True
 
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE")
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
     assert _converse_eligible(_req(), _route("quick")) is False
 
 

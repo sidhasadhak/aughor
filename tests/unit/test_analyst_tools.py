@@ -294,14 +294,12 @@ class _Route:
     ("1", _Route(depth="deep", forced="dossier"), _Req(), False),    # dossier stays a conversation
     ("1", _Route(depth="deep", mode="explore"), _Req(), False),      # explore keeps its graph
     ("1", _Route(depth="quick"), _Req(), False),                     # quick is not deep
-    ("",  _Route(depth="deep"), _Req(), False),                      # flag off → phase script
+    ("0", _Route(depth="deep"), _Req(), False),                      # flag off → phase script
 ])
 def test_analyst_door(monkeypatch, flag, route, req, expect):
     from aughor.routers.investigations import _analyst_eligible
-    if flag:
-        monkeypatch.setenv("AUGHOR_ASK_CONVERSE", flag)
-    else:
-        monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    # SP-14: default-ON, so the off arm is an explicit "0", never an unset variable.
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", flag)
     assert _analyst_eligible(req, route) is expect
 
 

@@ -102,6 +102,10 @@ def test_wide_degrades_to_quick_without_capability():
 @pytest.fixture
 def ask_client(monkeypatch):
     captured: dict = {}
+    # SP-14 made ask.converse default-ON; this suite is about the ROUTE-WIDE detector's
+    # quick/deep pinning, so the third and analyst bodies are pinned off explicitly —
+    # the same reasoning test_ask_router.py's own fixture records.
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
 
     async def fake_deep(*a, **k):
         captured["requested_mode"] = k.get("requested_mode")

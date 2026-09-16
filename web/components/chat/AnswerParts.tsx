@@ -23,6 +23,7 @@ import { Progress } from "@/components/ui/progress";
 import { StatusChip, type ChipHue } from "@/components/brief/StatusChip";
 import { AnswerProse } from "@/components/chat/AnswerProse";
 import { ProposalCardById } from "@/components/ProposalCard";
+import { approverName } from "@/lib/auth";
 import { Icon } from "@/components/ui/icon";
 import type { AnswerPart } from "@/lib/chatTurn";
 
@@ -124,7 +125,7 @@ export function AnswerParts({ parts, onFollowUp }: {
               </div>
             );
           case "proposal_ref":
-            return <ProposalCardById key={i} proposalId={part.proposal_id} actor="chat" />;
+            return <ProposalCardById key={i} proposalId={part.proposal_id} actor={approverName("chat")} />;
           default:
             // A newer server's kind: name it quietly rather than dump or drop it.
             return (
