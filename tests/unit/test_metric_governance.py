@@ -91,3 +91,49 @@ class TestBackCompatDefaults:
     def test_explicit_status_is_respected(self):
         m = MetricDefinition(name="x", label="X", sql="1", status="proposed")
         assert m.status == "proposed"
+
+
+class TestValidateMetricRunsForReal:
+    """HB-2 found the tie-out door broken twice over: the module called
+    ``conn.execute(sql)`` against the governed ``execute(hypothesis_id, sql)``
+    signature (every test errored), and a stringified boolean ``'False'`` read as
+    truthy (a failing test could not fail). The departure gate is the first caller
+    that needs the verdict to be RIGHT, so both defects get direct coverage."""
+
+    def _metric(self):
+        return MetricDefinition(
+            name="revenue", label="Revenue", sql="SUM(total_amount)",
+            quality_tests=["SELECT COUNT(*) = 0 FROM orders WHERE total_amount IS NULL"])
+
+    def test_governed_two_arg_connection_is_called_correctly(self):
+        from types import SimpleNamespace
+        from aughor.semantic.metrics import validate_metric
+        calls = []
+
+        class _Conn:
+            def execute_bounded(self, label, sql, max_rows):
+                calls.append((label, sql, max_rows))
+                return SimpleNamespace(rows=[["True"]])
+        v = validate_metric(self._metric(), _Conn())
+        assert v.passed is True
+        assert calls and calls[0][0] == "__metric_tieout__"
+
+    def test_stringified_false_fails_the_test(self):
+        from types import SimpleNamespace
+        from aughor.semantic.metrics import validate_metric
+
+        class _Conn:
+            def execute_bounded(self, label, sql, max_rows):
+                return SimpleNamespace(rows=[["False"]])
+        v = validate_metric(self._metric(), _Conn())
+        assert v.passed is False
+
+    def test_raw_single_arg_connection_still_works(self):
+        from types import SimpleNamespace
+        from aughor.semantic.metrics import validate_metric
+
+        class _Raw:
+            def execute(self, sql):
+                return SimpleNamespace(rows=[[1]])
+        v = validate_metric(self._metric(), _Raw())
+        assert v.passed is True

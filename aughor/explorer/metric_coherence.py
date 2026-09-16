@@ -12,7 +12,8 @@ is a KB/registry entry, not a code change.
 
 Public surface (the explorer gate + emission sites call these — kept public so the cross-module
 import stays off the private-import ratchet): `mislabeled_named_metric`, `drifted_registered_metric`,
-`relabel_mislabeled_finding`, `metric_vocab_for`. Everything else is module-private.
+`relabel_mislabeled_finding`, `metric_vocab_for`, and `asserted_governed_metrics` (HB-2's
+departure gate targets its tie-out with it). Everything else is module-private.
 """
 from __future__ import annotations
 
@@ -112,6 +113,28 @@ def _wrong_usage_idents(metric) -> list[str]:
             if ident not in out:
                 out.append(ident)
     return out
+
+
+def asserted_governed_metrics(text: str, connection_id: str = "",
+                              table_cols: dict | None = None) -> list:
+    """Public: registered metrics ASSERTED with a value in ``text``, scoped to the
+    connection (its own metrics plus unscoped globals) and — when ``table_cols`` is
+    given — to metrics the connection can compute (`metric_matches_columns`, the same
+    applicability rule the prompt filter and the drift guard use). HB-2's departure
+    gate targets its tie-out with this: the metrics a departing message claims are the
+    ones whose quality tests must hold at the gate. Empty on any registry trouble."""
+    if not text:
+        return []
+    try:
+        from aughor.semantic.metrics import list_metrics, metric_matches_columns
+        metrics = [m for m in list_metrics(connection_id=connection_id or None)
+                   if (getattr(m, "sql", "") or "").strip()]
+        if table_cols:
+            metrics = [m for m in metrics if metric_matches_columns(m, table_cols)]
+    except Exception as _e:
+        logger.debug("asserted-metrics: registry unavailable: %s", _e)
+        return []
+    return _asserted_registered(text, metrics)
 
 
 def _asserted_registered(finding_text: str, metrics: list) -> list:

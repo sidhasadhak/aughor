@@ -793,6 +793,10 @@ def _accept_outbound_send(p: StagedProposal, *, actor: str, mint_grant: bool = F
     _Result = _executor_result()
 
     d = dict(p.params or {})
+    if d.get("trigger_id"):
+        # HB-3 — the same outbound_send kind wearing its Action-Hub shape (a proposed
+        # ticket/webhook): the trigger id in the params is what routes it here.
+        return _accept_notify_send(p, d, actor=actor, mint_grant=mint_grant)
     bot_id, channel = str(d.get("bot_id") or ""), str(d.get("channel") or "")
     bot = get_bot_decrypted(bot_id)
     if bot is None or not bot.enabled:
@@ -824,6 +828,87 @@ def _accept_outbound_send(p: StagedProposal, *, actor: str, mint_grant: bool = F
     why = f"Slack refused the post: {info.get('error', 'unknown')}"
     _record_outcome(p.id, "failed", why, {})
     return _Result("failed", False, p.action_id, message=why), ""
+
+
+def _accept_notify_send(p: "StagedProposal", d: dict, *, actor: str,
+                        mint_grant: bool = False):
+    """HB-3 — perform a proposed Action-Hub send (a Jira ticket, a webhook) a person
+    just approved. The fire happens HERE, mirror of the Slack branch above; the recorded
+    outcome carries the created resource's reference (Jira's ticket key) so a resumed
+    run — and the filing that puts the ticket on the object it is about — reads a real
+    ref, never a guess. ``mint_grant`` is "always allow" for THIS trigger."""
+    from aughor.actions import grants
+    from aughor.notifications.executor import fire_action
+    from aughor.notifications.models import ActionPayload
+    from aughor.notifications.store import get_trigger
+    from aughor.util.time import now_iso_z
+
+    _Result = _executor_result()
+
+    trigger_id = str(d.get("trigger_id") or "")
+    trigger = get_trigger(trigger_id)
+    if trigger is None or not trigger.enabled:
+        why = f"Action Hub trigger {trigger_id!r} is not available"
+        _record_outcome(p.id, "failed", why, {})
+        return _Result("dispatch_error", False, p.action_id, message=why), ""
+
+    automation_id = str(d.get("automation_id") or "")
+    log = fire_action(trigger, ActionPayload(
+        investigation_id=f"automation:{automation_id}",
+        rec_index=0,
+        recommendation=str(d.get("message") or ""),
+        metric_name=str(d.get("metric_name") or ""),
+        headline=p.reasoning[:120] if p.reasoning else trigger.name,
+        trigger_id=trigger_id,
+        triggered_at=now_iso_z(),
+        # Stable per PROPOSAL: an accept retried after a crash must not fire twice.
+        delivery_key=f"{automation_id}:{p.id}",
+    ))
+    status = getattr(log, "status", "")
+    if status == "ok":
+        outcome = {"trigger_id": trigger_id, "resource_ref": log.resource_ref,
+                   "about": str(d.get("about") or "")}
+        _record_outcome(p.id, "executed",
+                        f"fired {trigger.name}"
+                        + (f" — created {log.resource_ref}" if log.resource_ref else ""),
+                        outcome)
+        grant_id = ""
+        if mint_grant:
+            g = grants.mint_notify_grant(automation_id, trigger_id,
+                                         connection_id=p.connection_id, created_by=actor)
+            grant_id = g.id if g else ""
+        _file_send_on_object(d.get("about"), trigger, log, source=p.source)
+        return _Result("executed", True, p.action_id,
+                       message=f"fired {trigger.name}"
+                               + (f" — created {log.resource_ref}" if log.resource_ref else "")
+                               + (" · this chain may now fire it unattended" if grant_id else ""),
+                       outcome=outcome), grant_id
+    if status == "timeout":
+        _record_outcome(p.id, "uncertain", "send timed out — it may have arrived", {})
+        return _Result("uncertain", False, p.action_id,
+                       message="send timed out — it may have arrived"), ""
+    why = f"trigger refused the send: {getattr(log, 'error', '') or 'unknown'}"
+    _record_outcome(p.id, "failed", why, {})
+    return _Result("failed", False, p.action_id, message=why), ""
+
+
+def _file_send_on_object(about, trigger, log, *, source: str) -> None:
+    """Everything lands on the map (§3.18's fifth law): a fired ticket/webhook that
+    declares what it is ABOUT is filed on that object. Best-effort — filing must never
+    fail a send that already happened."""
+    if not about:
+        return
+    try:
+        from aughor.hub.links import file_link
+        file_link(object_ref=str(about),
+                  kind="ticket" if trigger.type == "jira" else "webhook",
+                  ref=getattr(log, "resource_ref", "") or "",
+                  title=(getattr(log, "recommendation", "") or "")[:200],
+                  url="", source=source or "")
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning(
+            "send fired but filing it on %s failed", about, exc_info=True)
 
 
 def _executor_result():

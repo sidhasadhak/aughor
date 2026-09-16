@@ -867,6 +867,8 @@ from aughor.routers import (
     intake as intake_router,
     roles as roles_router,
     groups as groups_router,
+    departures as departures_router,
+    links as links_router,
     packs as packs_router,
     receipt as receipt_router,
     agui,
@@ -928,6 +930,8 @@ app.include_router(intake_router.router)
 app.include_router(packs_router.router)
 app.include_router(roles_router.router)
 app.include_router(groups_router.router)  # HB-1 — groups, level grants, explain + route (the routing half)
+app.include_router(departures_router.router)  # HB-2 — the departures ledger, verdicts, graduation
+app.include_router(links_router.router)  # HB-3 — the manifest: tickets/threads filed on objects, outcomes
 app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)

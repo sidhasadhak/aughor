@@ -35,6 +35,8 @@ export const CONDITION_KINDS: { value: ConditionKind; label: string; desc: strin
   { value: "metric",         label: "Metric",         desc: "Delegate to an existing monitor by id" },
   { value: "source_change",  label: "Source change",  desc: "A table's rows changed (add / delete / backfill)" },
   { value: "entity_appears", label: "New entity",     desc: "A new key appeared in a table" },
+  { value: "promise_breached", label: "Promise breached", desc: "A declared promise is measured broken" },
+  { value: "finding_created",  label: "New finding",      desc: "The explorer recorded a new finding" },
 ];
 
 export const EFFECT_KINDS: { value: EffectKind; label: string; desc: string }[] = [

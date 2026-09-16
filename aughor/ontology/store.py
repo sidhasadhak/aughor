@@ -150,6 +150,18 @@ def patch_entity(
     return graph
 
 
+def cached_ontology_scopes() -> list[tuple[str, str]]:
+    """Every ``(connection_id, schema_name)`` holding a cached graph — an index read
+    only (no graph is validated, nothing builds). HB-3's links store scans this to
+    find which connection declared a promise an object ref names."""
+    out: list[tuple[str, str]] = []
+    for k in _load():
+        parts = str(k).split(":")
+        if len(parts) >= 2 and (parts[0], parts[1]) not in out:
+            out.append((parts[0], parts[1]))
+    return out
+
+
 def load_latest_ontology(
     connection_id: str,
     schema_name: Optional[str] = None,

@@ -322,6 +322,44 @@ class FreshnessResult(BaseModel):
     message: str
 
 
+def _run_check_sql(conn, sql: str, label: str):
+    """Execute one check statement against a connection of either arity.
+
+    HB-2 found the tie-out plane broken at its only door: this module called
+    ``conn.execute(sql)`` while every governed connection's signature is
+    ``execute(hypothesis_id, sql)`` — so EVERY quality test errored with a
+    TypeError that was then reported as "1 of N tests failed", a wrong number
+    wearing a tie-out's verdict. Governed and bounded first (a check returns a
+    scalar; five rows is generosity), single-arg as the fallback for a raw or
+    stub connection."""
+    if hasattr(conn, "execute_bounded"):
+        return conn.execute_bounded(label, sql, 5)
+    try:
+        return conn.execute(label, sql)
+    except TypeError:
+        return conn.execute(sql)
+
+
+def _truthy_scalar(val) -> bool:
+    """A quality test's verdict, as the DATABASE meant it. The connection layer
+    stringifies result cells, so a boolean False arrives as ``'False'`` — and
+    ``bool('False')`` is True: a failing test that could not fail (found by HB-2's
+    departure gate, the first caller that ever needed the verdict to be right).
+    String forms are parsed as verdicts; anything unrecognized falls back to
+    Python truthiness."""
+    if isinstance(val, str):
+        s = val.strip().lower()
+        if s in ("false", "f", "no", ""):
+            return False
+        if s in ("true", "t", "yes"):
+            return True
+        try:
+            return float(s) != 0.0
+        except ValueError:
+            return bool(s)
+    return bool(val)
+
+
 def validate_metric(metric: MetricDefinition, conn) -> ValidationResult:
     """Run all quality_tests for a metric against conn. Each test must return a truthy scalar."""
     if not metric.quality_tests:
@@ -336,13 +374,13 @@ def validate_metric(metric: MetricDefinition, conn) -> ValidationResult:
     all_passed = True
     for sql in metric.quality_tests:
         try:
-            qr = conn.execute(sql)
+            qr = _run_check_sql(conn, sql, "__metric_tieout__")
             rows = qr.rows if qr else []
             # A test passes when it returns a single truthy value
             if rows:
                 first = rows[0]
                 val = first[0] if isinstance(first, (list, tuple)) else list(first.values())[0]
-                passed = bool(val)
+                passed = _truthy_scalar(val)
             else:
                 passed = False
             results.append(QualityTestResult(test_sql=sql, passed=passed))
@@ -373,7 +411,7 @@ def check_freshness(metric: MetricDefinition, conn) -> FreshnessResult:
         )
 
     try:
-        qr = conn.execute(metric.freshness_check_sql)
+        qr = _run_check_sql(conn, metric.freshness_check_sql, "__metric_freshness__")
         rows = qr.rows if qr else []
         latest = None
         if rows:

@@ -1319,6 +1319,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/automations/{automation_id}/graduate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Graduate
+         * @description Take an automation off probation by hand — the declarer's override. The measured
+         *     path (verdicts crossing the threshold) is the intended door; this one exists
+         *     because a person outranks a threshold about their own automation.
+         */
+        post: operations["graduate_automations__automation_id__graduate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/automations/{automation_id}/graph": {
         parameters: {
             query?: never;
@@ -3204,6 +3226,90 @@ export interface paths {
         get: operations["cron_tick_cron_tick_get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departures": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Departures
+         * @description The ledger, newest first — departed and held rows alike, reasons and checks
+         *     verbatim (the receipt that travels, readable where it was recorded).
+         */
+        get: operations["get_departures_departures_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departures/precision/{automation_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Precision
+         * @description The measured departure precision one automation has earned — the number
+         *     graduation reads, published so probation is never a mystery state.
+         */
+        get: operations["get_precision_departures_precision__automation_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departures/{departure_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get One */
+        get: operations["get_one_departures__departure_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departures/{departure_id}/verdict": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Mark
+         * @description The declarer's mark on one departure — accept / correct / reject.
+         *
+         *     Forwards into the feedback plane when the departure carries an investigation id
+         *     (one mark, both ledgers), then re-measures the automation's precision and
+         *     graduates it the moment the threshold holds — "graduates at a measured
+         *     precision", literally at the moment of the measurement that satisfies it.
+         */
+        post: operations["mark_departures__departure_id__verdict_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6672,6 +6778,62 @@ export interface paths {
          * @description Restore an earlier version's content as a NEW version (history is never rewound).
          */
         post: operations["post_revert_lifecycle__kind__revert_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/links": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Links */
+        get: operations["get_links_links_get"];
+        put?: never;
+        /** File One */
+        post: operations["file_one_links_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/links/{link_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get One */
+        get: operations["get_one_links__link_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/links/{link_id}/close": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Close One
+         * @description The outcome column: what happened, and the object's stamped measures re-read at
+         *     close beside the filing's — before and after, recorded.
+         */
+        post: operations["close_one_links__link_id__close_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11863,6 +12025,16 @@ export interface components {
              */
             surface: string;
         };
+        /** CloseBody */
+        CloseBody: {
+            /**
+             * Number Recovered
+             * @default
+             */
+            number_recovered: string;
+            /** Outcome */
+            outcome: string;
+        };
         /** ColumnAnnotationIn */
         ColumnAnnotationIn: {
             /** Description */
@@ -11898,7 +12070,7 @@ export interface components {
              * Kind
              * @enum {string}
              */
-            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook";
+            kind: "schedule" | "metric" | "source_change" | "entity_appears" | "webhook" | "promise_breached" | "finding_created";
         };
         /**
          * Context
@@ -12351,6 +12523,28 @@ export interface components {
             feedback: string;
             /** Keep Subquestions */
             keep_subquestions?: number[] | null;
+        };
+        /** FileLinkBody */
+        FileLinkBody: {
+            /** Kind */
+            kind: string;
+            /** Object Ref */
+            object_ref: string;
+            /**
+             * Ref
+             * @default
+             */
+            ref: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Url
+             * @default
+             */
+            url: string;
         };
         /**
          * FixAllRequest
@@ -14079,6 +14273,16 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** VerdictBody */
+        VerdictBody: {
+            /**
+             * Note
+             * @default
+             */
+            note: string;
+            /** Verdict */
+            verdict: string;
         };
         /** VerdictIn */
         VerdictIn: {
@@ -17486,6 +17690,37 @@ export interface operations {
             query?: {
                 exposed?: boolean;
             };
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    graduate_automations__automation_id__graduate_post: {
+        parameters: {
+            query?: never;
             header?: never;
             path: {
                 automation_id: string;
@@ -21019,6 +21254,136 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_departures_departures_get: {
+        parameters: {
+            query?: {
+                state?: string | null;
+                automation_id?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_precision_departures_precision__automation_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                automation_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_one_departures__departure_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                departure_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    mark_departures__departure_id__verdict_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                departure_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VerdictBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -26508,6 +26873,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RevisionOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_links_links_get: {
+        parameters: {
+            query?: {
+                object_ref?: string | null;
+                status?: string | null;
+                kind?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    file_one_links_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FileLinkBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_one_links__link_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    close_one_links__link_id__close_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                link_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CloseBody"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */

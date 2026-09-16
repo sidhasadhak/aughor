@@ -306,3 +306,28 @@ def mint_send_grant(automation_id: str, channel: str, *, connection_id: str,
         action_id=send_grant_action_id(automation_id),
         target_arg="channel", target_value=str(channel),
         owner_kind="automation", owner_id=automation_id, created_by=created_by))
+
+
+# HB-3 — the same shape for an Action Hub trigger (the ticket leg: a proposed notify —
+# a Jira ticket, a webhook — is approved once, and "always allow" lets the chain fire
+# that trigger unattended from then on). Same store, same owner cascade; only the
+# namespace prefix and the bound target differ, which is all that was Slack-shaped.
+
+def notify_grant_action_id(automation_id: str) -> str:
+    return f"notify:{automation_id}"
+
+
+def matching_notify_grant(automation_id: str, trigger_id: str, *, connection_id: str):
+    """The grant that lets this chain fire this trigger unattended, or ``None``."""
+    return matching_grant(notify_grant_action_id(automation_id),
+                          {"trigger_id": str(trigger_id)}, connection_id=connection_id)
+
+
+def mint_notify_grant(automation_id: str, trigger_id: str, *, connection_id: str,
+                      created_by: str) -> StandingGrant:
+    """This automation may fire this Action Hub trigger unattended from now on."""
+    return mint_grant(StandingGrant(
+        connection_id=connection_id,
+        action_id=notify_grant_action_id(automation_id),
+        target_arg="trigger_id", target_value=str(trigger_id),
+        owner_kind="automation", owner_id=automation_id, created_by=created_by))

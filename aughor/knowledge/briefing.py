@@ -702,6 +702,7 @@ def get_briefing(
     metric_moves: "Optional[Any]" = None,
     workspace_id: Optional[str] = None,
     col_types: Optional[dict[str, str]] = None,
+    promise_chains: "Optional[Any]" = None,
 ) -> dict[str, Any]:
     """Return cached briefing narrative if fresh, otherwise generate and cache.
 
@@ -741,6 +742,17 @@ def get_briefing(
             moves = []
         if moves:
             domain_data = {**domain_data, "Key Metrics": list(moves) + list(domain_data.get("Key Metrics", []))}
+
+    # HB-3 — fold in the promise chains (breach rate at filing vs now, the filed
+    # ticket/thread refs, recorded outcomes), same shape and same fold as the moves:
+    # deterministic candidates under their own domain, citable by the narrative.
+    if promise_chains is not None:
+        try:
+            chains = promise_chains() or []
+        except Exception:
+            chains = []
+        if chains:
+            domain_data = {**domain_data, "Promises": list(chains) + list(domain_data.get("Promises", []))}
 
     briefing = generate_narrative(domain_data, patterns, connection_id, macro_context,
                                   profile=profile, workspace_id=workspace_id,

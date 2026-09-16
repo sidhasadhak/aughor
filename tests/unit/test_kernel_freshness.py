@@ -324,6 +324,9 @@ _FINGERPRINT_ALLOWLIST = {
     ("continuous", "connection_schema_fingerprint"),  # delegates to profile_cache
     ("evidence_budget", "_fingerprint"),        # content: result identity for rendering
     ("ambiguity_ledger", "_fingerprint"),       # content: facet identity
+    # HB-3 — the promise trigger's change detector: breach-state identity ("did the
+    # measured numbers move past the last fired state"), not staleness of a cache.
+    ("probes", "_promise_fingerprint"),
 }
 
 

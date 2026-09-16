@@ -261,7 +261,7 @@ def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> t
     return False, f"schedule({cond.cron}): next due {nxt.isoformat() if nxt else 'never'}"
 
 
-def default_probe(cond: Condition, automation: Automation) -> tuple[bool, str]:
+def default_probe(cond: Condition, automation: Automation):
     """Evaluate a warehouse-backed condition.
 
     ``metric`` delegates to the named :class:`~aughor.monitors.models.Monitor`: the monitor's own
@@ -297,6 +297,16 @@ def default_probe(cond: Condition, automation: Automation) -> tuple[bool, str]:
         from aughor.automations.probes import evaluate_source_condition
         return evaluate_source_condition(cond, automation)
 
+    # HB-3 — the hub's two triggers. Their evaluators return a third element, the
+    # PAYLOAD a fired condition hands the chain; `evaluate_conditions` normalizes, so
+    # this dispatcher keeps the (fired, detail[, payload]) shape as returned.
+    if cond.kind == "promise_breached":
+        from aughor.automations.probes import evaluate_promise_condition
+        return evaluate_promise_condition(cond, automation)
+    if cond.kind == "finding_created":
+        from aughor.automations.probes import evaluate_finding_condition
+        return evaluate_finding_condition(cond, automation)
+
     raise ProbeUnavailable(f"condition kind '{cond.kind}' has no probe wired")
 
 
@@ -324,7 +334,8 @@ _SCHEDULE_SKIPPED_BY: dict[str, str] = {
 def evaluate_conditions(automation: Automation, *, now: datetime,
                         probe: Optional[ConditionProbe] = None,
                         manual: bool = False,
-                        via: str = "hand") -> tuple[bool, list[str], str]:
+                        via: str = "hand",
+                        trigger_data: Optional[dict] = None) -> tuple[bool, list[str], str]:
     """Evaluate every condition under ``condition_logic``. Returns ``(fired, details, reason)``.
 
     Deliberately evaluates ALL conditions rather than short-circuiting: the run history is meant to
@@ -364,7 +375,15 @@ def evaluate_conditions(automation: Automation, *, now: datetime,
             results.append((True, f"webhook: {asked}") if manual
                            else (False, "webhook: waiting to be called"))
         else:
-            results.append(probe_fn(cond, automation))
+            # HB-3 — a probe may return (fired, detail) or (fired, detail, payload);
+            # a fired condition's payload is what the chain binds as `trigger.<key>`
+            # (`{"$from": "trigger.breach_rate"}`). Collected into the caller's dict —
+            # the return shape stays what every existing caller expects.
+            r = probe_fn(cond, automation)
+            ok, detail = bool(r[0]), str(r[1])
+            if ok and len(r) > 2 and isinstance(r[2], dict) and trigger_data is not None:
+                trigger_data.update(r[2])
+            results.append((ok, detail))
 
     fired_details = [d for ok, d in results if ok]
     quiet_details = [d for ok, d in results if not ok]
@@ -427,6 +446,18 @@ def _stage_approval(effect: Effect, automation: Automation, *, alias: str, run_i
                                         "channel": str(effect.config.get("channel", "")),
                                         "message": effect.config.get("message", ""),
                                         "thread_ts": str(effect.config.get("thread_ts") or ""),
+                                        "about": str(effect.config.get("about", "")),
+                                        "automation_id": automation.id})
+        elif effect.kind == "notify":
+            # HB-3 — the proposed ticket/webhook send, same outbound_send kind so the one
+            # inbox card serves it; `trigger_id` in the params is what routes the accept
+            # to the notify replay, and `about` is the securable the send is filed on.
+            kind, action_id, params = ("outbound_send",
+                                       f"notify:{automation.id}",
+                                       {"trigger_id": str(effect.config.get("trigger_id", "")),
+                                        "message": effect.config.get("message", ""),
+                                        "metric_name": str(effect.config.get("metric_name", "")),
+                                        "about": str(effect.config.get("about", "")),
                                         "automation_id": automation.id})
         else:
             kind = "integration" if integration else "declared_action"
@@ -620,6 +651,27 @@ def acting_agent_ref(effect: Effect, automation: Automation) -> str:
     return f"agent:{agent}" if agent else f"automation:{automation.id}"
 
 
+def _gate_departure(effect: Effect, automation: Automation, *, kind: str,
+                    text: str, target: str):
+    """HB-2 — ask the departure gate about one outbound message. Returns its verdict,
+    or None when the gate itself failed (the transport must not die of a gate defect;
+    the failure is tolerated and counted, and the send proceeds as before the wave)."""
+    try:
+        from aughor.govern.departure import gate_departure
+        from aughor.org.context import current_org_id
+        return gate_departure(
+            kind=kind, org_id=current_org_id(), conn_id=automation.conn_id,
+            text=text, automation_id=automation.id, automation_name=automation.name,
+            probation=bool(getattr(automation, "probation", False)),
+            declared_by=getattr(automation, "declared_by", "") or "",
+            actor=acting_agent_ref(effect, automation), target=target)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "departure gate unavailable — send proceeds ungated",
+                 counter="departures.gate_failed")
+        return None
+
+
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
     """RC-5.4 — post into a channel AS the bot, so the message can be replied to.
 
@@ -653,6 +705,18 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
                          f"allow' to let this chain post there unattended from now on"))
         grants.bump_use(grant.id)
 
+    # HB-2 — the departure gate: content customs on the unattended path, judged on the
+    # exact text that would post (the bound message). A hold is a verdict — the same
+    # message holds identically next attempt — so it maps to the terminal "held", never
+    # retried. The inbox's accepted-proposal send is deliberately ungated: a person
+    # reviewed that text and pressed send, and the person is the gate there.
+    message_text = str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    verdict = _gate_departure(effect, automation, kind="slack_post",
+                              text=message_text, target=f"{bot_id}:{channel}")
+    if verdict is not None and verdict.held:
+        return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="held",
+                             message=f"held at departure — {verdict.reason_sentence()}")
+
     bot = get_bot_decrypted(bot_id)
     if bot is None:
         return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",
@@ -664,11 +728,15 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
                              message=f"Slack bot '{bot.name}' is disabled")
 
     ok, info = post_as_bot(
-        bot.bot_token, channel,
-        str(effect.config.get("message") or f"Automation '{automation.name}' fired"),
+        bot.bot_token, channel, message_text,
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
     )
     if ok:
+        # HB-3 — a post that declares what it is `about` is filed on that object as a
+        # thread the moment it exists (everything lands on the map).
+        _thread_ref = f"{info.get('channel', '') or channel}:{info.get('ts', '')}"
+        _link_id = _file_departure_link(effect, automation, kind="thread",
+                                        ref=_thread_ref, title=message_text)
         return EffectOutcome(
             kind=effect.kind, target=f"{bot_id}:{channel}", status="executed",
             message=f"posted as {bot.name} (ts {info.get('ts', '')})",
@@ -676,7 +744,7 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
             # "step1.ts"}` to reply INTO this thread, which is the whole shape of a
             # conversation an automation starts and then continues.
             data={"ts": info.get("ts", ""), "channel": info.get("channel", "") or channel,
-                  "bot_id": bot_id})
+                  "bot_id": bot_id, **({"link_id": _link_id} if _link_id else {})})
     if info.get("uncertain"):
         # It may have arrived. Saying "failed" would license a retry, and a retried
         # maybe-delivered message is the duplicate this layer exists to prevent.
@@ -686,23 +754,139 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
                          message=f"Slack refused the post: {info.get('error', 'unknown')}")
 
 
+def _file_departure_link(effect: Effect, automation: Automation, *, kind: str,
+                         ref: str, url: str = "", title: str = "") -> str:
+    """HB-3 — everything lands on the map: a send that declares what it is `about` (a
+    securable string in its config) is FILED on that object after it fires. Best-effort;
+    filing never fails a send that already happened. Returns the link id or ""."""
+    about = str(effect.config.get("about", "") or "")
+    if not about:
+        return ""
+    try:
+        from aughor.hub.links import file_link
+        row = file_link(object_ref=about, kind=kind, ref=ref, url=url,
+                        title=title[:200], source=acting_agent_ref(effect, automation))
+        return str(row.get("id", ""))
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "filing the send on its object failed — the send itself stands",
+                 counter="automations.engine.file_link")
+        return ""
+
+
+def _route_destinations(securable: str, automation: Automation) -> list:
+    """HB-3 — where a departure about ``securable`` goes: HB-1's `route()`, called in
+    anger for the first time. For a promise/process the owner and the meaning chain are
+    read off the CACHED graph (a probe never builds); anything else routes by
+    subscription grants alone."""
+    from aughor.org.context import current_org_id
+    from aughor.rbac.routing import route
+
+    owner, parents = "", []
+    ref = str(securable)
+    if ref.startswith(("promise:", "process:")):
+        pid = ref.split(":", 1)[1].partition(".")[0]
+        if ref.startswith("promise:"):
+            # The meaning chain is STRUCTURAL: a promise's id embeds its process
+            # (promise:<process>.<noun>), so a grant on the process covers its
+            # promises with or without a cached graph.
+            parents = [f"process:{pid}"]
+        try:
+            from aughor.ontology.store import load_latest_ontology
+            graph = load_latest_ontology(automation.conn_id, None)
+            process = (getattr(graph, "processes", None) or {}).get(pid) if graph else None
+            if process is not None:
+                owner = getattr(process, "owner", "") or ""
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "owner lookup for routing failed — routing by grants alone",
+                     counter="automations.engine.route_owner")
+    return route(ref, org_id=current_org_id(), owner=owner, parents=parents)
+
+
+def _dispatch_notify_routed(effect: Effect, automation: Automation,
+                            securable: str) -> EffectOutcome:
+    """One message, delivered wherever the MAP says it belongs — the promise's owner and
+    every Subscribe-or-higher holder, each group through its channel. Each destination
+    runs the FULL single-trigger path (approval, departure gate, fire, filing), so the
+    ledger records one row per landing and probation holds each one."""
+    dests = _route_destinations(securable, automation)
+    reachable = [d for d in dests if d.channel_trigger_id]
+    unreachable = [d.principal for d in dests if not d.channel_trigger_id]
+    if not reachable:
+        whom = (f" ({', '.join(unreachable)} have no channel yet)" if unreachable
+                else " (nobody owns or subscribes to it)")
+        return EffectOutcome(
+            kind=effect.kind, target=securable, status="skipped",
+            message=f"routing for {securable} found no channel to land in{whom}")
+
+    outcomes: list[tuple[str, EffectOutcome]] = []
+    for d in reachable:
+        one = effect.model_copy(update={"config": {
+            **effect.config, "trigger_id": d.channel_trigger_id, "route_about": ""}})
+        outcomes.append((d.principal, _dispatch_notify(one, automation)))
+
+    executed = [p for p, o in outcomes if o.status == "executed"]
+    worst = next((o for _p, o in outcomes if o.status != "executed"), None)
+    summary = "; ".join(f"{p}: {o.status}" for p, o in outcomes)
+    if unreachable:
+        summary += f" · no channel: {', '.join(unreachable)}"
+    return EffectOutcome(
+        kind=effect.kind, target=securable,
+        status="executed" if executed else (worst.status if worst else "skipped"),
+        message=f"routed by {securable} — {summary}",
+        data={"destinations": [{"principal": p, "status": o.status,
+                                "target": o.target} for p, o in outcomes]})
+
+
 def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
     from aughor.notifications.executor import fire_action
     from aughor.notifications.models import ActionPayload
     from aughor.notifications.store import get_trigger
+
+    # HB-3 — a step may say WHAT its message is about instead of WHERE it goes:
+    # `route_about` hands the destination decision to the map (owner + subscribers,
+    # each group through its channel), and no model decides who gets what.
+    _route_ref = str(effect.config.get("route_about", "") or "")
+    if _route_ref:
+        return _dispatch_notify_routed(effect, automation, _route_ref)
 
     trigger_id = str(effect.config.get("trigger_id", ""))
     trigger = get_trigger(trigger_id)
     if trigger is None:
         return EffectOutcome(kind=effect.kind, target=trigger_id, status="dispatch_error",
                              message=f"unknown Action Hub trigger: {trigger_id}")
+    # HB-3 — a notify the chain's AUTHOR marked `require_approval` parks for a person,
+    # exactly as SP-7's drafted Slack post does: the ticket leg's "a Jira ticket is
+    # PROPOSED and approved" — the send fires on accept, and "always allow" mints the
+    # trigger-bound standing grant. Drafting still never sets this on notify (a
+    # preconfigured webhook a person stood up posts unattended, propose.py's rule);
+    # only an authored chain asks for it.
+    if bool(effect.config.get("require_approval")):
+        from aughor.actions import grants
+        _grant = grants.matching_notify_grant(automation.id, trigger_id,
+                                              connection_id=automation.conn_id)
+        if _grant is None:
+            return EffectOutcome(
+                kind=effect.kind, target=trigger_id, status="approval_required",
+                message=(f"a proposed send to trigger '{trigger.name}' waits for a "
+                         f"person — accept it in the inbox, or accept with 'always "
+                         f"allow' to let this chain fire it unattended from now on"))
+        grants.bump_use(_grant.id)
+
+    # HB-2 — same departure gate as slack_post: notify is the other unattended transport.
+    _notify_text = str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    _verdict = _gate_departure(effect, automation, kind="notify",
+                               text=_notify_text, target=trigger_id)
+    if _verdict is not None and _verdict.held:
+        return EffectOutcome(kind=effect.kind, target=trigger_id, status="held",
+                             message=f"held at departure — {_verdict.reason_sentence()}")
     # ActionPayload has no defaults — every field is supplied. `investigation_id` carries the
     # automation id so a webhook receiver can trace the notification back to what sent it.
     log = fire_action(trigger, ActionPayload(
         investigation_id=f"automation:{automation.id}",
         rec_index=0,
-        recommendation=str(effect.config.get("message")
-                           or f"Automation '{automation.name}' fired"),
+        recommendation=_notify_text,
         metric_name=str(effect.config.get("metric_name", "")),
         headline=automation.name,
         trigger_id=trigger_id,
@@ -720,8 +904,21 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
         return EffectOutcome(kind=effect.kind, target=trigger_id, status="uncertain",
                              message=f"delivery timed out — {UNCERTAIN_DELIVERY}")
     ok = _status == "ok"
-    return EffectOutcome(kind=effect.kind, target=trigger_id,
-                         status="executed" if ok else "failed",
+    if ok:
+        _ref = getattr(log, "resource_ref", "") or getattr(log, "id", "")
+        link_id = _file_departure_link(
+            effect, automation,
+            kind="ticket" if trigger.type == "jira" else "webhook",
+            ref=_ref, title=_notify_text)
+        return EffectOutcome(
+            kind=effect.kind, target=trigger_id, status="executed",
+            message=(f"created {log.resource_ref}" if getattr(log, "resource_ref", "")
+                     else ""),
+            # VA-13-style publication: a later step (or a person) binds the created
+            # ticket's ref and the filed link. Absent-when-empty like every sibling.
+            data={k: v for k, v in (("resource_ref", getattr(log, "resource_ref", "")),
+                                    ("link_id", link_id)) if v})
+    return EffectOutcome(kind=effect.kind, target=trigger_id, status="failed",
                          message=getattr(log, "error", None) or "")
 
 
@@ -885,7 +1082,12 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                          # a report Slack never saw.
                          data={k: v for k, v in (("investigation_id", _inv),
                                                  ("answer", run.headline),
-                                                 ("summary", run.summary)) if v})
+                                                 ("summary", run.summary),
+                                                 # HB-2 — the report's confidence, so a
+                                                 # chain can gate on it and the ledger
+                                                 # can record it; absent-when-empty like
+                                                 # its siblings.
+                                                 ("confidence", getattr(run, "confidence", ""))) if v})
 
 
 # ── DS-9 · a chain as a step ──────────────────────────────────────────────────
@@ -1472,6 +1674,10 @@ def _walk_automation(
         return _finish(AutomationRun(**base, outcome="gated", reason=gate_reason))
 
     # 2 — conditions
+    # HB-3 — what a payload-bearing trigger measured on THIS firing; filled by
+    # `evaluate_conditions` and seeded into the chain context below. A resume never
+    # re-probes, so its copy rides the checkpoint's context instead.
+    trigger_data: dict = {}
     if resume:
         # Already evaluated, in the tick that parked. Re-probing here would ask a warehouse
         # the same question a second time and — worse — could answer it differently, so a
@@ -1493,7 +1699,8 @@ def _walk_automation(
     else:
         try:
             fired, details, reason = evaluate_conditions(automation, now=now, probe=probe,
-                                                         manual=manual, via=via)
+                                                         manual=manual, via=via,
+                                                         trigger_data=trigger_data)
         except Exception as exc:
             logger.warning("automation %s condition evaluation failed: %s",
                            automation.id, exc)
@@ -1526,6 +1733,12 @@ def _walk_automation(
     # row rather than recomputed, because recomputing would mean re-running the steps that
     # produced them — the one thing a durable pause exists to avoid.
     context: dict[str, dict] = dict((resume or {}).get("checkpoint", {}).get("context") or {})
+    # HB-3 — what the fired trigger measured, published under the reserved alias
+    # `trigger` so a step binds `{"$from": "trigger.breach_rate"}` exactly as it binds a
+    # prior step's keys. A resume keeps the checkpoint's copy (the firing observation,
+    # not a re-probe); a chain with no payload-bearing trigger publishes nothing.
+    if trigger_data and "trigger" not in context:
+        context["trigger"] = dict(trigger_data)
     outcomes: list[EffectOutcome] = []
     # DS-6 — each unfanned step's guard VERDICT: True (held, the step went on), False
     # (did not hold), or None/absent (never decided — upstream missing, or a comparison
@@ -1973,12 +2186,13 @@ def _walk_automation(
     # was false — seen once, fired never (probes.py module docstring). Best-effort: an
     # uncommitted baseline re-fires the change next tick (at-least-once, never lost).
     try:
-        from aughor.automations.probes import commit_fired_baselines
+        from aughor.automations.probes import commit_fired_baselines, commit_hub_baselines
         # B2 — NOT in a preview. This runs regardless of `persist`, so a dry run would
         # consume a source change and the real tick would then find nothing new: a
         # preview that alters the next real run is not a preview.
         if not dry_run:
             commit_fired_baselines(automation)
+            commit_hub_baselines(automation)
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "baseline commit is best-effort; the fired run is already recorded",

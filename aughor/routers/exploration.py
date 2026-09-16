@@ -591,6 +591,17 @@ def _load_business_profile(conn_id: str, schema: str | None):
         return None
 
 
+def _promise_chains_provider(conn_id: str):
+    """HB-3 — the chain leg's provider, beside the moves': a zero-arg callable
+    returning the promise-chain findings (breach rate at filing vs now, filed refs,
+    recorded outcomes). Deterministic, model-free; get_briefing invokes it only on a
+    cache miss, like its sibling."""
+    def _provider():
+        from aughor.knowledge.promise_chains import promise_chain_findings
+        return promise_chain_findings(conn_id)
+    return _provider
+
+
 def _metric_moves_provider(conn_id: str, profile):
     """A zero-arg callable that runs each north-star metric's chart_sql and returns the
     material time-trend MOVES as synthetic findings (the biggest KPI swings — margin
@@ -720,6 +731,7 @@ def generate_briefing(conn_id: str, refresh: bool = False, schema: str | None = 
         macro_context=macro,
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
+        promise_chains=_promise_chains_provider(conn_id),
         workspace_id=workspace_id,
         col_types=_connection_col_types(conn_id),
     )
@@ -768,6 +780,7 @@ def generate_canvas_briefing(canvas_id: str, refresh: bool = False, workspace_id
         macro_context=macro,
         profile=profile,
         metric_moves=_metric_moves_provider(conn_id, profile),
+        promise_chains=_promise_chains_provider(conn_id),
         workspace_id=workspace_id,
         col_types=_connection_col_types(conn_id),
     )

@@ -49,6 +49,13 @@ _CONDITION_REQUIRED: dict[str, tuple[str, ...]] = {
     # placed, and a chain that has one but has never been given a URL is a chain whose
     # DOOR is shut — a distinction the create form would flatten if it demanded a key here.
     "webhook":        (),
+    # HB-3 — the hub's two triggers: a declared promise breaking, a finding being
+    # created. `promise_breached` names the declared PROCESS whose stage promises it
+    # watches (a specific promise optionally, by its noun); `finding_created` requires
+    # nothing — an unfiltered watch on the connection's findings is a complete
+    # configuration, and `domain` / `min_confidence` narrow it.
+    "promise_breached": ("process",),
+    "finding_created":  (),
 }
 
 
@@ -72,7 +79,8 @@ class Condition(BaseModel):
     (``required_keys(kind, family=…)``); a flat kind→handler map added anywhere would start
     answering confidently and wrongly.
     """
-    kind: Literal["schedule", "metric", "source_change", "entity_appears", "webhook"]
+    kind: Literal["schedule", "metric", "source_change", "entity_appears", "webhook",
+                  "promise_breached", "finding_created"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -105,6 +113,13 @@ class Condition(BaseModel):
             return f"metric({self.monitor_id})"
         if self.kind == "webhook":
             return "webhook"       # nothing to name — the URL is the whole configuration
+        if self.kind == "promise_breached":
+            want = str(self.config.get("promise", "") or "")
+            return (f"promise_breached({self.config.get('process', '')}"
+                    + (f".{want}" if want else "") + ")")
+        if self.kind == "finding_created":
+            dom = str(self.config.get("domain", "") or "")
+            return f"finding_created({dom})" if dom else "finding_created"
         return f"{self.kind}({self.table})"
 
 
@@ -327,7 +342,13 @@ class Effect(BaseModel):
 
     @model_validator(mode="after")
     def _require_config_keys(self) -> "Effect":
-        missing = [k for k in _EFFECT_REQUIRED.get(self.kind, ()) if not self.config.get(k)]
+        required = _EFFECT_REQUIRED.get(self.kind, ())
+        # HB-3 — a notify may say WHAT it is about instead of WHERE it goes:
+        # `route_about` (a securable string) hands the destination to the map, so
+        # `trigger_id` is required exactly when no routing subject is named.
+        if self.kind == "notify" and self.config.get("route_about"):
+            required = tuple(k for k in required if k != "trigger_id")
+        missing = [k for k in required if not self.config.get(k)]
         if missing:
             raise ValueError(
                 f"effect kind '{self.kind}' requires config key(s): {', '.join(missing)}"
@@ -448,6 +469,20 @@ class Automation(BaseModel):
     )
 
     enabled: bool = True
+    #: HB-2 — who declared this automation, as a principal string ("user:<id>"). Set by
+    #: the create doors (the router and the inbox's accepted draft), never authored in
+    #: the request body; first writer wins at the store. Empty on everything created
+    #: before the wave and on localhost with identity off — and probation cannot apply
+    #: without it (there is nobody to address the review to).
+    declared_by: str = ""
+    #: HB-2 — a NEW automation is on probation: its departures go to the declarer's
+    #: review queue, not the channel, until its measured precision graduates it
+    #: (govern/departure.py holds the thresholds). Model default False so an
+    #: engine-built or fixture Automation behaves exactly as before; the create doors
+    #: set True explicitly — probation is a property of being DECLARED, not of the
+    #: dataclass. Lifecycle state like `last_status`: the store preserves it across
+    #: authoring saves, and only `set_probation` (graduation) changes it.
+    probation: bool = False
     #: DS-14 — may an external MCP client invoke this chain as a tool?
     #:
     #: OPT-IN, and default False on purpose. A deployment's automations are its private
@@ -499,8 +534,9 @@ class Automation(BaseModel):
         step that runs after it, is not schedulable — and looking schedulable is the
         expensive part.
         """
-        from aughor.automations.dataflow import validate_chain
-        problem = validate_chain(list(self.effects or []))
+        from aughor.automations.dataflow import trigger_keys_for, validate_chain
+        problem = validate_chain(list(self.effects or []),
+                                 trigger_keys=trigger_keys_for(list(self.conditions or [])))
         if problem:
             raise ValueError(problem)
         return self
@@ -517,6 +553,11 @@ class EffectOutcome(BaseModel):
         # reported as a failure by every layer below, and retrying that is how one
         # alert becomes two. Never retried; "failed" still is.
         "uncertain",
+        # HB-2 — the departure gate held this send (a trust or tie-out hold, or
+        # probation routing it to the declarer's queue). A verdict, not a fault:
+        # the same message holds identically next attempt, so it is never retried,
+        # and the message carries the recorded reason verbatim.
+        "held",
     ]
     message: str = ""      # authored criterion message / error, verbatim — never paraphrased
     attempts: int = 1

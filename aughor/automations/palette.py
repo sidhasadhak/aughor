@@ -86,6 +86,13 @@ TRIGGERS: tuple[PaletteEntry, ...] = (
                  "A table's rows changed (add / delete / backfill)", "table", 30),
     PaletteEntry("entity_appears", "trigger", "New entity",
                  "A new key appeared in a table", "key", 40),
+    # HB-3 — the hub's two triggers: what the platform MEASURED breaking, and what it
+    # FOUND. Both are reads of stamped state (a probe never builds); both publish a
+    # payload the chain binds as `trigger.<key>`.
+    PaletteEntry("promise_breached", "trigger", "Promise breached",
+                 "A declared promise is measured broken", "alert", 50),
+    PaletteEntry("finding_created", "trigger", "New finding",
+                 "The explorer recorded a new finding", "spark", 60),
 )
 
 ACTIONS: tuple[PaletteEntry, ...] = (
@@ -187,6 +194,16 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         from aughor.semantic.trusted_queries import list_trusted
         return len(list_trusted(conn_id or ""))
 
+    def processes() -> int:
+        # HB-3 — a promise trigger needs a declared process with a measured promise on
+        # THIS connection's cached graph. A read of the cache, never a build.
+        from aughor.ontology.store import load_latest_ontology
+        graph = load_latest_ontology(conn_id, None) if conn_id else None
+        if graph is None:
+            return 0
+        return sum(1 for p in (graph.processes or {}).values()
+                   if any(st.promise is not None for st in p.stages))
+
     return {
         # The Slack sentence is the one the rail already shows, word for word: two
         # surfaces explaining the same absence differently is how a reader learns the
@@ -227,6 +244,13 @@ def _prereqs(conn_id: Optional[str]) -> dict[str, _Prereq]:
         "trusted_query": _Prereq(trusted, "No trusted queries on this connection — "
                                           "promote a verified answer first, then this "
                                           "step can run it."),
+        # HB-3 — the promise trigger names a declared process, so it follows the module's
+        # one rule: available exactly when such an object exists here. `finding_created`
+        # deliberately has NO prereq row: an empty findings ledger is a young connection,
+        # not a missing object — the trigger simply stays quiet until the first finding.
+        "promise_breached": _Prereq(
+            processes, "No declared process with a measured promise on this connection — "
+                       "declare one on the Ontology's process panel first."),
     }
 
 
