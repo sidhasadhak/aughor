@@ -143,19 +143,33 @@ def _safe_float(x):
         return None
 
 
-def _uniqueness_oracle_for(conn):
-    """Build (and cache on conn) the cardinality oracle the fan-out chasm guards use to
-    treat a 1:1 dimension as a non-satellite. Returns None if conn/schema unavailable."""
+def _cached_table_parse(conn) -> dict | None:
+    """The conn's ``{table: [columns]}`` schema parse, computed once per run and cached on
+    the conn — the oracles and the formula-drift guard all read the same parse. Returns
+    None when conn/schema is unavailable (each caller's guard then stays off/unscoped)."""
     if conn is None:
         return None
     try:
-        from aughor.business_profile.validate import make_uniqueness_oracle
-        from aughor.tools.schema import parse_schema_tables
         tc = getattr(conn, "_insight_table_cols", None)
         if tc is None:
+            from aughor.tools.schema import parse_schema_tables
             tc = parse_schema_tables(conn.get_schema())
             if hasattr(conn, "__dict__"):
                 conn._insight_table_cols = tc
+        return tc
+    except Exception as _e:
+        tolerate(_e, "emission gate: schema parse unavailable", counter="emission_gate.schema_parse_failed")
+        return None
+
+
+def _uniqueness_oracle_for(conn):
+    """Build (and cache on conn) the cardinality oracle the fan-out chasm guards use to
+    treat a 1:1 dimension as a non-satellite. Returns None if conn/schema unavailable."""
+    tc = _cached_table_parse(conn)
+    if tc is None:
+        return None
+    try:
+        from aughor.business_profile.validate import make_uniqueness_oracle
         return make_uniqueness_oracle(conn, tc)
     except Exception as _e:
         tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.oracle_failed")
@@ -164,18 +178,13 @@ def _uniqueness_oracle_for(conn):
 
 def _cardinality_oracle_for(conn):
     """Build (and cache on conn) the distinct-count probe the group-by-continuous-measure guard
-    uses to tell a continuous measure from a discrete dimension. Reuses the cached
-    conn._insight_table_cols parse. Returns None if conn/schema unavailable (guard stays off)."""
-    if conn is None:
+    uses to tell a continuous measure from a discrete dimension. Reuses the shared cached
+    schema parse. Returns None if conn/schema unavailable (guard stays off)."""
+    tc = _cached_table_parse(conn)
+    if tc is None:
         return None
     try:
         from aughor.business_profile.validate import make_cardinality_oracle
-        from aughor.tools.schema import parse_schema_tables
-        tc = getattr(conn, "_insight_table_cols", None)
-        if tc is None:
-            tc = parse_schema_tables(conn.get_schema())
-            if hasattr(conn, "__dict__"):
-                conn._insight_table_cols = tc
         return make_cardinality_oracle(conn, tc)
     except Exception as _e:
         tolerate(_e, "insight-gate: cardinality oracle unavailable", counter="insight_gate.cardinality_oracle_failed")
@@ -716,7 +725,11 @@ def verify_insight(rows, finding_text: str = "", sql: str = "", metric_ranges=No
         nm = mislabeled_named_metric(finding_text, sql, metric_vocab_for(conn, industry))
         if nm:
             return (False, nm)
-        dr = drifted_registered_metric(finding_text, sql, getattr(conn, "_connection_id", "") or "")
+        # The drift guard judges only by metrics this connection can COMPUTE — hand it the
+        # shared cached schema parse (None on a schema hiccup, which runs the check
+        # unscoped, as before, rather than skipping it).
+        dr = drifted_registered_metric(finding_text, sql, getattr(conn, "_connection_id", "") or "",
+                                       table_cols=_cached_table_parse(conn))
         if dr:
             return (False, dr)
         return (True, "")
