@@ -609,7 +609,6 @@ def test_monitor_bundle_rolls_back_and_gates_on_open_channel(monkeypatch, tmp_pa
     from aughor.semantic.metrics import MetricDefinition, save_metric
     save_metric(MetricDefinition(name="aov", label="AOV", sql="AVG(total)",
                                  connection="conn-x"))
-    from aughor.monitors.store import get_monitor
 
     # Unknown metric: refused with the known ones named, never guessed.
     out = act.draft_monitor("conn-x", {"metric": "revenue_maybe"})
