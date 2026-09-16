@@ -122,6 +122,10 @@ class ActionLog:
     http_status:      Optional[int]
     error:            Optional[str]
     fired_at:         str
+    #: HB-3 — the created resource's reference (a Jira ticket key like OPS-123), so the
+    #: send can be FILED on the object it is about. "" for transports that answer with
+    #: nothing worth keeping, and for every pre-wave row.
+    resource_ref:     str = ""
 
     def to_dict(self) -> dict:
         return {
@@ -135,4 +139,5 @@ class ActionLog:
             "http_status":      self.http_status,
             "error":            self.error,
             "fired_at":         self.fired_at,
+            "resource_ref":     self.resource_ref,
         }

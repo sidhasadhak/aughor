@@ -678,7 +678,9 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     "investigate":    ("investigation_id", "answer", "summary", "confidence"),
     "slack_post":     ("ts", "channel"),
     "kinetic_action": None,
-    "notify":         (),
+    # HB-3 — a fired notify publishes the created resource's ref (a Jira ticket key)
+    # and the filed link's id, absent-when-empty like investigate's summary.
+    "notify":         ("resource_ref", "link_id"),
     "brief":          (),
     "monitor":        (),
     "agent_alert":    (),
@@ -742,8 +744,10 @@ def publishes_list(kind: str, key: str) -> bool:
 #: dataflow the engine does not have.
 BINDABLE_FIELDS: dict[str, tuple[str, ...]] = {
     "investigate":    ("question",),
-    "slack_post":     ("message", "thread_ts", "channel"),
-    "notify":         ("message",),
+    "slack_post":     ("message", "thread_ts", "channel", "about"),
+    # HB-3 — `about` (what the send is filed on) and `route_about` (what it routes by)
+    # bind from the trigger's payload: `{"$from": "trigger.about"}` is the whole point.
+    "notify":         ("message", "about", "route_about"),
     "brief":          (),
     "kinetic_action": ("params",),
     "monitor":        (),
@@ -975,7 +979,8 @@ def _integration_problem(effect: Any, alias: str) -> Optional[str]:
     return None
 
 
-def validate_chain(effects: list) -> Optional[str]:
+def validate_chain(effects: list,
+                   trigger_keys: "Optional[tuple[str, ...]]" = None) -> Optional[str]:
     """The error message for an unsatisfiable chain, or None when it is sound.
 
     Checked at CONSTRUCTION, which is the whole point: an automation whose step 2 reads
@@ -995,6 +1000,11 @@ def validate_chain(effects: list) -> Optional[str]:
     guarded: set[str] = set()   # DS-6 — aliases with a non-empty `when`, routable-from
     for i, effect in enumerate(effects):
         alias = alias_for(effect, i)
+        # HB-3 — `trigger` is the reserved alias the firing condition publishes under; a
+        # step wearing it would shadow the trigger's payload for every later binding.
+        if alias == TRIGGER_ALIAS:
+            return (f"step {i + 1} is aliased '{TRIGGER_ALIAS}', which is reserved for "
+                    f"the firing trigger's payload — rename the step")
         # DS-6 — a malformed join must not recurse past as an ordinary payload.
         for candidate in ([effect_config(effect), fan_source(effect)]
                           + [_clause_side(c, s) for c in guard_clauses(effect)
@@ -1056,6 +1066,20 @@ def validate_chain(effects: list) -> Optional[str]:
             target, _ = parse_ref(ref)
             if target == alias:
                 return f"step '{alias}' refers to itself ({ref})"
+            # HB-3 — a binding onto the firing trigger's payload. Valid exactly when a
+            # condition on THIS automation publishes that key; the closed set makes a
+            # typo a save-time sentence instead of a skipped step at 09:00.
+            if target == TRIGGER_ALIAS:
+                key = parse_ref(ref)[1]
+                if trigger_keys is None:
+                    return (f"step '{alias}' binds to '{ref}', but none of this "
+                            f"automation's triggers publishes a payload — add a "
+                            f"promise_breached or finding_created trigger, or bind "
+                            f"to a step")
+                if key not in trigger_keys:
+                    return (f"step '{alias}' binds to '{ref}', but this automation's "
+                            f"trigger publishes {', '.join(trigger_keys)}")
+                continue
             if target in seen:
                 # B1 — the KEY, not only the step. An unknown key used to pass every
                 # save-time check and surface at 09:00 as a skipped step. Checked only
@@ -1100,6 +1124,33 @@ def validate_chain(effects: list) -> Optional[str]:
         if guard_clauses(effect):
             guarded.add(alias)
     return None
+
+
+#: HB-3 — the reserved context alias a fired trigger publishes under, and the CLOSED
+#: key set each payload-bearing condition kind publishes — save-time law, like
+#: PUBLISHED_KEYS one section up: `{"$from": "trigger.breach_rate"}` on a chain whose
+#: trigger publishes no such key is refused when saved, not discovered at 09:00.
+TRIGGER_ALIAS = "trigger"
+
+TRIGGER_PUBLISHED: dict[str, tuple[str, ...]] = {
+    "promise_breached": ("process", "promise", "stage", "breached", "reached",
+                         "breach_rate", "as_of", "segment", "owner", "about",
+                         "process_securable"),
+    "finding_created": ("finding_id", "finding", "domain", "confidence",
+                        "generated_at", "count_new", "about"),
+}
+
+
+def trigger_keys_for(conditions: list) -> "Optional[tuple[str, ...]]":
+    """Every key the automation's payload-bearing triggers publish, or None when no
+    condition publishes anything (a `trigger.*` ref is then an unknown step, honestly)."""
+    keys: list[str] = []
+    for c in conditions or []:
+        kind = getattr(c, "kind", None) or (c.get("kind") if isinstance(c, dict) else None)
+        for k in TRIGGER_PUBLISHED.get(str(kind or ""), ()):
+            if k not in keys:
+                keys.append(k)
+    return tuple(keys) if keys else None
 
 
 #: SP-7 — the declared-write effect kind, spelled once here where the wire is spelled, so a

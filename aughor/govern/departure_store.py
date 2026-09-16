@@ -126,7 +126,17 @@ def mark_departure(departure_id: str, verdict: str, note: str = "") -> Optional[
 def precision_for(automation_id: str) -> dict:
     """Measured departure precision for one automation: marked verdicts over its rows.
     `correct` counts toward precision (a finding worth correcting reached a person
-    worth reaching); `reject` is the wasted push."""
+    worth reaching); `reject` is the wasted push.
+
+    HB-3's falsifier rides the denominator: a probation push left unmarked past
+    ``PROBATION_WINDOW_DAYS`` is an **unlanded** push and counts against precision —
+    an automation whose queue nobody reads cannot graduate by silence. A fresh
+    unmarked push (still inside the window) counts nothing yet."""
+    from datetime import datetime, timedelta, timezone
+
+    from aughor.govern.departure import PROBATION_WINDOW_DAYS
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=PROBATION_WINDOW_DAYS)
+              ).strftime("%Y-%m-%dT%H:%M:%SZ")
     with _LOCK:
         conn = _connect()
         try:
@@ -134,10 +144,16 @@ def precision_for(automation_id: str) -> dict:
                 "SELECT verdict, COUNT(*) AS n FROM departures "
                 "WHERE automation_id = ? AND verdict != '' GROUP BY verdict",
                 (automation_id,)).fetchall()
+            unlanded = conn.execute(
+                "SELECT COUNT(*) AS n FROM departures WHERE automation_id = ? "
+                "AND state = 'held_probation' AND verdict = '' AND ts < ?",
+                (automation_id, cutoff)).fetchone()["n"]
         finally:
             conn.close()
     counts = {r["verdict"]: r["n"] for r in rows}
     marked = sum(counts.values())
     useful = counts.get("accept", 0) + counts.get("correct", 0)
+    denominator = marked + unlanded
     return {"automation_id": automation_id, "marked": marked, "counts": counts,
-            "precision": (useful / marked) if marked else None}
+            "unlanded": unlanded,
+            "precision": (useful / denominator) if denominator else None}

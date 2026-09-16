@@ -163,3 +163,50 @@ def test_precision_counts_correct_as_useful():
     stats = ds.precision_for("prec-auto")
     assert stats["marked"] == 3
     assert stats["precision"] == pytest.approx(2 / 3)
+
+
+# ── HB-3's falsifier: a push that earns no landing is not value ───────────────────
+
+def _probation_row(automation_id, ts=None, **over):
+    import uuid
+    row = dict(id=uuid.uuid4().hex[:12], kind="slack_post", org_id="default",
+               conn_id="", state="held_probation", automation_id=automation_id,
+               automation_name="w", actor="", target="#ops",
+               addressed_to="user:ana", reasons="[]", checks="{}",
+               text_preview="", investigation_id="")
+    if ts is not None:
+        row["ts"] = ts
+    row.update(over)
+    return ds.record_departure(**row)
+
+
+def test_unlanded_pushes_past_the_window_count_against_precision():
+    """Five accepts alone read 100%; three probation pushes nobody acted on within the
+    window drag precision to 5/8 — an automation cannot graduate by silence."""
+    auto = "hb3-window"
+    for _ in range(5):
+        ds.mark_departure(_probation_row(auto), "accept")
+    for _ in range(3):
+        _probation_row(auto, ts="2020-01-01T00:00:00Z")     # long past the window
+    stats = ds.precision_for(auto)
+    assert stats["marked"] == 5 and stats["unlanded"] == 3
+    assert stats["precision"] == pytest.approx(5 / 8)
+
+
+def test_fresh_unmarked_pushes_do_not_count_yet():
+    auto = "hb3-fresh"
+    for _ in range(2):
+        ds.mark_departure(_probation_row(auto), "accept")
+    _probation_row(auto)                                     # just pushed, window open
+    stats = ds.precision_for(auto)
+    assert stats["unlanded"] == 0 and stats["precision"] == pytest.approx(1.0)
+
+
+def test_a_late_mark_converts_an_unlanded_push():
+    """Acting late is still acting: the mark moves the push from unlanded to marked."""
+    auto = "hb3-late"
+    dep = _probation_row(auto, ts="2020-01-01T00:00:00Z")
+    assert ds.precision_for(auto)["unlanded"] == 1
+    ds.mark_departure(dep, "reject")
+    stats = ds.precision_for(auto)
+    assert stats["unlanded"] == 0 and stats["counts"] == {"reject": 1}

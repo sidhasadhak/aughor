@@ -49,6 +49,13 @@ _CONDITION_REQUIRED: dict[str, tuple[str, ...]] = {
     # placed, and a chain that has one but has never been given a URL is a chain whose
     # DOOR is shut — a distinction the create form would flatten if it demanded a key here.
     "webhook":        (),
+    # HB-3 — the hub's two triggers: a declared promise breaking, a finding being
+    # created. `promise_breached` names the declared PROCESS whose stage promises it
+    # watches (a specific promise optionally, by its noun); `finding_created` requires
+    # nothing — an unfiltered watch on the connection's findings is a complete
+    # configuration, and `domain` / `min_confidence` narrow it.
+    "promise_breached": ("process",),
+    "finding_created":  (),
 }
 
 
@@ -72,7 +79,8 @@ class Condition(BaseModel):
     (``required_keys(kind, family=…)``); a flat kind→handler map added anywhere would start
     answering confidently and wrongly.
     """
-    kind: Literal["schedule", "metric", "source_change", "entity_appears", "webhook"]
+    kind: Literal["schedule", "metric", "source_change", "entity_appears", "webhook",
+                  "promise_breached", "finding_created"]
     config: dict = Field(default_factory=dict)
 
     @model_validator(mode="after")
@@ -105,6 +113,13 @@ class Condition(BaseModel):
             return f"metric({self.monitor_id})"
         if self.kind == "webhook":
             return "webhook"       # nothing to name — the URL is the whole configuration
+        if self.kind == "promise_breached":
+            want = str(self.config.get("promise", "") or "")
+            return (f"promise_breached({self.config.get('process', '')}"
+                    + (f".{want}" if want else "") + ")")
+        if self.kind == "finding_created":
+            dom = str(self.config.get("domain", "") or "")
+            return f"finding_created({dom})" if dom else "finding_created"
         return f"{self.kind}({self.table})"
 
 
@@ -327,7 +342,13 @@ class Effect(BaseModel):
 
     @model_validator(mode="after")
     def _require_config_keys(self) -> "Effect":
-        missing = [k for k in _EFFECT_REQUIRED.get(self.kind, ()) if not self.config.get(k)]
+        required = _EFFECT_REQUIRED.get(self.kind, ())
+        # HB-3 — a notify may say WHAT it is about instead of WHERE it goes:
+        # `route_about` (a securable string) hands the destination to the map, so
+        # `trigger_id` is required exactly when no routing subject is named.
+        if self.kind == "notify" and self.config.get("route_about"):
+            required = tuple(k for k in required if k != "trigger_id")
+        missing = [k for k in required if not self.config.get(k)]
         if missing:
             raise ValueError(
                 f"effect kind '{self.kind}' requires config key(s): {', '.join(missing)}"
@@ -513,8 +534,9 @@ class Automation(BaseModel):
         step that runs after it, is not schedulable — and looking schedulable is the
         expensive part.
         """
-        from aughor.automations.dataflow import validate_chain
-        problem = validate_chain(list(self.effects or []))
+        from aughor.automations.dataflow import trigger_keys_for, validate_chain
+        problem = validate_chain(list(self.effects or []),
+                                 trigger_keys=trigger_keys_for(list(self.conditions or [])))
         if problem:
             raise ValueError(problem)
         return self

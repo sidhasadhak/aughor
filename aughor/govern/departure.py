@@ -61,6 +61,12 @@ TIEOUT_MAX_METRICS = 3
 GRADUATION_MIN_MARKED = 5
 GRADUATION_PRECISION = 0.8
 
+#: HB-3's falsifier, structural: a probation push its declarer never acted on within
+#: this window counts AGAINST precision (an "unlanded" push in the denominator) — so an
+#: automation whose queue nobody reads cannot graduate by silence. A push that earns no
+#: landing is not value.
+PROBATION_WINDOW_DAYS = 7
+
 
 @dataclass
 class DepartureVerdict:

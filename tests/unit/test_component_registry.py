@@ -194,7 +194,10 @@ def test_outputs_distinguish_publishes_nothing_from_the_open_set():
     """`[]` and `None` are different claims and a binding checker reads them differently:
     empty REFUSES a binding at save, open accepts it unchecked."""
     rows = {c.id: c for c in components(conn_id="fixture")}
-    assert rows["effect:notify"].outputs == []
+    # HB-3 — notify moved from "publishes nothing" to a CLOSED two-key set (the created
+    # ticket's ref and the filed link); `brief` is the remaining publishes-nothing kind.
+    assert rows["effect:notify"].outputs == ["resource_ref", "link_id"]
+    assert rows["effect:brief"].outputs == []
     assert rows["effect:kinetic_action"].outputs is None
     assert rows["effect:slack_post"].outputs == ["ts", "channel"]
 

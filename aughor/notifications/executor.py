@@ -74,7 +74,7 @@ def _retry_after(resp, attempt: int) -> float:
 
 
 def _post(url: str, headers: dict, payload: dict,
-          timeout: int = _TIMEOUT_S) -> tuple[int, str, bool]:
+          timeout: int = _TIMEOUT_S) -> tuple[int, str, bool, str]:
     """POST through the outbound seam (VA-9a), retrying per :func:`_post_attempts`.
 
     ONE span per logical send, with every retry inside it, and the cap checked once
@@ -90,15 +90,19 @@ def _post(url: str, headers: dict, payload: dict,
         # Nothing left the machine, so this is NOT uncertain — a retry once the window
         # rolls over is legitimate, and marking it uncertain would suppress a send that
         # never happened.
-        return 0, f"blocked by a usage cap: {blocked.reason}", False
+        return 0, f"blocked by a usage cap: {blocked.reason}", False, ""
 
 
 def _post_attempts(url: str, headers: dict, payload: dict,
-                   timeout: int = _TIMEOUT_S) -> tuple[int, str, bool]:
+                   timeout: int = _TIMEOUT_S) -> tuple[int, str, bool, str]:
     """POST with a retry policy that matches what each failure MEANS.
 
-    Returns ``(status_code, error, uncertain)``; ``uncertain`` is True when the request may
-    already have been delivered.
+    Returns ``(status_code, error, uncertain, body)``; ``uncertain`` is True when the
+    request may already have been delivered. ``body`` is the SUCCESS response's first
+    2000 characters (HB-3: Jira answers a create with the ticket's key, and filing the
+    ticket on the object it is about needs that key — discarded here, it existed
+    nowhere); empty on every failure path, where the error slot already carries what
+    the caller may see.
 
     The policy this replaces was inverted, in both directions at once. It retried on
     exception — which is mostly a read timeout, the one case where Slack may already have
@@ -125,12 +129,12 @@ def _post_attempts(url: str, headers: dict, payload: dict,
             # established, so nothing was delivered and a retry cannot duplicate.
             last_status, last_err, wait = 0, f"connect timeout: {exc}", 1.5 ** attempt
         except requests.exceptions.Timeout as exc:
-            return 0, f"read timeout after {timeout}s: {exc}", True
+            return 0, f"read timeout after {timeout}s: {exc}", True, ""
         except Exception as exc:            # noqa: BLE001 — connection-level, safe to retry
             last_status, last_err, wait = 0, str(exc), 1.5 ** attempt
         else:
             if resp.ok:
-                return resp.status_code, "", False
+                return resp.status_code, "", False, (resp.text or "")[:2000]
             last_status, last_err = resp.status_code, (resp.text or "")[:200]
             if resp.status_code == 429:
                 wait = _retry_after(resp, attempt)
@@ -138,10 +142,10 @@ def _post_attempts(url: str, headers: dict, payload: dict,
                 wait = 1.5 ** attempt
             else:
                 # A malformed or unauthorised request fails identically next time.
-                return resp.status_code, last_err, False
+                return resp.status_code, last_err, False, ""
         if attempt < _MAX_ATTEMPTS - 1:
             time.sleep(wait)
-    return last_status, last_err, False
+    return last_status, last_err, False, ""
 
 
 #: Slack attachment colour per alert severity — a wall of identical blue bars is not
@@ -280,7 +284,7 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
         # Generic webhook
         http_payload = payload.to_dict()
 
-    status_code, error, uncertain = _post(trigger.url, headers, http_payload)
+    status_code, error, uncertain, body = _post(trigger.url, headers, http_payload)
 
     if uncertain:
         # It reached the server and we did not hear back. "failed" would license a retry
@@ -295,12 +299,24 @@ def fire_action(trigger: ActionTrigger, payload: ActionPayload) -> ActionLog:
     # credential. Redact on the way into the stored log, not only on the way to stdout.
     error = error.replace(trigger.url, redact_url(trigger.url)) if error else error
 
+    # HB-3 — the created resource's reference, so a fired ticket can be FILED on the
+    # object it is about. Jira answers a create with {"id", "key", "self"}; the key is
+    # the human ref (OPS-123). Parsed only on success, best-effort, never a failure.
+    resource_ref = ""
+    if status == "ok" and trigger.type == "jira" and body:
+        try:
+            import json as _json
+            _parsed = _json.loads(body)
+            resource_ref = str(_parsed.get("key") or _parsed.get("id") or "")
+        except Exception:
+            resource_ref = ""
+
     log = ActionLog(
         id=log_id, trigger_id=trigger.id, trigger_name=trigger.name,
         investigation_id=payload.investigation_id, rec_index=payload.rec_index,
         recommendation=payload.recommendation,
         status=status, http_status=status_code or None,
-        error=error or None, fired_at=fired_at,
+        error=error or None, fired_at=fired_at, resource_ref=resource_ref,
     )
     log_action(log)
 

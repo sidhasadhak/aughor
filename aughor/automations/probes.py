@@ -199,3 +199,189 @@ def commit_fired_baselines(automation: Automation) -> None:
             from aughor.kernel.errors import tolerate
             tolerate(exc, "closing the commit db handle is best-effort; baselines are recorded",
                      counter="automations.probes.commit_db_close")
+
+
+# ── HB-3 · the hub's two triggers ─────────────────────────────────────────────────
+#
+# Both are READS of what the platform has already measured or stored — a probe never
+# builds and never spends a model. `promise_breached` reads the STAMPED promise
+# numbers off the cached ontology graph (the measure pass wrote them; the probe only
+# notices), and `finding_created` reads the explorer's findings ledger by its
+# `generated_at` cursor. Baselines ride the same `probe_state` table as the source
+# probes, and advance in `commit_fired_baselines` after a fired tick, same as theirs.
+# First observation FIRES — the house rule (`evaluate_source_condition`), and for a
+# promise it is the point: a promise already broken when the watch begins is news.
+
+def _promise_rows(automation: Automation, cond: Condition) -> tuple[list[dict], str]:
+    """Every measured promise row of the condition's process (optionally one, by its
+    noun) from the cached graph — ``(rows, problem)``; a problem raises upstream."""
+    from aughor.ontology.processes import describe_process
+    from aughor.ontology.store import load_latest_ontology
+
+    process_id = str(cond.config.get("process", ""))
+    want = str(cond.config.get("promise", "") or "")
+    graph = load_latest_ontology(automation.conn_id,
+                                 str(cond.config.get("schema_name", "") or "") or None)
+    if graph is None:
+        return [], f"promise_breached({process_id}): no built ontology for this connection"
+    process = (graph.processes or {}).get(process_id)
+    if process is None:
+        return [], f"promise_breached({process_id}): process not declared"
+    desc = describe_process(graph, process)
+    rows = []
+    for stage in desc.get("stages", []):
+        p = stage.get("promise")
+        if not p:
+            continue
+        if want and p.get("name") != want:
+            continue
+        rows.append({**p, "process": process_id, "process_owner": desc.get("owner", ""),
+                     "stage": stage.get("name", "")})
+    if not rows:
+        return [], (f"promise_breached({process_id}): no measured promise"
+                    + (f" named '{want}'" if want else "") + " on this process")
+    return rows, ""
+
+
+def _promise_fingerprint(row: dict) -> str:
+    return f"breached={row.get('breached')}|rate={row.get('breach_rate')}"
+
+
+def evaluate_promise_condition(cond: Condition, automation: Automation
+                               ) -> tuple[bool, str, dict]:
+    """(fired, detail, payload) — fires on a promise measured BROKEN beyond its last
+    fired state. The payload is what the chain binds (`{"$from": "trigger.breach_rate"}`):
+    the promise's stamped numbers plus its securable strings, so a downstream send can
+    say what it is about and route by it."""
+    from aughor.automations.store import get_probe_baseline
+    from aughor.metastore.models import thing_securable
+
+    from aughor.automations.engine import ProbeUnavailable
+    rows, problem = _promise_rows(automation, cond)
+    if problem:
+        raise ProbeUnavailable(problem)
+
+    fired_row = None
+    details: list[str] = []
+    for row in rows:
+        breached = int(row.get("breached") or 0)
+        label = f"promise_breached({row['process']}.{row['name']})"
+        target = f"promise:{row['process']}.{row['name']}"
+        baseline = get_probe_baseline(automation.id, target)
+        fp = _promise_fingerprint(row)
+        if breached <= 0:
+            details.append(f"{label}: kept ({row.get('reached')} reached)")
+            continue
+        if baseline is None:
+            details.append(f"{label}: first observation — {breached} breached "
+                           f"({row.get('breach_rate')})")
+            fired_row = fired_row or row
+        elif fp != baseline and breached >= _breached_of(baseline):
+            details.append(f"{label}: {baseline} → {fp}")
+            fired_row = fired_row or row
+        else:
+            details.append(f"{label}: unchanged since last fired ({fp})")
+
+    if fired_row is None:
+        return False, "; ".join(details), {}
+    payload = {
+        "process": fired_row["process"],
+        "promise": fired_row["name"],
+        "stage": fired_row["stage"],
+        "breached": fired_row.get("breached"),
+        "reached": fired_row.get("reached"),
+        "breach_rate": fired_row.get("breach_rate"),
+        "as_of": fired_row.get("as_of") or "",
+        "segment": fired_row.get("segment") or "",
+        "owner": fired_row.get("process_owner") or "",
+        "about": thing_securable("promise", f"{fired_row['process']}.{fired_row['name']}"),
+        "process_securable": thing_securable("process", fired_row["process"]),
+    }
+    return True, "; ".join(details), payload
+
+
+def _breached_of(fingerprint: str) -> int:
+    """The breached count a committed fingerprint recorded (0 when unparsable, which
+    errs toward firing — noisy beats silent, the pre-registered-gate rule above)."""
+    try:
+        return int(fingerprint.split("|", 1)[0].split("=", 1)[1])
+    except Exception:
+        return 0
+
+
+def evaluate_finding_condition(cond: Condition, automation: Automation
+                               ) -> tuple[bool, str, dict]:
+    """(fired, detail, payload) — fires when a finding newer than the cursor exists,
+    optionally filtered by `domain` / `min_confidence`. Payload carries the NEWEST
+    matching finding; `count_new` says how many arrived, so a chain can say "and 4
+    more" instead of firing four times."""
+    from aughor.automations.store import get_probe_baseline
+    from aughor.explorer.store import get_findings
+
+    domain = str(cond.config.get("domain", "") or "")
+    try:
+        min_conf = float(cond.config.get("min_confidence") or 0.0)
+    except (TypeError, ValueError):
+        min_conf = 0.0
+
+    rows = [r for r in (get_findings(automation.conn_id) or [])
+            if r.get("generated_at")
+            and (not domain or r.get("domain") == domain)
+            and float(r.get("confidence") or 0.0) >= min_conf]
+    label = "finding_created" + (f"({domain})" if domain else "")
+    if not rows:
+        return False, f"{label}: no findings yet", {}
+
+    rows.sort(key=lambda r: str(r.get("generated_at")))
+    baseline = get_probe_baseline(automation.id, _finding_target(cond))
+    new = rows if baseline is None else [r for r in rows
+                                         if str(r.get("generated_at")) > baseline]
+    if not new:
+        return False, f"{label}: nothing newer than {baseline}", {}
+    newest = new[-1]
+    payload = {
+        "finding_id": str(newest.get("id", "")),
+        "finding": str(newest.get("finding", "")),
+        "domain": str(newest.get("domain", "")),
+        "confidence": newest.get("confidence"),
+        "generated_at": str(newest.get("generated_at", "")),
+        "count_new": len(new),
+        "about": f"finding:{newest.get('id', '')}",
+    }
+    detail = (f"{label}: {len(new)} new since {baseline or 'the watch began'}, "
+              f"newest {newest.get('id', '')}")
+    return True, detail, payload
+
+
+def _finding_target(cond: Condition) -> str:
+    """The probe_state key — per filter, so two finding conditions on one automation
+    keep separate cursors."""
+    return ("finding_created:" + str(cond.config.get("domain", "") or "*")
+            + ":" + str(cond.config.get("min_confidence", "") or "0"))
+
+
+def commit_hub_baselines(automation: Automation) -> None:
+    """HB-3's half of the fired-tick commit — promise fingerprints and finding cursors
+    advance here, beside `commit_fired_baselines`' source versions. Same at-least-once
+    stance: a failed commit re-fires, never loses."""
+    from aughor.automations.store import set_probe_baseline
+
+    for cond in automation.conditions:
+        try:
+            if cond.kind == "promise_breached":
+                rows, problem = _promise_rows(automation, cond)
+                for row in rows:
+                    set_probe_baseline(automation.id,
+                                       f"promise:{row['process']}.{row['name']}",
+                                       _promise_fingerprint(row))
+            elif cond.kind == "finding_created":
+                from aughor.explorer.store import get_findings
+                stamps = [str(r.get("generated_at"))
+                          for r in (get_findings(automation.conn_id) or [])
+                          if r.get("generated_at")]
+                if stamps:
+                    set_probe_baseline(automation.id, _finding_target(cond), max(stamps))
+        except Exception as exc:
+            from aughor.kernel.errors import tolerate
+            tolerate(exc, "hub baseline commit is best-effort (at-least-once semantics)",
+                     counter="automations.probes.commit_hub")

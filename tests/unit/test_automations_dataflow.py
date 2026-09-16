@@ -463,10 +463,19 @@ def test_a_binding_onto_a_key_the_kind_cannot_publish_is_refused_at_SAVE():
         _automation(_effect(), _effect(message={"$from": "step1.answer"}))
 
 
-def test_a_binding_onto_a_no_output_kind_says_it_publishes_nothing():
+def test_a_binding_onto_a_key_the_kind_does_not_publish_names_what_it_does():
+    """HB-3 grew notify's published set (`resource_ref`, `link_id` — the created ticket
+    and the filed link), so a wrong key's refusal now NAMES the set instead of saying
+    "publishes nothing" — same law, truthful sentence."""
     notify = Effect(kind="notify", alias="ping", config={"trigger_id": "t1"})
-    with pytest.raises(Exception, match="publishes nothing"):
+    with pytest.raises(Exception, match="resource_ref"):
         _automation(notify, _effect(message={"$from": "ping.ts"}))
+
+
+def test_a_no_output_kind_still_says_it_publishes_nothing():
+    brief = Effect(kind="brief", alias="daily", config={"subscription_id": "s1"})
+    with pytest.raises(Exception, match="publishes nothing"):
+        _automation(brief, _effect(message={"$from": "daily.ts"}))
 
 
 def test_kinetic_action_keys_stay_an_OPEN_set():

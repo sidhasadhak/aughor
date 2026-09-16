@@ -5754,6 +5754,41 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   filed on the promise → its close is recorded → the Briefing reports the breach rate before and after, with the chain.
   Four of its seven legs stand today; three are this wave. *Falsifier:* if the pushed finding is not acted on within the
   probation window by a real reader, the automation stays on probation — a push that earns no landing is not value.
+  > **BUILT 2026-09-16** (same session as HB-2's slice; the LIVE drive on Olist waits for the merge — a scratch
+  > server beside the live API is the one-writer trap). What stands, each piece real and tested:
+  > **The two triggers** — `promise_breached` reads the STAMPED promise numbers off the cached graph (a probe never
+  > builds; fires on first sight broken and on worsening past the last fired fingerprint) and `finding_created`
+  > cursors the explorer's findings by `generated_at` (house rule: first observation fires; `domain`/`min_confidence`
+  > narrow); both ride `probe_state`, commit on fired ticks (`commit_hub_baselines`), and PUBLISH a payload the chain
+  > binds under the reserved `trigger` alias (`{"$from": "trigger.breach_rate"}`) — seeded into the chain context,
+  > validated at save against each kind's closed key set (`TRIGGER_PUBLISHED`), the alias reserved.
+  > **The manifest's first links** — `aughor/hub/links.py` (`data/hub_links.db`, registered same-commit): a ticket,
+  > thread or webhook call FILED on the securable it is about, with the OUTCOME COLUMN (status·outcome·
+  > number_recovered·closed_by) and stamped-measure snapshots at filing AND at close, so before/after is two recorded
+  > facts. Doors: POST/GET `/links`, POST `/links/{id}/close`. Sends file THEMSELVES when their config says `about`
+  > (slack_post→thread, notify→webhook/ticket) — §3.18's fifth law made mechanical.
+  > **The ticket leg** — `require_approval` on `notify` parks the send as the same `outbound_send` inbox kind
+  > (SP-7's machinery, two new three-line grant adapters keyed by trigger_id for "always allow"); the accept FIRES
+  > the trigger, and the transport now KEEPS the success body — Jira's created key is parsed into
+  > `ActionLog.resource_ref` (it was discarded; the ticket's key existed nowhere) and published as a bindable
+  > (`notify` publishes `resource_ref`/`link_id` now).
+  > **Routing in anger** — `route_about` on a notify hands the destination to the MAP: HB-1's `route()` gets its
+  > first production caller; a promise's meaning chain is STRUCTURAL (`promise:<process>.<noun>` ⇒ parent
+  > `process:<process>`), the owner read best-effort off the cached graph, each group destination fired through its
+  > own channel trigger with the full per-destination path (approval, departure gate, filing) and no-channel
+  > principals reported honestly.
+  > **The falsifier, structural** — a probation push unmarked past `PROBATION_WINDOW_DAYS` (7) counts AGAINST
+  > precision as `unlanded`; an automation cannot graduate by silence, and a late mark converts.
+  > **The Briefing's chain leg** — `promise_chain_findings` folds a deterministic "Promises" domain beside the
+  > metric moves (same provider seam): breach rate at filing vs now, the chain (`webhook … → ticket OPS-123`), the
+  > recorded outcome; on frozen data it says "unchanged at 9.35%", because it is.
+  > **Receipt held as a test** (`test_hb3_links_receipt.py::test_the_receipt_chain`, every store/gate/grant/route
+  > real, the outbound HTTP the one stub): breach → routed landing in the supply-chain group's channel with NO
+  > channel named in the chain → filed → ticket proposed/approved/fired (OPS-123) → filed on the promise → closed
+  > with outcome → the Briefing block reports the chain with before==after stated honestly. **Open in the wave:**
+  > the LIVE Olist drive (post-merge: declare the group+channel live, arm the chain, the 09:00Z tick); a Slack
+  > THREAD filed from the accepted-proposal send path (the unattended path files; the inbox slack accept does not
+  > yet); `domain`-tag routing facts at the dispatch site; UI for links/probation queues (doors serve JSON).
 - **HB-4 · the provenance envelope and one ranker**, as above, with the harness arm per source kind. *Receipt:* the
   same question answered with and without conversation-derived notes on the ON-10 sets; notes stay in the prompt only
   with measured lift. *Falsifier:* R4's — a source kind that regresses is stored and shown, never injected.
@@ -6844,8 +6879,10 @@ the browser** · **measure the premise before building.**
     *Recommended: yes; an organisation starting empty is the alternative.* HB-6's call — still open.
     **(d) The persona set** — Viewer / Editor / Owner as the first persona groups; a Steward only when a deployment
     asks — **✅ DECIDED 2026-09-16 with (a)**, being the personas HB-1 ships.
-    **(e) The first live receipt's host** — Olist's dispatch promise. *Recommended: yes — real breaches, three new legs,
-    no new channel.*
+    **(e) The first live receipt's host** — Olist's dispatch promise — **✅ DECIDED 2026-09-16 (the user: "Go for
+    HB-3 entirely", on the recorded recommendation: real breaches, three new legs, no new channel).** One honesty
+    note recorded with the decision: Olist is a FROZEN historical dataset, so the "number recovered" leg can prove
+    its MECHANISM (re-measure at close) but the rate itself cannot move — the receipt reports that plainly.
     **(f) The email channel** — keyed on the Google OAuth client (VA-11); HB-5's email half waits for it.
     *Recommended: hold.*
     **(g) The §0 amendment** as written — the hub as the platform's purpose, the three planes its infrastructure.
