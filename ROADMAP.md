@@ -5714,6 +5714,38 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   departure by a failing tie-out, with the reason recorded; an automation on probation reaches only its declarer until
   its measured precision graduates it. *Falsifier:* a departure precision baseline that a later change lowers cannot
   ship — the ratchet.
+  > **First slice BUILT 2026-09-16** — same day as the wave's live motivating receipt: theLook's brief departed to
+  > #aughor_canvas prefixed "NOT reliable" (a trust reframe warning readers off numbers a channel had already been
+  > handed). What stands: `govern/departure.py` — content customs beside `govern/outbound`'s transport customs — wired
+  > into the two UNATTENDED transports (`_dispatch_slack_post`, `_dispatch_notify`; the inbox's accepted-proposal send
+  > stays ungated by design — a person reviewed that text and pressed send). Three checks, every decision in the
+  > departures ledger (`data/departures.db`, hermetically registered same-commit): **trust** — the reframe banner is
+  > composed from ONE constant (`TRUST_BANNER`) and detected at the gate, so the flagged brief the screen shows is
+  > held from the channel; **tie-out** — `validate_metric` runs AT THE GATE on governed metrics the departing text
+  > asserts (`asserted_governed_metrics`, the drift guard's own matcher made public), fail ⇒ held, error ⇒ recorded
+  > "unavailable" and departed (an infrastructure hiccup is not a failing number); **probation** — `declared_by` +
+  > `probation` on the automation (migration 8; create doors set them; the store preserves them across authoring
+  > saves, first-writer-wins on the declarer), a probation send lands on the declarer's ledger queue instead of the
+  > channel, verdicts (accept·correct·reject, forwarded to the feedback plane when investigation-linked) graduate it
+  > at measured precision (≥80% over ≥5 marked, plus a manual door) — inert with identity off exactly as HB-1's
+  > enforcement, since `current_user_id()` is then empty and there is nobody to address the review to. An accuracy
+  > hold outranks probation. `held` joined the step-outcome vocabulary (terminal, never retried); the investigate
+  > step now publishes `confidence` beside `summary` (measured: NOTHING of the synthesis but the summary text used to
+  > cross into a chain). The ratchet is a labeled corpus (`test_departure_gate_ratchet.py`) with the live incident
+  > verbatim as its anchor case — a flipped verdict is red, and relabeling is named in the failure message as
+  > defeating the ratchet. Receipt held as tests on real SQL (HB-1's precedent): a governed metric's genuinely
+  > failing quality test held the send with the reason recorded, the same send departed once the data was clean, and
+  > five accepted marks graduated a probation chain whose next send reached the transport.
+  > 🔴 **Found broken on the way: the tie-out plane had never worked.** `validate_metric` — quality_tests' ONLY
+  > caller — called `conn.execute(sql)` against the governed `execute(hypothesis_id, sql)` signature, so every
+  > quality test errored (reported as "failed"); and the connection layer stringifies cells, so a boolean `False`
+  > arrived as `'False'` — truthy — a failing test that could not fail. Both fixed with direct coverage; the gate is
+  > the first caller that ever needed the verdict to be right. **Open in the wave:** the other outbound transports
+  > (monitor alerts, briefing subscriptions, the human-initiated finding share, agent alerts — `fire_action`'s other
+  > callers); gate laws 1 (re-measure at send), 2 (definition-gated beyond metrics), 4 (freshness + as-of), 5
+  > (claim-type), 6 (disagreement asks the owner), 7 (noise band — the router's dedupe is the start); the receipt
+  > line ON the departing message (law 8 is ledger-side only so far); a departures screen (the doors serve JSON;
+  > the runs rail already shows a held step's reason); auto-graduation's outcome window (HB-3's ground).
 - **HB-3 · promises and findings as triggers; outcomes and the manifest's first links.** `promise_breached` and
   `finding_created` beside the five triggers; a proposed ticket and a Slack thread filed on the object they are about;
   an outcome column (ticket closed, number recovered). *The first live receipt, end to end:* Olist's dispatch promise

@@ -58,6 +58,8 @@ CREATE TABLE IF NOT EXISTS automations (
     timezone              TEXT NOT NULL DEFAULT '',
     scheduling            TEXT NOT NULL DEFAULT 'ordered',
     exposed_as_tool       INTEGER NOT NULL DEFAULT 0,
+    declared_by           TEXT NOT NULL DEFAULT '',
+    probation             INTEGER NOT NULL DEFAULT 0,
     created_at            TEXT NOT NULL DEFAULT '',
     updated_at            TEXT NOT NULL DEFAULT '',
     last_run_at           TEXT,
@@ -231,6 +233,21 @@ _MIGRATIONS: list[Migration] = [
     Migration(version=7, name="automation clock (SP-13: cron in the chain's timezone)",
               apply=lambda conn: add_column_if_missing(
                   conn, "automations", "timezone", "TEXT NOT NULL DEFAULT ''")),
+    #: Version 8. Its predecessors were each numbered off a live `PRAGMA user_version`
+    #: read; this one could not be read directly (the API was serving, and a second
+    #: process on the store — read-only included — is the SIGBUS precondition), so it is
+    #: numbered by construction instead: 7 is the highest version this file has ever
+    #: listed, versions come only from this file, and the runner applies everything
+    #: above the current mark — so 8 executes on every possible live value.
+    #:
+    #: Existing automations default to probation=0 — grandfathered, they keep posting
+    #: to their channels; probation is for automations DECLARED after this wave.
+    Migration(version=8, name="departure gate (HB-2: declared_by + probation)",
+              apply=lambda conn: (
+                  add_column_if_missing(conn, "automations", "declared_by",
+                                        "TEXT NOT NULL DEFAULT ''"),
+                  add_column_if_missing(conn, "automations", "probation",
+                                        "INTEGER NOT NULL DEFAULT 0"))),
 ]
 
 
@@ -260,6 +277,7 @@ def _row_to_automation(row: sqlite3.Row) -> Automation:
     d = dict(row)
     d["enabled"] = bool(d["enabled"])
     d["exposed_as_tool"] = bool(d.get("exposed_as_tool", 0))
+    d["probation"] = bool(d.get("probation", 0))
     d["conditions"] = json.loads(d["conditions"] or "[]")
     d["effects"] = json.loads(d["effects"] or "[]")
     d["fallback_effect"] = json.loads(d["fallback_effect"]) if d.get("fallback_effect") else None
@@ -273,6 +291,7 @@ def _automation_params(a: Automation) -> dict:
     p["fallback_effect"] = json.dumps(a.fallback_effect.model_dump()) if a.fallback_effect else None
     p["enabled"] = int(a.enabled)
     p["exposed_as_tool"] = int(a.exposed_as_tool)
+    p["probation"] = int(a.probation)
     return p
 
 
@@ -378,11 +397,13 @@ def upsert_automation(automation: Automation) -> Automation:
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
                     retry_backoff_seconds, agent_id, timezone, scheduling, exposed_as_tool,
+                    declared_by, probation,
                     created_at, updated_at, last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
                     :retry_backoff_seconds, :agent_id, :timezone, :scheduling, :exposed_as_tool,
+                    :declared_by, :probation,
                     :created_at, :updated_at, :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET
@@ -408,14 +429,29 @@ def upsert_automation(automation: Automation) -> Automation:
                     timezone=excluded.timezone,
                     scheduling=excluded.scheduling,
                     exposed_as_tool=excluded.exposed_as_tool,
+                    -- HB-2: a declarer is a fact of birth — first writer wins, an
+                    -- authoring save can never overwrite or blank it.
+                    declared_by=CASE WHEN automations.declared_by = ''
+                                     THEN excluded.declared_by
+                                     ELSE automations.declared_by END,
+                    -- HB-2: probation is LIFECYCLE state (like last_status), not an
+                    -- authored field — an update preserves the row's value; only
+                    -- `set_probation` (graduation, or re-probation) changes it.
+                    probation=automations.probation,
                     updated_at=excluded.updated_at,
                     last_run_at=excluded.last_run_at,
                     last_status=excluded.last_status
             """, _automation_params(automation))
             conn.commit()
+            # HB-2: `declared_by`/`probation` are preserved-on-conflict above, so the
+            # incoming model can disagree with what the row now holds. Returning the
+            # model would echo a value the store never wrote — this store's own
+            # `conn_id` lesson, from the other direction — so return the row's truth.
+            row = conn.execute("SELECT * FROM automations WHERE id = ?",
+                               (automation.id,)).fetchone()
         finally:
             conn.close()
-    return automation
+    return _row_to_automation(row) if row is not None else automation
 
 
 def delete_automation(automation_id: str) -> bool:
@@ -433,6 +469,22 @@ def delete_automation(automation_id: str) -> bool:
             return cur.rowcount > 0
         finally:
             conn.close()
+
+
+def set_probation(automation_id: str, on: bool) -> Optional[Automation]:
+    """HB-2 — the ONE writer of probation state (the upsert preserves it). Graduation
+    turns it off; a person may also put a misbehaving chain back on probation."""
+    with _LOCK:
+        conn = _connect()
+        try:
+            cur = conn.execute("UPDATE automations SET probation = ? WHERE id = ?",
+                               (int(on), automation_id))
+            conn.commit()
+            if cur.rowcount == 0:
+                return None
+        finally:
+            conn.close()
+    return get_automation(automation_id)
 
 
 def set_automation_enabled(automation_id: str, enabled: bool) -> Optional[Automation]:
@@ -859,6 +911,14 @@ def _save_payload_for_inbox(params: dict):
     first_run = _first_scheduled_time(automation)
     if first_run and not automation.paused_until:
         automation = automation.model_copy(update={"paused_until": first_run})
+    # HB-2 — an accepted draft is a DECLARED automation: born on probation, addressed to
+    # the person whose accept created it (the request identity; "" with identity off,
+    # which leaves probation inert exactly as the router's create door says).
+    from aughor.org.context import current_user_id
+    _uid = current_user_id()
+    automation = automation.model_copy(update={
+        "declared_by": automation.declared_by or (f"user:{_uid}" if _uid else ""),
+        "probation": True})
     try:
         saved = upsert_automation(automation)
     except (ValidationError, ValueError, TypeError) as exc:

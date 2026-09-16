@@ -73,6 +73,8 @@ for _env, _file in (
     # KI-1 — the intake lane's staging store, registered in the SAME commit.
     ("AUGHOR_INTAKE_DB", "intake.db"),
     ("AUGHOR_USER_PREFS_DB", "user_prefs.db"),
+    # HB-2 — the departures ledger, registered in the SAME commit as the store.
+    ("AUGHOR_DEPARTURES_DB", "departures.db"),
     # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it
     # writes (ontology/vocabulary.py:151). Unisolated it created data/vocabulary/ in
     # the repo on any suite run that saved a synonym.

@@ -4733,8 +4733,13 @@ def _reframe_on_trust_caveat(synth, phases) -> bool:
         lead = _ended(headlined[0])
         _es = synth.executive_summary or ""
         if str(lead)[:48].lower() not in _es.lower():
+            # The banner's prefix is govern.departure's TRUST_BANNER — one source of
+            # truth, because HB-2's departure gate detects exactly this text to HOLD the
+            # flagged brief at the channel door (confidence never travels into a chain;
+            # only this summary string does).
+            from aughor.govern.departure import TRUST_BANNER
             reframe = (
-                f"⚠ A trust check flagged the evidence and the figures below are NOT reliable: {lead} "
+                f"⚠ {TRUST_BANNER} and the figures below are NOT reliable: {lead} "
                 "Do not read the numbers or ranking as fact until they are recomputed. "
             )
             synth.executive_summary = (reframe + _es).strip()[:900]

@@ -675,7 +675,7 @@ PUBLISHED_KEYS: dict[str, Optional[tuple[str, ...]]] = {
     # summary — the trust warnings and the numbers. A briefing chain wants the second;
     # both keep the absent-when-empty rule, so binding to either on a run that produced
     # neither skips the dependent step with a reason instead of posting "".
-    "investigate":    ("investigation_id", "answer", "summary"),
+    "investigate":    ("investigation_id", "answer", "summary", "confidence"),
     "slack_post":     ("ts", "channel"),
     "kinetic_action": None,
     "notify":         (),

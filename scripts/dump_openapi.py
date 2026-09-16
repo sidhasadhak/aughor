@@ -44,7 +44,7 @@ def _isolate_stores() -> None:
         "EVIDENCE", "MONITORS", "ORGSETTINGS", "SAVEDQUERY", "VOLUMES",
         "VERDICTS", "PACK_DELTAS", "PACK_BINDINGS", "CHECKPOINTS",
         "IDEMPOTENCY", "RBAC", "AUTOMATIONS", "KINETIC_INBOX", "KINETIC_GRANTS",
-        "LEARNING", "INTAKE", "USER_PREFS",
+        "LEARNING", "INTAKE", "USER_PREFS", "DEPARTURES",
         "AGENTS", "AGENT_ALERTS", "EVALS", "MATCACHE", "ORGS",
     ):
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))

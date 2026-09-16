@@ -620,6 +620,27 @@ def acting_agent_ref(effect: Effect, automation: Automation) -> str:
     return f"agent:{agent}" if agent else f"automation:{automation.id}"
 
 
+def _gate_departure(effect: Effect, automation: Automation, *, kind: str,
+                    text: str, target: str):
+    """HB-2 — ask the departure gate about one outbound message. Returns its verdict,
+    or None when the gate itself failed (the transport must not die of a gate defect;
+    the failure is tolerated and counted, and the send proceeds as before the wave)."""
+    try:
+        from aughor.govern.departure import gate_departure
+        from aughor.org.context import current_org_id
+        return gate_departure(
+            kind=kind, org_id=current_org_id(), conn_id=automation.conn_id,
+            text=text, automation_id=automation.id, automation_name=automation.name,
+            probation=bool(getattr(automation, "probation", False)),
+            declared_by=getattr(automation, "declared_by", "") or "",
+            actor=acting_agent_ref(effect, automation), target=target)
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "departure gate unavailable — send proceeds ungated",
+                 counter="departures.gate_failed")
+        return None
+
+
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
     """RC-5.4 — post into a channel AS the bot, so the message can be replied to.
 
@@ -653,6 +674,18 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
                          f"allow' to let this chain post there unattended from now on"))
         grants.bump_use(grant.id)
 
+    # HB-2 — the departure gate: content customs on the unattended path, judged on the
+    # exact text that would post (the bound message). A hold is a verdict — the same
+    # message holds identically next attempt — so it maps to the terminal "held", never
+    # retried. The inbox's accepted-proposal send is deliberately ungated: a person
+    # reviewed that text and pressed send, and the person is the gate there.
+    message_text = str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    verdict = _gate_departure(effect, automation, kind="slack_post",
+                              text=message_text, target=f"{bot_id}:{channel}")
+    if verdict is not None and verdict.held:
+        return EffectOutcome(kind=effect.kind, target=f"{bot_id}:{channel}", status="held",
+                             message=f"held at departure — {verdict.reason_sentence()}")
+
     bot = get_bot_decrypted(bot_id)
     if bot is None:
         return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",
@@ -664,8 +697,7 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
                              message=f"Slack bot '{bot.name}' is disabled")
 
     ok, info = post_as_bot(
-        bot.bot_token, channel,
-        str(effect.config.get("message") or f"Automation '{automation.name}' fired"),
+        bot.bot_token, channel, message_text,
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
     )
     if ok:
@@ -696,13 +728,19 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
     if trigger is None:
         return EffectOutcome(kind=effect.kind, target=trigger_id, status="dispatch_error",
                              message=f"unknown Action Hub trigger: {trigger_id}")
+    # HB-2 — same departure gate as slack_post: notify is the other unattended transport.
+    _notify_text = str(effect.config.get("message") or f"Automation '{automation.name}' fired")
+    _verdict = _gate_departure(effect, automation, kind="notify",
+                               text=_notify_text, target=trigger_id)
+    if _verdict is not None and _verdict.held:
+        return EffectOutcome(kind=effect.kind, target=trigger_id, status="held",
+                             message=f"held at departure — {_verdict.reason_sentence()}")
     # ActionPayload has no defaults — every field is supplied. `investigation_id` carries the
     # automation id so a webhook receiver can trace the notification back to what sent it.
     log = fire_action(trigger, ActionPayload(
         investigation_id=f"automation:{automation.id}",
         rec_index=0,
-        recommendation=str(effect.config.get("message")
-                           or f"Automation '{automation.name}' fired"),
+        recommendation=_notify_text,
         metric_name=str(effect.config.get("metric_name", "")),
         headline=automation.name,
         trigger_id=trigger_id,
@@ -885,7 +923,12 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                          # a report Slack never saw.
                          data={k: v for k, v in (("investigation_id", _inv),
                                                  ("answer", run.headline),
-                                                 ("summary", run.summary)) if v})
+                                                 ("summary", run.summary),
+                                                 # HB-2 — the report's confidence, so a
+                                                 # chain can gate on it and the ledger
+                                                 # can record it; absent-when-empty like
+                                                 # its siblings.
+                                                 ("confidence", getattr(run, "confidence", ""))) if v})
 
 
 # ── DS-9 · a chain as a step ──────────────────────────────────────────────────

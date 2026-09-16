@@ -103,6 +103,11 @@ class InvestigationRun:
     #: ``answer_report`` frame carries it; a run that streamed bare headline frames has no
     #: summary to report and leaves this empty.
     summary: str = ""
+    #: HB-2 — the report's confidence ("HIGH" / "MEDIUM" / "LOW"), same availability rule.
+    #: Measured before the wave: NOTHING of the synthesis but the summary text crossed
+    #: into a chain, so a LOW-floored report and a confident one bound identically.
+    #: Published so a chain can gate on it and the departures ledger can record it.
+    confidence: str = ""
 
     @property
     def ok(self) -> bool:
@@ -227,6 +232,8 @@ def run_investigation(
                     # headline is still a report with a summary.
                     if isinstance(report, dict) and report.get("executive_summary"):
                         seen["summary"] = str(report["executive_summary"])
+                    if isinstance(report, dict) and report.get("confidence"):
+                        seen["confidence"] = str(report["confidence"])
                 elif (kind in ("headline", "headline_delta") and payload.get("headline")
                         and not seen.get("headline_is_final")):
                     # The answer itself. Sniffed off the same stream as the ids above and
@@ -304,12 +311,14 @@ def run_investigation(
                                     investigation_id=inv_id,
                                     receipt_id=seen.get("receipt_id", ""),
                                     headline=seen.get("headline", ""),
-                                    summary=seen.get("summary", ""))
+                                    summary=seen.get("summary", ""),
+                                    confidence=seen.get("confidence", ""))
         return InvestigationRun("executed", reason, basis="inline",
                                 investigation_id=inv_id,
                                 receipt_id=seen.get("receipt_id", ""),
                                 headline=seen.get("headline", ""),
-                                summary=seen.get("summary", ""))
+                                summary=seen.get("summary", ""),
+                                confidence=seen.get("confidence", ""))
 
     # VA-13 — a caller that needs the ANSWER has to wait for it. Checked BEFORE the
     # submit, not after: `submit_background_tick` hands the work to the kernel loop and

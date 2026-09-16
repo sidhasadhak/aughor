@@ -448,6 +448,20 @@ class Automation(BaseModel):
     )
 
     enabled: bool = True
+    #: HB-2 — who declared this automation, as a principal string ("user:<id>"). Set by
+    #: the create doors (the router and the inbox's accepted draft), never authored in
+    #: the request body; first writer wins at the store. Empty on everything created
+    #: before the wave and on localhost with identity off — and probation cannot apply
+    #: without it (there is nobody to address the review to).
+    declared_by: str = ""
+    #: HB-2 — a NEW automation is on probation: its departures go to the declarer's
+    #: review queue, not the channel, until its measured precision graduates it
+    #: (govern/departure.py holds the thresholds). Model default False so an
+    #: engine-built or fixture Automation behaves exactly as before; the create doors
+    #: set True explicitly — probation is a property of being DECLARED, not of the
+    #: dataclass. Lifecycle state like `last_status`: the store preserves it across
+    #: authoring saves, and only `set_probation` (graduation) changes it.
+    probation: bool = False
     #: DS-14 — may an external MCP client invoke this chain as a tool?
     #:
     #: OPT-IN, and default False on purpose. A deployment's automations are its private
@@ -517,6 +531,11 @@ class EffectOutcome(BaseModel):
         # reported as a failure by every layer below, and retrying that is how one
         # alert becomes two. Never retried; "failed" still is.
         "uncertain",
+        # HB-2 — the departure gate held this send (a trust or tie-out hold, or
+        # probation routing it to the declarer's queue). A verdict, not a fault:
+        # the same message holds identically next attempt, so it is never retried,
+        # and the message carries the recorded reason verbatim.
+        "held",
     ]
     message: str = ""      # authored criterion message / error, verbatim — never paraphrased
     attempts: int = 1

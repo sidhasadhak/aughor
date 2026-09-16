@@ -390,6 +390,14 @@ def create(body: CreateAutomationRequest):
         automation = Automation(**body.model_dump())
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
+    # HB-2 — a DECLARED automation is born on probation, addressed to its declarer.
+    # With identity off `current_user_id()` is "" and the gate's probation check is
+    # inert (nobody to address the review to) — built and waiting on OIDC, exactly as
+    # HB-1's enforcement is.
+    from aughor.org.context import current_user_id
+    uid = current_user_id()
+    automation = automation.model_copy(update={
+        "declared_by": f"user:{uid}" if uid else "", "probation": True})
     return _save(automation)
 
 
