@@ -164,3 +164,21 @@ describe("SP-12 kinds", () => {
     expect(screen.getByText(/Ops Slack/)).toBeInTheDocument();
   });
 });
+
+describe("outbound_send (SP-7 widened)", () => {
+  it("shows the drafted post's destination and offers always-allow", async () => {
+    const accept = vi.fn().mockResolvedValue({ status: "executed", outcome: {}, minted_grant: "g1" });
+    (await import("@/lib/api")).acceptProposal = accept as never;
+    render(
+      <ProposalCard proposal={proposal({
+        kind: "outbound_send", action_id: "slack_post:auto-1",
+        params: { bot_id: "sb_1", channel: "#ops", message: "anomalies today", automation_id: "auto-1" },
+      })} actor="tester" />);
+    expect(screen.getByText("#ops")).toBeInTheDocument();
+    expect(screen.getByText("anomalies today")).toBeInTheDocument();
+    const box = screen.getByRole("checkbox");
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(accept).toHaveBeenCalledWith("prop-1", "tester", true, {});
+  });
+});
