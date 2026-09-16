@@ -65,7 +65,7 @@ def test_a_router_chosen_deep_route_keeps_its_body(_flag_on):
 
 
 def test_the_flag_still_gates_everything(monkeypatch):
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, off is explicit
     assert inv._converse_eligible(_req(seed_sql="SELECT 1"), _route("quick")) is False
 
 
