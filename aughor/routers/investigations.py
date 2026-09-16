@@ -5734,7 +5734,7 @@ def cancel_investigation_route(inv_id: str):
     job_id = _job_id_for_investigation(inv_id)
     if not job_id:
         raise HTTPException(status_code=404, detail="No kernel job found for this investigation")
-    cancelled = kernel().cancel(job_id, reason="a person cancelled it")
+    cancelled = kernel().cancel(job_id, reason="cancelled on request")
     return {"investigation_id": inv_id, "job_id": job_id, "cancelled": cancelled}
 
 

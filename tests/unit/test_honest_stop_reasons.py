@@ -126,7 +126,7 @@ def test_a_budget_kill_names_the_budget_the_spend_and_the_fix(ledger, monkeypatc
     assert jid not in J._stop_reasons, "a finished job's reason must not linger"
 
 
-def test_a_person_cancel_is_named_as_one(ledger, monkeypatch):
+def test_a_requested_cancel_is_named_as_one(ledger, monkeypatch):
     monkeypatch.setattr(JobKernel, "_resolve_governance", lambda self, jid: (_gov(), "analyst"))
     said: dict = {}
 
@@ -144,12 +144,12 @@ def test_a_person_cancel_is_named_as_one(ledger, monkeypatch):
 
         jid = await k.submit("investigation", work, conn_id="c1")
         await started.wait()
-        k.cancel(jid, reason="a person cancelled it")
+        k.cancel(jid, reason="cancelled on request")
         await _wait_terminal(k, ledger, jid)
 
     asyncio.run(main())
     assert said["reason"] == ("Stopped before answering (0 model calls, 0 queries) — "
-                              "a person cancelled it.")
+                              "cancelled on request.")
 
 
 @pytest.mark.parametrize("kw,expected", [
