@@ -5402,7 +5402,7 @@ quarries, as §3.15 ON-0a says); a registry or any second distribution channel; 
 organisation's ontology; a table name inside a package.
 
 
-### 3.18 · Arc HB — the hub: people still come to the platform, and the platform also receives data and exports intelligence (drafted 2026-09-16 at the user's direction — §6 item 24; the shape decided in conversation 2026-09-15; **NOTHING BUILT**, no wave started)
+### 3.18 · Arc HB — the hub: people still come to the platform, and the platform also receives data and exports intelligence (drafted 2026-09-16 at the user's direction — §6 item 24; the shape decided in conversation 2026-09-15; **ADOPTED 2026-09-16** — item 24 (a), (b) and (d) stamped on the user's *"Lets take the logical next step.. go.."*; **HB-1 FIRST SLICE STARTED** the same day)
 
 > **Origin.** The user, 2026-09-15, after asking how a CEO, a supply-chain head, a pricing analyst and a finance
 > controller should each benefit: *"think even bigger.. beyond roles.. the entire platform is a collection of moving
@@ -6656,21 +6656,23 @@ the browser** · **measure the premise before building.**
     conversation points the same way.
 
 24. ⏳ **DRAFTED 2026-09-16 (the user: "Create a roadmap now") — Arc HB, the hub (§3.18): the shape decided in
-    conversation 2026-09-15; the calls the build needs are open with recommendations.** Decided in the user's own
+    conversation 2026-09-15; (a), (b) and (d) DECIDED 2026-09-16, the rest open with recommendations.** Decided in the
+    user's own
     words, recorded here so they are not re-asked: the nomenclature does not change — the airport stays an analogy;
     the four people were examples, and the mechanism serves every layer with no layer taxonomy; personas as
     platform-shipped groups carrying a level per securable kind, and the organisation's functions as groups of users
     (people and agents) — the Databricks workspace shape on our own `Grant` seam; and the definition — people still
-    come to the platform, and it also receives data and exports information, intelligence and analysis. Open:
-    **(a) Adoption** — is §3.18 active, HB-1 first? *Recommended: yes — HB-1 is the routing half, has value with
-    identity off, and HB-2/HB-3 need owners and subscribers to send to.* The instruction to write the roadmap is read
-    as the plan, not as a start: no wave has begun.
-    **(b) `domain` becomes a grant-bearing tag** beside `tier` and `pii`. *Recommended: yes — it is what makes a
-    function group self-maintaining; tags stay human-set, so a tag cannot be granted by a model.*
+    come to the platform, and it also receives data and exports information, intelligence and analysis.
+    **(a) Adoption — ✅ DECIDED 2026-09-16 (the user: "Lets take the logical next step.. go..", on the recorded
+    recommendation): §3.18 is active, HB-1 first** — the routing half, which has value with identity off; HB-2/HB-3
+    need owners and subscribers to send to.
+    **(b) `domain` becomes a grant-bearing tag** beside `tier` and `pii` — **✅ DECIDED 2026-09-16 with (a)**, being a
+    call HB-1's own spec names (grants by tag are what make a function group self-maintaining); tags stay human-set,
+    so a tag cannot be granted by a model.
     **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations.
-    *Recommended: yes; an organisation starting empty is the alternative.*
+    *Recommended: yes; an organisation starting empty is the alternative.* HB-6's call — still open.
     **(d) The persona set** — Viewer / Editor / Owner as the first persona groups; a Steward only when a deployment
-    asks. *Recommended: yes.*
+    asks — **✅ DECIDED 2026-09-16 with (a)**, being the personas HB-1 ships.
     **(e) The first live receipt's host** — Olist's dispatch promise. *Recommended: yes — real breaches, three new legs,
     no new channel.*
     **(f) The email channel** — keyed on the Google OAuth client (VA-11); HB-5's email half waits for it.
