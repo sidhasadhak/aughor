@@ -284,6 +284,7 @@ def test_grant_accept_revalidates_a_moved_world(monkeypatch):
 def test_act_roster_names_and_conversation_wiring():
     names = [t.name for t in act.spotlight_act_tools("c1")]
     assert names == ["set_preference", "draft_agent", "draft_automation",
+                     "edit_automation", "draft_monitor", "draft_brief",
                      "pause_or_resume_automation", "propose_agent_grant"]
     from aughor.agent.converse_tools import converse_tools
     got = {t.name for t in converse_tools("c1")}
@@ -462,3 +463,203 @@ def test_hole_sentence_round_trips_through_the_shared_parser():
     _, holes = fill_required_holes([{"kind": "slack_post", "config": {"bot_id": "b"}}])
     assert holes and parse_hole(holes[0]) == (1, "channel")
     assert parse_hole("Anything else at all") is None
+
+
+# ── SP-11 — a follow-up supersedes the pending draft; one ask, one proposal ────────
+
+def test_three_follow_ups_leave_one_pending_proposal(monkeypatch):
+    """The wave's own receipt sentence, as a test."""
+    from aughor.actions.inbox import list_proposals
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops")))
+    before = {p.id for p in list_proposals("conn-x")}
+
+    first = act.draft_automation("conn-x", {"outcome": "anomalies at 9"})
+    second = act.draft_automation("conn-x", {"outcome": "anomalies at 8, not 9",
+                                             "supersedes": first["proposal_id"]})
+    third = act.draft_automation("conn-x", {"outcome": "anomalies at 8 to #alerts",
+                                            "supersedes": second["proposal_id"]})
+    assert "replaces" in third["summary"]
+
+    new = [p for p in list_proposals("conn-x") if p.id not in before]
+    pending = [p for p in new if p.pending]
+    assert [p.id for p in pending] == [third["proposal_id"]]
+    resolved = {p.id: p for p in new if not p.pending}
+    assert resolved[first["proposal_id"]].status == "superseded"
+    assert third["proposal_id"] in resolved[second["proposal_id"]].status_message
+
+
+def test_supersede_cannot_retire_another_connections_or_settled_work(monkeypatch):
+    monkeypatch.setattr("aughor.automations.propose.propose_chain",
+                        lambda outcome, conn_id, provider=None: _proposal(
+                            draft=_slack_draft(channel="#ops")))
+    # Another connection's pending draft: named, NOT superseded, both records stand.
+    foreign = stage_proposal(StagedProposal(
+        kind="automation_draft", connection_id="conn-OTHER",
+        action_id="automation:foreign", params=_slack_draft(channel="#x")))
+    out = act.draft_automation("conn-x", {"outcome": "x", "supersedes": foreign.id})
+    assert "was not superseded" in out["summary"]
+    assert get_proposal(foreign.id).pending
+
+    # A settled draft stays settled — first-responder-wins protects the human's act.
+    settled = act.draft_automation("conn-x", {"outcome": "y"})
+    assert reject_proposal(settled["proposal_id"], actor="tester") is True
+    out = act.draft_automation("conn-x", {"outcome": "y again",
+                                          "supersedes": settled["proposal_id"]})
+    assert "was not superseded" in out["summary"]
+    assert get_proposal(settled["proposal_id"]).status == "rejected"
+
+
+def test_finishing_in_the_editor_resolves_the_draft():
+    """SP-11's second half at the inbox seam: the editor's save supersedes with the
+    saved record named, and a second call is a harmless no-op."""
+    from aughor.actions.inbox import supersede_proposal
+    p = stage_proposal(StagedProposal(
+        kind="automation_draft", connection_id="conn-x",
+        action_id="automation:editor", params=_slack_draft(channel="#ops")))
+    assert supersede_proposal(p.id, actor="editor",
+                              note="finished in the editor as automation abc123") is True
+    row = get_proposal(p.id)
+    assert row.status == "superseded" and "abc123" in row.status_message
+    assert supersede_proposal(p.id, actor="editor") is False
+
+
+# ── SP-12 — edit, monitor, brief: change what exists, alert on motion, deliver ─────
+
+def _seed_monday_brief():
+    from aughor.automations.models import Automation, Condition, Effect
+    from aughor.automations.store import upsert_automation
+    return upsert_automation(Automation(
+        conn_id="conn-x", name="The Monday brief",
+        conditions=[Condition(kind="schedule", config={"cron": "0 9 * * 1"})],
+        effects=[Effect(kind="notify", config={"trigger_id": "trig-1"})]))
+
+
+def test_move_the_monday_brief_to_8am_is_a_one_field_diff():
+    """The wave's receipt sentence, verbatim, as a test."""
+    from aughor.automations.store import get_automation
+    a = _seed_monday_brief()
+
+    out = act.edit_automation("conn-x", {"automation": a.id,
+                                         "changes": {"cron": "0 8 * * 1"}})
+    assert out["staged"] is True
+    assert out["diff"] == [{"field": "cron", "before": "0 9 * * 1", "after": "0 8 * * 1"}]
+    p = get_proposal(out["proposal_id"])
+    assert p.kind == "automation_edit" and p.detail["diff"] == out["diff"]
+
+    result, _ = accept_proposal(p.id, actor="tester")
+    assert result.ok, result.message
+    saved = get_automation(a.id)
+    assert saved.conditions[0].config["cron"] == "0 8 * * 1"
+    assert saved.name == "The Monday brief"            # one field moved, nothing else
+
+
+def test_edit_refuses_no_ops_unknown_fields_and_mixed_delete():
+    a = _seed_monday_brief()
+    out = act.edit_automation("conn-x", {"automation": a.id,
+                                         "changes": {"name": "The Monday brief"}})
+    assert out["staged"] is False and "no diff" in out["summary"]
+    out = act.edit_automation("conn-x", {"automation": a.id,
+                                         "changes": {"effects": []}})
+    assert out["staged"] is False and "not editable by sentence" in out["summary"]
+    out = act.edit_automation("conn-x", {"automation": a.id, "delete": True,
+                                         "changes": {"name": "x"}})
+    assert out["staged"] is False and "one proposal says one thing" in out["summary"]
+
+
+def test_delete_by_sentence_is_staged_and_applied_on_accept():
+    from aughor.automations.store import get_automation
+    a = _seed_monday_brief()
+    out = act.edit_automation("conn-x", {"automation": a.id, "delete": True})
+    assert out["staged"] is True and "cannot be undone" in out["summary"]
+    result, _ = accept_proposal(out["proposal_id"], actor="tester")
+    assert result.ok and result.detail["deleted"] is True
+    assert get_automation(a.id) is None
+
+
+def test_alert_when_refund_rate_breaks_3_sigma_stages_monitor_and_chain(monkeypatch, tmp_path):
+    """The wave's other receipt sentence: ONE proposal, monitor + the chain its
+    breach fires, married at accept — and rolled back together."""
+    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(name="refund_rate", label="Refund rate",
+                                 sql="SUM(refunds)/COUNT(*)", connection="conn-x"))
+    from aughor.automations.store import get_automation
+    from aughor.monitors.store import get_monitor
+
+    out = act.draft_monitor("conn-x", {"metric": "refund_rate", "sigma": 3,
+                                       "channel": "#ops", "bot_id": "b1"})
+    assert out["staged"] is True and out["to_fill"] == []
+    assert "spends no model calls" in out["summary"]   # the honest cost sentence
+    p = get_proposal(out["proposal_id"])
+    assert p.kind == "monitor_bundle"
+    assert p.params["automation"]["conditions"][0]["config"]["monitor_id"] == ""
+
+    result, _ = accept_proposal(p.id, actor="tester")
+    assert result.ok, result.message
+    mon = get_monitor(result.detail["monitor_id"])
+    chain = get_automation(result.detail["automation_id"])
+    assert mon.alert_on == "anomaly" and mon.sigma_threshold == 3.0
+    assert chain.conditions[0].config["monitor_id"] == mon.id   # married
+
+
+def test_monitor_bundle_rolls_back_and_gates_on_open_channel(monkeypatch, tmp_path):
+    monkeypatch.setenv("AUGHOR_METRICS_PATH", str(tmp_path / "metrics.json"))
+    from aughor.semantic.metrics import MetricDefinition, save_metric
+    save_metric(MetricDefinition(name="aov", label="AOV", sql="AVG(total)",
+                                 connection="conn-x"))
+    from aughor.monitors.store import get_monitor
+
+    # Unknown metric: refused with the known ones named, never guessed.
+    out = act.draft_monitor("conn-x", {"metric": "revenue_maybe"})
+    assert out["staged"] is False and "aov" in out["summary"]
+
+    # A channel nobody named stays open; accept refuses until the card fills it.
+    out = act.draft_monitor("conn-x", {"metric": "aov"})
+    assert any("channel" in h for h in out["to_fill"])
+    refused, _ = accept_proposal(out["proposal_id"], actor="tester")
+    assert refused.status == "invalid_params"
+    assert get_proposal(out["proposal_id"]).pending
+
+    # All or nothing: a chain save that fails deletes the monitor it just made.
+    monkeypatch.setattr("aughor.runners.automation_save._SAVE",
+                        lambda params: (False, "the store said no"))
+    result, _ = accept_proposal(out["proposal_id"], actor="tester",
+                                fills={"2.channel": "#ops", "2.bot_id": "b1"})
+    assert not result.ok and "rolled back" in result.message
+    assert result.status == "dispatch_error"
+    # nothing chainless left behind
+    import aughor.monitors.store as ms
+    assert all(m.name != "aov anomaly watch" for m in ms.list_monitors("conn-x"))
+
+
+def test_brief_draft_names_known_triggers_and_accept_saves(tmp_path, monkeypatch):
+    monkeypatch.setenv("AUGHOR_TRIGGERS_FILE", str(tmp_path / "triggers.json"))
+    from aughor.notifications.models import ActionTrigger
+    from aughor.notifications.store import save_trigger
+    save_trigger(ActionTrigger(id="trig-slack", name="Ops Slack", type="slack",
+                               url="https://hooks.example/x", channel="#ops"))
+
+    out = act.draft_brief("conn-x", {"trigger": "nope", "period": "day"})
+    assert out["staged"] is False and "trig-slack" in out["summary"]
+
+    out = act.draft_brief("conn-x", {"trigger": "Ops Slack", "period": "day", "hour": 8,
+                                     "name": "Morning brief"})
+    assert out["staged"] is True and "08:00 UTC" in out["summary"]
+    result, _ = accept_proposal(out["proposal_id"], actor="tester")
+    assert result.ok, result.message
+    from aughor.briefing.store import get_subscription
+    sub = get_subscription(result.detail["subscription_id"])
+    assert sub is not None and sub.send_cron == "0 8 * * *" and sub.trigger_id == "trig-slack"
+
+
+def test_a_not_found_refusal_names_the_known_automations():
+    """SP-M's first measured drop, closed: 'Monday brief' against 'The Monday brief'
+    left the model nothing to correct with. The refusal now lists the connection's
+    own names — one retry instead of a wandered-out budget."""
+    _seed_monday_brief()
+    out = act.edit_automation("conn-x", {"automation": "Monday brief",
+                                         "changes": {"cron": "0 8 * * 1"}})
+    assert out["staged"] is False
+    assert "The Monday brief" in out["summary"]

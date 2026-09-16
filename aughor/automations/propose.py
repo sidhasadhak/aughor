@@ -317,14 +317,16 @@ def _hold_drafted_writes(drafted: "ProposedChain") -> list[int]:
     return held
 
 
-def _first_run(conditions: list, now: datetime) -> str:
-    """The earliest next fire of the draft's schedule triggers (ISO UTC), or ""."""
+def _first_run(conditions: list, now: datetime, timezone: str = "") -> str:
+    """The earliest next fire of the draft's schedule triggers (ISO UTC), or "".
+    Evaluated in the draft's own clock (SP-13) — `next_fire_utc` normalizes back to
+    UTC, so the Z this stamps stays true whatever zone the cron is read in."""
     from aughor.automations.engine import next_fire_utc
     times = []
     for c in conditions:
         if c.get("kind") != "schedule":
             continue
-        t = next_fire_utc(str((c.get("config") or {}).get("cron") or ""), now)
+        t = next_fire_utc(str((c.get("config") or {}).get("cron") or ""), now, timezone)
         if t is not None:
             times.append(t)
     return min(times).strftime("%Y-%m-%dT%H:%M:%SZ") if times else ""
@@ -367,9 +369,15 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
     opened = _open_unnamed_choices(drafted, outcome)
     held = _hold_drafted_writes(drafted)
 
+    # SP-13 — the caller's chosen clock, read from the settings registry. A draft
+    # spoken as "9am" lands in the reader's own time; "" keeps UTC, the platform's
+    # default and every pre-SP-13 chain's clock.
+    from aughor.db.user_prefs import preferred_timezone
+    draft_tz = preferred_timezone()
     payload = {
         "conn_id": conn_id,
         "name": drafted.name or "Proposed chain",
+        **({"timezone": draft_tz} if draft_tz else {}),
         "description": drafted.description or "",
         "conditions": [c.model_dump() for c in drafted.conditions],
         "condition_logic": drafted.condition_logic or "all",
@@ -412,4 +420,5 @@ def propose_chain(outcome: str, *, conn_id: str, provider: Any = None) -> ChainP
     return ChainProposal(verdict="proposed", draft=payload, dry_run=dry,
                          notes=held_note + (drafted.notes or ""),
                          to_fill=to_fill,
-                         first_run=_first_run(payload["conditions"], datetime.now(timezone.utc)))
+                         first_run=_first_run(payload["conditions"], datetime.now(timezone.utc),
+                                              draft_tz))

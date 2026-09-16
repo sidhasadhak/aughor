@@ -31,3 +31,24 @@ def set_automation_state_payload(params: dict) -> tuple[bool, Any]:
         return False, ("automation state door not registered — the automations "
                        "package has not been imported in this process")
     return _STATE(dict(params or {}))
+
+
+# SP-12 — the EDIT door, registered the same way. The inbox's `automation_edit`
+# accept must apply a staged field diff through the one write path, and K may not
+# import A; the automations store hangs its editor here at import.
+_EDIT = None
+
+
+def register_automation_edit(fn) -> None:
+    """Called by the automations store at import — the closed-field editor."""
+    global _EDIT
+    _EDIT = fn
+
+
+def edit_automation_payload(params: dict):
+    """Apply ``{automation_id, changes}`` through the registered editor.
+    Returns ``(True, {automation_id, name, changed})`` or ``(False, reason)``."""
+    if _EDIT is None:
+        return False, ("automation edit door not registered — the automations "
+                       "package has not been imported in this process")
+    return _EDIT(dict(params or {}))

@@ -6048,6 +6048,29 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/kinetic-actions/inbox/{proposal_id}/supersede": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Supersede Inbox
+         * @description Resolve a pending draft as REPLACED (SP-11) — a person finished the same ask in
+         *     the real editor, so the staged draft must not sit beside the saved record looking
+         *     like separate work. No side effect, first-responder-wins; a re-supersede is a
+         *     no-op, and an already-accepted draft stays what it is.
+         */
+        post: operations["supersede_inbox_kinetic_actions_inbox__proposal_id__supersede_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/kinetic-actions/propose": {
         parameters: {
             query?: never;
@@ -13542,6 +13565,19 @@ export interface components {
              * @default reference
              */
             target: string;
+        };
+        /** SupersedeRequest */
+        SupersedeRequest: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * Note
+             * @default
+             */
+            note: string;
         };
         /**
          * SystemMessage
@@ -25138,6 +25174,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    supersede_inbox_kinetic_actions_inbox__proposal_id__supersede_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                proposal_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SupersedeRequest"];
             };
         };
         responses: {

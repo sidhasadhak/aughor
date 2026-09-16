@@ -95,7 +95,7 @@ def _own_the_log(monkeypatch):
     counts BOTH shapes, and it sets its own events rather than driving a live turn."""
     from aughor.obs import prompt_window
 
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, off is explicit
     Ledger.default().session_events_clear()
     prompt_window.close_window()
     yield

@@ -204,7 +204,7 @@ def ask_client(monkeypatch):
     # ways and this suite happened to take one of them.
     # The on state has its own coverage below (test_ask_converse_on_serves_the_quick_turn)
     # and in test_converse_route_off_state.py.
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")  # SP-14: default-ON, so off is explicit
 
     async def fake_chat(*a, **k):
         yield inv._sse("quick_marker", {})

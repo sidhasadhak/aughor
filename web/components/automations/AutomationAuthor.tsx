@@ -256,7 +256,8 @@ export function DesignControls({ automation, connId, name, draft, onDraft, onSav
  * the old rail the node faces genuinely cannot carry — selects and pickers need more
  * room than a node row — scoped to the one node being asked about.
  */
-export function StepInspector({ draft, onDraft, selection, logicLabel, onClose }: {
+export function StepInspector({ draft, onDraft, selection, logicLabel, onClose,
+                                timezone }: {
   draft: Draft;
   onDraft: (d: Draft) => void;
   /** "__trigger" or a step alias (`step3`, or an explicit alias). */
@@ -264,6 +265,8 @@ export function StepInspector({ draft, onDraft, selection, logicLabel, onClose }
   /** "all match" / "any match" — the automation's own words for the trigger header. */
   logicLabel: string;
   onClose: () => void;
+  /** SP-13 — the automation's own clock, for the schedule editor's labels. */
+  timezone?: string;
 }) {
   const [agents, setAgents] = useState<UserAgent[]>([]);
   const [bots, setBots] = useState<SlackBotSummary[]>([]);
@@ -305,7 +308,7 @@ export function StepInspector({ draft, onDraft, selection, logicLabel, onClose }
         {selection === "__trigger" ? (
           <>
             {draft.conditions.map((c, i) => (
-              <ConditionRow key={i} c={c} onChange={cc => setCond(i, cc)}
+              <ConditionRow key={i} c={c} timezone={timezone} onChange={cc => setCond(i, cc)}
                 // The model requires at least one, so the last row has no remove
                 // control at all rather than one that fails at save.
                 onRemove={draft.conditions.length > 1

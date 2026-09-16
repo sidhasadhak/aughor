@@ -429,3 +429,27 @@ export function relTime(iso: string | null | undefined): string {
   if (s < 86400) return `${Math.floor(s / 3600)}h`;
   return `${Math.floor(s / 86400)}d`;
 }
+
+
+/** SP-13 — an instant in a chain's OWN clock, with UTC beside it for operators:
+ *  "Wed, 16 Sept, 09:00 Europe/Berlin (07:00 UTC)". An unknown zone falls back to
+ *  the UTC words alone — a card must degrade, never break, on a zone this browser
+ *  does not know. */
+export function zonedTimeWords(iso: string, tz?: string): string {
+  const d = new Date(iso);
+  if (isNaN(d.getTime())) return iso;
+  const utcOnly = d.toUTCString().replace(/:\d{2} GMT$/, " UTC");
+  if (!tz) return utcOnly;
+  try {
+    const local = new Intl.DateTimeFormat("en-GB", {
+      weekday: "short", day: "numeric", month: "short",
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: tz,
+    }).format(d);
+    const utc = new Intl.DateTimeFormat("en-GB", {
+      hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC",
+    }).format(d);
+    return `${local} ${tz} (${utc} UTC)`;
+  } catch {
+    return utcOnly;
+  }
+}

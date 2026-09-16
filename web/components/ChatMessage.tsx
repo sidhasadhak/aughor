@@ -39,6 +39,7 @@ import { GuardReceiptChain } from "@/components/GuardReceiptChain";
 import { SqlView } from "@/components/query/SqlView";
 import { ToolTrail } from "@/components/ToolTrail";
 import { ProposalCardById } from "@/components/ProposalCard";
+import { approverName } from "@/lib/auth";
 import { AnswerParts } from "@/components/chat/AnswerParts";
 import { FixItForm } from "@/components/FixItForm";
 import { InFlightFindings, RunProgressCard } from "@/components/RunProgressCard";
@@ -1613,7 +1614,7 @@ export function ChatMessage({
       {turn.stagedProposals.length > 0 && (
         <div className="flex flex-col gap-2 my-2">
           {turn.stagedProposals.map(ref => (
-            <ProposalCardById key={ref.proposalId} proposalId={ref.proposalId} actor="chat" />
+            <ProposalCardById key={ref.proposalId} proposalId={ref.proposalId} actor={approverName("chat")} />
           ))}
         </div>
       )}

@@ -180,3 +180,18 @@ def test_accept_carries_fills_to_the_inbox(flag_on):
                     json={"actor": "tester", "fills": {"1.channel": "#ops"}})
     assert r.status_code == 200, r.text
     assert inbox.get_proposal(p.id).params["effects"][0]["config"]["channel"] == "#ops"
+
+
+def test_supersede_over_http_is_resolve_once(flag_on):
+    """SP-11 — the editor's finish door: resolves a pending draft as replaced, and a
+    second call (or one against settled work) reports False instead of erring."""
+    p = inbox.stage_proposal(inbox.StagedProposal(
+        kind="automation_draft", connection_id="conn-api", action_id="automation:e",
+        params={"name": "e"}))
+    r = client.post(f"/kinetic-actions/inbox/{p.id}/supersede",
+                    json={"actor": "editor", "note": "finished in the editor as xyz"})
+    assert r.status_code == 200 and r.json()["superseded"] is True
+    row = inbox.get_proposal(p.id)
+    assert row.status == "superseded" and "xyz" in row.status_message
+    r = client.post(f"/kinetic-actions/inbox/{p.id}/supersede", json={"actor": "editor"})
+    assert r.json()["superseded"] is False

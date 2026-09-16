@@ -380,9 +380,19 @@ def _write_answer_receipt(*, kind: str, natural_key: str, question: str,
         # here covers all three callers by construction rather than by three edits.
         # Gated by `graph.build`, best-effort, and the finding shape is exactly what
         # `load_investigation_findings` would rebuild from the same receipt.
+        #
+        # The HEADLINE is the finding; the question alone is not a discovery — the
+        # rebuild collector's own law, enforced here too. Callers pass
+        # ``headline or question`` for the RECEIPT (a receipt page must show
+        # something), so an answer that concluded nothing arrives with headline ==
+        # question — and projecting that stored the whole scheduled-run context block
+        # as a "finding" the graph search then served, ~2KB of prompt echoed per node
+        # into every later model turn (measured on the user's own OpenRouter log,
+        # 2026-09-15: ten near-identical nodes, none a discovery).
+        _concluded = (headline or "").strip() and (headline or "").strip() != (question or "").strip()
         _note_finding_on_graph(
             connection_id=connection_id, receipt_id=_receipt_id,
-            headline=headline or question, sql=sqls[0] if sqls else "",
+            headline=headline if _concluded else "", sql=sqls[0] if sqls else "",
             tables=sorted(seen),
         )
         # `receipt_id` is the stable artifact id → the unified GET /receipt/{id} (WP-10); a

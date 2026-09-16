@@ -58,6 +58,13 @@ def _isolate_stores() -> None:
     # both places at once, which is the rule this file's sibling comment below states.
     os.environ.setdefault("AUGHOR_UPLOAD_DIR", os.path.join(tmp, "uploads"))
     os.environ.setdefault("AUGHOR_PLAYBOOK_PATH", os.path.join(tmp, "playbook.json"))
+    # The metrics catalog and glossary are TRACKED repo files (data/metrics.json,
+    # data/glossary.yaml) — the one store family whose pollution lands in git status,
+    # not just in a live database. Found the hard way TWICE: a live-drive scratch
+    # server wrote both (memory, pre-2026-09), and SP-M's recorder re-seeded
+    # metrics.json on 2026-09-16 because this list still lacked them.
+    os.environ.setdefault("AUGHOR_METRICS_PATH", os.path.join(tmp, "metrics.json"))
+    os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.yaml"))
 
     # The DIRECTORY stores, which this dump never isolated: the docstring above said
     # "every store honours its AUGHOR_*_DB override", and that sentence was the gap — a

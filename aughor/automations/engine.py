@@ -204,21 +204,29 @@ def claim_delivery(automation_id: str, started_at: str) -> bool:
         return False
 
 
-def cron_trigger(cron: str):
-    """The ONE reading of a cron string — in UTC, the only clock an automation has today."""
+def cron_trigger(cron: str, timezone: str = ""):
+    """The ONE reading of a cron string — in the automation's own clock (SP-13).
+
+    "" = UTC, which is every chain written before the field existed. An IANA name
+    hands DST to the trigger itself: a 09:00 Europe/Berlin chain fires at 07:00Z in
+    summer and 08:00Z in winter, with no arithmetic of ours in between."""
     from apscheduler.triggers.cron import CronTrigger
 
-    return CronTrigger.from_crontab(cron, timezone="UTC")
+    return CronTrigger.from_crontab(cron, timezone=timezone or "UTC")
 
 
-def next_fire_utc(cron: str, after: datetime) -> Optional[datetime]:
+def next_fire_utc(cron: str, after: datetime, timezone: str = "") -> Optional[datetime]:
     """SP-7 — when this cron next fires after ``after``, read by the trigger the scheduler
     itself uses, so a first run a draft STATES cannot disagree with the one that happens.
-    ``None`` for a cron that does not parse or never fires again."""
+    ``None`` for a cron that does not parse or never fires again. Always returned IN
+    UTC whatever clock the trigger evaluates in — every consumer stamps ISO with a Z,
+    and a Berlin-local datetime rendered with a Z would be the lie SP-13 exists to end."""
+    from datetime import timezone as _tz
     try:
-        return cron_trigger(cron).get_next_fire_time(None, after)
+        t = cron_trigger(cron, timezone).get_next_fire_time(None, after)
     except (ValueError, KeyError):
         return None
+    return t.astimezone(_tz.utc) if t is not None else None
 
 
 def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> tuple[bool, str]:
@@ -229,7 +237,7 @@ def _schedule_fired(cond: Condition, automation: Automation, now: datetime) -> t
     a missed 08:00 that ticks at 08:04 still fires, once.
     """
     try:
-        trigger = cron_trigger(cond.cron)
+        trigger = cron_trigger(cond.cron, getattr(automation, "timezone", ""))
     except (ValueError, KeyError) as exc:
         raise ProbeUnavailable(f"invalid cron '{cond.cron}': {exc}") from exc
 

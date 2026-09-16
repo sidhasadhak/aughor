@@ -83,18 +83,21 @@ export function toCron(s: ScheduleShape): string {
   }
 }
 
-/** The schedule in the words a person would say it — the clock always named. */
-export function cronWords(cron: string): string {
+/** The schedule in the words a person would say it — the clock always named.
+ *  SP-13: a chain with its own timezone says THAT clock, never "UTC" for a cron
+ *  that is not read in UTC. */
+export function cronWords(cron: string, tz = ""): string {
+  const clock = tz || "UTC";
   const s = parseCron(cron);
   switch (s.occurrence) {
     case "hourly": return `Every hour at minute ${s.minute}`;
-    case "daily": return `Every day at ${s.time} UTC`;
+    case "daily": return `Every day at ${s.time} ${clock}`;
     case "weekly": {
       const days = s.weekdays.map(d => DAY_WORDS[d]).join(", ");
-      return `Every ${days} at ${s.time} UTC`;
+      return `Every ${days} at ${s.time} ${clock}`;
     }
-    case "monthly": return `Monthly on day ${s.dayOfMonth} at ${s.time} UTC`;
-    default: return cron ? `On the cron schedule ${cron} (UTC)` : "";
+    case "monthly": return `Monthly on day ${s.dayOfMonth} at ${s.time} ${clock}`;
+    default: return cron ? `On the cron schedule ${cron} (${clock})` : "";
   }
 }
 
@@ -163,9 +166,12 @@ function DayChips({ value, onChange }: { value: number[]; onChange: (d: number[]
   );
 }
 
-export function ScheduleEditor({ cron, onCron }: {
+export function ScheduleEditor({ cron, onCron, timezone = "" }: {
   cron: string;
   onCron: (cron: string) => void;
+  /** SP-13 — the clock this chain's cron is read in ("" = UTC). Display context
+   *  only: the editor labels honestly and leaves DST arithmetic to the server. */
+  timezone?: string;
 }) {
   const s = parseCron(cron);
   // A fresh schedule trigger arrives with no expression at all. Seed the default the
@@ -177,7 +183,10 @@ export function ScheduleEditor({ cron, onCron }: {
   }, [cron]);
 
   const put = (patch: Partial<ScheduleShape>) => onCron(toCron({ ...s, ...patch }));
-  const next = nextFireUtc(cron);
+  // The next-run guess is EXACT arithmetic only — a zoned cron crosses DST, which is
+  // the server's trigger to compute, so a non-UTC chain states no client guess.
+  const next = timezone && timezone !== "UTC" ? null : nextFireUtc(cron);
+  const clock = timezone || "UTC";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -200,8 +209,8 @@ export function ScheduleEditor({ cron, onCron }: {
         </div>
         {(s.occurrence === "daily" || s.occurrence === "weekly" || s.occurrence === "monthly") && (
           <div>
-            <label style={fieldLabel}>At (UTC)</label>
-            <input type="time" value={s.time} aria-label="Time of day, UTC"
+            <label style={fieldLabel}>At ({clock})</label>
+            <input type="time" value={s.time} aria-label={`Time of day, ${clock}`}
               onChange={e => e.target.value && put({ time: e.target.value })}
               style={{ ...inputStyle, padding: "5px 8px", width: 96 }} />
           </div>
@@ -236,7 +245,7 @@ export function ScheduleEditor({ cron, onCron }: {
 
       {s.occurrence === "custom" && (
         <div>
-          <label style={fieldLabel}>Cron expression (UTC)</label>
+          <label style={fieldLabel}>Cron expression ({clock})</label>
           <input style={inputStyle} value={cron} aria-label="Cron expression"
             onChange={e => onCron(e.target.value)} placeholder="e.g. 0 9 * * 1-5" />
         </div>
@@ -245,7 +254,7 @@ export function ScheduleEditor({ cron, onCron }: {
       {/* The schedule read back in words — what a person can check at a glance, with
           the clock named. The next run is stated only when its arithmetic is exact. */}
       <div className="aug-fs-xs" style={{ color: "var(--t3)", lineHeight: 1.5 }}>
-        {cronWords(cron)}
+        {cronWords(cron, timezone)}
         {next && (
           <> · next run {`${DAY_WORDS[next.getUTCDay()]} ${next.getUTCDate()} ${MONTH_WORDS[next.getUTCMonth()]}, ${two(next.getUTCHours())}:${two(next.getUTCMinutes())} UTC`}</>
         )}
