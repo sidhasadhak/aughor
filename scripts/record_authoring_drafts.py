@@ -63,6 +63,21 @@ def _seed(connection_id: str) -> None:
             effects=[effect]))
     create_agent("The Look Analyst", instructions="Analyse theLook with judgment.",
                  connection_id=connection_id)
+    # The first recording's two measured fixture gaps (2026-09-16): with no Slack bot,
+    # `slack_post` is UNAVAILABLE and every delivery ask dies on an honest refusal of
+    # the fixture, not of the drafting; with no subscription, the `brief` effect has
+    # nothing to deliver. TWO bots on purpose: SP-7's sender rule then keeps the bot an
+    # OPEN choice unless the ask names one — the open-choice path stays measurable.
+    from aughor.slackbots.models import SlackBot
+    from aughor.slackbots.store import save_bot
+    save_bot(SlackBot(id="sb_fixture_a", name="Aughor", bot_token="xoxb-fixture-a",
+                      connection_id=connection_id))
+    save_bot(SlackBot(id="sb_fixture_b", name="TheLook Analyst",
+                      bot_token="xoxb-fixture-b", connection_id=connection_id))
+    from aughor.briefing.models import BriefSubscription
+    from aughor.briefing.store import save_subscription
+    save_subscription(BriefSubscription(conn_id=connection_id, name="Weekly briefing",
+                                        period="week", trigger_id="trig-slack"))
 
 
 def main() -> int:

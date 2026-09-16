@@ -3162,6 +3162,18 @@ cost; staged → accepted → finished in the form → lapsed, counted weekly; S
 > not-found refusals now list the connection's own automation/agent names, the movement's convention everywhere
 > else. Open questions the numbers raise for SP-14's gate: the agent_bundle family staged 0/5 on the fixture (each a
 > stated refusal, not silence) — re-record on a seeded richer fixture before reading that as the tools' failure.
+> **RE-RECORDED 2026-09-16, richer fixture** (two Slack bots so the sender stays a measurable open choice, a brief
+> subscription; ~60 more calls on the user's word): **16/30 staged** (was 9), all seven kinds represented, agent
+> bundles 2/5 (was 0); **honesty still perfect — 26/26 proposals across both runs, zero check failures.** The
+> residual decomposes cleanly: 4 designed refusal specimens behaving exactly as designed (both red-team asks; the
+> checks-first pricing watchdog; the no-support-schema agent) · 5 honest conversational turns (a careful question
+> back before a delete; "nothing is paused" answered truthfully; the name-listing fix WORKING — the model got the
+> candidate list and chose to hand the "morning chain ≈ morning anomalies?" guess back to the person, which is
+> right custody for an edit) · **5 budget deaths, the one remaining defect class**: diligent turns that spent all 8
+> loop steps measuring first (four SQL probes before drafting a monitor) and died answerless in the recorder —
+> live, the stream renders the graceful budget sentence, but the ask still lands undraftd. The 22(d) gate call this
+> leaves the user: on the 26 real asks, 21 behaved correctly (81%) and 5 hit the step budget — the knob is the
+> converse loop's step budget, a cost decision, not a code defect.
 
 **Not in this movement:** an intent classifier in front of the roster · a second inbox or approval surface ·
 auto-accepting anything structural · a canvas for agents · a model grading its own drafts.
