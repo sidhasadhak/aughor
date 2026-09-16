@@ -6161,6 +6161,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-15:** item 22 — Arc SP's second movement, authoring by sentence — arrived with the measured
 > trace of the user's own Spotlight turn; clause (a) was answered yes the same turn and SP-7 began. (b), (c) and (d)
 > stay open with recommendations, and none blocks SP-7. Open: 16, 18, 22(b–d).
+> **Amended 2026-09-16:** 22(b) was decided with SP-10 ("Go for SP-10" on the both-recommendation), and 22(d) with
+> SP-M's numbers on the table (graduate after the richer-fixture re-record). Open: 16, 18(c), 22(c).
 > **Amended 2026-09-15, later:** item 18(b) — Shipment and Payment — decided by the user, and not as recommended:
 > entities with a link, applied live on LuxExperience the same day. Open: 16, 18(c), 22(b–d).
 
@@ -6468,9 +6470,12 @@ the browser** · **measure the premise before building.**
     ⏳ **(c) Accept stays the arming** — or a separate Arm step after Accept. *Recommended: keep it; with SP-7 Accept
     refuses while a choice is still open and the first run is stated, so a second click would add no check.* SP-7 is
     built on the recommendation; the call stays the user's.
-    ⏳ **(d) Graduating `ask.converse`** — its code default is off and the user's deployment runs it through a runtime
-    override, so a fresh install cannot draft from chat, ⌘K or Slack. *Recommended: when SP-M's scored set passes, not
-    before; meanwhile the Quick chip says that setting things up needs the conversation.* Needed by SP-14.
+    ✅ **(d) DECIDED 2026-09-16 (the user) — graduate AFTER the richer-fixture re-record, as recommended.** Asked with
+    SP-M's first recorded numbers on the table (every staged draft honest, 10/10 with zero check failures; 21/30
+    staged nothing on the SPARSE fixture, agent bundles 0/5 as stated refusals). The user chose the middle door: seed
+    a richer fixture, re-record the thirty asks, and graduate when the STAGING rate looks healthy — not just the
+    honesty rate. SP-14 ships right after. Until then a fresh install's Quick chip keeps saying that setting things
+    up needs the conversation.
 
 23. ✅ **DECIDED 2026-09-15 (the user) — the answer vocabulary (§3.11, third movement).** The user, with the Adaptive
     Cards catalog on screen: *"Why don't we consider introducing such UI elements? We have been calling ourselves
