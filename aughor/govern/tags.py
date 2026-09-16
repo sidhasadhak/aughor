@@ -45,6 +45,14 @@ from aughor.metastore.models import securable_kind
 #: small and explicit is what stops "we tagged it" from silently meaning "we secured it".
 GATING_KEYS: frozenset[str] = frozenset({"tier", "pii"})
 
+#: Tag keys that BEAR GRANTS (HB-1, §6 item 24 (b)) — the third load-bearing key, and a
+#: different kind of load than gating: ``tier``/``pii`` RESTRICT (a clearance the reader
+#: must hold), ``domain`` EXTENDS (a grant on ``domain:supply-chain`` covers every object
+#: tagged ``domain=supply-chain``, which is what makes a function group self-maintaining —
+#: a promise declared next month is covered the day it is tagged). Tags stay human-set
+#: either way: a model cannot author one, so a model cannot grant by one.
+GRANT_BEARING_KEYS: frozenset[str] = frozenset({"domain"})
+
 #: The clearance a ``tier`` value demands. A tier absent from this map does not gate —
 #: an unknown tier is a DESCRIPTION, not a lock, because inventing a lock from an
 #: unrecognised string would make a typo silently deny access to real data.
@@ -180,10 +188,15 @@ def check(
 
 
 def gating_kinds() -> tuple[str, ...]:
-    """The securable kinds a tag may name — mirrors the metastore vocabulary."""
+    """The securable kinds a CLEARANCE decision reads tags from — the data-carrying
+    kinds only. Deliberately narrower than the metastore vocabulary since HB-1 widened
+    it: the ontology's things are taggable (a promise carries ``domain=...`` so grants
+    reach it) but tier/pii clearances gate data reads, not meaning objects."""
     return ("catalog", "schema", "table", "artifact")
 
 
 def is_securable(value: str) -> bool:
-    """Whether ``value`` is a well-formed securable string this plane can tag."""
+    """Whether ``value`` is a well-formed securable string this plane can tag — since
+    HB-1 that includes the ontology's things (``promise:...``, ``metric:...``), which is
+    how a `domain` tag lands on the objects whose grants it bears."""
     return bool(securable_kind(value))
