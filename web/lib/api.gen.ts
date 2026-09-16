@@ -6458,6 +6458,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Decisions
+         * @description The decision-record accumulation, made visible: per-site volume (total, trainable,
+         *     outcome-closed) and the newest rows. This is the observability half of "is this
+         *     decision learnable" — the volume answer that must exist before any scorer does.
+         */
+        get: operations["get_decisions_learning_decisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/export": {
         parameters: {
             query?: never;
@@ -6477,6 +6499,28 @@ export interface paths {
          *     with, which is this codebase's most-repeated failure shape.
          */
         post: operations["post_export_learning_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/export/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Export Decisions
+         * @description Export decision records as selection corpora (`choice` + held-out `choice_golden`
+         *     per site). Idempotent like every exporter — an unchanged corpus registers no new
+         *     version — so it is safe to call repeatedly and safe to schedule later.
+         */
+        post: operations["post_export_decisions_learning_export_decisions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -26316,11 +26360,75 @@ export interface operations {
             };
         };
     };
+    get_decisions_learning_decisions_get: {
+        parameters: {
+            query?: {
+                site?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_export_learning_export_post: {
         parameters: {
             query?: {
                 task?: string;
                 publish_golden?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_export_decisions_learning_export_decisions_post: {
+        parameters: {
+            query?: {
+                site?: string | null;
+                task?: string;
             };
             header?: never;
             path?: never;

@@ -27,8 +27,11 @@ _DB_PATH = resolve_db_path("AUGHOR_LEARNING_DB", Path("data/learning.db"))
 
 #: The kinds a dataset node can be. `golden` is held out and NEVER trained on — it is the
 #: ratchet's measuring stick, and a corpus that trains on its own benchmark cannot be
-#: measured by it.
-KINDS = ("sft", "dpo", "golden")
+#: measured by it. `choice` / `choice_golden` are the decision-record corpora
+#: (`{context, options, label}` selection rows, exporters.export_decisions): a separate
+#: kind pair rather than reusing sft/golden because MI-4's entry gates COUNT golden
+#: examples, and a decision row inflating the nl2sql gate would corrupt that measurement.
+KINDS = ("sft", "dpo", "golden", "choice", "choice_golden")
 
 
 def datasets_dir() -> Path:

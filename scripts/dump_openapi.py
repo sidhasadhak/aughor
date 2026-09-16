@@ -45,7 +45,7 @@ def _isolate_stores() -> None:
         "VERDICTS", "PACK_DELTAS", "PACK_BINDINGS", "CHECKPOINTS",
         "IDEMPOTENCY", "RBAC", "AUTOMATIONS", "KINETIC_INBOX", "KINETIC_GRANTS",
         "LEARNING", "INTAKE", "USER_PREFS", "DEPARTURES", "HUB_LINKS",
-        "AGENTS", "AGENT_ALERTS", "EVALS", "MATCACHE", "ORGS",
+        "AGENTS", "AGENT_ALERTS", "EVALS", "MATCACHE", "ORGS", "DECISIONS",
     ):
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
     os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))

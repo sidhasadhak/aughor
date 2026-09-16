@@ -75,6 +75,10 @@ for _env, _file in (
     ("AUGHOR_USER_PREFS_DB", "user_prefs.db"),
     # HB-2 — the departures ledger, registered in the SAME commit as the store.
     ("AUGHOR_DEPARTURES_DB", "departures.db"),
+    # Decision records (learning/decisions.py) — written from the ANSWER PATH (the tool
+    # loop, the route classifier), so an unregistered default here would have every
+    # suite run appending into live data/. Registered in the SAME commit as the store.
+    ("AUGHOR_DECISIONS_DB", "decisions.db"),
     # HB-3 — the manifest's links (tickets/threads filed on objects), same commit.
     ("AUGHOR_HUB_LINKS_DB", "hub_links.db"),
     # Not a .db: `vocabulary` resolves a DIRECTORY through the same helper, and it

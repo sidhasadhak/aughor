@@ -129,6 +129,10 @@ def run_tool_loop(
     """
     by_name = {t.name: t for t in tools}
     wire = [t.as_wire() for t in tools]
+    # The decision-record menu: SORTED, so the option order (and therefore each label
+    # index) is stable across turns regardless of roster assembly order. Only real
+    # menus are recorded — one tool is not a choice.
+    menu = sorted(by_name)
     budget = max_steps if max_steps is not None else _budget(provider)
     history: list[dict] = []
     steps: list[LoopStep] = []
@@ -206,6 +210,20 @@ def run_tool_loop(
                          detail="" if ok else payload,
                          result_chars=len(payload),
                          prompt_chars=_history_chars(history)))
+        # One decision record per executed choice: the menu the model picked from, what
+        # it picked, and whether the pick ran clean. The context is a routing glimpse
+        # (step position, the previous pick and how it went, the question) — never tool
+        # results, which belong to the session log. Hallucinated names are skipped: a
+        # pick that was not on the menu is a model failure, not a selection example.
+        if len(menu) >= 2:
+            prev = steps[-2] if len(steps) >= 2 else None
+            from aughor.learning.decisions import record_decision
+            record_decision(
+                "converse.tool",
+                f"step {len(steps)} | last {prev.tool + (' ok' if prev.ok else ' error') if prev else '(start)'}"
+                f" | {question}",
+                menu, chosen=call.name, source="llm",
+                outcome="ok" if ok else "error")
         history.extend(_exchange(call, payload))
 
     # Budget spent. The turn is not an error — it is an answer we did not reach, and
