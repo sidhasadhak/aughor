@@ -414,17 +414,35 @@ def _stage_approval(effect: Effect, automation: Automation, *, alias: str, run_i
         # inbox filters, groups and purges by: putting a vault grant there would have
         # hidden every integration proposal from the queue that exists to show them.
         integration = effect.kind == "integration_call"
+        # SP-7 widened (2026-09-16): a drafted Slack post parks as its OWN kind, whose
+        # accept performs the send (`_accept_outbound_send`) the way the declared and
+        # integration kinds perform theirs — one inbox, three shapes of write. The params
+        # carry the RESOLVED send (bot, channel, the bound message) plus the automation id,
+        # which "always allow" needs to mint the standing send-grant against.
+        outbound = effect.kind == "slack_post"
+        if outbound:
+            kind, action_id, params = ("outbound_send",
+                                       f"slack_post:{automation.id}",
+                                       {"bot_id": str(effect.config.get("bot_id", "")),
+                                        "channel": str(effect.config.get("channel", "")),
+                                        "message": effect.config.get("message", ""),
+                                        "thread_ts": str(effect.config.get("thread_ts") or ""),
+                                        "automation_id": automation.id})
+        else:
+            kind = "integration" if integration else "declared_action"
+            action_id = (str(effect.config.get("operation", "")) if integration
+                         else effect.action_id)
+            params = effect.params
         staged = stage_proposal(StagedProposal(
             connection_id=automation.conn_id,
             schema_name=effect.config.get("schema_name") or "",
-            kind="integration" if integration else "declared_action",
+            kind=kind,
             grant_id=(str(effect.config.get("connection_id", "")) if integration else ""),
-            action_id=(str(effect.config.get("operation", "")) if integration
-                       else effect.action_id),
+            action_id=action_id,
             # The RESOLVED params — what this step would actually have written. A proposal
             # freezes its params at stage time (RC-3), and freezing `{"$from": "step1.total"}`
             # would freeze a reference whose meaning moves, not a value a human can weigh.
-            params=effect.params,
+            params=params,
             reasoning=message,
             proposer=acting_agent_ref(effect, automation) or "automation",
             # `automation:<id>` — the label `inbox._owner_of` already parses, so a grant minted
@@ -617,6 +635,24 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
 
     bot_id = str(effect.config.get("bot_id", ""))
     channel = str(effect.config.get("channel", ""))
+
+    # SP-7 widened to outbound sends (2026-09-16): a post a MODEL drafted into this chain
+    # (`require_approval`) reaches a real channel, so its first run waits for a person —
+    # unless a standing send-grant already says this chain may post here unattended
+    # ("always allow", SP-12b). A hand-built chain never sets `require_approval`, so it is
+    # untouched, exactly as a hand-built declared write is. The verdict is `approval_required`,
+    # which the run loop already turns into a durable inbox proposal and a paused run.
+    if bool(effect.config.get("require_approval")):
+        from aughor.actions import grants
+        grant = grants.matching_send_grant(automation.id, channel, connection_id=automation.conn_id)
+        if grant is None:
+            return EffectOutcome(
+                kind=effect.kind, target=f"{bot_id}:{channel}", status="approval_required",
+                message=(f"a drafted Slack post to {channel or '(unnamed channel)'} waits "
+                         f"for a person — accept it in the inbox, or accept with 'always "
+                         f"allow' to let this chain post there unattended from now on"))
+        grants.bump_use(grant.id)
+
     bot = get_bot_decrypted(bot_id)
     if bot is None:
         return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",

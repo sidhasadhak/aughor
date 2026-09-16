@@ -275,3 +275,34 @@ def purge_connection(connection_id: str) -> int:
             return n
         finally:
             c.close()
+
+
+# ── SP-12b · the outbound-send grant ──────────────────────────────────────────────
+#
+# A drafted chain's Slack post holds for a person on its first run (SP-7's law, widened
+# from warehouse writes to outbound sends). "Always allow" mints ONE of these so later
+# runs of THAT chain to THAT channel go unattended — the first-send-only shape the user
+# asked for. It reuses this store rather than a new one: an outbound send is a
+# target-bound standing permission exactly like a declared write's, and it revokes with
+# the automation through the same owner cascade. The synthetic action id namespaces it
+# off any real declared action, and the bound target is the channel.
+
+def send_grant_action_id(automation_id: str) -> str:
+    return f"slack_post:{automation_id}"
+
+
+def matching_send_grant(automation_id: str, channel: str, *, connection_id: str):
+    """The grant that lets this chain post to this channel unattended, or ``None``."""
+    return matching_grant(send_grant_action_id(automation_id),
+                          {"channel": str(channel)}, connection_id=connection_id)
+
+
+def mint_send_grant(automation_id: str, channel: str, *, connection_id: str,
+                    created_by: str) -> StandingGrant:
+    """Record that this automation may post to this channel unattended from now on —
+    owned by the automation, so a delete of the chain revokes it via the owner cascade."""
+    return mint_grant(StandingGrant(
+        connection_id=connection_id,
+        action_id=send_grant_action_id(automation_id),
+        target_arg="channel", target_value=str(channel),
+        owner_kind="automation", owner_id=automation_id, created_by=created_by))

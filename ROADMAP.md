@@ -3004,6 +3004,22 @@ nothing. `draft_automation` may also name an existing agent, so a chain can run 
 > `ua_…` and saved the chain running as it, muted until its 09:00 first run; a second accept 409'd. The LIVE first
 > run (receipt + spend on the new agent) needs a deployment on this code and a real tick — still owed.
 
+**SP-7b · The hold widened to outbound sends — ✅ BUILT 2026-09-16** (branch `claude/drafted-first-send-holds`; the
+user: *"this should be available for operations in the UI.. you should not be doing this"*). SP-7's law — a write a
+model drafts into a chain waits for a person — covered warehouse writes ONLY, and a live 9am tick proved the gap: a
+drafted anomaly chain's Slack post would have fired unattended, and my own claim that it would park was FALSE. Now a
+drafted `slack_post` carries `require_approval` too, and the Slack dispatcher returns `approval_required` on its first
+run unless a standing send-grant covers this chain and channel. The run parks on the same DS-8 machinery every declared
+write uses; the parked step stages a new `outbound_send` inbox kind whose accept performs the post through the same
+`post_as_bot` (so a resumed chain reads the real thread `ts` downstream), and whose "always allow" (the card's own
+checkbox, minted only by a HUMAN's accept — never by the model, never by me) records a channel-bound standing send-grant
+reusing `actions/grants.py`, owned by the automation and revoked with it. The card renders the destination and message
+with the always-allow control in Attention, the inbox and chat — the affordance where the user said it belongs. `notify`
+is deliberately excluded: it fires a webhook a person already stood up. **Receipt:** a drafted post parks, accept sends
+once, always-allow lets the next run post unattended, and a hand-built post is untouched — all through the real engine
+and inbox, `tests/unit/test_drafted_send_holds.py`. **Still owed:** the same hold for other outbound transports, and
+the live tick on a deployment carrying this.
+
 **SP-9 · The approval card — ✅ BUILT 2026-09-15** (same branch as SP-8). One card per proposal kind, the same in
 Attention, the Automations inbox and chat: an agent's scope, schema and instructions; a chain drawn read-only on the
 canvas with its first run, destination, runs-as, dry run and cost per run. Accept · Open in editor · Reject, with open

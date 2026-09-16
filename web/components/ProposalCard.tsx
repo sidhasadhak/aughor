@@ -55,6 +55,7 @@ const KIND_CHIP: Record<string, { hue: ChipHue; label: string }> = {
   automation_edit: { hue: "info", label: "edit" },
   monitor_bundle: { hue: "info", label: "monitor + chain" },
   brief_draft: { hue: "info", label: "brief delivery" },
+  outbound_send: { hue: "caution", label: "Slack post" },
 };
 
 const STATUS_TONE: Record<string, string> = {
@@ -342,6 +343,15 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
           </span>
         </div>
       )}
+      {p.kind === "outbound_send" && (
+        <div className="flex flex-col gap-1">
+          <Row label="Posts to">{String(p.params?.channel ?? "")}</Row>
+          <Row label="Message">{String(p.params?.message ?? "")}</Row>
+          <span className="aug-text-xs" style={{ color: "var(--t3)" }}>
+            A model drafted this send — it waits for you on every run until you allow it.
+          </span>
+        </div>
+      )}
       {(p.kind === "declared_action" || p.kind === "integration") && (
         <div className="flex flex-col gap-1">
           <Row label="Action" mono>{p.action_id}</Row>
@@ -392,6 +402,12 @@ export function ProposalCard({ proposal, actor, onResolved, onOpenInEditor, inbo
             <label className="aug-text-xs flex items-center gap-1.5 cursor-pointer" style={{ color: "var(--t3)" }}>
               <input type="checkbox" checked={mint} onChange={e => setMint(e.target.checked)} />
               also allow this target unattended
+            </label>
+          )}
+          {p.kind === "outbound_send" && (
+            <label className="aug-text-xs flex items-center gap-1.5 cursor-pointer" style={{ color: "var(--t3)" }}>
+              <input type="checkbox" checked={mint} onChange={e => setMint(e.target.checked)} />
+              always allow this chain to post here
             </label>
           )}
           {p.kind === "integration" && (

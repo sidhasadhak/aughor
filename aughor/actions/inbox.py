@@ -175,10 +175,15 @@ class StagedProposal(BaseModel):
     #: accept creates the monitor, injects its id into the chain's metric trigger and
     #: saves, all or nothing, the agent bundle's own law) and ``brief_draft`` (a
     #: briefing subscription; accept saves it).
+    #: ``outbound_send`` (SP-7 widened, 2026-09-16) is a drafted Slack post parked for a
+    #: person on its first run: params carry the resolved send, accept performs it through
+    #: the same `post_as_bot` the engine uses, and `mint_grant` records a standing
+    #: send-grant so later runs of that chain to that channel go unattended.
     kind: Literal["declared_action", "integration",
                   "agent_draft", "automation_draft", "agent_bundle",
                   "automation_state", "agent_grant",
-                  "automation_edit", "monitor_bundle", "brief_draft"] = "declared_action"
+                  "automation_edit", "monitor_bundle", "brief_draft",
+                  "outbound_send"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -547,6 +552,8 @@ def gov_action_of(p: StagedProposal) -> str:
     if p.kind in ("agent_draft", "automation_draft", "agent_bundle",
                   "automation_edit", "monitor_bundle", "brief_draft"):
         return f"spotlight.{p.kind}"
+    if p.kind == "outbound_send":
+        return "automations.outbound_send"
     return f"kinetic.{p.action_id}"
 
 
@@ -674,6 +681,8 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     # accept EXECUTES differs, which is the smallest seam the two kinds can meet at.
     if p.kind == "integration":
         return _accept_integration(p, actor=actor, mint_grant=mint_grant), ""
+    if p.kind == "outbound_send":
+        return _accept_outbound_send(p, actor=actor, mint_grant=mint_grant)
     if p.kind == "agent_draft":
         return _accept_agent_draft(p, actor=actor), ""
     if p.kind == "automation_draft":
@@ -766,6 +775,55 @@ def _accept_integration(p: StagedProposal, *, actor: str, mint_grant: bool = Fal
     return KineticResult(status, result.ok, p.action_id,
                          message=(result.message or ("" if result.ok else status)) + note,
                          outcome=dict(result.data or {}))
+
+
+def _accept_outbound_send(p: StagedProposal, *, actor: str, mint_grant: bool = False):
+    """Perform a drafted Slack post a person just approved — the send happens HERE, so a
+    resumed run replays the parked step from this proposal's recorded outcome (ts/channel),
+    and a downstream ``{"$from": "step.ts"}`` binds to a real thread exactly as a live send.
+
+    ``mint_grant`` is the card's "always allow": it records a standing send-grant owned by
+    the automation, so the NEXT run of this chain to this channel posts unattended. Returns
+    the ``(result, grant_id_or_empty)`` pair like every accept.
+    """
+    from aughor.actions import grants
+    from aughor.slackbots.post import post_as_bot
+    from aughor.slackbots.store import get_bot_decrypted
+
+    _Result = _executor_result()
+
+    d = dict(p.params or {})
+    bot_id, channel = str(d.get("bot_id") or ""), str(d.get("channel") or "")
+    bot = get_bot_decrypted(bot_id)
+    if bot is None or not bot.enabled:
+        why = f"Slack bot {bot_id!r} is not available"
+        _record_outcome(p.id, "failed", why, {})
+        return _Result("dispatch_error", False, p.action_id, message=why), ""
+
+    ok, info = post_as_bot(bot.bot_token, channel,
+                           str(d.get("message") or ""),
+                           thread_ts=str(d.get("thread_ts") or "") or None)
+    if ok:
+        outcome = {"ts": info.get("ts", ""), "channel": info.get("channel", "") or channel,
+                   "bot_id": bot_id}
+        _record_outcome(p.id, "executed", f"posted as {bot.name} (ts {info.get('ts', '')})", outcome)
+        grant_id = ""
+        if mint_grant:
+            g = grants.mint_send_grant(str(d.get("automation_id") or ""), channel,
+                                       connection_id=p.connection_id, created_by=actor)
+            grant_id = g.id if g else ""
+        return _Result("executed", True, p.action_id,
+                             message=f"posted to {channel} as {bot.name}"
+                                     + (" · this chain may now post there unattended" if grant_id else ""),
+                             outcome=outcome), grant_id
+    if info.get("uncertain"):
+        # It may have arrived — mapping to failed would license the retry that duplicates it.
+        _record_outcome(p.id, "uncertain", "post timed out", {})
+        return _Result("uncertain", False, p.action_id,
+                             message="post timed out — it may have arrived"), ""
+    why = f"Slack refused the post: {info.get('error', 'unknown')}"
+    _record_outcome(p.id, "failed", why, {})
+    return _Result("failed", False, p.action_id, message=why), ""
 
 
 def _executor_result():
