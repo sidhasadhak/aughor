@@ -4,6 +4,72 @@
  */
 
 export interface paths {
+    "/access/explain": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Explain Access
+         * @description May ``principal`` act at ``level`` on ``securable`` — and which grant says so.
+         *     ``parents`` is the meaning chain upward (comma-separated securables); ``domain``
+         *     is the object's grant-bearing tag value, if tagged.
+         */
+        get: operations["explain_access_access_explain_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/grants": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Level Grants
+         * @description The org's LEVEL grants (the ladder's rows; USAGE stays the catalog plane's).
+         */
+        get: operations["get_level_grants_access_grants_get"];
+        put?: never;
+        /** Create Level Grant */
+        post: operations["create_level_grant_access_grants_post"];
+        /** Delete Level Grant */
+        delete: operations["delete_level_grant_access_grants_delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/access/route": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Route Departure
+         * @description Where a departure about ``securable`` lands: its owner (when the owner field
+         *     names a principal) and every Subscribe-or-higher holder, each group through its
+         *     channel — resolved and explained BEFORE anything sends.
+         */
+        get: operations["route_departure_access_route_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/actions/logs": {
         parameters: {
             query?: never;
@@ -5020,6 +5086,75 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Groups
+         * @description The built-in groups (platform-shipped, a level per securable kind) + the org's function
+         *     groups. The ladder rides along as reference data so a client never hardcodes it.
+         */
+        get: operations["get_groups_groups_get"];
+        put?: never;
+        /**
+         * Create Group
+         * @description Create or update a function group (idempotent on its id).
+         */
+        post: operations["create_group_groups_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{group_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove Group
+         * @description Delete a function group, its memberships and its level grants — a grant
+         *     naming a gone group routes nobody, but leaving rows behind is how a re-created
+         *     group would silently inherit its predecessor's reach.
+         */
+        delete: operations["remove_group_groups__group_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/groups/{group_id}/members": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Members */
+        get: operations["get_members_groups__group_id__members_get"];
+        put?: never;
+        /**
+         * Create Member
+         * @description Add a person or an agent (a member is a principal string, one rule for both).
+         */
+        post: operations["create_member_groups__group_id__members_post"];
+        /** Delete Member */
+        delete: operations["delete_member_groups__group_id__members_delete"];
         options?: never;
         head?: never;
         patch?: never;
@@ -12419,6 +12554,26 @@ export interface components {
              */
             text: string;
         };
+        /** GroupRequest */
+        GroupRequest: {
+            /**
+             * Channel Trigger Id
+             * @default
+             */
+            channel_trigger_id: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /**
+             * Name
+             * @default
+             */
+            name: string;
+        };
         /**
          * GuardClause
          * @description W1 — one comparison in a step's ``when`` guard.
@@ -12644,6 +12799,11 @@ export interface components {
             path: string;
             /** Where */
             where?: components["schemas"]["ObjectFilter"][];
+        };
+        /** MemberRequest */
+        MemberRequest: {
+            /** Principal */
+            principal: string;
         };
         /** MetricRequest */
         MetricRequest: {
@@ -15076,6 +15236,15 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** GrantRequest */
+        aughor__routers__groups__GrantRequest: {
+            /** Level */
+            level: string;
+            /** Principal */
+            principal: string;
+            /** Securable */
+            securable: string;
+        };
         /** ProposeRequest */
         aughor__routers__kinetic__ProposeRequest: {
             /**
@@ -15118,6 +15287,173 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    explain_access_access_explain_get: {
+        parameters: {
+            query: {
+                principal: string;
+                level: string;
+                securable: string;
+                parents?: string | null;
+                domain?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_level_grants_access_grants_get: {
+        parameters: {
+            query?: {
+                securable?: string | null;
+                principal?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_level_grant_access_grants_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["aughor__routers__groups__GrantRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_level_grant_access_grants_delete: {
+        parameters: {
+            query: {
+                principal: string;
+                securable: string;
+                level: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    route_departure_access_route_get: {
+        parameters: {
+            query: {
+                securable: string;
+                owner?: string | null;
+                parents?: string | null;
+                domain?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_action_logs_actions_logs_get: {
         parameters: {
             query?: {
@@ -23549,6 +23885,189 @@ export interface operations {
             };
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_groups_groups_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
+    create_group_groups_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroupRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    remove_group_groups__group_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_members_groups__group_id__members_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_member_groups__group_id__members_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                group_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemberRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_member_groups__group_id__members_delete: {
+        parameters: {
+            query: {
+                principal: string;
+            };
+            header?: never;
+            path: {
+                group_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

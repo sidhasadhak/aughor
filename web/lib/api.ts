@@ -5927,6 +5927,103 @@ export async function revokeRole(userId: string, role: string): Promise<boolean>
   return !!data.removed;
 }
 
+// ── Groups & level grants (HB-1, the routing half) ──────────────────────────
+
+export interface AccessGroup {
+  id: string;
+  name: string;
+  kind: "builtin" | "function";
+  description: string;
+  channel_trigger_id: string;
+  levels?: Record<string, string>; // built-in groups: default level per securable kind
+}
+
+export interface GroupsCatalogue {
+  ladder: string[];
+  builtin_groups: AccessGroup[];
+  groups: AccessGroup[];
+}
+
+export interface LevelGrant {
+  principal: string;   // user:… | group:… | agent:…
+  securable: string;   // metric:… | promise:… | domain:… | …
+  level: string;       // view | subscribe | edit | manage | own
+  created_at: string;
+}
+
+/** The ladder, the built-in groups and the org's function groups. */
+export async function getGroups(): Promise<GroupsCatalogue | null> {
+  const res = await fetch(`${getApiBase()}/groups`);
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function saveGroup(g: { id: string; name?: string; description?: string; channel_trigger_id?: string }): Promise<AccessGroup | null> {
+  const res = await fetch(`${getApiBase()}/groups`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(g),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function deleteGroup(groupId: string): Promise<boolean> {
+  const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}`, { method: "DELETE" });
+  if (!res.ok) return false;
+  return !!(await res.json()).removed;
+}
+
+/** A group's members. Null when the caller can't manage roles (403 — the list names people). */
+export async function getGroupMembers(groupId: string): Promise<string[] | null> {
+  const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}/members`);
+  if (res.status === 403) return null;
+  if (!res.ok) return [];
+  return (await res.json()).members ?? [];
+}
+
+export async function addGroupMember(groupId: string, principal: string): Promise<string[] | null> {
+  const res = await fetch(`${getApiBase()}/groups/${encodeURIComponent(groupId)}/members`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ principal }),
+  });
+  if (!res.ok) return null;
+  return (await res.json()).members ?? [];
+}
+
+export async function removeGroupMember(groupId: string, principal: string): Promise<boolean> {
+  const res = await fetch(
+    `${getApiBase()}/groups/${encodeURIComponent(groupId)}/members?principal=${encodeURIComponent(principal)}`,
+    { method: "DELETE" });
+  if (!res.ok) return false;
+  return !!(await res.json()).removed;
+}
+
+/** The org's level grants. Null when the caller can't manage roles (403). */
+export async function getLevelGrants(filter?: { securable?: string; principal?: string }): Promise<LevelGrant[] | null> {
+  const params = new URLSearchParams();
+  if (filter?.securable) params.set("securable", filter.securable);
+  if (filter?.principal) params.set("principal", filter.principal);
+  const qs = params.toString();
+  const res = await fetch(`${getApiBase()}/access/grants${qs ? `?${qs}` : ""}`);
+  if (res.status === 403) return null;
+  if (!res.ok) return [];
+  return res.json();
+}
+
+export async function addLevelGrant(principal: string, securable: string, level: string): Promise<LevelGrant | null> {
+  const res = await fetch(`${getApiBase()}/access/grants`, {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ principal, securable, level }),
+  });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+export async function removeLevelGrant(principal: string, securable: string, level: string): Promise<boolean> {
+  const q = `principal=${encodeURIComponent(principal)}&securable=${encodeURIComponent(securable)}&level=${encodeURIComponent(level)}`;
+  const res = await fetch(`${getApiBase()}/access/grants?${q}`, { method: "DELETE" });
+  if (!res.ok) return false;
+  return !!(await res.json()).removed;
+}
+
 // ── Specialist packs (Domain Expertise Packs) ───────────────────────────────────
 
 export interface PackSummary {
