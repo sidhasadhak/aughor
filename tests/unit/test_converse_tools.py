@@ -390,9 +390,12 @@ def test_clarifying_in_prose_is_granted(fake_conn):
     assert "clarifying question" in ct.converse_system_prompt("c1")
 
 
-def test_converse_is_off_by_default(monkeypatch):
-    """`ask.converse` is an EXPERIMENT. Off means /ask behaves exactly as today."""
+def test_converse_is_on_by_default(monkeypatch):
+    """SP-14 (decision 22(d)): a fresh install authors by sentence out of the box —
+    and an operator's explicit off still means exactly off."""
     monkeypatch.delenv("AUGHOR_ASK_CONVERSE", raising=False)
+    assert ct.converse_available() is True
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
     assert ct.converse_available() is False
 
 
@@ -402,7 +405,7 @@ def test_the_flag_is_read_at_call_time_not_import_time(monkeypatch):
     LLM budget."""
     monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "1")
     assert ct.converse_available() is True
-    monkeypatch.delenv("AUGHOR_ASK_CONVERSE")
+    monkeypatch.setenv("AUGHOR_ASK_CONVERSE", "0")
     assert ct.converse_available() is False
 
 

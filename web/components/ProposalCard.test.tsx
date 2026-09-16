@@ -123,3 +123,62 @@ describe("utcWords", () => {
     expect(utcWords("not a date")).toBe("not a date");
   });
 });
+
+describe("SP-12 kinds", () => {
+  it("an edit renders as a before-and-after diff, never raw params", () => {
+    const { container } = render(
+      <ProposalCard proposal={proposal({
+        kind: "automation_edit", action_id: "automation-edit:The Monday brief",
+        params: { automation_id: "a1", changes: { cron: "0 8 * * 1" } },
+        detail: { automation_name: "The Monday brief",
+          diff: [{ field: "cron", before: "0 9 * * 1", after: "0 8 * * 1" }] },
+      })} actor="tester" />);
+    expect(screen.getByText("The Monday brief")).toBeInTheDocument();
+    expect(screen.getByText("0 9 * * 1")).toBeInTheDocument();
+    expect(screen.getByText("0 8 * * 1")).toBeInTheDocument();
+    expect(container.textContent).not.toContain('{"automation_id"');
+  });
+
+  it("a monitor bundle says what it watches and reads as one decision", () => {
+    render(
+      <ProposalCard proposal={proposal({
+        kind: "monitor_bundle", action_id: "monitor:refund watch+automation:refund watch",
+        params: { monitor: { name: "refund watch" }, automation: chainParams("#ops") },
+        detail: { watches: "refund_rate", sigma: 3, check_cadence: "hourly",
+          to_fill: [], open_choices: [] },
+      })} actor="tester" />);
+    expect(screen.getByText("refund watch")).toBeInTheDocument();
+    expect(screen.getByText(/refund_rate · breach at 3σ/)).toBeInTheDocument();
+    expect(screen.getByText(/all or nothing/)).toBeInTheDocument();
+  });
+
+  it("a brief draft says when and through what it delivers", () => {
+    render(
+      <ProposalCard proposal={proposal({
+        kind: "brief_draft", action_id: "brief:Morning brief",
+        params: { name: "Morning brief", period: "day", trigger_id: "trig-slack" },
+        detail: { send_words: "every day at 08:00 UTC", delivers_via: "trig-slack (Ops Slack)" },
+      })} actor="tester" />);
+    expect(screen.getByText("Morning brief")).toBeInTheDocument();
+    expect(screen.getByText("every day at 08:00 UTC")).toBeInTheDocument();
+    expect(screen.getByText(/Ops Slack/)).toBeInTheDocument();
+  });
+});
+
+describe("outbound_send (SP-7 widened)", () => {
+  it("shows the drafted post's destination and offers always-allow", async () => {
+    const accept = vi.fn().mockResolvedValue({ status: "executed", outcome: {}, minted_grant: "g1" });
+    (await import("@/lib/api")).acceptProposal = accept as never;
+    render(
+      <ProposalCard proposal={proposal({
+        kind: "outbound_send", action_id: "slack_post:auto-1",
+        params: { bot_id: "sb_1", channel: "#ops", message: "anomalies today", automation_id: "auto-1" },
+      })} actor="tester" />);
+    expect(screen.getByText("#ops")).toBeInTheDocument();
+    expect(screen.getByText("anomalies today")).toBeInTheDocument();
+    const box = screen.getByRole("checkbox");
+    await userEvent.click(box);
+    await userEvent.click(screen.getByRole("button", { name: "Accept" }));
+    expect(accept).toHaveBeenCalledWith("prop-1", "tester", true, {});
+  });
+});

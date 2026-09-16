@@ -451,8 +451,10 @@ export function ForEachRows({ e, onChange }: {
   );
 }
 
-export function ConditionRow({ c, onChange, onRemove }: {
+export function ConditionRow({ c, onChange, onRemove, timezone }: {
   c: AutoCondition; onChange: (c: AutoCondition) => void; onRemove?: () => void;
+  /** SP-13 — the automation's own clock, for honest labels ("" = UTC). */
+  timezone?: string;
 }) {
   const set = (patch: Record<string, unknown>) => onChange({ ...c, config: { ...c.config, ...patch } });
   return (
@@ -470,7 +472,8 @@ export function ConditionRow({ c, onChange, onRemove }: {
       </div>
       <div>
         {c.kind === "schedule" && (
-          <ScheduleEditor cron={String(c.config.cron ?? "")} onCron={cron => set({ cron })} />
+          <ScheduleEditor cron={String(c.config.cron ?? "")} onCron={cron => set({ cron })}
+            timezone={timezone} />
         )}
         {c.kind === "metric" && (
           <input style={inputStyle} value={String(c.config.monitor_id ?? "")} onChange={e => set({ monitor_id: e.target.value })} placeholder="monitor id" />

@@ -37,6 +37,27 @@ logger = logging.getLogger(__name__)
 _MAX_REASON = 400
 
 
+def _supersede_prior(new_p, supersedes: str) -> str:
+    """SP-11 — a corrected re-draft REPLACES the pending draft it follows, so the
+    inbox holds one pending proposal per ask. Guarded, never trusted: only a PENDING
+    proposal on the SAME connection is resolved, so a model cannot retire another
+    conversation's work by naming its id. Returns the sentence for the summary
+    ("" when nothing was superseded — the new draft stands either way)."""
+    from aughor.actions.inbox import get_proposal, supersede_proposal
+
+    old_id = str(supersedes or "").strip()
+    if not old_id or old_id == new_p.id:
+        return ""
+    old = get_proposal(old_id)
+    if old is None or not old.pending or old.connection_id != new_p.connection_id:
+        return (f" NOTE: {old_id} was not superseded — it is not a pending draft on "
+                f"this connection; both records stand.")
+    if supersede_proposal(old_id, actor="spotlight:redraft",
+                          note=f"superseded by {new_p.id}"):
+        return f" It replaces {old_id}, which is now resolved as superseded."
+    return ""
+
+
 def _announce(emit, p) -> None:
     """SP-9 — a staged proposal announces itself on the turn's frame channel, so the
     chat renders the RECORD (fetched by id) as a card rather than re-parsing prose.
@@ -107,20 +128,22 @@ def draft_agent(connection_id: str, args: dict, *, emit=None) -> dict:
     schedule = str(args.get("schedule") or "").strip()
     if schedule:
         return _stage_agent_bundle(connection_id, agent_params, schedule,
-                                   reasoning=reasoning, disclosure=disclosure, emit=emit)
+                                   reasoning=reasoning, disclosure=disclosure,
+                                   supersedes=str(args.get("supersedes") or ""), emit=emit)
 
     p = stage_proposal(StagedProposal(
         kind="agent_draft", org_id=current_org_id() or "",
         connection_id=connection_id, action_id=f"agent:{name}",
         params=agent_params,
         reasoning=reasoning, proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
     _announce(emit, p)
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
         "documents_attached": len(doc_ids),
         "summary": (f"Agent draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) — "
                     f"nothing exists yet; a human accepts it in the inbox and only "
-                    f"then is the agent created.{disclosure}"),
+                    f"then is the agent created.{disclosure}{replaced}"),
     }
 
 
@@ -139,7 +162,8 @@ def _open_choice_fields(draft: dict) -> list[dict]:
 
 
 def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *,
-                        reasoning: str, disclosure: str, emit=None) -> dict:
+                        reasoning: str, disclosure: str, supersedes: str = "",
+                        emit=None) -> dict:
     """SP-8 — ONE proposal holding both records: the agent, and the chain that runs as
     it. The chain is drafted by DS-15's own proposer from the schedule clause, carries
     SP-7's open choices, and names NO agent id — the agent does not exist yet, and the
@@ -172,13 +196,16 @@ def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *
         params={"agent": dict(agent_params), "automation": dict(proposal.draft)},
         detail={"to_fill": to_fill, "open_choices": _open_choice_fields(proposal.draft),
                 "first_run": first_run,
+                "timezone": str(proposal.draft.get("timezone") or ""),
                 "dry_run_ok": bool(proposal.dry_run), "runs_as": name},
         reasoning=(reasoning + open_note), proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, supersedes)
     _announce(emit, p)
     open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
                  + " — the approver fills them on the card, or ask and draft again."
                  if to_fill else "")
-    when_line = (f" Accepted, its first run would be {_utc_words(first_run)}."
+    when_line = (f" Accepted, its first run would be "
+                 f"{_when_words(first_run, str(proposal.draft.get('timezone') or ''))}."
                  if first_run else "")
     return {
         "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
@@ -188,7 +215,7 @@ def _stage_agent_bundle(connection_id: str, agent_params: dict, schedule: str, *
                     f"'{clip(name, NAME_CLIP)}' AND its schedule "
                     f"'{clip(chain_name, NAME_CLIP)}', accepted or refused together — "
                     f"accept creates the agent and saves the chain running as it, all "
-                    f"or nothing.{disclosure}{open_line}{when_line}"),
+                    f"or nothing.{disclosure}{open_line}{when_line}{replaced}"),
     }
 
 
@@ -237,16 +264,19 @@ def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
         params=params,
         detail={"to_fill": to_fill, "open_choices": _open_choice_fields(proposal.draft),
                 "first_run": first_run,
+                "timezone": str(proposal.draft.get("timezone") or ""),
                 "dry_run_ok": bool(proposal.dry_run),
                 "runs_as": agent.name if agent is not None else ""},
         reasoning=(str(args.get("reasoning") or outcome)[:_MAX_REASON] + open_note),
         proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
     _announce(emit, p)
     open_line = (" It cannot be accepted until these are chosen: " + "; ".join(to_fill)
                  + " — the approver fills them on the card, or ask and draft again."
                  if to_fill else "")
     when_line = (f" It waits for its schedule: accepted now, its first run would be "
-                 f"{_utc_words(first_run)}." if first_run else "")
+                 f"{_when_words(first_run, str(proposal.draft.get('timezone') or ''))}."
+                 if first_run else "")
     as_line = (f" It runs as agent '{clip(agent.name, NAME_CLIP)}', its runs and spend "
                f"attributed there." if agent is not None else "")
     return {
@@ -255,7 +285,7 @@ def draft_automation(connection_id: str, args: dict, *, emit=None) -> dict:
         "to_fill": to_fill, "first_run": first_run,
         "summary": (f"Automation draft '{clip(name, NAME_CLIP)}' staged for approval (proposal {p.id}) "
                     f"with its dry-run attached — it joins the one scheduler only "
-                    f"after a human accepts it in the inbox.{as_line}{open_line}{when_line}"),
+                    f"after a human accepts it in the inbox.{as_line}{open_line}{when_line}{replaced}"),
     }
 
 
@@ -267,6 +297,23 @@ def _utc_words(iso: str) -> str:
     except ValueError:
         return iso
     return f"{dt:%a} {dt.day} {dt:%b %Y}, {dt:%H:%M} UTC"
+
+
+def _when_words(iso: str, tz: str = "") -> str:
+    """SP-13 — the draft speaks LOCAL time and UTC stays visible for operators:
+    ``Wed 16 Sep 2026, 09:00 Europe/Berlin (07:00 UTC)``. With no zone (or an
+    unreadable one), the UTC words alone — exactly what every pre-SP-13 draft said."""
+    if not tz:
+        return _utc_words(iso)
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    try:
+        dt = datetime.fromisoformat(iso.replace("Z", "+00:00"))
+        local = dt.astimezone(ZoneInfo(tz))
+    except Exception:
+        return _utc_words(iso)
+    return (f"{local:%a} {local.day} {local:%b %Y}, {local:%H:%M} {tz} "
+            f"({dt:%H:%M} UTC)")
 
 
 def _resolve_automation(connection_id: str, ref: str):
@@ -284,13 +331,20 @@ def _resolve_automation(connection_id: str, ref: str):
             return None, (f"automation '{clip(a.name, NAME_CLIP)}' belongs to connection "
                           f"{a.conn_id!r}, not this conversation's — switch there to act on it")
         return a, ""
-    matches = [x for x in list_automations(conn_id=connection_id) if x.name == ref]
+    rows = list_automations(conn_id=connection_id)
+    matches = [x for x in rows if x.name == ref]
     if len(matches) == 1:
         return matches[0], ""
     if len(matches) > 1:
         ids = ", ".join(x.id for x in matches)
         return None, f"{len(matches)} automations are named {clip(ref, NAME_CLIP)!r} — use an id: {ids}"
-    return None, f"no automation named {clip(ref, NAME_CLIP)!r} on this connection"
+    # SP-M's first measured drop: "move the Monday brief to 8am" failed against a chain
+    # named "The Monday brief", and a bare not-found gave the model nothing to correct
+    # with — it wandered the platform reads until the turn's budget died. A refusal
+    # NAMES THE KNOWN ONES, the movement's own convention everywhere else.
+    known = ", ".join(sorted(clip(x.name, NAME_CLIP) for x in rows)[:12]) or "(none)"
+    return None, (f"no automation named {clip(ref, NAME_CLIP)!r} on this connection — "
+                  f"the automations here are: {known}. Use the exact name or an id.")
 
 
 def _resolve_agent(connection_id: str, ref: str):
@@ -313,8 +367,10 @@ def _resolve_agent(connection_id: str, ref: str):
                           f"use an id: {ids}")
         a = matches[0] if matches else None
     if a is None:
-        return None, (f"no agent {clip(ref, NAME_CLIP)!r} exists — to create one WITH "
-                      f"this schedule, use draft_agent with its schedule field")
+        known = ", ".join(sorted(clip(x.name, NAME_CLIP) for x in list_agents())[:12]) or "(none)"
+        return None, (f"no agent {clip(ref, NAME_CLIP)!r} exists — the agents here are: "
+                      f"{known}. To create one WITH this schedule, use draft_agent "
+                      f"with its schedule field")
     if (a.connection_id or "") not in ("", connection_id):
         return None, (f"agent '{clip(a.name, NAME_CLIP)}' belongs to connection "
                       f"{a.connection_id!r}, not this conversation's — switch there "
@@ -418,6 +474,229 @@ def propose_agent_grant(connection_id: str, args: dict, *, emit=None) -> dict:
     }
 
 
+def edit_automation(connection_id: str, args: dict, *, emit=None) -> dict:
+    """SP-12 — change what exists by sentence, staged as a BEFORE→AFTER diff.
+
+    A closed field set (name · description · cron · enabled) — structure stays the
+    canvas's, where a person sees what they are changing. ``delete: true`` stages the
+    removal instead (the same custody as a pause: proposed here, applied only on a
+    human's accept). The diff is computed against the LIVE record at stage time and
+    the door re-validates at accept, so a staged edit can never save a chain the
+    editor would refuse."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.org.context import current_org_id
+
+    a, refusal = _resolve_automation(connection_id, str(args.get("automation") or ""))
+    if a is None:
+        return {"staged": False, "summary": f"Nothing staged: {refusal}"}
+    reasoning = str(args.get("reasoning") or "edited from conversation")[:_MAX_REASON]
+
+    if bool(args.get("delete")):
+        if args.get("changes"):
+            return {"staged": False,
+                    "summary": "Nothing staged: delete OR edit — one proposal says one thing."}
+        p = stage_proposal(StagedProposal(
+            kind="automation_state", org_id=current_org_id() or "",
+            connection_id=connection_id, action_id=f"automation-delete:{clip(a.name, NAME_CLIP)}",
+            params={"automation_id": a.id, "action": "delete"},
+            reasoning=reasoning, proposer="spotlight", source="agent"))
+        _announce(emit, p)
+        return {"staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+                "summary": (f"Proposed: DELETE automation '{clip(a.name, NAME_CLIP)}' (proposal "
+                            f"{p.id}). Nothing is removed until a human accepts — and "
+                            f"a delete cannot be undone, so say that plainly.")}
+
+    from aughor.automations.store import EDITABLE_FIELDS
+    changes_in = dict(args.get("changes") or {})
+    unknown = sorted(set(changes_in) - set(EDITABLE_FIELDS))
+    if unknown:
+        return {"staged": False,
+                "summary": (f"Nothing staged: field(s) {', '.join(unknown)} are not "
+                            f"editable by sentence — editable: {', '.join(EDITABLE_FIELDS)}; "
+                            f"the canvas edits the rest.")}
+    current: dict = {"name": a.name, "description": a.description,
+                     "enabled": a.enabled, "timezone": a.timezone}
+    schedules = [c for c in a.conditions if c.kind == "schedule"]
+    if len(schedules) == 1:
+        current["cron"] = str(schedules[0].config.get("cron") or "")
+    elif "cron" in changes_in:
+        return {"staged": False,
+                "summary": (f"Nothing staged: this chain has {len(schedules)} schedule "
+                            f"triggers — a cron edit needs exactly one; use the canvas.")}
+    diff = []
+    changes: dict = {}
+    for field, after in changes_in.items():
+        before = current.get(field)
+        after = bool(after) if field == "enabled" else str(after).strip()
+        if after == before:
+            continue
+        changes[field] = after
+        diff.append({"field": field, "before": before, "after": after})
+    if not diff:
+        return {"staged": False,
+                "summary": "Nothing staged: every named value already stands — no diff, no proposal."}
+
+    p = stage_proposal(StagedProposal(
+        kind="automation_edit", org_id=current_org_id() or "",
+        connection_id=connection_id, action_id=f"automation-edit:{clip(a.name, NAME_CLIP)}",
+        params={"automation_id": a.id, "changes": changes},
+        detail={"diff": diff, "automation_name": a.name},
+        reasoning=reasoning, proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
+    _announce(emit, p)
+    lines = "; ".join(f"{d['field']}: {d['before']!r} → {d['after']!r}" for d in diff)
+    return {"staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+            "diff": diff,
+            "summary": (f"Edit staged for '{clip(a.name, NAME_CLIP)}' (proposal {p.id}): {lines}. "
+                        f"Nothing changes until a human accepts it in the inbox.{replaced}")}
+
+
+def draft_monitor(connection_id: str, args: dict, *, emit=None) -> dict:
+    """SP-12 — an alert as a MONITOR plus the chain its breach fires: ONE proposal.
+
+    The preferred shape for "alert me when X moves": the check itself is SQL on a
+    clock and spends no model calls; the deep analysis runs only when something
+    actually moved — where a scheduled chain would spend the analysis every tick,
+    quiet days included. The monitor watches a REGISTERED metric (or explicit SQL);
+    an unknown metric is refused with known ones named, never guessed. SP-7's law
+    holds for the destination: a channel or sender the request did not name stays an
+    open choice the approver fills on the card."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.automations.models import Automation, fill_required_holes
+    from aughor.org.context import current_org_id
+    from aughor.semantic.metrics import get_metric, list_metrics
+
+    metric = str(args.get("metric") or "").strip()
+    sql = str(args.get("sql") or "").strip()
+    if not metric and not sql:
+        return {"staged": False,
+                "summary": "Nothing staged: name a registered metric to watch, or give "
+                           "the exact scalar SQL."}
+    if metric and get_metric(metric) is None:
+        known = sorted({m.name for m in list_metrics()})[:12]
+        return {"staged": False,
+                "summary": (f"Nothing staged: no registered metric {clip(metric, NAME_CLIP)!r}. "
+                            f"Known metrics: {', '.join(known) or '(none registered)'} — "
+                            f"or give explicit SQL.")}
+    try:
+        sigma = float(args.get("sigma") or 3.0)
+    except (TypeError, ValueError):
+        return {"staged": False, "summary": "Nothing staged: sigma must be a number."}
+    name = str(args.get("name") or "").strip() or f"{metric or 'custom'} anomaly watch"
+    question = (str(args.get("question") or "").strip()
+                or f"What moved {metric or 'this metric'}, and where?")
+
+    monitor = {"conn_id": connection_id, "name": name,
+               **({"metric_name": metric} if metric else {"custom_sql": sql}),
+               "alert_on": "anomaly", "sigma_threshold": sigma,
+               "check_cron": "0 * * * *"}
+    chain = {
+        "conn_id": connection_id, "name": name,
+        "description": f"Fired by the '{name}' monitor; runs the deep analysis and posts it.",
+        "conditions": [{"kind": "metric", "config": {"monitor_id": ""}}],
+        "effects": [
+            {"kind": "investigate", "config": {"question": question}},
+            {"kind": "slack_post", "config": {
+                "channel": str(args.get("channel") or "").strip(),
+                "bot_id": str(args.get("bot_id") or "").strip(),
+                "message": {"$from": "step1.answer"}}},
+        ],
+    }
+    # The save's own refusal, asked NOW: holes placeholder-filled for validation only
+    # (SP-7's split — what a person sees keeps the holes), the trigger's monitor id
+    # placeholder-filled the same way because the record it names is the accept's to
+    # create.
+    filled_effects, holes = fill_required_holes(chain["effects"])
+    checked = {**chain, "effects": filled_effects,
+               "conditions": [{"kind": "metric", "config": {"monitor_id": "…"}}]}
+    try:
+        Automation(**checked)
+    except Exception as exc:
+        return {"staged": False,
+                "summary": f"Nothing staged: the alert chain would not validate — {str(exc)[:200]}"}
+
+    open_note = (" OPEN CHOICES: " + "; ".join(holes) + "." if holes else "")
+    p = stage_proposal(StagedProposal(
+        kind="monitor_bundle", org_id=current_org_id() or "",
+        connection_id=connection_id,
+        action_id=f"monitor:{name}+automation:{name}",
+        params={"monitor": monitor, "automation": chain},
+        detail={"to_fill": holes,
+                "open_choices": _open_choice_fields(chain),
+                "watches": metric or "custom SQL", "sigma": sigma,
+                "check_cadence": "hourly"},
+        reasoning=(str(args.get("reasoning") or f"alert when {metric or 'the metric'} "
+                   f"breaks {sigma}σ")[:_MAX_REASON] + open_note),
+        proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
+    _announce(emit, p)
+    open_line = (" It cannot be accepted until these are chosen: " + "; ".join(holes)
+                 + " — the approver fills them on the card." if holes else "")
+    return {
+        "staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+        "to_fill": holes,
+        "summary": (f"ONE proposal staged (proposal {p.id}): monitor '{clip(name, NAME_CLIP)}' "
+                    f"(watches {metric or 'custom SQL'}, {sigma}σ, checked hourly — the "
+                    f"check is SQL only and spends no model calls) AND the chain its "
+                    f"breach fires (deep analysis → Slack), accepted or refused "
+                    f"together. The analysis runs ONLY when something moves — a daily "
+                    f"schedule would spend it every day, quiet or not."
+                    f"{open_line}{replaced}"),
+    }
+
+
+def draft_brief(connection_id: str, args: dict, *, emit=None) -> dict:
+    """SP-12 — a recurring briefing delivery, staged. The delivery TRIGGER must exist
+    (a Notifications trigger); an unnamed or unknown one is refused with the known
+    ones listed — a subscription pointing at nothing would look scheduled and deliver
+    nowhere."""
+    from aughor.actions.inbox import StagedProposal, stage_proposal
+    from aughor.notifications.store import list_triggers
+    from aughor.org.context import current_org_id
+
+    period = str(args.get("period") or "week").strip().lower()
+    if period not in ("day", "week"):
+        return {"staged": False,
+                "summary": "Nothing staged: period is 'day' or 'week'."}
+    triggers = {t.id: t for t in list_triggers()}
+    ref = str(args.get("trigger") or "").strip()
+    trigger = triggers.get(ref) or next(
+        (t for t in triggers.values() if getattr(t, "name", "") == ref), None)
+    if trigger is None:
+        known = ", ".join(f"{t.id} ({getattr(t, 'name', '')})" for t in
+                          list(triggers.values())[:8]) or "(none configured)"
+        return {"staged": False,
+                "summary": (f"Nothing staged: name the delivery trigger — known: "
+                            f"{known}. Create one under Notifications first if none fits.")}
+    try:
+        hour = int(args.get("hour") if args.get("hour") is not None else 9)
+    except (TypeError, ValueError):
+        return {"staged": False, "summary": "Nothing staged: hour must be 0–23 (UTC)."}
+    if not 0 <= hour <= 23:
+        return {"staged": False, "summary": "Nothing staged: hour must be 0–23 (UTC)."}
+    name = str(args.get("name") or "").strip() or f"{period}ly briefing"
+    send_cron = f"0 {hour} * * *" if period == "day" else f"0 {hour} * * 1"
+
+    p = stage_proposal(StagedProposal(
+        kind="brief_draft", org_id=current_org_id() or "",
+        connection_id=connection_id, action_id=f"brief:{name}",
+        params={"name": name, "period": period, "send_cron": send_cron,
+                "trigger_id": trigger.id},
+        detail={"delivers_via": f"{trigger.id} ({getattr(trigger, 'name', '')})",
+                "send_words": (f"every day at {hour:02d}:00 UTC" if period == "day"
+                               else f"every Monday at {hour:02d}:00 UTC")},
+        reasoning=str(args.get("reasoning") or "drafted from conversation")[:_MAX_REASON],
+        proposer="spotlight", source="agent"))
+    replaced = _supersede_prior(p, str(args.get("supersedes") or ""))
+    _announce(emit, p)
+    when = ("every day" if period == "day" else "every Monday") + f" at {hour:02d}:00 UTC"
+    return {"staged": True, "proposal_id": p.id, "expires_at": p.expires_at,
+            "summary": (f"Brief subscription '{clip(name, NAME_CLIP)}' staged (proposal {p.id}) — "
+                        f"{when}, delivered through {clip(getattr(trigger, 'name', '') or trigger.id, NAME_CLIP)}. "
+                        f"It joins the schedule only after a human accepts it in the "
+                        f"inbox.{replaced}")}
+
+
 # ── the roster ───────────────────────────────────────────────────────────────────────
 
 _PREF_PARAMS = {
@@ -446,6 +725,12 @@ _AGENT_PARAMS = {
         "doc_ids": {"type": "array", "items": {"type": "string"},
                     "description": "Document ids to attach. Leaving this empty is "
                                    "RESTRICTIVE, not neutral — say so to the user."},
+        "supersedes": {"type": "string",
+                       "description": "When this draft CORRECTS one you staged earlier "
+                                      "in this conversation, its proposal id — the old "
+                                      "pending draft is resolved as superseded, so the "
+                                      "inbox holds one proposal per ask. Leave empty "
+                                      "for a new ask."},
         "schedule": {"type": "string",
                      "description": "When the SAME ask also says when or where the "
                                     "agent should run ('every morning at 9am to "
@@ -467,6 +752,12 @@ _AUTOMATION_PARAMS = {
                     "description": "The outcome the automation should produce, in the "
                                    "user's own words (e.g. 'brief me every Monday on "
                                    "refund rate')."},
+        "supersedes": {"type": "string",
+                        "description": "When this draft CORRECTS one you staged earlier "
+                                       "in this conversation, its proposal id — the old "
+                                       "pending draft is resolved as superseded, so the "
+                                       "inbox holds one proposal per ask. Leave empty "
+                                       "for a new ask."},
         "run_as_agent": {"type": "string",
                          "description": "An EXISTING agent (its id or exact name) the "
                                         "chain runs as, when the user names one — its "
@@ -498,6 +789,82 @@ _STATE_PARAMS = {
                                     "— recorded verbatim for the approver."},
     },
     "required": ["automation", "action"],
+}
+_EDIT_PARAMS = {
+    "type": "object",
+    "properties": {
+        "automation": {"type": "string",
+                       "description": "The automation's id or its exact name."},
+        "changes": {"type": "object",
+                    "description": "Only the fields that change: name, description, "
+                                   "cron (the ONE schedule trigger's expression, read "
+                                   "in the chain's own timezone), timezone (an IANA "
+                                   "name like Europe/Berlin — the clock the schedule "
+                                   "is read in), enabled (false disables). Anything "
+                                   "structural is the canvas's."},
+        "delete": {"type": "boolean",
+                   "description": "true stages DELETION instead of an edit — "
+                                  "irreversible once a human accepts; never combined "
+                                  "with changes."},
+        "supersedes": {"type": "string",
+                       "description": "When this corrects an edit you staged earlier "
+                                      "in this conversation, its proposal id."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": ["automation"],
+}
+_MONITOR_PARAMS = {
+    "type": "object",
+    "properties": {
+        "metric": {"type": "string",
+                   "description": "The REGISTERED metric to watch (its exact name). "
+                                  "Unknown names are refused with the known ones "
+                                  "listed. Give sql instead only when the user "
+                                  "supplied the exact query."},
+        "sql": {"type": "string",
+                "description": "Explicit scalar SQL to watch, when no registered "
+                               "metric fits and the user supplied it."},
+        "sigma": {"type": "number",
+                  "description": "Standard deviations from the rolling mean that "
+                                 "count as a breach (default 3)."},
+        "name": {"type": "string", "description": "Short monitor name."},
+        "question": {"type": "string",
+                     "description": "The deep-analysis question a breach should "
+                                    "answer, in the user's own words."},
+        "channel": {"type": "string",
+                    "description": "Slack channel for the alert — ONLY if the user "
+                                   "named one; otherwise leave empty and it stays an "
+                                   "open choice the approver fills."},
+        "bot_id": {"type": "string",
+                   "description": "Sending bot — ONLY if the user named one."},
+        "supersedes": {"type": "string",
+                       "description": "When this corrects a draft you staged earlier "
+                                      "in this conversation, its proposal id."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": [],
+}
+_BRIEF_PARAMS = {
+    "type": "object",
+    "properties": {
+        "name": {"type": "string", "description": "Short subscription name."},
+        "period": {"type": "string", "enum": ["day", "week"],
+                   "description": "day = every day; week = every Monday."},
+        "hour": {"type": "integer",
+                 "description": "Send hour, 0-23 UTC (default 9)."},
+        "trigger": {"type": "string",
+                    "description": "The delivery trigger's id or exact name — a "
+                                   "configured Notifications trigger. Unknown ones "
+                                   "are refused with the known ones listed."},
+        "supersedes": {"type": "string",
+                       "description": "When this corrects a draft you staged earlier "
+                                      "in this conversation, its proposal id."},
+        "reasoning": {"type": "string",
+                      "description": "One sentence on why, shown to the approver."},
+    },
+    "required": ["trigger"],
 }
 _GRANT_PARAMS = {
     "type": "object",
@@ -544,8 +911,10 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "",
                 "plain chat — always disclose that). When the ask ALSO says when or "
                 "where the agent should run, pass that clause as schedule — the agent "
                 "and its chain then stage as ONE proposal, accepted or refused "
-                "together. Quote the summary field verbatim; tell the user where the "
-                "approval lives."
+                "together. Re-drafting after feedback? Pass supersedes with the "
+                "earlier proposal id so the inbox holds ONE pending draft per ask. "
+                "Quote the summary field verbatim; tell the user where the approval "
+                "lives."
             ),
             parameters=_AGENT_PARAMS,
             run=lambda a: draft_agent(connection_id, a, emit=emit),
@@ -557,11 +926,55 @@ def spotlight_act_tools(connection_id: str, *, session_id: str = "",
                 "dry-run receipt) and STAGE it for human approval in the inbox — it "
                 "never schedules itself. Use for 'every Monday…', 'when X happens…', "
                 "'remind/brief me…' asks. When the user names an existing agent it "
-                "should run as, pass run_as_agent. A refusal with a reason is an "
-                "answer to relay, not an error. Quote the summary field verbatim."
+                "should run as, pass run_as_agent. Re-drafting after feedback? Pass "
+                "supersedes with the earlier proposal id so the inbox holds ONE "
+                "pending draft per ask. A refusal with a reason is an answer to "
+                "relay, not an error. Quote the summary field verbatim."
             ),
             parameters=_AUTOMATION_PARAMS,
             run=lambda a: draft_automation(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="edit_automation",
+            description=(
+                "STAGE a change to an existing automation as a before-and-after "
+                "diff — name, description, its schedule's cron, or enabled — for "
+                "human approval in the inbox. Use for 'move the Monday brief to "
+                "8am', 'rename…', 'disable…' asks; pass delete true for 'delete…' "
+                "(irreversible once accepted — say so). Structural changes belong "
+                "to the canvas. Quote the summary field verbatim."
+            ),
+            parameters=_EDIT_PARAMS,
+            run=lambda a: edit_automation(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="draft_monitor",
+            description=(
+                "For 'alert me when X moves/breaks/spikes' asks: STAGE ONE proposal "
+                "holding a metric monitor AND the chain its breach fires (deep "
+                "analysis, then Slack) — accepted or refused together. PREFER this "
+                "over a scheduled chain for anomaly asks: the hourly check is SQL "
+                "only and spends no model calls, and the analysis runs only when "
+                "something actually moved, where a daily schedule spends it every "
+                "day. The monitor watches a REGISTERED metric; unknown names are "
+                "refused with the known ones listed. A channel the user did not "
+                "name stays an open choice. Quote the summary field verbatim."
+            ),
+            parameters=_MONITOR_PARAMS,
+            run=lambda a: draft_monitor(connection_id, a, emit=emit),
+        ),
+        ToolSpec(
+            name="draft_brief",
+            description=(
+                "STAGE a recurring briefing delivery (daily, or weekly on Monday, "
+                "at an hour UTC) through an existing Notifications trigger, for "
+                "human approval in the inbox. Use for 'brief me every morning', "
+                "'send the weekly briefing to…' asks. The trigger must already "
+                "exist — unknown ones are refused with the known ones listed. "
+                "Quote the summary field verbatim."
+            ),
+            parameters=_BRIEF_PARAMS,
+            run=lambda a: draft_brief(connection_id, a, emit=emit),
         ),
         ToolSpec(
             name="pause_or_resume_automation",

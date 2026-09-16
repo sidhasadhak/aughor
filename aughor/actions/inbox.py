@@ -96,7 +96,8 @@ _MIGRATIONS: list = [
 #: Terminal statuses — a proposal in any of these is resolved and cannot be re-resolved.
 #: ``expired`` joins them: a lapsed proposal is resolved BY TIME, and re-opening it would
 #: hand back the acceptance window the expiry exists to close.
-_TERMINAL = {"accepted", "rejected", "executed", "failed", "approval_required", "expired"}
+_TERMINAL = {"accepted", "rejected", "executed", "failed", "approval_required", "expired",
+             "superseded"}
 
 #: How long a staged proposal stays acceptable, in hours. Read per call, never frozen at
 #: import, so a test (or an operator) can shorten it without reloading the module.
@@ -168,9 +169,21 @@ class StagedProposal(BaseModel):
     #: morning" — accept creates the agent and then saves the chain carrying its id, all
     #: or nothing, so the two cannot arrive half-married the way the user's own live
     #: drafts did (an agent, and a schedule that ran as nobody).
+    #: SP-12 adds three more of the same staged shape: ``automation_edit`` (params
+    #: are {automation_id, changes} over a CLOSED field set; accept applies through
+    #: the registered edit door), ``monitor_bundle`` ({"monitor", "automation"} —
+    #: accept creates the monitor, injects its id into the chain's metric trigger and
+    #: saves, all or nothing, the agent bundle's own law) and ``brief_draft`` (a
+    #: briefing subscription; accept saves it).
+    #: ``outbound_send`` (SP-7 widened, 2026-09-16) is a drafted Slack post parked for a
+    #: person on its first run: params carry the resolved send, accept performs it through
+    #: the same `post_as_bot` the engine uses, and `mint_grant` records a standing
+    #: send-grant so later runs of that chain to that channel go unattended.
     kind: Literal["declared_action", "integration",
                   "agent_draft", "automation_draft", "agent_bundle",
-                  "automation_state", "agent_grant"] = "declared_action"
+                  "automation_state", "agent_grant",
+                  "automation_edit", "monitor_bundle", "brief_draft",
+                  "outbound_send"] = "declared_action"
     #: The WAREHOUSE connection this proposal belongs to — for a declared action, the one
     #: that declares it; for an integration, the automation's own. Unchanged in meaning on
     #: purpose: it is what the inbox filters and purges by, and what `needs-human` groups
@@ -204,9 +217,12 @@ class StagedProposal(BaseModel):
     #: carry one).
     trace_id: str = ""
     #: pending | accepted | rejected | executed | failed | approval_required | expired |
-    #: uncertain. `uncertain` (DS-11's completion) is an accepted write whose transport
-    #: broke: it MAY have arrived, and the resumed run carries the word rather than
-    #: flattening it to `failed`, which would license the retry that duplicates it.
+    #: uncertain | superseded. `uncertain` (DS-11's completion) is an accepted write whose
+    #: transport broke: it MAY have arrived, and the resumed run carries the word rather
+    #: than flattening it to `failed`, which would license the retry that duplicates it.
+    #: `superseded` (SP-11) is a draft REPLACED — by a corrected re-draft from the same
+    #: conversation, or by a person finishing it in the real editor — so one ask never
+    #: piles up pending duplicates; the message names what replaced it.
     status: str = "pending"
     status_message: str = ""                            # authored criterion / approval message, verbatim
     outcome: dict = Field(default_factory=dict)         # what the executed write returned
@@ -533,8 +549,11 @@ def gov_action_of(p: StagedProposal) -> str:
         op = get_operation(p.action_id)
         if op is not None:
             return op.gov_action
-    if p.kind in ("agent_draft", "automation_draft", "agent_bundle"):
+    if p.kind in ("agent_draft", "automation_draft", "agent_bundle",
+                  "automation_edit", "monitor_bundle", "brief_draft"):
         return f"spotlight.{p.kind}"
+    if p.kind == "outbound_send":
+        return "automations.outbound_send"
     return f"kinetic.{p.action_id}"
 
 
@@ -550,6 +569,31 @@ def reject_proposal(proposal_id: str, *, actor: str) -> bool:
         if p:
             govern.audit(gov_action_of(p), p.connection_id, "proposal_rejected",
                          actor=actor, detail=f"proposal {proposal_id}")
+    return resolved
+
+
+def supersede_proposal(proposal_id: str, *, actor: str, note: str = "") -> bool:
+    """Resolve a PENDING draft as replaced — no side effect, like reject, but honest
+    about WHY: a corrected re-draft or the real editor finished the same ask, and
+    leaving the old draft pending would offer an approver a stale record beside the
+    live one (SP-11's duplicate). First-responder-wins like every resolve: a draft
+    already accepted or rejected stays what it is, and False says so."""
+    resolved = _resolve_once(proposal_id, "superseded", actor)
+    if resolved:
+        if note:
+            with _LOCK:
+                c = _conn()
+                try:
+                    c.execute("UPDATE staged_proposals SET status_message=? WHERE id=?",
+                              (note[:400], proposal_id))
+                    c.commit()
+                finally:
+                    c.close()
+        from aughor.govern import actions as govern
+        p = get_proposal(proposal_id)
+        if p:
+            govern.audit(gov_action_of(p), p.connection_id, "proposal_superseded",
+                         actor=actor, detail=f"proposal {proposal_id}: {note or 'replaced'}")
     return resolved
 
 
@@ -599,7 +643,7 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     # open choice right here (``fills``), which is the person making the choice, not the
     # model — and only an open choice, so arming-time edits stay impossible.
     filled_params: Optional[dict] = None
-    if p.kind in ("automation_draft", "agent_bundle") and p.pending:
+    if p.kind in ("automation_draft", "agent_bundle", "monitor_bundle") and p.pending:
         from aughor.runners import automation_payload_holes
         chain = (dict(p.params or {}) if p.kind == "automation_draft"
                  else dict((p.params or {}).get("automation") or {}))
@@ -637,12 +681,20 @@ def accept_proposal(proposal_id: str, *, actor: str, mint_grant: bool = False,
     # accept EXECUTES differs, which is the smallest seam the two kinds can meet at.
     if p.kind == "integration":
         return _accept_integration(p, actor=actor, mint_grant=mint_grant), ""
+    if p.kind == "outbound_send":
+        return _accept_outbound_send(p, actor=actor, mint_grant=mint_grant)
     if p.kind == "agent_draft":
         return _accept_agent_draft(p, actor=actor), ""
     if p.kind == "automation_draft":
         return _accept_automation_draft(p, actor=actor), ""
     if p.kind == "agent_bundle":
         return _accept_agent_bundle(p, actor=actor), ""
+    if p.kind == "automation_edit":
+        return _accept_automation_edit(p, actor=actor), ""
+    if p.kind == "monitor_bundle":
+        return _accept_monitor_bundle(p, actor=actor), ""
+    if p.kind == "brief_draft":
+        return _accept_brief_draft(p, actor=actor), ""
     if p.kind == "automation_state":
         return _accept_automation_state(p, actor=actor), ""
     if p.kind == "agent_grant":
@@ -723,6 +775,55 @@ def _accept_integration(p: StagedProposal, *, actor: str, mint_grant: bool = Fal
     return KineticResult(status, result.ok, p.action_id,
                          message=(result.message or ("" if result.ok else status)) + note,
                          outcome=dict(result.data or {}))
+
+
+def _accept_outbound_send(p: StagedProposal, *, actor: str, mint_grant: bool = False):
+    """Perform a drafted Slack post a person just approved — the send happens HERE, so a
+    resumed run replays the parked step from this proposal's recorded outcome (ts/channel),
+    and a downstream ``{"$from": "step.ts"}`` binds to a real thread exactly as a live send.
+
+    ``mint_grant`` is the card's "always allow": it records a standing send-grant owned by
+    the automation, so the NEXT run of this chain to this channel posts unattended. Returns
+    the ``(result, grant_id_or_empty)`` pair like every accept.
+    """
+    from aughor.actions import grants
+    from aughor.slackbots.post import post_as_bot
+    from aughor.slackbots.store import get_bot_decrypted
+
+    _Result = _executor_result()
+
+    d = dict(p.params or {})
+    bot_id, channel = str(d.get("bot_id") or ""), str(d.get("channel") or "")
+    bot = get_bot_decrypted(bot_id)
+    if bot is None or not bot.enabled:
+        why = f"Slack bot {bot_id!r} is not available"
+        _record_outcome(p.id, "failed", why, {})
+        return _Result("dispatch_error", False, p.action_id, message=why), ""
+
+    ok, info = post_as_bot(bot.bot_token, channel,
+                           str(d.get("message") or ""),
+                           thread_ts=str(d.get("thread_ts") or "") or None)
+    if ok:
+        outcome = {"ts": info.get("ts", ""), "channel": info.get("channel", "") or channel,
+                   "bot_id": bot_id}
+        _record_outcome(p.id, "executed", f"posted as {bot.name} (ts {info.get('ts', '')})", outcome)
+        grant_id = ""
+        if mint_grant:
+            g = grants.mint_send_grant(str(d.get("automation_id") or ""), channel,
+                                       connection_id=p.connection_id, created_by=actor)
+            grant_id = g.id if g else ""
+        return _Result("executed", True, p.action_id,
+                             message=f"posted to {channel} as {bot.name}"
+                                     + (" · this chain may now post there unattended" if grant_id else ""),
+                             outcome=outcome), grant_id
+    if info.get("uncertain"):
+        # It may have arrived — mapping to failed would license the retry that duplicates it.
+        _record_outcome(p.id, "uncertain", "post timed out", {})
+        return _Result("uncertain", False, p.action_id,
+                             message="post timed out — it may have arrived"), ""
+    why = f"Slack refused the post: {info.get('error', 'unknown')}"
+    _record_outcome(p.id, "failed", why, {})
+    return _Result("failed", False, p.action_id, message=why), ""
 
 
 def _executor_result():
@@ -833,6 +934,108 @@ def _accept_agent_bundle(p: StagedProposal, *, actor: str):
                    message=(f"agent '{agent.name}' created as {agent.id}; automation "
                             f"'{out['name']}' saved as {out['automation_id']}, running as it"),
                    outcome=outcome, detail=outcome)
+
+
+def _accept_automation_edit(p: StagedProposal, *, actor: str):
+    """Apply a staged field diff through the registered edit door (SP-12). The door
+    re-reads the record and re-validates the result — a staged edit can never save a
+    chain the editor would refuse, and a record deleted between stage and accept is
+    an honest failure, not a crash."""
+    _Result = _executor_result()
+    from aughor.runners.automation_state import edit_automation_payload
+
+    ok, out = edit_automation_payload(dict(p.params or {}))
+    if not ok:
+        _record_outcome(p.id, "failed", str(out), {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"edit no longer valid: {out}")
+    _record_outcome(p.id, "executed",
+                    f"automation {out['automation_id']} edited ({', '.join(out['changed'])})", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"automation '{out['name']}' edited: {', '.join(out['changed'])}",
+                   outcome=out, detail=out)
+
+
+def _accept_monitor_bundle(p: StagedProposal, *, actor: str):
+    """Create the monitor, then save the chain its metric trigger fires — ALL OR
+    NOTHING, the agent bundle's own law. The monitor's id is set from the record just
+    created, never trusted from params (it does not exist at stage time), and a chain
+    save that fails deletes the monitor, so an alert cannot exist half-armed: a
+    monitor with no chain would breach silently, which reads as 'nothing is wrong'."""
+    _Result = _executor_result()
+    from pydantic import ValidationError
+
+    from aughor.monitors.models import Monitor
+    from aughor.monitors.store import delete_monitor, upsert_monitor
+    from aughor.runners import save_automation_payload
+
+    d = dict(p.params or {})
+    try:
+        monitor = Monitor(**dict(d.get("monitor") or {}))
+    except (ValidationError, ValueError, TypeError) as exc:
+        msg = str(exc)[:400]
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    saved_monitor = upsert_monitor(monitor)
+    chain_d = dict(d.get("automation") or {})
+    conditions = [dict(c) for c in (chain_d.get("conditions") or [])]
+    for c in conditions:
+        if c.get("kind") == "metric":
+            c["config"] = {**dict(c.get("config") or {}), "monitor_id": saved_monitor.id}
+    chain_d["conditions"] = conditions
+    ok, out = save_automation_payload(chain_d)
+    if not ok:
+        delete_monitor(saved_monitor.id)   # all or nothing — no silent, chainless monitor
+        msg = f"chain not saved ({out}); monitor creation rolled back"
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    outcome = {"monitor_id": saved_monitor.id, "monitor_name": saved_monitor.name,
+               "automation_id": out["automation_id"], "automation_name": out["name"],
+               "first_run": out.get("first_run", "")}
+    _record_outcome(p.id, "executed",
+                    f"monitor {saved_monitor.id} created; automation {out['automation_id']} saved",
+                    outcome)
+    return _Result("executed", True, p.action_id,
+                   message=(f"monitor '{saved_monitor.name}' created as {saved_monitor.id}; "
+                            f"chain '{out['name']}' saved, fired by it"),
+                   outcome=outcome, detail=outcome)
+
+
+def _accept_brief_draft(p: StagedProposal, *, actor: str):
+    """Save the drafted briefing subscription — validation re-runs HERE: the delivery
+    trigger can be deleted between stage and accept, and a subscription pointing at a
+    trigger that is gone would look scheduled and deliver nothing."""
+    _Result = _executor_result()
+    from aughor.briefing.models import BriefSubscription
+    from aughor.briefing.store import save_subscription
+    from aughor.notifications.store import get_trigger
+
+    d = dict(p.params or {})
+    trigger_id = str(d.get("trigger_id") or "")
+    if not get_trigger(trigger_id):
+        msg = f"delivery trigger {trigger_id!r} no longer exists"
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    try:
+        sub = BriefSubscription(
+            conn_id=p.connection_id, name=str(d.get("name") or ""),
+            period=str(d.get("period") or "week"),
+            send_cron=str(d.get("send_cron") or ""), trigger_id=trigger_id)
+    except (ValueError, TypeError) as exc:
+        msg = str(exc)[:400]
+        _record_outcome(p.id, "failed", msg, {})
+        return _Result("dispatch_error", False, p.action_id,
+                       message=f"draft no longer valid: {msg}")
+    saved = save_subscription(sub)
+    out = {"subscription_id": saved.id, "name": saved.name,
+           "send_cron": saved.resolved_cron()}
+    _record_outcome(p.id, "executed", f"brief subscription {saved.id} saved", out)
+    return _Result("executed", True, p.action_id,
+                   message=f"brief subscription '{saved.name}' saved as {saved.id}",
+                   outcome=out, detail=out)
 
 
 def _accept_automation_state(p: StagedProposal, *, actor: str):

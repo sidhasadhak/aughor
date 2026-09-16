@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import logging
 
+from aughor.agent.spotlight_text import clip
 from aughor.agent.tool_loop import ToolSpec
 
 logger = logging.getLogger(__name__)
@@ -50,6 +51,9 @@ _MAX_MONITORS = 25
 _MAX_ALERTS = 5
 _MAX_CITATIONS = 10
 _SQL_PREVIEW = 400
+#: A search summary ROUTES; `describe_entity` is the paid detail. Long enough for a
+#: finding's conclusion sentence, far short of the ~2KB prompt echoes it once carried.
+_SEARCH_SUMMARY_CLIP = 280
 
 
 def search_graph(connection_id: str, args: dict) -> dict:
@@ -68,11 +72,29 @@ def search_graph(connection_id: str, args: dict) -> dict:
     out = _search(connection_id, query, limit=limit)
     # Compact for the window: `data` blobs carry column lists and provenance the entity
     # page needs but a routing decision does not — `describe_entity` is the paid detail.
-    out["nodes"] = [
-        {"id": n.get("id"), "kind": n.get("kind"), "label": n.get("label"),
-         "summary": n.get("summary", "")}
-        for n in out.get("nodes", [])
-    ]
+    # The summary is CLIPPED for the same reason: this read routes, it does not report,
+    # and the loop re-sends history whole on every later turn, so an unclipped summary
+    # is paid for again and again (measured on the user's own OpenRouter log,
+    # 2026-09-15: ten ~2KB finding summaries in one search result). Near-identical
+    # rows collapse to one, the cut declared in `notice` rather than made silently.
+    nodes, seen, collapsed = [], {}, 0
+    for n in out.get("nodes", []):
+        summary = clip(str(n.get("summary", "")), _SEARCH_SUMMARY_CLIP)
+        key = (n.get("kind"), summary)
+        if key in seen:
+            seen[key]["similar"] = int(seen[key].get("similar", 1)) + 1
+            collapsed += 1
+            continue
+        row = {"id": n.get("id"), "kind": n.get("kind"), "label": n.get("label"),
+               "summary": summary}
+        seen[key] = row
+        nodes.append(row)
+    out["nodes"] = nodes
+    out["count"] = len(nodes)
+    if collapsed:
+        out["notice"] = ((out.get("notice") or "") + f" {collapsed} near-identical "
+                         f"node(s) collapsed into their first occurrence "
+                         f"(`similar` counts them).").strip()
     out["staleness"] = _graph_staleness(connection_id)
     return out
 

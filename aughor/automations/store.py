@@ -55,6 +55,7 @@ CREATE TABLE IF NOT EXISTS automations (
     max_retries           INTEGER NOT NULL DEFAULT 1,
     retry_backoff_seconds REAL NOT NULL DEFAULT 30.0,
     agent_id              TEXT NOT NULL DEFAULT '',
+    timezone              TEXT NOT NULL DEFAULT '',
     scheduling            TEXT NOT NULL DEFAULT 'ordered',
     exposed_as_tool       INTEGER NOT NULL DEFAULT 0,
     created_at            TEXT NOT NULL DEFAULT '',
@@ -224,6 +225,12 @@ _MIGRATIONS: list[Migration] = [
     #: above and passes either way.
     Migration(version=6, name="run attribution (MI-1: agent_id + trace_id on runs)",
               apply=_add_run_attribution),
+    #: Version 7, read off the LIVE store exactly as its predecessors were:
+    #: `PRAGMA user_version` on the deployed `data/automations.db` returned 6 on
+    #: 2026-09-16, so 7 is the next one that will actually execute.
+    Migration(version=7, name="automation clock (SP-13: cron in the chain's timezone)",
+              apply=lambda conn: add_column_if_missing(
+                  conn, "automations", "timezone", "TEXT NOT NULL DEFAULT ''")),
 ]
 
 
@@ -370,12 +377,12 @@ def upsert_automation(automation: Automation) -> Automation:
                 INSERT INTO automations (
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
-                    retry_backoff_seconds, agent_id, scheduling, exposed_as_tool,
+                    retry_backoff_seconds, agent_id, timezone, scheduling, exposed_as_tool,
                     created_at, updated_at, last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
-                    :retry_backoff_seconds, :agent_id, :scheduling, :exposed_as_tool,
+                    :retry_backoff_seconds, :agent_id, :timezone, :scheduling, :exposed_as_tool,
                     :created_at, :updated_at, :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET
@@ -398,6 +405,7 @@ def upsert_automation(automation: Automation) -> Automation:
                     max_retries=excluded.max_retries,
                     retry_backoff_seconds=excluded.retry_backoff_seconds,
                     agent_id=excluded.agent_id,
+                    timezone=excluded.timezone,
                     scheduling=excluded.scheduling,
                     exposed_as_tool=excluded.exposed_as_tool,
                     updated_at=excluded.updated_at,
@@ -832,7 +840,8 @@ def _first_scheduled_time(automation: Automation) -> str:
     from aughor.automations.engine import next_fire_utc
 
     now = datetime.now(timezone.utc)
-    times = [t for c in automation.conditions if (t := next_fire_utc(c.cron, now)) is not None]
+    times = [t for c in automation.conditions
+             if (t := next_fire_utc(c.cron, now, automation.timezone)) is not None]
     return min(times).strftime("%Y-%m-%dT%H:%M:%SZ") if times else ""
 
 
@@ -895,9 +904,76 @@ def _state_payload_for_inbox(params: dict):
         saved = pause_automation(automation_id, None)
         return True, {"automation_id": saved.id, "name": saved.name,
                       "paused_until": ""}
-    return False, f"unknown state action {action!r} — pause or resume"
+    # SP-12 — deleting by sentence rides the same staged custody as pausing: the
+    # model proposes, a human accepts, and only then does the record go. The name
+    # travels in the outcome because after the delete there is nothing left to ask.
+    if action == "delete":
+        name = a.name
+        delete_automation(automation_id)
+        return True, {"automation_id": automation_id, "name": name, "deleted": True}
+    return False, f"unknown state action {action!r} — pause, resume or delete"
 
 
-from aughor.runners.automation_state import register_automation_state  # noqa: E402
+#: SP-12 — the fields a staged edit may touch, and nothing else. `cron` reaches the
+#: ONE schedule trigger; everything structural (steps, bindings, triggers beyond the
+#: clock) stays the canvas's, where a person sees what they are changing.
+EDITABLE_FIELDS = ("name", "description", "cron", "enabled", "timezone")
+
+
+def _edit_payload_for_inbox(params: dict):
+    """Apply a staged ``{automation_id, changes}`` diff — closed fields, re-validated.
+
+    The record is re-read HERE (it can change between stage and accept), the changed
+    values are applied onto a copy, and the copy goes through the model's own
+    validation before the one write door saves it — a staged edit can never save a
+    chain the editor would refuse."""
+    from pydantic import ValidationError
+
+    automation_id = str(params.get("automation_id") or "")
+    changes = dict(params.get("changes") or {})
+    a = get_automation(automation_id)
+    if a is None:
+        return False, f"automation {automation_id!r} no longer exists"
+    unknown = sorted(set(changes) - set(EDITABLE_FIELDS))
+    if unknown:
+        return False, (f"field(s) {', '.join(unknown)} are not editable by sentence — "
+                       f"editable: {', '.join(EDITABLE_FIELDS)}; the canvas edits the rest")
+    if not changes:
+        return False, "no changes to apply"
+    payload = a.model_dump()
+    changed: list[str] = []
+    if "name" in changes:
+        payload["name"] = str(changes["name"]).strip()
+        changed.append("name")
+    if "description" in changes:
+        payload["description"] = str(changes["description"]).strip()
+        changed.append("description")
+    if "enabled" in changes:
+        payload["enabled"] = bool(changes["enabled"])
+        changed.append("enabled")
+    if "timezone" in changes:
+        payload["timezone"] = str(changes["timezone"]).strip()
+        changed.append("timezone")
+    if "cron" in changes:
+        schedules = [c for c in payload.get("conditions") or []
+                     if c.get("kind") == "schedule"]
+        if len(schedules) != 1:
+            return False, (f"this chain has {len(schedules)} schedule triggers — a "
+                           f"cron edit needs exactly one; use the canvas")
+        schedules[0].setdefault("config", {})["cron"] = str(changes["cron"]).strip()
+        changed.append("cron")
+    try:
+        updated = Automation(**payload)
+    except (ValidationError, ValueError, TypeError) as exc:
+        return False, str(exc)[:400]
+    saved = upsert_automation(updated)
+    return True, {"automation_id": saved.id, "name": saved.name, "changed": changed}
+
+
+from aughor.runners.automation_state import (  # noqa: E402
+    register_automation_edit,
+    register_automation_state,
+)
 
 register_automation_state(_state_payload_for_inbox)
+register_automation_edit(_edit_payload_for_inbox)

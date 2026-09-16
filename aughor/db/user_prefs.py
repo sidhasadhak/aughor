@@ -92,11 +92,35 @@ def _map_layout(v: Any) -> dict:
     return out
 
 
+def _timezone(value):
+    """A real IANA zone or nothing — a typo'd clock must refuse, never arm a 9am that
+    fires at 7 (SP-13)."""
+    from zoneinfo import ZoneInfo
+    name = str(value or "").strip()
+    try:
+        ZoneInfo(name)
+    except Exception:
+        raise ValueError(f"unknown timezone {name!r} — an IANA name like Europe/Berlin")
+    return name
+
+
+def preferred_timezone() -> str:
+    """The caller's chosen clock, or "" (= UTC, the platform's default). Drafts read
+    this so a schedule spoken in conversation lands in the reader's own time."""
+    try:
+        return str(get_preferences()["preferences"].get("timezone") or "")
+    except Exception:
+        return ""
+
+
 ALLOWED_KEYS: dict[str, tuple] = {
     "theme": (_one_of("dark", "light", "system"), "UI theme"),
     "density": (_one_of("comfortable", "compact"), "layout density"),
     "default_connection": (_connection_id, "connection new conversations open on"),
     "ontology_map_layout": (_map_layout, "where you dragged the cards on the ontology map"),
+    # SP-13 — the clock drafts and new schedules speak. Cosmetic-plus: it changes what
+    # NEW drafts default to, never what any existing chain does.
+    "timezone": (_timezone, "the timezone drafts and new schedules speak (IANA name)"),
 }
 
 
