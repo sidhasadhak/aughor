@@ -106,4 +106,10 @@ def validate_loaded(pack: Pack) -> ValidationReport:
     if not (pack.expertise or "").strip():
         r.warnings.append("no expertise.md — the expert has no reasoning persona")
 
+    # ── function layer (HB-6) — same checks install refuses on, so the roster
+    # names a broken layer before anyone reaches the install door ──────────────
+    if pack.function is not None:
+        from aughor.packs.install import function_layer_problems
+        r.errors.extend(function_layer_problems(pack))
+
     return r

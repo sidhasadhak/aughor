@@ -1,0 +1,13 @@
+id: supply-chain
+name: Supply Chain
+version: 1
+owner_team: Platform
+default_temporal_grain: period
+domains:
+  - supply-chain
+  - logistics
+  - fulfilment
+extends: []
+scope:
+  connections: ["*"]
+status: draft

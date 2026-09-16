@@ -57,6 +57,11 @@ KIND_CATEGORY: dict[str, str] = {
     # Governance because every accept changes a governed definition somewhere; the
     # per-store trails (metric.governance, trusted_query.governance) carry the detail.
     "intake.governance": "governance_change",
+    # HB-6 — installing a pack's function layer mints level grants for its group and
+    # lands declared automations: reach changed, which is what this category means.
+    # Its sibling `pack.status_changed` stays operational above — a status flip grants
+    # nobody anything.
+    "pack.installed": "governance_change",
     "llm_call": "model_call",
     # Arc VA decision ③ — admins may read any trace's payloads, and every such read is
     # auditable. Filed as data_access because that is what an auditor asking "who saw
@@ -311,6 +316,7 @@ _SINKS: list[tuple[str, Callable[[int], list[AuditEvent]]]] = [
     ("governance_change", lambda n: _from_ledger("metric.governance", n)),
     ("governance_change", lambda n: _from_ledger("trusted_query.governance", n)),
     ("governance_change", lambda n: _from_ledger("intake.governance", n)),
+    ("governance_change", lambda n: _from_ledger("pack.installed", n)),
     ("model_call", _from_session_log),
     # A mapping entry alone renders NOTHING: `feed` walks this list, not KIND_CATEGORY.
     # The two lists are parallel and hand-maintained, which is why the ratchet now

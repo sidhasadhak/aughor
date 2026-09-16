@@ -5844,6 +5844,21 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   cost, probation state (Agent Ops' Map does this per agent; hub-wide does not exist); a function pack ships its group,
   its tags, its default grants and subscriptions, and its automations (24 c). *Receipt:* installing a supply-chain pack
   creates the group, tagged and subscribed, waiting for members.
+  > **BUILT 2026-09-16.** **The map** is one read — `GET /hub/map` — assembling every column the sentence names
+  > from stores that all existed: the trigger is the condition's own one-liner; a routed notify's destinations are
+  > resolved through the ENGINE's resolver, so the map cannot drift from the send; grants are the standing rows
+  > bucketed by their automation owner; **cost is an explicit floor** (the session-log fold over each chain's run
+  > traces and step investigations, `unpriced_calls`/`calls_without_usage` carried — there is no per-automation
+  > usage axis, and a tick job's own meter reads ~0 by construction while the inner investigation job holds the
+  > spend); an unmeasured precision renders null, never 0%. The screen is Agent Ops' **Hub** layer beside the
+  > per-agent Map, and it takes no connection scope — hub-wide is the definition, the door's `?conn_id` serves
+  > narrow callers. **The packs half**: `function.yaml` + `POST /packs/{id}/install` — guarded
+  > (`govern.guard("pack.install")`), journalled (`pack.installed`), validate-everything-then-write (a bad layer
+  > refuses whole with nothing written), idempotent, and it never takes back what operators set. The shipped
+  > `packs/supply-chain` IS the receipt, held by `test_hb6_packs_ship_groups.py`: installing it creates the group
+  > — tagged via subscribe grants on its domains, subscribed to the order process, zero members — with its
+  > dispatch watch declared `pack:supply-chain`, on probation, disarmed; and `route()` already finds the group as
+  > a destination, channel-less until someone gives it one. §6 24 (c) taken with the wave.
 
 **Sequencing rules that bind the arc.** No channel is built before an automation with real traffic needs it. The
 routing half precedes enforcement. Departures are gated harder than the screen from the first one. Push only from
@@ -6583,6 +6598,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-16, later:** item 24 (a), (b) and (d) decided on the user's *"Lets take the logical next step..
 > go.."* — §3.18 active, HB-1 first, `domain` grant-bearing, Viewer/Editor/Owner the first personas; (c) waits for
 > HB-6, (e) for HB-3, (f) holds on the OAuth client, (g) rides the arc. Open: 16, 18(c), 22(c), 24(c·e·f·g).
+> **Amended 2026-09-16, HB-6:** item 24 (c) decided on the user's *"Start hb-6"*, on the recorded recommendation —
+> packs ship function groups; (e) had been taken with HB-3 the same day. Open: 16, 18(c), 22(c), 24(f·g).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -6917,8 +6934,12 @@ the browser** · **measure the premise before building.**
     **(b) `domain` becomes a grant-bearing tag** beside `tier` and `pii` — **✅ DECIDED 2026-09-16 with (a)**, being a
     call HB-1's own spec names (grants by tag are what make a function group self-maintaining); tags stay human-set,
     so a tag cannot be granted by a model.
-    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations.
-    *Recommended: yes; an organisation starting empty is the alternative.* HB-6's call — still open.
+    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations —
+    **✅ DECIDED 2026-09-16 with HB-6 (the user: "Start hb-6", on the recorded recommendation).** Two spellings the
+    build fixed: "tagged" is subscribe grants on the pack's domains, because a group is a principal, not a securable
+    — (b)'s grants-by-tag mechanism is what makes the group self-maintaining; and a pack automation lands declared
+    (`pack:<id>`), on probation and DISARMED, so nothing a pack ships acts before a person arms it. A re-install
+    never takes back what operators set (the group's channel, its members, an arming, a graduation).
     **(d) The persona set** — Viewer / Editor / Owner as the first persona groups; a Steward only when a deployment
     asks — **✅ DECIDED 2026-09-16 with (a)**, being the personas HB-1 ships.
     **(e) The first live receipt's host** — Olist's dispatch promise — **✅ DECIDED 2026-09-16 (the user: "Go for

@@ -774,7 +774,7 @@ def _file_departure_link(effect: Effect, automation: Automation, *, kind: str,
         return ""
 
 
-def _route_destinations(securable: str, automation: Automation) -> list:
+def route_destinations(securable: str, automation: Automation) -> list:
     """HB-3 — where a departure about ``securable`` goes: HB-1's `route()`, called in
     anger for the first time. For a promise/process the owner and the meaning chain are
     read off the CACHED graph (a probe never builds); anything else routes by
@@ -810,7 +810,7 @@ def _dispatch_notify_routed(effect: Effect, automation: Automation,
     every Subscribe-or-higher holder, each group through its channel. Each destination
     runs the FULL single-trigger path (approval, departure gate, fire, filing), so the
     ledger records one row per landing and probation holds each one."""
-    dests = _route_destinations(securable, automation)
+    dests = route_destinations(securable, automation)
     reachable = [d for d in dests if d.channel_trigger_id]
     unreachable = [d.principal for d in dests if not d.channel_trigger_id]
     if not reachable:

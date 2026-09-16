@@ -193,6 +193,39 @@ class PackEval(_Base):
     expect: dict = Field(default_factory=dict)
 
 
+class PackFunctionGroup(_Base):
+    """The function group a pack ships (HB-6, §6 24 c). `id` defaults to the pack id at
+    install; it must be a group slug because it lands inside `group:<id>` principals."""
+    id: str = ""
+    name: str = ""
+    description: str = ""
+
+
+class PackGrant(_Base):
+    """One default grant the function layer ships: the group gets `privilege` on
+    `securable`. Privileges are the rbac ladder's words (view/subscribe/edit/manage/own)."""
+    securable: str
+    privilege: str = "subscribe"
+
+
+class PackFunction(_Base):
+    """`function.yaml` — the function layer a pack ships (HB-6): its group, its
+    subscriptions and default grants, and its automations.
+
+    `automations` stays a list of RAW mappings on purpose: each entry is validated at
+    install by constructing the real `Automation` model, so the automations plane keeps
+    its one set of save-time laws and no field silently vanishes behind a thinner copy
+    declared here (the `extra="ignore"` trap the manifest's VA-1 note documents).
+    The pack's `domains` double as the layer's tags: install subscribes the group to
+    `domain:<value>` for each one — grants by tag are what make a function group
+    self-maintaining (§6 24 b)."""
+    group: PackFunctionGroup = Field(default_factory=PackFunctionGroup)
+    #: Securables the group is subscribed to (a subscription IS a subscribe-level grant).
+    subscriptions: list[str] = Field(default_factory=list)
+    grants: list[PackGrant] = Field(default_factory=list)
+    automations: list[dict] = Field(default_factory=list)
+
+
 class Pack(_Base):
     """A fully-loaded specialist pack."""
     manifest: PackManifest
@@ -204,6 +237,7 @@ class Pack(_Base):
     surface: Optional[PackSurface] = None
     evals: list[PackEval] = Field(default_factory=list)
     ontology: Optional[PackOntology] = None          # ontology.yaml — the core the business extends
+    function: Optional[PackFunction] = None          # function.yaml — the group the pack ships (HB-6)
     path: str = ""                                   # source folder
 
     @property

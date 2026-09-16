@@ -24,6 +24,7 @@ const AgenticAgentsPanel = dynamic(() => import("@/components/AgenticAgentsPanel
 const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").then(m => ({ default: m.NeedsHumanPanel })),       { ssr: false, loading });
 const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
 const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
+const HubMapPanel        = dynamic(() => import("@/components/agentops/HubMapPanel").then(m => ({ default: m.HubMapPanel })),      { ssr: false, loading });
 
 /**
  * This screen's glyphs, by role. The drawings come from the platform icon set
@@ -53,7 +54,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 // (Automations → History and Activity → Traces are the others); its phase view —
 // the half with no second home — moved to Activity → Phases.
 export type AgenticOpsLayer =
-  "fleet" | "agents" | "attention" | "activity" | "automations";
+  "fleet" | "agents" | "attention" | "activity" | "automations" | "hub";
 
 // Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
 // inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
@@ -70,6 +71,11 @@ const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
   // than to a cron. Filing it under Monitors said the opposite: that it was a metric
   // watch with side effects, next to the agent plane instead of part of it.
   { id: "automations", icon: "gear",   label: "Automations", blurb: "Scheduled agent work · the proposal queue" },
+  // HB-6 — the hub-wide map. The Roster's Map answers "what does THIS agent touch";
+  // this layer answers the hub-wide question the roadmap words exactly: every
+  // automation on one screen — trigger, destinations, grant, owner, last run, cost,
+  // probation state.
+  { id: "hub",       icon: "flow",     label: "Hub",       blurb: "Every automation on one screen — where it sends, what it earned" },
 ];
 
 type Props = {
@@ -192,6 +198,13 @@ export function AgenticOpsWorkspace({
         );
         if (id === "automations") return (
           <AutomationsPanel connId={connId} workspaceId={workspaceId} />
+        );
+        if (id === "hub") return (
+          // No connId on purpose: this layer IS the hub-wide answer ("every automation
+          // on one screen"). Scoping it to the page's selected connection would rebuild
+          // the per-connection Automations layer one tab over. The door still takes
+          // ?conn_id for callers that want the narrow read.
+          <HubMapPanel />
         );
         return (
           <FleetOverviewPanel
