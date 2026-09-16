@@ -4691,6 +4691,14 @@ _COMPUTATION_ERROR_CAVEAT_RE = re.compile(
     r"could not be computed|formula drift|grain-correct recompute|artifact", re.I)
 
 
+def _ended(caveat) -> str:
+    """A trust caveat as a complete sentence. The guards return reasons with no terminal
+    punctuation, and the reframe concatenates one ahead of another sentence — the live
+    2026-09-16 brief read "…as your organisation defines it Do not read the numbers…"."""
+    t = str(caveat or "").strip()
+    return t + "." if t and t[-1] not in ".!?:" else t
+
+
 def _reframe_on_trust_caveat(synth, phases) -> bool:
     """Report-quality fix 4 — make a trust advisory STRUCTURAL, not just a confidence label. The
     prior wiring only demoted HIGH→MEDIUM (``_cap_confidence_on_trust_advisory``); the corrupted
@@ -4722,7 +4730,7 @@ def _reframe_on_trust_caveat(synth, phases) -> bool:
         headlined = [cav for cav, _ in err_findings]   # fail-safe: treat as headlined (be cautious)
 
     if headlined:
-        lead = headlined[0]
+        lead = _ended(headlined[0])
         _es = synth.executive_summary or ""
         if str(lead)[:48].lower() not in _es.lower():
             reframe = (
@@ -4735,12 +4743,12 @@ def _reframe_on_trust_caveat(synth, phases) -> bool:
             synth.confidence = "LOW"
             synth.confidence_justification = (
                 "Floored to LOW — a computation-error trust check fired on a headlined figure: "
-                + str(lead) + " " + (getattr(synth, "confidence_justification", "") or "")
+                + lead + " " + (getattr(synth, "confidence_justification", "") or "")
             ).strip()
         return True
 
     # Flagged findings exist but none is headlined — surface honestly without nuking a grounded answer.
-    lead = err_findings[0][0]
+    lead = _ended(err_findings[0][0])
     _gaps = list(getattr(synth, "data_gaps", None) or [])
     _note = ("A supporting finding was excluded from the conclusion after a trust check flagged it: "
              + str(lead))

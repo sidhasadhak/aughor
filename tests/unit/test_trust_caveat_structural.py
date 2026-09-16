@@ -93,6 +93,19 @@ def test_idempotent_reframe():
     assert synth.executive_summary == first
 
 
+def test_the_banner_ends_the_caveat_sentence_before_its_own():
+    """Producers return reasons with no terminal punctuation, and the banner concatenates one
+    ahead of its own sentence — the live 2026-09-16 brief read '…as your organisation defines
+    it Do not read the numbers…'. A caveat already punctuated must not gain a second stop."""
+    synth = _Synth(exec_summary="Net revenue rose 9.1% on 2026-09-08.")
+    phases = _phases("metric formula drift: the finding asserts Revenue but the query computes "
+                     "it a different way (it reads 'order_items'), so this number is not Revenue "
+                     "as your organisation defines it", rows=[["2026-09-08", "9.1"]])
+    assert _reframe_on_trust_caveat(synth, phases) is True
+    assert "defines it. Do not read" in synth.executive_summary
+    assert "it. Do not" in synth.executive_summary and "it.. Do not" not in synth.executive_summary
+
+
 def test_composes_with_confidence_cap_when_headlined():
     """The mild-advisory MEDIUM cap and the computation-error LOW floor compose when the flagged
     number is headlined (as a salient % figure)."""

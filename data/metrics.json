@@ -1,6 +1,7 @@
 [
   {
     "name": "revenue",
+    "connection": "samples",
     "label": "Revenue",
     "sql": "SUM(total_amount)",
     "tables": [
@@ -29,6 +30,7 @@
   },
   {
     "name": "aov",
+    "connection": "samples",
     "label": "Average Order Value",
     "sql": "AVG(total_amount)",
     "tables": [

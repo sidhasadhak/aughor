@@ -589,6 +589,21 @@ def filter_metrics_to_schema(metrics: list, schema_text: str, dedupe: bool = Tru
     return _fold([m for m in metrics if _metric_matches_schema(m, tables, cols)])
 
 
+def metric_matches_columns(metric, table_cols) -> bool:
+    """Whether *metric* is computable on a schema given as ``{table: [columns]}`` — the
+    parsed form the explorer's emission gate already caches on the conn, so a caller
+    holding the parse skips the schema-text re-parse ``filter_metrics_to_schema``
+    would do. Same predicate as the prompt filter: every declared table, dimension and
+    formula column must be present. An empty/unparsed mapping can't prove absence → True,
+    mirroring ``filter_metrics_to_schema``'s no-tables fallback. Public boundary so the
+    trust guards judge a connection by the SAME applicability rule the prompt injects by."""
+    tables = {str(t).split(".")[-1].lower() for t in (table_cols or {})}
+    if not tables:
+        return True
+    cols = {str(c).lower() for _cs in (table_cols or {}).values() for c in (_cs or [])}
+    return _metric_matches_schema(metric, tables, cols)
+
+
 def metric_additivity(metric) -> bool:
     """Whether a metric is ADDITIVE (summable across groups, so a share-of-total / Pareto is
     valid). A DECLARED `additivity` field wins; otherwise infer from the formula via the same

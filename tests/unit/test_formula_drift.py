@@ -16,6 +16,7 @@ from aughor.semantic.metrics import list_metrics
 
 _REVENUE = SimpleNamespace(
     name="revenue", label="Revenue", sql="SUM(total_amount)",
+    tables=["orders"], dimensions=[],
     wrong_usage_examples=["SUM(order_items.line_total) — line-item grain diverges ~4.3x.",
                           "SUM(total_amount) joined to order_items without de-duplicating fans out."],
 )
@@ -71,7 +72,7 @@ def test_the_emission_gate_hands_the_drift_check_the_connection_it_read(monkeypa
     from aughor.explorer import verify as V
     seen = []
 
-    def drift(finding_text, sql, connection_id=""):
+    def drift(finding_text, sql, connection_id="", table_cols=None):
         seen.append(connection_id)
         return "metric formula drift: recorded"
     monkeypatch.setattr(V, "drifted_registered_metric", drift)
@@ -101,6 +102,48 @@ def test_unasserted_metric_is_ignored(monkeypatch):
     # 'revenue' not asserted with a value → nothing to check.
     assert _drift_via_stub("Margins look healthy across regions.",
                            "SELECT SUM(line_total) FROM order_items", monkeypatch) is None
+
+
+# ── applicability: only a metric the connection can COMPUTE may judge it ───────────
+
+def test_a_metric_the_connection_cannot_compute_never_judges_it(monkeypatch):
+    # Live 2026-09-16: the global revenue (samples' orders.total_amount) condemned theLook,
+    # whose only revenue basis IS order_items.sale_price — no total_amount column exists
+    # there — and the daily brief departed flagged NOT reliable.
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
+    finding = "Net revenue was 22,128.43 on 2026-09-08."
+    sql = "SELECT SUM(oi.sale_price) FROM order_items oi"
+    thelook = {"orders": ["order_id", "status", "created_at"],
+               "order_items": ["order_id", "sale_price"]}
+    assert drifted_registered_metric(finding, sql, "thelook", table_cols=thelook) is None
+    # the SAME query judged on a schema that HAS the governed column is still drift:
+    samples = {"orders": ["order_id", "status", "total_amount"],
+               "order_items": ["order_id", "line_total"]}
+    assert drifted_registered_metric(finding, sql, "samples", table_cols=samples)
+
+
+def test_an_unknown_schema_does_not_narrow(monkeypatch):
+    # None/empty table_cols can't prove absence → the guard behaves exactly as before.
+    monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda **_: [_REVENUE])
+    finding, sql = "Revenue was 4.1M.", "SELECT SUM(line_total) FROM order_items"
+    assert drifted_registered_metric(finding, sql, "c", table_cols=None)
+    assert drifted_registered_metric(finding, sql, "c", table_cols={})
+
+
+# ── two grains of one name: matching EITHER governed formula is not drift ──────────
+
+def test_a_query_matching_the_other_grain_of_the_same_name_is_not_drift(monkeypatch):
+    # `filter_metrics_to_schema` documents the pair: revenue over orders vs over
+    # order_items are genuinely different grains of one name. A query computing the
+    # item-grain formula matches a governed definition — the orders-grain entry must
+    # not condemn it, whichever comes first in registry order.
+    item_grain = SimpleNamespace(
+        name="revenue", label="Revenue", sql="SUM(sale_price)",
+        tables=["order_items"], dimensions=[], wrong_usage_examples=[])
+    finding, sql = "Revenue was 4.1M.", "SELECT SUM(oi.sale_price) FROM order_items oi"
+    for registry in ([_REVENUE, item_grain], [item_grain, _REVENUE]):
+        monkeypatch.setattr("aughor.semantic.metrics.list_metrics", lambda _r=registry, **_: _r)
+        assert drifted_registered_metric(finding, sql) is None
 
 
 # ── wired into the emission gate, against the REAL registry ────────────────────────

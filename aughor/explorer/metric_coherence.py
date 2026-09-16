@@ -134,7 +134,8 @@ def _asserted_registered(finding_text: str, metrics: list) -> list:
     return out
 
 
-def drifted_registered_metric(finding_text: str, sql: str, connection_id: str = "") -> str | None:
+def drifted_registered_metric(finding_text: str, sql: str, connection_id: str = "",
+                              table_cols: dict | None = None) -> str | None:
     """The deeper coherence layer under the alias↔claim signal: a finding that ASSERTS a
     REGISTERED metric whose SQL structurally DRIFTS from that metric's governed formula —
     caught even with no revealing result alias (the alias guard needs one). High-precision:
@@ -145,13 +146,25 @@ def drifted_registered_metric(finding_text: str, sql: str, connection_id: str = 
 
     ``connection_id`` scopes the registry to the connection the finding was read on — its own
     metrics and the global ones it has not scoped, never a metric another connection scoped
-    (the user's rule, 2026-09-14: the explorer does not look beyond its connection)."""
+    (the user's rule, 2026-09-14: the explorer does not look beyond its connection).
+
+    ``table_cols`` (``{table: [columns]}`` — the emission gate's cached schema
+    parse) narrows the registry further, to metrics the
+    connection can actually COMPUTE: a governed formula whose table or column does not exist
+    on this connection cannot be drifted from on it, only mismatched against it. Measured
+    live 2026-09-16: the global ``revenue = SUM(total_amount)`` (the samples demo schema's)
+    condemned theLook's ``order_items.sale_price`` revenue — the only revenue basis that
+    dataset has — and the daily brief departed flagged NOT reliable. Same predicate the
+    prompt filter uses (``metric_matches_columns``), so the guard judges a connection by the
+    metrics the prompt would inject for it. ``None``/empty means unknown → no narrowing."""
     if not finding_text or not sql:
         return None
     try:
-        from aughor.semantic.metrics import list_metrics
+        from aughor.semantic.metrics import list_metrics, metric_matches_columns
         metrics = [m for m in list_metrics(connection_id=connection_id or None)
                    if (getattr(m, "sql", "") or "").strip()]
+        if table_cols:
+            metrics = [m for m in metrics if metric_matches_columns(m, table_cols)]
     except Exception as _e:
         logger.debug("formula-drift: registry unavailable: %s", _e)
         return None
@@ -159,37 +172,47 @@ def drifted_registered_metric(finding_text: str, sql: str, connection_id: str = 
     if not asserted:
         return None
     s = _alias_stripped_norm(sql)
+    # Grouped by metric NAME: one name can be governed at two grains (``filter_metrics_to_schema``
+    # documents the revenue-over-orders vs revenue-over-order_items pair), and a query matching
+    # EITHER governed formula computes the metric — a flat pass fired on whichever wrong-grain
+    # entry came first in registry order.
+    by_name: dict[str, list] = {}
     for m in asserted:
-        formula = _kbnorm(getattr(m, "sql", ""))
-        if not formula or formula in s:
-            continue                       # governed formula present (alias-insensitive) → no drift
-        # Governed formula ABSENT — corroborate with a wrong-usage column actually in the SQL.
-        for ident in _wrong_usage_idents(m):
-            n = _kbnorm(ident)
-            if len(n) >= 6 and n not in formula and n in s:
-                lbl = getattr(m, "label", "") or getattr(m, "name", "")
-                # The REMEDY goes to the log, never into the returned reason. This reason
-                # becomes a finding's `trust_caveat`, and a trust caveat is concatenated
-                # verbatim into `confidence_justification` — which renders in the customer
-                # PDF (`export/document.py`). So "Recompute with the governed formula or
-                # relabel to what the SQL computes." shipped to readers who cannot do
-                # either: measured on the live corpus 2026-09-02, three stored reports
-                # carried it, the most recent from the day before.
-                #
-                # The split is by AUDIENCE, which is the only split that holds: a reader
-                # needs to know the number is not the governed metric (so they distrust
-                # it); whoever writes the query needs the governed formula and what to do.
-                # The governed SQL goes with the remedy for the same reason — it is the
-                # fixer's material, and it reads as leaked implementation in a narrative.
-                logger.info(
-                    "formula drift on %s: query references %r; governed: %s — recompute with "
-                    "the governed formula, or relabel the finding to what the SQL computes.",
-                    lbl, ident, getattr(m, "sql", ""))
-                # "metric formula drift" is load-bearing text, not a label: the deep path's
-                # `_COMPUTATION_ERROR_CAVEAT_RE` matches on it to reframe the headline.
-                return (f"metric formula drift: the finding asserts {lbl} but the query "
-                        f"computes it a different way (it reads '{ident}'), so this number "
-                        f"is not {lbl} as your organisation defines it")
+        by_name.setdefault((getattr(m, "name", "") or getattr(m, "label", "")).lower(), []).append(m)
+    for defs in by_name.values():
+        formulas = [_kbnorm(getattr(m, "sql", "")) for m in defs]
+        if any(f and f in s for f in formulas):
+            continue                       # a governed formula present (alias-insensitive) → no drift
+        for m, formula in zip(defs, formulas):
+            if not formula:
+                continue
+            # Governed formula ABSENT — corroborate with a wrong-usage column actually in the SQL.
+            for ident in _wrong_usage_idents(m):
+                n = _kbnorm(ident)
+                if len(n) >= 6 and n not in formula and n in s:
+                    lbl = getattr(m, "label", "") or getattr(m, "name", "")
+                    # The REMEDY goes to the log, never into the returned reason. This reason
+                    # becomes a finding's `trust_caveat`, and a trust caveat is concatenated
+                    # verbatim into `confidence_justification` — which renders in the customer
+                    # PDF (`export/document.py`). So "Recompute with the governed formula or
+                    # relabel to what the SQL computes." shipped to readers who cannot do
+                    # either: measured on the live corpus 2026-09-02, three stored reports
+                    # carried it, the most recent from the day before.
+                    #
+                    # The split is by AUDIENCE, which is the only split that holds: a reader
+                    # needs to know the number is not the governed metric (so they distrust
+                    # it); whoever writes the query needs the governed formula and what to do.
+                    # The governed SQL goes with the remedy for the same reason — it is the
+                    # fixer's material, and it reads as leaked implementation in a narrative.
+                    logger.info(
+                        "formula drift on %s: query references %r; governed: %s — recompute with "
+                        "the governed formula, or relabel the finding to what the SQL computes.",
+                        lbl, ident, getattr(m, "sql", ""))
+                    # "metric formula drift" is load-bearing text, not a label: the deep path's
+                    # `_COMPUTATION_ERROR_CAVEAT_RE` matches on it to reframe the headline.
+                    return (f"metric formula drift: the finding asserts {lbl} but the query "
+                            f"computes it a different way (it reads '{ident}'), so this number "
+                            f"is not {lbl} as your organisation defines it")
     return None
 
 
