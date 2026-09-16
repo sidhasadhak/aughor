@@ -3523,14 +3523,17 @@ def _fast_synthesis_rescue(system: str, user: str, response_model):
     this returns — a faster model does not buy a less-verified report. Timeout its own
     env (``AUGHOR_SYNTH_FAST_TIMEOUT_S``), deliberately shorter than the narrator's:
     the user has already waited one full timeout by the time this runs."""
-    import concurrent.futures as _cf
     import os as _os
+
+    from aughor.kernel.cancellation import run_bounded
     timeout = float(_os.getenv("AUGHOR_SYNTH_FAST_TIMEOUT_S", "60"))
-    ex = _cf.ThreadPoolExecutor(max_workers=1)
     try:
-        fut = ex.submit(lambda: _provider("fast").complete(
-            system=system, user=user, response_model=response_model))
-        out = fut.result(timeout=timeout)
+        out = run_bounded(
+            lambda: _provider("fast").complete(
+                system=system, user=user, response_model=response_model),
+            timeout,
+            abandoned=f"the fast-role rescue passed its {timeout:g}s bound; the "
+                      "deterministic report ships")
         from aughor.stats import stats as _s
         _s.inc("deep_analysis.synthesis_fast_rescue")
         return out
@@ -3540,8 +3543,6 @@ def _fast_synthesis_rescue(system: str, user: str, response_model):
                       "report ships (visibly degraded)",
                  counter="deep_analysis.synthesis_fast_rescue_failed")
         return None
-    finally:
-        ex.shutdown(wait=False)
 
 
 def _degraded_report(question: str, phases: list, intake_data: dict, *,
@@ -9618,7 +9619,6 @@ def ada_synthesize(state: AgentState) -> dict:
     import os as _os
     import concurrent.futures as _cf
     _synth_timeout = float(_os.getenv("AUGHOR_SYNTH_TIMEOUT_S", "120"))
-    _synth_ex = _cf.ThreadPoolExecutor(max_workers=1)
     # R16 P2 — the narrator's system prompt lives with the other prompts and carries
     # the report-style writing contract.
     from aughor.agent.prompts_investigate import synthesis_system_prompt
@@ -9642,16 +9642,18 @@ def ada_synthesize(state: AgentState) -> dict:
                              response_model=ADASynthesisModel)
 
     try:
-        _synth_fut = _synth_ex.submit(_run_synth)
-        synth: ADASynthesisModel = _synth_fut.result(timeout=_synth_timeout)
+        # Don't block the investigation on a hung LLM call — abandon the worker, keep the
+        # fallback. Abandoned means stopped: its in-flight request finishes, but a failed
+        # stream no longer launches a blocking redo behind the rescue that replaced it.
+        from aughor.kernel.cancellation import run_bounded
+        synth: ADASynthesisModel = run_bounded(
+            _run_synth, _synth_timeout,
+            abandoned=f"synthesis passed its {_synth_timeout:g}s bound; the rescue took over")
     except Exception as e:
         synth = None
         if isinstance(e, _cf.TimeoutError):
             from aughor.stats import stats as _s
             _s.inc("deep_analysis.synthesis_timeout")
-    finally:
-        # Don't block the investigation on a hung LLM call — abandon the worker, keep the fallback.
-        _synth_ex.shutdown(wait=False)
 
     # CI-5a — before conceding to the deterministic fallback, one bounded attempt on
     # the FAST role. A slow narrator was the whole cause of the 28% fallback rate;

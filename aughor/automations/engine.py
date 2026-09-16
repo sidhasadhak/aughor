@@ -859,8 +859,9 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         # Only the inline path can report this — it is the only one that waited. Before H5 the
         # drained error was computed and then discarded, so an inline run that errored was
         # recorded as `executed`: a tick that answered nothing, filed as a tick that worked.
+        # The message ends on its advice; the agent rides the outcome's own `agent_id`.
         return EffectOutcome(kind=effect.kind, target=target, status="failed",
-                             message=f"{run.message}{ran_as}")
+                             message=run.message)
     _inv = str(getattr(run, "investigation_id", "") or getattr(run, "id", "") or "")
     return EffectOutcome(kind=effect.kind, target=target, status="executed",
                          message=f"{run.message}{ran_as}",

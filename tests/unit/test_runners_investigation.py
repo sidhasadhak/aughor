@@ -169,7 +169,10 @@ def test_an_inline_run_the_RECORD_calls_failed_is_a_failure_even_with_no_error_e
     run = run_investigation(_req(), idempotency_key="k")
 
     assert run.status == "failed" and not run.ok
-    assert "ended failed" in run.message and "0 queries" in run.message
+    assert "ended failed" in run.message
+    # The row's `query_count` is written only on COMPLETION, so on a failed row it is
+    # always 0 — quoting it told the 09-16 reader "0 queries" about runs that issued dozens.
+    assert "queries" not in run.message
 
 
 @pytest.mark.parametrize("status", ["failed", "timed_out", "interrupted"])

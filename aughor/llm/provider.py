@@ -1575,6 +1575,44 @@ def _usage_or_none(raw) -> tuple[Optional[int], Optional[int]]:
     return _extract_usage(raw)
 
 
+def _json_shape(node: dict, defs: dict, _seen: tuple = ()) -> str:
+    """A JSON Schema node as a one-line shape — ``{"a": string, "b": [{"c": number}]}``.
+
+    Written for the raw streaming path's instruction: a model follows a literal shape more
+    reliably than prose about one, and it costs a fraction of the schema's bytes. A
+    recursive model is named instead of expanded, so the rendering always terminates."""
+    if not isinstance(node, dict):
+        return "value"
+    ref = node.get("$ref")
+    if isinstance(ref, str):
+        name = ref.rsplit("/", 1)[-1]
+        if name in _seen:
+            return name
+        return _json_shape(defs.get(name) or {}, defs, _seen + (name,))
+    if "const" in node:
+        return json.dumps(node["const"])
+    if "enum" in node:
+        return "|".join(json.dumps(v) for v in node["enum"])
+    for union in ("anyOf", "oneOf"):
+        if isinstance(node.get(union), list):
+            return "|".join(_json_shape(n, defs, _seen) for n in node[union])
+    if isinstance(node.get("allOf"), list) and len(node["allOf"]) == 1:
+        return _json_shape(node["allOf"][0], defs, _seen)
+    kind = node.get("type")
+    if kind == "array":
+        items = node.get("items")
+        return f"[{_json_shape(items, defs, _seen)}]" if isinstance(items, dict) else "[]"
+    if kind == "object" or "properties" in node:
+        props = node.get("properties") or {}
+        if not props:
+            return "object"
+        return "{" + ", ".join(f'"{k}": {_json_shape(v, defs, _seen)}'
+                               for k, v in props.items()) + "}"
+    if isinstance(kind, list):
+        return "|".join(str(t) for t in kind)
+    return str(kind) if kind else "value"
+
+
 def _run_resilient(do, base_url: str, *, stats: dict | None = None,
                    max_retries: Optional[int] = None):
     """Run ``do()`` under the per-endpoint semaphore, retrying transient errors with exponential
@@ -1592,6 +1630,10 @@ def _run_resilient(do, base_url: str, *, stats: dict | None = None,
     deadline = time.monotonic() + max(1.0, _float_env("AUGHOR_LLM_DEADLINE_S", _DEADLINE_S))
     attempt = 0
     while True:
+        # Every request — first attempt, retry, fallback link, blocking redo — passes here,
+        # so this is the one place an abandoned run stops spending.
+        from aughor.kernel import cancellation
+        cancellation.checkpoint()
         _pace(base_url)  # rate gate BEFORE the concurrency gate: waiting for a slot we
         # are not yet allowed to use would hold it from callers who are.
         # Acquired fresh per attempt — the slot is a single-use context manager, and a
@@ -1974,8 +2016,11 @@ class LLMProvider:
         """One tool turn against ONE binding. The per-backend half of the call, split out
         so the fallback walk reuses it exactly — the primary and every link run the same
         code path, which is what keeps a chain-served turn honest."""
-        from aughor.kernel import metering
+        from aughor.kernel import cancellation, metering
 
+        # This request skips `_run_resilient`, so it needs the funnel's stop of its own:
+        # an abandoned analyst's next tool choice is a full-context request.
+        cancellation.checkpoint()
         endpoint = client.chat.completions
         kwargs: dict[str, Any] = dict(
             model=model,
@@ -2155,6 +2200,10 @@ class LLMProvider:
                                    text_field, on_text, base_url=self._base_url,
                                    role=self.role)
         except Exception as stream_exc:
+            # An abandoned caller (a synthesis past its timeout, a run past its budget) gets
+            # no redo: the blocking call would be a second full request nobody reads.
+            from aughor.kernel import cancellation
+            cancellation.checkpoint()
             logger.warning("provider: partial streaming failed (%s); falling back to blocking complete()",
                            str(stream_exc)[:120])
             return self.complete(system=system, user=user,
@@ -2294,12 +2343,16 @@ class LLMProvider:
     @staticmethod
     def _json_stream_instruction(response_model) -> str:
         """A compact 'answer as this JSON object' instruction for the raw streaming
-        path (which bypasses instructor's own schema prompt). Field names + types
-        only — the terminal ``model_validate`` is the real contract, and a mismatch
-        falls back to the blocking instructor call."""
-        props = response_model.model_json_schema().get("properties", {})
-        fields = ", ".join(f'"{k}" ({v.get("type", "value")})' for k, v in props.items())
-        return (f"\n\nReturn ONLY a JSON object with fields: {fields}. "
+        path (which bypasses instructor's own schema prompt).
+
+        The whole shape, nested objects included. Top-level names alone told a model
+        ``"recommendations" (array)`` and nothing about the items, so it wrote strings
+        where the model requires objects — every deep synthesis on this path failed its
+        terminal validation and was paid for twice through the blocking fallback. The
+        terminal ``model_validate`` stays the real contract."""
+        schema = response_model.model_json_schema()
+        shape = _json_shape(schema, schema.get("$defs") or {})
+        return (f"\n\nReturn ONLY a JSON object of this shape: {shape}. "
                 "No markdown fences, no prose outside the JSON.")
 
     @staticmethod

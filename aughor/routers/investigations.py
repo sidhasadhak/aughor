@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import re
+import sys
 import threading
 from dataclasses import dataclass, field
 from typing import Any, AsyncGenerator, Callable, Literal, Optional
@@ -3167,9 +3168,14 @@ async def _core_frames(
     where an ``except Exception -> error`` and ``_metered_stream``'s ``BudgetExceeded``
     handler both work exactly as they did when this was one function.
     """
+    from aughor.kernel import cancellation
+
     loop = asyncio.get_running_loop()
     frames: asyncio.Queue = asyncio.Queue()
     cancel = threading.Event()
+    # `emit` and `cancelled()` only reach code that emits or checks; a phase can make
+    # several model calls between the two. The stop scope reaches the model funnel itself.
+    stop = cancellation.StopScope(cancellation.current())
 
     def _emit(t: str, p: dict) -> None:        # runs on the WORKER thread
         if cancel.is_set():
@@ -3178,7 +3184,8 @@ async def _core_frames(
 
     def _work():
         try:
-            return run(_emit, cancel.is_set)
+            with cancellation.scope(stop):
+                return run(_emit, cancel.is_set)
         finally:
             loop.call_soon_threadsafe(frames.put_nowait, _CORE_DONE)
 
@@ -3197,6 +3204,9 @@ async def _core_frames(
     finally:
         cancel.set()
         if not fut.done():
+            # Only an ABANDONED body is stopped: one that finished may have handed work
+            # to a background thread that must outlive the turn.
+            stop.stop("its reader went away before the answer finished")
             # The body cannot be interrupted mid-call, and awaiting it here would
             # hold teardown for the rest of the turn. Retrieve the exception in a
             # callback instead, so an orphan that raises does not log
@@ -4374,9 +4384,9 @@ async def _stream_investigation(
         try:
             _inv_now = get_investigation(inv_id)
             if _inv_now and _inv_now.get("status") == "running":
+                from aughor.kernel.jobs import describe_stop
                 fail_investigation(inv_id, status="failed",
-                                   reason="the run ended without a terminal status — cancelled "
-                                   "(deadline or budget) or the caller went away")
+                                   reason=describe_stop(sys.exception()))
         except Exception:
             logger.debug("finally orphan-reconcile failed", exc_info=True)
         _telemetry.end_trace(trace_id)
@@ -4559,9 +4569,9 @@ async def _stream_resume(inv_id: str, feedback: str, request: Request,
         try:
             _inv_now = get_investigation(inv_id)
             if _inv_now and _inv_now.get("status") == "running":
+                from aughor.kernel.jobs import describe_stop
                 fail_investigation(inv_id, status="failed",
-                                   reason="the run ended without a terminal status — cancelled "
-                                   "(deadline or budget) or the caller went away")
+                                   reason=describe_stop(sys.exception()))
         except Exception:
             logger.debug("resume finally orphan-reconcile failed", exc_info=True)
         db.close()
@@ -4578,9 +4588,15 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
     for the whole iteration — the receipt reads it via metering.snapshot() — and arm
     the Insight agent's budget; the LLM funnel raises BudgetExceeded (a BaseException,
     so it unwinds past the answer path's fail-open try/excepts), surfaced here as a
-    clean error event. Output is otherwise passed through unchanged."""
+    clean error event. Output is otherwise passed through unchanged.
+
+    Inside a kernel job it METERS INTO THE JOB'S accumulator rather than starting its
+    own. A fresh one shadowed the job's for the whole run: the heartbeat and the final
+    flush read an accumulator nothing wrote to, so every analyst-body job flushed zero
+    spend (measured on every scheduled run 09-10 → 09-16), its token budget could never
+    fire, and its failure said "0 queries"."""
     from aughor.kernel import metering
-    token = metering.start()
+    token = metering.start() if metering.current() is None else None
     btoken = metering.set_budget(*budget) if budget else None
     try:
         async for chunk in gen:
@@ -4588,12 +4604,13 @@ async def _metered_stream(gen: AsyncGenerator[str, None],
     except metering.BudgetExceeded as be:
         yield _sse("error", _error_event(
             be, message=f"Answer stopped — {be.reason} exceeded. "
-                        f"Raise the Insight agent's budget in Fleet → Agents.",
+                        f"Raise the Responder's budget with PATCH /agents/insight.",
             reason="budget_exceeded"))
     finally:
         if btoken is not None:
             metering.clear_budget(btoken)
-        metering.reset(token)
+        if token is not None:
+            metering.reset(token)
 
 
 def _insight_budget(conn_id: str):
@@ -4738,6 +4755,7 @@ async def _job_streamed_body(
 
     async def _drive() -> None:
         err: Optional[str] = None
+        stop_exc: Optional[BaseException] = None
         seen_inv: Optional[str] = None
         try:
             async for sse in body_factory():
@@ -4757,6 +4775,7 @@ async def _job_streamed_body(
             # run ends WITHOUT one — chiefly kernel cancellation — so a late
             # resumer sees a closed-with-reason run, not a silent cliff.
             err = str(exc)[:200] or type(exc).__name__
+            stop_exc = exc
             raise
         finally:
             if resume_run is not None:
@@ -4770,9 +4789,9 @@ async def _job_streamed_body(
                 try:
                     _row = get_investigation(seen_inv)
                     if _row and _row.get("status") == "running":
+                        from aughor.kernel.jobs import describe_stop
                         fail_investigation(seen_inv, status="failed",
-                                           reason="the SSE stream ended with the run still 'running' — "
-                                           "the client disconnected")
+                                           reason=describe_stop(stop_exc))
                 except Exception:
                     logger.debug("bridge reconcile failed for %s", seen_inv, exc_info=True)
             # Always release the client drainer, even on cancellation/error.
@@ -5715,7 +5734,7 @@ def cancel_investigation_route(inv_id: str):
     job_id = _job_id_for_investigation(inv_id)
     if not job_id:
         raise HTTPException(status_code=404, detail="No kernel job found for this investigation")
-    cancelled = kernel().cancel(job_id)
+    cancelled = kernel().cancel(job_id, reason="cancelled on request")
     return {"investigation_id": inv_id, "job_id": job_id, "cancelled": cancelled}
 
 
