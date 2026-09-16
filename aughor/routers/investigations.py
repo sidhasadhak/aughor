@@ -2032,6 +2032,14 @@ def _answer_core(
                                       dialect=_writer_dialect(db))
         if _frame_sec:
             prompt = _frame_sec + prompt
+        # HB-4 — the ranked conversation-notes block, gated on measured lift
+        # (aughor/hub/injection.py): renders "" while the gate holds, so this line is
+        # byte-inert today. Mirrored in grounding._BLOCKS ("hub_notes") — the receipt
+        # and the live prompt must not disagree about what was injected.
+        from aughor.agent.grounding import hub_notes as _hub_notes
+        _notes_sec = _hub_notes(connection_id)
+        if _notes_sec:
+            prompt = _notes_sec + prompt
         # Summon surface (SP-2, §3.11) — which product screen the question was asked
         # from; the ⌘K overlay sends its host tab and every other door sends ''
         # (byte-identical prompts). Whitespace-collapsed and hard-capped because it

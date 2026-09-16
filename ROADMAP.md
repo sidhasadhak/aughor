@@ -5792,12 +5792,54 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
 - **HB-4 · the provenance envelope and one ranker**, as above, with the harness arm per source kind. *Receipt:* the
   same question answered with and without conversation-derived notes on the ON-10 sets; notes stay in the prompt only
   with measured lift. *Falsifier:* R4's — a source kind that regresses is stored and shown, never injected.
+  > **BUILT 2026-09-16** (same session as HB-2/HB-3). What stands: **the envelope** (`hub/provenance.py`) — source
+  > kind · author · scope · observed-at with per-kind decay · verification · blast radius, with the closed authority
+  > ladder (measured > approved > declared > mined > said > inferred; unknown ranks LAST, fail-closed) and the
+  > roadmap's exact reader stamps (`[measured 2018-09-11, this connection]` · `[said by Ana in #ops, 3 days ago,
+  > unverified]`) — generalising the substrate PX-5 already held (`DefinitionSource` + `ontology/authority.py`'s
+  > verified-outranks-authority, measured before building). **The ranker** (`hub/ranker.py`) — deterministic on the
+  > three axes; per-kind recency (a definition's current approved version wins regardless of age · an observation
+  > decays and expires unless re-affirmed, 30 days · a measurement ranks by the data's own as-of); conflicts:
+  > different tiers — the higher wins and the loser is a FLAG in the receipt; same tier — both survive and the
+  > conflict is surfaced, never guessed (the ambiguity-ledger hookup rides the first real conflict); the budget fill
+  > SAYS WHAT IT DROPPED. **The gate** (`hub/injection.py`) — `INJECTABLE_SOURCE_KINDS = ()`, a closed constant
+  > flipped only by a change citing a dated harness receipt; while empty the block renders `""` and every prompt is
+  > byte-identical (tested). Wired into BOTH prompt seams in lockstep — `grounding._BLOCKS` ("hub_notes") and
+  > `_stream_chat`'s prepend — with a test that fails when either loses the block, since nothing else does.
+  > **The harness arm** — `notes` in `evals/ablation_eval.py` (UNGATED by design: the arm measures what the gate
+  > asks), with the inert-drop guard ("a notes arm with an empty block is the raw arm under another name" — dropped,
+  > not spent on). **The receipt's honest state:** no conversation notes exist yet for the ON-10 questions, so the
+  > arm inert-drops, the gate holds, and "stored and shown, never injected" IS the shipped behavior — R4's stance by
+  > construction. The arm's first real measurement runs when arrivals accumulate notes; the flip, if lift measures,
+  > cites its dated results file. **Open:** more adapters as kinds earn arms; the ambiguity-ledger ask-once wiring on
+  > the first live same-tier conflict.
 - **HB-5 · arrivals from people and systems.** A sentence in Slack becomes a note on the object with provenance (blast
   radius decides what applies and what waits); live Jira and Confluence state through Atlassian's MCP server on the
   allowlist — no connector code, the write slice's grant law already governs "open a ticket"; the email channel in both
   directions, keyed on the Google OAuth client only the user can create (24 f); one conversation record wherever it
   moves (Slack → deep analysis → Jira comment → email). *Falsifier:* an inbound channel that carries untrusted text
   reaches the agent only through customs — a red-team set of injected instructions must land as data, never as acts.
+  > **FIRST SLICE BUILT 2026-09-16** (with HB-4, one branch). The Slack half: **a sentence becomes a note on the
+  > object, deterministically** — HB-3's thread→object link is the router (a reply lands in a thread the platform
+  > FILED on a securable, so the reply is about that securable; no model decides). The verb is explicit and
+  > colon-strict: `@bot note: carrier X was on strike` files; `note that revenue dipped?` is prose and still asks —
+  > which keeps the whole path inside `app_mention`, so NO new Slack scope and NO reinstall. The door
+  > (`POST /arrivals/slack`) runs customs in order — cap (500), control-strip (`prompt_safety`), PII redaction
+  > (`security/pii.redact_text`, the row scanner's patterns given a free-text seam) — then stages an OBJECT note
+  > under `agent_notes`' blast-radius law (the new `object` target ALWAYS stages, even at high confidence: an object
+  > note is read by everyone who opens the object). Provenance rides the staged recommendation verbatim; `GET
+  > /arrivals/notes` is the stored-and-shown surface with the stamp on every row; the envelope adapter feeds the
+  > ranker from the same store. The TS bot (`bots/slack`) gained the verb + `createArrivalPoster` (70/70 vitest).
+  > **The falsifier is permanent** (`test_hb5_arrival_redteam.py`, SP-6's contract extended inbound): seven attacks —
+  > instruction override, fake tool-result framing, fenced fake proposal, exfiltration nudge, 10KB bulk, SQL
+  > injection, PII smuggle — each lands as a capped, redacted, PENDING note; the action inbox, the automations
+  > library and the links store are unchanged by every one. **Deliberately not built:** the email channel (both
+  > directions keyed on the Google OAuth client only the user can create — §6 item 24 f holds); Jira/Confluence
+  > state arrives through the allowlisted MCP consumer with the write slice's grant law, no connector code, and its
+  > live receipt waits on a real Atlassian server on the allowlist; a plain (non-mention) thread reply stays
+  > un-listened (it would need `message.channels` + a reinstall — the mention verb covers the case without either).
+  > "One conversation record wherever it moves" is the manifest ordered by time: the thread link, the ticket link
+  > and the notes all hang off the one securable.
 - **HB-6 · the map and the packs.** Every automation on one screen — trigger, destinations, grant, owner, last run,
   cost, probation state (Agent Ops' Map does this per agent; hub-wide does not exist); a function pack ships its group,
   its tags, its default grants and subscriptions, and its automations (24 c). *Receipt:* installing a supply-chain pack

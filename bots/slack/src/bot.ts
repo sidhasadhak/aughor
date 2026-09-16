@@ -19,13 +19,31 @@ import { Chat, StreamingPlan, type Adapter, type FileUpload, type StateAdapter, 
 
 import { csvFilename, deepLink, renderGrid, worthShowing } from "./artifacts.js";
 import type { ChartRenderer } from "./chart.js";
-import type { AskChunk, AskStream, TurnArtifacts } from "./aughor.js";
+import type { ArrivalPoster, AskChunk, AskStream, TurnArtifacts } from "./aughor.js";
 
 export const BOT_USERNAME = "aughor";
 
 const USAGE =
   "Ask me a data question — e.g. “@aughor why did revenue dip last month?” " +
   "I answer from the connected warehouse, with a Trust Receipt behind every number.";
+
+/** HB-5 — the note verb: "@aughor note: carrier X was on strike last week" files the
+ *  sentence as a NOTE on the object this thread is about (the thread→object link HB-3
+ *  filed), instead of asking a question. The COLON is the verb — "note that revenue
+ *  dipped?" is prose and still asks. Deterministic; never a guess. */
+const NOTE_VERB = /^note:\s*/i;
+
+/** A Slack thread id's (channel, root ts), for the arrivals door. The adapter's ids
+ *  are colon-joined and prefixed ("slack:C123:1712.34"); the root ts is always the
+ *  digits.digits tail. Null when the id does not carry one — the caller says so
+ *  honestly instead of filing against a guess. */
+export function parseSlackThreadRef(threadId: string): { channel: string; ts: string } | null {
+  const parts = (threadId ?? "").split(":").filter(Boolean);
+  const ts = parts[parts.length - 1] ?? "";
+  if (!/^\d+\.\d+$/.test(ts) || parts.length < 2) return null;
+  const channel = parts[parts.length - 2];
+  return channel ? { channel, ts } : null;
+}
 
 /** The question, with the bot's own mention tokens stripped off. */
 export function stripMention(text: string, userName: string = BOT_USERNAME): string {
@@ -60,6 +78,7 @@ export function buildBot({
   adapters,
   state,
   webUrl,
+  postArrival,
 }: {
   ask: AskStream;
   /** Absent in tests that only care about the text half. */
@@ -67,6 +86,8 @@ export function buildBot({
   adapters: Record<string, Adapter>;
   state: StateAdapter;
   webUrl?: string;
+  /** HB-5 — absent in tests that only exercise the ask half. */
+  postArrival?: ArrivalPoster;
 }): Chat {
   const bot = new Chat({
     userName: BOT_USERNAME,
@@ -81,6 +102,30 @@ export function buildBot({
     const question = stripMention(message.text ?? "");
     if (!question) {
       await thread.post(USAGE);
+      return;
+    }
+
+    // HB-5 — the note verb takes the arrival path, never the ask path. The door does
+    // customs and staging; this relays and repeats the door's own sentence, and an
+    // unfiled thread gets the honest refusal rather than a silently redirected ask.
+    if (postArrival && NOTE_VERB.test(question)) {
+      const ref = parseSlackThreadRef(thread.id);
+      if (!ref) {
+        await thread.post("I can't tell which thread this is, so I can't file the note.");
+        return;
+      }
+      const result = await postArrival({
+        channel: ref.channel,
+        threadTs: ref.ts,
+        text: question.replace(NOTE_VERB, "").trim(),
+        author: message.author?.fullName ?? "",
+        authorRef: message.author?.userId ? `slack:${message.author.userId}` : "",
+      });
+      await thread.post(
+        result.ok
+          ? `Noted — staged for review. ${result.detail}`
+          : `Not filed: ${result.detail}`,
+      );
       return;
     }
 
