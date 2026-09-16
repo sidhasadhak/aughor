@@ -32,6 +32,7 @@ import asyncio
 import contextvars
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Awaitable, Callable, Optional
@@ -74,6 +75,67 @@ def run_attribution() -> tuple[str, str]:
         return _current_job.get() or "", _current_charter.get() or ""
     except Exception:
         return "", ""
+
+
+#: Why the kernel cancelled a job, readable from INSIDE the run while it unwinds — where
+#: a reconcile has to name the cause. Before this the cancelled run only saw a bare
+#: CancelledError, and filed a 900s budget kill as "the client disconnected".
+_stop_reasons: dict[str, str] = {}
+
+_BUDGET_STOP = re.compile(r"^budget exceeded: (time|token) budget \(([\d,.]+)(?:s| tokens)\)")
+
+
+def describe_stop(exc: Optional[BaseException] = None) -> str:
+    """Why the run on this task ended without an answer, then what to do — one short
+    paragraph for the investigation record and the run history that quotes it."""
+    job_id = _current_job.get()
+    agent_id = _current_charter.get() or ""
+    agent = agent_id
+    try:
+        from aughor.kernel.agents import get_charter
+        charter = get_charter(agent_id) if agent_id else None
+        agent = charter.name if charter else agent_id
+    except Exception as e:
+        from aughor.kernel.errors import tolerate
+        tolerate(e, "a stop reason names the agent best-effort", counter="jobs.describe_stop")
+    from aughor.kernel.cancellation import RunStopped
+    m = metering.current()
+    return stop_sentence(
+        reason=(exc.reason if isinstance(exc, RunStopped)
+                else _stop_reasons.get(job_id, "") if job_id else ""),
+        in_job=job_id is not None, agent_id=agent_id, agent=agent,
+        cancelled=exc is None or isinstance(exc, (asyncio.CancelledError, GeneratorExit)),
+        error="" if exc is None else (str(exc) or type(exc).__name__),
+        llm_calls=m.llm_calls if m is not None else None,
+        queries=m.query_count if m is not None else None)
+
+
+def stop_sentence(*, reason: str, in_job: bool, cancelled: bool, error: str = "",
+                  agent_id: str = "", agent: str = "", llm_calls: Optional[int] = None,
+                  queries: Optional[int] = None) -> str:
+    spent = ""
+    if llm_calls is not None and queries is not None:
+        spent = (f" ({llm_calls} model call{'' if llm_calls == 1 else 's'}, "
+                 f"{queries} quer{'y' if queries == 1 else 'ies'})")
+    who = agent or "agent"
+    patch = f"PATCH /agents/{agent_id}" if agent_id else "PATCH /agents/<agent>"
+    budget = _BUDGET_STOP.match(reason)
+    if budget and budget.group(1) == "time":
+        return (f"Stopped at the {who}'s {budget.group(2)}s time budget before answering"
+                f"{spent}. Bind a faster model in Settings → Models, or raise "
+                f"time_budget_s with {patch}.")
+    if budget:
+        return (f"Stopped at the {who}'s {budget.group(2)}-token budget before answering"
+                f"{spent}. Ask a narrower question, or raise token_budget with {patch}.")
+    if reason:
+        return f"Stopped before answering{spent} — {reason}."
+    if not cancelled:
+        return f"Stopped before answering{spent}: {error}"
+    if in_job:
+        return (f"Cancelled before answering{spent}, with no recorded reason (an API "
+                "restart does this). Run it again.")
+    return (f"Stopped before answering{spent} — the request streaming it ended (a closed "
+            "page or an API restart). Ask again.")
 
 
 class JobState:
@@ -254,6 +316,7 @@ class JobKernel:
                 except asyncio.CancelledError:
                     self._transition(job_id, JobState.CANCELLED)
                     self._tasks.pop(job_id, None)
+                    _stop_reasons.pop(job_id, None)
                     raise
             try:
                 await self._run(job_id, coro_factory, on_finish)
@@ -336,7 +399,7 @@ class JobKernel:
                                  job_id=job_id,
                                  conn_id=(self.ledger.job_get(job_id) or {}).get("conn_id"))
                 self.ledger.job_update(job_id, error=f"budget exceeded: {over}")
-                self.cancel(job_id)
+                self.cancel(job_id, reason=f"budget exceeded: {over}")
                 return
 
     async def _run(self, job_id: str, coro_factory, on_finish) -> None:
@@ -404,6 +467,7 @@ class JobKernel:
                 from aughor.kernel.errors import tolerate
                 tolerate(_m_exc, "job metrics flush", counter="metering")
             metering.unregister_job(job_id)
+            _stop_reasons.pop(job_id, None)
             metering.reset(_m_token)
             if _model_token is not None:
                 from aughor.llm.provider import reset_run_model
@@ -428,9 +492,13 @@ class JobKernel:
 
     # ── cancellation ──────────────────────────────────────────────────────────
 
-    def cancel(self, job_id: str) -> bool:
+    def cancel(self, job_id: str, reason: str = "") -> bool:
+        """Cancel a job. ``reason`` is what the run's own reconcile reports as the cause —
+        without one, the only honest thing it can say is that nothing recorded why."""
         task = self._tasks.get(job_id)
         if task is not None and not task.done():
+            if reason:
+                _stop_reasons.setdefault(job_id, reason)
             task.cancel()
             return True
         # No live task (e.g. PENDING row from a dead process) — close the row.
@@ -442,15 +510,16 @@ class JobKernel:
         if conn_id is None and canvas_id is None:
             return 0
         n = 0
+        why = "its connection was removed" if canvas_id is None else "its canvas was removed"
         for job in self.ledger.jobs_where(states=list(JobState.ACTIVE),
                                           conn_id=conn_id, canvas_id=canvas_id):
-            if self.cancel(job["id"]):
+            if self.cancel(job["id"], reason=why):
                 n += 1
         # A connection scope also owns canvas jobs running on that connection.
         if conn_id is not None and canvas_id is None:
             for job in self.ledger.jobs_where(states=list(JobState.ACTIVE)):
                 if job.get("conn_id") == conn_id and job.get("canvas_id"):
-                    if self.cancel(job["id"]):
+                    if self.cancel(job["id"], reason=why):
                         n += 1
         return n
 

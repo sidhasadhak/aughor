@@ -111,4 +111,4 @@ def cancel_job(job_id: str):
     and the kernel records it CANCELLED."""
     if Ledger.default().job_get(job_id) is None:
         raise HTTPException(status_code=404, detail="No such job")
-    return {"job_id": job_id, "cancelled": kernel().cancel(job_id)}
+    return {"job_id": job_id, "cancelled": kernel().cancel(job_id, reason="a person cancelled it")}
