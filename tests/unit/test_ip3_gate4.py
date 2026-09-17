@@ -179,3 +179,16 @@ def test_the_airline_receipt_passes_and_reproduces_every_published_figure():
     dataset = next(d for d in pack.datasets if d.id == DATASET_ID)
     assert {m["metric"] for m in receipt["metrics"] if m["in_range"]} == set(dataset.measures)
     assert receipt["claims_by_tier"]["measured-false"] == 0
+
+
+@pytest.mark.parametrize("package", sorted(
+    p.parent for p in (Path(__file__).resolve().parents[2] / "packs").glob("*/pack.yaml")
+    if int((yaml.safe_load(p.read_text(encoding="utf-8")) or {}).get("anatomy") or 0) >= 1), ids=lambda p: p.name)
+def test_every_anatomy_package_has_a_current_passing_receipt_for_each_dataset(package):
+    pack = load_pack(package)
+    fingerprint = gate4.package_fingerprint(package)
+    for dataset in pack.datasets:
+        receipt = gate4.read_receipt(pack, dataset.id)
+        assert receipt is not None, f"{pack.id}: no receipt for {dataset.id} — run `aughor packs measure {pack.id} --write`"
+        assert receipt["package_fingerprint"] == fingerprint, f"{pack.id}: {dataset.id} receipt is stale"
+        assert receipt["dataset_sha256"] == dataset.sha256 and receipt["ok"], receipt["findings"]

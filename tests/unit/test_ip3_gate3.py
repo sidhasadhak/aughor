@@ -191,3 +191,28 @@ def test_a_malformed_file_is_a_load_error_not_a_crash(tmp_path):
 def test_an_expression_names_only_role_attributes_and_sql(tmp_path, expression, ok):
     pack = load_pack(_write(tmp_path / "rail", _package()))
     assert (expression_findings(expression, pack, "test") == []) is ok
+
+
+# ── every shipped package that declares the anatomy — the population read from packs/, not listed here ────────
+
+REPO_PACKS = Path(__file__).resolve().parents[2] / "packs"
+
+
+def _anatomy_packages() -> list[Path]:
+    found = []
+    for manifest in sorted(REPO_PACKS.glob("*/pack.yaml")):
+        data = yaml.safe_load(manifest.read_text(encoding="utf-8")) or {}
+        if int(data.get("anatomy") or 0) >= 1:
+            found.append(manifest.parent)
+    return found
+
+
+def test_at_least_one_shipped_package_declares_the_anatomy():
+    """Without this, the test below passes over an empty population."""
+    assert [p.name for p in _anatomy_packages()], "no package in packs/ declares anatomy: 1"
+
+
+@pytest.mark.parametrize("package", _anatomy_packages(), ids=lambda p: p.name)
+def test_every_shipped_anatomy_package_passes_gate3(package):
+    report = run_gate3(load_pack(package))
+    assert report.ok, report.lines()

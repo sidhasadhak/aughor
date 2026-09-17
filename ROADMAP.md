@@ -5411,7 +5411,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 BUILT** 2026-09-17 on `claude/ip-3-generator`, local)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5549,6 +5549,78 @@ installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-s
   by design); the profile inference prompt does not name the chosen industries — the narrowing is at resolution,
   deterministic, and a prompt change waits for a measured reason.
 
+**IP-3 · The generator: gates 3 and 4 as code, airline as the reference — BUILT 2026-09-17** on
+`claude/ip-3-generator` (`5a9fa8c9` the anatomy and gate 3, `388a3c7b` airline and gate 4), local, nothing pushed.
+
+The anatomy a package declares with `anatomy: 1`:
+- role attributes, named in expressions as `{{role.<role>.<attribute>}}`;
+- metrics with a `unit` and a `sane_range`: a min, a max, a basis (the population and period) and sources;
+- `sources.yaml`: each source's publisher, url, published and retrieved dates, and each figure with the words it
+  was published in;
+- plays with an id, a kind (diagnostic, data_quality, practice) and, for data-quality plays, a detection;
+- goldens on a named dataset: the metric, a filter, the published value, its tolerance and its source;
+- `datasets/*.yaml`, the one place a package names tables: the url, size, SHA-256, load statements, a binding from
+  role attributes to columns, and the metrics the dataset measures.
+
+The loader reads all of it as UTF-8 and turns a malformed file into a `PacksError` — a pydantic error from a metric
+or ontology file used to escape every caller, the roster route included.
+
+- **Gate 3, the static gate** (`aughor/packs/gate3.py`; `aughor packs check`; `validate_pack` for an anatomy
+  package). It checks: schema, sources, a sourced band for every metric, roles not tables, no alias collision,
+  bound plays, goldens, datasets and ontology references. For roles not tables, a formula, filter or detection may
+  name only role attributes and SQL words; `FROM`, `JOIN`, `SELECT` and `;` are refused. Each rule is proven by a
+  planted violation, and every shipped anatomy package passes (the population is read from `packs/`).
+- **Gate 4, measured with no model** (`aughor/packs/gate4.py`; `aughor packs measure [--download] [--write]`).
+  - The dataset comes from a cache outside the repository; it is downloaded only on request and refused when its
+    size or SHA-256 differs from the package's.
+  - The load statements build a DuckDB database. Each formula is compiled through the binding into one SELECT, and
+    no model writes it.
+  - It checks every recipe against its sane range and every golden against its published figure, and runs every
+    detection. Claims are tiered by the same model-free build and measurements a connection gets
+    (`extract_structural_ontology`, verified joins, cardinality, lifecycles, `apply_core_claims`).
+  - Findings: a recipe out of range, a golden that doesn't reproduce, a detection that can't run, a claim measured
+    false.
+  - The report is stored as `measurements/<dataset>.json`, keyed to the package's fingerprint, and CI fails a stale
+    or failing receipt.
+- **Airline, the reference package.** `industry.json` and `kb/` are unchanged, as IP-1 moved them. The package adds:
+  - four sources: BTS's January and full-year 2019 Air Travel Consumer Reports, its delay-cause definitions, and
+    the on-time file, every figure quoted;
+  - a flight role with ten attributes;
+  - three metrics with sourced bands: on-time arrival rate, cancellation rate, completion factor;
+  - an ontology: flight, carrier, airport and aircraft, three links, and the flight lifecycle;
+  - eight bound plays, three of them data-quality plays with detections;
+  - questions;
+  - 14 goldens: the figures BTS published for January 2019;
+  - the dataset: BTS Marketing Carrier On-Time Performance, January 2019.
+- **Measured on the real file** (the user approved the download: 34,217,271 bytes, SHA-256 `c8cc2c6e…d501b`,
+  638,649 flights, 10 carrier networks):
+  - Recipes: on time 78.37%, cancelled 3.06%, completion factor 96.94%, each inside its band.
+  - Goldens: all 14 reproduce within one-decimal rounding — 78.4% on time and 3.1% cancelled overall, and six
+    carriers' on-time and six carriers' cancellation rates.
+  - The published on-time rate counts cancelled and diverted flights as not on time. The release does not say so,
+    but only that reading reproduces 78.4%; over operated flights the rate would be 81.03%.
+  - Detections: 21,000 cancelled or diverted flights, which a wrong denominator would drop; 0 cancellations
+    without a reason; 0 late flags on flights that never arrived.
+  - Claims: 6 measured-true (four objects; flight to carrier and flight to aircraft, both measured N:1) and 2
+    expected — no flight-to-airport join is inferred (two keys point at one table), and no lifecycle is read.
+- **Found on the way, each its own task.**
+  - The profiler's sampled queries break on DuckDB tables over 500,000 rows. The SQL transpile moves `USING SAMPLE`
+    after `LIMIT`, so those tables get no column values and no lifecycle; that is why airline's lifecycle claim is
+    unmeasured.
+  - The sane-range parser misreads shipped ranges: airline's "ratio 0..1 (0..100%)" is read as 0..100, so an
+    impossible 1.4 passes.
+- **Receipts:** `tests/unit/test_ip3_gate3.py` (38) and `test_ip3_gate4.py` (10: each failure planted on a 100-flight
+  file in BTS's layout, with no download, plus the committed receipt held to the package); the full backend suite
+  once on the branch: IP3_FULL_SUITE_RESULT.
+- **Open:**
+  - More metrics. Load factor needs T-100 data, a separate download to approve. Yield, RASM/CASM and ancillary
+    revenue need revenue sources. Utilization, stage length, diversions and delay-cause shares need verified bands.
+  - The runtime still reads `industry.json` and `kb/`: pack plays are not seeded into the playbook store, and
+    `kb/` detection SQL still names example tables.
+  - Gate 5, the with-and-without comparison, spends model calls and waits for the user's go.
+  - Gate 6 (a person's review, draft → active).
+  - Authoring the next package (gates 1–2 for IP-4) is still by hand.
+
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
 `metrics/*.yaml` (formula, grain, sane range with its source, anti-patterns), `playbooks/*.yaml` (diagnostic,
@@ -5593,6 +5665,7 @@ draft → active.
   ✅ BUILT 2026-09-17 (above): the Verifier's rule-outs on deep reports, then the top-up.
 - **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
+  ✅ BUILT 2026-09-17 (above): 14 of 14 published BTS figures reproduced with no model.
 - **IP-4 the tiers.**
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
     and FFIEC Call Reports that reconcile to the FDIC's published totals), then payments & fintech (it reuses
@@ -6439,8 +6512,12 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         IP-2 ✅ MERGED #518: the installer asks once which industries (through the
         terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
         narrows every industry read; Settings → Organization and `aughor industries` change it.
-        Next: IP-3 the generator (airline as reference) → IP-4 tier 1: banking & lending first,
-        then payments & fintech, then insurance. The user, 2026-09-17: finish Arc IP before Arc IN
+        IP-3 ✅ BUILT 2026-09-17 (local): the anatomy and gate 3 (static, CI) · gate 4 measures a
+        package on a named public dataset with no model · airline the reference — 3 sourced
+        metrics, 8 bound plays, 14 goldens; all 14 of BTS's published January 2019 figures
+        reproduced on its 638,649-flight file; 6 claims measured-true, 2 expected.
+        Next: IP-4 tier 1: banking & lending first, then payments & fintech, then insurance.
+        The user, 2026-09-17: finish Arc IP before Arc IN
 ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what Hermes Agent's installer
         teaches; sequenced AFTER Arc IP (the user's order); nothing built. Measured on `1c150b05`:
         state lives in the checkout's data/, a re-run never updates the code, no update or doctor
