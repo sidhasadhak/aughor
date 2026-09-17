@@ -96,7 +96,8 @@ def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ran
             # (a) Profile-authoritative range check: the matched metric is a BOUNDED rate
             # and this column overshoots its ceiling → grain bug (conversion 1.41, 105%).
             # Applies to a single column too (a per-channel rate need not span ≥2 rows to
-            # be impossible). A matched OPEN metric (ROAS) is explicitly exempt.
+            # be impossible). A matched metric that is not a bounded rate — a ROAS 0..∞, an
+            # NRR typically 0.8..1.4, 0..24 block hours — carries no max and is exempt.
             if m_max is not None:
                 # Normalise to a 0..1 fraction, TOLERATING the SQL emitting the other scale
                 # than declared — a metric declared 'ratio 0-1' whose query returns 100.0, OR
@@ -117,7 +118,8 @@ def is_degenerate_result(rows, finding_text: str = "", sql: str = "", metric_ran
                         return True      # saturated at the ceiling (100% repeat / 100% approved)
             # (b) Keyword fallback when no profile match — saturated-at-ceiling only (the
             # >bound case is unsafe without knowing bounded-vs-unbounded). Skip entirely
-            # when we matched an OPEN metric (don't ceiling-drop a real ROAS=1.0).
+            # when we matched a metric that is not a bounded rate (don't ceiling-drop a
+            # real ROAS=1.0).
             elif matched is None and rate_ctx and len(norm) >= 2:
                 lo = min(nums)
                 if 0.0 <= lo and hi <= 1.0005 and all(n >= 0.9995 for n in nums):
