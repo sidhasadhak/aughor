@@ -60,7 +60,8 @@ def test_golden_profile_cache_survives_logic_version_extraction():
     `concept`, per-table `derived_quantities`, and `semantic_type` for space-separated
     identifiers), then "v6-postal-key" when a postal-named TEXT column became a `key`, then "v7-percent-scale"
     when `unit` gained `percent_whole`. "v8-table-cap" profiled a different set of tables, and "v9-table-sample"
-    made a large table's sampled queries parse, so its `top_values` and `value_sample` stop coming back empty.
+    made a large table's sampled queries parse and read DuckDB's value lists whole, so a large table's `top_values`
+    and `value_sample` stop coming back empty.
 
     Both bumps are DELIBERATE global misses, because `from_dict` reads an older entry
     happily and every existing connection would otherwise keep serving stale profiles. The

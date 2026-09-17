@@ -62,7 +62,8 @@ def cache_path():
 #     sampled top-values and entity-value query on a table over 500,000 rows used to fail to
 #     parse, and the pair sample fell back to the table's first 300 rows, so a cached large
 #     table lacks `top_values`, `value_sample`, the concepts and `derived_quantities` a
-#     random sample finds, and the lifecycles the ontology reads from `top_values`.
+#     random sample finds, and the lifecycles the ontology reads from `top_values`. On DuckDB
+#     those value lists are now read from the whole column, not the sample.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
