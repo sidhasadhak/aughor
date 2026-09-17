@@ -104,18 +104,44 @@ def series_move(columns, rows, min_points: int = 3) -> Optional[Move]:
 
 # ── finding synthesis ────────────────────────────────────────────────────────
 
-_PCT_HINT = re.compile(r"percent|ratio|\brate\b|margin|sentiment|share|%", re.I)
-_CUR_HINT = re.compile(r"usd|eur|gbp|jpy|cny|inr|\$|€|£|revenue|\bvalue\b|\baov\b|price|spend|sales|order\s+value", re.I)
+#: A money unit says so in its own text ("EUR", "$", "currency per shipment"). The NAME is read too — a
+#: 'currency, strictly positive' MRR names no symbol — but never over a unit that states a ratio: "Net
+#: Revenue Retention" and "ROAS (Return on Ad Spend)" are named for money and measured in multiples of it.
+_CUR_UNIT = re.compile(r"usd|eur|gbp|jpy|cny|inr|\$|€|£|¥|₹|\bcurrency\b", re.I)
+_CUR_NAME = re.compile(r"revenue|\bvalue\b|\baov\b|price|spend|sales|order\s+value", re.I)
+_RATIO_UNIT = re.compile(r"\bratio\b|\bmultiple\b|\btimes\b|\bx\b|×", re.I)
+#: A metric measured in multiples of what it returns (ROAS 4.2, LTV:CAC 3.1) — a figure, not money.
+_MULTIPLE = re.compile(r"\broas\b|return on ad", re.I)
+#: The unit a text OPENS with, before the commentary that follows it — 'hours per aircraft per day, 0..24
+#: (physically capped at 24). Any value > 24 is impossible.' is stated in hours, and its closing "value" is
+#: prose, not a currency. The same principle as the range reading: what the text states first is what it means.
+_UNIT_HEAD = re.compile(r"[;(]|,|\.\s")
+
+
+def _unit_head(unit: str) -> str:
+    return _UNIT_HEAD.split(unit or "", maxsplit=1)[0]
 
 
 def _fmt_value(value: float, name: str, unit: str, sym: str) -> str:
-    """Format a metric value for prose: percent metrics as 'NN%' (scaling a 0..1 ratio
-    up), currency metrics with the business's symbol, everything else as a plain number."""
-    hay = f"{name} {unit}"
-    if _PCT_HINT.search(hay):
-        v = value * 100 if abs(value) <= 1.5 else value
-        return f"{v:.0f}%"
-    if _CUR_HINT.search(hay):
+    """Format a metric value for prose AT THE SCALE ITS TEXT STATES: a percent only for a stated 0..1 or
+    0..100 rate (`stated_range`'s ratio01 / pct100), currency with the business's symbol, everything else as
+    a plain number.
+
+    Reading the scale off the words instead — percent|ratio|rate|margin|share anywhere in the name or unit,
+    times 100 when the value was under 1.5 — phrased a 'ratio 0..∞' turnover moving 4 → 6 as "from 4% to
+    6%" and a 'percent 0-100' defect rate moving 1.2 → 2.2 as "from 120% to 2%". Whether a text states a
+    bounded rate is `business_profile/validate.py::stated_range`'s question, and the KPI tiles ask the same
+    reader (the API ships it as each metric's `stated_range`)."""
+    from aughor.business_profile.validate import stated_range
+
+    kind = stated_range(unit)[0]
+    if kind == "ratio01":
+        # A 0..1 rate whose chart_sql came out on the 0..100 scale is still that rate's percent.
+        return f"{value * 100 if abs(value) <= 1.5 else value:.0f}%"
+    if kind == "pct100":
+        return f"{value:.0f}%"
+    if _CUR_UNIT.search(unit) or (_CUR_NAME.search(f"{name} {_unit_head(unit)}")
+                                  and not _RATIO_UNIT.search(unit) and not _MULTIPLE.search(name)):
         return f"{sym}{value:,.0f}" if abs(value) >= 10 else f"{sym}{value:,.2f}"
     return f"{value:g}"
 

@@ -47,7 +47,7 @@ _TWO_SIDED_RE = re.compile(
     r"(?:(?P<hi_inf>\+?\s*(?:∞|inf(?:inity)?\b))|(?P<hi_approx>[~≈]\s*)?[$€£¥₹]?(?P<hi>" + _NUM + r")(?P<hi_plus>\+)?)"
 )
 _BRACKET_RE = re.compile(r"\[\s*(?P<lo>" + _NUM + r")\s*,\s*(?P<hi>" + _NUM + r")\s*\]")
-# "≥ 1", "<= 5", "0+" — a bound on one side, read only where the text declares its range (see _range_kind).
+# "≥ 1", "<= 5", "0+" — a bound on one side, read only where the text declares its range (see stated_range).
 _ONE_SIDED_RE = re.compile(
     r"(?P<op>≥|>=|≤|<=|>|<)\s*(?P<approx>[~≈]\s*)?[$€£¥₹]?(?P<num>" + _NUM + r")"
     r"|(?<![\w.])(?P<plus>" + _NUM + r")\+"
@@ -91,7 +91,7 @@ def _first_stated_band(text: str) -> tuple[float | None, float | None, bool] | N
     return None
 
 
-def _range_kind(unit_or_range: str) -> tuple[str, float | None, float | None]:
+def stated_range(unit_or_range: str) -> tuple[str, float | None, float | None]:
     """Read the range a metric's unit/range text states, as the (kind, lo, hi) the live checks hold it to.
 
     kinds: 'ratio01' (a stated 0..1), 'pct100' (a stated 0..100), 'band' (any other stated band, open at an end
@@ -149,7 +149,7 @@ def profile_metric_ranges(profile) -> list[tuple]:
         )
         if not toks:
             continue
-        kind, _lo, hi = _range_kind(getattr(m, "unit_or_range", "") or "")
+        kind, _lo, hi = stated_range(getattr(m, "unit_or_range", "") or "")
         out.append((toks, kind, hi if kind in ("ratio01", "pct100") else None))
     return out
 
@@ -326,7 +326,7 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
             val = _first_numeric(getattr(res, "rows", []) or [])
             if val is None:
                 return (False, "no scalar (NULL/empty result)")
-            kind, lo, hi = _range_kind(unit_or_range)
+            kind, lo, hi = stated_range(unit_or_range)
             if kind in ("ratio01", "pct100", "band"):
                 # Outside a stated bound → a grain artifact (the >1 conversion bug, a
                 # 26-hour aircraft day). Slack is 5% of the band's width — a rate's 1.05,

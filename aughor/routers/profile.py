@@ -25,17 +25,25 @@ def get_business_profile(connection_id: str, schema_name: Optional[str] = Query(
     # RC3 — serve-time coherence: blank the value_sql of a category-named metric declared as
     # a scalar percent/ratio ("Top Return Reason 0.4%") so the KPI strip drops it, without
     # waiting for a re-inference. New profiles are already gated at build time (audit_profile).
+    # And ship each metric's unit/range text as the RANGE IT STATES (`stated_range`), read by the
+    # same `stated_range` the value audit holds the metric to — so the KPI strip formats a figure at
+    # the scale its text states and hides it only by a bound that text states, instead of reading
+    # the prose with regexes of its own (which held every "ratio" to 0..1 and read '0-1000' as a
+    # percent). Serve-time, so a reworded reader reaches the tiles without a re-inference.
     try:
-        from aughor.business_profile.validate import name_sql_coherent
+        from aughor.business_profile.validate import stated_range, name_sql_coherent
         for m in (raw.get("profile", {}).get("north_star_metrics") or []):
+            kind, lo, hi = stated_range(m.get("unit_or_range", "") or "")
+            m["stated_range"] = {"kind": kind, "lo": lo, "hi": hi}
             if (m.get("value_sql") or "").strip():
                 ok, _ = name_sql_coherent(m.get("name", ""), m.get("unit_or_range", ""))
                 if not ok:
                     m["value_sql"] = ""
     except Exception as exc:
         from aughor.kernel.errors import tolerate
-        tolerate(exc, "serve-time metric coherence filter is best-effort; the raw profile is "
-                 "still returned (build-time audit_profile is the primary gate)",
+        tolerate(exc, "serve-time metric coherence filter and range reading are best-effort; the raw "
+                 "profile is still returned (build-time audit_profile is the primary gate, and a metric "
+                 "with no stated_range formats as open — unbounded, never a guessed bound)",
                  counter="profile.coherence_filter")
     return {"available": True, **raw}
 

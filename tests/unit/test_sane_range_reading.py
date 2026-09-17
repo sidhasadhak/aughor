@@ -1,6 +1,6 @@
 """A metric's range reads as the range its text states — measured over every range the industry packages ship.
 
-`business_profile/validate.py::_range_kind` turns a metric's unit/range text into the bound the live checks hold
+`business_profile/validate.py::stated_range` turns a metric's unit/range text into the bound the live checks hold
 its value to: `audit_value_sql` blanks a KPI whose scalar falls outside it, and `is_degenerate_result` drops a
 finding whose rate column overshoots it. It tested for "percent" before "ratio", and for the bare word "ratio"
 anywhere, so the ranges `packs/<industry>/industry.json` ships were misread (measured on main `21a4484f`,
@@ -25,7 +25,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from aughor.business_profile.validate import _range_kind, audit_value_sql, profile_metric_ranges
+from aughor.business_profile.validate import stated_range, audit_value_sql, profile_metric_ranges
 from aughor.explorer.verify import is_degenerate_result
 
 #: The shipped packages — the repository's own, not the suite's temp copy of `packs/`.
@@ -123,7 +123,7 @@ def test_every_shipped_range_has_a_stated_reading():
 
 @pytest.mark.parametrize("pack, metric, field, text", SHIPPED, ids=[f"{p}:{m}" for p, m, _, _ in SHIPPED])
 def test_a_shipped_range_reads_as_it_states(pack, metric, field, text):
-    assert _range_kind(text) == INTENDED[(pack, metric, field)]
+    assert stated_range(text) == INTENDED[(pack, metric, field)]
 
 
 # ── The value_sql audit holds a KPI's scalar to the range read ───────────────────────────────────────────────
