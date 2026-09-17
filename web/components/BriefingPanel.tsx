@@ -963,11 +963,20 @@ export function FindingActions({ insight, domain, connectionId, canvasId, schema
         metric_name: (insight.measures || []).join(", ") || undefined,
         headline: `${domain}${insight.angle ? " · " + insight.angle : ""}`,
         source_id: insight.id,
+        // HB-2 — the departure gate re-runs the finding's query on this connection before
+        // its numbers leave.
+        conn_id: connectionId,
       });
-      setShareMsg(r.status === "ok" ? `Sent to ${trigger.name} ✓` : `Failed: ${r.error || r.status}`);
+      // A hold is the gate's verdict, not a failure: say why, and leave it up long enough
+      // to read (the departures screen keeps the full record).
+      setShareMsg(r.status === "ok" ? `Sent to ${trigger.name} ✓`
+        : r.status === "held" ? `Not sent — ${r.error || "held at departure"}`
+        : `Failed: ${r.error || r.status}`);
+      setTimeout(() => setShareMsg(null), r.status === "held" ? 12000 : 4000);
+      return;
     } catch { setShareMsg("Share failed"); }
     setTimeout(() => setShareMsg(null), 4000);
-  }, [insight, domain]);
+  }, [insight, domain, connectionId]);
 
   const btnColor = "var(--t3)";
   // A "no data" finding isn't actionable — disable Monitor/Promote/Share (a monitor

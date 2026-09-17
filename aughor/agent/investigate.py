@@ -5388,6 +5388,7 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     return {
         "subject": f"definition of {label}",
         "metric_label": label,
+        "metric_name": cand.name,
         "question": (f"“{label}” can be computed two ways that give different answers "
                      f"({_fmt(governed_v)} vs {_fmt(parsed_v)}) — which did you mean?"),
         "options": [gov_label, parsed_label],

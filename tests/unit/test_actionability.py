@@ -140,7 +140,8 @@ def test_send_finding_maps_payload(monkeypatch):
         text="Churn is up 12% in EU", metric_name="churn_rate",
         headline="Retention · cohort", source_id="insight_42"))
 
-    assert out == {"status": "ok"}
+    # HB-2 — the response also names the departure the gate recorded for this send.
+    assert out["status"] == "ok" and out["departure_id"]
     p = captured["payload"]
     assert p.recommendation == "Churn is up 12% in EU"
     assert p.metric_name == "churn_rate"

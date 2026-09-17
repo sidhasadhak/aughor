@@ -1,5 +1,5 @@
 """HB-2 — the departures ledger's doors: what left, what was held and why, the
-declarer's verdict, and graduation.
+declarer's verdict, the owner's answer, and graduation.
 
 The probation loop lives here: a held-probation departure is reviewed on the screen
 (never re-sent by this router — the ledger is the declarer's queue, not a second
@@ -8,33 +8,79 @@ transport), the declarer marks it accept / correct / reject, and at measured pre
 reach the channel. Marks are also the wave's contribution to MI-1's graded ledger: a
 departure that carries an ``investigation_id`` forwards its verdict into the feedback
 plane, so the same mark teaches the model's ledger and the probation ratchet at once.
+
+Law 6's loop lives here too: a departure held because the readings of a metric disagreed
+asks its owner, and the answer door remembers the chosen reading in the ambiguity ledger —
+the next run binds it, and nobody is asked twice.
+
+Rows are served with their JSON columns parsed (reasons, checks, guards, receipt,
+question), so a reader never re-decodes what the gate recorded.
 """
 from __future__ import annotations
 
+import json
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from aughor.govern.departure import GRADUATION_MIN_MARKED, GRADUATION_PRECISION
+from aughor.govern.departure import (
+    GRADUATION_MIN_MARKED,
+    GRADUATION_PRECISION,
+    answer_owner_question,
+)
 from aughor.govern.departure_store import (
     get_departure,
     list_departures,
     mark_departure,
     precision_for,
+    summary_counts,
 )
 
 router = APIRouter(tags=["departures"])
+
+#: Ledger columns stored as JSON text, and what each decodes to when it cannot.
+_JSON_COLUMNS = {"reasons": list, "checks": dict, "guards": dict, "receipt": dict,
+                 "question": dict, "numerals": list}
+
+
+def _served(row: Optional[dict]) -> Optional[dict]:
+    """One ledger row as the doors serve it: JSON columns decoded, never re-encoded."""
+    if row is None:
+        return None
+    out = dict(row)
+    for column, empty in _JSON_COLUMNS.items():
+        raw = out.get(column)
+        if isinstance(raw, str):
+            try:
+                decoded = json.loads(raw) if raw else empty()
+            except ValueError:
+                decoded = empty()
+            out[column] = decoded if isinstance(decoded, empty) else empty()
+    return out
 
 
 @router.get("/departures")
 def get_departures(state: Optional[str] = Query(default=None),
                    automation_id: Optional[str] = Query(default=None),
+                   addressed_to: Optional[str] = Query(default=None),
+                   kind: Optional[str] = Query(default=None),
+                   awaiting: bool = Query(default=False),
                    limit: int = Query(default=50, ge=1, le=500)):
-    """The ledger, newest first — departed and held rows alike, reasons and checks
-    verbatim (the receipt that travels, readable where it was recorded)."""
-    return {"departures": list_departures(state=state, automation_id=automation_id,
-                                          limit=limit)}
+    """The ledger, newest first — departed and held rows alike, reasons, guard outcomes and
+    the receipt verbatim (the receipt that travels, readable where it was recorded).
+    ``awaiting`` narrows to what a person still owes: an unmarked probation departure or an
+    unanswered owner question."""
+    rows = list_departures(state=state, automation_id=automation_id, limit=limit,
+                           addressed_to=addressed_to, kind=kind, awaiting=awaiting)
+    return {"departures": [_served(r) for r in rows]}
+
+
+@router.get("/departures/summary")
+def get_summary():
+    """How many departures took each state, and how many a person still owes — the count
+    the departures screen and its badge show."""
+    return summary_counts()
 
 
 @router.get("/departures/{departure_id}")
@@ -42,7 +88,7 @@ def get_one(departure_id: str):
     row = get_departure(departure_id)
     if row is None:
         raise HTTPException(status_code=404, detail="Departure not found")
-    return row
+    return _served(row)
 
 
 class VerdictBody(BaseModel):
@@ -91,7 +137,30 @@ def mark(departure_id: str, body: VerdictBody):
             if auto is not None and auto.probation:
                 set_probation(row["automation_id"], False)
                 graduated = True
-    return {"departure": row, "precision": stats, "graduated": graduated}
+    return {"departure": _served(row), "precision": stats, "graduated": graduated}
+
+
+class AnswerBody(BaseModel):
+    reading: str
+
+
+@router.post("/departures/{departure_id}/answer")
+def answer(departure_id: str, body: AnswerBody):
+    """Law 6 — the owner chooses one of the readings a held departure asked about. The
+    choice is remembered in the ambiguity ledger at user authority, so the next analysis of
+    that metric binds it and never pauses on it again. The held message is not re-sent: a
+    hold is a verdict, and the next run departs on the answer."""
+    from aughor.org.context import current_user_id
+    try:
+        result = answer_owner_question(
+            departure_id, body.reading.strip(),
+            answered_by=f"user:{current_user_id()}" if current_user_id() else "")
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Departure not found")
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    return {"departure": _served(result["departure"]),
+            "resolution_id": result["resolution_id"]}
 
 
 @router.get("/departures/precision/{automation_id}")

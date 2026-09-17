@@ -45,7 +45,7 @@ on the HTTP path and not on a scheduled one.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
 
 _KIND = "investigation"          # the kernel job kind (Fleet groups runs by it)
@@ -108,6 +108,11 @@ class InvestigationRun:
     #: into a chain, so a LOW-floored report and a confident one bound identically.
     #: Published so a chain can gate on it and the departures ledger can record it.
     confidence: str = ""
+    #: HB-2 law 6 — the analysis PAUSED on divergent readings of a metric: the subject, the
+    #: question, the options and previews, and each reading's SQL. A headless run keeps its
+    #: pause (the request posture stays `allow_clarify`): the departure gate asks the
+    #: metric's OWNER instead of the run silently choosing a reading nobody picked.
+    clarify: dict = field(default_factory=dict)
 
     @property
     def ok(self) -> bool:
@@ -254,6 +259,13 @@ def run_investigation(
                     seen["headline"] = str(payload["headline"])
                     if kind == "headline":
                         seen["headline_is_final"] = "1"
+                elif kind == "clarify_pending":
+                    # HB-2 law 6 — the run paused on divergent readings. Sniffed off the
+                    # stream like the ids: the frame carries every reading with its SQL, so
+                    # the owner's answer can be remembered without resuming anything.
+                    seen["clarify"] = {k: payload.get(k) for k in (
+                        "subject", "metric_label", "metric_name", "question", "options",
+                        "previews", "readings") if payload.get(k)}
                 elif kind == "error":
                     seen["error"] = str(payload.get("message", ""))[:2000]
 
@@ -318,7 +330,8 @@ def run_investigation(
                                 receipt_id=seen.get("receipt_id", ""),
                                 headline=seen.get("headline", ""),
                                 summary=seen.get("summary", ""),
-                                confidence=seen.get("confidence", ""))
+                                confidence=seen.get("confidence", ""),
+                                clarify=seen.get("clarify") or {})
 
     # VA-13 — a caller that needs the ANSWER has to wait for it. Checked BEFORE the
     # submit, not after: `submit_background_tick` hands the work to the kernel loop and

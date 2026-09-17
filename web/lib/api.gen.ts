@@ -3286,8 +3286,10 @@ export interface paths {
         };
         /**
          * Get Departures
-         * @description The ledger, newest first — departed and held rows alike, reasons and checks
-         *     verbatim (the receipt that travels, readable where it was recorded).
+         * @description The ledger, newest first — departed and held rows alike, reasons, guard outcomes and
+         *     the receipt verbatim (the receipt that travels, readable where it was recorded).
+         *     ``awaiting`` narrows to what a person still owes: an unmarked probation departure or an
+         *     unanswered owner question.
          */
         get: operations["get_departures_departures_get"];
         put?: never;
@@ -3319,6 +3321,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/departures/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Summary
+         * @description How many departures took each state, and how many a person still owes — the count
+         *     the departures screen and its badge show.
+         */
+        get: operations["get_summary_departures_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/departures/{departure_id}": {
         parameters: {
             query?: never;
@@ -3330,6 +3353,29 @@ export interface paths {
         get: operations["get_one_departures__departure_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departures/{departure_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer
+         * @description Law 6 — the owner chooses one of the readings a held departure asked about. The
+         *     choice is remembered in the ambiguity ledger at user authority, so the next analysis of
+         *     that metric binds it and never pauses on it again. The held message is not re-sent: a
+         *     hold is a verdict, and the next run departs on the answer.
+         */
+        post: operations["answer_departures__departure_id__answer_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11574,6 +11620,11 @@ export interface components {
             /** Table */
             table: string;
         };
+        /** AnswerBody */
+        AnswerBody: {
+            /** Reading */
+            reading: string;
+        };
         /** AppBody */
         AppBody: {
             /**
@@ -15393,6 +15444,8 @@ export interface components {
         };
         /** _SendFindingBody */
         _SendFindingBody: {
+            /** Conn Id */
+            conn_id?: string | null;
             /** Headline */
             headline?: string | null;
             /** Metric Name */
@@ -21465,6 +21518,9 @@ export interface operations {
             query?: {
                 state?: string | null;
                 automation_id?: string | null;
+                addressed_to?: string | null;
+                kind?: string | null;
+                awaiting?: boolean;
                 limit?: number;
             };
             header?: never;
@@ -21524,6 +21580,26 @@ export interface operations {
             };
         };
     };
+    get_summary_departures_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_one_departures__departure_id__get: {
         parameters: {
             query?: never;
@@ -21534,6 +21610,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_departures__departure_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                departure_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {

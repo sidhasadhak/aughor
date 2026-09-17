@@ -161,6 +161,31 @@ def _grounds(n: Numeral, cell: float) -> bool:
     return abs(target - c) / denom <= 0.02
 
 
+def numeral_matches_measure(n: Numeral, cell: float) -> bool:
+    """Public, and stricter than the finding guard: does ``cell`` support numeral ``n`` AT
+    THE PRECISION IT IS WRITTEN?
+
+    A number written in full claims its last significant digit, so it matches only within
+    half a unit of that digit — "99,441" allows ±0.5, "4,100" ±50, "22,128.43" ±0.005, and a
+    percentage its shown decimals. Only an ABBREVIATED number ("2.5M") keeps the finding
+    guard's acceptors (its rounding window and 2% relative), because abbreviating is
+    rounding by construction.
+
+    The HB-2 departure gate reads this (law 1). The finding guard's 2% was built to catch
+    1e6 unit slips, not to confirm counts: under it, the 2026-09-16 dispatch watch's
+    "99,441 order lines" — Olist's ORDER count — passed as 1.6% from the promise's stamped
+    101,033 kept lines, a number it never meant."""
+    if n.multiplier != 1.0:
+        return _grounds(n, cell)
+    if n.decimals > 0 or n.suffix == "%":
+        half = 0.5 * (10.0 ** (-n.decimals))
+    else:
+        digits = n.text.replace(",", "").lstrip("$€£").strip()
+        significant = digits.rstrip("0")
+        half = 0.5 * (10.0 ** (len(digits) - len(significant) if significant else 0))
+    return abs(n.value) - half <= abs(cell) <= abs(n.value) + half
+
+
 def verify_finding(finding: str, rows, extra: Optional[Iterable] = None) -> GroundingResult:
     """Verify that every magnitude-bearing numeral in ``finding`` is grounded in a
     real cell of ``rows``. Returns which tokens (if any) are ungrounded."""

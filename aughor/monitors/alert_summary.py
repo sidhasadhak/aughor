@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 class AlertSummarySection(BaseModel):
     title: str
     items: list[str] = Field(default_factory=list)
+    #: HB-2 — what kind of claim this section's lines make, so the departure gate judges each
+    #: line by it: ``monitor_alerts`` (dated records a person declared) · ``findings`` ·
+    #: ``causal_links`` · ``recommendations`` · ``review_queue`` · ``held``.
+    kind: str = ""
 
 
 class AlertSummary(BaseModel):
@@ -92,7 +96,8 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
                 items.append(f"{badge} [{ts}] {a.message}")
             if len(recent_alerts) > 10:
                 items.append(f"… and {len(recent_alerts) - 10} more alerts")
-            sections.append(AlertSummarySection(title="Monitor Alerts", items=items))
+            sections.append(AlertSummarySection(title="Monitor Alerts", items=items,
+                                                 kind="monitor_alerts"))
     except Exception as exc:
         logger.debug("Digest: monitor alerts section failed: %s", exc)
 
@@ -115,11 +120,16 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
                 # First sentence — split on sentence boundary, not every '.',
                 # or "dropped 38.8%" truncates to "dropped 38."
                 first = _re.split(r"(?<=[.!?])\s+", text, maxsplit=1)[0].strip()
-                raw_insights.append(first if first.endswith((".", "!", "?")) else first + ".")
+                first = first if first.endswith((".", "!", "?")) else first + "."
+                # HB-2 law 4 — a finding leaving in a briefing says when it was found: its
+                # numbers are that day's measurement, and the reader is told so.
+                found = str(ins.get("generated_at") or "")[:10]
+                raw_insights.append(f"{first} (found {found})" if found else first)
         if raw_insights:
             sections.append(AlertSummarySection(
                 title="Exploration Insights",
                 items=raw_insights[:8],
+                kind="findings",
             ))
     except Exception as exc:
         logger.debug("Digest: exploration section failed: %s", exc)
@@ -138,7 +148,8 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
                     f"(strength: {e.get('weight', 0):.2f})"
                     for e in top
                 ]
-                sections.append(AlertSummarySection(title="Top Causal Relationships", items=items))
+                sections.append(AlertSummarySection(title="Top Causal Relationships", items=items,
+                                                     kind="causal_links"))
     except Exception as exc:
         logger.debug("Digest: causal graph section failed: %s", exc)
 
@@ -155,7 +166,8 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
                 f"{a.get('title', 'Untitled')} — {a.get('description', '')[:80]}"
                 for a in open_recs
             ]
-            sections.append(AlertSummarySection(title="Open Recommendations", items=items))
+            sections.append(AlertSummarySection(title="Open Recommendations", items=items,
+                                                 kind="recommendations"))
     except Exception as exc:
         logger.debug("Digest: recommendations section failed: %s", exc)
 
@@ -178,6 +190,7 @@ def build_alert_summary(conn_id: str, period: str = "week") -> AlertSummary:
                 sections.append(AlertSummarySection(
                     title="Evidence Review Queue",
                     items=[f"{unreviewed} claim(s) awaiting validation — open the Evidence tab to review."],
+                    kind="review_queue",
                 ))
     except Exception as exc:
         logger.debug("Digest: evidence section failed: %s", exc)
