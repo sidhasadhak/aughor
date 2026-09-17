@@ -97,12 +97,25 @@ export async function getCapabilities(connectionId?: string): Promise<Capabiliti
 }
 
 // ── Business / Industry Profile ─────────────────────────────────────────────
+/** The range a metric's `unit_or_range` text STATES, read by the backend and shipped with the profile:
+ *  'ratio01' a stated 0..1 rate, 'pct100' a stated 0..100 one, 'band' any other stated band ('0..24',
+ *  '≥ 1' — `lo`/`hi` is null where the text leaves that end open), 'typical' a band the text only calls
+ *  usual (never a bound), 'open' no band at all. One reader — `stated_range` in
+ *  `aughor/business_profile/validate.py`, the same one the value audit holds the metric to — so a figure
+ *  the audit keeps is never hidden here by a bound its text doesn't state. */
+export interface StatedRange {
+  kind: "ratio01" | "pct100" | "band" | "typical" | "open";
+  lo: number | null;
+  hi: number | null;
+}
 export interface NorthStarMetric {
   name: string;
   definition: string;
   maps_to: string;
   why_it_matters: string;
   unit_or_range: string;
+  /** How `unit_or_range` reads. Absent from an API older than the field — then the figure reads as 'open'. */
+  stated_range?: StatedRange;
   value_sql: string;
   chart_sql?: string;
 }

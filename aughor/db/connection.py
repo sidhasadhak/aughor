@@ -559,6 +559,40 @@ def _pg_fix_interval_arithmetic(sql: str) -> str:
     return _INTERVAL_NUMERIC.sub(_replace, sql)
 
 
+# ── DuckDB: SQL written back by sqlglot, with the query-level sample where DuckDB takes it ──
+# DuckDB's grammar takes a query-level sample (`USING SAMPLE …`) straight after QUALIFY and refuses it
+# after ORDER BY, LIMIT or OFFSET. sqlglot's DuckDB writer puts it at the very end of the statement, so
+# valid DuckDB failed once written back: `… USING SAMPLE 10% LIMIT 5` ran as `… LIMIT 5 USING SAMPLE
+# SYSTEM (10 PERCENT)`, answered with `syntax error at or near "USING"`. Measured 2026-09-17 on DuckDB
+# 1.5.2 with sqlglot 30.8.0, and unchanged in 30.18.0, the newest release. A table-level TABLESAMPLE is
+# written on its own table and never moved.
+
+_DUCKDB_DIALECT = sqlglot.Dialect.get_or_raise("duckdb")
+
+
+class _DuckDBWriter(_DUCKDB_DIALECT.generator_class):
+    """sqlglot's own DuckDB writer, with a query-level sample written after QUALIFY instead of after LIMIT."""
+
+    AFTER_HAVING_MODIFIER_TRANSFORMS = {
+        **_DUCKDB_DIALECT.generator_class.AFTER_HAVING_MODIFIER_TRANSFORMS,   # WINDOW, then QUALIFY
+        "sample": lambda self, e: self.sql(e, "sample"),
+    }
+
+    def after_limit_modifiers(self, expression: sqlglot.exp.Expr) -> list[str]:
+        # Everything the writer puts after LIMIT except the sample, which is written above. Subtracted
+        # from what the library returns rather than reimplemented, so a modifier sqlglot adds later is
+        # still written — and if sqlglot ever moves the sample itself, the clause appears TWICE and the
+        # tests say so, rather than this override going quietly wrong.
+        sample = self.sql(expression, "sample")
+        return [part for part in super().after_limit_modifiers(expression) if not sample or part != sample]
+
+
+def _write_duckdb(tree: sqlglot.exp.Expr) -> str:
+    """``tree`` as DuckDB SQL, spelled exactly as sqlglot's DuckDB writer spells it except for where a
+    query-level sample goes. Like ``sqlglot.transpile``, it does not copy ``tree`` first."""
+    return _DuckDBWriter(dialect=_DUCKDB_DIALECT).generate(tree, copy=False)
+
+
 # ── DuckDB: an engine refusal healed after the engine names it ────────────────
 # The model writes SQLite's JULIANDAY for day differences, and DuckDB has no such function. The
 # DuckDB rules forbid it by name at generation; measured 2026-09-13, both ON-10 falsifier runs still
@@ -607,7 +641,7 @@ def rewrite_julianday(sql: str) -> str:
                                       expression=exp.Literal.number(0.5)))
 
     healed = tree.transform(_swap)
-    return healed.sql(dialect="duckdb") if changed else ""
+    return _write_duckdb(healed) if changed else ""
 
 
 def heal_duckdb_refusal(result: QueryResult, sql: str, attempt) -> QueryResult:
@@ -1136,10 +1170,14 @@ class DuckDBConnection(DatabaseConnection):
 
     @staticmethod
     def _normalize_to_duckdb(sql: str) -> str:
-        """Transpile any-dialect SQL to DuckDB syntax via SQLGlot. Silent no-op on failure."""
+        """Transpile any-dialect SQL to DuckDB syntax via SQLGlot. Silent no-op on failure.
+
+        Written back by `_write_duckdb`, not `sqlglot.transpile`: sqlglot's own writer moves a
+        query-level `USING SAMPLE` after LIMIT, where DuckDB refuses it."""
         try:
-            result = sqlglot.transpile(sql, read="duckdb", write="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
-            return result[0] if result and result[0] else sql
+            statements = sqlglot.parse(sql, read="duckdb", error_level=sqlglot.ErrorLevel.IGNORE)
+            first = statements[0] if statements else None
+            return (_write_duckdb(first) if first else "") or sql
         except Exception:
             return sql
 

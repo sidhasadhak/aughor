@@ -58,13 +58,25 @@ def cache_path():
 # v8: the per-connection table cap goes 20 -> 60 and the list is de-duplicated first, so a
 #     connection profiles a different SET of tables than it used to. On the workspace that
 #     is 40 more tables, `data_co_supplychain` among them.
+# v9: two reads fixed at once (merged from two sessions, one version bump). A large
+#     table's sample is written where the engine reads it (`_sampled_table`): every sampled
+#     top-values and entity-value query on a table over 500,000 rows used to fail to parse,
+#     and the pair sample fell back to the table's first 300 rows, so a cached large table
+#     lacked `top_values`, `value_sample`, the concepts and `derived_quantities` a random
+#     sample finds, and the lifecycles the ontology reads from `top_values`; on DuckDB those
+#     value lists are now read from the whole column, not the sample. And the entity value
+#     sample and the dense date range read past the connection's 500-row answer cap: a
+#     cached column of 501–2,000 values held 500 of them as its whole `value_sample`, a
+#     column the catalog under-counts past 2,000 held 500 where it should hold none, and a
+#     timestamp with more than 500 populated months took its `effective_date_range` from
+#     the first 500 of them.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v8-table-cap"
+PROFILE_LOGIC_VERSION = "v9-sampled-bounded"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:

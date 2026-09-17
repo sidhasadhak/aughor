@@ -16,7 +16,7 @@ from pathlib import Path
 
 import duckdb
 
-from aughor.db.connection import DuckDBConnection
+from aughor.db.connection import MAX_ROWS, DatabaseConnection, DuckDBConnection
 from aughor.tools.profiler import ColumnProfile, build_column_profiles
 import aughor.tools.profiler as profiler
 import aughor.tools.profile_cache as pc
@@ -25,8 +25,8 @@ from aughor.semantic import answer_resolution as R
 
 # ─────────────────────────── producer (profiler) ─────────────────────────────
 
-def _duck(setup: list[str]):
-    c = DuckDBConnection.__new__(DuckDBConnection)
+def _duck(setup: list[str], cls=DuckDBConnection):
+    c = cls.__new__(cls)
     c._path = Path(":memory:")
     c._conn = duckdb.connect(":memory:")
     c._connection_id = "test"
@@ -78,6 +78,59 @@ def test_value_sample_respects_max_distinct_cap(monkeypatch):
     p = _by_col(build_column_profiles(c, "s", [("id", "INTEGER"), ("brand", "VARCHAR")],
                                       fk_cols={"id"}, row_count=120))
     assert p["brand"].value_sample is None
+
+
+# The caps below are the shipped ones. The test above monkeypatches the cap to 35 over 40 values, which
+# sits under the connection's 500-row answer cap and so never met it.
+
+def _cities(n_distinct: int, cls=DuckDBConnection):
+    """`city` holds `City 0` … `City {n-1}`, each on two rows, so COUNT(DISTINCT) reads it exactly."""
+    c = _duck([f"CREATE TABLE t AS SELECT i AS id, 'City ' || (i % {n_distinct}) AS city "
+               f"FROM range({2 * n_distinct}) r(i)"], cls=cls)
+    return c, 2 * n_distinct
+
+
+def _city_profile(c, row_count: int, fast_stats=None) -> ColumnProfile:
+    return _by_col(build_column_profiles(c, "t", [("id", "BIGINT"), ("city", "VARCHAR")], fk_cols={"id"},
+                                         row_count=row_count, fast_stats=fast_stats))["city"]
+
+
+def test_value_sample_holds_every_value_past_the_500_row_answer_cap():
+    """900 distinct values sit between the answer cap and the sample cap. The distinct read went through `execute`,
+    which keeps 500 rows, so the profile stored 500 of the 900 as the complete set (measured 2026-09-17). Which 500
+    survived changed from build to build, and offline binding bound a token whose value was cut to a kept
+    neighbour, 'City 3' as 'City 39', with no live probe: 366 and 369 of the 400 cut values in two builds."""
+    assert MAX_ROWS < 900 <= profiler._VALUE_SAMPLE_MAX_DISTINCT
+    c, rows = _cities(900)
+    p = _city_profile(c, rows)
+    assert p.distinct_count == 900
+    assert sorted(p.value_sample) == sorted(f"City {i}" for i in range(900))
+
+
+def test_value_sample_at_exactly_the_cap_is_kept_whole():
+    cap = profiler._VALUE_SAMPLE_MAX_DISTINCT
+    c, rows = _cities(cap)
+    assert len(_city_profile(c, rows).value_sample) == cap
+
+
+def test_value_sample_is_dropped_when_the_catalog_under_reads_past_the_cap():
+    """The gate trusts the catalog's distinct estimate, and SUMMARIZE's `approx_unique` is a HyperLogLog: it read
+    851 for 900 values (DuckDB 1.5.2). A column the estimate puts under the cap but that holds more must come back
+    None, and the LIMIT cap+1 read is what catches it. Behind the 500-row cap that read could never hold more than
+    the cap, so such a column stored 500 values."""
+    c, rows = _cities(2500)
+    p = _city_profile(c, rows, fast_stats={"city": {"approx_unique": 1950, "null_pct": 0.0}})
+    assert p.value_sample is None
+
+
+def test_value_sample_is_dropped_when_the_connection_cuts_the_bounded_read():
+    """A connector that does not override `execute_bounded` falls back to its capped `execute` and returns 500 rows
+    while counting 900. A cut read is not the distinct set, so nothing is stored."""
+    class _Capped(DuckDBConnection):
+        execute_bounded = DatabaseConnection.execute_bounded
+
+    c, rows = _cities(900, cls=_Capped)
+    assert _city_profile(c, rows).value_sample is None
 
 
 # ─────────────────────────── serialization ───────────────────────────────────

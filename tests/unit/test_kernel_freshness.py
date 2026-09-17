@@ -59,7 +59,9 @@ def test_golden_profile_cache_survives_logic_version_extraction():
     changed nothing. Bumped twice on 2026-08-17: "v5-concept" for AT-4/AT-6 (per-column
     `concept`, per-table `derived_quantities`, and `semantic_type` for space-separated
     identifiers), then "v6-postal-key" when a postal-named TEXT column became a `key`, then "v7-percent-scale"
-    when `unit` gained `percent_whole`.
+    when `unit` gained `percent_whole`. "v8-table-cap" profiled a different set of tables, and "v9-sampled-bounded"
+    (two sessions' fixes, one bump) made a large table's sampled queries parse and read DuckDB's value lists whole,
+    and read the value sample and the dense date range past the 500-row answer cap, which had cut both.
 
     Both bumps are DELIBERATE global misses, because `from_dict` reads an older entry
     happily and every existing connection would otherwise keep serving stale profiles. The
@@ -75,8 +77,8 @@ def test_golden_profile_cache_survives_logic_version_extraction():
 
     from aughor.tools.profile_cache import PROFILE_LOGIC_VERSION, compute_schema_fingerprint
 
-    assert PROFILE_LOGIC_VERSION == "v8-table-cap"
-    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "f8d6bf0025b139c9"
+    assert PROFILE_LOGIC_VERSION == "v9-sampled-bounded"
+    assert compute_schema_fingerprint({"orders": 5, "items": 3}) == "cb7435e153419446"
     # the same inputs under the previous version — a different key, which is the point
     v4 = hashlib.md5(b"v4-valsample|items:3|orders:5").hexdigest()[:16]
     assert v4 == "191fd41b93f3a03e"

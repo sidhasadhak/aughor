@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from aughor.business_profile.validate import audit_value_sql, audit_chart_sql, audit_profile, _range_kind
+from aughor.business_profile.validate import audit_value_sql, audit_chart_sql, audit_profile, stated_range
 
 # A chasm: attribution and invoices are each on the many-side of `order`.
 TC = {
@@ -43,18 +43,50 @@ class FakeConn:
 
 
 class TestRangeKind:
+    """The ranges the industry packages ship are measured in test_sane_range_reading.py; these are the
+    shapes a profile's model-written unit_or_range takes (read off a live deployment's profiles, 2026-09-17)."""
+
     def test_bounded_ratio(self):
-        assert _range_kind("ratio 0-1") == ("ratio01", 1.0)
+        assert stated_range("ratio 0-1") == ("ratio01", 0.0, 1.0)
+        assert stated_range("[0.0, 1.0]") == ("ratio01", 0.0, 1.0)
 
     def test_percent(self):
-        assert _range_kind("percent 0-100") == ("pct100", 100.0)
+        assert stated_range("percent 0-100") == ("pct100", 0.0, 100.0)
+
+    def test_the_measured_suffix_is_not_a_band(self):
+        # infer._calibrate_ranges appends the measured value to a range after the audit
+        assert stated_range("ratio 0–1 (measured ≈ 0.49)") == ("ratio01", 0.0, 1.0)
+        assert stated_range("EUR (positive magnitude) (measured ≈ 45,437,544)") == ("open", None, None)
+
+    def test_a_percent_gloss_leaves_a_ratio_a_ratio(self):
+        assert stated_range("0.0 to 1.0 (0% to 100%)") == ("ratio01", 0.0, 1.0)
+        assert stated_range("0.0 to 1.0 (ratio, not %)") == ("ratio01", 0.0, 1.0)
 
     def test_unbounded_ratio_is_open(self):
-        assert _range_kind("ratio 0-∞")[0] == "open"
-        assert _range_kind("ratio 0-inf")[0] == "open"
+        assert stated_range("ratio 0-∞")[0] == "open"
+        assert stated_range("ratio 0-inf")[0] == "open"
+        assert stated_range("ratio 0+") == ("open", None, None)
+        assert stated_range("0 to 10,000,000+ (depending on category size)") == ("open", None, None)
 
     def test_currency_is_open(self):
-        assert _range_kind("USD") == ("open", None)
+        assert stated_range("USD") == ("open", None, None)
+
+    def test_a_unit_word_alone_states_no_bound(self):
+        # an Inventory Turnover of 5 was held to 0..1 by the word "ratio"
+        assert stated_range("ratio (units sold per unit avg. inventory)") == ("open", None, None)
+        assert stated_range("percent") == ("open", None, None)
+
+    def test_any_other_stated_band(self):
+        assert stated_range("1-5 scale (measured ≈ 4.08)") == ("band", 1.0, 5.0)
+        assert stated_range("ratio -1 to 1 (healthy: >0.2)") == ("band", -1.0, 1.0)
+        assert stated_range("ratio 0-1000 (USD per order)") == ("band", 0.0, 1000.0)      # was a 0..100 percent
+        assert stated_range("0 - 10,000,000,000 EUR") == ("band", 0.0, 10_000_000_000.0)  # was a 0..1 ratio
+
+    def test_a_hedged_band_is_typical(self):
+        # the guess F4 (infer._calibrate_ranges) names: held as a bound, it would flag a correct $537 AOV
+        assert stated_range("USD (human scale: 20–150)") == ("typical", 20.0, 150.0)
+        assert stated_range("ratio (e.g., 2–6)") == ("typical", 2.0, 6.0)
+        assert stated_range("units, typically 1-5 for specialty food (measured ≈ 6.65)") == ("typical", 1.0, 5.0)
 
 
 class TestStaticGuards:

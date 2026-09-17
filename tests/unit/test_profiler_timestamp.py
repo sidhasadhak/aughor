@@ -92,3 +92,50 @@ def test_plain_words_ending_in_id_are_not_keys():
     # all-lowercase numeric columns must NOT be mistaken for ids
     for col in ("valid", "void", "grid", "solid", "humid", "rapid"):
         assert _st(col, "BIGINT") == "measure", f"{col} should not be classified as a key"
+
+
+# ── _robust_date_range reads every populated month ────────────────────────────
+
+def _months(n_months: int, sparse_head: int, cls=None):
+    """`ev.ts` holds one row a month for the first `sparse_head` months from 1950-01, then ten a month."""
+    from pathlib import Path
+
+    import duckdb
+
+    from aughor.db.connection import DuckDBConnection
+
+    cls = cls or DuckDBConnection
+    c = cls.__new__(cls)
+    c._path = Path(":memory:")
+    c._conn = duckdb.connect(":memory:")
+    c._connection_id = "test"
+    c._schema_name = None
+    c._conn.execute(
+        "CREATE TABLE ev AS SELECT (DATE '1950-01-01' + to_months(m::INT))::TIMESTAMP AS ts "
+        f"FROM (SELECT m, unnest(range(CASE WHEN m < {sparse_head} THEN 1 ELSE 10 END)) "
+        f"FROM range({n_months}) r(m))")
+    return c
+
+
+def test_dense_date_range_reads_every_month_past_the_answer_cap():
+    """900 populated months, 1950-01 to 2024-12. The month read went through `execute`, which keeps the first 500
+    rows of the ascending list, so the dense region ended at 1991-08, 33 years short of the data, and that is the
+    range the explorer's windowing prefers over the raw one (measured 2026-09-17)."""
+    from aughor.db.connection import MAX_ROWS
+    from aughor.tools.profiler import _robust_date_range
+
+    assert MAX_ROWS < 900
+    assert _robust_date_range(_months(900, sparse_head=60), '"ev"', '"ts"') == (
+        "1955-01-01 00:00:00", "2024-12-01 00:00:00")
+
+
+def test_dense_date_range_is_unknown_when_the_connection_cuts_the_month_read():
+    """Part of the months cannot place the dense region's end, so a cut read answers None and the caller keeps the
+    absolute range."""
+    from aughor.db.connection import DatabaseConnection, DuckDBConnection
+    from aughor.tools.profiler import _robust_date_range
+
+    class _Capped(DuckDBConnection):
+        execute_bounded = DatabaseConnection.execute_bounded
+
+    assert _robust_date_range(_months(900, sparse_head=60, cls=_Capped), '"ev"', '"ts"') is None
