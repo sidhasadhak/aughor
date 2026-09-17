@@ -177,7 +177,8 @@ for _env, _file in (
 # UNLINKED from the live dir even when the store it was purging had been redirected. A suite
 # run destroyed a real exploration_workspace.json (89 findings; data/*.json is gitignored, so
 # it was unrecoverable). One env for the whole family → a new store in it is isolated by
-# construction. Authored files (glossary/kb/rules) keep their own vars and stay repo-readable.
+# construction. Authored files (glossary/rules) keep their own vars and stay repo-readable; the KB lives in the
+# knowledge packages (IP-1), which the authored-packs copy below isolates.
 for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
                  # MI-3 — snapshot bytes. The DB name above is not enough on its own: a
                  # dir-keyed store needs the directory family too, a lesson paid twice.

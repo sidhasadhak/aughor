@@ -1,23 +1,20 @@
 """Industry metric-knowledge resolver.
 
 Connects a connection's inferred BusinessProfile to curated, per-industry metric
-recipes (formula + grain + anti-patterns) under data/kb/industry/*.json, with an
+recipes (formula + grain + anti-patterns) carried by the industry PACKAGES (IP-1:
+`packs/<industry>/industry.json`, resolved by `aughor/packs/knowledge.py`), with an
 LLM fallback for metrics no curated entry covers. The recipe is what the explorer
 injects into Phase-8 SQL generation — the lever for SQL ACCURACY (it carries the
 canonical grain/join and the anti-pattern that avoids bugs like conversion > 1).
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-
-_KB_DIR = Path(__file__).parent.parent.parent / "data" / "kb" / "industry"
 
 
 def _norm(s: str) -> str:
@@ -29,23 +26,14 @@ def _tokens(s: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", (s or "").lower()) if len(t) > 2}
 
 
-@lru_cache(maxsize=1)
 def load_industry_kbs() -> tuple[dict, ...]:
-    """All curated industry KB files (cached). Tuple so it's hashable/cacheable.
+    """All curated industries, ordered by id. Tuple so it's hashable/cacheable.
 
-    Each KB carries its ``id``, the file stem ("airline", "retail", …): the closed name an industry
-    text resolves to (:func:`industry_id`) and the tag playbook retrieval is scoped by."""
-    kbs = []
-    if _KB_DIR.exists():
-        for f in sorted(_KB_DIR.glob("*.json")):
-            try:
-                kb = json.loads(f.read_text())
-            except Exception as exc:
-                logger.warning("industry KB %s failed to load: %s", f.name, exc)
-                continue
-            kb.setdefault("id", f.stem)
-            kbs.append(kb)
-    return tuple(kbs)
+    Each KB carries its ``id`` ("airline", "retail", …), the industry id its package declares: the
+    closed name an industry text resolves to (:func:`industry_id`) and the tag playbook retrieval is
+    scoped by. IP-1 — resolved (and cached per pack roots) by the package reader."""
+    from aughor.packs.knowledge import industry_kbs
+    return industry_kbs()
 
 
 #: Words that name an industry no curated KB covers yet. A generic alias ("retail", "subscription",
@@ -140,28 +128,14 @@ def industry_id(industry: str) -> str:
     return str(kb.get("id") or "") if kb else ""
 
 
-@lru_cache(maxsize=1)
-def _kb_entry_industries() -> dict[str, str]:
-    """``{deep-KB entry id: the industry whose kb_files hold it}``. An entry from a file no industry
-    claims (finance, marketing, product, the generic metrics) is absent: every industry may read it."""
-    out: dict[str, str] = {}
-    for kb in load_industry_kbs():
-        for stem in kb.get("kb_files", []):
-            try:
-                items = json.loads((_KB_DIR.parent / f"{stem}.json").read_text())
-            except Exception as exc:
-                logger.warning("industry KB %s names kb file %s, which failed to load: %s",
-                               kb.get("id"), stem, exc)
-                continue
-            for e in items if isinstance(items, list) else [items]:
-                if isinstance(e, dict) and e.get("id"):
-                    out[str(e["id"])] = str(kb.get("id") or "")
-    return out
-
-
 def kb_entry_industry(kb_entry_id: Optional[str]) -> str:
-    """The industry a deep-KB entry belongs to, or "" for an entry every industry may read."""
-    return _kb_entry_industries().get(kb_entry_id or "", "")
+    """The industry a deep-KB entry belongs to, or "" for an entry every industry may read.
+
+    IP-1 — ownership by place: the industry of the package that carries the entry. An entry a
+    function or the analytics base carries (finance, marketing, product, customer, the SQL
+    patterns) belongs to no industry, so every industry may read it."""
+    from aughor.packs.knowledge import entry_industry
+    return entry_industry(kb_entry_id)
 
 
 def industry_scope(connection_id: str, schema_name: Optional[str] = None, *,
@@ -193,8 +167,15 @@ def industry_scope(connection_id: str, schema_name: Optional[str] = None, *,
     return industry_id(text) if text else None
 
 
-@lru_cache(maxsize=16)
 def metric_vocabulary(industry: str = "") -> tuple:
+    """The recognized metric vocabulary for an industry — cached per industry text AND per pack
+    roots (IP-1: a moved root never serves another root's vocabulary). See `_metric_vocabulary`."""
+    from aughor.packs.knowledge import cache_token
+    return _metric_vocabulary(industry, cache_token())
+
+
+@lru_cache(maxsize=32)
+def _metric_vocabulary(industry: str, _roots: tuple) -> tuple:
     """The recognized metric vocabulary for an industry — ``((token, canonical_label, formula), …)``
     built from the curated KB matched to ``industry`` (or the union of ALL KBs when nothing matches).
     Each metric contributes its name + every alias as a normalized token. This is the deterministic,

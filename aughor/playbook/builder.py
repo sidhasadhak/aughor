@@ -1,19 +1,17 @@
 """
 Convert KB Tier-2 causal entries into draft PlaybookEntry objects.
 Run seed_from_kb() once on startup when data/playbook.json is empty.
+
+IP-1 — the entries come from the knowledge packages (`aughor/packs/knowledge.py`), the one
+reader that replaced this module's own recursive walk of `data/kb`.
 """
 from __future__ import annotations
 
-import glob
-import json
 import re
 import uuid
-from pathlib import Path
 
 from aughor.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
 from aughor.playbook.store import count_entries, save_entries
-
-_KB_PATH = Path(__file__).parent.parent.parent / "data" / "kb"
 
 
 def _slug(text: str) -> str:
@@ -21,16 +19,15 @@ def _slug(text: str) -> str:
 
 
 def _load_all_kb() -> list[dict]:
+    """Every KB entry the knowledge packages carry, in file-name order."""
+    from aughor.packs.knowledge import iter_kb_payloads
+
     entries: list[dict] = []
-    for f in sorted(glob.glob(str(_KB_PATH / "**" / "*.json"), recursive=True)):
-        try:
-            data = json.load(open(f))
-            if isinstance(data, list):
-                entries.extend(data)
-            elif isinstance(data, dict):
-                entries.append(data)
-        except Exception:
-            pass
+    for _file, data in iter_kb_payloads():
+        if isinstance(data, list):
+            entries.extend(e for e in data if isinstance(e, dict))
+        elif isinstance(data, dict):
+            entries.append(data)
     return entries
 
 

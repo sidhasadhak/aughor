@@ -6267,6 +6267,13 @@ export interface PackSummary {
   errors?: string[];
   warnings?: string[];
   error?: string;
+  /** HB-6 — whether the pack ships an organisation function group to install. */
+  function?: boolean;
+  /** IP-1 — the knowledge layer a package carries ("industry" · "function" · "base"), or "". */
+  layer?: string;
+  /** IP-1 — the industry id an industry package carries ("retail", "food_delivery"), or "". */
+  industry?: string;
+  description?: string;
 }
 
 export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary[] }> {

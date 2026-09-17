@@ -94,6 +94,15 @@ def validate_loaded(pack: Pack) -> ValidationReport:
         if pb.trigger_metric and pb.trigger_metric not in metric_names:
             r.warnings.append(f"playbook trigger_metric {pb.trigger_metric!r} is not a pack metric")
 
+    # ── knowledge layer (IP-1) — a package is REFERENCE the agents read (§3.17), not a
+    # steering pack, so the steering completeness warnings below do not apply to it ──────
+    if m.layer or m.industry:
+        from aughor.packs.knowledge import package_checks
+        errors, warnings = package_checks(pack)
+        r.errors.extend(errors)
+        r.warnings.extend(warnings)
+        return r
+
     # ── completeness warnings (a pack that does nothing is rarely intended) ─────
     if not pack.metrics:
         r.warnings.append("no metrics defined")

@@ -1,6 +1,6 @@
 """Named-metric ↔ SQL coherence — industry-KB-driven (no hardcoded list). The explorer trust gate
 rejects a finding whose query is ALIASED as one metric while the prose asserts a DIFFERENT one
-(the AOV-aliased-`aov`-narrated-"ROAS" bug). The metric vocabulary comes from data/kb/industry/*.json
+(the AOV-aliased-`aov`-narrated-"ROAS" bug). The metric vocabulary comes from the industry packages' industry.json (IP-1)
 matched to the connection's industry — so airline/manufacturing/SaaS are covered by their JSON."""
 from __future__ import annotations
 

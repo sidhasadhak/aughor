@@ -1,0 +1,18 @@
+id: product
+name: Product
+version: 1
+description: >
+  The product function, read by every industry: engagement, feature adoption, activation, conversion funnels and web analytics.
+layer: function
+owner_team: Platform
+domains:
+  - product
+  - engagement
+  - web analytics
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").

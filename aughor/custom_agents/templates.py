@@ -95,7 +95,12 @@ def list_templates() -> list[dict]:
     out: list[dict] = []
     for pid in list_packs(root):
         try:
-            out.append(template_from_pack(load_pack(root / pid)))
+            pack = load_pack(root / pid)
+            # IP-1 — a knowledge package (an industry, a function, the analytics base) is
+            # reference every agent reads, not a stance an agent is created from.
+            if pack.manifest.layer:
+                continue
+            out.append(template_from_pack(pack))
         except Exception:
             logger.warning("pack %s could not be loaded as an agent template", pid, exc_info=True)
     return out
@@ -108,7 +113,8 @@ def get_template(pack_id: str) -> Optional[dict]:
     if not (pack_dir / "pack.yaml").is_file():
         return None
     try:
-        return template_from_pack(load_pack(pack_dir))
+        pack = load_pack(pack_dir)
+        return None if pack.manifest.layer else template_from_pack(pack)
     except Exception:
         logger.warning("pack %s could not be loaded as an agent template", pack_id, exc_info=True)
         return None

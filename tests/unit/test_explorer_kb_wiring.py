@@ -123,23 +123,22 @@ class TestKbPathResolution:
     A store whose source is unreachable fails silently: it keeps answering, just never improves.
     """
 
-    def test_default_points_at_the_repo_kb_and_it_exists(self):
-        import os
-
+    def test_by_default_the_kb_is_what_the_packages_carry(self):
+        """IP-1 — no override means the knowledge packages, never nothing: every file the resolver
+        lists exists, and the index builder would read them."""
+        from aughor.packs.knowledge import kb_files
         from aughor.semantic import kb_retriever
-        assert os.path.isdir(kb_retriever.KB_PATH), (
-            f"KB_PATH {kb_retriever.KB_PATH!r} is not a directory — build_kb_index() would "
-            f"silently index nothing"
-        )
-        assert kb_retriever.KB_PATH.rstrip("/").endswith("data/kb")
+        assert kb_retriever.KB_PATH == "", "an override is set — this test measures the default"
+        files = kb_files()
+        assert files and all(f.path.is_file() for f in files), (
+            "the knowledge packages carry no KB file — build_kb_index() would silently index nothing")
 
-    def test_the_repo_kb_actually_loads_entries(self):
-        """Guards the path AND the parse: a directory that exists but yields zero entries is the
+    def test_the_package_kb_actually_loads_entries(self):
+        """Guards the resolver AND the parse: packages that exist but yield zero entries are the
         same silent no-op."""
-        from aughor.semantic.kb_loader import load_kb_entries
-        from aughor.semantic.kb_retriever import KB_PATH
-        entries = load_kb_entries(KB_PATH)
-        assert len(entries) > 200, f"only {len(entries)} KB entries loadable from {KB_PATH}"
+        from aughor.semantic.kb_loader import load_package_kb_entries
+        entries = load_package_kb_entries()
+        assert len(entries) > 200, f"only {len(entries)} KB entries loadable from the packages"
 
     def test_an_explicit_override_still_wins(self, monkeypatch, tmp_path):
         """Operators must keep the escape hatch — the default is a fallback, not a hard-code."""
