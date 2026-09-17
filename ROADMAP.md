@@ -5611,7 +5611,10 @@ or ontology file used to escape every caller, the roster route included.
     impossible 1.4 passes.
 - **Receipts:** `tests/unit/test_ip3_gate3.py` (38) and `test_ip3_gate4.py` (10: each failure planted on a 100-flight
   file in BTS's layout, with no download, plus the committed receipt held to the package); the full backend suite
-  once on the branch: IP3_FULL_SUITE_RESULT.
+  once on the branch: 10,692 passed, 5 skipped and 2 failed — two ratchets gate 4 tripped (a fingerprint function
+  not in the freshness registry; a lowercase `information_schema`). Fixed by registering the receipt's fingerprint
+  as a staleness fingerprint and reading DuckDB's own table list; both ratchets, the IP-3 tests and the boundary
+  and contract suites re-ran green (94 passed).
 - **Open:**
   - More metrics. Load factor needs T-100 data, a separate download to approve. Yield, RASM/CASM and ancillary
     revenue need revenue sources. Utilization, stage length, diversions and delay-cause shares need verified bands.

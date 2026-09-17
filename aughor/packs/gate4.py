@@ -167,7 +167,7 @@ def build_database(dataset: PackDataset, data_path: Path, db_path: Path) -> dict
         for statement in dataset.load:
             con.execute(statement.replace("{data}", literal))
         tables = [row[0] for row in con.execute(
-            "SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' ORDER BY 1").fetchall()]
+            "SELECT table_name FROM duckdb_tables() WHERE schema_name = 'main' ORDER BY 1").fetchall()]
         return {t: con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0] for t in tables}
     finally:
         con.close()
