@@ -5,6 +5,9 @@ description: >
   The airline industry package: its curated metrics (load factor, OTP, yield, RASM/CASM, ancillary revenue, fleet utilisation) and the deep knowledge behind them.
 layer: industry
 industry: airline
+# IP-3 (2026-09-17): the reference package — the full anatomy, held to gate 3 (the static gate) and measured by
+# gate 4 on BTS's public January 2019 on-time file. industry.json and kb/ stay as IP-1 moved them.
+anatomy: 1
 owner_team: Platform
 domains:
   - airline

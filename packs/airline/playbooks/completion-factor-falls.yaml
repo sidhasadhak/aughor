@@ -1,0 +1,12 @@
+id: completion-factor-falls
+kind: diagnostic
+trigger_metric: completion_factor
+trigger_condition: completion factor falls below the prior period
+trigger_operator: lt
+recommendation: >
+  A falling completion factor is a rising cancellation rate: split the cancellations by cause, airport and day, and
+  check whether the on-time rate rose at the same time.
+expected_impact: Schedule reliability is read as one picture, not two opposite headlines.
+owner_role: Operations Control
+tags: [completion factor, cancellations]
+sources: [bts-atcr-2019-01]

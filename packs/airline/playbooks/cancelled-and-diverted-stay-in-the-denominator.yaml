@@ -1,0 +1,13 @@
+id: cancelled-and-diverted-stay-in-the-denominator
+kind: data_quality
+trigger_metric: on_time_arrival_rate
+trigger_condition: on-time arrival rate reads higher than the published rate for the same flights
+recommendation: >
+  Keep cancelled and diverted flights in the denominator, counted as not on time. Dividing by operated flights drops
+  them and reads higher than the rate the Air Travel Consumer Report publishes.
+expected_impact: The rate matches the published definition.
+owner_role: Data Analyst
+tags: [on-time performance, data quality]
+sources: [bts-atcr-2019-01]
+detection: >
+  SUM(CASE WHEN {{role.flight.cancelled}} = 1 OR {{role.flight.diverted}} = 1 THEN 1 ELSE 0 END)

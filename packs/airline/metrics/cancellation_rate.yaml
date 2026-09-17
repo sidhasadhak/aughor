@@ -1,0 +1,24 @@
+name: cancellation_rate
+title: Cancellation rate
+aliases: [flight cancellation rate, cancel rate, cancelled flights share]
+unit: ratio
+definition: The share of scheduled flights that were cancelled.
+formula: >
+  SUM(CASE WHEN {{role.flight.cancelled}} = 1 THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)
+grain: >
+  Scheduled flights of a marketing carrier network over a period; by carrier, airport or month by filtering the
+  same flights.
+binds:
+  required: [flight]
+anti_patterns:
+  - "Counting cancellations over operated flights: a cancelled flight never operated, so the rate reads as nonsense."
+  - "Reading a month's rate without its cause: carrier, weather, National Aviation System and security are separate levers."
+sane_range:
+  min: 0.0025
+  max: 0.0495
+  basis: >
+    U.S. marketing carrier networks' cancellation rates published for January 2019 by carrier: from Hawaiian
+    Airlines Network's 0.3% to United Airlines Network's 4.9%, widened by the ±0.05 points of their one-decimal
+    rounding. The system-wide rates published for 2019 (3.1% in January, 1.1% in December, 1.9% for the year) lie
+    inside it.
+  sources: [bts-atcr-2019-01, bts-atcr-2019-12-full-year]

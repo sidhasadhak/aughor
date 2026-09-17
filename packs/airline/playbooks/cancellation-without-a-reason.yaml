@@ -1,0 +1,12 @@
+id: cancellation-without-a-reason
+kind: data_quality
+trigger_metric: cancellation_rate
+trigger_condition: cancelled flights carry no cancellation code
+recommendation: >
+  Every cancelled flight should carry its cancellation code. Cancellations without one cannot be split by cause and
+  silently shrink every cause's share.
+expected_impact: Cause shares add up to the cancellations they describe.
+owner_role: Data Engineer
+tags: [cancellations, data quality]
+detection: >
+  SUM(CASE WHEN {{role.flight.cancelled}} = 1 AND {{role.flight.cancellation_code}} IS NULL THEN 1 ELSE 0 END)

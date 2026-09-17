@@ -6,9 +6,10 @@ pack author can add forward-looking keys without breaking the loader.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _GRAINS = ("cohort", "period", "point")
 _STATUSES = ("draft", "active", "deprecated")
@@ -277,6 +278,12 @@ class PackSource(_Base):
     retrieved: str = ""        # ISO date
     figures: list[SourceFigure] = Field(default_factory=list)
     notes: str = ""
+
+    @field_validator("published", "retrieved", mode="before")
+    @classmethod
+    def _date_as_text(cls, value):
+        """YAML reads an unquoted 2019-03-29 as a date; keep it as the ISO text an author wrote."""
+        return value.isoformat() if isinstance(value, date) else value
 
 
 class DatasetRoleBinding(_Base):

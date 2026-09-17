@@ -153,6 +153,14 @@ def test_each_rule_fires_on_its_planted_violation(tmp_path, label, path, change,
     assert any(expected in line for line in lines), (label, lines)
 
 
+def test_an_unquoted_yaml_date_is_read_as_the_date_it_names(tmp_path):
+    root = _write(tmp_path / "rail", _package())
+    text = (root / "sources.yaml").read_text(encoding="utf-8").replace("'2020-02-01'", "2020-02-01")
+    (root / "sources.yaml").write_text(text, encoding="utf-8")
+    assert load_pack(root).sources[0].published == "2020-02-01"
+    assert run_gate3(load_pack(root)).ok
+
+
 def test_a_pack_before_the_anatomy_is_not_held(tmp_path):
     files = _package()
     files["pack.yaml"]["anatomy"] = 0

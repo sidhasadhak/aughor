@@ -1,0 +1,284 @@
+{
+  "pack_id": "airline",
+  "dataset_id": "bts-marketing-ontime-2019-01",
+  "dataset_sha256": "c8cc2c6e365d2f48a4e772de7e8d0df0e2cd80d42379c6c03ca81d96d65d501b",
+  "package_fingerprint": "3d397cce0f3e3b17df6167ee2920b710322c11795bae289f8c5adc258b42e996",
+  "measured_at": "2026-09-17T14:08:47+00:00",
+  "rows": {
+    "aircraft": 5825,
+    "airports": 360,
+    "carriers": 10,
+    "flights": 638649
+  },
+  "metrics": [
+    {
+      "metric": "on_time_arrival_rate",
+      "value": 0.7836933902660147,
+      "sane_min": 0.6665,
+      "sane_max": 0.8775,
+      "in_range": true,
+      "sql": "SELECT SUM(CASE WHEN \"cancelled\" = 0 AND \"diverted\" = 0\n         AND \"arr_del15\" = 0 THEN 1.0 ELSE 0.0 END)\n/ NULLIF(COUNT(*), 0) AS value FROM \"flights\"",
+      "error": ""
+    },
+    {
+      "metric": "cancellation_rate",
+      "value": 0.030611493950511156,
+      "sane_min": 0.0025,
+      "sane_max": 0.0495,
+      "in_range": true,
+      "sql": "SELECT SUM(CASE WHEN \"cancelled\" = 1 THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0) AS value FROM \"flights\"",
+      "error": ""
+    },
+    {
+      "metric": "completion_factor",
+      "value": 0.9693885060494889,
+      "sane_min": 0.9505,
+      "sane_max": 0.9975,
+      "in_range": true,
+      "sql": "SELECT SUM(CASE WHEN \"cancelled\" = 0 THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0) AS value FROM \"flights\"",
+      "error": ""
+    }
+  ],
+  "goldens": [
+    {
+      "question": "What was the on-time arrival rate of U.S. marketing carriers in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "",
+      "expected": 0.784,
+      "tolerance": 0.0005,
+      "measured": 0.7836933902660147,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of scheduled domestic flights did U.S. marketing carriers cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "",
+      "expected": 0.031,
+      "tolerance": 0.0005,
+      "measured": 0.030611493950511156,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What was Hawaiian Airlines Network's on-time arrival rate in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'HA'",
+      "expected": 0.872,
+      "tolerance": 0.0005,
+      "measured": 0.8718832891246684,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What was Spirit Airlines' on-time arrival rate in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'NK'",
+      "expected": 0.829,
+      "tolerance": 0.0005,
+      "measured": 0.8294573643410853,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What was Delta's network on-time arrival rate in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'DL'",
+      "expected": 0.827,
+      "tolerance": 0.0005,
+      "measured": 0.8266006659005863,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What was JetBlue's on-time arrival rate in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'B6'",
+      "expected": 0.694,
+      "tolerance": 0.0005,
+      "measured": 0.6941046516385059,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What was United's network on-time arrival rate in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'UA'",
+      "expected": 0.721,
+      "tolerance": 0.0005,
+      "measured": 0.7206552292333043,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What was Allegiant's on-time arrival rate in January 2019?",
+      "metric": "on_time_arrival_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'G4'",
+      "expected": 0.734,
+      "tolerance": 0.0005,
+      "measured": 0.7342895164867662,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of its flights did Hawaiian Airlines Network cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'HA'",
+      "expected": 0.003,
+      "tolerance": 0.0005,
+      "measured": 0.0034482758620689655,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of its flights did Allegiant cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'G4'",
+      "expected": 0.007,
+      "tolerance": 0.0005,
+      "measured": 0.00739316871211001,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of its flights did Delta's network cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'DL'",
+      "expected": 0.011,
+      "tolerance": 0.0005,
+      "measured": 0.011144995432982705,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of its flights did United's network cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'UA'",
+      "expected": 0.049,
+      "tolerance": 0.0005,
+      "measured": 0.049384511001260054,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of its flights did JetBlue cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'B6'",
+      "expected": 0.04,
+      "tolerance": 0.0005,
+      "measured": 0.04009327823916868,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    },
+    {
+      "question": "What share of its flights did Southwest cancel in January 2019?",
+      "metric": "cancellation_rate",
+      "where": "{{role.flight.marketing_carrier}} = 'WN'",
+      "expected": 0.035,
+      "tolerance": 0.0005,
+      "measured": 0.03547685784102343,
+      "ok": true,
+      "source": "bts-atcr-2019-01",
+      "error": ""
+    }
+  ],
+  "detections": [
+    {
+      "play": "cancellation-without-a-reason",
+      "metric": "cancellation_rate",
+      "count": 0,
+      "error": ""
+    },
+    {
+      "play": "cancelled-and-diverted-stay-in-the-denominator",
+      "metric": "on_time_arrival_rate",
+      "count": 21000,
+      "error": ""
+    },
+    {
+      "play": "late-flag-on-a-flight-that-never-arrived",
+      "metric": "on_time_arrival_rate",
+      "count": 0,
+      "error": ""
+    }
+  ],
+  "claims": [
+    {
+      "kind": "object",
+      "subject": "Flight",
+      "tier": "measured-true",
+      "measured": "Flight (flights)",
+      "note": "matched Flight backed by flights"
+    },
+    {
+      "kind": "object",
+      "subject": "Carrier",
+      "tier": "measured-true",
+      "measured": "Carrier (carriers)",
+      "note": "matched Carrier backed by carriers"
+    },
+    {
+      "kind": "object",
+      "subject": "Airport",
+      "tier": "measured-true",
+      "measured": "Airport (airports)",
+      "note": "matched Airport backed by airports"
+    },
+    {
+      "kind": "object",
+      "subject": "Aircraft",
+      "tier": "measured-true",
+      "measured": "Aircraft (aircraft)",
+      "note": "matched Aircraft backed by aircraft"
+    },
+    {
+      "kind": "link",
+      "subject": "Flight \u2192 Carrier",
+      "tier": "measured-true",
+      "measured": "N:1",
+      "note": "Flight_RELATES_TO_Carrier: measured N:1: flights.carrier_id 10 distinct over 638649 non-null rows (N); carriers.carrier_id 10 distinct over 10 non-null rows (1)"
+    },
+    {
+      "kind": "link",
+      "subject": "Flight \u2192 Aircraft",
+      "tier": "measured-true",
+      "measured": "N:1",
+      "note": "Flight_RELATES_TO_Aircraft: authored N:N, measured N:1: flights.aircraft_id 5825 distinct over 633964 non-null rows (N); aircraft.aircraft_id 5825 distinct over 5825 non-null rows (1)"
+    },
+    {
+      "kind": "link",
+      "subject": "Flight \u2192 Airport",
+      "tier": "expected",
+      "measured": null,
+      "note": "no join found between Flight and Airport"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Flight",
+      "tier": "expected",
+      "measured": null,
+      "note": "no lifecycle detected on Flight (the core looks for `status`)"
+    }
+  ],
+  "claims_by_tier": {
+    "expected": 2,
+    "measured-true": 6,
+    "measured-false": 0,
+    "human": 0
+  },
+  "findings": [],
+  "ok": true
+}
