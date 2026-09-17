@@ -5674,8 +5674,14 @@ nothing pushed. The user: *"lets start ip-4"*.
   - **Payments & fintech, then insurance.**
   - **Gate 5**: not needed for banking — gate 4 is unambiguous (answer 8).
   - **Gate 6**: the user's review.
-  - **Found by the survey:** the evaluate route passes an IP-3 golden without checking it (its own task);
-    promotion rewrites pack.yaml without its comments (its own task).
+  - **Found by the survey:** promotion rewrites pack.yaml without its comments (its own task).
+  - ✅ **A published figure is reported from the receipt that measured it.** `check_expectation` skipped every
+    expectation key it did not know, so IP-3's goldens scored as passing wherever the evaluate and status doors ran
+    them — airline 14 of 14, banking 51 of 51, with nothing computed and a planner pass spent on each. The checker
+    now refuses a golden it cannot judge (and any unknown key, by name), and the runner reads what
+    `aughor packs measure` wrote in `measurements/<dataset>.json`: a receipt that is missing, that describes an
+    older package, or that says a figure did not reproduce is reported as that, never as a pass. The door
+    downloads nothing, builds nothing and calls no model.
   - ✅ **A pack's claims can no longer reach a model through the explorer.** ON-7b gave the ontology explorer a
     catalogue that rendered every claim — expectations included, from any pack a person had measured against the
     connection — while `ontology_map.py` and `CoreClaim` both said claims are never rendered, and ON-0a's rule is
