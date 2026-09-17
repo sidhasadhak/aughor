@@ -1,0 +1,312 @@
+{
+ "1-5 scale (measured ≈ 4.08)": {
+  "hi": 5.0,
+  "kind": "band",
+  "lo": 1.0
+ },
+ "EUR (positive magnitude) (measured ≈ 404.11)": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "LTV in currency, positive. LTV:CAC ratio typically 3..5 is healthy; <1 means you lose money per customer; >>5 may mean under-investment in growth (or a churn/margin error).": {
+  "hi": 5.0,
+  "kind": "typical",
+  "lo": 3.0
+ },
+ "RPK/ASK are large positive counts (units: passenger-km or seat-km/miles), scaling into billions for a full carrier annually. RPK must always be <= ASK for the same population (RPK > ASK implies load factor > 1, a bug).": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "USD, positive; compare against LTV.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "USD, strictly positive; typically tens to low-hundreds for DTC.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "count, strictly positive; urban last-mile routes often 80–200 stops/route/day.": {
+  "hi": 200.0,
+  "kind": "typical",
+  "lo": 80.0
+ },
+ "currency per ASM/ASK in cents, typically ~10–20 US cents per ASM for both RASM and CASM; a profitable carrier has RASM > CASM. Values like dollars-per-ASM or 1e-9 indicate a unit/grain error.": {
+  "hi": 20.0,
+  "kind": "typical",
+  "lo": 10.0
+ },
+ "currency per account/user, strictly positive; B2B ARPA >> B2C ARPU as a rule.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "currency per km or per mile (small), e.g. ~0.05–0.20 USD per RPM; values near 1+ USD/mile or near-zero scientific-notation indicate a unit/grain mismatch.": {
+  "hi": 0.2,
+  "kind": "typical",
+  "lo": 0.05
+ },
+ "currency per passenger, typically ~5–60 USD/pax (higher for LCCs/ULCCs). Negative or near-zero only on a revenue-mapping error.": {
+  "hi": 60.0,
+  "kind": "typical",
+  "lo": 5.0
+ },
+ "currency per shipment or per mile/km, strictly positive. Sub-cent or scientific-notation values ⇒ a units/grain mismatch (e.g. cost summed once, distance fanned out).": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "currency, positive; only meaningful relative to LTV and payback. Self-serve B2C CAC is low; enterprise B2B can be thousands+.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "currency, strictly positive; ARR is exactly 12*MRR by construction.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "currency, strictly positive; typically low tens to ~100 per order. Negative or zero indicates refunds/voids leaking into GMV.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "downtime in minutes/hours <= scheduled time; MTBF/MTTR positive durations (MTBF >> MTTR for healthy assets).": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "hours or days, strictly positive; last-mile parcel hours-to-days, ocean freight days-to-weeks. Negative or zero ⇒ swapped timestamps.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "hours per aircraft per day, 0..24 (physically capped at 24); industry-typical 8–14 (LCCs/narrowbodies higher, long-haul widebodies can exceed via long sectors). Any value > 24 is impossible.": {
+  "hi": 24.0,
+  "kind": "band",
+  "lo": 0.0
+ },
+ "minutes (1-10) (measured ≈ 4.25)": {
+  "hi": 10.0,
+  "kind": "band",
+  "lo": 1.0
+ },
+ "minutes to hours, non-negative; cross-dock minutes, port detention hours-to-days. Negative ⇒ timestamp error.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "minutes, strictly positive; typically 20–60 min. Sub-5 or >180 usually signals a unit error or stuck/abandoned orders.": {
+  "hi": 60.0,
+  "kind": "typical",
+  "lo": 20.0
+ },
+ "months, positive; healthy SaaS payback is <12 months, with <18 acceptable for enterprise; >24 signals weak unit economics or a grain/period error.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "percent 0-100 (measured ≈ 2.2)": {
+  "hi": 100.0,
+  "kind": "pct100",
+  "lo": 0.0
+ },
+ "percent 0..100 (negative only on loss-leaders / data error).": {
+  "hi": 100.0,
+  "kind": "pct100",
+  "lo": 0.0
+ },
+ "ratio (units sold / avg units in stock)": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "ratio (units sold per unit avg. inventory)": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "ratio -1 to 1 (healthy: >0.2)": {
+  "hi": 1.0,
+  "kind": "band",
+  "lo": -1.0
+ },
+ "ratio 0-1 (measured ≈ 0.26)": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0-1, typically 0.20-0.50 for a 6-product catalog (measured ≈ 0.17)": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0-1000 (USD per order)": {
+  "hi": 1000.0,
+  "kind": "band",
+  "lo": 0.0
+ },
+ "ratio 0-∞ (measured ≈ 5.27)": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "ratio 0..1 (0..100%); industry-typical 0.005–0.03 (under 3%). Sustained values above ~0.1 signal an operational crisis or a counting error.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (0..100%); industry-typical 0.70–0.90. Cannot exceed 1.0.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (0..100%); industry-typical 0.75–0.90. Any value > 1.0 is impossible and indicates a grain/join error.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (commonly 0.6–0.9; brief >1 only from overtime above nameplate, otherwise a bug).": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (mature lines often 0.95–0.999; >1 impossible).": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (never > 1).": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (never > 1); operators target 0.90–0.99.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (never > 1); opt-in free-trial B2B SaaS often 0.15–0.25, freemium B2C typically low single-digit percent.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (never > 1, never negative); SMB B2C runs higher, enterprise B2B often <0.01/month.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (occasionally slightly >1 on legitimate overload, otherwise a bug). Healthy linehaul often 0.7–0.95.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (strong supply chains 0.9–0.98; >1 impossible).": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1 (world-class ~0.85; >1 is impossible — a grain/window error).": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1, typically 0.10–0.30 (10–30%). A value > 1 means commission was summed against a fanned-out (too-small) or mismatched GMV.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1, typically very small (0.001–0.05); a value near 1 or >1 signals row fan-out.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; PPM 0..1,000,000 (good processes often <500 PPM).": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; always <= On-Time Delivery Rate. Typical retail-supplier targets 0.95+.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; apparel/beauty often 0.1–0.4.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; healthy B2B monthly gross revenue churn is ~0.005–0.02 (annualized ~0.05–0.20). Never negative, never > 1.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; healthy marketplaces typically 0.02–0.10 overall. A rate > 1 is a join fan-out bug, not real data.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; last-mile B2C typically 0.85–0.97.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; month-1 retention often 0.2–0.5, declining over later periods.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..1; typically 0.6–0.95. A rate > 1 is a join fan-out bug.": {
+  "hi": 1.0,
+  "kind": "ratio01",
+  "lo": 0.0
+ },
+ "ratio 0..~4 deliveries/hour typical; > ~6/hr is unusual and suggests double-counted deliveries or undercounted hours.": {
+  "hi": 4.0,
+  "kind": "typical",
+  "lo": 0.0
+ },
+ "ratio 0..∞ (typical 1–10x); near-zero scientific-notation = a units/grain error.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "ratio 0..∞ (typical retail 2–12/yr; >50 suggests a grain error).": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "ratio ≥ 1 within an active window (an active user has at least 1 order); typically 1–10 per month. A value < 1 means the denominator is wrong (non-active users included).": {
+  "hi": null,
+  "kind": "band",
+  "lo": 1.0
+ },
+ "ratio, typically 0.8..1.4; NRR > 1 is NORMAL and GOOD (expansion outweighs churn) — do not treat >1 as a bug. Best-in-class B2B is ~1.1–1.3. Values far above ~1.5 usually mean new logos leaked into the cohort.": {
+  "hi": 1.4,
+  "kind": "typical",
+  "lo": 0.8
+ },
+ "score 0-100 (measured ≈ 48.16)": {
+  "hi": 100.0,
+  "kind": "pct100",
+  "lo": 0.0
+ },
+ "time per unit, strictly positive (seconds to minutes for discrete parts); cycle <= takt means demand is met.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ },
+ "units per period, non-negative; bounded above by ideal-rate capacity for the window.": {
+  "hi": null,
+  "kind": "open",
+  "lo": null
+ }
+}

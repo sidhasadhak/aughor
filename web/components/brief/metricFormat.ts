@@ -1,11 +1,18 @@
 /**
- * How a north-star metric's figures read — one implementation shared by the KPI tiles
- * (`IndustryKpiStrip`) and the Briefing's "numbers that moved" table (`moves.ts`), so a value
- * and its move are never formatted two ways on one screen.
+ * How a north-star metric's figures read on the Briefing's KPI tiles (`IndustryKpiStrip`) — the
+ * value and its period delta in one place, so the two are never formatted two ways on one card.
  *
- * Pure (no React, no fetch): the table's row builder is unit-tested through it.
+ * What the metric's unit/range text MEANS is not decided here: the API ships it as the metric's
+ * `stated_range`, read by `aughor/business_profile/validate.py::stated_range` — the same reader the
+ * value audit holds the metric to, and the same one the Briefing's move phrasing asks
+ * (`aughor/knowledge/metric_moves.py`). This file turns that reading into a string.
+ *
+ * Pure (no React, no fetch), and measured over every range the industry packages ship in
+ * `metricFormat.test.ts`.
  */
 import type { Format } from "@number-flow/react";
+
+import type { StatedRange } from "@/lib/api";
 
 /** How to drive the <NumberFlow> odometer so it renders EXACTLY `display`: the value is
  *  pre-rounded to the digits the display string shows (min === max fraction digits, no
@@ -22,6 +29,36 @@ export interface KpiFlow {
 const isMultiplier = (name: string, unit: string) =>
   /\b(x|×|multiple|multiplier|roas|times)\b/i.test(unit) || /\broas\b|return on ad/i.test(name);
 
+/** What a metric's unit/range text states, when the API shipped no reading for it (an older API, or a
+ *  reading that failed): no band — so the figure shows unbounded rather than by a bound guessed from the
+ *  words, which is what hid an inventory turnover of 5 for reading "ratio" anywhere in its text. */
+const UNSTATED: StatedRange = { kind: "open", lo: null, hi: null };
+
+/** The unit a text OPENS with, before the commentary that follows: 'hours per aircraft per day, 0..24
+ *  (physically capped at 24). Any value > 24 is impossible.' is stated in hours, and the "value" in its
+ *  last sentence is prose, not a currency. Same principle as the range reading — what the text states
+ *  first is what it means; what follows glosses it. */
+const unitHead = (u: string) => u.split(/[;(]|,|\.\s/)[0];
+
+/** Money names itself: a currency code or symbol anywhere (a gloss like '(USD per order)' still says
+ *  money), or one of the softer words where the unit is actually stated — never from a "value" in
+ *  commentary, which read a net revenue retention of 1.6 as "$1.60". */
+const isMoney = (u: string) => /usd|eur|gbp|jpy|cny|inr|[$€£¥₹]|\bcurrency\b/.test(u)
+  || /revenue|spend|cost|gmv|sales|value|price/.test(unitHead(u));
+
+/** Days only when the text opens in days: 'hours per aircraft per day' is hours, and 80–200
+ *  'stops/route/day' are stops. */
+const isDays = (u: string) => /^\s*days?\b/.test(unitHead(u));
+
+/** True when `v` falls outside a band the text STATES, past the slack the value audit allows — 5% of the
+ *  band's width, or of its one bound when an end is open (`audit_value_sql`, validate.py). A band the text
+ *  only calls typical is never a bound, and an open end never bounds: real values fall outside both. */
+function outsideStatedBand(v: number, { kind, lo, hi }: StatedRange): boolean {
+  if (kind !== "band") return false;
+  const slack = 0.05 * (lo !== null && hi !== null ? hi - lo : Math.abs((hi ?? lo) as number));
+  return (hi !== null && v > hi + slack) || (lo !== null && v < lo - slack);
+}
+
 // Odometer format presets (module-level so NumberFlow's memoized formatter is reused).
 // Fixed fraction digits + no grouping mirror what toFixed()/String() emit — the same
 // digits the display string carries — so the animated text can never drift from it.
@@ -29,10 +66,16 @@ const FLOW_INT: Format = { maximumFractionDigits: 0, useGrouping: false };
 const FLOW_1DP: Format = { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false };
 const FLOW_2DP: Format = { minimumFractionDigits: 2, maximumFractionDigits: 2, useGrouping: false };
 
-/** Format a raw scalar by its declared unit/range; gate out broken values. The business's
- *  currency symbol is used for money metrics — a €-company never shows '$'. Alongside the
- *  display string, each branch emits the exact `flow` spec that reproduces it (see KpiFlow). */
-export function formatMetric(v: number, unit: string, sym: string, name: string): { display: string; ok: boolean; flow?: KpiFlow } {
+/** Format a raw scalar by the range its unit/range text STATES (`range`, shipped by the API — see
+ *  StatedRange); gate out broken values. The business's currency symbol is used for money metrics — a
+ *  €-company never shows '$'. Alongside the display string, each branch emits the exact `flow` spec that
+ *  reproduces it (see KpiFlow).
+ *
+ *  A percent is a figure whose text states a 0..1 or 0..100 RATE, and the only bound a figure is hidden by
+ *  is one its text states. Reading the words instead — "ratio" anywhere meant 0..1, "0-1000" contained
+ *  "0-100" — hid an inventory turnover of 5, a net review ratio of -0.2 and a €404 AOV, and showed the
+ *  airline package's 0.82 load factor ('ratio 0..1 (0..100%)') as "0.8%". */
+export function formatMetric(v: number, unit: string, sym: string, name: string, range: StatedRange = UNSTATED): { display: string; ok: boolean; flow?: KpiFlow } {
   const u = (unit || "").toLowerCase();
   let display: string;
   let flow: KpiFlow | undefined;
@@ -41,19 +84,21 @@ export function formatMetric(v: number, unit: string, sym: string, name: string)
     const s = v.toFixed(2);
     display = `${s}×`;
     flow = { value: Number(s), format: FLOW_2DP, suffix: "×" };
-  } else if (/ratio|0-1|0\.\.1/.test(u) && !/0-100|0\.\.100/.test(u)) {
+  } else if (range.kind === "ratio01") {
     if (v < -0.001 || v > 1.05) return { display: "", ok: false };   // broken bounded rate (>1)
     if (v >= 0.9995) return { display: "", ok: false };              // rounds to 100% — degenerate
     const s = (v * 100).toFixed(1);
     display = `${s}%`;
     flow = { value: Number(s), format: FLOW_1DP, suffix: "%" };
-  } else if (/percent|0-100|0\.\.100|%/.test(u)) {
+  } else if (range.kind === "pct100") {
     if (v < -0.5 || v > 105) return { display: "", ok: false };
     if (v >= 99.95) return { display: "", ok: false };
     const s = v.toFixed(1);
     display = `${s}%`;
     flow = { value: Number(s), format: FLOW_1DP, suffix: "%" };
-  } else if (/day/.test(u)) {
+  } else if (outsideStatedBand(v, range)) {
+    return { display: "", ok: false };                               // 26 block hours in a 0..24 day
+  } else if (isDays(u)) {
     const s = v.toFixed(1);
     display = `${s}d`;
     flow = { value: Number(s), format: FLOW_1DP, suffix: "d" };
@@ -64,7 +109,7 @@ export function formatMetric(v: number, unit: string, sym: string, name: string)
                         : a >= 1e3 ? [(v / 1e3).toFixed(1), "K", FLOW_1DP] as const
                         : Number.isInteger(v) ? [String(v), "", FLOW_INT] as const
                         : [v.toFixed(2), "", FLOW_2DP] as const;
-    const pre = /usd|eur|gbp|jpy|cny|inr|[$€£¥₹]|revenue|spend|cost|gmv|sales|value|price/.test(u) ? sym : "";
+    const pre = isMoney(u) ? sym : "";
     display = pre + s + mag;
     flow = { value: Number(s), format: fmt, prefix: pre || undefined, suffix: mag || undefined };
   }
@@ -72,9 +117,10 @@ export function formatMetric(v: number, unit: string, sym: string, name: string)
   return { display, ok: true, flow };
 }
 
-/** Period-over-period delta in the metric's own terms: pts for rates, × for multipliers,
- *  relative % for everything else. null when there aren't two points. */
-export function deltaInfo(values: number[], unit: string, name: string): { text: string; sign: number } | null {
+/** Period-over-period delta in the metric's own terms: pts for a rate its text STATES (`range`), × for
+ *  multipliers, relative % for everything else — a turnover moving 4 → 5 is "+25.0%", not "+100.0pts".
+ *  null when there aren't two points. */
+export function deltaInfo(values: number[], unit: string, name: string, range: StatedRange = UNSTATED): { text: string; sign: number } | null {
   if (values.length < 2) return null;
   const prev = values[values.length - 2], last = values[values.length - 1];
   const diff = last - prev;
@@ -83,10 +129,10 @@ export function deltaInfo(values: number[], unit: string, name: string): { text:
   let text: string;
   if (isMultiplier(name, u)) {
     text = `${diff >= 0 ? "+" : ""}${diff.toFixed(2)}×`;
-  } else if (/ratio|0-1|0\.\.1/.test(u) && !/0-100/.test(u)) {
+  } else if (range.kind === "ratio01") {
     const pts = diff * 100;
     text = `${pts >= 0 ? "+" : ""}${pts.toFixed(1)}pts`;
-  } else if (/percent|0-100|%/.test(u)) {
+  } else if (range.kind === "pct100") {
     text = `${diff >= 0 ? "+" : ""}${diff.toFixed(1)}pts`;
   } else {
     const rel = prev !== 0 ? (diff / Math.abs(prev)) * 100 : 0;
