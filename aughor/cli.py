@@ -1072,6 +1072,95 @@ def packs_list(packs_dir: Path):
                   f"by an agent or selectable for steering.")
 
 
+@packs.command("check")
+@click.argument("pack_id")
+def packs_check(pack_id: str):
+    """IP-3 — run the static gate (gate 3) on PACK_ID: sources, sourced sane ranges, formulas over roles, no alias
+    collision, bound plays, goldens and datasets. Exits 1 on any finding. A pack that does not declare
+    `anatomy: 1` is not held to it."""
+    from aughor.packs.gate3 import applies, run_gate3
+    from aughor.packs.loader import PacksError, load_pack
+    from aughor.packs.roots import pack_dir
+
+    folder = pack_dir(pack_id)
+    if folder is None:
+        console.print(f"[red]✗[/red] no pack {pack_id!r} in either pack root")
+        sys.exit(1)
+    try:
+        pack = load_pack(folder)
+    except PacksError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    if not applies(pack):
+        console.print(f"[yellow]{pack_id} does not declare anatomy: 1 — the static gate does not hold it[/yellow]")
+        return
+    report = run_gate3(pack)
+    for line in report.lines():
+        console.print(f"  [red]✗[/red] {line}")
+    if not report.ok:
+        console.print(f"\n[red]{len(report.findings)} finding(s)[/red] — gate 3 fails for {pack_id}")
+        sys.exit(1)
+    console.print(f"[green]✓[/green] gate 3 passes for {pack_id}: {len(pack.metrics)} metrics, "
+                  f"{len(pack.playbooks)} plays, {len(pack.evals)} goldens, {len(pack.sources)} sources, "
+                  f"{len(pack.datasets)} dataset(s)")
+
+
+@packs.command("measure")
+@click.argument("pack_id")
+@click.option("--dataset", "dataset_id", default="", help="The dataset to measure on (default: the package's first).")
+@click.option("--download", is_flag=True, help="Download the dataset into the cache if it is not there yet.")
+@click.option("--write", is_flag=True, help="Store the receipt as measurements/<dataset>.json inside the package.")
+def packs_measure(pack_id: str, dataset_id: str, download: bool, write: bool):
+    """IP-3 — run gate 4 on PACK_ID: measure its recipes, goldens, detections and ontology claims on a named public
+    dataset, with no model. Exits 1 on any finding."""
+    import os
+
+    # A measurement reads a public file; it records nothing in this deployment's stores.
+    os.environ.setdefault("AUGHOR_KERNEL_EVENTS", "0")
+    from aughor.packs.gate3 import applies, run_gate3
+    from aughor.packs.gate4 import Gate4Error, run_gate4, write_receipt
+    from aughor.packs.loader import PacksError, load_pack
+    from aughor.packs.roots import pack_dir
+
+    folder = pack_dir(pack_id)
+    if folder is None:
+        console.print(f"[red]✗[/red] no pack {pack_id!r} in either pack root")
+        sys.exit(1)
+    try:
+        pack = load_pack(folder)
+    except PacksError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    if not applies(pack) or not run_gate3(pack).ok:
+        console.print(f"[red]✗[/red] {pack_id} must pass gate 3 first: aughor packs check {pack_id}")
+        sys.exit(1)
+    try:
+        report = run_gate4(pack, dataset_id, download=download)
+    except Gate4Error as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[bold]{pack_id}[/bold] on [bold]{report.dataset_id}[/bold] "
+                  f"({', '.join(f'{t} {n:,}' for t, n in report.rows.items())})")
+    for m in report.metrics:
+        mark = "[green]✓[/green]" if m.in_range else "[red]✗[/red]"
+        console.print(f"  {mark} {m.metric} = {m.value}  [dim]sane [{m.sane_min}, {m.sane_max}][/dim]")
+    passed = sum(g.ok for g in report.goldens)
+    console.print(f"  goldens: {passed} of {len(report.goldens)} reproduce their published figure")
+    for g in report.goldens:
+        if not g.ok:
+            console.print(f"    [red]✗[/red] {g.question} — measured {g.measured}, published {g.expected}")
+    for d in report.detections:
+        console.print(f"  detection {d.play}: {d.count if d.error == '' else 'error — ' + d.error}")
+    console.print(f"  claims: {report.claims_by_tier}")
+    for line in report.findings:
+        console.print(f"  [red]✗[/red] {line}")
+    if write:
+        console.print(f"[dim]receipt: {write_receipt(pack, report)}[/dim]")
+    if not report.ok:
+        sys.exit(1)
+    console.print(f"[green]✓[/green] gate 4 passes for {pack_id}")
+
+
 @packs.command("promote")
 @click.argument("pack_id")
 @click.option("--packs-dir", default=None, type=Path,

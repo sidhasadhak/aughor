@@ -1,0 +1,28 @@
+name: on_time_arrival_rate
+title: On-time arrival rate
+aliases: [on-time performance, OTP, A14, arrival punctuality, on-time arrivals]
+unit: ratio
+definition: >
+  The share of scheduled flights that arrived less than 15 minutes after their scheduled arrival. A cancelled or
+  diverted flight never arrived on time, so it stays in the denominator as not on time.
+formula: >
+  SUM(CASE WHEN {{role.flight.cancelled}} = 0 AND {{role.flight.diverted}} = 0
+           AND {{role.flight.arrived_15_late}} = 0 THEN 1.0 ELSE 0.0 END)
+  / NULLIF(COUNT(*), 0)
+grain: >
+  Scheduled flights of a marketing carrier network over a period; read by carrier, airport or month by filtering
+  the same flights, never by averaging the carriers' rates.
+binds:
+  required: [flight]
+anti_patterns:
+  - "Dividing by operated flights only: dropping cancelled and diverted flights reads higher than the published rate."
+  - "Averaging carriers' or airports' rates instead of counting flights: a small carrier weighs as much as a large one."
+  - "Reading on-time without the cancellation rate: an airline can raise on-time by cancelling its latest flights."
+sane_range:
+  min: 0.6665
+  max: 0.8775
+  basis: >
+    U.S. marketing carrier networks' on-time arrival rates published for 2019, monthly and full-year: from JetBlue
+    Airways' 66.7% (December 2019) to Hawaiian Airlines Network's 87.7% (full year 2019), widened by the ±0.05
+    points of their one-decimal rounding.
+  sources: [bts-atcr-2019-01, bts-atcr-2019-12-full-year]

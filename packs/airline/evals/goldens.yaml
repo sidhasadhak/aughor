@@ -1,0 +1,44 @@
+# Goldens on BTS's January 2019 marketing-carrier file: each reproduces a figure the Air Travel Consumer Report
+# published for the same flights. Published to one decimal of a percent, so the tolerance is ±0.05 points.
+- question: What was the on-time arrival rate of U.S. marketing carriers in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.784, tolerance: 0.0005,
+           source: bts-atcr-2019-01}
+- question: What share of scheduled domestic flights did U.S. marketing carriers cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.031, tolerance: 0.0005,
+           source: bts-atcr-2019-01}
+- question: What was Hawaiian Airlines Network's on-time arrival rate in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.872, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'HA'"}
+- question: What was Spirit Airlines' on-time arrival rate in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.829, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'NK'"}
+- question: What was Delta's network on-time arrival rate in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.827, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'DL'"}
+- question: What was JetBlue's on-time arrival rate in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.694, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'B6'"}
+- question: What was United's network on-time arrival rate in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.721, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'UA'"}
+- question: What was Allegiant's on-time arrival rate in January 2019?
+  expect: {metric: on_time_arrival_rate, dataset: bts-marketing-ontime-2019-01, value: 0.734, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'G4'"}
+- question: What share of its flights did Hawaiian Airlines Network cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.003, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'HA'"}
+- question: What share of its flights did Allegiant cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.007, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'G4'"}
+- question: What share of its flights did Delta's network cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.011, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'DL'"}
+- question: What share of its flights did United's network cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.049, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'UA'"}
+- question: What share of its flights did JetBlue cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.040, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'B6'"}
+- question: What share of its flights did Southwest cancel in January 2019?
+  expect: {metric: cancellation_rate, dataset: bts-marketing-ontime-2019-01, value: 0.035, tolerance: 0.0005,
+           source: bts-atcr-2019-01, where: "{{role.flight.marketing_carrier}} = 'WN'"}

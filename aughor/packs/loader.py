@@ -13,8 +13,8 @@ import yaml
 from pydantic import ValidationError
 
 from aughor.packs.models import (
-    Pack, PackFunction, PackManifest, PackMetric, PackOntology, PackQuestions, PackPlaybook,
-    PackSurface, PackEval, RoleSpec,
+    Pack, PackDataset, PackFunction, PackManifest, PackMetric, PackOntology, PackQuestions, PackPlaybook,
+    PackSource, PackSurface, PackEval, RoleSpec,
 )
 
 
@@ -31,7 +31,7 @@ class PacksError(Exception):
 
 def _read_yaml(path: Path) -> dict:
     try:
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise PacksError(f"invalid YAML in {path.name}: {e}") from e
@@ -44,7 +44,7 @@ def _read_yaml(path: Path) -> dict:
 
 def _read_yaml_list(path: Path) -> list:
     try:
-        with path.open() as f:
+        with path.open(encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except yaml.YAMLError as e:
         raise PacksError(f"invalid YAML in {path.name}: {e}") from e
@@ -54,8 +54,16 @@ def _read_yaml_list(path: Path) -> list:
 
 
 def load_pack(path: Union[str, Path]) -> Pack:
-    """Load the pack rooted at `path`. Raises PacksError if `pack.yaml` is absent or invalid."""
-    root = Path(path)
+    """Load the pack rooted at `path`. Raises PacksError if `pack.yaml` is absent or invalid, or when any other
+    file does not fit its model — every caller catches PacksError, and a pydantic error from a metric or an
+    ontology file used to escape them all (the roster route included)."""
+    try:
+        return _load_pack(Path(path))
+    except ValidationError as e:
+        raise PacksError(f"invalid pack file in {path}: {e}") from e
+
+
+def _load_pack(root: Path) -> Pack:
     manifest_file = root / "pack.yaml"
     if not manifest_file.is_file():
         raise PacksError(f"no pack.yaml in {root}")
@@ -69,7 +77,7 @@ def load_pack(path: Union[str, Path]) -> Pack:
     expertise = ""
     exp_file = root / PROSE_FILE
     if exp_file.is_file():
-        expertise = exp_file.read_text()
+        expertise = exp_file.read_text(encoding="utf-8")
 
     metrics: list[PackMetric] = []
     metrics_dir = root / "metrics"
@@ -117,10 +125,25 @@ def load_pack(path: Union[str, Path]) -> Pack:
     if f_file.is_file():
         function = PackFunction(**(_read_yaml(f_file) or {}))
 
+    # IP-3 — the cited sources and the named datasets of a full-anatomy package.
+    sources: list[PackSource] = []
+    src_file = root / "sources.yaml"
+    if src_file.is_file():
+        for item in (_read_yaml(src_file).get("sources") or []):
+            if not isinstance(item, dict):
+                raise PacksError(f"sources.yaml: every source must be a mapping, got {type(item).__name__}")
+            sources.append(PackSource(**item))
+
+    datasets: list[PackDataset] = []
+    ds_dir = root / "datasets"
+    if ds_dir.is_dir():
+        for f in sorted(ds_dir.glob("*.yaml")):
+            datasets.append(PackDataset(**_read_yaml(f)))
+
     return Pack(
         manifest=manifest, expertise=expertise, metrics=metrics, entities=entities,
         questions=questions, playbooks=playbooks, surface=surface, evals=evals,
-        ontology=ontology, function=function, path=str(root),
+        ontology=ontology, function=function, sources=sources, datasets=datasets, path=str(root),
     )
 
 

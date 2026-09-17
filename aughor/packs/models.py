@@ -6,9 +6,10 @@ pack author can add forward-looking keys without breaking the loader.
 """
 from __future__ import annotations
 
+from datetime import date
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 _GRAINS = ("cohort", "period", "point")
 _STATUSES = ("draft", "active", "deprecated")
@@ -17,6 +18,17 @@ _STATUSES = ("draft", "active", "deprecated")
 #: product, customer) is read by every industry; a BASE is what every analysis shares.
 #: "" is every other pack: an ontology, an organisation function group, an engine.
 KNOWLEDGE_LAYERS = ("industry", "function", "base")
+#: IP-3 — the package anatomy a pack declares (`anatomy:` in pack.yaml; ROADMAP §3.17 "The package"). 0 is every pack
+#: written before it; 1 is the anatomy the static gate (`aughor/packs/gate3.py`) holds a package to: cited sources,
+#: metrics as formulas over role attributes with a sourced sane range, bound plays, and goldens on a named dataset.
+ANATOMY_VERSIONS = (0, 1)
+#: The three kinds of play a package carries (§3.17): what to investigate when a metric moves, what to check the
+#: number itself for, and a move for the business.
+PLAY_KINDS = ("diagnostic", "data_quality", "practice")
+#: The units a metric's value is stated in, so a measured value and its sane range are read the same way.
+METRIC_UNITS = ("ratio", "percent", "minutes", "hours", "miles", "count", "currency", "number")
+#: The kinds of attribute a role carries.
+ATTRIBUTE_TYPES = ("flag", "number", "count", "minutes", "hours", "miles", "date", "time", "code", "text")
 
 
 class _Base(BaseModel):
@@ -55,11 +67,23 @@ class PackManifest(_Base):
     #: IP-1 — the closed industry id an INDUSTRY package carries ("airline",
     #: "food_delivery" — the ids `industry_scope` returns). "" for every other layer.
     industry: str = ""
+    #: IP-3 — the package anatomy this pack declares (`ANATOMY_VERSIONS`); 1 puts it under the static gate.
+    anatomy: int = 0
 
 
 class MetricBinds(_Base):
     required: list[str] = Field(default_factory=list)
     optional: list[str] = Field(default_factory=list)
+
+
+class SaneRange(_Base):
+    """IP-3 — the band a metric's value is plausible in, the population and period that band was published for
+    (`basis`), and the sources that published it. A band is a claim like any other: the static gate refuses one
+    without a source, and gate 4 checks what it measures against it."""
+    min: Optional[float] = None
+    max: Optional[float] = None
+    basis: str = ""
+    sources: list[str] = Field(default_factory=list)
 
 
 class PackMetric(_Base):
@@ -73,6 +97,19 @@ class PackMetric(_Base):
     grain: str = ""
     anti_patterns: list[str] = Field(default_factory=list)
     binds: MetricBinds = Field(default_factory=MetricBinds)
+    #: IP-3 — the name a person reads ("On-time arrival rate"); `name` stays the id plays and goldens bind to.
+    title: str = ""
+    #: IP-3 — what the value is stated in (`METRIC_UNITS`).
+    unit: str = ""
+    #: IP-3 — the sourced band the value is plausible in.
+    sane_range: Optional[SaneRange] = None
+
+
+class RoleAttribute(_Base):
+    """IP-3 — one attribute a role carries: a flight's `cancelled` flag, its `arrival_delay` in minutes. A formula
+    names it `{{role.flight.cancelled}}`; a dataset's binding maps it to that dataset's column."""
+    type: str = "text"
+    description: str = ""
 
 
 class RoleSpec(_Base):
@@ -82,6 +119,8 @@ class RoleSpec(_Base):
     expects: dict = Field(default_factory=dict)
     default: Optional[str] = None
     one_of: list[str] = Field(default_factory=list)
+    #: IP-3 — the attributes a formula may name on this role.
+    attributes: dict[str, RoleAttribute] = Field(default_factory=dict)
 
 
 class PackQuestions(_Base):
@@ -101,6 +140,13 @@ class PackPlaybook(_Base):
     expected_impact: str = ""
     owner_role: str = ""
     tags: list[str] = Field(default_factory=list)
+    #: IP-3 — a stable id, the kind of play (`PLAY_KINDS`) and the sources behind it.
+    id: str = ""
+    kind: str = ""
+    sources: list[str] = Field(default_factory=list)
+    #: IP-3 — for a data-quality play: an aggregate over role attributes that counts the rows showing the pitfall's
+    #: shape (a flight arriving three hours before its schedule). Gate 4 runs it; a count is exposure, not a defect.
+    detection: str = ""
 
 
 class PackSurface(_Base):
@@ -203,9 +249,63 @@ class PackOntology(_Base):
 
 
 class PackEval(_Base):
-    """`evals/*.yaml` — a golden question + expected behaviour (per-pack scored suite)."""
+    """`evals/*.yaml` — a golden question + expected behaviour (per-pack scored suite).
+
+    IP-3 — a golden on a named public dataset carries, in `expect`: `metric` (a pack metric's name), `dataset` (a
+    `datasets/*.yaml` id), `where` (a filter over role attributes), `value` and `tolerance` (the published figure
+    the recipe must reproduce, in the metric's unit) and `source` (the `sources.yaml` id that published it). Gate 4
+    computes it with no model."""
     question: str
     expect: dict = Field(default_factory=dict)
+
+
+class SourceFigure(_Base):
+    """One figure a source publishes, with the words it was published in."""
+    label: str = ""
+    value: Optional[float] = None
+    unit: str = ""
+    quote: str = ""
+
+
+class PackSource(_Base):
+    """IP-3 — `sources.yaml`: a cited source a sane range, a play or a golden rests on. A benchmark is a measurement
+    with a date and a population, so a source carries when it was published and when it was read."""
+    id: str = ""
+    title: str = ""
+    publisher: str = ""
+    url: str = ""
+    published: str = ""        # ISO date
+    retrieved: str = ""        # ISO date
+    figures: list[SourceFigure] = Field(default_factory=list)
+    notes: str = ""
+
+    @field_validator("published", "retrieved", mode="before")
+    @classmethod
+    def _date_as_text(cls, value):
+        """YAML reads an unquoted 2019-03-29 as a date; keep it as the ISO text an author wrote."""
+        return value.isoformat() if isinstance(value, date) else value
+
+
+class DatasetRoleBinding(_Base):
+    """How a dataset holds one role: the table (after its load statements) and a column per attribute."""
+    table: str = ""
+    columns: dict[str, str] = Field(default_factory=dict)
+
+
+class PackDataset(_Base):
+    """IP-3 — `datasets/*.yaml`: a named public dataset the package is measured on (gate 4). The one place a package
+    names tables: what the public file holds, how it is loaded, and how its columns bind the package's roles."""
+    id: str = ""
+    title: str = ""
+    source: str = ""           # the sources.yaml id describing the dataset
+    url: str = ""
+    bytes: int = 0
+    sha256: str = ""
+    licence: str = ""
+    member: str = ""           # the file to read inside a downloaded archive
+    load: list[str] = Field(default_factory=list)      # DuckDB statements; {data} is the extracted file's path
+    binding: dict[str, DatasetRoleBinding] = Field(default_factory=dict)
+    measures: list[str] = Field(default_factory=list)  # the metrics this dataset can measure
 
 
 class PackFunctionGroup(_Base):
@@ -253,6 +353,8 @@ class Pack(_Base):
     evals: list[PackEval] = Field(default_factory=list)
     ontology: Optional[PackOntology] = None          # ontology.yaml — the core the business extends
     function: Optional[PackFunction] = None          # function.yaml — the group the pack ships (HB-6)
+    sources: list[PackSource] = Field(default_factory=list)    # sources.yaml (IP-3)
+    datasets: list[PackDataset] = Field(default_factory=list)  # datasets/*.yaml (IP-3)
     path: str = ""                                   # source folder
 
     @property

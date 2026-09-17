@@ -1,0 +1,44 @@
+# What an airline's data is expected to hold — claims, each measured into a tier (expected · measured-true ·
+# measured-false) on a connection, and by gate 4 on the package's public dataset. Never the organisation's ontology.
+objects:
+  - name: Flight
+    roles: [event, transaction]
+    aliases: [flights, flight_legs, scheduled_flights, legs, segments]
+    description: One scheduled flight of a marketing carrier network, on a date, between two airports.
+  - name: Carrier
+    roles: [party]
+    aliases: [carriers, airlines, marketing_carriers]
+    description: The airline, or carrier network, that sold or operated a flight.
+  - name: Airport
+    roles: [place]
+    aliases: [airports, stations]
+    description: An airport a flight leaves or reaches.
+  - name: Aircraft
+    roles: [asset]
+    aliases: [tails, fleet, planes]
+    description: The aircraft, by tail number, that flew a flight.
+
+links:
+  - from_object: Flight
+    to_object: Carrier
+    cardinality: "N:1"
+    via: carrier_id
+    description: Every flight is sold by one marketing carrier network.
+  - from_object: Flight
+    to_object: Aircraft
+    cardinality: "N:1"
+    via: aircraft_id
+    to_side_optional: true
+    description: An operated flight is flown by one aircraft; a cancelled flight has none.
+  - from_object: Flight
+    to_object: Airport
+    cardinality: "N:1"
+    via: origin_airport_id
+    description: Every flight leaves one airport (and reaches another).
+
+lifecycles:
+  - object: Flight
+    column_hint: status
+    states: [scheduled, departed, arrived, diverted, cancelled]
+    terminal_states: [arrived, diverted, cancelled]
+    end_state_names: [arrived, landed, diverted, cancelled, canceled]

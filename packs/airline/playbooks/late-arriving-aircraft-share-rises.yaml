@@ -1,0 +1,13 @@
+id: late-arriving-aircraft-share-rises
+kind: practice
+trigger_metric: on_time_arrival_rate
+trigger_condition: late-arriving aircraft makes up a growing share of delay minutes
+trigger_operator: lt
+recommendation: >
+  A late-arriving-aircraft delay is one where the previous flight with the same aircraft arrived late: the delay is
+  propagating from earlier legs. Protect the first departures of the day and the turn times behind them before
+  adding capacity.
+expected_impact: Fewer delays carried from one leg to the next through the day.
+owner_role: Network Planning
+tags: [on-time performance, delay propagation]
+sources: [bts-delay-causes]

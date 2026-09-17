@@ -1,0 +1,25 @@
+# The roles airline's formulas, goldens and detections name — never a table. A dataset's binding
+# (datasets/*.yaml) maps each attribute to that dataset's column.
+roles:
+  flight:
+    description: >
+      One scheduled flight of a marketing carrier network — a flight number on a date between two airports —
+      whether it operated, was cancelled or was diverted.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      flight_date: {type: date, description: The date the flight was scheduled to operate.}
+      marketing_carrier:
+        type: code
+        description: The marketing carrier network that sold the flight (a mainline carrier with its branded code-share partners).
+      operating_carrier: {type: code, description: The carrier that operated the flight.}
+      tail_number: {type: code, description: The aircraft that flew it; absent when the flight was cancelled.}
+      origin: {type: code, description: The airport the flight was scheduled to leave.}
+      destination: {type: code, description: The airport the flight was scheduled to reach.}
+      cancelled: {type: flag, description: 1 when the flight was cancelled.}
+      cancellation_code:
+        type: code
+        description: Why a cancelled flight was cancelled — air carrier, weather, National Aviation System or security.
+      diverted: {type: flag, description: 1 when the flight landed somewhere other than its destination.}
+      arrived_15_late:
+        type: flag
+        description: 1 when the flight arrived 15 minutes or more after its scheduled arrival; empty when it never arrived.

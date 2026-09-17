@@ -27,10 +27,12 @@ fault in throwaway subprocesses:
 """
 from __future__ import annotations
 
+import ast
 import importlib
 import os
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -219,6 +221,44 @@ def test_the_claim_is_released_so_the_next_process_is_not_warned(served, tmp_pat
     serving.claim()
     serving.release()
     assert serving.serving_pid() is None
+
+
+def test_windows_asks_whether_the_process_exited_and_never_signals_it(served, monkeypatch):
+    """On Windows `os.kill(pid, 0)` is GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid). `/health` made
+    that call, the console host delivered the Ctrl+C to every process on the console, and
+    `aughor up` stopped itself: the Windows install job, red from 2026-09-15."""
+    serving, _ = served
+    signalled, asked = [], []
+    monkeypatch.setattr(serving, "_WINDOWS", True)
+    monkeypatch.setattr(serving.os, "kill", lambda *args: signalled.append(args))
+    monkeypatch.setattr(serving, "_alive_on_windows", lambda pid: asked.append(pid) or pid == 4242)
+    serving.claim(4242)
+    assert serving.serving_pid() == 4242
+    serving.claim(4343)
+    assert serving.serving_pid() is None
+    assert asked == [4242, 4343]
+    assert signalled == []
+
+
+def test_signal_zero_is_sent_only_where_it_is_a_liveness_probe():
+    """Signal 0 checks a pid only on POSIX; on Windows it is a Ctrl+C. The platform's one
+    `os.kill(pid, 0)` is the POSIX branch of `serving._alive`, read from the tree rather than a list."""
+    root = Path(__file__).resolve().parents[2]
+    found = []
+    for path in sorted((root / "aughor").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        parents = {child: node for node in ast.walk(tree) for child in ast.iter_child_nodes(node)}
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "kill" and isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "os" and len(node.args) == 2
+                    and isinstance(node.args[1], ast.Constant) and node.args[1].value == 0):
+                continue
+            scope = node
+            while scope in parents and not isinstance(scope, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                scope = parents[scope]
+            found.append((path.relative_to(root).as_posix(), getattr(scope, "name", "<module>")))
+    assert found == [("aughor/db/serving.py", "_alive")]
 
 
 # ── the surfaces an operator actually reads ─────────────────────────────────────

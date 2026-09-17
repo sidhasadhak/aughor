@@ -1,0 +1,86 @@
+# The cited sources behind airline's sane ranges, plays and goldens. Every figure below was read on the publisher's
+# own page on the retrieved date, and quotes the words it was published in. U.S. government works (public domain).
+sources:
+  - id: bts-atcr-2019-01
+    title: "Air Travel Consumer Report: January 2019 Numbers"
+    publisher: U.S. Department of Transportation, Bureau of Transportation Statistics
+    url: https://www.bts.gov/newsroom/air-travel-consumer-report-january-2019-numbers
+    published: 2019-03-29
+    retrieved: 2026-09-17
+    notes: >
+      Marketing carrier networks (mainline carriers with their branded code-share partners), January 2019. The
+      release does not say how cancelled and diverted flights enter the on-time rate; gate 4 reproduces 78.4 only
+      when they count as not on time (measurements/bts-marketing-ontime-2019-01.json).
+    figures:
+      - {label: "On-time arrival rate, marketing carriers, January 2019", value: 78.4, unit: percent,
+         quote: "marketing carriers posted an on-time arrival rate of 78.4 percent"}
+      - {label: "Cancellation rate, marketing carriers, January 2019", value: 3.1, unit: percent,
+         quote: "marketing carriers canceled 3.1 percent of their scheduled domestic flights"}
+      - {label: "On-time arrival rate, Hawaiian Airlines Network, January 2019", value: 87.2, unit: percent,
+         quote: "Hawaiian Airlines Network – 87.2 percent"}
+      - {label: "On-time arrival rate, Spirit Airlines, January 2019", value: 82.9, unit: percent,
+         quote: "Spirit Airlines – 82.9 percent"}
+      - {label: "On-time arrival rate, Delta Airlines Network, January 2019", value: 82.7, unit: percent,
+         quote: "Delta Airlines Network – 82.7 percent"}
+      - {label: "On-time arrival rate, JetBlue Airways, January 2019", value: 69.4, unit: percent,
+         quote: "JetBlue Airways – 69.4 percent"}
+      - {label: "On-time arrival rate, United Airlines Network, January 2019", value: 72.1, unit: percent,
+         quote: "United Airlines Network – 72.1 percent"}
+      - {label: "On-time arrival rate, Allegiant Airlines, January 2019", value: 73.4, unit: percent,
+         quote: "Allegiant Airlines – 73.4 percent"}
+      - {label: "Cancellation rate, Hawaiian Airlines Network, January 2019", value: 0.3, unit: percent,
+         quote: "Hawaiian Airlines Network – 0.3 percent"}
+      - {label: "Cancellation rate, Allegiant Airlines, January 2019", value: 0.7, unit: percent,
+         quote: "Allegiant Airlines – 0.7 percent"}
+      - {label: "Cancellation rate, Delta Air Lines Network, January 2019", value: 1.1, unit: percent,
+         quote: "Delta Air Lines Network – 1.1 percent"}
+      - {label: "Cancellation rate, United Airlines Network, January 2019", value: 4.9, unit: percent,
+         quote: "United Airlines Network – 4.9 percent"}
+      - {label: "Cancellation rate, JetBlue Airways, January 2019", value: 4.0, unit: percent,
+         quote: "JetBlue Airways – 4.0 percent"}
+      - {label: "Cancellation rate, Southwest Airlines, January 2019", value: 3.5, unit: percent,
+         quote: "Southwest Airlines – 3.5 percent"}
+
+  - id: bts-atcr-2019-12-full-year
+    title: "Air Travel Consumer Report: December 2019, Full Year 2019 Numbers"
+    publisher: U.S. Department of Transportation, Bureau of Transportation Statistics
+    url: https://www.bts.gov/newsroom/air-travel-consumer-report-december-2019-full-year-2019-numbers
+    published: 2020-02-19
+    retrieved: 2026-09-17
+    notes: Marketing carrier networks, calendar year 2019 and December 2019.
+    figures:
+      - {label: "On-time arrival rate, marketing carriers, full year 2019", value: 79.0, unit: percent,
+         quote: "marketing carriers posted an on-time arrival rate of 79.0%"}
+      - {label: "Cancellation rate, marketing carriers, full year 2019", value: 1.9, unit: percent,
+         quote: "marketing carriers canceled 1.9% of their scheduled domestic flights"}
+      - {label: "On-time arrival rate, Hawaiian Airlines Network, full year 2019", value: 87.7, unit: percent,
+         quote: "Hawaiian Airlines Network – 87.7%"}
+      - {label: "On-time arrival rate, JetBlue Airways, December 2019", value: 66.7, unit: percent,
+         quote: "JetBlue Airways – 66.7%"}
+      - {label: "On-time arrival rate, marketing carriers, December 2019", value: 78.2, unit: percent,
+         quote: "reporting marketing carriers posted an on-time arrival rate of 78.2%"}
+      - {label: "Cancellation rate, marketing carriers, December 2019", value: 1.1, unit: percent,
+         quote: "reporting marketing carriers canceled 1.1% of their scheduled domestic flights"}
+
+  - id: bts-delay-causes
+    title: "Understanding the Reporting of Causes of Flight Delays and Cancellations"
+    publisher: U.S. Department of Transportation, Bureau of Transportation Statistics
+    url: https://www.bts.gov/topics/airlines-and-airports/understanding-reporting-causes-flight-delays-and-cancellations
+    published: 2024-04-15
+    retrieved: 2026-09-17
+    notes: >
+      Five delay categories (air carrier, extreme weather, National Aviation System, late-arriving aircraft,
+      security); cancellations use the same categories without late-arriving aircraft. Weather also sits inside NAS.
+    figures:
+      - {label: "Share of NAS delays due to weather, 2020", value: 45.8, unit: percent,
+         quote: "During 2020, 45.8% of NAS delays were due to weather."}
+
+  - id: bts-prezip-marketing-ontime-2019-01
+    title: "Marketing Carrier On-Time Performance (Beginning January 2018), January 2019 file"
+    publisher: U.S. Department of Transportation, Bureau of Transportation Statistics (TranStats)
+    url: https://transtats.bts.gov/PREZIP/On_Time_Marketing_Carrier_On_Time_Performance_Beginning_January_2018_2019_1.zip
+    published: 2019-03-28
+    retrieved: 2026-09-17
+    notes: >
+      One row per scheduled flight of a marketing carrier network, 120 columns. Field definitions:
+      https://www.transtats.bts.gov/Fields.asp?gnoyr_VQ=FGK. The published date is the file's Last-Modified header.

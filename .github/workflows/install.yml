@@ -168,6 +168,17 @@ jobs:
               $ready = $false
             }
           }
+          # The API reads its own claim as a live process. Only Windows runs that check's Windows
+          # branch; it used to be os.kill(pid, 0), a Ctrl+C for the whole console (aughor/db/serving.py).
+          if ($ready) {
+            try {
+              $wal = Invoke-RestMethod http://127.0.0.1:8000/diagnostics/wal-keepalive
+              Write-Host "serving pid: $($wal.serving_pid); another process serving: $($wal.foreign_process)"
+              if (-not ($wal.serving_pid -gt 0) -or $wal.foreign_process) { $ready = $false }
+            } catch {
+              $ready = $false
+            }
+          }
           Write-Host "servers answered: $ready; installer exited: $($up.HasExited)"
           Get-Content up.log -ErrorAction SilentlyContinue
           Get-ChildItem .aughor/logs/*.log -ErrorAction SilentlyContinue | ForEach-Object {
