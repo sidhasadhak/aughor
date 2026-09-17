@@ -1,0 +1,26 @@
+name: equity_capital_ratio
+title: Equity capital ratio
+aliases: [equity-to-assets ratio, equity capital ratio, equity to assets]
+unit: ratio
+definition: >
+  The entity's own equity capital as a share of total assets, at the end of the period.
+formula: >
+  SUM({{role.financial_period.equity_capital}})
+    / NULLIF(SUM({{role.financial_period.total_assets}}), 0)
+grain: >
+  An entity's balances at the end of a period, summed over the entities, then divided; read by peer group, size or
+  date by filtering the same rows, never by averaging the entities' ratios.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Adding minority interests to the equity: the FDIC's ratio uses the bank's own equity capital."
+  - "Reading it as a regulatory capital ratio: those divide capital as regulations define it by risk-weighted or average assets."
+sane_range:
+  min: 0.08305
+  max: 0.18005
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from International banks 8.31% (June 30, 2026) to Other specialized under $1 billion 18.00% (June 30,
+    2026), widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside a
+    group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

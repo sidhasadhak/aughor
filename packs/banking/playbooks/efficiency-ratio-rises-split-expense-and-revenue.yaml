@@ -1,0 +1,13 @@
+id: efficiency-ratio-rises-split-expense-and-revenue
+kind: diagnostic
+trigger_metric: efficiency_ratio
+trigger_condition: efficiency ratio rises period over period
+trigger_operator: gt
+recommendation: >
+  Read the expense and the revenue apart before calling it a cost problem: the ratio rises when noninterest expense
+  grows faster than net interest income plus noninterest income, and also when revenue falls with expense flat. Then
+  look for one-time expense — a restructuring, a legal charge — before reading it as a trend.
+expected_impact: The rise is attributed to expense or to revenue, and one-time items are named.
+owner_role: Finance
+tags: [efficiency ratio, noninterest expense, revenue]
+sources: [fdic-qbp-notes-2025-q2]

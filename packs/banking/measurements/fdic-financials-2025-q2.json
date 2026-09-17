@@ -1,0 +1,818 @@
+{
+  "pack_id": "banking",
+  "dataset_id": "fdic-financials-2025-q2",
+  "dataset_sha256": "2e7f670703044711b3ebd31d92fb2c3ab0827eeafb7679257c0fb7b81fea564c",
+  "package_fingerprint": "24f6ccfd7365561f7802f7769df99b20857e97cdd0d343f959cad0c9bf79e5d1",
+  "measured_at": "2026-09-17T17:53:56+00:00",
+  "rows": {
+    "call_reports": 4421,
+    "institutions": 4421
+  },
+  "metrics": [
+    {
+      "metric": "net_interest_margin",
+      "value": 0.03255757604418745,
+      "sane_min": 0.02205,
+      "sane_max": 0.09415,
+      "in_range": true,
+      "sql": "SELECT SUM((\"interest_income\" - \"interest_expense\") * \"periods_per_year\")\n  / NULLIF(SUM(\"average_earning_assets\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "yield_on_earning_assets",
+      "value": 0.055363138150901575,
+      "sane_min": 0.03565,
+      "sane_max": 0.12275,
+      "in_range": true,
+      "sql": "SELECT SUM(\"interest_income\" * \"periods_per_year\")\n  / NULLIF(SUM(\"average_earning_assets\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "cost_of_funding_earning_assets",
+      "value": 0.02280556210671412,
+      "sane_min": 0.01005,
+      "sane_max": 0.03385,
+      "in_range": true,
+      "sql": "SELECT SUM(\"interest_expense\" * \"periods_per_year\")\n  / NULLIF(SUM(\"average_earning_assets\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "return_on_assets",
+      "value": 0.011357625322953669,
+      "sane_min": -0.00385,
+      "sane_max": 0.03585,
+      "in_range": true,
+      "sql": "SELECT SUM(\"net_income\" * \"periods_per_year\")\n  / NULLIF(SUM(\"average_assets\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "return_on_equity",
+      "value": 0.11240324724018075,
+      "sane_min": -0.03015,
+      "sane_max": 0.25175,
+      "in_range": true,
+      "sql": "SELECT SUM(\"net_income\" * \"periods_per_year\")\n  / NULLIF(SUM(\"average_equity\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "efficiency_ratio",
+      "value": 0.5551364485016703,
+      "sane_min": 0.50055,
+      "sane_max": 0.76475,
+      "in_range": true,
+      "sql": "SELECT SUM(\"noninterest_expense\" - COALESCE(\"amortization_of_intangibles\", 0))\n  / NULLIF(SUM(\"interest_income\" - \"interest_expense\" + \"noninterest_income\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "net_charge_off_rate",
+      "value": 0.0060408367780316625,
+      "sane_min": 0.00015,
+      "sane_max": 0.03605,
+      "in_range": true,
+      "sql": "SELECT SUM((\"gross_charge_offs\" - COALESCE(\"recoveries\", 0)) * \"periods_per_year\")\n  / NULLIF(SUM(\"average_loans\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "noncurrent_loan_rate",
+      "value": 0.009581493335981442,
+      "sane_min": 0.00455,
+      "sane_max": 0.01565,
+      "in_range": true,
+      "sql": "SELECT SUM(\"noncurrent_loans\")\n  / NULLIF(SUM(\"total_loans\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "past_due_and_nonaccrual_rate",
+      "value": 0.014975018091314555,
+      "sane_min": 0.00845,
+      "sane_max": 0.03355,
+      "in_range": true,
+      "sql": "SELECT SUM(COALESCE(\"past_due_30_89_loans\", 0) + \"noncurrent_loans\")\n  / NULLIF(SUM(\"total_loans\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "reserve_coverage_ratio",
+      "value": 1.7939551543933359,
+      "sane_min": 1.06405,
+      "sane_max": 3.94925,
+      "in_range": true,
+      "sql": "SELECT SUM(\"allowance_for_credit_losses\")\n  / NULLIF(SUM(\"noncurrent_loans\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "loans_to_deposits_ratio",
+      "value": 0.6522832885269372,
+      "sane_min": 0.31355,
+      "sane_max": 0.91715,
+      "in_range": true,
+      "sql": "SELECT SUM(\"net_loans\")\n  / NULLIF(SUM(\"total_deposits\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    },
+    {
+      "metric": "equity_capital_ratio",
+      "value": 0.10138756572597357,
+      "sane_min": 0.08305,
+      "sane_max": 0.18005,
+      "in_range": true,
+      "sql": "SELECT SUM(\"equity_capital\")\n  / NULLIF(SUM(\"total_assets\"), 0) AS value FROM \"call_reports\"",
+      "error": ""
+    }
+  ],
+  "goldens": [
+    {
+      "question": "What was the net interest margin of all FDIC-insured institutions in the second quarter of 2025?",
+      "metric": "net_interest_margin",
+      "where": "",
+      "expected": 0.0326,
+      "tolerance": 5e-05,
+      "measured": 0.03255757604418745,
+      "ok": true,
+      "source": "fdic-qbp-2025-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the yield on earning assets of all FDIC-insured institutions in the second quarter of 2025?",
+      "metric": "yield_on_earning_assets",
+      "where": "",
+      "expected": 0.0554,
+      "tolerance": 5e-05,
+      "measured": 0.055363138150901575,
+      "ok": true,
+      "source": "fdic-qbp-2025-q2",
+      "error": ""
+    },
+    {
+      "question": "What did it cost all FDIC-insured institutions to fund their earning assets in the second quarter of 2025?",
+      "metric": "cost_of_funding_earning_assets",
+      "where": "",
+      "expected": 0.0228,
+      "tolerance": 5e-05,
+      "measured": 0.02280556210671412,
+      "ok": true,
+      "source": "fdic-qbp-2025-q2",
+      "error": ""
+    },
+    {
+      "question": "What share of the loans of all FDIC-insured institutions was noncurrent on June 30, 2025?",
+      "metric": "noncurrent_loan_rate",
+      "where": "",
+      "expected": 0.0096,
+      "tolerance": 5e-05,
+      "measured": 0.009581493335981442,
+      "ok": true,
+      "source": "fdic-qbp-2025-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the ratio of net loans to deposits of all FDIC-insured institutions on June 30, 2025?",
+      "metric": "loans_to_deposits_ratio",
+      "where": "",
+      "expected": 0.6523,
+      "tolerance": 5e-05,
+      "measured": 0.6522832885269372,
+      "ok": true,
+      "source": "fdic-qbp-2025-q2",
+      "error": ""
+    },
+    {
+      "question": "What share of the loans of all FDIC-insured institutions was past due 30 days or more or in nonaccrual on June 30, 2025?",
+      "metric": "past_due_and_nonaccrual_rate",
+      "where": "",
+      "expected": 0.015,
+      "tolerance": 5e-05,
+      "measured": 0.014975018091314555,
+      "ok": true,
+      "source": "fdic-qbp-2025-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of all FDIC-insured institutions in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "",
+      "expected": 0.0114,
+      "tolerance": 5e-05,
+      "measured": 0.011357625322953669,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of credit card banks in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '3'",
+      "expected": -0.0038,
+      "tolerance": 5e-05,
+      "measured": -0.003822665692997796,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of international banks in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '1'",
+      "expected": 0.0119,
+      "tolerance": 5e-05,
+      "measured": 0.011873294160199827,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of agricultural banks in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '2'",
+      "expected": 0.0128,
+      "tolerance": 5e-05,
+      "measured": 0.012812036891995941,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of commercial lenders in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '4'",
+      "expected": 0.0116,
+      "tolerance": 5e-05,
+      "measured": 0.011638159720552746,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of mortgage lenders in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '5'",
+      "expected": 0.0109,
+      "tolerance": 5e-05,
+      "measured": 0.010865304567364528,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of consumer lenders in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '6'",
+      "expected": 0.0139,
+      "tolerance": 5e-05,
+      "measured": 0.013928634700195086,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of other specialized under $1 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '7'",
+      "expected": 0.0357,
+      "tolerance": 5e-05,
+      "measured": 0.03567839122927554,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of all other under $1 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '8'",
+      "expected": 0.0125,
+      "tolerance": 5e-05,
+      "measured": 0.012495292203030663,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of all other over $1 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.peer_group}} = '9'",
+      "expected": 0.0123,
+      "tolerance": 5e-05,
+      "measured": 0.012278875567615732,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of all FDIC-insured institutions in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "",
+      "expected": 0.006,
+      "tolerance": 5e-05,
+      "measured": 0.0060408367780316625,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of credit card banks in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '3'",
+      "expected": 0.036,
+      "tolerance": 5e-05,
+      "measured": 0.03598001686881788,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of international banks in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '1'",
+      "expected": 0.008,
+      "tolerance": 5e-05,
+      "measured": 0.007959289273136475,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of agricultural banks in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '2'",
+      "expected": 0.0025,
+      "tolerance": 5e-05,
+      "measured": 0.0025168026276895083,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of commercial lenders in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '4'",
+      "expected": 0.0024,
+      "tolerance": 5e-05,
+      "measured": 0.002409327134343953,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of mortgage lenders in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '5'",
+      "expected": 0.0002,
+      "tolerance": 5e-05,
+      "measured": 0.00022592055262927123,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of consumer lenders in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '6'",
+      "expected": 0.0104,
+      "tolerance": 5e-05,
+      "measured": 0.010355707434520616,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of other specialized under $1 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '7'",
+      "expected": 0.0023,
+      "tolerance": 5e-05,
+      "measured": 0.002271571288268249,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of all other under $1 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '8'",
+      "expected": 0.0009,
+      "tolerance": 5e-05,
+      "measured": 0.0008924110935803344,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of all other over $1 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.peer_group}} = '9'",
+      "expected": 0.005,
+      "tolerance": 5e-05,
+      "measured": 0.004982047005187565,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of insured institutions with assets under $100 million in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.total_assets}} < 100000",
+      "expected": 0.0226,
+      "tolerance": 5e-05,
+      "measured": 0.02259563839507727,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of insured institutions with assets of $100 million to $1 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.total_assets}} >= 100000 AND {{role.financial_period.total_assets}} < 1000000",
+      "expected": 0.0125,
+      "tolerance": 5e-05,
+      "measured": 0.012510567606925828,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of insured institutions with assets of $1 billion to $10 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.total_assets}} >= 1000000 AND {{role.financial_period.total_assets}} < 10000000",
+      "expected": 0.0124,
+      "tolerance": 5e-05,
+      "measured": 0.01236894280821085,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of insured institutions with assets of $10 billion to $250 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.total_assets}} >= 10000000 AND {{role.financial_period.total_assets}} <= 250000000",
+      "expected": 0.0127,
+      "tolerance": 5e-05,
+      "measured": 0.012668973225296296,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the return on assets of insured institutions with assets over $250 billion in the second quarter of 2025?",
+      "metric": "return_on_assets",
+      "where": "{{role.financial_period.total_assets}} > 250000000",
+      "expected": 0.0104,
+      "tolerance": 5e-05,
+      "measured": 0.01042501502883803,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of insured institutions with assets under $100 million in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.total_assets}} < 100000",
+      "expected": 0.0019,
+      "tolerance": 5e-05,
+      "measured": 0.0019023705310181418,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of insured institutions with assets of $100 million to $1 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.total_assets}} >= 100000 AND {{role.financial_period.total_assets}} < 1000000",
+      "expected": 0.0012,
+      "tolerance": 5e-05,
+      "measured": 0.001202398445519064,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of insured institutions with assets of $1 billion to $10 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.total_assets}} >= 1000000 AND {{role.financial_period.total_assets}} < 10000000",
+      "expected": 0.0031,
+      "tolerance": 5e-05,
+      "measured": 0.003066266130109502,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of insured institutions with assets of $10 billion to $250 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.total_assets}} >= 10000000 AND {{role.financial_period.total_assets}} <= 250000000",
+      "expected": 0.0057,
+      "tolerance": 5e-05,
+      "measured": 0.005700438027288387,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the net charge-off rate of insured institutions with assets over $250 billion in the second quarter of 2025?",
+      "metric": "net_charge_off_rate",
+      "where": "{{role.financial_period.total_assets}} > 250000000",
+      "expected": 0.0077,
+      "tolerance": 5e-05,
+      "measured": 0.0077028031392768585,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of all FDIC-insured institutions on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "",
+      "expected": 0.1014,
+      "tolerance": 5e-05,
+      "measured": 0.10138756572597357,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of credit card banks on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '3'",
+      "expected": 0.1348,
+      "tolerance": 5e-05,
+      "measured": 0.13483539223476856,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of international banks on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '1'",
+      "expected": 0.0868,
+      "tolerance": 5e-05,
+      "measured": 0.08684658866223559,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of agricultural banks on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '2'",
+      "expected": 0.1005,
+      "tolerance": 5e-05,
+      "measured": 0.10052305492203598,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of commercial lenders on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '4'",
+      "expected": 0.1107,
+      "tolerance": 5e-05,
+      "measured": 0.11067117393450075,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of mortgage lenders on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '5'",
+      "expected": 0.0967,
+      "tolerance": 5e-05,
+      "measured": 0.09672254673929771,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of consumer lenders on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '6'",
+      "expected": 0.0969,
+      "tolerance": 5e-05,
+      "measured": 0.09685243883315288,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of other specialized under $1 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '7'",
+      "expected": 0.1444,
+      "tolerance": 5e-05,
+      "measured": 0.1443846049100542,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of all other under $1 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '8'",
+      "expected": 0.1026,
+      "tolerance": 5e-05,
+      "measured": 0.10263749027225338,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of all other over $1 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.peer_group}} = '9'",
+      "expected": 0.0997,
+      "tolerance": 5e-05,
+      "measured": 0.09971169686592599,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of insured institutions with assets under $100 million on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.total_assets}} < 100000",
+      "expected": 0.1389,
+      "tolerance": 5e-05,
+      "measured": 0.13889998801268755,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of insured institutions with assets of $100 million to $1 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.total_assets}} >= 100000 AND {{role.financial_period.total_assets}} < 1000000",
+      "expected": 0.1048,
+      "tolerance": 5e-05,
+      "measured": 0.10481210305741173,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of insured institutions with assets of $1 billion to $10 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.total_assets}} >= 1000000 AND {{role.financial_period.total_assets}} < 10000000",
+      "expected": 0.1073,
+      "tolerance": 5e-05,
+      "measured": 0.10730576931469446,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of insured institutions with assets of $10 billion to $250 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.total_assets}} >= 10000000 AND {{role.financial_period.total_assets}} <= 250000000",
+      "expected": 0.1061,
+      "tolerance": 5e-05,
+      "measured": 0.10610113890036134,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    },
+    {
+      "question": "What was the equity capital ratio of insured institutions with assets over $250 billion on June 30, 2025?",
+      "metric": "equity_capital_ratio",
+      "where": "{{role.financial_period.total_assets}} > 250000000",
+      "expected": 0.0977,
+      "tolerance": 5e-05,
+      "measured": 0.09774869162389475,
+      "ok": true,
+      "source": "fdic-qbp-2026-q2",
+      "error": ""
+    }
+  ],
+  "detections": [
+    {
+      "play": "income-without-an-average-balance",
+      "metric": "net_interest_margin",
+      "count": 1,
+      "error": ""
+    },
+    {
+      "play": "noncurrent-loans-above-the-loan-book",
+      "metric": "noncurrent_loan_rate",
+      "count": 0,
+      "error": ""
+    },
+    {
+      "play": "period-end-balance-read-as-the-average",
+      "metric": "return_on_assets",
+      "count": 6,
+      "error": ""
+    },
+    {
+      "play": "recoveries-above-charge-offs-stay-in-the-sum",
+      "metric": "net_charge_off_rate",
+      "count": 1036,
+      "error": ""
+    }
+  ],
+  "claims": [
+    {
+      "kind": "object",
+      "subject": "Institution",
+      "tier": "measured-true",
+      "measured": "Institution (institutions)",
+      "note": "matched Institution backed by institutions"
+    },
+    {
+      "kind": "object",
+      "subject": "CallReport",
+      "tier": "measured-true",
+      "measured": "CallReport (call_reports)",
+      "note": "matched CallReport backed by call_reports"
+    },
+    {
+      "kind": "object",
+      "subject": "Customer",
+      "tier": "expected",
+      "measured": null,
+      "note": "no table matched \u2014 tried Customer, customers, clients, borrowers, depositors, parties"
+    },
+    {
+      "kind": "object",
+      "subject": "DepositAccount",
+      "tier": "expected",
+      "measured": null,
+      "note": "no table matched \u2014 tried DepositAccount, deposit_accounts, accounts, deposits"
+    },
+    {
+      "kind": "object",
+      "subject": "Loan",
+      "tier": "expected",
+      "measured": null,
+      "note": "no table matched \u2014 tried Loan, loans, facilities, credit_accounts, loan_accounts"
+    },
+    {
+      "kind": "object",
+      "subject": "Transaction",
+      "tier": "expected",
+      "measured": null,
+      "note": "no table matched \u2014 tried Transaction, transactions, postings, account_transactions"
+    },
+    {
+      "kind": "object",
+      "subject": "Branch",
+      "tier": "expected",
+      "measured": null,
+      "note": "no table matched \u2014 tried Branch, branches, offices"
+    },
+    {
+      "kind": "link",
+      "subject": "CallReport \u2192 Institution",
+      "tier": "expected",
+      "measured": null,
+      "note": "no join found between CallReport and Institution"
+    },
+    {
+      "kind": "link",
+      "subject": "DepositAccount \u2192 Customer",
+      "tier": "expected",
+      "measured": null,
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "Loan \u2192 Customer",
+      "tier": "expected",
+      "measured": null,
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "Transaction \u2192 DepositAccount",
+      "tier": "expected",
+      "measured": null,
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "link",
+      "subject": "DepositAccount \u2192 Branch",
+      "tier": "expected",
+      "measured": null,
+      "note": "one end has no matched table"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "Loan",
+      "tier": "expected",
+      "measured": null,
+      "note": "no matched table"
+    },
+    {
+      "kind": "lifecycle",
+      "subject": "DepositAccount",
+      "tier": "expected",
+      "measured": null,
+      "note": "no matched table"
+    }
+  ],
+  "claims_by_tier": {
+    "expected": 12,
+    "measured-true": 2,
+    "measured-false": 0,
+    "human": 0
+  },
+  "findings": [],
+  "ok": true
+}

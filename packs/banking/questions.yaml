@@ -1,0 +1,16 @@
+canonical:
+  - What was our net interest margin last quarter, and how does it compare with our peer group?
+  - What did net charge-offs cost us last quarter, as a share of average loans?
+  - What share of our loans is noncurrent, and how much of it does the allowance cover?
+  - What was our efficiency ratio last quarter?
+diagnostic:
+  - Did the margin fall because asset yields fell or because funding costs rose?
+  - Which loan categories drove the rise in net charge-offs, and did noncurrent loans rise before it?
+  - Is the efficiency ratio worse because expense rose or because revenue fell?
+explorer_angles:
+  - Net interest margin split into the yield on earning assets and the cost of funding them
+  - Net charge-offs and noncurrent loans by loan category and quarter
+  - Reserve coverage against noncurrent loans over time
+intent_tags: [net interest margin, NIM, cost of funds, return on assets, ROA, return on equity, efficiency ratio,
+              charge-offs, noncurrent loans, delinquency, reserve coverage, allowance for credit losses,
+              loan-to-deposit ratio, equity capital]

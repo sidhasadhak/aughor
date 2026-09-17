@@ -1,0 +1,26 @@
+name: yield_on_earning_assets
+title: Yield on earning assets
+aliases: [asset yield, yield on earning assets, earning asset yield]
+unit: ratio
+definition: >
+  Total interest, dividend and fee income earned on loans and investments, as a share of average earning assets, at
+  an annual rate.
+formula: >
+  SUM({{role.financial_period.interest_income}} * {{role.financial_period.periods_per_year}})
+    / NULLIF(SUM({{role.financial_period.average_earning_assets}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Dividing by total assets: cash, premises and goodwill earn nothing and dilute the yield."
+  - "Reading the yield without the cost of funding: the margin is their difference."
+sane_range:
+  min: 0.03565
+  max: 0.12275
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Mortgage lenders 3.57% (second quarter 2025) to Credit card banks 12.27% (second quarter 2025),
+    widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

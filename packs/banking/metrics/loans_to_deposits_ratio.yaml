@@ -1,0 +1,24 @@
+name: loans_to_deposits_ratio
+title: Loans-to-deposits ratio
+aliases: [LDR, loan-to-deposit ratio, loans to deposits]
+unit: ratio
+definition: >
+  Loans and leases after the allowance for credit losses, as a share of total deposits, at the end of the period.
+formula: >
+  SUM({{role.financial_period.net_loans}})
+    / NULLIF(SUM({{role.financial_period.total_deposits}}), 0)
+grain: >
+  An entity's balances at the end of a period, summed over the entities, then divided; read by peer group, size or
+  date by filtering the same rows, never by averaging the entities' ratios.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Mixing gross and net loans, or domestic and total deposits, across entities or periods."
+sane_range:
+  min: 0.31355
+  max: 0.91715
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Other specialized under $1 billion 31.36% (June 30, 2025) to Consumer lenders 91.71% (June 30, 2026),
+    widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

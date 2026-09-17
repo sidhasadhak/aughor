@@ -1,0 +1,27 @@
+name: net_charge_off_rate
+title: Net charge-off rate
+aliases: [NCO rate, net charge-off rate, net charge-offs to loans, loss rate]
+unit: ratio
+definition: >
+  Loans and leases charged off less amounts recovered on loans charged off earlier, as a share of average loans and
+  leases, at an annual rate.
+formula: >
+  SUM(({{role.financial_period.gross_charge_offs}} - COALESCE({{role.financial_period.recoveries}}, 0)) * {{role.financial_period.periods_per_year}})
+    / NULLIF(SUM({{role.financial_period.average_loans}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Dividing by loans at the period's end: a growing book understates its losses."
+  - "Clipping a negative net charge-off to zero: recoveries above charge-offs are real and belong in the sum."
+  - "Reading charge-offs in the same period as the delinquency that caused them: charge-offs follow months of nonpayment."
+sane_range:
+  min: 0.00015
+  max: 0.03605
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Mortgage lenders 0.02% (second quarter 2025) to Credit card banks 3.60% (second quarter 2025),
+    widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

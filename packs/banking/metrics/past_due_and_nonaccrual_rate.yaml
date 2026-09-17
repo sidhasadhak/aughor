@@ -1,0 +1,26 @@
+name: past_due_and_nonaccrual_rate
+title: Past-due and nonaccrual rate
+aliases: [PDNA rate, past-due and nonaccrual rate, delinquency rate]
+unit: ratio
+definition: >
+  Loans and leases 30 days or more past due or in nonaccrual status, as a share of loans and leases, at the end of
+  the period.
+formula: >
+  SUM(COALESCE({{role.financial_period.past_due_30_89_loans}}, 0) + {{role.financial_period.noncurrent_loans}})
+    / NULLIF(SUM({{role.financial_period.total_loans}}), 0)
+grain: >
+  An entity's balances at the end of a period, summed over the entities, then divided; read by peer group, size or
+  date by filtering the same rows, never by averaging the entities' ratios.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Adding loans 90 days past due twice — once as past due and again inside noncurrent loans."
+  - "Mixing a 30-day and a 90-day definition across periods."
+sane_range:
+  min: 0.00845
+  max: 0.03355
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Mortgage lenders 0.85% (June 30, 2026) to Credit card banks 3.35% (June 30, 2025), widened by the
+    ±0.005 points of their two-decimal rounding. A single institution can sit outside a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

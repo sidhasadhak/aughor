@@ -1,0 +1,27 @@
+name: efficiency_ratio
+title: Efficiency ratio
+aliases: [efficiency ratio, cost-to-income ratio, cost income ratio]
+unit: ratio
+definition: >
+  Noninterest expense less amortization of intangible assets, as a share of net interest income plus noninterest
+  income. Lower is better.
+formula: >
+  SUM({{role.financial_period.noninterest_expense}} - COALESCE({{role.financial_period.amortization_of_intangibles}}, 0))
+    / NULLIF(SUM({{role.financial_period.interest_income}} - {{role.financial_period.interest_expense}} + {{role.financial_period.noninterest_income}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Counting the provision for credit losses as an expense: it is not in the ratio."
+  - "Leaving amortization of intangibles in the expense: an acquirer reads less efficient than it runs."
+  - "Comparing a trading-heavy or credit card bank with a community bank without a peer group."
+sane_range:
+  min: 0.50055
+  max: 0.76475
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Mortgage lenders 50.06% (second quarter 2026) to Less than $100 million 76.47% (second quarter 2026),
+    widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

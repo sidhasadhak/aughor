@@ -27,8 +27,8 @@ ANATOMY_VERSIONS = (0, 1)
 PLAY_KINDS = ("diagnostic", "data_quality", "practice")
 #: The units a metric's value is stated in, so a measured value and its sane range are read the same way.
 METRIC_UNITS = ("ratio", "percent", "minutes", "hours", "miles", "count", "currency", "number")
-#: The kinds of attribute a role carries.
-ATTRIBUTE_TYPES = ("flag", "number", "count", "minutes", "hours", "miles", "date", "time", "code", "text")
+#: The kinds of attribute a role carries. `currency` is an amount of money: a balance, or income over a period.
+ATTRIBUTE_TYPES = ("flag", "number", "count", "currency", "minutes", "hours", "miles", "date", "time", "code", "text")
 
 
 class _Base(BaseModel):
