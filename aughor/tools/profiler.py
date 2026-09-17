@@ -753,6 +753,12 @@ def _safe_float(v) -> Optional[float]:
         return None
 
 
+#: Populated months `_robust_date_range` reads, a thousand years of them. Its read is bounded
+#: because `execute` keeps 500 rows, the first 500 months of the ascending list: a timestamp
+#: spanning 1950 to 2024 placed its dense region's end in 1991 (measured 2026-09-17).
+_DENSE_RANGE_MAX_MONTHS = 12_000
+
+
 def _robust_date_range(
     conn: "DatabaseConnection",
     qt: str,
@@ -770,15 +776,18 @@ def _robust_date_range(
     in which case callers should fall back to the absolute date_range.
     """
     try:
-        r = conn.execute(
+        r = conn.execute_bounded(
             "__profiler__",
             f"SELECT date_trunc('month', {qts})::VARCHAR AS m, COUNT(*) AS c "
             f"FROM {qt} WHERE {qts} IS NOT NULL GROUP BY 1 ORDER BY 1",
+            _DENSE_RANGE_MAX_MONTHS,
         )
     except Exception:
         return None
     if r.error or not r.rows:
         return None
+    if (r.row_count or 0) > len(r.rows):
+        return None     # part of the months cannot say where the dense region ends
 
     months = [(str(row[0]), int(row[1])) for row in r.rows if row[0] is not None]
     if len(months) < 2:
@@ -1509,6 +1518,15 @@ def build_column_profiles(
     # cap, persist the distinct set so entity resolution can bind offline. The
     # distinct GATE (from raw_stats) bounds the scan; LIMIT cap+1 + the len check
     # drops any column that turns out larger than the cap (kept as live-probe only).
+    #
+    # The read is BOUNDED at cap+1 because `execute` stops at the connection's answer
+    # cap, 500 rows on DuckDB and Postgres, far below this one. Through it a column of
+    # 900 values stored 500 of them as the complete set, and the len check could never
+    # see a column past the cap. A read the connection still cut (`row_count` counting
+    # more rows than `rows` holds) is not the distinct set either, so it is not kept.
+    # A partial set costs more than a live probe: offline binding matches it fuzzily,
+    # and a token whose value was cut bound to a kept neighbour ('City 3' as 'City 39')
+    # for more than 9 in 10 of the cut values, measured 2026-09-17.
     value_sample_map: dict[str, list[str]] = {}
 
     def _index_eligible(col: str) -> bool:
@@ -1531,12 +1549,14 @@ def build_column_profiles(
     for col in highcard_dims:
         qc = _q(col)
         sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
-        r = conn.execute(
+        r = conn.execute_bounded(
             "__profiler__",
             f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt}{sample_clause} "
             f"WHERE {qc} IS NOT NULL LIMIT {_VALUE_SAMPLE_MAX_DISTINCT + 1}",
+            _VALUE_SAMPLE_MAX_DISTINCT + 1,
         )
-        if not r.error and r.rows and len(r.rows) <= _VALUE_SAMPLE_MAX_DISTINCT:
+        if (not r.error and r.rows and len(r.rows) <= _VALUE_SAMPLE_MAX_DISTINCT
+                and (r.row_count or 0) <= len(r.rows)):
             vals = [str(row[0]) for row in r.rows if row[0] is not None]
             if vals:
                 value_sample_map[col] = vals
@@ -1658,14 +1678,20 @@ class _TranspilingConnection:
     def __getattr__(self, name):
         return getattr(self._raw, name)
 
-    def execute(self, label, sql):
-        out = sql
+    def _transpile(self, sql):
         try:
             import sqlglot
-            out = sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
+            return sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
         except Exception:
-            out = sql
-        return self._raw.execute(label, out)
+            return sql
+
+    def execute(self, label, sql):
+        return self._raw.execute(label, self._transpile(sql))
+
+    # Spelled out rather than left to `__getattr__`, which would hand the engine's own bounded read the
+    # DuckDB spelling untranspiled.
+    def execute_bounded(self, label, sql, max_rows):
+        return self._raw.execute_bounded(label, self._transpile(sql), max_rows)
 
 
 def profile_connection(

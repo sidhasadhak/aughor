@@ -58,13 +58,18 @@ def cache_path():
 # v8: the per-connection table cap goes 20 -> 60 and the list is de-duplicated first, so a
 #     connection profiles a different SET of tables than it used to. On the workspace that
 #     is 40 more tables, `data_co_supplychain` among them.
+# v9: the entity value sample and the dense date range read past the connection's 500-row
+#     answer cap. A cached column of 501–2,000 values holds 500 of them as its whole
+#     `value_sample`, a column the catalog under-counts past 2,000 holds 500 where it should
+#     hold none, and a timestamp with more than 500 populated months took its
+#     `effective_date_range` from the first 500 of them.
 #
 # Unlike the other five logic versions in this tree (plain ints compared with `<`), this
 # one is baked into the fingerprint's hash INPUT: bumping it changes every key, which is
 # the rebuild. Registered as `profile_cache` in `aughor/kernel/freshness.py:LOGIC_VERSIONS`
 # — extracted from an inline literal so the inventory can name it. The value is unchanged,
 # so every existing cache key still resolves.
-PROFILE_LOGIC_VERSION = "v8-table-cap"
+PROFILE_LOGIC_VERSION = "v9-bounded-reads"
 
 
 def compute_schema_fingerprint(table_col_counts: dict[str, int]) -> str:

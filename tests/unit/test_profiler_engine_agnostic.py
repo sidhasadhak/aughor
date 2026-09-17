@@ -22,11 +22,16 @@ class _StubConn:
 
     def __init__(self, rows=None):
         self.seen: list[str] = []
+        self.bounded: list[tuple[str, int]] = []
         self._rows = rows if rows is not None else []
 
     def execute(self, label, sql):
         self.seen.append(sql)
         return SimpleNamespace(error=None, rows=self._rows, columns=[])
+
+    def execute_bounded(self, label, sql, max_rows):
+        self.bounded.append((sql, max_rows))
+        return SimpleNamespace(error=None, rows=self._rows, row_count=len(self._rows), columns=[])
 
 
 def test_wrapper_transpiles_duckdb_flavor_to_backticks():
@@ -48,6 +53,22 @@ def test_wrapper_transpiles_casts_and_date_trunc():
     sent = stub.seen[0]
     assert "::" not in sent
     assert "TRUNC" in sent.upper()
+
+
+def test_wrapper_transpiles_a_bounded_read_and_keeps_its_bound():
+    # The value sample reads past the answer cap through `execute_bounded`. The wrapper had no such method, so
+    # `__getattr__` handed the engine's own one the DuckDB spelling untranspiled.
+    stub = _StubConn()
+    wrapped = _TranspilingConnection(stub)
+    wrapped.execute_bounded(
+        "__profiler__",
+        'SELECT DISTINCT CAST("city" AS VARCHAR) AS v FROM "orders" WHERE "city" IS NOT NULL LIMIT 2001',
+        2001,
+    )
+    assert stub.seen == []
+    [(sent, max_rows)] = stub.bounded
+    assert max_rows == 2001
+    assert "`orders`" in sent and "`city`" in sent and '"' not in sent
 
 
 def test_wrapper_passes_unparseable_sql_through_unchanged():
