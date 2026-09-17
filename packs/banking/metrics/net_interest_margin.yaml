@@ -1,0 +1,28 @@
+name: net_interest_margin
+title: Net interest margin
+aliases: [NIM, net interest margin, margin on earning assets]
+unit: ratio
+definition: >
+  Interest and dividends earned on earning assets less the interest paid to depositors and other creditors, as a
+  share of average earning assets, at an annual rate. No adjustment is made for tax-exempt interest income.
+formula: >
+  SUM(({{role.financial_period.interest_income}} - {{role.financial_period.interest_expense}}) * {{role.financial_period.periods_per_year}})
+    / NULLIF(SUM({{role.financial_period.average_earning_assets}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Dividing by earning assets at the period's end instead of their average over the period."
+  - "Reading a quarter's net interest income over average earning assets without annualizing it: it reads a quarter of the margin."
+  - "Averaging the entities' margins: a small bank weighs as much as the largest one. Sum the income and the balances, then divide."
+  - "Mixing a tax-equivalent margin with the reported one: the FDIC's is not tax-equivalent."
+sane_range:
+  min: 0.02205
+  max: 0.09415
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Mortgage lenders 2.21% (second quarter 2025) to Credit card banks 9.41% (second quarter 2026),
+    widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

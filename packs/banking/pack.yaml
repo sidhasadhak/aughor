@@ -1,0 +1,22 @@
+id: banking
+name: Banking and lending
+version: 1
+description: >
+  The banking and lending industry package: the net interest margin with the yield and funding cost behind it,
+  returns, efficiency, credit quality (charge-offs, noncurrent and past-due loans, reserve coverage), liquidity and
+  capital, measured the way the FDIC measures insured institutions.
+layer: industry
+industry: banking
+# IP-4 (2026-09-17): drafted by the generator — a cited dossier, the package, the static gate (gate 3) and a measurement
+# on the FDIC's own per-institution data (gate 4). A draft is read by no agent; a person's review makes it active (gate 6).
+anatomy: 1
+owner_team: Platform
+domains:
+  - banking
+  - lending
+  - credit
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor

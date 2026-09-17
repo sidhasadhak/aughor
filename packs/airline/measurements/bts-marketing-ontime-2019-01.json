@@ -2,8 +2,8 @@
   "pack_id": "airline",
   "dataset_id": "bts-marketing-ontime-2019-01",
   "dataset_sha256": "c8cc2c6e365d2f48a4e772de7e8d0df0e2cd80d42379c6c03ca81d96d65d501b",
-  "package_fingerprint": "3d397cce0f3e3b17df6167ee2920b710322c11795bae289f8c5adc258b42e996",
-  "measured_at": "2026-09-17T14:08:47+00:00",
+  "package_fingerprint": "abd68d950c508f9062dba6ad2d236eaff42d8b973bb590e14a48657a13271d30",
+  "measured_at": "2026-09-17T17:35:23+00:00",
   "rows": {
     "aircraft": 5825,
     "airports": 360,

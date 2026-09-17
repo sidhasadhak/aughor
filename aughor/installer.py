@@ -454,7 +454,8 @@ def industries_file(root: Path) -> Path:
     return path if path.is_absolute() else root / path
 
 
-_MANIFEST_FIELD = re.compile(r"^([a-z_]+):[ \t]*(.*?)[ \t]*$")
+# A quoted value is kept whole; an unquoted one ends where a ` #` comment starts.
+_MANIFEST_FIELD = re.compile(r"""^([a-z_]+):[ \t]*("[^"]*"|'[^']*'|.*?)[ \t]*(?:[ \t]#.*)?$""")
 
 
 def _manifest_fields(path: Path) -> dict:
@@ -470,7 +471,8 @@ def _manifest_fields(path: Path) -> dict:
 
 def shipped_industries(root: Path) -> list[Industry]:
     """The industry packages the API reads as an industry, ordered by id: `layer: industry` with an
-    industry id and its industry.json, not deprecated; the first folder to carry an id wins."""
+    industry id and its industry.json, active (a draft awaits a person's review, §3.17 gate 6); the first
+    folder to carry an id wins."""
     override = os.environ.get("AUGHOR_PACKS_DIR")
     packs = Path(override) if override else Path("packs")
     packs = packs if packs.is_absolute() else root / packs
@@ -478,7 +480,7 @@ def shipped_industries(root: Path) -> list[Industry]:
     for manifest in sorted(packs.glob("*/pack.yaml")):
         fields = _manifest_fields(manifest)
         industry = fields.get("industry", "")
-        if (fields.get("layer") != "industry" or not industry or fields.get("status") == "deprecated"
+        if (fields.get("layer") != "industry" or not industry or fields.get("status") != "active"
                 or not (manifest.parent / "industry.json").is_file() or industry in found):
             continue
         found[industry] = Industry(id=industry, name=fields.get("name") or industry, pack=manifest.parent.name)

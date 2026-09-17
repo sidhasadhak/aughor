@@ -293,6 +293,7 @@ def read_pack(connection_id: str, args: dict) -> dict:
     """
     from aughor.packs import load_pack
     from aughor.packs.loader import PROSE_FIELD
+    from aughor.packs.models import KNOWLEDGE_LAYERS
     from aughor.packs.roots import pack_dir
 
     pack_id = str(args.get("pack_id") or "").strip()
@@ -310,6 +311,10 @@ def read_pack(connection_id: str, args: dict) -> dict:
                  counter="platform_tools.read_pack_load")
         return {"error": f"pack '{pack_id}' failed to load"}
 
+    if pack.manifest.layer in KNOWLEDGE_LAYERS:
+        return {"pack_id": pack_id, "status": pack.manifest.status, "readable": False,
+                "why": (f"'{pack_id}' is a knowledge package: its metrics and plays reach you as "
+                        "reference for this connection's industry, not through read_pack.")}
     if pack.manifest.status != "active":
         return {"pack_id": pack_id, "status": pack.manifest.status, "readable": False,
                 "why": (f"'{pack_id}' is {pack.manifest.status}, not active. Imported "
@@ -505,7 +510,7 @@ def list_packs(connection_id: str, args: dict) -> dict:
                           "source": pack.manifest.source,
                           "scope": ents,
                           "applies_to_this_connection": applies,
-                          "readable": pack.manifest.status == "active" and applies})
+                          "readable": pack.manifest.steers and applies})
             if applies:
                 entry["description"] = pack_description(pack)
             else:

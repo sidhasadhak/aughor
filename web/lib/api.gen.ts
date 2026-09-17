@@ -31159,7 +31159,7 @@ export interface operations {
             query?: {
                 connection_id?: string | null;
                 schema_name?: string | null;
-                /** @description A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless */
+                /** @description A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless. Any pack may be named — reviewing a draft package against your data is what gate 6 asks for — and the answer says whether it is deployed here; only a deployed pack's confirmed claims reach a prompt */
                 pack?: string | null;
                 /** @description ON-8 — measure an organisation's ontology instead: every declaration in the domain, on the connections it names */
                 domain?: string | null;

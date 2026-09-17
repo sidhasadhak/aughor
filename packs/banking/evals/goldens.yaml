@@ -1,0 +1,108 @@
+# Goldens on the FDIC's June 30, 2025 per-institution data: each reproduces a figure the FDIC published for the
+# same institutions. Published to two decimals of a percent, so the tolerance is ±0.005 points. Return on assets,
+# net charge-offs to loans and the equity capital ratio come as the second quarter 2026 profile restates them; the
+# other all-institution figures as first published, which the amendments since left inside their rounding.
+# Return on equity, the efficiency ratio and reserve coverage have no golden: the amendments moved them past the
+# rounding of their only publication, and the profile does not restate them — gate 4 holds them to their band.
+- question: "What was the net interest margin of all FDIC-insured institutions in the second quarter of 2025?"
+  expect: {metric: net_interest_margin, dataset: fdic-financials-2025-q2, value: 0.0326, tolerance: 0.00005, source: fdic-qbp-2025-q2}
+- question: "What was the yield on earning assets of all FDIC-insured institutions in the second quarter of 2025?"
+  expect: {metric: yield_on_earning_assets, dataset: fdic-financials-2025-q2, value: 0.0554, tolerance: 0.00005, source: fdic-qbp-2025-q2}
+- question: "What did it cost all FDIC-insured institutions to fund their earning assets in the second quarter of 2025?"
+  expect: {metric: cost_of_funding_earning_assets, dataset: fdic-financials-2025-q2, value: 0.0228, tolerance: 0.00005, source: fdic-qbp-2025-q2}
+- question: "What share of the loans of all FDIC-insured institutions was noncurrent on June 30, 2025?"
+  expect: {metric: noncurrent_loan_rate, dataset: fdic-financials-2025-q2, value: 0.0096, tolerance: 0.00005, source: fdic-qbp-2025-q2}
+- question: "What was the ratio of net loans to deposits of all FDIC-insured institutions on June 30, 2025?"
+  expect: {metric: loans_to_deposits_ratio, dataset: fdic-financials-2025-q2, value: 0.6523, tolerance: 0.00005, source: fdic-qbp-2025-q2}
+- question: "What share of the loans of all FDIC-insured institutions was past due 30 days or more or in nonaccrual on June 30, 2025?"
+  expect: {metric: past_due_and_nonaccrual_rate, dataset: fdic-financials-2025-q2, value: 0.015, tolerance: 0.00005, source: fdic-qbp-2025-q2}
+- question: "What was the return on assets of all FDIC-insured institutions in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0114, tolerance: 0.00005, source: fdic-qbp-2026-q2}
+- question: "What was the return on assets of credit card banks in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: -0.0038, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '3'"}
+- question: "What was the return on assets of international banks in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0119, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '1'"}
+- question: "What was the return on assets of agricultural banks in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0128, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '2'"}
+- question: "What was the return on assets of commercial lenders in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0116, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '4'"}
+- question: "What was the return on assets of mortgage lenders in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0109, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '5'"}
+- question: "What was the return on assets of consumer lenders in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0139, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '6'"}
+- question: "What was the return on assets of other specialized under $1 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0357, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '7'"}
+- question: "What was the return on assets of all other under $1 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0125, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '8'"}
+- question: "What was the return on assets of all other over $1 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0123, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '9'"}
+- question: "What was the net charge-off rate of all FDIC-insured institutions in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.006, tolerance: 0.00005, source: fdic-qbp-2026-q2}
+- question: "What was the net charge-off rate of credit card banks in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.036, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '3'"}
+- question: "What was the net charge-off rate of international banks in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.008, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '1'"}
+- question: "What was the net charge-off rate of agricultural banks in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0025, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '2'"}
+- question: "What was the net charge-off rate of commercial lenders in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0024, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '4'"}
+- question: "What was the net charge-off rate of mortgage lenders in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0002, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '5'"}
+- question: "What was the net charge-off rate of consumer lenders in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0104, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '6'"}
+- question: "What was the net charge-off rate of other specialized under $1 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0023, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '7'"}
+- question: "What was the net charge-off rate of all other under $1 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0009, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '8'"}
+- question: "What was the net charge-off rate of all other over $1 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.005, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '9'"}
+- question: "What was the return on assets of insured institutions with assets under $100 million in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0226, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} < 100000"}
+- question: "What was the return on assets of insured institutions with assets of $100 million to $1 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0125, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 100000 AND {{role.financial_period.total_assets}} < 1000000"}
+- question: "What was the return on assets of insured institutions with assets of $1 billion to $10 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0124, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 1000000 AND {{role.financial_period.total_assets}} < 10000000"}
+- question: "What was the return on assets of insured institutions with assets of $10 billion to $250 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0127, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 10000000 AND {{role.financial_period.total_assets}} <= 250000000"}
+- question: "What was the return on assets of insured institutions with assets over $250 billion in the second quarter of 2025?"
+  expect: {metric: return_on_assets, dataset: fdic-financials-2025-q2, value: 0.0104, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} > 250000000"}
+- question: "What was the net charge-off rate of insured institutions with assets under $100 million in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0019, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} < 100000"}
+- question: "What was the net charge-off rate of insured institutions with assets of $100 million to $1 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0012, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 100000 AND {{role.financial_period.total_assets}} < 1000000"}
+- question: "What was the net charge-off rate of insured institutions with assets of $1 billion to $10 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0031, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 1000000 AND {{role.financial_period.total_assets}} < 10000000"}
+- question: "What was the net charge-off rate of insured institutions with assets of $10 billion to $250 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0057, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 10000000 AND {{role.financial_period.total_assets}} <= 250000000"}
+- question: "What was the net charge-off rate of insured institutions with assets over $250 billion in the second quarter of 2025?"
+  expect: {metric: net_charge_off_rate, dataset: fdic-financials-2025-q2, value: 0.0077, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} > 250000000"}
+- question: "What was the equity capital ratio of all FDIC-insured institutions on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1014, tolerance: 0.00005, source: fdic-qbp-2026-q2}
+- question: "What was the equity capital ratio of credit card banks on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1348, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '3'"}
+- question: "What was the equity capital ratio of international banks on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.0868, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '1'"}
+- question: "What was the equity capital ratio of agricultural banks on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1005, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '2'"}
+- question: "What was the equity capital ratio of commercial lenders on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1107, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '4'"}
+- question: "What was the equity capital ratio of mortgage lenders on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.0967, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '5'"}
+- question: "What was the equity capital ratio of consumer lenders on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.0969, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '6'"}
+- question: "What was the equity capital ratio of other specialized under $1 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1444, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '7'"}
+- question: "What was the equity capital ratio of all other under $1 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1026, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '8'"}
+- question: "What was the equity capital ratio of all other over $1 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.0997, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.peer_group}} = '9'"}
+- question: "What was the equity capital ratio of insured institutions with assets under $100 million on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1389, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} < 100000"}
+- question: "What was the equity capital ratio of insured institutions with assets of $100 million to $1 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1048, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 100000 AND {{role.financial_period.total_assets}} < 1000000"}
+- question: "What was the equity capital ratio of insured institutions with assets of $1 billion to $10 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1073, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 1000000 AND {{role.financial_period.total_assets}} < 10000000"}
+- question: "What was the equity capital ratio of insured institutions with assets of $10 billion to $250 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.1061, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} >= 10000000 AND {{role.financial_period.total_assets}} <= 250000000"}
+- question: "What was the equity capital ratio of insured institutions with assets over $250 billion on June 30, 2025?"
+  expect: {metric: equity_capital_ratio, dataset: fdic-financials-2025-q2, value: 0.0977, tolerance: 0.00005, source: fdic-qbp-2026-q2, where: "{{role.financial_period.total_assets}} > 250000000"}

@@ -1,0 +1,15 @@
+id: noncurrent-loans-above-the-loan-book
+kind: data_quality
+trigger_metric: noncurrent_loan_rate
+trigger_condition: noncurrent loans exceed the loans they are part of
+recommendation: >
+  Noncurrent loans are part of the loan book, so a period whose noncurrent loans exceed its loans is a units or
+  mapping error — two sources in different units, or a subledger joined to the wrong entity — and it pushes the rate
+  above 100%. Fix the mapping before reading the rate.
+expected_impact: The noncurrent loan rate is read over balances that belong together.
+owner_role: Data Engineer
+tags: [noncurrent loans, data quality]
+sources: [fdic-qbp-notes-2025-q2]
+detection: >
+  SUM(CASE WHEN {{role.financial_period.noncurrent_loans}} > {{role.financial_period.total_loans}} THEN 1 ELSE 0
+  END)

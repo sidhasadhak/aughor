@@ -1,0 +1,15 @@
+id: income-without-an-average-balance
+kind: data_quality
+trigger_metric: net_interest_margin
+trigger_condition: an entity earns interest but carries no average earning assets
+recommendation: >
+  An entity with interest income and no average earning assets adds to the margin's numerator and nothing to its
+  denominator, raising the margin of every group it sits in. Find the balance — a new entity whose opening balance
+  is missing, a mapping gap — before reading the margin; dropping the row silently hides the entity instead.
+expected_impact: Every entity in the margin carries both its income and its balance.
+owner_role: Data Engineer
+tags: [net interest margin, average balances, data quality]
+sources: [fdic-qbp-notes-2025-q2]
+detection: >
+  SUM(CASE WHEN {{role.financial_period.interest_income}} > 0 AND
+  COALESCE({{role.financial_period.average_earning_assets}}, 0) <= 0 THEN 1 ELSE 0 END)

@@ -775,11 +775,27 @@ def get_ontology_relationships(
     return {rid: r.model_dump() for rid, r in graph.relationships.items()}
 
 
+def _claims_out(claims, pack: Optional[str], connection_id: str, schema_name: Optional[str]) -> Optional[dict]:
+    """A claims summary, saying whether the pack it names is DEPLOYED on this connection (active and bound).
+
+    A person may measure any pack's map against their data — that is how a package is reviewed before it is
+    activated (§3.17 gate 6). The claims are saved and shown, and the explorer's prompt reads only a deployed
+    pack's confirmed claims, so this flag is the difference a reader has to see.
+    """
+    if claims is None:
+        return None
+    out = claims.summary()
+    if pack:
+        from aughor.packs.ontology_map import bound_pack_ids
+        out["deployed"] = pack in bound_pack_ids(connection_id, schema_name)
+    return out
+
+
 @router.post("/ontology/measure", dependencies=[gate(Capability.ONTOLOGY_EDIT)])
 def measure_ontology(
     connection_id: str = BUILTIN_ID,
     schema_name: Optional[str] = Query(default=None),
-    pack: Optional[str] = Query(default=None, description="A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless"),
+    pack: Optional[str] = Query(default=None, description="A pack id whose industry map is evaluated as claims (ON-0a); packs deployed on the connection apply regardless. Any pack may be named — reviewing a draft package against your data is what gate 6 asks for — and the answer says whether it is deployed here; only a deployed pack's confirmed claims reach a prompt"),
     domain: Optional[str] = Query(default=None, description="ON-8 — measure an organisation's ontology instead: every declaration in the domain, on the connections it names"),
 ):
     """Measure the cached ontology against the live data and save what it says — no model
@@ -824,7 +840,7 @@ def measure_ontology(
            # ON-9 — every declared process and rule, counted again on this pass.
            "processes": reports.get("processes", []),
            "rules": reports.get("rules", []),
-           "claims": claims.summary() if claims is not None else None}
+           "claims": _claims_out(claims, pack, connection_id, effective)}
     try:
         from aughor.kernel.ledger import Ledger
         Ledger.default().emit("ontology.measure", {"ok": True, "schema": effective,
@@ -1996,8 +2012,12 @@ def explore_ontology(
     trace_id = uuid.uuid4().hex
     try:
         with bind_trace(trace_id):
+            # ON-0a: only the packs DEPLOYED here may reach the prompt, and only where the data measured them
+            # true — the catalogue filters on both.
+            from aughor.packs.ontology_map import bound_pack_ids
             said, answerer, catalogue = draft_business(graph, get_provider("coder"), glossary=glossary,
-                                                       answered=answered_by)
+                                                       answered=answered_by,
+                                                       deployed_packs=bound_pack_ids(connection_id, effective))
     except NoModelConfigured:
         raise
     except Exception as exc:  # noqa: BLE001 — a draft that could not be asked for writes nothing, and says why

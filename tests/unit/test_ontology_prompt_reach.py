@@ -12,8 +12,9 @@ pins that measurement so it moves only DELIBERATELY:
   broke, and an empty audit passes every baseline (the vocabulary ratchet's own lesson).
 
 Measured 2026-09-10 on the fixture graph: 59 of 142 fields reach at least one block;
-156 walked since ON-0a added `measured_cardinality`, `cardinality_note`, `core_claims` (unreached by
-design — claims are never rendered), `lifecycle_verified` (a gate), `lifecycle_note` (reaches ENTITY MODEL),
+156 walked since ON-0a added `measured_cardinality`, `cardinality_note`, `core_claims` (which reach the
+explorer's catalogue only as `measured-true` from a DEPLOYED pack — measured 2026-09-17, when that block
+joined this ratchet), `lifecycle_verified` (a gate), `lifecycle_note` (reaches ENTITY MODEL),
 and ON-1 added `api_name`, `backing.*` and the link names (unreached: the prompt still names tables).
 """
 from __future__ import annotations
@@ -25,14 +26,14 @@ from aughor.ontology import prompt_reach as pr
 #: field path → the blocks it reached on 2026-09-10. A block may be ADDED to a field
 #: (reach grew); removing one needs the renderer change that justifies it, in the same PR.
 REACH_BASELINE: dict[str, set[str]] = {
-    "entities.*.id": {'entity_model', 'question_frame'},
-    "entities.*.display_name": {'entity_model', 'question_frame', 'semantic_layer'},
+    "entities.*.id": {'entity_model', 'explorer_catalogue', 'question_frame'},
+    "entities.*.display_name": {'entity_model', 'explorer_catalogue', 'question_frame', 'semantic_layer'},
     "entities.*.identity_key": {'entity_model'},
     "entities.*.grain_verified": {'entity_model'},
-    "entities.*.entity_type": {'entity_model'},
-    "entities.*.has_lifecycle": {'entity_model'},
-    "entities.*.lifecycle_column": {'intake_entity_context'},
-    "entities.*.lifecycle_states": {'entity_model'},
+    "entities.*.entity_type": {'entity_model', 'explorer_catalogue'},
+    "entities.*.has_lifecycle": {'entity_model', 'explorer_catalogue'},
+    "entities.*.lifecycle_column": {'explorer_catalogue', 'intake_entity_context'},
+    "entities.*.lifecycle_states": {'entity_model', 'explorer_catalogue'},
     "entities.*.terminal_states": {'entity_model', 'intake_entity_context'},
     "entities.*.active_filter": {'entity_model', 'intake_entity_context'},
     "entities.*.lifecycle_verified": {'entity_model'},   # ON-0a: the gate on the lifecycle-check line
@@ -47,17 +48,17 @@ REACH_BASELINE: dict[str, set[str]] = {
     "entities.*.computed_properties[].formula_sql": {'semantic_layer'},
     "entities.*.computed_properties[].unit": {'semantic_layer'},
     "entities.*.computed_properties[].verified": {'semantic_layer'},
-    "relationships.*.from_entity": {'question_frame', 'relationships'},
-    "relationships.*.to_entity": {'question_frame', 'relationships'},
+    "relationships.*.from_entity": {'explorer_catalogue', 'question_frame', 'relationships'},
+    "relationships.*.to_entity": {'explorer_catalogue', 'question_frame', 'relationships'},
     "relationships.*.verb": {'relationships'},
     "relationships.*.cardinality": {'relationships'},
-    "relationships.*.from_table": {'relationships'},
-    "relationships.*.from_col": {'relationships'},
-    "relationships.*.to_table": {'relationships'},
-    "relationships.*.to_col": {'relationships'},
+    "relationships.*.from_table": {'explorer_catalogue', 'relationships'},
+    "relationships.*.from_col": {'explorer_catalogue', 'relationships'},
+    "relationships.*.to_table": {'explorer_catalogue', 'relationships'},
+    "relationships.*.to_col": {'explorer_catalogue', 'relationships'},
     "relationships.*.join_confidence": {'relationships'},
     "relationships.*.nullable": {'relationships'},
-    "relationships.*.value_overlap": {'relationships'},
+    "relationships.*.value_overlap": {'explorer_catalogue', 'relationships'},
     "metrics.*.id": {'metric_contract'},
     "metrics.*.display_name": {'metric_contract'},
     "metrics.*.description": {'metric_contract'},
@@ -94,21 +95,21 @@ REACH_BASELINE: dict[str, set[str]] = {
     "kinetic_actions.*.edits[].value": {'actions_declared'},
     # ON-10 (2026-09-13): the question frame — a declared process, promise and rule reach the deep analysis's intake and
     # every phase planner, with what the frame reads of the types, links and backings to start from and compile over.
-    "schema_name": {'question_frame'},
+    "schema_name": {'explorer_catalogue', 'question_frame'},
     "entities.*.backing.kind": {'question_frame'},
-    "entities.*.backing.table": {'question_frame'},
-    "entities.*.backing.primary_key": {'question_frame'},
-    "entities.*.backing.verified": {'question_frame'},
+    "entities.*.backing.table": {'explorer_catalogue', 'question_frame'},
+    "entities.*.backing.primary_key": {'explorer_catalogue', 'question_frame'},
+    "entities.*.backing.verified": {'explorer_catalogue', 'question_frame'},
     "entities.*.bindings[].properties.*.semantic_type": {'question_frame'},
     "entities.*.bindings[].verified": {'question_frame'},
     "entities.*.properties.*.name": {'question_frame'},
-    "entities.*.properties.*.semantic_type": {'question_frame'},
-    "relationships.*.measured_cardinality": {'question_frame'},
+    "entities.*.properties.*.semantic_type": {'explorer_catalogue', 'question_frame'},
+    "relationships.*.measured_cardinality": {'explorer_catalogue', 'question_frame'},
     "relationships.*.api_name": {'question_frame'},
-    "processes.*.id": {'question_frame'},
+    "processes.*.id": {'explorer_catalogue', 'question_frame'},
     "processes.*.display_name": {'question_frame'},
-    "processes.*.entity": {'question_frame'},
-    "processes.*.stages[].name": {'question_frame'},
+    "processes.*.entity": {'explorer_catalogue', 'question_frame'},
+    "processes.*.stages[].name": {'explorer_catalogue', 'question_frame'},
     "processes.*.stages[].timestamp": {'question_frame'},
     "processes.*.stages[].promise.name": {'question_frame'},
     "processes.*.stages[].promise.within_days": {'question_frame'},
@@ -126,21 +127,50 @@ REACH_BASELINE: dict[str, set[str]] = {
     "processes.*.stages[].p50_days": {'question_frame'},
     "processes.*.stages[].p90_days": {'question_frame'},
     "processes.*.stages[].p95_days": {'question_frame'},
-    "rules.*.id": {'question_frame'},
+    "rules.*.id": {'explorer_catalogue', 'question_frame'},
     "rules.*.description": {'question_frame'},
     "rules.*.owner": {'question_frame'},
-    "rules.*.entity": {'question_frame'},
-    "rules.*.kind": {'question_frame'},
+    "rules.*.entity": {'explorer_catalogue', 'question_frame'},
+    "rules.*.kind": {'explorer_catalogue', 'question_frame'},
     "rules.*.property": {'question_frame'},
     "rules.*.values": {'question_frame'},
     "rules.*.verified": {'question_frame'},
     "rules.*.flags": {'question_frame'},
     "rules.*.note": {'question_frame'},
+
+    # ON-7b's explorer catalogue, measured here from 2026-09-17: the block this ratchet did not cover when
+    # it was written. A claim reaches it only as `measured-true` from a pack deployed on the connection —
+    # `tier` and `provenance` reach it because they are that gate.
+    "connection_id": {'explorer_catalogue'},
+    "core_claims[].expected": {'explorer_catalogue'},
+    "core_claims[].kind": {'explorer_catalogue'},
+    "core_claims[].measured": {'explorer_catalogue'},
+    "core_claims[].provenance": {'explorer_catalogue'},
+    "core_claims[].subject": {'explorer_catalogue'},
+    "core_claims[].tier": {'explorer_catalogue'},
+    "entities.*.backing.rows": {'explorer_catalogue'},
+    "entities.*.bindings[].kind": {'explorer_catalogue'},
+    "entities.*.bindings[].name": {'explorer_catalogue'},
+    "entities.*.bindings[].table": {'explorer_catalogue'},
+    "entities.*.description": {'explorer_catalogue'},
+    "entities.*.domain": {'explorer_catalogue'},
+    "entities.*.origin": {'explorer_catalogue'},
+    "entities.*.properties.*.data_type": {'explorer_catalogue'},
+    "entities.*.properties.*.is_primary_key": {'explorer_catalogue'},
+    "entities.*.properties.*.sample_values": {'explorer_catalogue'},
+    "entities.*.proposed_bindings[].covered": {'explorer_catalogue'},
+    "entities.*.proposed_bindings[].key": {'explorer_catalogue'},
+    "entities.*.proposed_bindings[].objects": {'explorer_catalogue'},
+    "entities.*.proposed_bindings[].table": {'explorer_catalogue'},
+    "processes.*.origin": {'explorer_catalogue'},
+    "relationships.*.origin": {'explorer_catalogue'},
+    "rules.*.origin": {'explorer_catalogue'},
 }
 
 #: The walk saw this many leaf fields on 2026-09-10. It may grow with the model; a fall
 #: means a class stopped being walked, not that the ontology got smaller.
-FIELDS_WALKED = 317   # +71 ON-10 (2026-09-13): a declared process with two promises and a rule on the fixture, and the
+FIELDS_WALKED = 331   # +14 (2026-09-17): five claims on the fixture, so the explorer catalogue's gate is
+#   measured from both sides (a deployed pack's confirmed claim, and every tier and pack it must drop); +71 ON-10 (2026-09-13): a declared process with two promises and a rule on the fixture, and the
 #   timestamps and dimension they anchor to — 43 of those fields reach the question frame, the rest (a process's owner and
 #   description, a promise's target and counts, a rule's observed values) are read by the map and the doors, never by
 #   the frame; 246 before — 142 on 2026-09-10; +5 ON-0a (cardinality, lifecycle, core_claims); +9 ON-1 (api names, backing) — all unreached by design; +9 ON-4 (object params, the action's object type, declared edits); +9 ON-3b (the display property's name, source and measurement, the backing's rows, a link's business-verb name) — unreached by design: the map and describe_entity read them as tools, never as prompt text; +72 ON-1b (a further binding and a proposed one: source, key, kind, time column, the properties each supplies with their renames and skips, the counts and the verdict) — unreached by design: the compiler, the pages and describe_entity read bindings, no prompt renders one

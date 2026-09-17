@@ -1,0 +1,15 @@
+id: recoveries-above-charge-offs-stay-in-the-sum
+kind: data_quality
+trigger_metric: net_charge_off_rate
+trigger_condition: an entity recovers more than it charges off in a period
+recommendation: >
+  Net charge-offs are charge-offs less recoveries on loans charged off earlier, so a period's net charge-offs can be
+  negative. Keep them in the sum: clipping them to zero, or dropping them as bad rows, overstates the loss rate of
+  every group they belong to.
+expected_impact: The net charge-off rate counts recoveries in the periods they arrive.
+owner_role: Data Engineer
+tags: [charge-offs, recoveries, data quality]
+sources: [fdic-qbp-notes-2025-q2]
+detection: >
+  SUM(CASE WHEN COALESCE({{role.financial_period.recoveries}}, 0) > {{role.financial_period.gross_charge_offs}} THEN
+  1 ELSE 0 END)

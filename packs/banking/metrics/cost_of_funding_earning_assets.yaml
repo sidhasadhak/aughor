@@ -1,0 +1,26 @@
+name: cost_of_funding_earning_assets
+title: Cost of funding earning assets
+aliases: [cost of funds, funding cost, cost of funding earning assets]
+unit: ratio
+definition: >
+  Total interest paid on deposits and other borrowed money, as a share of average earning assets, at an annual rate.
+formula: >
+  SUM({{role.financial_period.interest_expense}} * {{role.financial_period.periods_per_year}})
+    / NULLIF(SUM({{role.financial_period.average_earning_assets}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Dividing interest expense by interest-bearing liabilities in one period and by earning assets in another: the two rates are not comparable."
+  - "Reading a rise as deposit repricing without checking the mix: noninterest-bearing deposits moving to time deposits raises it at unchanged rates."
+sane_range:
+  min: 0.01005
+  max: 0.03385
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Other specialized under $1 billion 1.01% (second quarter 2026) to Consumer lenders 3.38% (second
+    quarter 2025), widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside
+    a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]
