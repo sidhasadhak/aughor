@@ -5922,6 +5922,83 @@ nomenclature for the analogy's sake; a persona named "Analyst".
 
 ---
 
+### 3.19 · Arc JD — the judgment seam: a typed question is not a paragraph (drafted 2026-09-17 at the user's direction — §6 item 25; study: `docs/TYPESAFE_JEV_STUDY_2026-09-17.md`)
+
+**The observation.** TypeSafe shipped a model class that gives up text generation and returns typed,
+calibrated decisions — one **state**, N independent **questions**, each a Choice (one of a closed set,
+with a probability per option), a Score (a position on 2–10 ordered levels, which may fall between
+them) or a Noul (the probability a proposition is true). `vinnylarouge/jevlike` re-derives the *shape*
+in 400 lines of MIT PyTorch: an option becomes a query, it attends over the context, one dot product
+scores it, a softmax runs across the options — one forward pass instead of writing an answer word by
+word. Neither is adopted here. **What is adopted is the request shape**, which we can have on our own
+providers today, and which the study shows we are already approximating badly in two hot places.
+
+**What is true today (measured, first-hand).** The deep path's wall-clock is ~100% phase-serial LLM
+calls (`AGENT_NOTES.md:214`): 373 s serial against 304 s with `ada.parallel_phases` = **1.23×**, both
+arms 14 calls, and the note's own verdict is that intake and synthesis dominate and phase-level
+parallelism is spent. Intake is ONE decoder call carrying ~25 fields
+(`agent/prompts_investigate.py:755`) of which about ten are pure judgments over one state
+(`descriptive_only`, `cross_sectional`, `metric_is_ratio`, `claim_type_suggestion`) and three are
+picks from a set the schema already holds (`date_column`, `metric_table`, `dimensions`) — asked as
+free text, then repaired: "collect ALL spec errors and fix them in ONE combined LLM retry (was up to 3
+sequential round-trips on the critical path of every investigation)"
+(`agent/investigate.py:5498`), with the date column repaired deterministically because asking again is
+less reliable. The semantic operators put 25 rows in one prompt (`semops/operators.py`), so a row's
+verdict can be moved by its neighbours, a parse failure loses all 25 verdicts fail-open, and the
+champion cascade escalates **all** 200 rows on a sampled 20% disagreement — paying the strong tier for
+the rows the cheap tier already had right. And `earned_confidence` is COMPUTED, never asserted by the
+model (`agent/state.py:253`) — the right instinct, and the exact seam a calibrated per-item
+probability belongs in.
+
+**The arc in one line:** make a judgment a first-class call with a declared answer space, an isolated
+per-question score, and a probability our code bands on — then measure it with a control before
+believing any of it.
+
+- **JD-1 — the seam.** `judge(state, questions) -> answers` over the EXISTING providers: one call per
+  bundle, one closed schema per question (`noul` / `choice` / `score`), each question scored on its own
+  against the state, answers keyed by question id and carrying a probability. Flag-gated,
+  default-byte-identical, one backend at first. *Receipt:* the same bundle answered through the seam
+  and through today's path agree on the golden set. *Falsifier:* if isolation changes no answer and
+  saves no call, it is ceremony — drop it.
+- **JD-2 — intake's judgments leave the prose call.** The ~10 judgment fields become typed questions;
+  `date_column` / `metric_table` / `dimensions` become **choices over the real schema**, which cannot
+  return a column that does not exist. *Receipt:* the spec-repair retry rate on the golden set, before
+  and after — this is monotonic by construction (it can only remove invalid picks), so it is provable
+  below the ±7–10 noise floor. *Falsifier:* no drop in repair retries AND no wall-clock gain → revert.
+- **JD-3 — bands, not batches, in the semops cascade.** `semantic_filter` / `semantic_top_k` ask one
+  question per row through JD-1's seam; the champion tier is spent ONLY on the rows inside the
+  uncertainty band, and the band's floor routes to a person rather than to a guess. Thresholds live in
+  our code, never in the model. *Receipt:* strong-tier calls spent per 200-row filter, at equal
+  agreement with today's escalation. *Falsifier:* banding costs more strong-tier calls than the
+  sampled cascade → keep the sampled one.
+- **JD-4 — the instrument, and it comes first.** `jevlike/eval.py`'s battery adopted as a standing
+  guard on every judgment seam: top-1, expected calibration error over ten bins, and the
+  **shuffled-context control** — every question paired with the WRONG state, on the rule that a
+  judgment must beat that control to count. *Receipt:* the control run on our own logged judgments.
+  *Falsifier:* if real and shuffled score within noise, our judgments are not reading the state and the
+  rest of this arc is pointless.
+- **JD-5 — the hosted binding, optional and last.** Jev behind JD-1's seam as one backend among ours,
+  OFF by default, riding `govern/outbound` and the PII gate because the state is customer row text
+  leaving the box, surfaced in the Trust Receipt, and never on the verdict path: on TypeSafe's own
+  four-workflow benchmark Jev scores 67.8% against Opus 5's 73.1% — it is a speed and cost result, not
+  an accuracy one. *Receipt:* the same JD-4 battery, both backends, same bundles. *Falsifier:* no
+  wall-clock or cost win at equal calibrated accuracy → refuse and record it in §4.
+- **JD-6 — the local scorer, if JD-4 earns it.** A `jevlike`-shaped one-pass head trained on our own
+  logged `{state, options, chosen}` rows, weights outside the repo and installer per §3.9's adapter
+  law, used as a pre-filter and ranker (cut 200 candidate columns to 12 before a real model reads
+  them) and never as a decider — its own authors measure 26–29% where controls score 8% and call the
+  option head a capacity bottleneck. *Falsifier:* cannot beat a shuffled control by more than the
+  noise floor → stop, and say so.
+
+**Not this:** a judgment model anywhere a person acts on the number it produced; a model replacing a
+deterministic resolver that already works; a hosted dependency on by default, or one that sees row
+text without an outbound grant; weights in the repo or installer; a second confidence vocabulary
+beside `earned_confidence`; and no figure from a vendor page this session could not open treated as
+measured — `docs.typesafe.ai` was blocked by egress, and the study says which numbers are
+second-hand.
+
+---
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -7004,6 +7081,35 @@ the browser** · **measure the premise before building.**
     Not decided here because it isn't ripe: hosting and uptime (§6 item 17 stands — the hub exports only from where the
     platform runs); persona names beyond the three; row policies by group (HB-1's enforcement half, when identity is
     on).
+
+25. ⏳ **DRAFTED 2026-09-17 (the user: "find ways to improve our platform", after reading TypeSafe's Jev
+    and the `jevlike` re-derivation) — Arc JD, the judgment seam (§3.19): four adoptions that need no
+    vendor, two that wait.** The study is `docs/TYPESAFE_JEV_STUDY_2026-09-17.md`; it states plainly
+    which of its numbers are second-hand (`docs.typesafe.ai` and `typesafe.ai` are blocked by this
+    environment's egress policy, so the vendor's own pages were never read — the API contract comes
+    from a third-party client that calls it).
+    **(a) The seam and the instrument (JD-1, JD-4)** — a typed `judge(state, questions)` call over our
+    existing providers, and `jevlike`'s calibration battery (ECE + a shuffled-context control) as the
+    standing guard on it. *Recommended: yes, and JD-4 first — it is the instrument every other slice is
+    measured with, and the one that would have caught ON-0's lift-that-wasn't.*
+    **(b) Intake's judgments as typed questions, with closed option lists (JD-2)** — `date_column`,
+    `metric_table` and `dimensions` become choices over the schema, which cannot name a column that
+    does not exist, retiring a repair path that cost up to three sequential round-trips on the critical
+    path of every investigation. *Recommended: yes — monotonic by construction, therefore provable
+    below the noise floor.*
+    **(c) Confidence bands in the semops cascade (JD-3)** — spend the champion tier on the uncertain
+    rows only, and route the band's floor to a person. *Recommended: yes, after (a).*
+    **(d) The hosted Jev binding (JD-5)** — one backend behind the seam, off by default, behind the
+    outbound grant and the PII gate, never on the verdict path. The state is customer row text leaving
+    the box, and Jev's own benchmark puts it at 67.8% against Opus 5's 73.1%. *Recommended: hold until
+    (a) exists and can measure it; adopt only for pre-filters and rankings where a wrong answer is
+    cheap and recoverable.*
+    **(e) The local one-pass scorer (JD-6)** — sovereign, CPU-sized, trained on our own logged
+    decisions, weights outside the installer. *Recommended: hold behind (a) and (d)'s measurement; it
+    is a pre-filter, not a decider.*
+    Not decided here because it isn't ripe: whether a judgment's probability may ever reach a reader
+    (today `earned_confidence` is computed from evidence and nothing else asserts confidence); and
+    whether the uncertainty band's floor routes through the existing 428 approval gate or somewhere new.
 
 ---
 
