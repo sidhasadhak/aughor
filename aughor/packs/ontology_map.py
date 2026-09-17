@@ -3,12 +3,20 @@
 A pack's `ontology.yaml` is an APPROXIMATE map of an industry: the object types it expects,
 the links between them with the cardinality the data must confirm, the lifecycles with the
 states it expects to be terminal, and the fields it knows carry business-specific aliases
-without knowing which. None of it is rendered into a prompt. Each entry is evaluated against
-THIS graph and THIS data and recorded as a `CoreClaim` with a tier — `expected` until the
-data can speak, `measured-true`, `measured-false` (the data wins), `human` — so a UI can show
-what the core expected and what the warehouse said. What reaches the model is only the
-measured label on the relationship or entity itself, through the verified tier it already
-has (ON-0's reach ratchet is the gate).
+without knowing which. Each entry is evaluated against THIS graph and THIS data and recorded
+as a `CoreClaim` with a tier — `expected` until the data can speak, `measured-true`,
+`measured-false` (the data wins), `human` (an override settled it) — so a UI can show what the
+core expected and what the warehouse said.
+
+**What may reach a prompt**: the measured label on the relationship or entity itself, through
+the verified tier it already has; and, in the explorer's source catalogue, a claim that a pack
+DEPLOYED on this connection (active and bound — `bound_pack_ids`) measured TRUE. An expectation
+the data cannot speak to, a claim a person settled and a claim the data contradicts are shown in
+the panel and rendered into no prompt (§3.15 ON-0a: "nothing from the map reaches a prompt block
+except through the same verified tier"; "an entry that measures FALSE is rendered nowhere").
+A person may still measure any pack's map against their data — that is how a package is reviewed
+before it is made active (§3.17 gate 6) — and those claims reach the panel, never the model.
+ON-0's reach ratchet is the gate: `explorer_catalogue` is one of its blocks.
 
 Layering rides the pack `extends` chain: `core-ecommerce` ← `fashion-ecommerce` ← the
 company's own pack. Parents resolve first; a child entry with the same name replaces its

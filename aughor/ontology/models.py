@@ -954,8 +954,9 @@ class CoreClaim(BaseModel):
     """One claim from an industry map (a pack's `ontology.yaml`), evaluated against THIS
     graph and data (§3.15 ON-0a). Tiers: `expected` (declared, not yet measurable here),
     `measured-true`, `measured-false` (the data contradicts the core — the data wins),
-    `human` (an override settled it). Never rendered into a prompt: what reaches the model
-    is the measured label on the relationship or entity itself."""
+    `human` (an override settled it). Only a `measured-true` claim of a pack deployed on the
+    connection reaches a prompt (the explorer's source catalogue); every other tier is shown in
+    the panel and rendered nowhere — see `aughor/packs/ontology_map.py`."""
     #: ON-9 adds `process` (a process the core expects the type to go through) and `rule` (a definition the core
     #: expects the business to hold — its values left for the business to fill).
     kind: Literal["object", "link", "lifecycle", "alias", "process", "rule"]

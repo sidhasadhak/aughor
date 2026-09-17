@@ -30,7 +30,7 @@ import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Callable, Optional, get_args
+from typing import Any, Callable, Iterable, Optional, get_args
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -102,12 +102,21 @@ def _glossary_lines(glossary: Optional[dict], tables: set[str]) -> list[str]:
     return out[:40]
 
 
-def source_catalogue(graph: OntologyGraph, *, glossary: Optional[dict] = None) -> str:
+def source_catalogue(graph: OntologyGraph, *, glossary: Optional[dict] = None,
+                     deployed_packs: Optional[Iterable[str]] = None) -> str:
     """The SOURCE CATALOGUE an explorer reads — what the platform has measured or been told about this scope, as text:
     each entity with its table, its key's verdict, its rows and its columns (sample values where the profile kept
     them); the joins the builder found, with their measured cardinality and overlap; the bindings the data proposes;
-    what a person or an earlier draft already declared; the glossary; and the bound pack's claims with their tier.
-    Pure and deterministic: the same graph renders the same catalogue."""
+    what a person or an earlier draft already declared; the glossary; and what an industry map expected that THIS
+    data confirmed.
+
+    `deployed_packs` are the packs deployed on this connection (active and bound — `bound_pack_ids`). Only their
+    claims may be rendered, and only where the data measured them TRUE: an expectation the data cannot speak to, a
+    claim a person settled and a claim the data contradicts are shown in the panel and reach no prompt (§3.15 ON-0a,
+    "nothing from the map reaches a prompt block except through the same verified tier"). Passing none — the default
+    — renders no claim at all.
+
+    Pure and deterministic: the same graph and the same deployed packs render the same catalogue."""
     out: list[str] = [f"SOURCE CATALOGUE — connection {graph.connection_id}, schema {graph.schema_name or 'default'}",
                       "", "ENTITIES — id · its table · key (one row per object? measured) · rows · role · domain"]
     for e in sorted(graph.entities.values(), key=lambda x: x.id):
@@ -177,11 +186,14 @@ def source_catalogue(graph: OntologyGraph, *, glossary: Optional[dict] = None) -
     words = _glossary_lines(glossary, tables)
     if words:
         out += ["", "GLOSSARY — the business's own words for these tables", *words]
-    if graph.core_claims:
-        out += ["", "PACK CLAIMS — what an industry map expects, and what the data said"]
-        for c in graph.core_claims[:40]:
+    provenances = {f"pack:{pid}" for pid in (deployed_packs or ())}
+    confirmed = [c for c in graph.core_claims
+                 if c.tier == "measured-true" and c.provenance in provenances]
+    if confirmed:
+        out += ["", "PACK CLAIMS — what an industry map expected and this data confirmed"]
+        for c in confirmed[:40]:
             out.append(f"- {c.kind} {c.subject}: expected {c.expected}"
-                       + (f", measured {c.measured}" if c.measured else "") + f" ({c.tier})")
+                       + (f", measured {c.measured}" if c.measured else ""))
     text = "\n".join(out)
     if len(text) > MAX_CATALOGUE_CHARS:
         text = text[:MAX_CATALOGUE_CHARS] + f"\n… the catalogue was cut at {MAX_CATALOGUE_CHARS:,} characters"
@@ -330,7 +342,8 @@ _SYSTEM = ("You map the business behind a data warehouse. You propose; the platf
 
 
 def draft_business(graph: OntologyGraph, llm: Any, *, glossary: Optional[dict] = None,
-                   answered: Optional[Callable[[], Any]] = None) -> tuple[BusinessDraft, Answerer, str]:
+                   answered: Optional[Callable[[], Any]] = None,
+                   deployed_packs: Optional[Iterable[str]] = None) -> tuple[BusinessDraft, Answerer, str]:
     """ONE model call: the catalogue in, the proposals out. Returns the proposals, the binding that answered, and the
     catalogue as sent. Raises what the provider raises — a draft that could not be asked for writes nothing.
 
@@ -338,7 +351,7 @@ def draft_business(graph: OntologyGraph, llm: Any, *, glossary: Optional[dict] =
     `aughor.llm.provider.answered_by`, because this package is a store plane and never imports the inference plane
     (`test_ontology_llm_boundary`). Without it a draft is still made, and its provenance names no model."""
     from aughor.agent.prompts_ontology import EXPLORE_BUSINESS_PROMPT
-    catalogue = source_catalogue(graph, glossary=glossary)
+    catalogue = source_catalogue(graph, glossary=glossary, deployed_packs=deployed_packs)
     before = answered() if answered is not None else None
     said = llm.complete(system=_SYSTEM, user=EXPLORE_BUSINESS_PROMPT.format(catalogue=catalogue),
                         response_model=BusinessDraft, temperature=0.0)

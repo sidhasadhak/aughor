@@ -5674,9 +5674,17 @@ nothing pushed. The user: *"lets start ip-4"*.
   - **Payments & fintech, then insurance.**
   - **Gate 5**: not needed for banking — gate 4 is unambiguous (answer 8).
   - **Gate 6**: the user's review.
-  - **Found by the survey, each its own task:** the evaluate route passes an IP-3 golden without checking it;
-    `POST /ontology/measure?pack=` applies any pack's claims, draft or not, and the explorer's prompt then reads
-    them; promotion rewrites pack.yaml without its comments.
+  - **Found by the survey:** the evaluate route passes an IP-3 golden without checking it (its own task);
+    promotion rewrites pack.yaml without its comments (its own task).
+  - ✅ **A pack's claims can no longer reach a model through the explorer.** ON-7b gave the ontology explorer a
+    catalogue that rendered every claim — expectations included, from any pack a person had measured against the
+    connection — while `ontology_map.py` and `CoreClaim` both said claims are never rendered, and ON-0a's rule is
+    "nothing from the map reaches a prompt block except through the same verified tier" (an entry measuring FALSE
+    is "rendered nowhere"). The catalogue now renders a claim only when a pack DEPLOYED on the connection (active
+    and bound) measured it TRUE; the measure door still takes any pack id, because reviewing a package against
+    your own data is what gate 6 asks for, and its answer says whether the pack is deployed. The two comments say
+    that now. The reach ratchet did not cover the explorer's prompt at all — that is why the block landed
+    unnoticed — so `explorer_catalogue` is one of its blocks, with its measured reach recorded (49 fields).
 
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
