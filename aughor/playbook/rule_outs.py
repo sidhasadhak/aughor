@@ -119,7 +119,8 @@ def _alias_index(_roots: tuple) -> dict[tuple[str, ...], tuple[KbMetric, ...]]:
 
 def match_metric(metric_label: str, industry: Optional[str]) -> tuple[KbMetric, ...]:
     """The KB entries a report's metric label names, read in ``industry``'s scope
-    (``metric_kb.industry_scope``: a curated id, "" for the shared entries only, None for all)."""
+    (``metric_kb.industry_scope``: a curated id, "" for the shared entries only, None for every industry
+    the deployment chose — `industry_choice.readable_industries`)."""
     from aughor.packs.knowledge import cache_token
 
     head = _tokens(_BRACKET.sub(" ", metric_label or "")) or _tokens(metric_label)
@@ -129,6 +130,8 @@ def match_metric(metric_label: str, industry: Optional[str]) -> tuple[KbMetric, 
     stripped = [tuple(t for i, t in enumerate(h) if not (t in _QUALIFIERS and all(x in _QUALIFIERS for x in h[:i + 1])))
                 for h in heads]
 
+    from aughor.packs.industry_choice import readable_industries
+    readable = readable_industries(industry)
     best: dict[str, KbMetric] = {}
     best_len = 0
     for alias, metrics in _alias_index(cache_token()).items():
@@ -141,7 +144,7 @@ def match_metric(metric_label: str, industry: Optional[str]) -> tuple[KbMetric, 
             named = any(len(h) >= n and h[-n:] == alias for h in heads)
         if not named:
             continue
-        in_scope = [m for m in metrics if industry is None or m.industry in ("", industry)]
+        in_scope = [m for m in metrics if readable is None or m.industry in readable]
         if not in_scope:
             continue
         if n > best_len:

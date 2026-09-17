@@ -163,6 +163,9 @@ for _env, _file in (
     # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
     # got a seeded playbook written into its `data/`.
     ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
+    # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
+    # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
+    ("AUGHOR_INDUSTRIES_FILE", "industries.json"),
 ):
     os.environ[_env] = os.path.join(_test_stores_dir, _file)   # assigned, not setdefault
 

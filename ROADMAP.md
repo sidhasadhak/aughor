@@ -5411,7 +5411,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 BUILT** 2026-09-17 on `claude/ip-1-package-seam`, local)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 BUILT** 2026-09-17 on `claude/ip-1-package-seam`, local)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5502,6 +5502,45 @@ and the top-up), local, nothing pushed.
   repair"); the detection queries wait for IP-3's roles; the one wrong name match measured is "investigation job
   failure rate" on the platform's own operations data with no industry known, a report that states no signed move.
 
+**IP-2 · Chosen at install — BUILT 2026-09-17** on the same branch, local, nothing pushed. The answer is one file,
+`data/industries.json` (`AUGHOR_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
+installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
+- **What an answer means** (`aughor/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
+  detects each connection's (answer 1); a skipped question is written as `null` so a re-run does not ask again. A list
+  narrows: `metric_kb.load_industry_kbs()` — through which `match_industry`, `industry_id`, `industry_scope`, the
+  vocabulary and the recipes all pass — holds only the chosen packages, so an industry text naming another package
+  resolves to none, and a read that knows nothing about its connection (`industry_scope` None) sees the chosen
+  industries and the shared knowledge, never another industry's (`readable_industries`, used by the playbook read and
+  the rule-outs). An empty list keeps only the shared knowledge — a bank installing today is not handed a retailer's
+  playbook. An id no package carries is refused on write and ignored, with its name, on read; an unreadable file keeps
+  every industry and says why. Written whole and moved into place; re-read when its modification time or size
+  changes, so a choice made in Settings reaches a running API (the vocabulary cache keys on it).
+- **The installer** (`aughor/installer.py`, still standard-library only). Step 0, after the checkout check and before
+  `uv sync`: the six industry packages, read from `packs/*/pack.yaml` without a YAML parser, numbered; the answer
+  takes numbers, ids, folder names or package names, Enter for all, `none`. It asks through `/dev/tty` (the console
+  on Windows), so it works under `curl | sh`, where stdin is the rest of the script; with no terminal nothing is asked
+  and nothing written. `--industries retail,saas` or `AUGHOR_INDUSTRIES` answers ahead; an id no package carries stops
+  the install before anything slow, naming the ids that exist. The option is not handed on to `aughor up`.
+- **Changing it later.** Settings → Organization gains an Industries section (app scope — the choice is
+  deployment-wide): every industry, or only the ticked ones, saved on its own. `aughor industries` lists the packages
+  with the current choice and takes the installer's answers. A change drops only the stored business profiles whose
+  industry now resolves to a different package (`refresh_profiles_for_choice`): a profile keeps the recipes it
+  resolved when built, and re-inferring costs a model call per dataset, so a retail profile is kept when SaaS is
+  added. Settings says how many it dropped.
+- **Live, 2026-09-17, no model call:** the question through a real pseudo-terminal with stdin a pipe, as under
+  `curl | sh` — a wrong answer asked again, `5, saas` recorded as `["retail", "saas"]`; on a scratch stack with isolated
+  stores, Settings → Organization saved retail and SaaS (the API read it back, source `settings`), and `aughor
+  industries` read the same file with both ticked.
+- **Trap:** the test conftest points `AUGHOR_PACKS_DIR` at a copy of the six packages, so every existing installer
+  test would reach the question — and a developer running pytest in a terminal would wait on `/dev/tty`. Every
+  installer test now starts with no terminal and its own choice file; the question's tests script one.
+- **Receipts:** `tests/unit/test_installer.py` (25 new, 73 in all), `tests/unit/test_ip2_industry_choice.py` (14),
+  `web/components/OrgIndustriesSection.test.tsx` (3); `api.gen.ts` regenerated for the two routes; the full backend
+  suite once on the commit: 10,639 passed, 5 skipped, none failed; vitest 970 passed.
+- **Open:** the Windows console path (`CONIN$`) is untested here — no Windows machine, and the CI install workflow has
+  no console, so it asks nothing; the profile inference prompt does not name the chosen industries — the narrowing is
+  at resolution, deterministic, and a prompt change waits for a measured reason.
+
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
 `metrics/*.yaml` (formula, grain, sane range with its source, anti-patterns), `playbooks/*.yaml` (diagnostic,
@@ -5544,7 +5583,7 @@ draft → active.
   the four hard-coded `data/kb` loaders; the six industries and the functions move into packages unchanged;
   data-quality plays reach the Verifier. Only then do existing playbooks receive the 486 plays (answer 7: not yet).
   ✅ BUILT 2026-09-17 (above): the Verifier's rule-outs on deep reports, then the top-up.
-- **IP-2 chosen at install**, as above.
+- **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
 - **IP-4 the tiers.**
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
@@ -6318,8 +6357,11 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         outcome. IP-1 ✅ BUILT 2026-09-17 (local): the KB in eleven packages behind one resolver,
         moved unchanged (measured); data-quality plays as the Verifier's rule-outs on deep reports;
         existing playbooks topped up with the 486 checks, a deleted one never resurrected.
-        Next: IP-2 chosen at install → IP-3 the generator (airline as reference) → IP-4 tier 1:
-        banking & lending first, then payments & fintech, then insurance
+        IP-2 ✅ BUILT 2026-09-17 (local): the installer asks once which industries (through the
+        terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
+        narrows every industry read; Settings → Organization and `aughor industries` change it.
+        Next: IP-3 the generator (airline as reference) → IP-4 tier 1: banking & lending first,
+        then payments & fintech, then insurance
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -6978,7 +7020,8 @@ the browser** · **measure the premise before building.**
 21. ✅ **DECIDED 2026-09-14 (the user) — Arc IP (§3.17): nine answers that shape the industry packages.** Put as the
     plan's open calls, each with a recommendation, and answered over two turns.
     **(1) Skipping the install question** — every shipped package stays available and the industry is detected per
-    connection. *As recommended.*
+    connection. *As recommended.* **Built 2026-09-17 (IP-2):** Enter, no terminal, or no file all keep every package;
+    a skip is recorded as `null` so the installer does not ask again.
     **(2) Where packages live** — in the repo; no registry. *As recommended.*
     **(3) Which industry goes first** — left to the builder: **banking & lending**, then payments & fintech, then
     insurance.

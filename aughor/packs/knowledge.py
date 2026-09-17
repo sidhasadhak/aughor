@@ -77,6 +77,7 @@ class Package:
     layer: str
     industry: str
     directory: Path
+    name: str = ""          # the manifest's display name ("Retail and e-commerce")
 
 
 @dataclass(frozen=True)
@@ -282,7 +283,7 @@ def _find_packages(roots: list[Path], problems: list[str]) -> list[Package]:
                                 f"meaningful on layer industry — ignored")
             found.append(Package(pack_id=manifest.id, layer=manifest.layer,
                                  industry=manifest.industry if manifest.layer == "industry" else "",
-                                 directory=directory))
+                                 directory=directory, name=manifest.name or manifest.id))
     return found
 
 

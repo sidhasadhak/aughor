@@ -4,6 +4,8 @@
 the checkout and get `uv`. They then run this module on a uv-provided Python OUTSIDE the
 project's `.venv`, and everything else happens here, once, for all three systems:
 
+  0. Industries             which industry packages Aughor reads — asked once, through the terminal,
+                            before anything slow; `--industries` or AUGHOR_INDUSTRIES answer it ahead
   1. Python dependencies    `uv sync --all-extras --locked`
   2. Node.js                the one on this computer when it is new enough; otherwise an
                             official nodejs.org build, checksum-verified, kept in `.aughor/node`
@@ -48,8 +50,9 @@ import urllib.request
 import zipfile
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable, Iterator, Optional, Sequence, Union
+from typing import IO, Callable, Iterator, Optional, Sequence, Union
 
 #: The Python a NEW `.venv` is created with — the version CI gates every pull request on.
 #: An existing `.venv` keeps whatever version it has. Mirrored in install.sh and install.ps1.
@@ -423,6 +426,213 @@ def _child_env(**extra: str) -> dict:
     env.pop("VIRTUAL_ENV", None)
     env.update(extra)
     return env
+
+
+# ── 0. Industries ────────────────────────────────────────────────────────────────
+# IP-2 (ROADMAP §3.17 "Chosen at install"). The API reads the answer from one small file; this module can
+# import nothing of Aughor's, so it mirrors that file's name, the path rule and its shape from
+# aughor/packs/industry_choice.py — tests/unit/test_installer.py holds the two equal.
+
+#: aughor/packs/industry_choice.py CHOICE_FILE.
+INDUSTRIES_FILE = "industries.json"
+_ASK_ATTEMPTS = 3
+
+
+@dataclass(frozen=True)
+class Industry:
+    """An industry package in this checkout."""
+    id: str        # the id the API scopes by: "food_delivery"
+    name: str      # the package's name: "Food delivery"
+    pack: str      # its folder: "food-delivery"
+
+
+def industries_file(root: Path) -> Path:
+    """Where the API reads the choice: AUGHOR_INDUSTRIES_FILE, else industries.json in the state directory
+    (AUGHOR_STATE_DIR, else data/) — relative paths from the checkout, the folder the API runs in."""
+    override = os.environ.get("AUGHOR_INDUSTRIES_FILE")
+    path = Path(override) if override else Path(os.environ.get("AUGHOR_STATE_DIR") or "data") / INDUSTRIES_FILE
+    return path if path.is_absolute() else root / path
+
+
+_MANIFEST_FIELD = re.compile(r"^([a-z_]+):[ \t]*(.*?)[ \t]*$")
+
+
+def _manifest_fields(path: Path) -> dict:
+    """The top-level `key: value` scalars of a pack.yaml — all a package's identity needs, without a YAML
+    parser this module cannot import."""
+    fields: dict = {}
+    for line in _read_text(path).splitlines():
+        found = _MANIFEST_FIELD.match(line)
+        if found and found.group(1) not in fields:
+            fields[found.group(1)] = found.group(2).strip("'\"")
+    return fields
+
+
+def shipped_industries(root: Path) -> list[Industry]:
+    """The industry packages the API reads as an industry, ordered by id: `layer: industry` with an
+    industry id and its industry.json, not deprecated; the first folder to carry an id wins."""
+    override = os.environ.get("AUGHOR_PACKS_DIR")
+    packs = Path(override) if override else Path("packs")
+    packs = packs if packs.is_absolute() else root / packs
+    found: dict[str, Industry] = {}
+    for manifest in sorted(packs.glob("*/pack.yaml")):
+        fields = _manifest_fields(manifest)
+        industry = fields.get("industry", "")
+        if (fields.get("layer") != "industry" or not industry or fields.get("status") == "deprecated"
+                or not (manifest.parent / "industry.json").is_file() or industry in found):
+            continue
+        found[industry] = Industry(id=industry, name=fields.get("name") or industry, pack=manifest.parent.name)
+    return [found[key] for key in sorted(found)]
+
+
+def parse_industries(text: str, shipped: Sequence[Industry]) -> Optional[list[str]]:
+    """An answer: "" or "all" keeps every industry (None); "none" keeps none ([]); otherwise numbers from the
+    list, ids, folder names or package names, separated by commas or spaces. Raises ValueError naming what
+    matches no industry."""
+    answer = " ".join((text or "").split())
+    if answer.lower() in ("", "all"):
+        return None
+    if answer.lower() == "none":
+        return []
+    names = {}
+    for number, industry in enumerate(shipped, 1):
+        for key in (str(number), industry.id, industry.pack, industry.name):
+            names[key.lower()] = industry.id
+    chosen: set[str] = set()
+    unknown: list[str] = []
+    for part in (p.strip() for p in answer.split(",")):
+        if not part:
+            continue
+        if part.lower() in names:
+            chosen.add(names[part.lower()])
+            continue
+        for word in part.split():
+            if word.lower() in names:
+                chosen.add(names[word.lower()])
+            else:
+                unknown.append(word)
+    if unknown:
+        raise ValueError(f"No industry package is called {', '.join(unknown)}.")
+    return sorted(chosen)
+
+
+def describe_industries(chosen: Optional[Sequence[str]], shipped: Sequence[Industry]) -> str:
+    if chosen is None:
+        return "every industry, detected per connection"
+    if not chosen:
+        return "none, only what every industry shares"
+    names = {industry.id: industry.name for industry in shipped}
+    return ", ".join(names.get(i, i) for i in chosen)
+
+
+@contextmanager
+def _terminal() -> Iterator[Optional[tuple[IO[str], IO[str]]]]:
+    """The person's terminal, even when stdin is not: under `curl | sh` stdin is the rest of the script.
+    /dev/tty, or on Windows the console. None where there is no terminal — CI, a container build, a pipe."""
+    names = ("CONIN$", "CONOUT$") if os.name == "nt" else ("/dev/tty", "/dev/tty")
+    try:
+        reader = open(names[0], "r", encoding="utf-8", errors="replace")
+    except OSError:
+        yield None
+        return
+    try:
+        writer = open(names[1], "w", encoding="utf-8", errors="replace")
+    except OSError:
+        reader.close()
+        yield None
+        return
+    try:
+        yield reader, writer
+    finally:
+        reader.close()
+        writer.close()
+
+
+def ask_industries(terminal: tuple[IO[str], IO[str]], shipped: Sequence[Industry]) -> Union[Optional[list[str]], str]:
+    """Ask which industries Aughor is for. Returns the answer (None for every industry), or "unanswered"
+    when the terminal closed or no answer matched after three tries — then nothing is recorded, and the
+    next install asks again."""
+    reader, writer = terminal
+    width = len(str(len(shipped)))
+    lines = ["", "  Which industries is Aughor for?"]
+    lines += [f"    {str(n).rjust(width)}  {industry.name}" for n, industry in enumerate(shipped, 1)]
+    lines += ["  Type numbers or names, separated by commas. Press Enter for all of them: each",
+              "  connection's industry is then detected. Type none to use only what every industry shares.",
+              "  You can change this later in Settings > Organization, or with: aughor industries", ""]
+    writer.write("\n".join(lines))
+    for _attempt in range(_ASK_ATTEMPTS):
+        writer.write("  Industries: ")
+        writer.flush()
+        line = reader.readline()
+        if not line:
+            writer.write("\n")
+            writer.flush()
+            return "unanswered"
+        try:
+            chosen = parse_industries(line, shipped)
+        except ValueError as exc:
+            writer.write(f"  {exc} Use the numbers above, or press Enter for all.\n")
+            continue
+        writer.write("\n")
+        writer.flush()
+        return chosen
+    writer.write("\n")
+    writer.flush()
+    return "unanswered"
+
+
+def write_industries(path: Path, chosen: Optional[Sequence[str]]) -> None:
+    """The file the API reads — aughor/packs/industry_choice.py's shape."""
+    _write_json(path, {"industries": None if chosen is None else sorted(chosen), "source": "installer",
+                       "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+
+
+def choose_industries(root: Path, steps: Steps, given: Optional[str] = None) -> None:
+    """Step 0. `given` (--industries, else AUGHOR_INDUSTRIES) answers without asking; an answer already
+    recorded is kept; otherwise the terminal is asked, once. With no terminal nothing is asked and nothing
+    is recorded, which keeps every industry (§6 item 21, answer 1)."""
+    shipped = shipped_industries(root)
+    if not shipped:
+        return
+    path = industries_file(root)
+    if given is not None:
+        try:
+            chosen = parse_industries(given, shipped)
+        except ValueError as exc:
+            raise InstallError(str(exc), hint="Industries are: " + ", ".join(i.id for i in shipped)
+                               + " — or all, or none.") from None
+        write_industries(path, chosen)
+        steps.done(f"Industries: {describe_industries(chosen, shipped)}")
+        return
+    recorded = _read_json(path)
+    if recorded is not None and "industries" in recorded:
+        value = recorded["industries"]
+        chosen_now = value if isinstance(value, list) else None
+        steps.up_to_date(f"Industries: {describe_industries(chosen_now, shipped)}")
+        return
+    with _terminal() as terminal:
+        if terminal is None:
+            return
+        answer = ask_industries(terminal, shipped)
+    if answer == "unanswered":
+        steps.line("Industries: not chosen, so every industry stays available. The next install asks again.")
+        return
+    write_industries(path, answer)
+    steps.done(f"Industries: {describe_industries(answer, shipped)}")
+
+
+def _without_option(args: Sequence[str], option: str) -> list[str]:
+    """`args` with `option VALUE` and `option=VALUE` removed — for an option `aughor up` does not take."""
+    kept: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg == option:
+            skip = True
+        elif not arg.startswith(option + "="):
+            kept.append(arg)
+    return kept
 
 
 # ── 1. Python dependencies ───────────────────────────────────────────────────────
@@ -973,6 +1183,9 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--web-only", action="store_true", help="start only the web app")
     parser.add_argument("--no-browser", action="store_true", help="don't open the web app in a browser")
     parser.add_argument("--verbose", "-v", action="store_true", help="show everything the tools print")
+    parser.add_argument("--industries", metavar="IDS", default=None,
+                        help="industry packages to use, comma-separated (retail,saas), or all, or none; "
+                             "without it, the installer asks once (AUGHOR_INDUSTRIES works too)")
     return parser
 
 
@@ -988,6 +1201,8 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         if not ((root / "pyproject.toml").is_file() and (root / "web" / "package.json").is_file()):
             raise InstallError(f"{root} is not an Aughor checkout.",
                                hint="Run the installer from the folder Aughor was cloned into.")
+        choose_industries(root, steps, options.industries if options.industries is not None
+                          else os.environ.get("AUGHOR_INDUSTRIES"))
         sync_python(root, steps)
         if not options.api_only:
             prepare_web(root, steps, api_port=options.api_port, build=not options.dev)
@@ -1006,7 +1221,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         steps.line(start_command_hint())
         steps.line()
         return 0
-    return _hand_off(root, [arg for arg in args if arg != "--no-start"])
+    return _hand_off(root, [arg for arg in _without_option(args, "--industries") if arg != "--no-start"])
 
 
 if __name__ == "__main__":
