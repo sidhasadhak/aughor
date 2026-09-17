@@ -525,11 +525,48 @@ def describe_industries(chosen: Optional[Sequence[str]], shipped: Sequence[Indus
     return ", ".join(names.get(i, i) for i in chosen)
 
 
+def _windows() -> bool:
+    return os.name == "nt"
+
+
+def _unattended() -> bool:
+    """A CI job: nobody is at the terminal, whatever the runner attached. GitHub Actions, GitLab, CircleCI,
+    Buildkite and most others set CI; Azure Pipelines sets TF_BUILD."""
+    return any(os.environ.get(name, "").strip().lower() not in ("", "0", "false") for name in ("CI", "TF_BUILD"))
+
+
+def _console_window() -> bool:
+    """Whether this Windows process's console has a window someone could type into. GitHub's Windows
+    runner starts each step with a console but no window, and there CONIN$ opens fine — then a read waits
+    for a key nobody can press (measured on PR #518: both Windows install jobs sat at the question until
+    the step's time limit). Windows Terminal and VS Code report a window too."""
+    try:
+        import ctypes
+
+        return bool(ctypes.windll.kernel32.GetConsoleWindow())  # type: ignore[attr-defined]
+    except (AttributeError, OSError):
+        return False
+
+
+def _terminal_names() -> Optional[tuple[str, str]]:
+    """Where a person could answer — (read, write) — or None when nobody can: a CI job, or a Windows
+    console without a window."""
+    if _unattended():
+        return None
+    if _windows():
+        return ("CONIN$", "CONOUT$") if _console_window() else None
+    return ("/dev/tty", "/dev/tty")
+
+
 @contextmanager
 def _terminal() -> Iterator[Optional[tuple[IO[str], IO[str]]]]:
     """The person's terminal, even when stdin is not: under `curl | sh` stdin is the rest of the script.
-    /dev/tty, or on Windows the console. None where there is no terminal — CI, a container build, a pipe."""
-    names = ("CONIN$", "CONOUT$") if os.name == "nt" else ("/dev/tty", "/dev/tty")
+    /dev/tty, or on Windows the console. None where nobody can answer — CI, a container build, a pipe, a
+    console without a window."""
+    names = _terminal_names()
+    if names is None:
+        yield None
+        return
     try:
         reader = open(names[0], "r", encoding="utf-8", errors="replace")
     except OSError:

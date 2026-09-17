@@ -721,6 +721,28 @@ def test_three_wrong_answers_or_a_closed_terminal_record_nothing(two_industries,
         assert "The next install asks again." in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("ci, windows, window, names", [
+    ("true", False, False, None),                       # a CI job never waits for a person
+    ("1", True, True, None),
+    ("", True, False, None),                            # GitHub's Windows runner: a console, no window (PR #518)
+    ("", True, True, ("CONIN$", "CONOUT$")),
+    ("false", False, False, ("/dev/tty", "/dev/tty")),
+    ("", False, False, ("/dev/tty", "/dev/tty")),
+])
+def test_the_question_is_asked_only_where_a_person_can_answer(monkeypatch, ci, windows, window, names):
+    monkeypatch.setenv("CI", ci)
+    monkeypatch.delenv("TF_BUILD", raising=False)
+    monkeypatch.setattr(installer, "_windows", lambda: windows)
+    monkeypatch.setattr(installer, "_console_window", lambda: window)
+    assert installer._terminal_names() == names
+
+
+def test_azure_pipelines_counts_as_unattended(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("TF_BUILD", "True")
+    assert installer._terminal_names() is None
+
+
 def test_without_a_terminal_nothing_is_asked_or_recorded(two_industries, capsys):
     installer.choose_industries(Path.cwd(), installer.Steps())
     assert _recorded() == "nothing"
