@@ -5746,6 +5746,55 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   > (claim-type), 6 (disagreement asks the owner), 7 (noise band — the router's dedupe is the start); the receipt
   > line ON the departing message (law 8 is ledger-side only so far); a departures screen (the doors serve JSON;
   > the runs rail already shows a held step's reason); auto-graduation's outcome window (HB-3's ground).
+  > **REMAINDER BUILT 2026-09-17** (the user: *"Go for the HB-2 remainder first"*; branch `claude/hb-2-remainder`).
+  > **Every way out asks the gate.** Monitor alerts, scheduled briefings, agent alerts and a person's Share and
+  > Execute left ungated before; now every call to a message transport (`fire_action`, `post_as_bot`) asks the
+  > gate in the same function or is excused by name with its reason (`UNGATED_BY_DESIGN`: the two inbox accepts —
+  > a person reviewed that exact send — and the Action Hub's fixed `[TEST]` payload). Held structurally:
+  > `test_departure_every_exit_gated.py` walks the syntax tree of every `aughor/` module, so a send added later
+  > that forgets the gate is red, and an exemption whose call site is gone is red too.
+  > **The laws, each deterministic and recorded per guard** (`govern/departure.py`; the measurements they read
+  > come from `govern/departure_basis.py`, no model anywhere):
+  > law 1 re-measures — every magnitude the text states must be in the measurement it departs on (an analysis's
+  > kept result rows, a promise's stamp scoped to exactly that promise, a finding's query re-run), re-executed when
+  > older than 30 minutes, and a magnitude with no measurement behind it holds; grounding is precision-aware
+  > (`numeral_matches_measure`: a number written in full claims its last significant digit — the finding guard's 2%
+  > let "99,441" pass as 1.6% from the stamped 101,033 kept lines) · law 2 holds a well-known KPI stated with a
+  > number and no approved metric behind it, a draft metric, or an object not declared and measured on the
+  > connection; a monitor's or alert rule's own declaration defines what it measured, and a monitor's catalog
+  > metric is judged directly (`metric:<name>`) · law 4 holds a governed metric whose data breaches its declared
+  > SLA and states the as-of everywhere one is known (no SLA declared → nothing to judge, never an invented bar) ·
+  > law 5 lets a causal or associational sentence depart only on the licence its analysis recorded
+  > (`agent/claim_type.py`'s CLAIM LICENCE; a recorded adversarial refutation withdraws a causal one) and a
+  > forecast never (`sentence_claims`, negation-aware, forecast phrasing wider than the report checks' on purpose)
+  > · law 6: an analysis that PAUSED on divergent readings used to starve its send into a skip nobody was told about;
+  > the runner now reports the pause, the send is held for the metric's routable owner (`held_owner`) with both
+  > readings and their SQL, and `POST /departures/{id}/answer` crystallizes the choice in the ambiguity ledger at
+  > user authority, so the next run binds it — asked once · law 7: an unattended automation never sends the same
+  > message to the same place twice in 7 days, and a repeat whose every number moved less than 5% is noise; alerts
+  > keep their own anti-flap policy, a scheduled briefing speaks by schedule, a person chose · law 8: the receipt
+  > (source · definition · as-of · the guards that ran · the ledger row, linked when `AUGHOR_WEB_URL` is set)
+  > travels on the Slack post, in the webhook's `context` and on the Jira ticket, and is stored verbatim on the row.
+  > A scheduled briefing is judged line by line first: causal-graph relationships never depart, a finding line
+  > with an inferred KPI is cut, the rest leave with a "N lines held at departure" section and receipt count.
+  > **Live anchor, in the ratchet corpus verbatim:** the 2026-09-16 dispatch watch departed "10,423 of 99,441 order
+  > lines (9.35%)"; the promise it was about counted 111,456 lines — 99,441 is Olist's order count (the delivery
+  > promise's objects). Law 1 now holds it; the same message with 111,456 departs. **Calibrated before shipping on
+  > real traffic:** two real theLook briefing summaries ground every magnitude in their own rows and classify
+  > wholly descriptive, so ordinary sends are not held.
+  > **The departures screen** — an Agent Ops layer beside the Hub (`DeparturesPanel.tsx`, `lib/departures.ts`):
+  > every departure, its state, the reason in a line, and on Review the full record (reasons, each guard's outcome
+  > in the order it ran, the message, the receipt it carried or would have); a declarer's accept / needs
+  > correction / reject and an owner's reading choice live there; the layer's badge counts what a person owes;
+  > a receipt's `?departure=<id>` link opens its row. Share passes its connection and says "Not sent — why";
+  > Execute stopped reporting "✓ sent" for a send the gate kept in. Driven live on an isolated scratch stack
+  > seeded through the real gate: eight departures, the owner's answer remembered (`GET /learning/resolutions`
+  > showed the reading and its SQL at source `user`), the table overflow found and fixed (1,233px in a 1,160px
+  > pane). **HB-3 had already taken** auto-graduation's outcome window (the structural unlanded falsifier), so it
+  > is not open here. **Still open:** the live drive on the deployment once merged (the Olist watch will HOLD —
+  > its literal message states the order count); marking a verdict is not enforced to the addressee while identity
+  > is off (HB-1's posture); a deep run records no falsifier SURVIVAL for causal claims beyond its licence;
+  > "wrong" said in a Slack thread does not yet return as a correction.
 - **HB-3 · promises and findings as triggers; outcomes and the manifest's first links.** `promise_breached` and
   `finding_created` beside the five triggers; a proposed ticket and a Slack thread filed on the object they are about;
   an outcome column (ticket closed, number recovered). *The first live receipt, end to end:* Olist's dispatch promise
@@ -6211,7 +6260,9 @@ ARC HB  ✅ ADOPTED 2026-09-16 (§3.18; §6 item 24 (a)(b)(d) stamped on the use
         triggers + outcomes, first receipt on Olist's dispatch promise → HB-4 the provenance envelope
         + one ranker (a harness arm per source kind) → HB-5 arrivals (Slack sentences → notes ·
         Jira/Confluence through MCP · email, keyed on the user) → HB-6 the map, packs ship groups.
-        The measure is landings, not doors
+        The measure is landings, not doors. ✅ HB-1…HB-6 first slices merged (#513 · #515 · #516);
+        HB-2 REMAINDER built 2026-09-17 — every outbound transport gated (AST-held), laws 1·2·4·5·6·7
+        and the receipt on the message, the departures screen
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
         for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
