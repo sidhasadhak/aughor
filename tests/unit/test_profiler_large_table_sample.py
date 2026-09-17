@@ -67,13 +67,24 @@ def large_flights(tmp_path_factory):
     db = open_connection("duckdb", str(path), connection_id="t")
     statements: list[tuple[str, str]] = []
     run = db.execute
+    run_bounded = db.execute_bounded
 
     def recording(label, sql):
         result = run(label, sql)
         statements.append((sql, result.error or ""))
         return result
 
+    # Both entry points, because the profiler reads through both: the entity value
+    # sample and the dense date range go through `execute_bounded` (the bounded reads),
+    # and a recorder wrapping only `execute` would report those statements as never
+    # issued — which is exactly the miss `_SHAPES` exists to catch.
+    def recording_bounded(label, sql, max_rows):
+        result = run_bounded(label, sql, max_rows)
+        statements.append((sql, result.error or ""))
+        return result
+
     db.execute = recording
+    db.execute_bounded = recording_bounded
     try:
         tables, columns = profile_connection(db, ["flights"], {"flights": set()})
         build_column_profiles(
@@ -139,7 +150,10 @@ class _Recorder:
 
     def execute(self, label, sql):
         self.seen.append(sql)
-        return SimpleNamespace(error=None, rows=[], columns=[])
+        return SimpleNamespace(error=None, rows=[], columns=[], row_count=0)
+
+    def execute_bounded(self, label, sql, max_rows):
+        return self.execute(label, sql)
 
 
 def _received_by(dialect: str) -> list[str]:
