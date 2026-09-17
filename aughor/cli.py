@@ -778,6 +778,17 @@ def _print_ada_report(report: dict, elapsed: float):
         for g in report["data_gaps"]:
             console.print(f"  [dim]✗ {g}[/dim]")
 
+    # Rule out first (IP-1) — the known ways the stated move can be the data, before the actions
+    rule_outs = report.get("rule_outs") or {}
+    if rule_outs.get("items"):
+        from rich.markup import escape
+        console.print("\n[bold]Rule out first[/bold]")
+        console.print(f"  [dim]{escape(rule_outs.get('lead') or 'Not checked against your data.')}[/dim]")
+        for item in rule_outs["items"]:
+            console.print(f"  • {escape(item.get('cause', ''))}")
+            if item.get("fix"):
+                console.print(f"    [dim]Fix: {escape(item['fix'])}[/dim]")
+
     # Recommendations
     recs = report.get("recommendations") or []
     if recs:
@@ -1109,6 +1120,58 @@ def packs_demote(pack_id: str, packs_dir: Path, status: str, actor: str):
         console.print(f"[red]✗[/red] {exc}")
         sys.exit(1)
     console.print(f"[yellow]✓ {status}[/yellow] {pack_id}")
+
+
+@cli.command()
+@click.argument("choice", nargs=-1)
+def industries(choice: tuple):
+    """Which industry packages Aughor reads (IP-2) — the question the installer asked.
+
+    With no argument, lists the shipped industries and the current choice. `aughor industries retail saas`
+    keeps only those (numbers from the list and package names work too), `aughor industries all` keeps
+    every one with each connection's industry detected, and `aughor industries none` keeps only the
+    knowledge every industry shares. Settings > Organization changes the same choice.
+    """
+    from aughor.business_profile.metric_kb import refresh_profiles_for_choice
+    from aughor.installer import Industry, parse_industries
+    from aughor.packs.industry_choice import choice_path, describe, read_choice, shipped_industries, write_choice
+    from aughor.packs.knowledge import packages
+
+    shipped = shipped_industries()
+    current = read_choice()
+    if not choice:
+        if not shipped:
+            console.print("[yellow]No industry packages ship with this checkout.[/yellow]")
+            return
+        width = len(str(len(shipped)))
+        for number, industry in enumerate(shipped, 1):
+            kept = current.industries is None or industry.id in current.industries
+            mark = "[green]✓[/green]" if kept else "[dim]·[/dim]"
+            console.print(f"  {mark} {str(number).rjust(width)}  {industry.name}  [dim]{industry.id}[/dim]")
+        console.print(f"\nIndustries: {describe(current)}"
+                      + (f"  [dim]({current.source}, {current.updated_at})[/dim]" if current.source else ""))
+        if current.ignored:
+            console.print(f"[yellow]Ignored — no package carries: {', '.join(current.ignored)}[/yellow]")
+        if current.problem:
+            console.print(f"[yellow]{current.problem}[/yellow]")
+        console.print(f"[dim]{choice_path()}[/dim]")
+        return
+
+    folders = {p.industry: p.pack_id for p in packages() if p.layer == "industry" and p.industry}
+    options = [Industry(id=i.id, name=i.name, pack=folders.get(i.id, i.id)) for i in shipped]
+    try:
+        chosen = parse_industries(" ".join(choice), options)
+        after = write_choice(chosen, source="cli")
+    except ValueError as exc:   # an answer no package matches (UnknownIndustry is one too)
+        console.print(f"[red]✗[/red] {exc} Industries are: {', '.join(i.id for i in shipped)} — or all, or none.")
+        sys.exit(1)
+    refreshed = 0
+    if current.industries != after.industries:
+        refreshed = refresh_profiles_for_choice(current.industries, after.industries)
+    console.print(f"[green]✓[/green] Industries: {describe(after)}")
+    if refreshed:
+        console.print(f"[dim]{refreshed} business profile(s) resolved to a different package and will be "
+                      f"rebuilt the next time their data is used.[/dim]")
 
 
 @cli.group()

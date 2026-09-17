@@ -5411,7 +5411,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 BUILT** 2026-09-17 on `claude/ip-1-package-seam`, local)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5455,6 +5455,98 @@ of the live `data/playbook.json` (nothing written, no model called):
   once on the commit, 9,998 passed, 5 skipped. **Merged** as #503 (squash `aebe5feb`, 2026-09-14) after #502, which edits the same
   retriever call: the explorer's read passes both `learned_rates=False` and the industry scope.
 
+**IP-1 · The package seam — BUILT 2026-09-17** on `claude/ip-1-package-seam` (`8697d713` the seam, then the rule-outs
+and the top-up), local, nothing pushed.
+- **The seam.** The KB left `data/kb` for eleven packages, content untouched (69 `git mv` renames): six industry packages
+  (airline, food-delivery, logistics, manufacturing, retail, saas — each its curated `industry.json` and its deep KB
+  files), four functions every industry reads (finance, marketing, product, customer) and `analytics-base`. `pack.yaml`
+  declares `layer` and `industry`. `aughor/packs/knowledge.py` is the one reader that replaced the four loaders (the
+  seeder, the profiler, the industry KB, the vector retriever): an entry's industry is its package's, authored wins an
+  id, a deprecated package is not read, a file or an industry carried twice is a named problem, UTF-8 everywhere.
+  **Moved unchanged, measured:** `tests/fixtures/ip1_kb_parity.json` was captured from the pre-move loaders on
+  `4c4358b6`, and the parity tests reproduce all of it through the packages — 878 plays by kind and industry with
+  identical content, 282 retriever entries, the profiler's stems, the six industries, every entry's industry, each
+  industry's vocabulary. The full backend suite on the seam commit: 10,551 passed, 5 skipped.
+- **Data-quality plays reach the Verifier as rule-outs** — the user's call, 2026-09-17, asked twice and answered the
+  same: *"Rule-outs on reports"*. The detection queries are NOT run: they name example tables, and a row back would show
+  that the data has the shape where a pitfall can happen, not that the analysis made the mistake. When a deep analysis
+  reports its metric moving, `Verifier.rule_outs` lists the metric's known inflation causes (it rose) or deflation
+  causes (it fell), each with its fix, and says *"Not checked against your data."* — carried in the data, so no surface
+  can render the causes without it. Deterministic: no model, no query. Three reads (`aughor/playbook/rule_outs.py`):
+  the **direction** is the sign of the report's own `total_change_label`, on a report measured against something; the
+  **metric** is named when a KB entry's title or intent tag ENDS the report's label — a one-word alias must be the
+  whole label, and a bracket restating the measure as a count abstains; the **plays** are the playbook's active
+  data-quality plays for that entry and direction in the connection's industry scope, each listed with its version and
+  receipt and journaled as a `playbook.use`. **Measured on the 202 deep reports stored on the builder's deployment:** 19
+  state a signed move against a comparison; 9 name a KB entry, each the metric reported (GMV ×6, net revenue ×2, gross
+  margin % ×1); the 3 "Total sales (order count)" reports, which a containment match paired with GMV, abstain. Rendered
+  as **Rule out first** between the bottom line and the recommended actions — web, export and CLI. Live on a scratch
+  stack (isolated stores, no model call): the stored GMV report (−€23,173 MoM) lists two deflation causes with fixes.
+- **Existing playbooks receive the 486 checks** (answer 7). A check carries the KB `cause` and `fix`, fingerprinted only
+  when present, so every other play keeps its receipt and version. At startup `top_up_data_quality` adds each check
+  whose stable key (its id without the random suffix) was never in the playbook — a key in the version log whose play
+  is gone was deleted by a person, and stays deleted — and fills an empty cause or fix on a check already there without
+  touching what a person changed; an empty playbook is left to the seed. Measured read-only, the live playbook holds
+  392 plays and no check: it receives 486 on its next start. The playbook screen's status change keeps a check's cause
+  and fix.
+- **Receipts:** `tests/unit/test_ip1_knowledge_resolver.py`, `test_ip1_package_parity.py`, `test_ip1_rule_outs.py`
+  (the count-bracket abstention, the deletion guard, the kept fix and the web note
+  each broken once to prove a test fails), `web/components/brief/RuleOuts.test.tsx`; the full backend
+  suite once on the commit: 10,598 passed, 5 skipped and 2 failed — two import ratchets the change tripped (the top-up
+  read the store's private version-log helpers; the export document, platform code, imported the playbook package).
+  Fixed before landing with a public `store.ever_saved_ids` and the lead sentence carried in the payload, so every
+  surface renders the backend's words. Both ratchets with the rule-out, parity and playbook tests re-ran green (71
+  passed), as did the 15 test files that touch the playbook store, the builder, the export document or the CLI with
+  the vocabulary ratchet (293 passed); vitest 967 passed.
+- **Open:** SQL repair does not read the checks yet (the other half of "data-quality plays the Verifier and SQL
+  repair"); the detection queries wait for IP-3's roles; the one wrong name match measured is "investigation job
+  failure rate" on the platform's own operations data with no industry known, a report that states no signed move.
+
+**IP-2 · Chosen at install — BUILT 2026-09-17** on the same branch, local, nothing pushed. The answer is one file,
+`data/industries.json` (`AUGHOR_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
+installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
+- **What an answer means** (`aughor/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
+  detects each connection's (answer 1); a skipped question is written as `null` so a re-run does not ask again. A list
+  narrows: `metric_kb.load_industry_kbs()` — through which `match_industry`, `industry_id`, `industry_scope`, the
+  vocabulary and the recipes all pass — holds only the chosen packages, so an industry text naming another package
+  resolves to none, and a read that knows nothing about its connection (`industry_scope` None) sees the chosen
+  industries and the shared knowledge, never another industry's (`readable_industries`, used by the playbook read and
+  the rule-outs). An empty list keeps only the shared knowledge — a bank installing today is not handed a retailer's
+  playbook. An id no package carries is refused on write and ignored, with its name, on read; an unreadable file keeps
+  every industry and says why. Written whole and moved into place; re-read when its modification time or size
+  changes, so a choice made in Settings reaches a running API (the vocabulary cache keys on it).
+- **The installer** (`aughor/installer.py`, still standard-library only). Step 0, after the checkout check and before
+  `uv sync`: the six industry packages, read from `packs/*/pack.yaml` without a YAML parser, numbered; the answer
+  takes numbers, ids, folder names or package names, Enter for all, `none`. It asks through `/dev/tty` (the console
+  on Windows), so it works under `curl | sh`, where stdin is the rest of the script; with no terminal nothing is asked
+  and nothing written. `--industries retail,saas` or `AUGHOR_INDUSTRIES` answers ahead; an id no package carries stops
+  the install before anything slow, naming the ids that exist. The option is not handed on to `aughor up`.
+- **Changing it later.** Settings → Organization gains an Industries section (app scope — the choice is
+  deployment-wide): every industry, or only the ticked ones, saved on its own. `aughor industries` lists the packages
+  with the current choice and takes the installer's answers. A change drops only the stored business profiles whose
+  industry now resolves to a different package (`refresh_profiles_for_choice`): a profile keeps the recipes it
+  resolved when built, and re-inferring costs a model call per dataset, so a retail profile is kept when SaaS is
+  added. Settings says how many it dropped.
+- **Live, 2026-09-17, no model call:** the question through a real pseudo-terminal with stdin a pipe, as under
+  `curl | sh` — a wrong answer asked again, `5, saas` recorded as `["retail", "saas"]`; on a scratch stack with isolated
+  stores, Settings → Organization saved retail and SaaS (the API read it back, source `settings`), and `aughor
+  industries` read the same file with both ticked.
+- **Trap:** the test conftest points `AUGHOR_PACKS_DIR` at a copy of the six packages, so every existing installer
+  test would reach the question — and a developer running pytest in a terminal would wait on `/dev/tty`. Every
+  installer test now starts with no terminal and its own choice file; the question's tests script one.
+- **Receipts:** `tests/unit/test_installer.py` (25 new, 73 in all), `tests/unit/test_ip2_industry_choice.py` (14),
+  `web/components/OrgIndustriesSection.test.tsx` (3); `api.gen.ts` regenerated for the two routes; the full backend
+  suite once on the commit: 10,639 passed, 5 skipped, none failed; vitest 970 passed.
+- **Trap, measured on PR #518's first CI run:** GitHub's Windows runner starts each step with a console but no window.
+  `CONIN$` opens there, and the question waited for a key nobody could press — both Windows install jobs sat in
+  `install.cmd --no-start` for 20 minutes, where the last green run took two (macOS and Linux have no terminal to
+  open, and passed). The question is now asked only where a person can answer: never when `CI` or `TF_BUILD` is set,
+  and on Windows only in a console with a window (`GetConsoleWindow`). An unattended run asks nothing and records
+  nothing, which keeps every industry.
+- **Open:** a person answering in a Windows console is untested here (no Windows machine; CI now skips the question
+  by design); the profile inference prompt does not name the chosen industries — the narrowing is at resolution,
+  deterministic, and a prompt change waits for a measured reason.
+
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
 `metrics/*.yaml` (formula, grain, sane range with its source, anti-patterns), `playbooks/*.yaml` (diagnostic,
@@ -5496,7 +5588,8 @@ draft → active.
 - **IP-1 the package seam.** Industry ids on packs; packs load plays and KB entries through one resolver that replaces
   the four hard-coded `data/kb` loaders; the six industries and the functions move into packages unchanged;
   data-quality plays reach the Verifier. Only then do existing playbooks receive the 486 plays (answer 7: not yet).
-- **IP-2 chosen at install**, as above.
+  ✅ BUILT 2026-09-17 (above): the Verifier's rule-outs on deep reports, then the top-up.
+- **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
 - **IP-4 the tiers.**
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
@@ -6267,9 +6360,14 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
         whole-word industry matching, definitional answers read plays, "proven" only with an
-        outcome. Next: IP-1 the package seam → IP-2 chosen at install → IP-3 the generator
-        (airline as reference) → IP-4 tier 1: banking & lending first, then payments & fintech,
-        then insurance
+        outcome. IP-1 ✅ BUILT 2026-09-17 (local): the KB in eleven packages behind one resolver,
+        moved unchanged (measured); data-quality plays as the Verifier's rule-outs on deep reports;
+        existing playbooks topped up with the 486 checks, a deleted one never resurrected.
+        IP-2 ✅ BUILT 2026-09-17 (local): the installer asks once which industries (through the
+        terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
+        narrows every industry read; Settings → Organization and `aughor industries` change it.
+        Next: IP-3 the generator (airline as reference) → IP-4 tier 1: banking & lending first,
+        then payments & fintech, then insurance
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -6928,7 +7026,8 @@ the browser** · **measure the premise before building.**
 21. ✅ **DECIDED 2026-09-14 (the user) — Arc IP (§3.17): nine answers that shape the industry packages.** Put as the
     plan's open calls, each with a recommendation, and answered over two turns.
     **(1) Skipping the install question** — every shipped package stays available and the industry is detected per
-    connection. *As recommended.*
+    connection. *As recommended.* **Built 2026-09-17 (IP-2):** Enter, no terminal, or no file all keep every package;
+    a skip is recorded as `null` so the installer does not ask again.
     **(2) Where packages live** — in the repo; no registry. *As recommended.*
     **(3) Which industry goes first** — left to the builder: **banking & lending**, then payments & fintech, then
     insurance.
@@ -6938,7 +7037,10 @@ the browser** · **measure the premise before building.**
     **(6) A package's ontology claims** — measured on every connection of its industry, not only where a person bound
     the pack. *As recommended.*
     **(7) Existing playbooks and the 486 new plays** — not yet: they arrive when IP-1 routes data-quality plays to the
-    Verifier. *As recommended.*
+    Verifier. *As recommended.* **Delivered 2026-09-17 by IP-1:** the route is rule-outs on deep reports (the user's
+    call when asked how the checks reach the Verifier — not repair hints measured first, not running the detection
+    queries where tables match, not carry-only), and existing playbooks receive the 486 at startup, once, never
+    resurrecting a check a person deleted.
     **(8) Ablation spend** — gate 5 for the reference package; later packages only where gate 4 is ambiguous. *As
     recommended.*
     **(9) Record the arc here** — yes: §3.17, this item and the §5 band.

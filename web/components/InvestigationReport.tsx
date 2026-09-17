@@ -30,10 +30,11 @@ import {
   BriefFigure,
   renderEmphasis,
 } from "@/components/brief/Brief";
+import { RuleOutsSection } from "@/components/brief/RuleOuts";
 import { TrendStrip } from "@/components/brief/Sparkline";
 import { Icon } from "@/components/ui/icon";
 import { QuestionFrame } from "@/components/QuestionFrame";
-import type { OntologyFrame } from "@/lib/types";
+import type { OntologyFrame, RuleOuts } from "@/lib/types";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -127,6 +128,8 @@ export interface AnswerReport {
   // A short closing "bottom line" that lands the answer at the end of the report (before
   // recommendations). Authored by synthesis; older reports omit it.
   closing_summary?: string | null;
+  /** IP-1 — the Verifier's rule-outs for the move this report states; absent when it states none. */
+  rule_outs?: RuleOuts | null;
 }
 
 // ── Collapsible data table — quiet, only when a finding has no chart ───────────
@@ -471,6 +474,11 @@ export function InvestigationReportView({
           <BriefProse text={report.closing_summary} />
         </BriefSection>
       )}
+
+      {/* Rule out first (IP-1) — before the actions, the known ways this move can be the data
+          rather than the business. Backend-derived, never model-written; absent when the report
+          states no move or its metric names no known check. */}
+      <RuleOutsSection ruleOuts={report.rule_outs} />
 
       {/* Clean-output policy: the Methodology & details disclosure (confidence factors,
           attribution, data gaps, question intake, the SQL Sources list) is gone — a

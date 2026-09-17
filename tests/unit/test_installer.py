@@ -9,12 +9,14 @@ from __future__ import annotations
 import ast
 import hashlib
 import io
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tarfile
 import zipfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -22,6 +24,21 @@ import pytest
 from aughor import installer
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+@contextmanager
+def _no_terminal():
+    yield None
+
+
+@pytest.fixture(autouse=True)
+def _no_question_unless_a_test_scripts_one(tmp_path, monkeypatch):
+    """IP-2 — `main()` asks which industries through /dev/tty, and the conftest's packs copy ships six. Run
+    from a terminal, pytest would sit waiting for a person. Every test starts with no terminal and its own
+    choice file; the tests about the question script a terminal of their own."""
+    monkeypatch.setattr(installer, "_terminal", _no_terminal)
+    monkeypatch.setenv("AUGHOR_INDUSTRIES_FILE", str(tmp_path / "state" / "industries.json"))
+    monkeypatch.delenv("AUGHOR_INDUSTRIES", raising=False)
 
 
 @pytest.fixture(autouse=True)
@@ -567,3 +584,195 @@ def test_the_installer_leaves_the_aughor_command_behind(tmp_path, monkeypatch, c
     assert installer.main(["--no-start"]) == 0
     assert placed == [tmp_path]
     assert "Next time, start Aughor with:  aughor" in capsys.readouterr().out
+
+
+# ── Which industries (IP-2) ──────────────────────────────────────────────────────
+
+def _industry_pack(packs: Path, folder: str, industry: str, name: str, *, status: str = "draft",
+                   curated: bool = True) -> None:
+    d = packs / folder
+    d.mkdir(parents=True)
+    (d / "pack.yaml").write_text(f"id: {folder}\nname: {name}\ndescription: >\n  A package.\n"
+                                 f"layer: industry\nindustry: {industry}\nstatus: {status}\n")
+    if curated:
+        (d / "industry.json").write_text("{}")
+
+
+@pytest.fixture()
+def two_industries(tmp_path, monkeypatch):
+    packs = tmp_path / "packs"
+    _industry_pack(packs, "food-delivery", "food_delivery", "Food delivery")
+    _industry_pack(packs, "retail", "retail", "Retail and e-commerce")
+    monkeypatch.setenv("AUGHOR_PACKS_DIR", str(packs))
+    (tmp_path / "checkout").mkdir()
+    monkeypatch.chdir(_checkout(tmp_path / "checkout"))
+    return installer.shipped_industries(Path.cwd())
+
+
+def _scripted(answers: str, transcript: list):
+    @contextmanager
+    def terminal():
+        reader, writer = io.StringIO(answers), io.StringIO()
+        try:
+            yield reader, writer
+        finally:
+            transcript.append(writer.getvalue())
+    return terminal
+
+
+def _recorded() -> object:
+    path = Path(os.environ["AUGHOR_INDUSTRIES_FILE"])
+    return json.loads(path.read_text(encoding="utf-8"))["industries"] if path.exists() else "nothing"
+
+
+def test_the_installer_offers_the_industries_the_api_ships():
+    from aughor.packs.industry_choice import shipped_industries
+
+    offered = installer.shipped_industries(REPO)
+    assert [(i.id, i.name) for i in offered] == [(i.id, i.name) for i in shipped_industries()]
+    assert len(offered) == 6
+
+
+def test_the_installer_writes_the_choice_where_and_how_the_api_reads_it(tmp_path, monkeypatch):
+    from aughor.packs import industry_choice
+
+    monkeypatch.delenv("AUGHOR_INDUSTRIES_FILE")
+    monkeypatch.delenv("AUGHOR_STATE_DIR", raising=False)
+    assert installer.industries_file(tmp_path) == tmp_path / industry_choice.choice_path()   # data/ in the checkout
+    monkeypatch.setenv("AUGHOR_STATE_DIR", str(tmp_path / "state"))
+    assert installer.industries_file(tmp_path) == industry_choice.choice_path()
+    monkeypatch.setenv("AUGHOR_INDUSTRIES_FILE", str(tmp_path / "elsewhere.json"))
+    assert installer.industries_file(tmp_path) == industry_choice.choice_path()
+
+    installer.write_industries(industry_choice.choice_path(), ["saas", "retail"])
+    choice = industry_choice.read_choice()
+    assert (choice.industries, choice.source) == (("retail", "saas"), "installer")
+
+
+@pytest.mark.parametrize("answer, chosen", [
+    ("", None), ("  ", None), ("all", None), ("ALL", None),
+    ("none", []),
+    ("2", ["retail"]),
+    ("1, 2", ["food_delivery", "retail"]),
+    ("retail food_delivery", ["food_delivery", "retail"]),
+    ("food-delivery", ["food_delivery"]),
+    ("Retail and e-commerce, 1", ["food_delivery", "retail"]),
+])
+def test_an_answer_takes_numbers_ids_folders_and_names(two_industries, answer, chosen):
+    assert installer.parse_industries(answer, two_industries) == chosen
+
+
+@pytest.mark.parametrize("answer", ["3", "banking", "retail, bank"])
+def test_an_answer_that_names_no_industry_is_refused(two_industries, answer):
+    with pytest.raises(ValueError, match="No industry package is called"):
+        installer.parse_industries(answer, two_industries)
+
+
+def test_a_deprecated_or_uncurated_package_is_not_offered(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUGHOR_PACKS_DIR", raising=False)     # the checkout's own packs/ folder
+    packs = tmp_path / "packs"
+    _industry_pack(packs, "airline", "airline", "Airline", status="deprecated")
+    _industry_pack(packs, "rail", "rail", "Rail", curated=False)
+    _industry_pack(packs, "saas", "saas", "SaaS")
+    (packs / "finance").mkdir()
+    (packs / "finance" / "pack.yaml").write_text("id: finance\nlayer: function\n")
+    assert [i.id for i in installer.shipped_industries(tmp_path)] == ["saas"]
+
+
+def test_the_question_comes_before_the_slow_steps_and_is_recorded(two_industries, monkeypatch, capsys):
+    transcript: list = []
+    order: list = []
+    monkeypatch.setattr(installer, "_terminal", _scripted("2\n", transcript))
+    monkeypatch.setattr(installer, "sync_python", lambda root, steps: order.append(("python", _recorded())))
+    monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: order.append("web"))
+    assert installer.main(["--no-start"]) == 0
+    assert order == [("python", ["retail"]), "web"]
+    assert "Which industries is Aughor for?" in transcript[0] and "2  Retail and e-commerce" in transcript[0]
+    assert "Industries: Retail and e-commerce" in capsys.readouterr().out
+
+
+def test_a_recorded_answer_is_not_asked_again(two_industries, monkeypatch, capsys):
+    installer.write_industries(Path(os.environ["AUGHOR_INDUSTRIES_FILE"]), ["food_delivery"])
+    monkeypatch.setattr(installer, "_terminal", lambda: pytest.fail("an answered question is not asked again"))
+    installer.choose_industries(Path.cwd(), installer.Steps())
+    assert "Industries: Food delivery" in capsys.readouterr().out
+
+
+def test_enter_keeps_every_industry_and_records_that(two_industries, monkeypatch, capsys):
+    monkeypatch.setattr(installer, "_terminal", _scripted("\n", []))
+    installer.choose_industries(Path.cwd(), installer.Steps())
+    assert _recorded() is None
+    assert "Industries: every industry, detected per connection" in capsys.readouterr().out
+
+
+def test_a_wrong_answer_is_asked_again(two_industries, monkeypatch):
+    transcript: list = []
+    monkeypatch.setattr(installer, "_terminal", _scripted("banking\nretail\n", transcript))
+    installer.choose_industries(Path.cwd(), installer.Steps())
+    assert _recorded() == ["retail"]
+    assert "No industry package is called banking." in transcript[0]
+
+
+def test_three_wrong_answers_or_a_closed_terminal_record_nothing(two_industries, monkeypatch, capsys):
+    for answers in ("x\ny\nz\nretail\n", ""):
+        monkeypatch.setattr(installer, "_terminal", _scripted(answers, []))
+        installer.choose_industries(Path.cwd(), installer.Steps())
+        assert _recorded() == "nothing"
+        assert "The next install asks again." in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("ci, windows, window, names", [
+    ("true", False, False, None),                       # a CI job never waits for a person
+    ("1", True, True, None),
+    ("", True, False, None),                            # GitHub's Windows runner: a console, no window (PR #518)
+    ("", True, True, ("CONIN$", "CONOUT$")),
+    ("false", False, False, ("/dev/tty", "/dev/tty")),
+    ("", False, False, ("/dev/tty", "/dev/tty")),
+])
+def test_the_question_is_asked_only_where_a_person_can_answer(monkeypatch, ci, windows, window, names):
+    monkeypatch.setenv("CI", ci)
+    monkeypatch.delenv("TF_BUILD", raising=False)
+    monkeypatch.setattr(installer, "_windows", lambda: windows)
+    monkeypatch.setattr(installer, "_console_window", lambda: window)
+    assert installer._terminal_names() == names
+
+
+def test_azure_pipelines_counts_as_unattended(monkeypatch):
+    monkeypatch.delenv("CI", raising=False)
+    monkeypatch.setenv("TF_BUILD", "True")
+    assert installer._terminal_names() is None
+
+
+def test_without_a_terminal_nothing_is_asked_or_recorded(two_industries, capsys):
+    installer.choose_industries(Path.cwd(), installer.Steps())
+    assert _recorded() == "nothing"
+    assert "Industries" not in capsys.readouterr().out
+
+
+def test_the_flag_or_the_environment_answers_without_asking(two_industries, monkeypatch):
+    monkeypatch.setattr(installer, "_terminal", lambda: pytest.fail("a given answer is not asked for"))
+    monkeypatch.setattr(installer, "sync_python", lambda root, steps: None)
+    monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
+    assert installer.main(["--no-start", "--industries", "retail,food-delivery"]) == 0
+    assert _recorded() == ["food_delivery", "retail"]
+    monkeypatch.setenv("AUGHOR_INDUSTRIES", "none")
+    assert installer.main(["--no-start"]) == 0
+    assert _recorded() == []
+
+
+def test_an_unknown_industry_stops_the_install_before_anything_slow(two_industries, monkeypatch, capsys):
+    monkeypatch.setattr(installer, "sync_python", lambda *a: pytest.fail("nothing slow runs after a refusal"))
+    assert installer.main(["--no-start", "--industries", "banking"]) == 1
+    out = capsys.readouterr().out
+    assert "No industry package is called banking." in out and "food_delivery, retail" in out
+    assert _recorded() == "nothing"
+
+
+def test_the_industries_option_is_not_handed_to_aughor_up(two_industries, monkeypatch):
+    monkeypatch.setattr(installer, "sync_python", lambda root, steps: None)
+    monkeypatch.setattr(installer, "prepare_web", lambda root, steps, **kw: None)
+    handed: dict = {}
+    monkeypatch.setattr(installer, "_hand_off", lambda root, args: handed.update(args=list(args)) or 0)
+    assert installer.main(["--industries", "retail", "--no-browser", "--industries=all"]) == 0
+    assert handed["args"] == ["--no-browser"]
+

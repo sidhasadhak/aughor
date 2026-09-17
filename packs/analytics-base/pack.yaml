@@ -1,0 +1,18 @@
+id: analytics-base
+name: Analytics base
+version: 1
+description: >
+  What every industry's analysis shares: SQL and statistical patterns, data-quality correctness patterns, and cross-industry operations recipes.
+layer: base
+owner_team: Platform
+domains:
+  - sql patterns
+  - statistics
+  - data quality
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").

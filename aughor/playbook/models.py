@@ -23,6 +23,11 @@ class PlaybookEntry(BaseModel):
     evidence_sources: list[str] = Field(default_factory=list)  # inv_ids where this worked
     historical_success_rate: float = 0.0        # 0–1; updated by outcomes
     status: Literal["active", "deprecated", "draft"] = "draft"
+    # ── A data-quality play's own words (IP-1) ─────────────────────────────────
+    # The KB cause it checks and the KB's fix for it, verbatim — what a deep analysis lists as a
+    # rule-out when this play's metric moves in its direction. "" on every other play.
+    cause: str = ""
+    fix: str = ""
     # ── Governed-Dive provenance (set by the store; do not hand-edit) ──────────
     version: int = 1                            # bumps each time the play's CONTENT changes
     receipt: str = ""                           # content fingerprint pinning THIS version

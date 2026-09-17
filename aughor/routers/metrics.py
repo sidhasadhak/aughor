@@ -430,6 +430,10 @@ def update_playbook_entry(entry_id: str, req: PlaybookEntryRequest):
         id=entry_id,
         evidence_sources=existing.evidence_sources,
         historical_success_rate=existing.historical_success_rate,
+        # A data-quality play's cause and fix are not in the request: the playbook screen PUTs the
+        # play back to change its status, and rebuilding from the request alone would erase them.
+        cause=existing.cause,
+        fix=existing.fix,
         **req.model_dump(),
     )
     save_entry(updated)

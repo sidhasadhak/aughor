@@ -201,6 +201,45 @@ export async function updateOrgSettings(settings: OrgSettings): Promise<OrgSetti
   return res.json();
 }
 
+// ── Industries chosen at install (IP-2) — which industry packages this deployment reads ────
+export interface ShippedIndustry {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+}
+
+export interface IndustryChoice {
+  /** null keeps every industry, each connection's detected on its own; a list keeps those (none too). */
+  industries: string[] | null;
+  source: string;
+  updated_at: string;
+  ignored: string[];
+  problem: string;
+  shipped: ShippedIndustry[];
+  /** Business profiles this change dropped because their industry now resolves differently. */
+  profiles_refreshed: number;
+}
+
+export async function getIndustryChoice(): Promise<IndustryChoice> {
+  const res = await fetch(`${getApiBase()}/org-settings/industries`);
+  if (!res.ok) throw new Error("Failed to load the industry choice");
+  return res.json();
+}
+
+export async function updateIndustryChoice(industries: string[] | null): Promise<IndustryChoice> {
+  const res = await fetch(`${getApiBase()}/org-settings/industries`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ industries }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.detail ?? "Failed to save the industry choice");
+  }
+  return res.json();
+}
+
 // ── Org-scoped BYOK (CI-5b) — the org's own provider keys + per-role models ────
 export interface OrgLLMConfig {
   configured: boolean;
@@ -6267,6 +6306,13 @@ export interface PackSummary {
   errors?: string[];
   warnings?: string[];
   error?: string;
+  /** HB-6 — whether the pack ships an organisation function group to install. */
+  function?: boolean;
+  /** IP-1 — the knowledge layer a package carries ("industry" · "function" · "base"), or "". */
+  layer?: string;
+  /** IP-1 — the industry id an industry package carries ("retail", "food_delivery"), or "". */
+  industry?: string;
+  description?: string;
 }
 
 export async function getPacks(): Promise<{ enabled: boolean; packs: PackSummary[] }> {

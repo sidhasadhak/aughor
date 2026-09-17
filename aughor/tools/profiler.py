@@ -21,13 +21,10 @@ Design principles:
 """
 from __future__ import annotations
 
-import glob
-import json
 import logging
 import re
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 logger = logging.getLogger(__name__)
@@ -37,8 +34,7 @@ if TYPE_CHECKING:
 
 
 # ── Fact-table signal regex (auto-derived from KB SQL templates) ──────────────
-
-_KB_DIR = Path(__file__).parent.parent.parent / "data" / "kb"
+# IP-1 — the templates come from the knowledge packages (`aughor/packs/knowledge.py`).
 
 _FALLBACK_FACT_TERMS = (
     "order", "sale", "transaction", "revenue", "invoice", "payment",
@@ -89,23 +85,21 @@ def _build_fact_signals() -> re.Pattern:
       5. Extract the leading word-stem (up to first _ or digit); skip blocklisted stems
       6. Weight stems by reference count; keep those above a minimum share threshold
 
-    Falls back to _FALLBACK_FACT_TERMS if the KB directory is missing or empty.
+    Falls back to _FALLBACK_FACT_TERMS when no knowledge package carries a KB file.
     """
-    if not _KB_DIR.exists():
+    from aughor.packs.knowledge import iter_kb_payloads
+
+    payloads = [data for _file, data in iter_kb_payloads() if isinstance(data, list)]
+    if not payloads:
         stems = _FALLBACK_FACT_TERMS
     else:
         table_refs: Counter = Counter()
         cte_names: set[str] = set()
 
-        for path in glob.glob(str(_KB_DIR / "*.json")):
-            try:
-                with open(path) as f:
-                    entries = json.load(f)
-            except Exception:
-                continue
-            if not isinstance(entries, list):
-                continue
+        for entries in payloads:
             for entry in entries:
+                if not isinstance(entry, dict):
+                    continue
                 sql_strings = _extract_sql_strings(entry.get("sql_assets", []))
                 sql_strings += _extract_sql_strings(entry.get("template", ""))
                 for sql in sql_strings:

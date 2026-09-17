@@ -56,6 +56,9 @@ def _summary(pack_dir: Path) -> dict:
         "evals": len(pack.evals), "ok": r.ok,
         # HB-6 — whether this pack ships a function layer (a group to install).
         "function": pack.function is not None,
+        # IP-1 — the knowledge this pack is a package of: its layer, the industry an
+        # industry package carries, and the sentence that says what it holds.
+        "layer": m.layer, "industry": m.industry, "description": m.description,
         "errors": r.errors, "warnings": r.warnings,
     }
 

@@ -9537,6 +9537,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org-settings/industries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Industry Choice
+         * @description IP-2 — the shipped industry packages and which of them this deployment reads.
+         */
+        get: operations["get_industry_choice_org_settings_industries_get"];
+        /**
+         * Put Industry Choice
+         * @description IP-2 — choose the industry packages this deployment reads: null for every industry (each
+         *     connection's detected on its own), else the ids to keep. A stored business profile whose industry
+         *     now resolves to a different package is dropped so it re-infers on next use; the rest are kept.
+         */
+        put: operations["put_industry_choice_org_settings_industries_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org-settings/llm": {
         parameters: {
             query?: never;
@@ -12989,6 +13015,49 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** IndustryChoiceIn */
+        IndustryChoiceIn: {
+            /** Industries */
+            industries?: string[] | null;
+        };
+        /**
+         * IndustryChoiceOut
+         * @description The industry packages this deployment ships, and the ones it reads.
+         */
+        IndustryChoiceOut: {
+            /**
+             * Ignored
+             * @default []
+             */
+            ignored: string[];
+            /** Industries */
+            industries?: string[] | null;
+            /**
+             * Problem
+             * @default
+             */
+            problem: string;
+            /**
+             * Profiles Refreshed
+             * @default 0
+             */
+            profiles_refreshed: number;
+            /**
+             * Shipped
+             * @default []
+             */
+            shipped: components["schemas"]["ShippedIndustryOut"][];
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
         /**
          * InputContentDataSource
          * @description Inline base64-encoded source.
@@ -13947,6 +14016,23 @@ export interface components {
             source: string;
             /** Spreadsheet */
             spreadsheet: string;
+        };
+        /** ShippedIndustryOut */
+        ShippedIndustryOut: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
         };
         /** SlackArrival */
         SlackArrival: {
@@ -31983,6 +32069,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_industry_choice_org_settings_industries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndustryChoiceOut"];
+                };
+            };
+        };
+    };
+    put_industry_choice_org_settings_industries_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndustryChoiceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndustryChoiceOut"];
                 };
             };
             /** @description Validation Error */

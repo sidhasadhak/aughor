@@ -72,7 +72,7 @@ def retrieve_for_metric_and_phases(
     ``industry`` is ``aughor.business_profile.metric_kb.industry_scope`` for the connection being
     analysed. A curated id ("airline") reads that industry's plays plus the ones every industry shares,
     ``""`` reads only the shared ones, and ``None`` — nothing is known about the industry — reads all of
-    them. Unscoped, a SaaS "why is churn up this quarter" drew four e-commerce plays. Data-quality plays
+    them (IP-2: all of the industries chosen at install). Unscoped, a SaaS "why is churn up this quarter" drew four e-commerce plays. Data-quality plays
     are left out unless ``include_data_quality``: they check a number, they don't recommend a move.
     """
     if not metric_labels:
@@ -93,9 +93,11 @@ def retrieve_for_metric_and_phases(
     entries = list_active_entries()
     if not include_data_quality:
         entries = [e for e in entries if not is_data_quality(e)]
-    if industry is not None:
+    from aughor.packs.industry_choice import readable_industries
+    readable = readable_industries(industry)
+    if readable is not None:
         from aughor.business_profile.metric_kb import kb_entry_industry
-        entries = [e for e in entries if kb_entry_industry(e.source_kb_id) in ("", industry)]
+        entries = [e for e in entries if kb_entry_industry(e.source_kb_id) in readable]
     scored = [(s, e) for e in entries if (s := _score(e, query_tokens, learned_rates=learned_rates)) > 0]
     scored.sort(key=lambda x: -x[0])
     return [e for _, e in scored[:limit]]

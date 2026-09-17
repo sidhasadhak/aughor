@@ -11,6 +11,16 @@ Aughor has not cut a tagged release yet. The sections below describe the state o
 ## [Unreleased]
 
 ### Added
+- **The install asks which industries Aughor is for.** Once, before anything slow, through the
+  terminal even under `curl … | sh`: airline, food delivery, logistics, manufacturing, retail and
+  e-commerce, SaaS — or Enter for all of them, with each connection's industry detected from its
+  data. A choice narrows everything that reads an industry (metric recipes, playbook plays, the
+  rule-outs on deep reports) to the chosen packages. `--industries retail,saas` or
+  `AUGHOR_INDUSTRIES` answers without asking; Settings → Organization and `aughor industries` change
+  it later, and a change rebuilds only the business profiles whose industry now resolves differently.
+- **Deep reports list what to rule out first.** When a deep analysis reports a metric rising or
+  falling, it lists the known ways that metric reads high (or low), each with its fix, marked as not
+  checked against your data. Existing playbooks receive the 486 data-quality checks these come from.
 - **One-command install on macOS, Linux and Windows.** On a computer without Aughor, one
   `curl … | sh` (or `irm … | iex`) line is the whole install. It downloads Aughor into the home
   folder — a clone when Git is there, a snapshot when it is not, so nothing has to be installed

@@ -163,6 +163,9 @@ for _env, _file in (
     # always lacked), but nothing pointed that var anywhere in tests, so a fresh checkout
     # got a seeded playbook written into its `data/`.
     ("AUGHOR_PLAYBOOK_PATH", "playbook.json"),
+    # IP-2 — the industries chosen at install. Unpinned, a test that writes a choice would narrow the
+    # developer's live deployment to it; registered in the same commit as aughor/packs/industry_choice.py.
+    ("AUGHOR_INDUSTRIES_FILE", "industries.json"),
 ):
     os.environ[_env] = os.path.join(_test_stores_dir, _file)   # assigned, not setdefault
 
@@ -177,7 +180,8 @@ for _env, _file in (
 # UNLINKED from the live dir even when the store it was purging had been redirected. A suite
 # run destroyed a real exploration_workspace.json (89 findings; data/*.json is gitignored, so
 # it was unrecoverable). One env for the whole family → a new store in it is isolated by
-# construction. Authored files (glossary/kb/rules) keep their own vars and stay repo-readable.
+# construction. Authored files (glossary/rules) keep their own vars and stay repo-readable; the KB lives in the
+# knowledge packages (IP-1), which the authored-packs copy below isolates.
 for _dir_env in ("AUGHOR_EPISODES_DIR", "AUGHOR_MEMORY_DIR", "AUGHOR_ACTIONS_DIR",
                  # MI-3 — snapshot bytes. The DB name above is not enough on its own: a
                  # dir-keyed store needs the directory family too, a lesson paid twice.

@@ -11,6 +11,9 @@ the Trust Receipt can speak to — without changing the phase's re-plan/repair c
 (that stays the SQL-Engineer's job).
 
 Stateless and pure: ``scan`` and ``classify_failures`` are safe to call repeatedly.
+
+IP-1 — once a report is assembled, ``rule_outs`` lists the playbook's data-quality checks for the move it
+reports (the known ways its metric reads high or low), each marked as not checked against the data.
 """
 from __future__ import annotations
 
@@ -100,3 +103,14 @@ class Verifier:
                  for r in (results or []))
         return VerifierVerdict(fanout_hits=hits, error_classes=error_classes,
                                caveats=caveats, passed=ok)
+
+    @staticmethod
+    def rule_outs(metric_label: str, total_change_label: str, comparison_basis: str, *,
+                  industry: Optional[str], connection_id: str = "") -> Optional[dict]:
+        """IP-1 — the data-quality plays a finished report's move should be checked against: the known
+        ways its metric reads high when it rose, or low when it fell, each with its fix and marked as not
+        checked against the data. Report-level, where ``scan`` is per phase; deterministic, no query.
+        See ``aughor/playbook/rule_outs.py`` for the three reads (direction, metric, plays)."""
+        from aughor.playbook.rule_outs import rule_outs
+        return rule_outs(metric_label, total_change_label, comparison_basis,
+                         industry=industry, connection_id=connection_id)

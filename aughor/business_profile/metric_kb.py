@@ -1,23 +1,20 @@
 """Industry metric-knowledge resolver.
 
 Connects a connection's inferred BusinessProfile to curated, per-industry metric
-recipes (formula + grain + anti-patterns) under data/kb/industry/*.json, with an
+recipes (formula + grain + anti-patterns) carried by the industry PACKAGES (IP-1:
+`packs/<industry>/industry.json`, resolved by `aughor/packs/knowledge.py`), with an
 LLM fallback for metrics no curated entry covers. The recipe is what the explorer
 injects into Phase-8 SQL generation — the lever for SQL ACCURACY (it carries the
 canonical grain/join and the anti-pattern that avoids bugs like conversion > 1).
 """
 from __future__ import annotations
 
-import json
 import logging
 import re
 from functools import lru_cache
-from pathlib import Path
 from typing import Optional
 
 logger = logging.getLogger(__name__)
-
-_KB_DIR = Path(__file__).parent.parent.parent / "data" / "kb" / "industry"
 
 
 def _norm(s: str) -> str:
@@ -29,23 +26,20 @@ def _tokens(s: str) -> set[str]:
     return {t for t in re.split(r"[^a-z0-9]+", (s or "").lower()) if len(t) > 2}
 
 
-@lru_cache(maxsize=1)
 def load_industry_kbs() -> tuple[dict, ...]:
-    """All curated industry KB files (cached). Tuple so it's hashable/cacheable.
+    """The curated industries this deployment may resolve to, ordered by id. Tuple so it's hashable/cacheable.
 
-    Each KB carries its ``id``, the file stem ("airline", "retail", …): the closed name an industry
-    text resolves to (:func:`industry_id`) and the tag playbook retrieval is scoped by."""
-    kbs = []
-    if _KB_DIR.exists():
-        for f in sorted(_KB_DIR.glob("*.json")):
-            try:
-                kb = json.loads(f.read_text())
-            except Exception as exc:
-                logger.warning("industry KB %s failed to load: %s", f.name, exc)
-                continue
-            kb.setdefault("id", f.stem)
-            kbs.append(kb)
-    return tuple(kbs)
+    Each KB carries its ``id`` ("airline", "retail", …), the industry id its package declares: the
+    closed name an industry text resolves to (:func:`industry_id`) and the tag playbook retrieval is
+    scoped by. IP-1 — resolved (and cached per pack roots) by the package reader. IP-2 — only the
+    industries chosen at install (`aughor/packs/industry_choice.py`): every shipped one when nothing was
+    chosen, so a profile's industry text can resolve only to a package the deployment kept."""
+    from aughor.packs.industry_choice import available_industries, read_choice
+    from aughor.packs.knowledge import industry_kbs
+    if not read_choice().chosen:
+        return industry_kbs()
+    available = set(available_industries())
+    return tuple(kb for kb in industry_kbs() if kb["id"] in available)
 
 
 #: Words that name an industry no curated KB covers yet. A generic alias ("retail", "subscription",
@@ -104,8 +98,11 @@ def _sole_best(scored: list[tuple[tuple[int, int], dict]]) -> Optional[dict]:
     return scored[0][1]
 
 
-def match_industry(industry: str) -> Optional[dict]:
+def match_industry(industry: str, *, among: Optional[tuple[dict, ...]] = None) -> Optional[dict]:
     """Pick the curated industry KB an industry text names. Returns None if none does (→ LLM fallback).
+
+    ``among`` is the KBs to choose from — the deployment's available industries unless a caller compares
+    two choices (:func:`refresh_profiles_for_choice`).
 
     Names and aliases match as whole words, never as substrings. A KB's ``generic_aliases`` — a business
     model, channel or category several industries share ("retail", "subscription", "marketplace",
@@ -117,7 +114,7 @@ def match_industry(industry: str) -> Optional[dict]:
         return None
     specific: list[tuple[tuple[int, int], dict]] = []
     generic: list[tuple[tuple[int, int], dict]] = []
-    for kb in load_industry_kbs():
+    for kb in (load_industry_kbs() if among is None else among):
         weak = {tuple(_words(a)) for a in kb.get("generic_aliases", [])}
         strong_hits: set[str] = set()
         weak_hits: set[str] = set()
@@ -134,34 +131,43 @@ def match_industry(industry: str) -> Optional[dict]:
     return None
 
 
-def industry_id(industry: str) -> str:
+def industry_id(industry: str, *, among: Optional[tuple[dict, ...]] = None) -> str:
     """The curated industry an industry text names, as its KB id ("airline", "retail", …), or ""."""
-    kb = match_industry(industry)
+    kb = match_industry(industry, among=among)
     return str(kb.get("id") or "") if kb else ""
 
 
-@lru_cache(maxsize=1)
-def _kb_entry_industries() -> dict[str, str]:
-    """``{deep-KB entry id: the industry whose kb_files hold it}``. An entry from a file no industry
-    claims (finance, marketing, product, the generic metrics) is absent: every industry may read it."""
-    out: dict[str, str] = {}
-    for kb in load_industry_kbs():
-        for stem in kb.get("kb_files", []):
-            try:
-                items = json.loads((_KB_DIR.parent / f"{stem}.json").read_text())
-            except Exception as exc:
-                logger.warning("industry KB %s names kb file %s, which failed to load: %s",
-                               kb.get("id"), stem, exc)
-                continue
-            for e in items if isinstance(items, list) else [items]:
-                if isinstance(e, dict) and e.get("id"):
-                    out[str(e["id"])] = str(kb.get("id") or "")
-    return out
+def refresh_profiles_for_choice(before: Optional[tuple[str, ...]], after: Optional[tuple[str, ...]]) -> int:
+    """IP-2 — after the chosen industries change, drop each stored business profile whose industry now
+    resolves to a different package, so it re-infers — and re-resolves its metric recipes — on next use.
+
+    A profile keeps the recipes it resolved when it was built (`infer.py`); one built while airline was
+    available would go on serving airline recipes after airline was dropped. Only the profiles whose
+    resolution MOVES are dropped: re-inferring costs a model call per dataset, and a retail profile has
+    nothing to relearn when saas is added. ``before`` and ``after`` are `IndustryChoice.industries`
+    (None = every industry). Returns how many were dropped."""
+    from aughor.business_profile import store
+    from aughor.packs.knowledge import industry_kbs
+
+    kbs = industry_kbs()
+    old = kbs if before is None else tuple(kb for kb in kbs if kb["id"] in before)
+    new = kbs if after is None else tuple(kb for kb in kbs if kb["id"] in after)
+
+    def moves(raw: dict) -> bool:
+        text = str(((raw or {}).get("profile") or {}).get("industry") or "").strip()
+        return bool(text) and industry_id(text, among=old) != industry_id(text, among=new)
+
+    return store.invalidate_matching(moves)
 
 
 def kb_entry_industry(kb_entry_id: Optional[str]) -> str:
-    """The industry a deep-KB entry belongs to, or "" for an entry every industry may read."""
-    return _kb_entry_industries().get(kb_entry_id or "", "")
+    """The industry a deep-KB entry belongs to, or "" for an entry every industry may read.
+
+    IP-1 — ownership by place: the industry of the package that carries the entry. An entry a
+    function or the analytics base carries (finance, marketing, product, customer, the SQL
+    patterns) belongs to no industry, so every industry may read it."""
+    from aughor.packs.knowledge import entry_industry
+    return entry_industry(kb_entry_id)
 
 
 def industry_scope(connection_id: str, schema_name: Optional[str] = None, *,
@@ -170,7 +176,8 @@ def industry_scope(connection_id: str, schema_name: Optional[str] = None, *,
 
     A curated id ("airline") means that industry's entries plus the ones every industry shares; ""
     means an industry is known but no curated KB covers it, so only the shared entries; None means
-    nothing is known about the industry, so nothing is scoped.
+    nothing is known about the industry, so nothing is scoped (IP-2: a read with None still sees only the
+    industries chosen at install — `industry_choice.readable_industries`).
 
     ``industry`` is text a caller has already resolved (the explorer's effective industry). Without it,
     the organisation's declared industry wins, then the connection's STORED profile — a read, never an
@@ -193,8 +200,17 @@ def industry_scope(connection_id: str, schema_name: Optional[str] = None, *,
     return industry_id(text) if text else None
 
 
-@lru_cache(maxsize=16)
 def metric_vocabulary(industry: str = "") -> tuple:
+    """The recognized metric vocabulary for an industry — cached per industry text, per pack roots
+    (IP-1: a moved root never serves another root's vocabulary) and per industry choice (IP-2: a choice
+    changed in Settings is read on the next call). See `_metric_vocabulary`."""
+    from aughor.packs.industry_choice import choice_token
+    from aughor.packs.knowledge import cache_token
+    return _metric_vocabulary(industry, cache_token(), choice_token())
+
+
+@lru_cache(maxsize=32)
+def _metric_vocabulary(industry: str, _roots: tuple, _choice: tuple) -> tuple:
     """The recognized metric vocabulary for an industry — ``((token, canonical_label, formula), …)``
     built from the curated KB matched to ``industry`` (or the union of ALL KBs when nothing matches).
     Each metric contributes its name + every alias as a normalized token. This is the deterministic,

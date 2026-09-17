@@ -175,25 +175,42 @@ def load_kb_entries(kb_path: str) -> list[KBEntry]:
             continue
         filepath = os.path.join(kb_path, filename)
         try:
-            data = json.load(open(filepath, encoding="utf-8"))
+            with open(filepath, encoding="utf-8") as fh:
+                data = json.load(fh)
         except Exception:
             continue
-        if not isinstance(data, list):
-            continue
-
-        for raw in data:
-            if not isinstance(raw, dict) or not raw.get("id"):
-                continue
-            tier = _detect_tier(raw)
-            embed_text = _build_embed_text(raw, tier)
-            payload = _build_payload(raw, tier, filename)
-            entries.append(KBEntry(
-                pattern_id=raw["id"],
-                title=raw.get("title", raw["id"]),
-                tier=tier,
-                source_file=filename,
-                embed_text=embed_text,
-                payload=payload,
-            ))
+        entries.extend(_entries_from(data, filename))
 
     return entries
+
+
+def load_package_kb_entries() -> list[KBEntry]:
+    """IP-1 — the KB entries the knowledge packages carry, in the shape `load_kb_entries`
+    returns for a flat folder: the same tiers, payloads and file-name order, and the same
+    `source_file` (the bare file name), so a collection indexed before the move keeps its ids."""
+    from aughor.packs.knowledge import iter_kb_payloads
+
+    entries: list[KBEntry] = []
+    for kb_file, data in iter_kb_payloads():
+        entries.extend(_entries_from(data, kb_file.name))
+    return entries
+
+
+def _entries_from(data, filename: str) -> list[KBEntry]:
+    """The entries of one parsed KB file — list files only, entries with an id."""
+    if not isinstance(data, list):
+        return []
+    out: list[KBEntry] = []
+    for raw in data:
+        if not isinstance(raw, dict) or not raw.get("id"):
+            continue
+        tier = _detect_tier(raw)
+        out.append(KBEntry(
+            pattern_id=raw["id"],
+            title=raw.get("title", raw["id"]),
+            tier=tier,
+            source_file=filename,
+            embed_text=_build_embed_text(raw, tier),
+            payload=_build_payload(raw, tier, filename),
+        ))
+    return out

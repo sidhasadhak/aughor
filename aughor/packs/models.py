@@ -12,6 +12,11 @@ from pydantic import BaseModel, ConfigDict, Field
 
 _GRAINS = ("cohort", "period", "point")
 _STATUSES = ("draft", "active", "deprecated")
+#: IP-1 — the knowledge layers a package carries (ROADMAP §3.17 "Layers"). An INDUSTRY
+#: package holds one industry's curated knowledge; a FUNCTION (finance, marketing,
+#: product, customer) is read by every industry; a BASE is what every analysis shares.
+#: "" is every other pack: an ontology, an organisation function group, an engine.
+KNOWLEDGE_LAYERS = ("industry", "function", "base")
 
 
 class _Base(BaseModel):
@@ -40,6 +45,16 @@ class PackManifest(_Base):
     #: one layer of a pack, and a surface must be able to say so rather than presenting a
     #: specialist that silently knows nothing about your data.
     partial: bool = False
+    #: One sentence a roster shows: what this pack carries.
+    description: str = ""
+    #: IP-1 — the knowledge layer this pack is a package of (`KNOWLEDGE_LAYERS`), or "".
+    #: A package's `kb/*.json` and (for an industry) `industry.json` are what the agents
+    #: read as reference, resolved by `aughor/packs/knowledge.py` — the one reader that
+    #: replaced the four hard-coded `data/kb` loaders.
+    layer: str = ""
+    #: IP-1 — the closed industry id an INDUSTRY package carries ("airline",
+    #: "food_delivery" — the ids `industry_scope` returns). "" for every other layer.
+    industry: str = ""
 
 
 class MetricBinds(_Base):
