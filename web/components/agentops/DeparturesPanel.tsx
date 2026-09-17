@@ -135,14 +135,16 @@ export function DeparturesPanel() {
         <EmptyState variant="inline" title="Nothing under this filter." />
       ) : (
         <div style={{ flex: 1, overflow: "auto", padding: "0 16px 16px" }}>
-          <Table className="aug-dt">
+          {/* Fixed layout: a long reason truncates in its own column instead of pushing the
+              Review door off the right edge (measured: 1,233px of table in 1,160px). */}
+          <Table className="aug-dt" style={{ tableLayout: "fixed" }}>
             <TableHeader>
               <TableRow>
-                <TableHead>When</TableHead>
-                <TableHead>What, and where to</TableHead>
-                <TableHead>State</TableHead>
+                <TableHead style={{ width: 132 }}>When</TableHead>
+                <TableHead style={{ width: "30%" }}>What, and where to</TableHead>
+                <TableHead style={{ width: 172 }}>State</TableHead>
                 <TableHead>Why</TableHead>
-                <TableHead />
+                <TableHead style={{ width: 84 }} />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -170,16 +172,17 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
   const owed = owes(d);
   return (
     <Fragment>
-      <TableRow data-departure={d.id} aria-current={focused ? "true" : undefined}
-        style={focused ? { background: "var(--bg-2)" } : undefined}>
+      <TableRow data-departure={d.id} aria-selected={focused || undefined}>
         <TableCell>
           <span className="aug-fs-xs" style={{ fontFamily: "var(--font-mono, monospace)", color: "var(--t2)", whiteSpace: "nowrap" }}>
             {whenText(d.ts)}
           </span>
         </TableCell>
         <TableCell>
-          <div className="aug-fs-sm" style={{ color: "var(--t1)" }}>{sourceName(d)}</div>
-          <div className="aug-fs-xs" style={{ color: "var(--t3)" }}>
+          <div className="aug-fs-sm" title={sourceName(d)} style={{ color: "var(--t1)", overflow: "hidden", textOverflow: "ellipsis" }}>
+            {sourceName(d)}
+          </div>
+          <div className="aug-fs-xs" style={{ color: "var(--t3)", overflow: "hidden", textOverflow: "ellipsis" }}>
             {kindLabel(d.kind)}{d.target ? ` → ${d.target}` : ""}
           </div>
         </TableCell>
@@ -188,9 +191,9 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
         </TableCell>
         <TableCell>
           <div className="aug-fs-xs" title={summaryLine(d)} style={{
-            color: d.state === "departed" ? "var(--t3)" : "var(--t2)", maxWidth: 520,
-            overflow: "hidden", textOverflow: "ellipsis", display: "-webkit-box",
-            WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+            color: d.state === "departed" ? "var(--t3)" : "var(--t2)", whiteSpace: "normal",
+            overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2,
+            WebkitBoxOrient: "vertical", padding: "3px 0",
           }}>
             {summaryLine(d)}
           </div>
@@ -204,7 +207,7 @@ function DepartureRow({ departure: d, open, focused, onToggle, onChanged }: {
       </TableRow>
       {open && (
         <TableRow>
-          <TableCell colSpan={5} style={{ background: "var(--bg-1)" }}>
+          <TableCell colSpan={5} style={{ background: "var(--bg-1)", whiteSpace: "normal" }}>
             <DepartureDetail departure={d} onChanged={onChanged} />
           </TableCell>
         </TableRow>

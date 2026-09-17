@@ -452,7 +452,7 @@ def _tie_out(text: str, conn_id: str, conn: "_LazyConnection") -> _Check:
     """Run the quality_tests of governed metrics the text asserts. A tie-out that cannot
     run is recorded and does not hold (an infrastructure error is not a failing number)."""
     if not text or not conn_id:
-        return _Check(NOT_APPLICABLE, "no text or connection — not applicable")
+        return _Check(NOT_APPLICABLE, "no text or no connection to check")
     try:
         from aughor.explorer.metric_coherence import asserted_governed_metrics
         asserted = _unique_by_name(m for m in asserted_governed_metrics(text, conn_id)
@@ -722,7 +722,8 @@ def _disagreement(disagreement: Optional[dict], conn_id: str, declared_by: str) 
     from aughor.govern.departure_basis import owner_for_disagreement
     owner = owner_for_disagreement(disagreement, conn_id) or declared_by or ""
     label = disagreement.get("metric_label") or disagreement.get("subject") or "a metric"
-    previews = " vs ".join(str(p) for p in (disagreement.get("previews") or []) if p)
+    # A preview is written for a chip ("= 2.10%"); in a sentence it reads "2.10% vs 7.80%".
+    previews = " vs ".join(str(p).lstrip("= ").strip() for p in (disagreement.get("previews") or []) if p)
     what = f"the readings of {label} disagree" + (f" ({previews})" if previews else "")
     asked = (f"{owner} is asked" if owner
              else "the owner is asked on the departures screen (no owner is routable)")
