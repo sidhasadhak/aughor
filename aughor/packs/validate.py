@@ -94,6 +94,11 @@ def validate_loaded(pack: Pack) -> ValidationReport:
         if pb.trigger_metric and pb.trigger_metric not in metric_names:
             r.warnings.append(f"playbook trigger_metric {pb.trigger_metric!r} is not a pack metric")
 
+    # ── IP-3 — a package that declares the anatomy is held to the static gate (gate 3) ──
+    from aughor.packs.gate3 import applies, run_gate3
+    if applies(pack):
+        r.errors.extend(run_gate3(pack).lines())
+
     # ── knowledge layer (IP-1) — a package is REFERENCE the agents read (§3.17), not a
     # steering pack, so the steering completeness warnings below do not apply to it ──────
     if m.layer or m.industry:

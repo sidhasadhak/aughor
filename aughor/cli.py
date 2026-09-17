@@ -1072,6 +1072,39 @@ def packs_list(packs_dir: Path):
                   f"by an agent or selectable for steering.")
 
 
+@packs.command("check")
+@click.argument("pack_id")
+def packs_check(pack_id: str):
+    """IP-3 — run the static gate (gate 3) on PACK_ID: sources, sourced sane ranges, formulas over roles, no alias
+    collision, bound plays, goldens and datasets. Exits 1 on any finding. A pack that does not declare
+    `anatomy: 1` is not held to it."""
+    from aughor.packs.gate3 import applies, run_gate3
+    from aughor.packs.loader import PacksError, load_pack
+    from aughor.packs.roots import pack_dir
+
+    folder = pack_dir(pack_id)
+    if folder is None:
+        console.print(f"[red]✗[/red] no pack {pack_id!r} in either pack root")
+        sys.exit(1)
+    try:
+        pack = load_pack(folder)
+    except PacksError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    if not applies(pack):
+        console.print(f"[yellow]{pack_id} does not declare anatomy: 1 — the static gate does not hold it[/yellow]")
+        return
+    report = run_gate3(pack)
+    for line in report.lines():
+        console.print(f"  [red]✗[/red] {line}")
+    if not report.ok:
+        console.print(f"\n[red]{len(report.findings)} finding(s)[/red] — gate 3 fails for {pack_id}")
+        sys.exit(1)
+    console.print(f"[green]✓[/green] gate 3 passes for {pack_id}: {len(pack.metrics)} metrics, "
+                  f"{len(pack.playbooks)} plays, {len(pack.evals)} goldens, {len(pack.sources)} sources, "
+                  f"{len(pack.datasets)} dataset(s)")
+
+
 @packs.command("promote")
 @click.argument("pack_id")
 @click.option("--packs-dir", default=None, type=Path,
