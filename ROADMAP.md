@@ -5411,7 +5411,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 BUILT** 2026-09-17 on `claude/ip-1-package-seam`, local)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5455,8 +5455,8 @@ of the live `data/playbook.json` (nothing written, no model called):
   once on the commit, 9,998 passed, 5 skipped. **Merged** as #503 (squash `aebe5feb`, 2026-09-14) after #502, which edits the same
   retriever call: the explorer's read passes both `learned_rates=False` and the industry scope.
 
-**IP-1 · The package seam — BUILT 2026-09-17** on `claude/ip-1-package-seam` (`8697d713` the seam, then the rule-outs
-and the top-up), local, nothing pushed.
+**IP-1 · The package seam — BUILT 2026-09-17, MERGED #518** (squash `1c150b05`, with IP-2) and deployed the same day:
+the live playbook topped up from 392 to 878 plays (the 486 checks, all active; 459 with a fix), no model call at boot.
 - **The seam.** The KB left `data/kb` for eleven packages, content untouched (69 `git mv` renames): six industry packages
   (airline, food-delivery, logistics, manufacturing, retail, saas — each its curated `industry.json` and its deep KB
   files), four functions every industry reads (finance, marketing, product, customer) and `analytics-base`. `pack.yaml`
@@ -5502,7 +5502,9 @@ and the top-up), local, nothing pushed.
   repair"); the detection queries wait for IP-3's roles; the one wrong name match measured is "investigation job
   failure rate" on the platform's own operations data with no industry known, a report that states no signed move.
 
-**IP-2 · Chosen at install — BUILT 2026-09-17** on the same branch, local, nothing pushed. The answer is one file,
+**IP-2 · Chosen at install — BUILT 2026-09-17, MERGED #518** with IP-1. Merged over one red check, the user's call:
+the Windows "Start, and both servers answer" install step has failed on main since #509 (2026-09-15) with the same
+signature, before this work — the servers answer, then `aughor up` stops a few seconds later; its own task. The answer is one file,
 `data/industries.json` (`AUGHOR_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
 installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
 - **What an answer means** (`aughor/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
@@ -6015,6 +6017,77 @@ nomenclature for the analogy's sake; a persona named "Analyst".
 
 ---
 
+
+### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **sequenced after Arc IP**, the user's order; nothing built)
+
+> **Origin.** The user, 2026-09-17, with a screenshot of Hermes Agent's Quick Install
+> (https://github.com/nousresearch/hermes-agent): *"I like how hermes does it here… Im not suggesting to the exact same
+> but lets see what we learn from it as far as installation goes.. no code change for now"*, then *"Lets add this to
+> the roadmap first.. I want to finish IP arc first though.."*
+
+**The study, read 2026-09-17** — Hermes' README, its `install.sh` and `install.ps1`, and its installation guide; read,
+not run. Hermes installs with `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (Linux, macOS, WSL2,
+Termux) or `iex (irm https://hermes-agent.nousresearch.com/install.ps1)` (native Windows): uv, Python 3.11, Node.js,
+ripgrep and ffmpeg, and on Windows — because Hermes runs shell commands — a portable Git Bash under
+`%LOCALAPPDATA%\hermes\git`, no admin. The code lives in `~/.hermes/hermes-agent` (`/usr/local/lib/hermes-agent` for a
+root install), the data and config in `~/.hermes` (`HERMES_HOME`). Then `hermes setup` (a wizard, `--skip-setup` skips
+it), `hermes model`, `hermes update`, `hermes doctor`.
+
+**Where Aughor's install already holds its own — keep these.** The Node.js download is SHA-256-verified against
+nodejs.org; Hermes' Windows installer verifies none of its downloads. One line per step, the tools' output in
+`.aughor/logs/`, and a failed step shows its log's tail and the next action. A re-run skips what did not change (`npm ci`
+per lockfile, `next build` per fingerprint). The installer is standard-library only, held by tests, and CI runs it on
+three operating systems. It ends in the running app with the browser open, where Settings → Models is. No shell rc
+file is edited: the `aughor` command sits in uv's own command folder. A download cut off halfway runs nothing, and
+`install.sh` is POSIX `sh`.
+
+**What it teaches — measured against Aughor on main `1c150b05`:**
+- **Code and data apart.** Hermes keeps its checkout and its data in different places. Aughor's state is `data/`
+  inside the checkout, relative to the folder the API starts in (`aughor/db/paths.py`: `AUGHOR_STATE_DIR`, else
+  `Path("data")`). Deleting or re-cloning `~/aughor` deletes the connections, history and receipts with it, and a
+  process started from another folder reads another `data/` — the shape behind the one-writer rule §7 records.
+- **Update is a command.** `hermes update` fetches and fast-forwards, backs up a broken checkout and pins a commit
+  (`--commit`, refusing a rollback without `--force-commit`); re-running the installer on an existing clone updates it.
+  Aughor's `find_checkout` reuses an existing `~/aughor` as it is: a re-run re-syncs dependencies and never pulls, and
+  there is no `aughor update` and no pin.
+- **A doctor.** `hermes doctor` names missing dependencies, storage problems and PATH. Aughor's CLI (`seed`, `up`,
+  `ask`, `ontology-docs`, `graph-export`, `packs`, `industries`, `skills`) has none; `aughor up`'s boot summary is the
+  nearest thing.
+- **The README says what the install does:** the platforms, what gets installed and where, "no admin", and the known
+  Windows Defender false positive on `uv.exe` with the exclusion command. Aughor's Quick start is two commands and
+  "Next time, run `aughor`".
+- **Questions stay off the unattended path.** Hermes' Windows installer asks nothing (no `Read-Host`); its shell
+  installer reads stdin, else `/dev/tty`, else takes the default, and `--non-interactive` skips every prompt. IP-2's
+  industries question hung both Windows install jobs on PR #518's first CI run — a console without a window — until
+  the question required a person: no `CI`, and on Windows a console with a window.
+- **Hostile networks.** Hermes probes the network before the heavy steps, retries the clone and falls back to a
+  blobless clone when GitHub throttles, degrades its Python dependencies in tiers (all, all minus the broken, core
+  only), explains corporate-proxy certificate errors (`NODE_EXTRA_CA_CERTS`) and normalises long Windows profile paths.
+  Aughor says "check your internet connection".
+- **A short address.** Its own domain keeps the one-liner short and independent of the repository's layout. Aughor's
+  Windows line wraps `irm | iex` in `powershell -ExecutionPolicy ByPass -c "…"` on purpose, so it runs from Command
+  Prompt too (#501).
+
+**Waves** — none built; each lands as its own measured slice:
+- **IN-1 update and doctor.** `aughor update`: a clean clone fetches and fast-forwards; a dirty or diverged one is
+  refused with the reason, never reset; a snapshot install re-downloads into place; `--ref` pins; the installer's
+  steps re-run. Re-running `install.sh` or `install.ps1` on an existing clone does the same. `aughor doctor`: uv,
+  Python and Node.js with their versions, both ports, `data/` writable, the `aughor` command on PATH, a model
+  configured — answered without a model call and without a query against a warehouse.
+- **IN-2 the README's install section:** the platforms (WSL2 once measured), what gets installed and where, no admin,
+  the disk it takes, update, uninstall, non-interactive installs (`--industries`, `--no-start`), and troubleshooting
+  (Defender on `uv.exe`, a corporate proxy).
+- **IN-3 hostile networks:** a preflight before the slow steps, retries on the clone and the downloads, the
+  proxy-certificate hint.
+- **IN-4 a data home.** Aughor's state outside the checkout — per user (`~/.aughor`, `%LOCALAPPDATA%\aughor`), one
+  env override — and a one-time move of an existing `data/`, verified before anything is removed. The largest wave: it
+  touches every store path and the test isolation behind them, so it gets its own plan before it starts.
+
+**Recommended not to copy** (the builder's view; item 25 (f) is open): a portable Git Bash — Aughor runs no shell
+commands, and a Windows machine without Git already installs from a zip snapshot; Termux — a Next.js build does not
+belong on a phone; a root, multi-user install; a machine-readable stage protocol (`--manifest`, `--stage`, `--json`)
+until there is a desktop app to drive it; shell rc edits — uv's command folder already reaches PATH.
+
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
 ### 4.1 · A canvas for AGENT creation — REFUSED (2026-08-18)
@@ -6360,14 +6433,20 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
         whole-word industry matching, definitional answers read plays, "proven" only with an
-        outcome. IP-1 ✅ BUILT 2026-09-17 (local): the KB in eleven packages behind one resolver,
+        outcome. IP-1 ✅ MERGED #518 (`1c150b05`): the KB in eleven packages behind one resolver,
         moved unchanged (measured); data-quality plays as the Verifier's rule-outs on deep reports;
         existing playbooks topped up with the 486 checks, a deleted one never resurrected.
-        IP-2 ✅ BUILT 2026-09-17 (local): the installer asks once which industries (through the
+        IP-2 ✅ MERGED #518: the installer asks once which industries (through the
         terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
         narrows every industry read; Settings → Organization and `aughor industries` change it.
         Next: IP-3 the generator (airline as reference) → IP-4 tier 1: banking & lending first,
-        then payments & fintech, then insurance
+        then payments & fintech, then insurance. The user, 2026-09-17: finish Arc IP before Arc IN
+ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what Hermes Agent's installer
+        teaches; sequenced AFTER Arc IP (the user's order); nothing built. Measured on `1c150b05`:
+        state lives in the checkout's data/, a re-run never updates the code, no update or doctor
+        command, a two-command README. Waves: IN-1 `aughor update` + `aughor doctor` → IN-2 the
+        README's install section → IN-3 hostile networks → IN-4 a data home outside the checkout
+        (its own plan first)
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -7106,6 +7185,22 @@ the browser** · **measure the premise before building.**
     Not decided here because it isn't ripe: hosting and uptime (§6 item 17 stands — the hub exports only from where the
     platform runs); persona names beyond the three; row policies by group (HB-1's enforcement half, when identity is
     on).
+
+25. ⏳ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
+    — Arc IN, the install (§3.19): sequenced after Arc IP, nothing built.** Open, each with the builder's
+    recommendation:
+    **(a) Adoption and order** — IN-1 and IN-2 first (cheap, low risk, real gaps), IN-3 beside them, IN-4 last with its
+    own plan. *Recommended: yes, after Arc IP.*
+    **(b) A data home (IN-4)** — the state leaves the checkout. *Recommended: yes, planned on its own — it touches every
+    store.*
+    **(c) The industries question** — it stays in the install (§6 item 21, answer 1), now asked only where a person can
+    answer, or it moves to the app's first run with `--industries` kept for scripts. *Recommended: keep it in the
+    install, add `--non-interactive`, and measure it once in a real Windows console before calling Windows done.*
+    **(d) A short install address** — it needs a domain the project owns. *Recommended: when there is one; until then
+    the README shows the PowerShell-native form beside the Command Prompt one.*
+    **(e) WSL2** — named as supported. *Recommended: measure the installer there first, then say so.*
+    **(f) Not copied** — a portable Git Bash, Termux, a root multi-user install, the stage protocol, shell rc edits.
+    *Recommended: not now (reasons in §3.19).*
 
 ---
 
