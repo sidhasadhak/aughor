@@ -70,6 +70,13 @@ class PackManifest(_Base):
     #: IP-3 — the package anatomy this pack declares (`ANATOMY_VERSIONS`); 1 puts it under the static gate.
     anatomy: int = 0
 
+    @property
+    def steers(self) -> bool:
+        """Whether this pack can steer an answer: active, and not a knowledge package. A knowledge package's
+        `status` says whether the agents read it as reference (§3.17 gate 6: a person's review moves a draft
+        to active); it never makes it a pack a question is routed to, disclosed as or read through."""
+        return self.status == "active" and self.layer not in KNOWLEDGE_LAYERS
+
 
 class MetricBinds(_Base):
     required: list[str] = Field(default_factory=list)

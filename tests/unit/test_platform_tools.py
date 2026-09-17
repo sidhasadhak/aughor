@@ -224,6 +224,8 @@ def test_packs_name_the_bound_one_and_carry_its_playbooks(monkeypatch, tmp_path)
     pack = SimpleNamespace(
         manifest=SimpleNamespace(name="Finance", status="active", domains=["finance"],
                                  partial=False, source="", source_url="", licence="",
+                                 # A steering pack, as a real manifest's `steers` computes from its status and layer.
+                                 layer="", steers=True,
                                  # `scope` is read for every listed pack now. A real
                                  # manifest always carries it (the model defaults it), so
                                  # the fake completes rather than the reader loosening.

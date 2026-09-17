@@ -16,7 +16,7 @@ import pytest
 from aughor.packs import knowledge
 
 
-def _package(root: Path, pid: str, *, layer: str, industry: str = "", status: str = "draft",
+def _package(root: Path, pid: str, *, layer: str, industry: str = "", status: str = "active",
              kb: dict | None = None, curated: dict | None = None, raw_kb: dict | None = None) -> Path:
     d = root / pid
     (d / "kb").mkdir(parents=True, exist_ok=True)
@@ -78,6 +78,23 @@ def test_a_deprecated_package_is_not_read(roots):
              kb={"rail_ops": [{"id": "rail_otp"}]}, curated=_curated("Rail", ["rail_ops"]))
     assert knowledge.kb_files() == ()
     assert knowledge.industry_kbs() == ()
+
+
+def test_a_draft_package_is_not_read_until_a_person_makes_it_active(roots):
+    """§3.17 gate 6: a draft is still being authored — its industry is not matched and its entries reach no
+    agent until its pack.yaml says active."""
+    authored, _ = roots
+    package = _package(authored, "rail", layer="industry", industry="rail", status="draft",
+                       kb={"rail_ops": [{"id": "rail_otp"}]}, curated=_curated("Rail", ["rail_ops"]))
+    assert knowledge.kb_files() == ()
+    assert knowledge.industry_kbs() == ()
+    assert knowledge.entry_industry("rail_otp") == ""
+    manifest = package / "pack.yaml"
+    manifest.write_text(manifest.read_text(encoding="utf-8").replace("status: draft", "status: active"),
+                        encoding="utf-8")
+    knowledge.reset()
+    assert [kb["id"] for kb in knowledge.industry_kbs()] == ["rail"]
+    assert knowledge.entry_industry("rail_otp") == "rail"
 
 
 def test_a_file_carried_twice_is_a_problem_and_never_an_overwrite(roots):

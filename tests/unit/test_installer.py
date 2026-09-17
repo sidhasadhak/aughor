@@ -588,7 +588,7 @@ def test_the_installer_leaves_the_aughor_command_behind(tmp_path, monkeypatch, c
 
 # ── Which industries (IP-2) ──────────────────────────────────────────────────────
 
-def _industry_pack(packs: Path, folder: str, industry: str, name: str, *, status: str = "draft",
+def _industry_pack(packs: Path, folder: str, industry: str, name: str, *, status: str = "active",
                    curated: bool = True) -> None:
     d = packs / folder
     d.mkdir(parents=True)
@@ -677,6 +677,25 @@ def test_a_deprecated_or_uncurated_package_is_not_offered(tmp_path, monkeypatch)
     (packs / "finance").mkdir()
     (packs / "finance" / "pack.yaml").write_text("id: finance\nlayer: function\n")
     assert [i.id for i in installer.shipped_industries(tmp_path)] == ["saas"]
+
+
+def test_a_draft_package_is_not_offered_until_it_is_active(tmp_path, monkeypatch):
+    """§3.17 gate 6: the API does not read a draft, so the installer does not offer one."""
+    monkeypatch.delenv("AUGHOR_PACKS_DIR", raising=False)
+    packs = tmp_path / "packs"
+    _industry_pack(packs, "banking", "banking", "Banking", status="draft")
+    _industry_pack(packs, "saas", "saas", "SaaS")
+    assert [i.id for i in installer.shipped_industries(tmp_path)] == ["saas"]
+
+
+def test_a_comment_is_not_part_of_a_manifest_value(tmp_path, monkeypatch):
+    monkeypatch.delenv("AUGHOR_PACKS_DIR", raising=False)
+    rail = tmp_path / "packs" / "rail"
+    rail.mkdir(parents=True)
+    (rail / "pack.yaml").write_text('id: rail\nname: "Rail # freight"\nlayer: industry  # one industry\n'
+                                    "industry: rail  # the id the API scopes by\nstatus: active  # reviewed\n")
+    (rail / "industry.json").write_text("{}")
+    assert installer.shipped_industries(tmp_path) == [installer.Industry(id="rail", name="Rail # freight", pack="rail")]
 
 
 def test_the_question_comes_before_the_slow_steps_and_is_recorded(two_industries, monkeypatch, capsys):

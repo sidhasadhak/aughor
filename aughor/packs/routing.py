@@ -52,10 +52,10 @@ def score_pack(question: str, pack: Pack) -> float:
 
 def select_pack(question: str, packs: list[Pack], min_score: float = 1.0) -> Optional[tuple[Pack, float]]:
     """The best-matching ACTIVE pack above the floor, or None (→ generalist). Draft/deprecated
-    packs are never selected for live routing."""
+    packs are never selected for live routing, and neither is a knowledge package (`steers`)."""
     best: Optional[tuple[Pack, float]] = None
     for p in packs:
-        if p.manifest.status != "active":
+        if not p.manifest.steers:
             continue
         s = score_pack(question, p)
         if s >= min_score and (best is None or s > best[1]):
@@ -64,6 +64,6 @@ def select_pack(question: str, packs: list[Pack], min_score: float = 1.0) -> Opt
 
 
 def rank_packs(question: str, packs: list[Pack]) -> list[tuple[Pack, float]]:
-    """All active packs scored, descending — for cross-domain fan-out (multiple experts)."""
-    scored = [(p, score_pack(question, p)) for p in packs if p.manifest.status == "active"]
+    """All packs that steer, scored, descending — for cross-domain fan-out (multiple experts)."""
+    scored = [(p, score_pack(question, p)) for p in packs if p.manifest.steers]
     return sorted([x for x in scored if x[1] > 0], key=lambda x: x[1], reverse=True)

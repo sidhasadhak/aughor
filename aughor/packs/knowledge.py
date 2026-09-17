@@ -15,8 +15,10 @@ and this module is the only thing that finds it:
   place, where it used to be a list of file names each industry had to keep in step with
   the folder (`industry.json`'s `kb_files` still says it, and `problems()` holds the two
   equal);
-- authored packages win an id collision (the roots' rule), a **deprecated** package is
-  not read, and a draft one is: knowledge is reference, not steering (§3.17);
+- authored packages win an id collision (the roots' rule), and only an **active** package
+  is read: a draft is still being authored, and a person's review moves it to active
+  (§3.17 gate 6), while a deprecated one is retired. Active or not, a package is
+  reference, never steering (`PackManifest.steers`);
 - every file is read as **UTF-8** — three of the four old loaders used the platform
   default, so on a Windows install three KB files failed to decode and were skipped
   without a word.
@@ -273,8 +275,8 @@ def _find_packages(roots: list[Path], problems: list[str]) -> list[Package]:
             if manifest.id in seen:
                 continue                                    # authored wins
             seen.add(manifest.id)
-            if manifest.status == "deprecated":
-                continue
+            if manifest.status != "active":
+                continue                                    # a draft awaits review; deprecated is retired
             if manifest.layer == "industry" and not manifest.industry:
                 problems.append(f"pack {manifest.id}: layer industry needs an industry id — "
                                 f"read as knowledge every industry shares")

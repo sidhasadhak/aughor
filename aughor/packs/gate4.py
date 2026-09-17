@@ -44,6 +44,7 @@ RECEIPTS_DIR = "measurements"
 #: The files a measurement depends on — a change to any of them makes a receipt stale.
 ANATOMY_FILES = ("pack.yaml", "sources.yaml", "entities.yaml", "ontology.yaml", "questions.yaml")
 ANATOMY_DIRS = ("metrics", "playbooks", "evals", "datasets")
+_STATUS_LINE = re.compile(rb"^status:[^\n]*\n?", re.MULTILINE)
 
 
 class Gate4Error(Exception):
@@ -212,15 +213,20 @@ def compile_metric(metric: PackMetric, dataset: PackDataset, where: str = "") ->
 # ── the gate ───────────────────────────────────────────────────────────────────────────────────────────────
 
 def package_fingerprint(pack_dir: Path) -> str:
-    """SHA-256 over the package's anatomy files (paths and bytes), so a receipt names the package it measured."""
+    """SHA-256 over the package's anatomy files (paths and bytes), so a receipt names the package it measured.
+    pack.yaml's `status:` line is left out: a person's review moves a package from draft to active (§3.17 gate 6)
+    without changing anything that was measured."""
     hasher = hashlib.sha256()
     files = [pack_dir / name for name in ANATOMY_FILES if (pack_dir / name).is_file()]
     for folder in ANATOMY_DIRS:
         files.extend(sorted((pack_dir / folder).glob("*.yaml")))
     for path in sorted(files, key=lambda p: p.relative_to(pack_dir).as_posix()):
+        data = path.read_bytes()
+        if path == pack_dir / "pack.yaml":
+            data = _STATUS_LINE.sub(b"", data)
         hasher.update(path.relative_to(pack_dir).as_posix().encode())
         hasher.update(b"\0")
-        hasher.update(path.read_bytes())
+        hasher.update(data)
         hasher.update(b"\0")
     return hasher.hexdigest()
 
