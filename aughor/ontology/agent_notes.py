@@ -31,7 +31,10 @@ from datetime import datetime, timezone
 from typing import Optional
 
 CONFIDENCE = ("high", "med", "low")
-TARGETS = ("column", "table")
+# HB-5 — "object": a note on a securable thing (promise:… process:… entity instance),
+# the arrival path's target. It ALWAYS stages — an object note is read by everyone who
+# opens the object, which is exactly the blast radius that waits for a person.
+TARGETS = ("column", "table", "object")
 
 #: Blast-radius rule, as data: which (target, confidence) pairs may apply directly.
 #: Everything else stages. Kept tiny and explicit so a reviewer can read the policy
@@ -65,8 +68,14 @@ def _clean(s: str, cap: int) -> str:
 
 def propose_note(connection_id: str, schema: str, *, target: str, table: str,
                  column: str = "", note: str, evidence: str, confidence: str,
-                 session_id: str = "") -> NoteOutcome:
-    """Route one agent proposal: apply, stage, or reject. Never raises."""
+                 session_id: str = "", provenance: Optional[dict] = None) -> NoteOutcome:
+    """Route one agent proposal: apply, stage, or reject. Never raises.
+
+    ``target="object"`` (HB-5): ``table`` carries the SECURABLE the note is about
+    (``promise:order_to_delivery.dispatch``); the note always stages. ``provenance``
+    is HB-4's envelope as a dict (source_kind · author · where · observed_at ·
+    verification…), stored verbatim on the staged recommendation so the reader sees
+    the stamp, not a bare sentence."""
     target = (target or "").strip().lower()
     confidence = (confidence or "").strip().lower()
     table = (table or "").strip()
@@ -92,8 +101,13 @@ def propose_note(connection_id: str, schema: str, *, target: str, table: str,
         if target == "column":
             return _route_column(connection_id, schema, table, column, note, evidence,
                                  confidence, session_id)
+        if target == "object":
+            return _stage(connection_id, schema, "object", table, "", note, evidence,
+                          confidence, session_id, provenance=provenance,
+                          why="an object note is read by everyone who opens the object — "
+                              "it waits for a person to accept it")
         return _stage(connection_id, schema, "table", table, "", note, evidence,
-                      confidence, session_id,
+                      confidence, session_id, provenance=provenance,
                       why="a table-level claim is read by every future session before it "
                           "writes SQL — it waits for a person to accept it")
     except Exception as exc:  # the answer path must never fail on a note
@@ -126,7 +140,8 @@ def _route_column(conn: str, schema: str, table: str, column: str, note: str,
 
 
 def _stage(conn: str, schema: str, target: str, table: str, column: str, note: str,
-           evidence: str, confidence: str, session_id: str, *, why: str) -> NoteOutcome:
+           evidence: str, confidence: str, session_id: str, *, why: str,
+           provenance: Optional[dict] = None) -> NoteOutcome:
     from aughor.ontology.recommendations import (
         OntologyRecommendation, get_recommendation, save_recommendation,
     )
@@ -137,16 +152,22 @@ def _stage(conn: str, schema: str, target: str, table: str, column: str, note: s
     ev = {"note": note, "evidence": evidence, "confidence": confidence,
           "session_id": session_id, "at": now}
     if rec is None:
+        fields = {"note": note, "column": column, "confidence": confidence}
+        if provenance:
+            fields["provenance"] = dict(provenance)
         rec = OntologyRecommendation(
             id=rec_id, kind=f"{target}_note", target_id=key, entity=table,
-            proposed_fields={"note": note, "column": column, "confidence": confidence},
+            proposed_fields=fields,
             reason=f"proposed by the conversation with evidence: {evidence[:160]}",
             support=1, evidence=[ev])
     else:
         rec.support += 1
         rec.last_seen = now
         rec.evidence = (rec.evidence + [ev])[-5:]
-        rec.proposed_fields = {"note": note, "column": column, "confidence": confidence}
+        fields = {"note": note, "column": column, "confidence": confidence}
+        if provenance:
+            fields["provenance"] = dict(provenance)
+        rec.proposed_fields = fields
     save_recommendation(conn, schema, rec)
     return NoteOutcome(True, "staged", f"staged for human review: {why}",
                        target=target, table=table, column=column, recommendation_id=rec_id,
@@ -172,6 +193,11 @@ def accept_note(conn: str, schema: str, rec_id: str) -> Optional[dict]:
         flags = set_column_flags(conn, schema, rec.entity, str(rec.proposed_fields.get("column")),
                                  note=note, source="human")
         written = {"column_note": flags.note}
+    elif rec.kind == "object_note":
+        # HB-5 — the recommendations store IS the sink: an accepted object note stays
+        # here, readable with verification "accepted" (stored and shown; injection into
+        # a prompt is HB-4's gate and needs a measured lift first).
+        written = {"object_note": note, "object_ref": rec.target_id}
     else:
         from aughor.semantic.glossary import update_table
         update_table(rec.entity, grain=note)
@@ -179,3 +205,32 @@ def accept_note(conn: str, schema: str, rec_id: str) -> Optional[dict]:
     rec.status = "accepted"
     save_recommendation(conn, schema, rec)
     return {"accepted": rec_id, **written}
+
+
+def object_notes_for(connection_id: str, object_ref: str,
+                     include_pending: bool = True) -> list[dict]:
+    """HB-4/5 — the notes filed on one securable, newest last: pending (staged,
+    awaiting a person) and accepted, each with its provenance dict. A read of the
+    recommendations tree only; scans the connection's schema folders."""
+    from aughor.ontology.recommendations import load_recommendations
+    out: list[dict] = []
+    for schema in _schemas_of(connection_id):
+        for rec in load_recommendations(connection_id, schema):
+            if rec.kind != "object_note" or rec.target_id != object_ref:
+                continue
+            if rec.status == "dismissed":
+                continue
+            if rec.status == "pending" and not include_pending:
+                continue
+            out.append({"id": rec.id, "schema": schema,
+                        "note": str(rec.proposed_fields.get("note") or ""),
+                        "status": rec.status,
+                        "provenance": dict(rec.proposed_fields.get("provenance") or {}),
+                        "first_seen": rec.first_seen, "last_seen": rec.last_seen})
+    out.sort(key=lambda r: r["last_seen"])
+    return out
+
+
+def _schemas_of(connection_id: str) -> list[str]:
+    from aughor.ontology.recommendations import recommendation_schemas
+    return recommendation_schemas(connection_id)

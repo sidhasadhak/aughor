@@ -1,0 +1,24 @@
+# The function layer (HB-6, §6 24 c). Installing this pack creates the Supply Chain
+# group — subscribed to the pack's domains (its tags) and to the order process below —
+# waiting for members. Its automation lands declared, on probation and disarmed.
+group:
+  id: supply-chain
+  name: Supply Chain
+  description: Owns fulfilment — the order-to-delivery process and its promises.
+subscriptions:
+  - "process:order_to_delivery"
+automations:
+  - id: dispatch-watch
+    name: Dispatch promise watch
+    description: >
+      When the dispatch promise breaches, file a routed alert on the promise — it
+      reaches the process owner and every subscriber, this group included.
+    conditions:
+      - kind: promise_breached
+        config:
+          process: order_to_delivery
+    effects:
+      - kind: notify
+        config:
+          route_about: "promise:order_to_delivery.dispatch"
+          message: The dispatch promise breached; the platform routed this to its owners and subscribers.

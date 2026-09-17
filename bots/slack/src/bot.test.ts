@@ -225,3 +225,78 @@ describe("buildBot — RC-2", () => {
     expect(seen[0].sessionId).toBe(THREAD);
   });
 });
+
+// ── HB-5 · the note verb: arrivals, never asks ──────────────────────────────────
+
+import { parseSlackThreadRef } from "./bot.js";
+import type { ArrivalBody, ArrivalResult } from "./aughor.js";
+
+function fakeArrivals(result: Partial<ArrivalResult> = {}) {
+  const posted: ArrivalBody[] = [];
+  const postArrival = async (body: ArrivalBody): Promise<ArrivalResult> => {
+    posted.push(body);
+    return { ok: true, status: 200, detail: "staged for human review", ...result };
+  };
+  return { postArrival, posted };
+}
+
+describe("parseSlackThreadRef", () => {
+  it("reads channel and root ts off the adapter's colon-joined id", () => {
+    expect(parseSlackThreadRef("slack:C1:1712.001")).toEqual({ channel: "C1", ts: "1712.001" });
+    expect(parseSlackThreadRef("C1:1712.001")).toEqual({ channel: "C1", ts: "1712.001" });
+  });
+  it("refuses an id with no ts tail rather than guessing", () => {
+    expect(parseSlackThreadRef("slack:C1")).toBeNull();
+    expect(parseSlackThreadRef("")).toBeNull();
+  });
+});
+
+describe("the note verb", () => {
+  it("files the sentence through the arrivals door and never calls ask", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const { postArrival, posted } = fakeArrivals();
+    const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter,
+      THREAD,
+      createTestMessage("m9", "@aughor note: carrier X was on strike last week"),
+    );
+
+    expect(calls).toHaveLength(0);                      // an arrival is not an ask
+    expect(posted).toHaveLength(1);
+    expect(posted[0].channel).toBe("C1");
+    expect(posted[0].threadTs).toBe("1712.001");
+    expect(posted[0].text).toBe("carrier X was on strike last week");
+    expect(adapter).toHavePosted(THREAD);               // the door's sentence, repeated
+  });
+
+  it("repeats the door's refusal honestly on an unfiled thread", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["never"]);
+    const { postArrival } = fakeArrivals({ ok: false, status: 404,
+      detail: "thread C1:1712.001 is not filed on any object — nothing to note" });
+    const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter, THREAD, createTestMessage("m10", "@aughor note: this thread is unfiled"));
+
+    expect(calls).toHaveLength(0);
+    expect(adapter).toHavePosted(THREAD);
+  });
+
+  it("without the verb, a question still asks — the arrival path never hijacks", async () => {
+    const adapter = mockAughorAdapter();
+    const { ask, calls } = fakeAsk(["East is flat."]);
+    const { posted, postArrival } = fakeArrivals();
+    const bot = buildBot({ ask, postArrival, adapters: { slack: adapter }, state: createMockState() });
+
+    await bot.handleIncomingMessage(
+      adapter, THREAD, createTestMessage("m11", "@aughor note that revenue dipped?"));
+
+    // The COLON is the verb: "note that…" is prose and asks; only "note: …" files.
+    expect(posted).toHaveLength(0);
+    expect(calls).toHaveLength(1);
+  });
+});

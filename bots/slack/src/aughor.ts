@@ -277,3 +277,53 @@ export function createAskStream(
     }
   };
 }
+
+/** HB-5 — one arrival: a thread reply filed as a note on the object the thread is
+ *  about. The Python door does the customs (cap, control-strip, PII redaction) and
+ *  the staging; this is transport only, like everything in this file. */
+export interface ArrivalBody {
+  channel: string;
+  threadTs: string;
+  text: string;
+  author?: string;
+  authorRef?: string;
+}
+
+export interface ArrivalResult {
+  ok: boolean;
+  status: number;
+  /** The door's sentence — the staged note's why, or the honest refusal. */
+  detail: string;
+}
+
+export type ArrivalPoster = (body: ArrivalBody) => Promise<ArrivalResult>;
+
+export function createArrivalPoster(
+  env: Env = process.env,
+  fetchImpl: typeof fetch = fetch,
+): ArrivalPoster {
+  const base = (env.AUGHOR_API_URL ?? "http://127.0.0.1:8000").replace(/\/+$/, "");
+  const authHeaders: Record<string, string> =
+    env.AUGHOR_API_KEY ? { "x-api-key": env.AUGHOR_API_KEY } : {};
+  return async function postArrival(body: ArrivalBody): Promise<ArrivalResult> {
+    try {
+      const res = await fetchImpl(`${base}/arrivals/slack`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...authHeaders },
+        body: JSON.stringify({
+          channel: body.channel,
+          thread_ts: body.threadTs,
+          text: body.text,
+          author: body.author ?? "",
+          author_ref: body.authorRef ?? "",
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+      const detail = asText(payload.why) || asText(payload.detail) ||
+        (res.ok ? "noted" : `the arrivals door said ${res.status}`);
+      return { ok: res.ok, status: res.status, detail };
+    } catch (err) {
+      return { ok: false, status: 0, detail: `could not reach the arrivals door: ${String(err)}` };
+    }
+  };
+}

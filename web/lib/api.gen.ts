@@ -871,6 +871,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/arrivals/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arrival Notes
+         * @description Stored and shown — the conversation notes filed on one securable, each with its
+         *     provenance stamp. This is the surface the injection gate points at while it holds:
+         *     a reader SEES what people said; a prompt gets it only after measured lift.
+         */
+        get: operations["arrival_notes_arrivals_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/arrivals/slack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Arrival
+         * @description One inbound thread reply → a staged note on the filed object, with provenance.
+         *
+         *     404 when the thread is not filed on anything — an unfiled thread is ordinary
+         *     conversation, and inventing an object for it would be a model's guess.
+         */
+        post: operations["slack_arrival_arrivals_slack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ask": {
         parameters: {
             query?: never;
@@ -5311,6 +5356,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/hub/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Hub Map
+         * @description The map. Omit `conn_id` for the whole hub; pass it to narrow to one connection.
+         *
+         *     `cost` on every row is a floor, not a total (`floor: true` says so in the payload):
+         *     it folds the session log over the traces this automation's recent runs caused, and
+         *     carries `unpriced_calls`/`calls_without_usage` so an unknown price never renders as
+         *     free. `probation.precision` is null until anything is marked — "not measured", never
+         *     0%.
+         */
+        get: operations["get_hub_map_hub_map_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/intake/bundles": {
         parameters: {
             query?: never;
@@ -9623,6 +9694,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/packs/{pack_id}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Install
+         * @description Install this pack's function layer (HB-6, §6 24 c): the group it ships — tagged
+         *     via subscribe grants on its domains, subscribed to its securables, waiting for
+         *     members — and its automations, which land declared, on probation and disarmed.
+         *
+         *     Idempotent; a deprecated pack, a pack with no function.yaml, or any invalid entry
+         *     refuses the install whole with nothing written.
+         */
+        post: operations["post_install_packs__pack_id__install_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/packs/{pack_id}/propose-bindings": {
         parameters: {
             query?: never;
@@ -12876,6 +12972,19 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
+        /** InstallIn */
+        InstallIn: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
+        };
         /** InstructionsRequest */
         InstructionsRequest: {
             /** Text */
@@ -13787,6 +13896,25 @@ export interface components {
             source: string;
             /** Spreadsheet */
             spreadsheet: string;
+        };
+        /** SlackArrival */
+        SlackArrival: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Author Ref
+             * @default
+             */
+            author_ref: string;
+            /** Channel */
+            channel: string;
+            /** Text */
+            text: string;
+            /** Thread Ts */
+            thread_ts: string;
         };
         /** SlackBotBody */
         SlackBotBody: {
@@ -17035,6 +17163,71 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AllowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arrival_notes_arrivals_notes_get: {
+        parameters: {
+            query: {
+                object_ref: string;
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_arrival_arrivals_slack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackArrival"];
             };
         };
         responses: {
@@ -24497,6 +24690,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hub_map_hub_map_get: {
+        parameters: {
+            query?: {
+                conn_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -31978,6 +32202,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EvalIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_install_packs__pack_id__install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallIn"];
             };
         };
         responses: {

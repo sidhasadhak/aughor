@@ -4277,6 +4277,15 @@ export interface Automation {
   /** DS-7 — how the steps are scheduled: `ordered` (the sequential walk, the default)
    *  or `parallel` (steps run as their arrows allow). */
   scheduling: "ordered" | "parallel";
+  /** HB-2 — who declared this chain ("user:…", "pack:…"; "" = created before HB-2 or
+   *  with identity off). On the wire since HB-2; undeclared here until the hub map
+   *  needed an owner column. */
+  declared_by?: string;
+  /** HB-2 — a chain on probation sends into its declarer's queue until it graduates
+   *  at measured precision. */
+  probation?: boolean;
+  /** DS-14 — may an external MCP client invoke this chain? */
+  exposed_as_tool?: boolean;
 }
 
 export interface EffectOutcome {
@@ -4326,6 +4335,86 @@ export type NewAutomation = {
    *  a rename silently re-serialises a parallel chain. */
   scheduling?: "ordered" | "parallel";
 };
+
+// ── HB-6 · the hub-wide map — every automation on one screen ──────────────────
+
+export interface HubDestination {
+  kind: string;
+  target: string;
+  /** A routed notify: the securable it routes about, and what route() resolved. */
+  routed_about?: string;
+  resolved?: { principal: string; channel_trigger_id: string; group_id: string; why: string[] }[];
+  channel?: string;
+  label?: string;
+  type?: string;
+}
+
+export interface HubGrant {
+  id: string;
+  action_id: string;
+  target_arg: string;
+  target_value: string;
+  use_count: number;
+  last_used_at: string | null;
+}
+
+/** A FLOOR, never a total — the server says so (`floor: true`) and carries the two
+ *  caveats that keep a $0.00 from reading as free. */
+export interface HubCost {
+  window_days: number;
+  runs: number;
+  deep_runs: number;
+  total_tokens: number;
+  cost_usd: number;
+  unpriced_calls: number;
+  calls_without_usage: number;
+  floor: boolean;
+}
+
+export interface HubProbation {
+  on: boolean;
+  marked: number;
+  counts: Record<string, number>;
+  unlanded: number;
+  /** null until anything is marked — "not measured", never 0%. */
+  precision: number | null;
+  graduates_at: { min_marked: number; precision: number };
+}
+
+export interface HubMapRow {
+  id: string;
+  conn_id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  state: "live" | "muted" | "expired" | "disabled";
+  trigger: string[];
+  destinations: HubDestination[];
+  grants: HubGrant[];
+  owner: { declared_by: string; agent_id: string };
+  last_run: { at: string | null; status: string | null };
+  cost: HubCost;
+  probation: HubProbation;
+  exposed_as_tool: boolean;
+}
+
+export interface HubMapResponse {
+  rows: HubMapRow[];
+  window_days: number;
+  generated_at: string;
+  totals: { automations: number; live: number; probation: number };
+}
+
+/** HB-6 — the hub-wide map. Null when the door is absent (an older API), so the panel
+ *  renders "not here yet" instead of throwing. */
+export async function getHubMap(connId?: string): Promise<HubMapResponse | null> {
+  const qs = connId ? `?conn_id=${encodeURIComponent(connId)}` : "";
+  const res = await fetch(`${getApiBase()}/hub/map${qs}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error("Failed to fetch the hub map");
+  return res.json();
+}
+
 
 /** List automations. Returns [] when the plane is off (404) so a caller can render the
  *  "not enabled" empty state instead of throwing. */

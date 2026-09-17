@@ -111,6 +111,16 @@ def load_recommendations(conn: str, schema: str) -> list[OntologyRecommendation]
     return out
 
 
+def recommendation_schemas(conn: str) -> list[str]:
+    """The schema folders this connection's recommendations tree holds — a directory
+    listing, nothing built. HB-5's object-note reader scans with it."""
+    base = _ROOT / _safe(conn)
+    try:
+        return sorted(p.name for p in base.iterdir() if p.is_dir())
+    except FileNotFoundError:
+        return []
+
+
 def get_recommendation(conn: str, schema: str, rec_id: str) -> Optional[OntologyRecommendation]:
     return next((r for r in load_recommendations(conn, schema) if r.id == rec_id), None)
 

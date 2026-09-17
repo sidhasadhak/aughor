@@ -5792,16 +5792,73 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
 - **HB-4 · the provenance envelope and one ranker**, as above, with the harness arm per source kind. *Receipt:* the
   same question answered with and without conversation-derived notes on the ON-10 sets; notes stay in the prompt only
   with measured lift. *Falsifier:* R4's — a source kind that regresses is stored and shown, never injected.
+  > **BUILT 2026-09-16** (same session as HB-2/HB-3). What stands: **the envelope** (`hub/provenance.py`) — source
+  > kind · author · scope · observed-at with per-kind decay · verification · blast radius, with the closed authority
+  > ladder (measured > approved > declared > mined > said > inferred; unknown ranks LAST, fail-closed) and the
+  > roadmap's exact reader stamps (`[measured 2018-09-11, this connection]` · `[said by Ana in #ops, 3 days ago,
+  > unverified]`) — generalising the substrate PX-5 already held (`DefinitionSource` + `ontology/authority.py`'s
+  > verified-outranks-authority, measured before building). **The ranker** (`hub/ranker.py`) — deterministic on the
+  > three axes; per-kind recency (a definition's current approved version wins regardless of age · an observation
+  > decays and expires unless re-affirmed, 30 days · a measurement ranks by the data's own as-of); conflicts:
+  > different tiers — the higher wins and the loser is a FLAG in the receipt; same tier — both survive and the
+  > conflict is surfaced, never guessed (the ambiguity-ledger hookup rides the first real conflict); the budget fill
+  > SAYS WHAT IT DROPPED. **The gate** (`hub/injection.py`) — `INJECTABLE_SOURCE_KINDS = ()`, a closed constant
+  > flipped only by a change citing a dated harness receipt; while empty the block renders `""` and every prompt is
+  > byte-identical (tested). Wired into BOTH prompt seams in lockstep — `grounding._BLOCKS` ("hub_notes") and
+  > `_stream_chat`'s prepend — with a test that fails when either loses the block, since nothing else does.
+  > **The harness arm** — `notes` in `evals/ablation_eval.py` (UNGATED by design: the arm measures what the gate
+  > asks), with the inert-drop guard ("a notes arm with an empty block is the raw arm under another name" — dropped,
+  > not spent on). **The receipt's honest state:** no conversation notes exist yet for the ON-10 questions, so the
+  > arm inert-drops, the gate holds, and "stored and shown, never injected" IS the shipped behavior — R4's stance by
+  > construction. The arm's first real measurement runs when arrivals accumulate notes; the flip, if lift measures,
+  > cites its dated results file. **Open:** more adapters as kinds earn arms; the ambiguity-ledger ask-once wiring on
+  > the first live same-tier conflict.
 - **HB-5 · arrivals from people and systems.** A sentence in Slack becomes a note on the object with provenance (blast
   radius decides what applies and what waits); live Jira and Confluence state through Atlassian's MCP server on the
   allowlist — no connector code, the write slice's grant law already governs "open a ticket"; the email channel in both
   directions, keyed on the Google OAuth client only the user can create (24 f); one conversation record wherever it
   moves (Slack → deep analysis → Jira comment → email). *Falsifier:* an inbound channel that carries untrusted text
   reaches the agent only through customs — a red-team set of injected instructions must land as data, never as acts.
+  > **FIRST SLICE BUILT 2026-09-16** (with HB-4, one branch). The Slack half: **a sentence becomes a note on the
+  > object, deterministically** — HB-3's thread→object link is the router (a reply lands in a thread the platform
+  > FILED on a securable, so the reply is about that securable; no model decides). The verb is explicit and
+  > colon-strict: `@bot note: carrier X was on strike` files; `note that revenue dipped?` is prose and still asks —
+  > which keeps the whole path inside `app_mention`, so NO new Slack scope and NO reinstall. The door
+  > (`POST /arrivals/slack`) runs customs in order — cap (500), control-strip (`prompt_safety`), PII redaction
+  > (`security/pii.redact_text`, the row scanner's patterns given a free-text seam) — then stages an OBJECT note
+  > under `agent_notes`' blast-radius law (the new `object` target ALWAYS stages, even at high confidence: an object
+  > note is read by everyone who opens the object). Provenance rides the staged recommendation verbatim; `GET
+  > /arrivals/notes` is the stored-and-shown surface with the stamp on every row; the envelope adapter feeds the
+  > ranker from the same store. The TS bot (`bots/slack`) gained the verb + `createArrivalPoster` (70/70 vitest).
+  > **The falsifier is permanent** (`test_hb5_arrival_redteam.py`, SP-6's contract extended inbound): seven attacks —
+  > instruction override, fake tool-result framing, fenced fake proposal, exfiltration nudge, 10KB bulk, SQL
+  > injection, PII smuggle — each lands as a capped, redacted, PENDING note; the action inbox, the automations
+  > library and the links store are unchanged by every one. **Deliberately not built:** the email channel (both
+  > directions keyed on the Google OAuth client only the user can create — §6 item 24 f holds); Jira/Confluence
+  > state arrives through the allowlisted MCP consumer with the write slice's grant law, no connector code, and its
+  > live receipt waits on a real Atlassian server on the allowlist; a plain (non-mention) thread reply stays
+  > un-listened (it would need `message.channels` + a reinstall — the mention verb covers the case without either).
+  > "One conversation record wherever it moves" is the manifest ordered by time: the thread link, the ticket link
+  > and the notes all hang off the one securable.
 - **HB-6 · the map and the packs.** Every automation on one screen — trigger, destinations, grant, owner, last run,
   cost, probation state (Agent Ops' Map does this per agent; hub-wide does not exist); a function pack ships its group,
   its tags, its default grants and subscriptions, and its automations (24 c). *Receipt:* installing a supply-chain pack
   creates the group, tagged and subscribed, waiting for members.
+  > **BUILT 2026-09-16.** **The map** is one read — `GET /hub/map` — assembling every column the sentence names
+  > from stores that all existed: the trigger is the condition's own one-liner; a routed notify's destinations are
+  > resolved through the ENGINE's resolver, so the map cannot drift from the send; grants are the standing rows
+  > bucketed by their automation owner; **cost is an explicit floor** (the session-log fold over each chain's run
+  > traces and step investigations, `unpriced_calls`/`calls_without_usage` carried — there is no per-automation
+  > usage axis, and a tick job's own meter reads ~0 by construction while the inner investigation job holds the
+  > spend); an unmeasured precision renders null, never 0%. The screen is Agent Ops' **Hub** layer beside the
+  > per-agent Map, and it takes no connection scope — hub-wide is the definition, the door's `?conn_id` serves
+  > narrow callers. **The packs half**: `function.yaml` + `POST /packs/{id}/install` — guarded
+  > (`govern.guard("pack.install")`), journalled (`pack.installed`), validate-everything-then-write (a bad layer
+  > refuses whole with nothing written), idempotent, and it never takes back what operators set. The shipped
+  > `packs/supply-chain` IS the receipt, held by `test_hb6_packs_ship_groups.py`: installing it creates the group
+  > — tagged via subscribe grants on its domains, subscribed to the order process, zero members — with its
+  > dispatch watch declared `pack:supply-chain`, on probation, disarmed; and `route()` already finds the group as
+  > a destination, channel-less until someone gives it one. §6 24 (c) taken with the wave.
 
 **Sequencing rules that bind the arc.** No channel is built before an automation with real traffic needs it. The
 routing half precedes enforcement. Departures are gated harder than the screen from the first one. Push only from
@@ -6541,6 +6598,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-16, later:** item 24 (a), (b) and (d) decided on the user's *"Lets take the logical next step..
 > go.."* — §3.18 active, HB-1 first, `domain` grant-bearing, Viewer/Editor/Owner the first personas; (c) waits for
 > HB-6, (e) for HB-3, (f) holds on the OAuth client, (g) rides the arc. Open: 16, 18(c), 22(c), 24(c·e·f·g).
+> **Amended 2026-09-16, HB-6:** item 24 (c) decided on the user's *"Start hb-6"*, on the recorded recommendation —
+> packs ship function groups; (e) had been taken with HB-3 the same day. Open: 16, 18(c), 22(c), 24(f·g).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -6875,8 +6934,12 @@ the browser** · **measure the premise before building.**
     **(b) `domain` becomes a grant-bearing tag** beside `tier` and `pii` — **✅ DECIDED 2026-09-16 with (a)**, being a
     call HB-1's own spec names (grants by tag are what make a function group self-maintaining); tags stay human-set,
     so a tag cannot be granted by a model.
-    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations.
-    *Recommended: yes; an organisation starting empty is the alternative.* HB-6's call — still open.
+    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations —
+    **✅ DECIDED 2026-09-16 with HB-6 (the user: "Start hb-6", on the recorded recommendation).** Two spellings the
+    build fixed: "tagged" is subscribe grants on the pack's domains, because a group is a principal, not a securable
+    — (b)'s grants-by-tag mechanism is what makes the group self-maintaining; and a pack automation lands declared
+    (`pack:<id>`), on probation and DISARMED, so nothing a pack ships acts before a person arms it. A re-install
+    never takes back what operators set (the group's channel, its members, an arming, a graduation).
     **(d) The persona set** — Viewer / Editor / Owner as the first persona groups; a Steward only when a deployment
     asks — **✅ DECIDED 2026-09-16 with (a)**, being the personas HB-1 ships.
     **(e) The first live receipt's host** — Olist's dispatch promise — **✅ DECIDED 2026-09-16 (the user: "Go for

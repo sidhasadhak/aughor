@@ -156,7 +156,11 @@ def _classify_guarded(score: dict, sql: str | None, fired: list[str]) -> str:
 
 
 #: `framed_guarded` — the framed arm's SQL through the guard battery, as the product ships a framed answer.
-ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "framed_guarded", "injected", "objects")
+#: `notes` — HB-4's arm: the schema plus the ranked, provenance-stamped conversation-notes
+#: block (aughor/hub — what people SAID, enveloped). The injection gate
+#: (hub/injection.INJECTABLE_SOURCE_KINDS) flips only on this arm's measured lift; until
+#: then notes are stored and shown, never injected. Inert-dropped when no notes exist.
+ARMS: tuple[str, ...] = ("raw", "guarded", "ontology", "ontology_guarded", "framed", "framed_guarded", "injected", "objects", "notes")
 _NO_SQL = {"error": "Generation failed", "execution_success": 0.0}
 
 
@@ -462,6 +466,32 @@ def _load_graph(conn_id: str, schema_name: str | None,
     return _quiet(lambda: load_latest_ontology(conn_id, schema_name), None), "store"
 
 
+def notes_context(conn_id: str) -> str:
+    """HB-4 — the ranked conversation-notes block, UNGATED: the arm exists to measure
+    exactly what the gate asks, so it renders regardless of INJECTABLE_SOURCE_KINDS.
+    '' when the connection holds no conversation notes."""
+    from aughor.hub.adapters import conversation_note_pieces
+    from aughor.hub.injection import NOTES_BLOCK_BUDGET_CHARS
+    from aughor.hub.ranker import rank
+    pieces = _quiet(lambda: conversation_note_pieces(conn_id), [])
+    if not pieces:
+        return ""
+    ranked = rank(pieces, budget_chars=NOTES_BLOCK_BUDGET_CHARS)
+    if not ranked.kept:
+        return ""
+    return ("CONTEXT FROM PEOPLE (ranked; every line carries its provenance — weigh "
+            "it by the stamp, and prefer measured numbers over said ones):\n"
+            + ranked.rendered())
+
+
+def _arms_after_notes_check(arms: tuple[str, ...], notes_ctx: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Drop the notes arm when there is nothing to inject — a `notes` arm with an empty
+    block is the raw arm under another name (the ontology guard's rule, same words)."""
+    if "notes" not in arms or notes_ctx:
+        return arms, ()
+    return tuple(a for a in arms if a != "notes"), ("notes",)
+
+
 def _arms_after_ontology_check(arms: tuple[str, ...], onto_ctx: str) -> tuple[tuple[str, ...], tuple[str, ...]]:
     """Drop the ontology arms when there is nothing to inject.
 
@@ -564,6 +594,13 @@ def run(dataset: str, limit: int | None, output: str | None,
         print(f"  ⚠ the ontology for {label} (source: {graph_source}) declares no process and no rule — the `framed` "
               f"arm would equal raw, so it is DROPPED, not spent on. Pass --graph-json {label}=<the JSON of GET /ontology>.")
         dropped = tuple(dropped) + frame_dropped
+    notes_ctx = notes_context(conn_id) if "notes" in arms else ""
+    arms, notes_dropped = _arms_after_notes_check(arms, notes_ctx)
+    if notes_dropped:
+        print(f"  ⚠ no conversation notes on {label} — the `notes` arm would equal raw, "
+              f"so it is DROPPED, not spent on. Notes arrive through /arrivals (HB-5); "
+              f"the injection gate stays shut until this arm measures lift.")
+        dropped = tuple(dropped) + notes_dropped
     choose = None
     if "framed" in arms:
         from aughor.agent.framing import choose_definition
@@ -608,6 +645,13 @@ def run(dataset: str, limit: int | None, output: str | None,
                                            "class": _classify_guarded(og_score, og_sql, o_fired),
                                            "guards_fired": o_fired,
                                            "match": round(og_score.get("result_set_match", 0.0), 3)}
+
+        if "notes" in arms:
+            n_sql = _quiet(lambda: generate_sql_chat(q, conn_id, schema_text + "\n\n" + notes_ctx,
+                                                     dialect_rules=dialect_rules), None)
+            n_score = score_single(db, rec, n_sql) if n_sql else dict(_NO_SQL)
+            row["notes"] = {"sql": n_sql, "class": _classify_plain(n_score, n_sql),
+                            "match": round(n_score.get("result_set_match", 0.0), 3)}
 
         if "framed" in arms:
             block, frame, calls = _quiet(lambda: framed_context(q, graph, dialect=getattr(db, "dialect", "") or "duckdb",
