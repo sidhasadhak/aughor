@@ -4133,6 +4133,11 @@ async def _stream_investigation(
                         "question": _cp.get("question", ""),
                         "options": _cp.get("options", []),
                         "previews": _cp.get("previews", []),
+                        # HB-2 law 6 — the governed metric and each reading's SQL, so a
+                        # headless run's owner can answer on the departures screen and the
+                        # answer is remembered without resuming the run.
+                        "metric_name": _cp.get("metric_name", ""),
+                        "readings": _cp.get("readings", []),
                     })
                 elif "plan_gate" in _next:
                     _subqs = merged.get("sub_questions", [])

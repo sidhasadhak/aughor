@@ -153,10 +153,27 @@ def deliver(event: AgentAlertEvent, rule: AgentAlertRule) -> tuple[bool, str]:
                            rule.id, rule.name, channel, event.id)
             return False, f"unknown trigger: {channel}"
 
+        from aughor.govern.departure import gate_departure
+        from aughor.govern.departure_basis import measurement_for_agent_alert
+
+        recommendation = f"{rule.name} [{event.severity}]: {event.reason}"
+        # HB-2 — the departure gate. The numbers are the platform's own (a window of agent
+        # jobs, model calls or guardrail verdicts), measured in this tick and defined by the
+        # rule a person declared; no warehouse connection applies. Re-notification is the
+        # rule's own debounce, already applied upstream.
+        verdict = gate_departure(
+            kind="agent_alert", org_id=_current_org(), conn_id="", text=recommendation,
+            target=trigger.id, actor=f"alert_rule:{rule.id}", source_kind="alert_rule",
+            source_id=rule.id, source_name=rule.name,
+            measurement=measurement_for_agent_alert(event, rule),
+            declared_definition=f"alert rule '{rule.name}' (declared)")
+        if verdict.held:
+            return False, f"held at departure — {verdict.reason_sentence()}"[:500]
+
         log = fire_action(trigger, ActionPayload(
             investigation_id=f"agent_alert:{rule.id}",
             rec_index=0,
-            recommendation=f"{rule.name} [{event.severity}]: {event.reason}",
+            recommendation=recommendation,
             metric_name=event.metric,
             headline=rule.name,
             trigger_id=trigger.id,
@@ -164,7 +181,8 @@ def deliver(event: AgentAlertEvent, rule: AgentAlertRule) -> tuple[bool, str]:
             # The event id, never a fresh timestamp: the HTTP layer retries, and a slow
             # receiver has to be able to tell that retry from a genuinely new alert.
             delivery_key=f"agent-alert:{event.id}",
-            context=alert_context(event, rule),
+            context={**alert_context(event, rule), "receipt": verdict.receipt,
+                     "receipt_line": verdict.receipt_line()},
         ))
         status = str(getattr(log, "status", ""))
         if status == "timeout":
