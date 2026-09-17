@@ -5537,9 +5537,15 @@ installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-s
 - **Receipts:** `tests/unit/test_installer.py` (25 new, 73 in all), `tests/unit/test_ip2_industry_choice.py` (14),
   `web/components/OrgIndustriesSection.test.tsx` (3); `api.gen.ts` regenerated for the two routes; the full backend
   suite once on the commit: 10,639 passed, 5 skipped, none failed; vitest 970 passed.
-- **Open:** the Windows console path (`CONIN$`) is untested here — no Windows machine, and the CI install workflow has
-  no console, so it asks nothing; the profile inference prompt does not name the chosen industries — the narrowing is
-  at resolution, deterministic, and a prompt change waits for a measured reason.
+- **Trap, measured on PR #518's first CI run:** GitHub's Windows runner starts each step with a console but no window.
+  `CONIN$` opens there, and the question waited for a key nobody could press — both Windows install jobs sat in
+  `install.cmd --no-start` for 20 minutes, where the last green run took two (macOS and Linux have no terminal to
+  open, and passed). The question is now asked only where a person can answer: never when `CI` or `TF_BUILD` is set,
+  and on Windows only in a console with a window (`GetConsoleWindow`). An unattended run asks nothing and records
+  nothing, which keeps every industry.
+- **Open:** a person answering in a Windows console is untested here (no Windows machine; CI now skips the question
+  by design); the profile inference prompt does not name the chosen industries — the narrowing is at resolution,
+  deterministic, and a prompt change waits for a measured reason.
 
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
