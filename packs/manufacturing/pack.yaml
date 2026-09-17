@@ -1,0 +1,19 @@
+id: manufacturing
+name: Manufacturing
+version: 1
+description: >
+  The manufacturing industry package: OEE, first-pass yield, scrap, cycle versus takt, throughput, downtime, and the deep knowledge behind them.
+layer: industry
+industry: manufacturing
+owner_team: Platform
+domains:
+  - manufacturing
+  - production
+  - plant operations
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").

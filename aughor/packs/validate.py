@@ -94,6 +94,20 @@ def validate_loaded(pack: Pack) -> ValidationReport:
         if pb.trigger_metric and pb.trigger_metric not in metric_names:
             r.warnings.append(f"playbook trigger_metric {pb.trigger_metric!r} is not a pack metric")
 
+    # ── IP-3 — a package that declares the anatomy is held to the static gate (gate 3) ──
+    from aughor.packs.gate3 import applies, run_gate3
+    if applies(pack):
+        r.errors.extend(run_gate3(pack).lines())
+
+    # ── knowledge layer (IP-1) — a package is REFERENCE the agents read (§3.17), not a
+    # steering pack, so the steering completeness warnings below do not apply to it ──────
+    if m.layer or m.industry:
+        from aughor.packs.knowledge import package_checks
+        errors, warnings = package_checks(pack)
+        r.errors.extend(errors)
+        r.warnings.extend(warnings)
+        return r
+
     # ── completeness warnings (a pack that does nothing is rarely intended) ─────
     if not pack.metrics:
         r.warnings.append("no metrics defined")
@@ -105,5 +119,11 @@ def validate_loaded(pack: Pack) -> ValidationReport:
         r.warnings.append("no evals — the pack cannot be promotion-gated (Bet 2)")
     if not (pack.expertise or "").strip():
         r.warnings.append("no expertise.md — the expert has no reasoning persona")
+
+    # ── function layer (HB-6) — same checks install refuses on, so the roster
+    # names a broken layer before anyone reaches the install door ──────────────
+    if pack.function is not None:
+        from aughor.packs.install import function_layer_problems
+        r.errors.extend(function_layer_problems(pack))
 
     return r

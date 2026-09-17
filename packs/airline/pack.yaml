@@ -1,0 +1,22 @@
+id: airline
+name: Airline
+version: 1
+description: >
+  The airline industry package: its curated metrics (load factor, OTP, yield, RASM/CASM, ancillary revenue, fleet utilisation) and the deep knowledge behind them.
+layer: industry
+industry: airline
+# IP-3 (2026-09-17): the reference package — the full anatomy, held to gate 3 (the static gate) and measured by
+# gate 4 on BTS's public January 2019 on-time file. industry.json and kb/ stay as IP-1 moved them.
+anatomy: 1
+owner_team: Platform
+domains:
+  - airline
+  - aviation
+  - passenger operations
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").

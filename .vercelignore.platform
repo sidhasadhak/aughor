@@ -3,12 +3,11 @@
 # and excluding /web starved its builds into a 7-second empty shell whose check PASSED.
 # Platform (Python API) deploy. Root-anchored (a bare name also matches subpaths —
 # `evals` swallowed aughor/evals once). data/ ships ONLY its authored inputs
-# (glossary, KB, rules): the empty-catalogue goal means no generated stores, and
+# (glossary, rules — the KB ships in /packs since IP-1): the empty-catalogue goal means no generated stores, and
 # per-connection artifacts are keyed to local connections that don't exist there.
 # `/data/*` not `/data`: gitignore semantics cannot re-include under an excluded DIR.
 /web
 /data/*
-!/data/kb
 !/data/glossary.yaml
 !/data/global_rules.md
 !/data/events.yaml

@@ -6,7 +6,7 @@ The bug this guards: the coder aliased `SUM(order_value)/COUNT(DISTINCT order_id
 (correctly — that IS AOV), but the narrator wrote it up as "ROAS at 6.23"; that one wrong word
 made the Briefing claim ROAS and the drill-down chase a revenue÷spend ratio with no clean grain.
 The signal is the query's OWN label disagreeing with the claim. The metric vocabulary comes from
-the per-industry KB (data/kb/industry/*.json) matched to the connection's profile, plus
+the per-industry KB (the industry packages' industry.json, IP-1) matched to the connection's profile, plus
 org-registered metrics — so airline/manufacturing/SaaS are covered by their JSON, and a new metric
 is a KB/registry entry, not a code change.
 

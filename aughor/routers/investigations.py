@@ -2032,6 +2032,14 @@ def _answer_core(
                                       dialect=_writer_dialect(db))
         if _frame_sec:
             prompt = _frame_sec + prompt
+        # HB-4 — the ranked conversation-notes block, gated on measured lift
+        # (aughor/hub/injection.py): renders "" while the gate holds, so this line is
+        # byte-inert today. Mirrored in grounding._BLOCKS ("hub_notes") — the receipt
+        # and the live prompt must not disagree about what was injected.
+        from aughor.agent.grounding import hub_notes as _hub_notes
+        _notes_sec = _hub_notes(connection_id)
+        if _notes_sec:
+            prompt = _notes_sec + prompt
         # Summon surface (SP-2, §3.11) — which product screen the question was asked
         # from; the ⌘K overlay sends its host tab and every other door sends ''
         # (byte-identical prompts). Whitespace-collapsed and hard-capped because it
@@ -4125,6 +4133,11 @@ async def _stream_investigation(
                         "question": _cp.get("question", ""),
                         "options": _cp.get("options", []),
                         "previews": _cp.get("previews", []),
+                        # HB-2 law 6 — the governed metric and each reading's SQL, so a
+                        # headless run's owner can answer on the departures screen and the
+                        # answer is remembered without resuming the run.
+                        "metric_name": _cp.get("metric_name", ""),
+                        "readings": _cp.get("readings", []),
                     })
                 elif "plan_gate" in _next:
                     _subqs = merged.get("sub_questions", [])

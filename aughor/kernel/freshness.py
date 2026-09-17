@@ -233,6 +233,11 @@ FINGERPRINTS: dict[str, FingerprintSpec] = {
             "staleness",
             "per-entity structural hashes, so a PARTIAL verdict can name which tables moved.",
         ),
+        FingerprintSpec(
+            "package_receipt", "aughor.packs.gate4", "package_fingerprint", "staleness",
+            "IP-3 — a package's gate 4 receipt: SHA-256 over its anatomy files (paths and bytes). "
+            "A receipt whose fingerprint differs describes a package that has since changed, and CI fails it.",
+        ),
         # ── content: identity for dedup / idempotency, NOT staleness ──
         FingerprintSpec(
             "sql_args", "aughor.agent.wandering", "args_fingerprint", "content",

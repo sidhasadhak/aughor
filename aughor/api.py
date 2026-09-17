@@ -790,10 +790,17 @@ async def _start_continuous_exploration_loop() -> None:
 
 async def _seed_playbook() -> None:
     try:
-        from aughor.playbook.builder import seed_from_kb, activate_seeded
+        from aughor.playbook.builder import seed_from_kb, activate_seeded, top_up_data_quality
         n = seed_from_kb()
         if n:
             logger.info("Playbook seeded with %d entries from KB.", n)
+        # IP-1 — an existing playbook receives the data-quality checks it was seeded without, once;
+        # a play a person deleted stays deleted (see top_up_data_quality).
+        topped = top_up_data_quality()
+        if topped["added"] or topped["filled"]:
+            logger.info("Playbook topped up: %d data-quality plays added, %d given their cause and fix "
+                        "(%d deleted by a person, kept deleted).",
+                        topped["added"], topped["filled"], topped["kept_deleted"])
         # Activate the seed by default — promote KB-seeded drafts to 'active' so
         # they're live playbook items the user can keep / modify / remove, not
         # dormant drafts. Idempotent; never touches user-deprecated entries.
@@ -869,6 +876,8 @@ from aughor.routers import (
     groups as groups_router,
     departures as departures_router,
     links as links_router,
+    arrivals as arrivals_router,
+    hub as hub_router,
     packs as packs_router,
     receipt as receipt_router,
     agui,
@@ -932,6 +941,8 @@ app.include_router(roles_router.router)
 app.include_router(groups_router.router)  # HB-1 — groups, level grants, explain + route (the routing half)
 app.include_router(departures_router.router)  # HB-2 — the departures ledger, verdicts, graduation
 app.include_router(links_router.router)  # HB-3 — the manifest: tickets/threads filed on objects, outcomes
+app.include_router(arrivals_router.router)  # HB-5 — arrivals: a Slack sentence becomes a staged note with provenance
+app.include_router(hub_router.router)  # HB-6 — the hub-wide map: every automation on one screen
 app.include_router(receipt_router.router)
 app.include_router(agui.router)  # AG-UI protocol seam (CK-1); endpoint self-gates on flag `agui.endpoint`
 app.include_router(dashboard.router)  # briefing-cockpit — user-authored dashboard cards (Slice 0)

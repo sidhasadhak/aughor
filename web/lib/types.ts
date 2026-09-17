@@ -315,6 +315,21 @@ export interface AnswerReport {
   metric_definition?: string | null;
   // ON-10 — the frame the question was read through; absent when it reached nothing declared.
   frame?: OntologyFrame | null;
+  // IP-1 — the Verifier's rule-outs for the move the report states; absent when it states none.
+  rule_outs?: RuleOuts | null;
+}
+
+/** IP-1 — the known ways a reported move can be the data rather than the business: the playbook's
+ *  data-quality checks for the metric in the direction it moved, each with its fix. `lead` is the sentence
+ *  above the list — what the causes are about, which way they push, and `note` (none was checked against
+ *  the data) — composed once by the backend so every surface says the same words. */
+export interface RuleOuts {
+  direction: "up" | "down";
+  metric: string;
+  matched: string[];
+  note: string;
+  lead: string;
+  items: { cause: string; fix: string; play_id: string; version: number; receipt: string }[];
 }
 
 // SSE event shapes

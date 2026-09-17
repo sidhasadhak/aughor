@@ -31,6 +31,10 @@ _CONTENT_FIELDS = (
     "trigger_metric", "trigger_condition", "trigger_operator", "trigger_value",
     "recommendation", "expected_impact", "typical_timeline", "owner_role", "tags",
 )
+#: Content a play carries only when it has it (IP-1: a data-quality play's cause and fix). Each is
+#: fingerprinted when non-empty and left out when empty, so every play that has none keeps the
+#: receipt — and the version — it had before these fields existed.
+_OPTIONAL_CONTENT_FIELDS = ("cause", "fix")
 
 
 def _now_iso() -> str:
@@ -42,6 +46,7 @@ def compute_receipt(entry: PlaybookEntry) -> str:
     volatile meta (success rate, status, evidence, version). A finding that cites this receipt
     can prove it relied on exactly this content — even after the play is later revised."""
     payload = {k: getattr(entry, k) for k in _CONTENT_FIELDS}
+    payload.update({k: v for k in _OPTIONAL_CONTENT_FIELDS if (v := getattr(entry, k))})
     blob = json.dumps(payload, sort_keys=True, default=str)
     return "pbk_" + hashlib.sha256(blob.encode()).hexdigest()[:16]
 
@@ -108,6 +113,16 @@ def list_versions(entry_id: str, path: Path | None = None) -> list[dict]:
         return []
     log = json.load(open(vp))
     return [s for s in (log if isinstance(log, list) else []) if s.get("entry_id") == entry_id]
+
+
+def ever_saved_ids(path: Path | None = None) -> set[str]:
+    """Every play id the version log holds a snapshot of, including plays since deleted. An id here and
+    not in the playbook is a play a person removed (IP-1's top-up never brings one back)."""
+    vp = _versions_path(path)
+    if not vp.exists():
+        return set()
+    log = json.load(open(vp))
+    return {str(s["entry_id"]) for s in (log if isinstance(log, list) else []) if s.get("entry_id")}
 
 
 def get_version(entry_id: str, version: int, path: Path | None = None) -> dict | None:

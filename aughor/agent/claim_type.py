@@ -186,6 +186,41 @@ def admissible_verbs_directive(claim_type: str, why: str) -> str:
         "with anything else; no relationship was tested.")
 
 
+#: Forecast phrasing beyond the predictive verbs above. A report under a predictive licence
+#: may say "projected to"; a DEPARTURE never may (HB-2 law 5 — the platform has no
+#: forecaster), so the departure gate reads these as forecasts too. Kept out of
+#: `_PREDICTIVE_VERB_RE` on purpose: widening that would change what an investigation's own
+#: report checks refuse, which is a different contract from what may leave the platform.
+_FORECAST_PHRASE_RE = re.compile(
+    r"\b(?:project(?:ed|s)?\s+to|projection|on\s+track\s+to|likely\s+to|(?:is|are)\s+set\s+to"
+    r"|will\s+(?:reach|hit|exceed|surpass|top|double|triple|decline|increase|decrease"
+    r"|continue|recover|climb|shrink|stay|remain)|forecasting)\b", re.I)
+
+
+def sentence_claims(prose: str) -> list[tuple[str, str, str]]:
+    """(sentence, claim type, verb) for every sentence that claims MORE than a description —
+    the strongest type it affirmatively asserts. Forecast phrasing reports as ``predictive``.
+
+    The departure gate's reading of a message (HB-2 law 5): it has no licence of its own to
+    compare against, so it asks what each sentence claims and lets the caller decide what
+    may leave. Negated uses never count, by the same stripping ``overreaching_sentences``
+    applies — "revenue was NOT driven by pricing" describes a finding, it asserts no cause.
+    """
+    if not prose:
+        return []
+    out: list[tuple[str, str, str]] = []
+    for sentence in _SENTENCE_RE.split(prose):
+        stripped = _NEGATION_RE.sub(" ", sentence)
+        for name in ("causal", "predictive", "associational"):
+            m = _VERBS_BY_TYPE[name].search(stripped)
+            if m is None and name == "predictive":
+                m = _FORECAST_PHRASE_RE.search(stripped)
+            if m:
+                out.append((sentence.strip(), name, m.group(0)))
+                break
+    return out
+
+
 def overreaching_sentences(prose: str, claim_type: str) -> list[tuple[str, str]]:
     """(sentence, verb) for each sentence claiming more than the licence allows.
 

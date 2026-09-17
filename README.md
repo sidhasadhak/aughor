@@ -49,6 +49,12 @@ curl -LsSf https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.sh 
 powershell -ExecutionPolicy ByPass -c "irm https://raw.githubusercontent.com/sidhasadhak/aughor/main/install.ps1 | iex"
 ```
 
+The installer asks once which industries Aughor is for (airline, food delivery, logistics,
+manufacturing, retail and e-commerce, SaaS). Press Enter to keep them all: each connection's industry
+is then detected from its data. To answer without being asked, add `--industries retail,saas` (or
+`all`, or `none`) — `curl … | sh -s -- --industries retail`, or set `AUGHOR_INDUSTRIES` — and change it
+later in **Settings → Organization** or with `aughor industries`.
+
 Next time, run `aughor`.
 
 ## Pick your models

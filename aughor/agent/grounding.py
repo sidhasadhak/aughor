@@ -227,6 +227,18 @@ def writer_dialect(db: Optional[object]) -> str:
     return "duckdb"
 
 
+def hub_notes(connection_id: str) -> str:
+    """HB-4 — the ranked conversation-notes block, behind the injection gate. Renders
+    ``""`` until the conversation source kind measures lift on the ON-10 sets
+    (aughor/hub/injection.py's law), so the prompt is byte-identical while the gate
+    holds — stored and shown, never injected."""
+    def build() -> str:
+        from aughor.hub.injection import ranked_notes_block
+        block = ranked_notes_block(connection_id)
+        return (block + "\n\n") if block else ""
+    return _safe(build, "grounding: hub notes")
+
+
 def question_frame(question: str, connection_id: str, *, schema_name: str = "", dialect: str = "duckdb") -> str:
     """ON-10 — the question's business terms resolved against the DECLARED ontology (a promise, a lag, a rule, a stage's
     moment) with the SQL the object door compiles for each: the frame the deep investigation reads, given to the quick
@@ -254,6 +266,8 @@ _BLOCKS: list[tuple[str, str, Callable[..., str], bool]] = [
      lambda q, c, **k: custom_instructions(c, k.get("canvas_id") or ""), False),
     ("trusted", "Trusted query templates", lambda q, c, **k: trusted_templates(q, c), False),
     ("corrections", "Ambiguity-ledger priors (corrections)", lambda q, c, **k: correction_priors(q, c), False),
+    ("hub_notes", "Context from people (ranked, provenance-stamped)",
+     lambda q, c, **k: hub_notes(c), False),
     ("question_frame", "Question frame (declared definitions)",
      lambda q, c, **k: question_frame(q, c, schema_name=k.get("eff_schema") or "", dialect=writer_dialect(k.get("db"))),
      False),

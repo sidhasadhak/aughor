@@ -612,6 +612,50 @@ def _step_span(effect: Effect, automation: Automation, alias: str, run_id: str =
 #: absent from every label allowlist so it cannot reach a reader.
 AWAIT_KEY = "_await_result"
 
+#: HB-2 — engine→dispatcher plumbing for the departure gate, on AWAIT_KEY's precedent: what
+#: an outward send's words were read from (the analyses among the steps its config binds,
+#: the trigger's payload, divergent readings an analysis paused on). Set on the BOUND config
+#: of `DEPARTURE_SENDS` only; never authored, never stored.
+DEPARTURE_BASIS_KEY = "_departure_basis"
+#: HB-2 — a routed notify's securable, carried to each destination's gate. Not `about`:
+#: an `about` FILES the send on its object (HB-3), and routing one message to three groups
+#: must not file it three times.
+ROUTED_ABOUT_KEY = "_departure_about"
+#: HB-2 law 6 — what an investigate step publishes when its analysis PAUSED on divergent
+#: readings of a metric. A send that reads that step is held for the metric's owner instead
+#: of starving into a skip nobody is asked about.
+DISAGREEMENT_KEY = "_readings_disagree"
+#: The step kinds that leave the platform through the engine's departure gate.
+DEPARTURE_SENDS = frozenset({"slack_post", "notify"})
+
+
+def departure_basis(effect: Effect, context: dict) -> dict:
+    """HB-2 — where one outward send's words come from, read off the chain context: the
+    analyses its bindings read (law 1 grounds the message in their rows, law 5 reads their
+    claim licence), the trigger payload (a promise it is about, a finding) and divergent
+    readings an upstream analysis paused on (law 6)."""
+    from aughor.automations.dataflow import TRIGGER_ALIAS
+    analyses: list[str] = []
+    trigger: dict = {}
+    disagreement = None
+    seen: set[str] = set()
+    for ref in effect_refs(effect):
+        alias = parse_ref(ref)[0]
+        if not alias or alias in seen:
+            continue
+        seen.add(alias)
+        entry = context.get(alias) or {}
+        if not isinstance(entry, dict):
+            continue
+        if alias == TRIGGER_ALIAS:
+            trigger = {k: str(entry[k]) for k in ("about", "as_of", "finding_id") if entry.get(k)}
+            continue
+        if entry.get("investigation_id"):
+            analyses.append(str(entry["investigation_id"]))
+        if disagreement is None and isinstance(entry.get(DISAGREEMENT_KEY), dict):
+            disagreement = entry[DISAGREEMENT_KEY]
+    return {"analyses": analyses, "trigger": trigger, "disagreement": disagreement}
+
 
 def _downstream_binds(alias: str, later: list[Effect]) -> bool:
     """Does any later step reference ``alias``?
@@ -652,24 +696,81 @@ def acting_agent_ref(effect: Effect, automation: Automation) -> str:
 
 
 def _gate_departure(effect: Effect, automation: Automation, *, kind: str,
-                    text: str, target: str):
+                    text: str, target: str, about: Optional[str] = None,
+                    basis: Optional[dict] = None):
     """HB-2 — ask the departure gate about one outbound message. Returns its verdict,
     or None when the gate itself failed (the transport must not die of a gate defect;
-    the failure is tolerated and counted, and the send proceeds as before the wave)."""
+    the failure is tolerated and counted, and the send proceeds as before the wave).
+
+    The measurement the words depart on is the analysis the send read when it read one
+    (its rows are what the prose may cite), else the stamp of the promise it is about,
+    else the finding its trigger fired on; a literal with none of these departs on no
+    measurement, and law 1 holds any magnitude it states."""
     try:
+        from aughor.govern import departure_basis as basis_of
         from aughor.govern.departure import gate_departure
         from aughor.org.context import current_org_id
+        basis = basis if basis is not None else (effect.config.get(DEPARTURE_BASIS_KEY) or {})
+        trigger = basis.get("trigger") or {}
+        if about is None:
+            about = (effect.config.get("about") or effect.config.get(ROUTED_ABOUT_KEY)
+                     or trigger.get("about") or "")
+        about = about if isinstance(about, str) else ""
+        analyses = [str(a) for a in (basis.get("analyses") or []) if a]
+        investigation_id = analyses[0] if analyses else ""
+        if investigation_id:
+            measurement = basis_of.measurement_for_analysis(investigation_id, automation.conn_id)
+        elif about.startswith("promise:"):
+            measurement = basis_of.measurement_for_promise(about, automation.conn_id)
+        elif trigger.get("finding_id"):
+            measurement = basis_of.measurement_for_finding(trigger["finding_id"], automation.conn_id)
+        else:
+            measurement = None
         return gate_departure(
             kind=kind, org_id=current_org_id(), conn_id=automation.conn_id,
             text=text, automation_id=automation.id, automation_name=automation.name,
             probation=bool(getattr(automation, "probation", False)),
             declared_by=getattr(automation, "declared_by", "") or "",
-            actor=acting_agent_ref(effect, automation), target=target)
+            actor=acting_agent_ref(effect, automation), target=target,
+            investigation_id=investigation_id, source_kind="automation",
+            source_id=automation.id, source_name=automation.name, about=about,
+            measurement=measurement, disagreement=basis.get("disagreement"))
     except Exception as exc:
         from aughor.kernel.errors import tolerate
         tolerate(exc, "departure gate unavailable — send proceeds ungated",
                  counter="departures.gate_failed")
         return None
+
+
+def _hold_for_owner(effect: Effect, automation: Automation, context: dict) -> Optional[EffectOutcome]:
+    """HB-2 law 6 — a send whose upstream analysis PAUSED on divergent readings cannot
+    resolve its message, and before this wave it was skipped as starved: tokens spent, the
+    question unasked, nobody told. The departure has no asker, so the gate records it held
+    for the metric's owner with the readings to choose between; nothing is sent. None when
+    no upstream paused on a disagreement (the ordinary skip stands)."""
+    basis = departure_basis(effect, context)
+    if not basis.get("disagreement"):
+        return None
+    config = effect.config or {}
+    literal = {k: v for k, v in config.items() if isinstance(v, str)}
+    target = (f"{literal.get('bot_id', '')}:{literal.get('channel', '')}"
+              if effect.kind == "slack_post" else literal.get("trigger_id", "")
+              or literal.get("route_about", ""))
+    verdict = _gate_departure(effect, automation, kind=effect.kind, text="", target=target,
+                              about=literal.get("about") or literal.get("route_about") or "",
+                              basis=basis)
+    if verdict is None or not verdict.held:
+        return None
+    return EffectOutcome(kind=effect.kind, target=target, status="held",
+                         message=f"held for its owner — {verdict.reason_sentence()}")
+
+
+def _receipt_context(verdict) -> dict:
+    """HB-2 law 8 — the receipt as an Action Hub payload's context: structured for a
+    receiver that routes on it, and as the sentence a person reads."""
+    if verdict is None or not getattr(verdict, "receipt", None):
+        return {}
+    return {"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()}
 
 
 def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcome:
@@ -727,8 +828,11 @@ def _dispatch_slack_post(effect: Effect, automation: Automation) -> EffectOutcom
         return EffectOutcome(kind=effect.kind, target=bot_id, status="dispatch_error",
                              message=f"Slack bot '{bot.name}' is disabled")
 
+    # HB-2 law 8 — the receipt travels ON the message: what measured it, what defines it,
+    # as of when, the guards that ran, and where the full record lives.
+    receipt = verdict.receipt_line() if verdict is not None else ""
     ok, info = post_as_bot(
-        bot.bot_token, channel, message_text,
+        bot.bot_token, channel, f"{message_text}\n\n{receipt}" if receipt else message_text,
         thread_ts=str(effect.config.get("thread_ts") or "") or None,
     )
     if ok:
@@ -774,7 +878,7 @@ def _file_departure_link(effect: Effect, automation: Automation, *, kind: str,
         return ""
 
 
-def _route_destinations(securable: str, automation: Automation) -> list:
+def route_destinations(securable: str, automation: Automation) -> list:
     """HB-3 — where a departure about ``securable`` goes: HB-1's `route()`, called in
     anger for the first time. For a promise/process the owner and the meaning chain are
     read off the CACHED graph (a probe never builds); anything else routes by
@@ -810,7 +914,7 @@ def _dispatch_notify_routed(effect: Effect, automation: Automation,
     every Subscribe-or-higher holder, each group through its channel. Each destination
     runs the FULL single-trigger path (approval, departure gate, fire, filing), so the
     ledger records one row per landing and probation holds each one."""
-    dests = _route_destinations(securable, automation)
+    dests = route_destinations(securable, automation)
     reachable = [d for d in dests if d.channel_trigger_id]
     unreachable = [d.principal for d in dests if not d.channel_trigger_id]
     if not reachable:
@@ -823,7 +927,8 @@ def _dispatch_notify_routed(effect: Effect, automation: Automation,
     outcomes: list[tuple[str, EffectOutcome]] = []
     for d in reachable:
         one = effect.model_copy(update={"config": {
-            **effect.config, "trigger_id": d.channel_trigger_id, "route_about": ""}})
+            **effect.config, "trigger_id": d.channel_trigger_id, "route_about": "",
+            ROUTED_ABOUT_KEY: securable}})
         outcomes.append((d.principal, _dispatch_notify(one, automation)))
 
     executed = [p for p, o in outcomes if o.status == "executed"]
@@ -896,6 +1001,9 @@ def _dispatch_notify(effect: Effect, automation: Automation) -> EffectOutcome:
         # and the period, never by a fresh timestamp (which is what `triggered_at` is,
         # and why the receiver could not tell a retry from a new alert).
         delivery_key=f"{automation.id}:{last_delivery_claim(automation.id) or 'unclaimed'}",
+        # HB-2 law 8 — the receipt rides the payload's context (a receiver routes on it; the
+        # Slack and Jira renderings print its sentence).
+        context=_receipt_context(_verdict),
     ))
     _status = getattr(log, "status", "")
     if _status == "timeout":
@@ -933,6 +1041,10 @@ def _dispatch_brief(effect: Effect, automation: Automation) -> EffectOutcome:
                              message=f"unknown brief subscription: {sub_id}")
     result = deliver_subscription(sub) or {}
     _status = result.get("status")
+    if _status == "held":
+        # HB-2 — the briefing was held at departure: a verdict with its reason, never retried.
+        return EffectOutcome(kind=effect.kind, target=sub_id, status="held",
+                             message=str(result.get("error") or "held at departure"))
     if _status == "timeout":
         # Same reasoning as notify: an email whose send timed out may be in an inbox.
         return EffectOutcome(kind=effect.kind, target=sub_id, status="uncertain",
@@ -1060,8 +1172,14 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
         return EffectOutcome(kind=effect.kind, target=target, status="failed",
                              message=run.message)
     _inv = str(getattr(run, "investigation_id", "") or getattr(run, "id", "") or "")
+    # HB-2 law 6 — the analysis PAUSED on divergent readings of a metric. The step ran; its
+    # answer does not exist yet. Published under the engine's reserved key (never bindable)
+    # so the send reading this step is held for the metric's owner with the readings.
+    _clarify = getattr(run, "clarify", None) or {}
+    _paused = (f" — paused: the readings of {_clarify.get('metric_label') or 'a metric'} "
+               f"disagree, and its owner is asked at departure") if _clarify else ""
     return EffectOutcome(kind=effect.kind, target=target, status="executed",
-                         message=f"{run.message}{ran_as}",
+                         message=f"{run.message}{ran_as}{_paused}",
                          # VA-4c — the run this step produced. Its TOKENS live on the
                          # investigation, so carrying the id lets a node reach its own
                          # spend without this model growing a usage field the other five
@@ -1087,7 +1205,10 @@ def _dispatch_investigate(effect: Effect, automation: Automation) -> EffectOutco
                                                  # chain can gate on it and the ledger
                                                  # can record it; absent-when-empty like
                                                  # its siblings.
-                                                 ("confidence", getattr(run, "confidence", ""))) if v})
+                                                 ("confidence", getattr(run, "confidence", "")),
+                                                 (DISAGREEMENT_KEY,
+                                                  {**_clarify, "investigation_id": _inv}
+                                                  if _clarify else {})) if v})
 
 
 # ── DS-9 · a chain as a step ──────────────────────────────────────────────────
@@ -1882,6 +2003,15 @@ def _walk_automation(
                 should_run = verdict is True
                 bound = resolve(effect.config, step_context) if should_run else {}
             except UnresolvedBinding as exc:
+                # HB-2 law 6 — unless the upstream is an analysis that PAUSED on divergent
+                # readings: that is a question with no asker, and the send is held for the
+                # metric's owner rather than skipped as if nothing happened.
+                owner_hold = (_hold_for_owner(effect, automation, step_context)
+                              if effect.kind in DEPARTURE_SENDS and not dry_run else None)
+                if owner_hold is not None:
+                    step_outcomes.append(owner_hold.model_copy(update={
+                        **fan, "agent_id": acting_agent(effect, automation)}))
+                    continue
                 # SKIPPED, never run-with-a-hole. These steps send messages and write to
                 # systems; a missing channel or a missing thread id is not a value to
                 # default, and `skipped` already exists precisely for "did not run, and
@@ -1915,6 +2045,10 @@ def _walk_automation(
             # dispatchers would otherwise grow a parameter five of them ignore.
             if _downstream_binds(alias, automation.effects[i + 1:]):
                 bound = {**bound, AWAIT_KEY: True}
+            # HB-2 — an outward send carries where its words came from to the departure
+            # gate, the same way: on the bound config, so the dispatchers keep one signature.
+            if effect.kind in DEPARTURE_SENDS and not dry_run:
+                bound = {**bound, DEPARTURE_BASIS_KEY: departure_basis(effect, step_context)}
             step_started = now_iso_z()
             step_t0 = _time.monotonic()
             # VA-4d — one span per step, under the run's trace. `Activity → Runs` is "one

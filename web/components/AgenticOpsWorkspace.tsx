@@ -8,7 +8,7 @@ import { RangePicker } from "@/components/agentops/RangePicker";
 import { Button } from "@/components/ui/button";
 import { useTimeRange } from "@/components/agentops/useTimeRange";
 import { Workspace, type WorkspaceLayer } from "@/components/Workspace";
-import { getNeedsHuman } from "@/lib/api";
+import { getDepartureSummary, getNeedsHuman } from "@/lib/api";
 import { Icon as Glyph, type IconName } from "@/components/ui/icon";
 
 // ── Lazy panels — load on first open, then keep mounted (Workspace keep-alive),
@@ -24,6 +24,8 @@ const AgenticAgentsPanel = dynamic(() => import("@/components/AgenticAgentsPanel
 const NeedsHumanPanel    = dynamic(() => import("@/components/NeedsHumanPanel").then(m => ({ default: m.NeedsHumanPanel })),       { ssr: false, loading });
 const AgenticActivityPanel = dynamic(() => import("@/components/AgenticActivityPanel").then(m => ({ default: m.AgenticActivityPanel })), { ssr: false, loading });
 const AutomationsPanel   = dynamic(() => import("@/components/AutomationsPanel").then(m => ({ default: m.AutomationsPanel })),     { ssr: false, loading });
+const HubMapPanel        = dynamic(() => import("@/components/agentops/HubMapPanel").then(m => ({ default: m.HubMapPanel })),      { ssr: false, loading });
+const DeparturesPanel    = dynamic(() => import("@/components/agentops/DeparturesPanel").then(m => ({ default: m.DeparturesPanel })), { ssr: false, loading });
 
 /**
  * This screen's glyphs, by role. The drawings come from the platform icon set
@@ -36,6 +38,7 @@ const ROLE: Record<string, IconName> = {
   hand: "hand",
   activity: "activity",
   flow: "flow",
+  send: "send",
 };
 
 function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?: number; color?: string }) {
@@ -53,7 +56,7 @@ function Icon({ name, size = 14, color = "currentColor" }: { name: string; size?
 // (Automations → History and Activity → Traces are the others); its phase view —
 // the half with no second home — moved to Activity → Phases.
 export type AgenticOpsLayer =
-  "fleet" | "agents" | "attention" | "activity" | "automations";
+  "fleet" | "agents" | "attention" | "activity" | "automations" | "hub" | "departures";
 
 // Labels follow docs/GLOSSARY.md — Overview · Roster · Attention · Activity · Runs. The
 // inner layer stops being "Agents" now that the workspace is called Agent Ops (a workspace
@@ -70,6 +73,14 @@ const LAYERS: WorkspaceLayer<AgenticOpsLayer>[] = [
   // than to a cron. Filing it under Monitors said the opposite: that it was a metric
   // watch with side effects, next to the agent plane instead of part of it.
   { id: "automations", icon: "gear",   label: "Automations", blurb: "Scheduled agent work · the proposal queue" },
+  // HB-6 — the hub-wide map. The Roster's Map answers "what does THIS agent touch";
+  // this layer answers the hub-wide question the roadmap words exactly: every
+  // automation on one screen — trigger, destinations, grant, owner, last run, cost,
+  // probation state.
+  { id: "hub",       icon: "flow",     label: "Hub",       blurb: "Every automation on one screen — where it sends, what it earned" },
+  // HB-2 — the departures ledger: what left the platform, what the departure gate held
+  // and why, and the two things a person owes it (a probation mark, an owner's answer).
+  { id: "departures", icon: "send",    label: "Departures", blurb: "What left, what was held and why — and what needs a person" },
 ];
 
 type Props = {
@@ -104,6 +115,7 @@ export function AgenticOpsWorkspace({
   const [traceFocus, setTraceFocus] = useState<{ traceId?: string; investigationId?: string } | null>(null);
   const [agentFocus, setAgentFocus] = useState<{ id: string; kind: "charter" | "persona" } | null>(null);
   const [attention, setAttention] = useState(0);
+  const [departuresOwed, setDeparturesOwed] = useState(0);
   // Creating an agent is reachable from EVERY layer, not just the one whose sidebar happens
   // to hold the roster. A counter rather than a boolean: clicking Create while already on
   // the Roster must re-open the flow, and a bool that is already true fires no change.
@@ -117,7 +129,11 @@ export function AgenticOpsWorkspace({
   // from every layer, not only when the Attention panel is open.
   useEffect(() => {
     let alive = true;
-    const poll = () => getNeedsHuman(1).then(d => { if (alive) setAttention(d.count); }).catch(() => {});
+    const poll = () => {
+      getNeedsHuman(1).then(d => { if (alive) setAttention(d.count); }).catch(() => {});
+      // HB-2 — what the departures ledger still needs from a person, on its layer's badge.
+      getDepartureSummary().then(d => { if (alive) setDeparturesOwed(d?.awaiting ?? 0); }).catch(() => {});
+    };
     poll();
     const iv = setInterval(poll, 20_000);
     return () => { alive = false; clearInterval(iv); };
@@ -147,7 +163,7 @@ export function AgenticOpsWorkspace({
       layer={layer}
       onLayerChange={onLayerChange}
       ariaLabel="Agent Ops views"
-      badges={{ attention }}
+      badges={{ attention, departures: departuresOwed }}
       headerControls={
         <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
           <RangePicker range={range} onKey={setKey} onClearBrush={clearBrush} />
@@ -192,6 +208,17 @@ export function AgenticOpsWorkspace({
         );
         if (id === "automations") return (
           <AutomationsPanel connId={connId} workspaceId={workspaceId} />
+        );
+        if (id === "departures") return (
+          // Hub-wide, like the map: every departure the platform recorded, any connection.
+          <DeparturesPanel />
+        );
+        if (id === "hub") return (
+          // No connId on purpose: this layer IS the hub-wide answer ("every automation
+          // on one screen"). Scoping it to the page's selected connection would rebuild
+          // the per-connection Automations layer one tab over. The door still takes
+          // ?conn_id for callers that want the narrow read.
+          <HubMapPanel />
         );
         return (
           <FleetOverviewPanel

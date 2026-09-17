@@ -1,0 +1,12 @@
+canonical:
+  - What was our on-time arrival rate last month?
+  - Which carriers cancel the most flights?
+  - How does the completion factor compare across carriers?
+diagnostic:
+  - Which delay causes account for the fall in on-time arrivals?
+  - Did cancellations rise at the same time as on-time performance improved?
+  - Which airports and days concentrate the cancellations?
+explorer_angles:
+  - On-time arrival rate by carrier network and by departure airport
+  - Cancellations by cause, airport and day
+intent_tags: [on-time performance, OTP, cancellations, completion factor, delays, punctuality]

@@ -3858,6 +3858,28 @@ def _attach_kinetic_proposals(answer_report: dict, connection_id: str) -> None:
                  counter="kinetic.k4b_failed")
 
 
+def _attach_rule_outs(answer_report: dict, state) -> None:
+    """IP-1 — when the report states a move, attach the Verifier's rule-outs: the playbook's data-quality
+    checks for its metric in that direction, each with its fix, marked as not checked against the data.
+    Read in the connection's industry scope. Advisory: a failure leaves the report as it was."""
+    try:
+        from aughor.agent.verifier import Verifier
+        conn_id = state.get("connection_id", "") or ""
+        industry = None
+        if conn_id:
+            from aughor.business_profile.metric_kb import industry_scope
+            industry = industry_scope(conn_id, state.get("scope_schema") or None)
+        found = Verifier.rule_outs(
+            answer_report.get("metric") or "", answer_report.get("total_change_label") or "",
+            answer_report.get("comparison_basis") or "", industry=industry, connection_id=conn_id)
+        if found:
+            answer_report["rule_outs"] = found
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "rule-outs are advisory; the report ships without them",
+                 counter="deep_analysis.rule_outs")
+
+
 _EVIDENCE_BUDGET = 6000       # baseline; the live budget is _evidence_budget() (A1 ModelProfile)
 _CONDENSE_ROWS = 6            # rows kept per finding when an overflow phase must be condensed
 _CONDENSE_PHASE_CAP = 1200    # hard per-phase char backstop for a condensed block
@@ -5388,6 +5410,7 @@ def _detect_metric_clarify(intake, connection_id: str, schema_text: str, conn, q
     return {
         "subject": f"definition of {label}",
         "metric_label": label,
+        "metric_name": cand.name,
         "question": (f"“{label}” can be computed two ways that give different answers "
                      f"({_fmt(governed_v)} vs {_fmt(parsed_v)}) — which did you mean?"),
         "options": [gov_label, parsed_label],
@@ -10002,6 +10025,9 @@ def ada_synthesize(state: AgentState) -> dict:
 
     # K4b — the agent may propose declared actions from the finished answer (flag-gated, staged).
     _attach_kinetic_proposals(answer_report, state.get("connection_id", ""))
+
+    # IP-1 — the Verifier lists the known ways the reported move can be the data rather than the business.
+    _attach_rule_outs(answer_report, state)
 
     # ON-10 — the frame the question was read through rides with the answer, so the reader sees what each business
     # word was taken to mean and where the analysis started.

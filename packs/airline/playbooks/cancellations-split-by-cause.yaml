@@ -1,0 +1,12 @@
+id: cancellations-split-by-cause
+kind: diagnostic
+trigger_metric: cancellation_rate
+trigger_condition: cancellation rate rises period over period
+trigger_operator: gt
+recommendation: >
+  Split cancellations by their reported cause — air carrier, weather, National Aviation System or security (there is
+  no late-arriving-aircraft cause for a cancellation) — and by airport and day, before comparing carriers.
+expected_impact: A rise is traced to a storm, a hub or a carrier's own operation.
+owner_role: Operations Control
+tags: [cancellations, delay causes]
+sources: [bts-delay-causes]

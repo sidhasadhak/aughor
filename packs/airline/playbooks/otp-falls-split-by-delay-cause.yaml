@@ -1,0 +1,13 @@
+id: otp-falls-split-by-delay-cause
+kind: diagnostic
+trigger_metric: on_time_arrival_rate
+trigger_condition: on-time arrival rate falls period over period
+trigger_operator: lt
+recommendation: >
+  Split the late arrivals by the five reported delay causes — air carrier, extreme weather, National Aviation System,
+  late-arriving aircraft and security — before naming a cause. Weather also sits inside the National Aviation System
+  category, so extreme weather alone understates it.
+expected_impact: The fall is attributed to a cause a team owns, not to the month.
+owner_role: Operations Control
+tags: [on-time performance, delay causes]
+sources: [bts-delay-causes]

@@ -164,6 +164,14 @@ def invalidate_bare(connection_id: str) -> int:
         return 0
 
 
+def invalidate_matching(predicate) -> int:
+    """Delete each stored business profile whose stored payload ``predicate`` picks, so each re-infers
+    on next access. Returns the count removed."""
+    family = _family()
+    keys = [key for key in family.keys_with_prefix("") if predicate(_read(key) or {})]
+    return family.purge_entries(exact=keys) if keys else 0
+
+
 def invalidate_all() -> int:
     """Delete EVERY stored business profile so they lazily re-infer on next access. Used
     when an app-wide setting that changes inference (e.g. the declared industry) is updated,

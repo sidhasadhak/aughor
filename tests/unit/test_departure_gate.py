@@ -12,7 +12,22 @@ from types import SimpleNamespace
 import pytest
 
 from aughor.govern import departure_store as ds
-from aughor.govern.departure import TRUST_BANNER, gate_departure
+from aughor.govern.departure import TRUST_BANNER, Measurement, gate_departure
+
+
+@pytest.fixture(autouse=True)
+def _own_ledger(tmp_path, monkeypatch):
+    """Each test reads its own departures ledger: law 7 compares a send with the last one
+    that departed from the same source to the same place, and a shared session ledger would
+    let one test's departure become another test's repeat."""
+    monkeypatch.setenv("AUGHOR_DEPARTURES_DB", str(tmp_path / "departures.db"))
+
+
+def _measured(*values):
+    """A measurement taken moments ago that holds exactly these values."""
+    from aughor.util.time import now_iso_z
+    return Measurement(source="stub analysis", values=[float(v) for v in values],
+                       measured_at=now_iso_z())
 
 
 def _gate(text, **kw):
@@ -56,10 +71,13 @@ def test_clean_text_departs():
 
 # ── tie-out: validate_metric runs at the gate ─────────────────────────────────────
 
+#: A GOVERNED metric — approved, as the tie-out's own name for it says. (Before law 2 the
+#: stub carried no lifecycle at all, which `MetricDefinition` reads as a draft.)
 _REVENUE = SimpleNamespace(name="revenue", label="Revenue", sql="SUM(total_amount)",
                            tables=["orders"], dimensions=[],
                            quality_tests=["SELECT COUNT(*) = 0 FROM orders WHERE total_amount IS NULL"],
-                           wrong_usage_examples=[])
+                           wrong_usage_examples=[], status="approved", approved_by="Finance",
+                           version=2)
 
 
 def _stub_metrics(monkeypatch):
@@ -82,7 +100,7 @@ def test_passing_tieout_departs(monkeypatch):
     monkeypatch.setattr("aughor.db.connection.open_connection_for", lambda cid: object())
     monkeypatch.setattr("aughor.semantic.metrics.validate_metric",
                         lambda m, db: SimpleNamespace(passed=True, message="ok"))
-    v = _gate("Revenue reached 4,100 this week.", conn_id="c1")
+    v = _gate("Revenue reached 4,100 this week.", conn_id="c1", measurement=_measured(4100))
     assert v.state == "departed"
     assert "passed" in v.checks["tie_out"]
 
@@ -95,7 +113,7 @@ def test_unavailable_tieout_is_recorded_not_held(monkeypatch):
     def _boom(cid):
         raise RuntimeError("warehouse down")
     monkeypatch.setattr("aughor.db.connection.open_connection_for", _boom)
-    v = _gate("Revenue reached 4,100 this week.", conn_id="c1")
+    v = _gate("Revenue reached 4,100 this week.", conn_id="c1", measurement=_measured(4100))
     assert v.state == "departed"
     assert "unavailable" in v.checks["tie_out"]
 

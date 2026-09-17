@@ -190,6 +190,9 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
             fields.append({"title": "Caveat", "value": _trim(ctx["caveat"]), "short": False})
         if ctx.get("deep_link"):
             fields.append({"title": "Open", "value": ctx["deep_link"], "short": False})
+        if ctx.get("receipt_line"):
+            # HB-2 law 8 — the departure gate's receipt travels on the message.
+            fields.append({"title": "Receipt", "value": _trim(ctx["receipt_line"]), "short": False})
         return {
             "channel": trigger.channel or "#general",
             "text": _trim(f"*Monitor alert*: {ctx.get('monitor_name') or 'Monitor'}"),
@@ -200,16 +203,20 @@ def _build_slack_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict
                 "ts": int(time.time()),
             }],
         }
+    fields = [
+        {"title": "Investigation", "value": payload.investigation_id[:8], "short": True},
+        {"title": "Metric",        "value": payload.metric_name or "—",    "short": True},
+        {"title": "Headline",      "value": _trim(payload.headline) or "—", "short": False},
+    ]
+    if ctx.get("receipt_line"):
+        # HB-2 law 8 — the departure gate's receipt travels on the message.
+        fields.append({"title": "Receipt", "value": _trim(ctx["receipt_line"]), "short": False})
     return {
         "channel": trigger.channel or "#general",
         "text": _trim(f"*Aughor recommendation*: {payload.recommendation}"),
         "attachments": [{
             "color": "#2D72D2",
-            "fields": [
-                {"title": "Investigation", "value": payload.investigation_id[:8], "short": True},
-                {"title": "Metric",        "value": payload.metric_name or "—",    "short": True},
-                {"title": "Headline",      "value": _trim(payload.headline) or "—", "short": False},
-            ],
+            "fields": fields,
             "footer": "Aughor Intelligence Platform",
             "ts": int(time.time()),
         }],
@@ -232,6 +239,9 @@ def _build_jira_payload(trigger: ActionTrigger, payload: ActionPayload) -> dict:
                         f"Recommendation: {payload.recommendation}\n\n"
                         f"Metric: {payload.metric_name or '—'}\n"
                         f"Headline: {payload.headline or '—'}"
+                        # HB-2 law 8 — the departure gate's receipt travels on the ticket.
+                        + (f"\n\n{(payload.context or {}).get('receipt_line')}"
+                           if (payload.context or {}).get("receipt_line") else "")
                     )}],
                 }],
             },

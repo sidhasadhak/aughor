@@ -10,7 +10,8 @@ Graceful degradation: all failures (Qdrant down, KB path unset, embedding error)
 silently return empty strings so agent nodes are never blocked.
 
 Configure via:
-  AUGHOR_KB_PATH  — absolute path to the SQL KB JSONs folder (required to activate)
+  AUGHOR_KB_PATH  — optional: a flat folder of KB JSONs to index INSTEAD of the knowledge
+                    packages (IP-1 — by default the KB is what `packs/*/kb/` carries)
   AUGHOR_KB_ENABLED — set to "false" to disable entirely (default: "true")
 """
 from __future__ import annotations
@@ -31,18 +32,16 @@ if not os.environ.get("AUGHOR_SKIP_DOTENV"):
 
 KB_COLLECTION = "sql_knowledge_base"
 
-# The KB ships WITH the repo (63 authored, version-controlled JSON files under data/kb), so the
-# default is the repo's own copy — not "". An empty default made `build_kb_index()` a silent
-# no-op on a fresh clone and left the whole knowledge base unreachable unless an operator knew
-# to set AUGHOR_KB_PATH. It also let this install drift onto a path in a DIFFERENT repo
-# (~/dev/hermes/data/kb) that no longer exists: retrieval kept working only because the Qdrant
-# collection outlived its source, and 5 of the 63 files had therefore never been indexed at all.
+# The KB ships WITH the repo — authored, version-controlled JSON — and IP-1 moved it into the
+# knowledge PACKAGES (`packs/*/kb/*.json`, resolved by `aughor/packs/knowledge.py`). The default
+# is the packages, never "": an empty default once made `build_kb_index()` a silent no-op on a
+# fresh clone, and an operator-set path let this install drift onto a folder in a DIFFERENT repo
+# (~/dev/hermes/data/kb) whose collection outlived its source, 5 of 63 files never indexed.
 #
-# Repo-relative is right HERE, unlike the generated-state stores that must resolve
-# AUGHOR_STATE_DIR (aughor/db/paths.py): this is authored content that travels with the code,
-# not per-connection state a test must be able to redirect.
-_REPO_KB = Path(__file__).parent.parent.parent / "data" / "kb"
-KB_PATH = os.getenv("AUGHOR_KB_PATH") or str(_REPO_KB)
+# AUGHOR_KB_PATH stays as an explicit override: a flat folder indexed instead of the packages.
+# A vector's id is kb::<file name>::<entry id> either way, and the move kept every file name,
+# so a collection indexed before the move stays valid.
+KB_PATH = os.getenv("AUGHOR_KB_PATH") or ""
 KB_ENABLED = os.getenv("AUGHOR_KB_ENABLED", "true").lower() != "false"
 
 
@@ -54,7 +53,7 @@ def build_kb_index() -> int:
     Idempotent — safe to call multiple times (upsert by stable ID).
     Returns number of points indexed, 0 on any failure.
     """
-    if not KB_ENABLED or not KB_PATH:
+    if not KB_ENABLED:
         return 0
     try:
         return _build()
@@ -63,11 +62,11 @@ def build_kb_index() -> int:
 
 
 def _build() -> int:
-    from aughor.semantic.kb_loader import load_kb_entries
+    from aughor.semantic.kb_loader import load_kb_entries, load_package_kb_entries
     from aughor.semantic.embedder import embed
     from aughor.semantic.vector_store import ensure_collection, upsert
 
-    entries = load_kb_entries(KB_PATH)
+    entries = load_kb_entries(KB_PATH) if KB_PATH else load_package_kb_entries()
     if not entries:
         return 0
 
@@ -136,7 +135,7 @@ def retrieve_for_fix_sql(error: str, failed_sql: str, top_k: int = 2) -> str:
     Returns a formatted string ready to inject into FIX_SQL_PROMPT.
     Empty string on any failure.
     """
-    if not KB_ENABLED or not KB_PATH:
+    if not KB_ENABLED:
         return ""
     try:
         if not _ensure_indexed():
@@ -157,7 +156,7 @@ def retrieve_for_planning(hypothesis: str, top_k: int = 3) -> str:
     Returns a formatted string ready to inject into PLAN_QUERIES_PROMPT.
     Empty string on any failure.
     """
-    if not KB_ENABLED or not KB_PATH:
+    if not KB_ENABLED:
         return ""
     try:
         if not _ensure_indexed():
@@ -176,7 +175,7 @@ def retrieve_for_decompose(question: str, top_k: int = 2) -> str:
     Returns a formatted string ready to inject into DECOMPOSE_PROMPT.
     Empty string on any failure.
     """
-    if not KB_ENABLED or not KB_PATH:
+    if not KB_ENABLED:
         return ""
     try:
         if not _ensure_indexed():
@@ -233,7 +232,7 @@ def retrieve_for_reader(question: str, top_k: int = 3) -> str:
     caveats in plain speech, SQL as a fenced example — nothing addressed to
     someone else. Empty string on any failure, so the caller's fallthrough to the
     live-SQL answer path still works."""
-    if not KB_ENABLED or not KB_PATH:
+    if not KB_ENABLED:
         return ""
     try:
         if not _ensure_indexed():
@@ -386,7 +385,7 @@ def _format_for_decompose(hits: list[dict]) -> str:
 
 def has_strong_kb_match(query: str, threshold: float = 0.75, top_k: int = 3) -> bool:
     """Return True if the KB contains a match with score >= threshold."""
-    if not KB_ENABLED or not KB_PATH:
+    if not KB_ENABLED:
         return False
     try:
         if not _ensure_indexed():

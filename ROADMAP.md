@@ -5411,7 +5411,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 BUILT** 2026-09-17 on `claude/ip-3-generator`, local)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5455,6 +5455,175 @@ of the live `data/playbook.json` (nothing written, no model called):
   once on the commit, 9,998 passed, 5 skipped. **Merged** as #503 (squash `aebe5feb`, 2026-09-14) after #502, which edits the same
   retriever call: the explorer's read passes both `learned_rates=False` and the industry scope.
 
+**IP-1 · The package seam — BUILT 2026-09-17, MERGED #518** (squash `1c150b05`, with IP-2) and deployed the same day:
+the live playbook topped up from 392 to 878 plays (the 486 checks, all active; 459 with a fix), no model call at boot.
+- **The seam.** The KB left `data/kb` for eleven packages, content untouched (69 `git mv` renames): six industry packages
+  (airline, food-delivery, logistics, manufacturing, retail, saas — each its curated `industry.json` and its deep KB
+  files), four functions every industry reads (finance, marketing, product, customer) and `analytics-base`. `pack.yaml`
+  declares `layer` and `industry`. `aughor/packs/knowledge.py` is the one reader that replaced the four loaders (the
+  seeder, the profiler, the industry KB, the vector retriever): an entry's industry is its package's, authored wins an
+  id, a deprecated package is not read, a file or an industry carried twice is a named problem, UTF-8 everywhere.
+  **Moved unchanged, measured:** `tests/fixtures/ip1_kb_parity.json` was captured from the pre-move loaders on
+  `4c4358b6`, and the parity tests reproduce all of it through the packages — 878 plays by kind and industry with
+  identical content, 282 retriever entries, the profiler's stems, the six industries, every entry's industry, each
+  industry's vocabulary. The full backend suite on the seam commit: 10,551 passed, 5 skipped.
+- **Data-quality plays reach the Verifier as rule-outs** — the user's call, 2026-09-17, asked twice and answered the
+  same: *"Rule-outs on reports"*. The detection queries are NOT run: they name example tables, and a row back would show
+  that the data has the shape where a pitfall can happen, not that the analysis made the mistake. When a deep analysis
+  reports its metric moving, `Verifier.rule_outs` lists the metric's known inflation causes (it rose) or deflation
+  causes (it fell), each with its fix, and says *"Not checked against your data."* — carried in the data, so no surface
+  can render the causes without it. Deterministic: no model, no query. Three reads (`aughor/playbook/rule_outs.py`):
+  the **direction** is the sign of the report's own `total_change_label`, on a report measured against something; the
+  **metric** is named when a KB entry's title or intent tag ENDS the report's label — a one-word alias must be the
+  whole label, and a bracket restating the measure as a count abstains; the **plays** are the playbook's active
+  data-quality plays for that entry and direction in the connection's industry scope, each listed with its version and
+  receipt and journaled as a `playbook.use`. **Measured on the 202 deep reports stored on the builder's deployment:** 19
+  state a signed move against a comparison; 9 name a KB entry, each the metric reported (GMV ×6, net revenue ×2, gross
+  margin % ×1); the 3 "Total sales (order count)" reports, which a containment match paired with GMV, abstain. Rendered
+  as **Rule out first** between the bottom line and the recommended actions — web, export and CLI. Live on a scratch
+  stack (isolated stores, no model call): the stored GMV report (−€23,173 MoM) lists two deflation causes with fixes.
+- **Existing playbooks receive the 486 checks** (answer 7). A check carries the KB `cause` and `fix`, fingerprinted only
+  when present, so every other play keeps its receipt and version. At startup `top_up_data_quality` adds each check
+  whose stable key (its id without the random suffix) was never in the playbook — a key in the version log whose play
+  is gone was deleted by a person, and stays deleted — and fills an empty cause or fix on a check already there without
+  touching what a person changed; an empty playbook is left to the seed. Measured read-only, the live playbook holds
+  392 plays and no check: it receives 486 on its next start. The playbook screen's status change keeps a check's cause
+  and fix.
+- **Receipts:** `tests/unit/test_ip1_knowledge_resolver.py`, `test_ip1_package_parity.py`, `test_ip1_rule_outs.py`
+  (the count-bracket abstention, the deletion guard, the kept fix and the web note
+  each broken once to prove a test fails), `web/components/brief/RuleOuts.test.tsx`; the full backend
+  suite once on the commit: 10,598 passed, 5 skipped and 2 failed — two import ratchets the change tripped (the top-up
+  read the store's private version-log helpers; the export document, platform code, imported the playbook package).
+  Fixed before landing with a public `store.ever_saved_ids` and the lead sentence carried in the payload, so every
+  surface renders the backend's words. Both ratchets with the rule-out, parity and playbook tests re-ran green (71
+  passed), as did the 15 test files that touch the playbook store, the builder, the export document or the CLI with
+  the vocabulary ratchet (293 passed); vitest 967 passed.
+- **Open:** SQL repair does not read the checks yet (the other half of "data-quality plays the Verifier and SQL
+  repair"); the detection queries wait for IP-3's roles; the one wrong name match measured is "investigation job
+  failure rate" on the platform's own operations data with no industry known, a report that states no signed move.
+
+**IP-2 · Chosen at install — BUILT 2026-09-17, MERGED #518** with IP-1. Merged over one red check, the user's call:
+the Windows "Start, and both servers answer" install step has failed on main since #509 (2026-09-15) with the same
+signature, before this work — the servers answer, then `aughor up` stops a few seconds later; its own task. The answer is one file,
+`data/industries.json` (`AUGHOR_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
+installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
+- **What an answer means** (`aughor/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
+  detects each connection's (answer 1); a skipped question is written as `null` so a re-run does not ask again. A list
+  narrows: `metric_kb.load_industry_kbs()` — through which `match_industry`, `industry_id`, `industry_scope`, the
+  vocabulary and the recipes all pass — holds only the chosen packages, so an industry text naming another package
+  resolves to none, and a read that knows nothing about its connection (`industry_scope` None) sees the chosen
+  industries and the shared knowledge, never another industry's (`readable_industries`, used by the playbook read and
+  the rule-outs). An empty list keeps only the shared knowledge — a bank installing today is not handed a retailer's
+  playbook. An id no package carries is refused on write and ignored, with its name, on read; an unreadable file keeps
+  every industry and says why. Written whole and moved into place; re-read when its modification time or size
+  changes, so a choice made in Settings reaches a running API (the vocabulary cache keys on it).
+- **The installer** (`aughor/installer.py`, still standard-library only). Step 0, after the checkout check and before
+  `uv sync`: the six industry packages, read from `packs/*/pack.yaml` without a YAML parser, numbered; the answer
+  takes numbers, ids, folder names or package names, Enter for all, `none`. It asks through `/dev/tty` (the console
+  on Windows), so it works under `curl | sh`, where stdin is the rest of the script; with no terminal nothing is asked
+  and nothing written. `--industries retail,saas` or `AUGHOR_INDUSTRIES` answers ahead; an id no package carries stops
+  the install before anything slow, naming the ids that exist. The option is not handed on to `aughor up`.
+- **Changing it later.** Settings → Organization gains an Industries section (app scope — the choice is
+  deployment-wide): every industry, or only the ticked ones, saved on its own. `aughor industries` lists the packages
+  with the current choice and takes the installer's answers. A change drops only the stored business profiles whose
+  industry now resolves to a different package (`refresh_profiles_for_choice`): a profile keeps the recipes it
+  resolved when built, and re-inferring costs a model call per dataset, so a retail profile is kept when SaaS is
+  added. Settings says how many it dropped.
+- **Live, 2026-09-17, no model call:** the question through a real pseudo-terminal with stdin a pipe, as under
+  `curl | sh` — a wrong answer asked again, `5, saas` recorded as `["retail", "saas"]`; on a scratch stack with isolated
+  stores, Settings → Organization saved retail and SaaS (the API read it back, source `settings`), and `aughor
+  industries` read the same file with both ticked.
+- **Trap:** the test conftest points `AUGHOR_PACKS_DIR` at a copy of the six packages, so every existing installer
+  test would reach the question — and a developer running pytest in a terminal would wait on `/dev/tty`. Every
+  installer test now starts with no terminal and its own choice file; the question's tests script one.
+- **Receipts:** `tests/unit/test_installer.py` (25 new, 73 in all), `tests/unit/test_ip2_industry_choice.py` (14),
+  `web/components/OrgIndustriesSection.test.tsx` (3); `api.gen.ts` regenerated for the two routes; the full backend
+  suite once on the commit: 10,639 passed, 5 skipped, none failed; vitest 970 passed.
+- **Trap, measured on PR #518's first CI run:** GitHub's Windows runner starts each step with a console but no window.
+  `CONIN$` opens there, and the question waited for a key nobody could press — both Windows install jobs sat in
+  `install.cmd --no-start` for 20 minutes, where the last green run took two (macOS and Linux have no terminal to
+  open, and passed). The question is now asked only where a person can answer: never when `CI` or `TF_BUILD` is set,
+  and on Windows only in a console with a window (`GetConsoleWindow`). An unattended run asks nothing and records
+  nothing, which keeps every industry.
+- **Open:** a person answering in a Windows console is untested here (no Windows machine; CI now skips the question
+  by design); the profile inference prompt does not name the chosen industries — the narrowing is at resolution,
+  deterministic, and a prompt change waits for a measured reason.
+
+**IP-3 · The generator: gates 3 and 4 as code, airline as the reference — BUILT 2026-09-17** on
+`claude/ip-3-generator` (`5a9fa8c9` the anatomy and gate 3, `388a3c7b` airline and gate 4), local, nothing pushed.
+
+The anatomy a package declares with `anatomy: 1`:
+- role attributes, named in expressions as `{{role.<role>.<attribute>}}`;
+- metrics with a `unit` and a `sane_range`: a min, a max, a basis (the population and period) and sources;
+- `sources.yaml`: each source's publisher, url, published and retrieved dates, and each figure with the words it
+  was published in;
+- plays with an id, a kind (diagnostic, data_quality, practice) and, for data-quality plays, a detection;
+- goldens on a named dataset: the metric, a filter, the published value, its tolerance and its source;
+- `datasets/*.yaml`, the one place a package names tables: the url, size, SHA-256, load statements, a binding from
+  role attributes to columns, and the metrics the dataset measures.
+
+The loader reads all of it as UTF-8 and turns a malformed file into a `PacksError` — a pydantic error from a metric
+or ontology file used to escape every caller, the roster route included.
+
+- **Gate 3, the static gate** (`aughor/packs/gate3.py`; `aughor packs check`; `validate_pack` for an anatomy
+  package). It checks: schema, sources, a sourced band for every metric, roles not tables, no alias collision,
+  bound plays, goldens, datasets and ontology references. For roles not tables, a formula, filter or detection may
+  name only role attributes and SQL words; `FROM`, `JOIN`, `SELECT` and `;` are refused. Each rule is proven by a
+  planted violation, and every shipped anatomy package passes (the population is read from `packs/`).
+- **Gate 4, measured with no model** (`aughor/packs/gate4.py`; `aughor packs measure [--download] [--write]`).
+  - The dataset comes from a cache outside the repository; it is downloaded only on request and refused when its
+    size or SHA-256 differs from the package's.
+  - The load statements build a DuckDB database. Each formula is compiled through the binding into one SELECT, and
+    no model writes it.
+  - It checks every recipe against its sane range and every golden against its published figure, and runs every
+    detection. Claims are tiered by the same model-free build and measurements a connection gets
+    (`extract_structural_ontology`, verified joins, cardinality, lifecycles, `apply_core_claims`).
+  - Findings: a recipe out of range, a golden that doesn't reproduce, a detection that can't run, a claim measured
+    false.
+  - The report is stored as `measurements/<dataset>.json`, keyed to the package's fingerprint, and CI fails a stale
+    or failing receipt.
+- **Airline, the reference package.** `industry.json` and `kb/` are unchanged, as IP-1 moved them. The package adds:
+  - four sources: BTS's January and full-year 2019 Air Travel Consumer Reports, its delay-cause definitions, and
+    the on-time file, every figure quoted;
+  - a flight role with ten attributes;
+  - three metrics with sourced bands: on-time arrival rate, cancellation rate, completion factor;
+  - an ontology: flight, carrier, airport and aircraft, three links, and the flight lifecycle;
+  - eight bound plays, three of them data-quality plays with detections;
+  - questions;
+  - 14 goldens: the figures BTS published for January 2019;
+  - the dataset: BTS Marketing Carrier On-Time Performance, January 2019.
+- **Measured on the real file** (the user approved the download: 34,217,271 bytes, SHA-256 `c8cc2c6e…d501b`,
+  638,649 flights, 10 carrier networks):
+  - Recipes: on time 78.37%, cancelled 3.06%, completion factor 96.94%, each inside its band.
+  - Goldens: all 14 reproduce within one-decimal rounding — 78.4% on time and 3.1% cancelled overall, and six
+    carriers' on-time and six carriers' cancellation rates.
+  - The published on-time rate counts cancelled and diverted flights as not on time. The release does not say so,
+    but only that reading reproduces 78.4%; over operated flights the rate would be 81.03%.
+  - Detections: 21,000 cancelled or diverted flights, which a wrong denominator would drop; 0 cancellations
+    without a reason; 0 late flags on flights that never arrived.
+  - Claims: 6 measured-true (four objects; flight to carrier and flight to aircraft, both measured N:1) and 2
+    expected — no flight-to-airport join is inferred (two keys point at one table), and no lifecycle is read.
+- **Found on the way, each its own task.**
+  - The profiler's sampled queries break on DuckDB tables over 500,000 rows. The SQL transpile moves `USING SAMPLE`
+    after `LIMIT`, so those tables get no column values and no lifecycle; that is why airline's lifecycle claim is
+    unmeasured.
+  - The sane-range parser misreads shipped ranges: airline's "ratio 0..1 (0..100%)" is read as 0..100, so an
+    impossible 1.4 passes.
+- **Receipts:** `tests/unit/test_ip3_gate3.py` (38) and `test_ip3_gate4.py` (10: each failure planted on a 100-flight
+  file in BTS's layout, with no download, plus the committed receipt held to the package); the full backend suite
+  once on the branch: 10,692 passed, 5 skipped and 2 failed — two ratchets gate 4 tripped (a fingerprint function
+  not in the freshness registry; a lowercase `information_schema`). Fixed by registering the receipt's fingerprint
+  as a staleness fingerprint and reading DuckDB's own table list; both ratchets, the IP-3 tests and the boundary
+  and contract suites re-ran green (94 passed).
+- **Open:**
+  - More metrics. Load factor needs T-100 data, a separate download to approve. Yield, RASM/CASM and ancillary
+    revenue need revenue sources. Utilization, stage length, diversions and delay-cause shares need verified bands.
+  - The runtime still reads `industry.json` and `kb/`: pack plays are not seeded into the playbook store, and
+    `kb/` detection SQL still names example tables.
+  - Gate 5, the with-and-without comparison, spends model calls and waits for the user's go.
+  - Gate 6 (a person's review, draft → active).
+  - Authoring the next package (gates 1–2 for IP-4) is still by hand.
+
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
 `metrics/*.yaml` (formula, grain, sane range with its source, anti-patterns), `playbooks/*.yaml` (diagnostic,
@@ -5496,8 +5665,10 @@ draft → active.
 - **IP-1 the package seam.** Industry ids on packs; packs load plays and KB entries through one resolver that replaces
   the four hard-coded `data/kb` loaders; the six industries and the functions move into packages unchanged;
   data-quality plays reach the Verifier. Only then do existing playbooks receive the 486 plays (answer 7: not yet).
-- **IP-2 chosen at install**, as above.
+  ✅ BUILT 2026-09-17 (above): the Verifier's rule-outs on deep reports, then the top-up.
+- **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
+  ✅ BUILT 2026-09-17 (above): 14 of 14 published BTS figures reproduced with no model.
 - **IP-4 the tiers.**
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
     and FFIEC Call Reports that reconcile to the FDIC's published totals), then payments & fintech (it reuses
@@ -5746,6 +5917,55 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
   > (claim-type), 6 (disagreement asks the owner), 7 (noise band — the router's dedupe is the start); the receipt
   > line ON the departing message (law 8 is ledger-side only so far); a departures screen (the doors serve JSON;
   > the runs rail already shows a held step's reason); auto-graduation's outcome window (HB-3's ground).
+  > **REMAINDER BUILT 2026-09-17** (the user: *"Go for the HB-2 remainder first"*; branch `claude/hb-2-remainder`).
+  > **Every way out asks the gate.** Monitor alerts, scheduled briefings, agent alerts and a person's Share and
+  > Execute left ungated before; now every call to a message transport (`fire_action`, `post_as_bot`) asks the
+  > gate in the same function or is excused by name with its reason (`UNGATED_BY_DESIGN`: the two inbox accepts —
+  > a person reviewed that exact send — and the Action Hub's fixed `[TEST]` payload). Held structurally:
+  > `test_departure_every_exit_gated.py` walks the syntax tree of every `aughor/` module, so a send added later
+  > that forgets the gate is red, and an exemption whose call site is gone is red too.
+  > **The laws, each deterministic and recorded per guard** (`govern/departure.py`; the measurements they read
+  > come from `govern/departure_basis.py`, no model anywhere):
+  > law 1 re-measures — every magnitude the text states must be in the measurement it departs on (an analysis's
+  > kept result rows, a promise's stamp scoped to exactly that promise, a finding's query re-run), re-executed when
+  > older than 30 minutes, and a magnitude with no measurement behind it holds; grounding is precision-aware
+  > (`numeral_matches_measure`: a number written in full claims its last significant digit — the finding guard's 2%
+  > let "99,441" pass as 1.6% from the stamped 101,033 kept lines) · law 2 holds a well-known KPI stated with a
+  > number and no approved metric behind it, a draft metric, or an object not declared and measured on the
+  > connection; a monitor's or alert rule's own declaration defines what it measured, and a monitor's catalog
+  > metric is judged directly (`metric:<name>`) · law 4 holds a governed metric whose data breaches its declared
+  > SLA and states the as-of everywhere one is known (no SLA declared → nothing to judge, never an invented bar) ·
+  > law 5 lets a causal or associational sentence depart only on the licence its analysis recorded
+  > (`agent/claim_type.py`'s CLAIM LICENCE; a recorded adversarial refutation withdraws a causal one) and a
+  > forecast never (`sentence_claims`, negation-aware, forecast phrasing wider than the report checks' on purpose)
+  > · law 6: an analysis that PAUSED on divergent readings used to starve its send into a skip nobody was told about;
+  > the runner now reports the pause, the send is held for the metric's routable owner (`held_owner`) with both
+  > readings and their SQL, and `POST /departures/{id}/answer` crystallizes the choice in the ambiguity ledger at
+  > user authority, so the next run binds it — asked once · law 7: an unattended automation never sends the same
+  > message to the same place twice in 7 days, and a repeat whose every number moved less than 5% is noise; alerts
+  > keep their own anti-flap policy, a scheduled briefing speaks by schedule, a person chose · law 8: the receipt
+  > (source · definition · as-of · the guards that ran · the ledger row, linked when `AUGHOR_WEB_URL` is set)
+  > travels on the Slack post, in the webhook's `context` and on the Jira ticket, and is stored verbatim on the row.
+  > A scheduled briefing is judged line by line first: causal-graph relationships never depart, a finding line
+  > with an inferred KPI is cut, the rest leave with a "N lines held at departure" section and receipt count.
+  > **Live anchor, in the ratchet corpus verbatim:** the 2026-09-16 dispatch watch departed "10,423 of 99,441 order
+  > lines (9.35%)"; the promise it was about counted 111,456 lines — 99,441 is Olist's order count (the delivery
+  > promise's objects). Law 1 now holds it; the same message with 111,456 departs. **Calibrated before shipping on
+  > real traffic:** two real theLook briefing summaries ground every magnitude in their own rows and classify
+  > wholly descriptive, so ordinary sends are not held.
+  > **The departures screen** — an Agent Ops layer beside the Hub (`DeparturesPanel.tsx`, `lib/departures.ts`):
+  > every departure, its state, the reason in a line, and on Review the full record (reasons, each guard's outcome
+  > in the order it ran, the message, the receipt it carried or would have); a declarer's accept / needs
+  > correction / reject and an owner's reading choice live there; the layer's badge counts what a person owes;
+  > a receipt's `?departure=<id>` link opens its row. Share passes its connection and says "Not sent — why";
+  > Execute stopped reporting "✓ sent" for a send the gate kept in. Driven live on an isolated scratch stack
+  > seeded through the real gate: eight departures, the owner's answer remembered (`GET /learning/resolutions`
+  > showed the reading and its SQL at source `user`), the table overflow found and fixed (1,233px in a 1,160px
+  > pane). **HB-3 had already taken** auto-graduation's outcome window (the structural unlanded falsifier), so it
+  > is not open here. **Still open:** the live drive on the deployment once merged (the Olist watch will HOLD —
+  > its literal message states the order count); marking a verdict is not enforced to the addressee while identity
+  > is off (HB-1's posture); a deep run records no falsifier SURVIVAL for causal claims beyond its licence;
+  > "wrong" said in a Slack thread does not yet return as a correction.
 - **HB-3 · promises and findings as triggers; outcomes and the manifest's first links.** `promise_breached` and
   `finding_created` beside the five triggers; a proposed ticket and a Slack thread filed on the object they are about;
   an outcome column (ticket closed, number recovered). *The first live receipt, end to end:* Olist's dispatch promise
@@ -5792,16 +6012,73 @@ human-edit (§6 item 20) — conversation-derived context is a proposal or a col
 - **HB-4 · the provenance envelope and one ranker**, as above, with the harness arm per source kind. *Receipt:* the
   same question answered with and without conversation-derived notes on the ON-10 sets; notes stay in the prompt only
   with measured lift. *Falsifier:* R4's — a source kind that regresses is stored and shown, never injected.
+  > **BUILT 2026-09-16** (same session as HB-2/HB-3). What stands: **the envelope** (`hub/provenance.py`) — source
+  > kind · author · scope · observed-at with per-kind decay · verification · blast radius, with the closed authority
+  > ladder (measured > approved > declared > mined > said > inferred; unknown ranks LAST, fail-closed) and the
+  > roadmap's exact reader stamps (`[measured 2018-09-11, this connection]` · `[said by Ana in #ops, 3 days ago,
+  > unverified]`) — generalising the substrate PX-5 already held (`DefinitionSource` + `ontology/authority.py`'s
+  > verified-outranks-authority, measured before building). **The ranker** (`hub/ranker.py`) — deterministic on the
+  > three axes; per-kind recency (a definition's current approved version wins regardless of age · an observation
+  > decays and expires unless re-affirmed, 30 days · a measurement ranks by the data's own as-of); conflicts:
+  > different tiers — the higher wins and the loser is a FLAG in the receipt; same tier — both survive and the
+  > conflict is surfaced, never guessed (the ambiguity-ledger hookup rides the first real conflict); the budget fill
+  > SAYS WHAT IT DROPPED. **The gate** (`hub/injection.py`) — `INJECTABLE_SOURCE_KINDS = ()`, a closed constant
+  > flipped only by a change citing a dated harness receipt; while empty the block renders `""` and every prompt is
+  > byte-identical (tested). Wired into BOTH prompt seams in lockstep — `grounding._BLOCKS` ("hub_notes") and
+  > `_stream_chat`'s prepend — with a test that fails when either loses the block, since nothing else does.
+  > **The harness arm** — `notes` in `evals/ablation_eval.py` (UNGATED by design: the arm measures what the gate
+  > asks), with the inert-drop guard ("a notes arm with an empty block is the raw arm under another name" — dropped,
+  > not spent on). **The receipt's honest state:** no conversation notes exist yet for the ON-10 questions, so the
+  > arm inert-drops, the gate holds, and "stored and shown, never injected" IS the shipped behavior — R4's stance by
+  > construction. The arm's first real measurement runs when arrivals accumulate notes; the flip, if lift measures,
+  > cites its dated results file. **Open:** more adapters as kinds earn arms; the ambiguity-ledger ask-once wiring on
+  > the first live same-tier conflict.
 - **HB-5 · arrivals from people and systems.** A sentence in Slack becomes a note on the object with provenance (blast
   radius decides what applies and what waits); live Jira and Confluence state through Atlassian's MCP server on the
   allowlist — no connector code, the write slice's grant law already governs "open a ticket"; the email channel in both
   directions, keyed on the Google OAuth client only the user can create (24 f); one conversation record wherever it
   moves (Slack → deep analysis → Jira comment → email). *Falsifier:* an inbound channel that carries untrusted text
   reaches the agent only through customs — a red-team set of injected instructions must land as data, never as acts.
+  > **FIRST SLICE BUILT 2026-09-16** (with HB-4, one branch). The Slack half: **a sentence becomes a note on the
+  > object, deterministically** — HB-3's thread→object link is the router (a reply lands in a thread the platform
+  > FILED on a securable, so the reply is about that securable; no model decides). The verb is explicit and
+  > colon-strict: `@bot note: carrier X was on strike` files; `note that revenue dipped?` is prose and still asks —
+  > which keeps the whole path inside `app_mention`, so NO new Slack scope and NO reinstall. The door
+  > (`POST /arrivals/slack`) runs customs in order — cap (500), control-strip (`prompt_safety`), PII redaction
+  > (`security/pii.redact_text`, the row scanner's patterns given a free-text seam) — then stages an OBJECT note
+  > under `agent_notes`' blast-radius law (the new `object` target ALWAYS stages, even at high confidence: an object
+  > note is read by everyone who opens the object). Provenance rides the staged recommendation verbatim; `GET
+  > /arrivals/notes` is the stored-and-shown surface with the stamp on every row; the envelope adapter feeds the
+  > ranker from the same store. The TS bot (`bots/slack`) gained the verb + `createArrivalPoster` (70/70 vitest).
+  > **The falsifier is permanent** (`test_hb5_arrival_redteam.py`, SP-6's contract extended inbound): seven attacks —
+  > instruction override, fake tool-result framing, fenced fake proposal, exfiltration nudge, 10KB bulk, SQL
+  > injection, PII smuggle — each lands as a capped, redacted, PENDING note; the action inbox, the automations
+  > library and the links store are unchanged by every one. **Deliberately not built:** the email channel (both
+  > directions keyed on the Google OAuth client only the user can create — §6 item 24 f holds); Jira/Confluence
+  > state arrives through the allowlisted MCP consumer with the write slice's grant law, no connector code, and its
+  > live receipt waits on a real Atlassian server on the allowlist; a plain (non-mention) thread reply stays
+  > un-listened (it would need `message.channels` + a reinstall — the mention verb covers the case without either).
+  > "One conversation record wherever it moves" is the manifest ordered by time: the thread link, the ticket link
+  > and the notes all hang off the one securable.
 - **HB-6 · the map and the packs.** Every automation on one screen — trigger, destinations, grant, owner, last run,
   cost, probation state (Agent Ops' Map does this per agent; hub-wide does not exist); a function pack ships its group,
   its tags, its default grants and subscriptions, and its automations (24 c). *Receipt:* installing a supply-chain pack
   creates the group, tagged and subscribed, waiting for members.
+  > **BUILT 2026-09-16.** **The map** is one read — `GET /hub/map` — assembling every column the sentence names
+  > from stores that all existed: the trigger is the condition's own one-liner; a routed notify's destinations are
+  > resolved through the ENGINE's resolver, so the map cannot drift from the send; grants are the standing rows
+  > bucketed by their automation owner; **cost is an explicit floor** (the session-log fold over each chain's run
+  > traces and step investigations, `unpriced_calls`/`calls_without_usage` carried — there is no per-automation
+  > usage axis, and a tick job's own meter reads ~0 by construction while the inner investigation job holds the
+  > spend); an unmeasured precision renders null, never 0%. The screen is Agent Ops' **Hub** layer beside the
+  > per-agent Map, and it takes no connection scope — hub-wide is the definition, the door's `?conn_id` serves
+  > narrow callers. **The packs half**: `function.yaml` + `POST /packs/{id}/install` — guarded
+  > (`govern.guard("pack.install")`), journalled (`pack.installed`), validate-everything-then-write (a bad layer
+  > refuses whole with nothing written), idempotent, and it never takes back what operators set. The shipped
+  > `packs/supply-chain` IS the receipt, held by `test_hb6_packs_ship_groups.py`: installing it creates the group
+  > — tagged via subscribe grants on its domains, subscribed to the order process, zero members — with its
+  > dispatch watch declared `pack:supply-chain`, on probation, disarmed; and `route()` already finds the group as
+  > a destination, channel-less until someone gives it one. §6 24 (c) taken with the wave.
 
 **Sequencing rules that bind the arc.** No channel is built before an automation with real traffic needs it. The
 routing half precedes enforcement. Departures are gated harder than the screen from the first one. Push only from
@@ -5815,6 +6092,77 @@ receives what or which context outranks which; a layer taxonomy of people; a nin
 nomenclature for the analogy's sake; a persona named "Analyst".
 
 ---
+
+
+### 3.19 · Arc IN — the install: what Hermes Agent's installer teaches (drafted 2026-09-17 at the user's direction — §6 item 25; **sequenced after Arc IP**, the user's order; nothing built)
+
+> **Origin.** The user, 2026-09-17, with a screenshot of Hermes Agent's Quick Install
+> (https://github.com/nousresearch/hermes-agent): *"I like how hermes does it here… Im not suggesting to the exact same
+> but lets see what we learn from it as far as installation goes.. no code change for now"*, then *"Lets add this to
+> the roadmap first.. I want to finish IP arc first though.."*
+
+**The study, read 2026-09-17** — Hermes' README, its `install.sh` and `install.ps1`, and its installation guide; read,
+not run. Hermes installs with `curl -fsSL https://hermes-agent.nousresearch.com/install.sh | bash` (Linux, macOS, WSL2,
+Termux) or `iex (irm https://hermes-agent.nousresearch.com/install.ps1)` (native Windows): uv, Python 3.11, Node.js,
+ripgrep and ffmpeg, and on Windows — because Hermes runs shell commands — a portable Git Bash under
+`%LOCALAPPDATA%\hermes\git`, no admin. The code lives in `~/.hermes/hermes-agent` (`/usr/local/lib/hermes-agent` for a
+root install), the data and config in `~/.hermes` (`HERMES_HOME`). Then `hermes setup` (a wizard, `--skip-setup` skips
+it), `hermes model`, `hermes update`, `hermes doctor`.
+
+**Where Aughor's install already holds its own — keep these.** The Node.js download is SHA-256-verified against
+nodejs.org; Hermes' Windows installer verifies none of its downloads. One line per step, the tools' output in
+`.aughor/logs/`, and a failed step shows its log's tail and the next action. A re-run skips what did not change (`npm ci`
+per lockfile, `next build` per fingerprint). The installer is standard-library only, held by tests, and CI runs it on
+three operating systems. It ends in the running app with the browser open, where Settings → Models is. No shell rc
+file is edited: the `aughor` command sits in uv's own command folder. A download cut off halfway runs nothing, and
+`install.sh` is POSIX `sh`.
+
+**What it teaches — measured against Aughor on main `1c150b05`:**
+- **Code and data apart.** Hermes keeps its checkout and its data in different places. Aughor's state is `data/`
+  inside the checkout, relative to the folder the API starts in (`aughor/db/paths.py`: `AUGHOR_STATE_DIR`, else
+  `Path("data")`). Deleting or re-cloning `~/aughor` deletes the connections, history and receipts with it, and a
+  process started from another folder reads another `data/` — the shape behind the one-writer rule §7 records.
+- **Update is a command.** `hermes update` fetches and fast-forwards, backs up a broken checkout and pins a commit
+  (`--commit`, refusing a rollback without `--force-commit`); re-running the installer on an existing clone updates it.
+  Aughor's `find_checkout` reuses an existing `~/aughor` as it is: a re-run re-syncs dependencies and never pulls, and
+  there is no `aughor update` and no pin.
+- **A doctor.** `hermes doctor` names missing dependencies, storage problems and PATH. Aughor's CLI (`seed`, `up`,
+  `ask`, `ontology-docs`, `graph-export`, `packs`, `industries`, `skills`) has none; `aughor up`'s boot summary is the
+  nearest thing.
+- **The README says what the install does:** the platforms, what gets installed and where, "no admin", and the known
+  Windows Defender false positive on `uv.exe` with the exclusion command. Aughor's Quick start is two commands and
+  "Next time, run `aughor`".
+- **Questions stay off the unattended path.** Hermes' Windows installer asks nothing (no `Read-Host`); its shell
+  installer reads stdin, else `/dev/tty`, else takes the default, and `--non-interactive` skips every prompt. IP-2's
+  industries question hung both Windows install jobs on PR #518's first CI run — a console without a window — until
+  the question required a person: no `CI`, and on Windows a console with a window.
+- **Hostile networks.** Hermes probes the network before the heavy steps, retries the clone and falls back to a
+  blobless clone when GitHub throttles, degrades its Python dependencies in tiers (all, all minus the broken, core
+  only), explains corporate-proxy certificate errors (`NODE_EXTRA_CA_CERTS`) and normalises long Windows profile paths.
+  Aughor says "check your internet connection".
+- **A short address.** Its own domain keeps the one-liner short and independent of the repository's layout. Aughor's
+  Windows line wraps `irm | iex` in `powershell -ExecutionPolicy ByPass -c "…"` on purpose, so it runs from Command
+  Prompt too (#501).
+
+**Waves** — none built; each lands as its own measured slice:
+- **IN-1 update and doctor.** `aughor update`: a clean clone fetches and fast-forwards; a dirty or diverged one is
+  refused with the reason, never reset; a snapshot install re-downloads into place; `--ref` pins; the installer's
+  steps re-run. Re-running `install.sh` or `install.ps1` on an existing clone does the same. `aughor doctor`: uv,
+  Python and Node.js with their versions, both ports, `data/` writable, the `aughor` command on PATH, a model
+  configured — answered without a model call and without a query against a warehouse.
+- **IN-2 the README's install section:** the platforms (WSL2 once measured), what gets installed and where, no admin,
+  the disk it takes, update, uninstall, non-interactive installs (`--industries`, `--no-start`), and troubleshooting
+  (Defender on `uv.exe`, a corporate proxy).
+- **IN-3 hostile networks:** a preflight before the slow steps, retries on the clone and the downloads, the
+  proxy-certificate hint.
+- **IN-4 a data home.** Aughor's state outside the checkout — per user (`~/.aughor`, `%LOCALAPPDATA%\aughor`), one
+  env override — and a one-time move of an existing `data/`, verified before anything is removed. The largest wave: it
+  touches every store path and the test isolation behind them, so it gets its own plan before it starts.
+
+**Recommended not to copy** (the builder's view; item 25 (f) is open): a portable Git Bash — Aughor runs no shell
+commands, and a Windows machine without Git already installs from a zip snapshot; Termux — a Next.js build does not
+belong on a phone; a root, multi-user install; a machine-readable stage protocol (`--manifest`, `--stage`, `--json`)
+until there is a desktop app to drive it; shell rc edits — uv's command folder already reaches PATH.
 
 ## 4 · Decided AGAINST — do not re-propose without new facts
 
@@ -6154,14 +6502,31 @@ ARC HB  ✅ ADOPTED 2026-09-16 (§3.18; §6 item 24 (a)(b)(d) stamped on the use
         triggers + outcomes, first receipt on Olist's dispatch promise → HB-4 the provenance envelope
         + one ranker (a harness arm per source kind) → HB-5 arrivals (Slack sentences → notes ·
         Jira/Confluence through MCP · email, keyed on the user) → HB-6 the map, packs ship groups.
-        The measure is landings, not doors
+        The measure is landings, not doors. ✅ HB-1…HB-6 first slices merged (#513 · #515 · #516);
+        HB-2 REMAINDER built 2026-09-17 — every outbound transport gated (AST-held), laws 1·2·4·5·6·7
+        and the receipt on the message, the departures screen
 ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chosen at install and read
         for the connection's own industry. IP-0 ✅ MERGED #503 (`aebe5feb`): playbook reads
         scoped by industry (21 of 96 cross-industry plays → 0), the 486 dropped causes seeded,
         whole-word industry matching, definitional answers read plays, "proven" only with an
-        outcome. Next: IP-1 the package seam → IP-2 chosen at install → IP-3 the generator
-        (airline as reference) → IP-4 tier 1: banking & lending first, then payments & fintech,
-        then insurance
+        outcome. IP-1 ✅ MERGED #518 (`1c150b05`): the KB in eleven packages behind one resolver,
+        moved unchanged (measured); data-quality plays as the Verifier's rule-outs on deep reports;
+        existing playbooks topped up with the 486 checks, a deleted one never resurrected.
+        IP-2 ✅ MERGED #518: the installer asks once which industries (through the
+        terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
+        narrows every industry read; Settings → Organization and `aughor industries` change it.
+        IP-3 ✅ BUILT 2026-09-17 (local): the anatomy and gate 3 (static, CI) · gate 4 measures a
+        package on a named public dataset with no model · airline the reference — 3 sourced
+        metrics, 8 bound plays, 14 goldens; all 14 of BTS's published January 2019 figures
+        reproduced on its 638,649-flight file; 6 claims measured-true, 2 expected.
+        Next: IP-4 tier 1: banking & lending first, then payments & fintech, then insurance.
+        The user, 2026-09-17: finish Arc IP before Arc IN
+ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what Hermes Agent's installer
+        teaches; sequenced AFTER Arc IP (the user's order); nothing built. Measured on `1c150b05`:
+        state lives in the checkout's data/, a re-run never updates the code, no update or doctor
+        command, a two-command README. Waves: IN-1 `aughor update` + `aughor doctor` → IN-2 the
+        README's install section → IN-3 hostile networks → IN-4 a data home outside the checkout
+        (its own plan first)
 ARC ON  ✅ ADOPTED 2026-09-10 (§3.15; §6 item 14, all four clauses YES) — ON-0 STARTED. The user's challenge
         ("a fancy ERD… is it actionable or interpretable for the agents at runtime?")
         measured and largely confirmed: table = entity by construction; no instance
@@ -6541,6 +6906,8 @@ the browser** · **measure the premise before building.**
 > **Amended 2026-09-16, later:** item 24 (a), (b) and (d) decided on the user's *"Lets take the logical next step..
 > go.."* — §3.18 active, HB-1 first, `domain` grant-bearing, Viewer/Editor/Owner the first personas; (c) waits for
 > HB-6, (e) for HB-3, (f) holds on the OAuth client, (g) rides the arc. Open: 16, 18(c), 22(c), 24(c·e·f·g).
+> **Amended 2026-09-16, HB-6:** item 24 (c) decided on the user's *"Start hb-6"*, on the recorded recommendation —
+> packs ship function groups; (e) had been taken with HB-3 the same day. Open: 16, 18(c), 22(c), 24(f·g).
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -6818,7 +7185,8 @@ the browser** · **measure the premise before building.**
 21. ✅ **DECIDED 2026-09-14 (the user) — Arc IP (§3.17): nine answers that shape the industry packages.** Put as the
     plan's open calls, each with a recommendation, and answered over two turns.
     **(1) Skipping the install question** — every shipped package stays available and the industry is detected per
-    connection. *As recommended.*
+    connection. *As recommended.* **Built 2026-09-17 (IP-2):** Enter, no terminal, or no file all keep every package;
+    a skip is recorded as `null` so the installer does not ask again.
     **(2) Where packages live** — in the repo; no registry. *As recommended.*
     **(3) Which industry goes first** — left to the builder: **banking & lending**, then payments & fintech, then
     insurance.
@@ -6828,7 +7196,10 @@ the browser** · **measure the premise before building.**
     **(6) A package's ontology claims** — measured on every connection of its industry, not only where a person bound
     the pack. *As recommended.*
     **(7) Existing playbooks and the 486 new plays** — not yet: they arrive when IP-1 routes data-quality plays to the
-    Verifier. *As recommended.*
+    Verifier. *As recommended.* **Delivered 2026-09-17 by IP-1:** the route is rule-outs on deep reports (the user's
+    call when asked how the checks reach the Verifier — not repair hints measured first, not running the detection
+    queries where tables match, not carry-only), and existing playbooks receive the 486 at startup, once, never
+    resurrecting a check a person deleted.
     **(8) Ablation spend** — gate 5 for the reference package; later packages only where gate 4 is ambiguous. *As
     recommended.*
     **(9) Record the arc here** — yes: §3.17, this item and the §5 band.
@@ -6875,8 +7246,12 @@ the browser** · **measure the premise before building.**
     **(b) `domain` becomes a grant-bearing tag** beside `tier` and `pii` — **✅ DECIDED 2026-09-16 with (a)**, being a
     call HB-1's own spec names (grants by tag are what make a function group self-maintaining); tags stay human-set,
     so a tag cannot be granted by a model.
-    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations.
-    *Recommended: yes; an organisation starting empty is the alternative.* HB-6's call — still open.
+    **(c) Packs ship function groups** — the group, its tags, its default grants, subscriptions and automations —
+    **✅ DECIDED 2026-09-16 with HB-6 (the user: "Start hb-6", on the recorded recommendation).** Two spellings the
+    build fixed: "tagged" is subscribe grants on the pack's domains, because a group is a principal, not a securable
+    — (b)'s grants-by-tag mechanism is what makes the group self-maintaining; and a pack automation lands declared
+    (`pack:<id>`), on probation and DISARMED, so nothing a pack ships acts before a person arms it. A re-install
+    never takes back what operators set (the group's channel, its members, an arming, a graduation).
     **(d) The persona set** — Viewer / Editor / Owner as the first persona groups; a Steward only when a deployment
     asks — **✅ DECIDED 2026-09-16 with (a)**, being the personas HB-1 ships.
     **(e) The first live receipt's host** — Olist's dispatch promise — **✅ DECIDED 2026-09-16 (the user: "Go for
@@ -6890,6 +7265,22 @@ the browser** · **measure the premise before building.**
     Not decided here because it isn't ripe: hosting and uptime (§6 item 17 stands — the hub exports only from where the
     platform runs); persona names beyond the three; row policies by group (HB-1's enforcement half, when identity is
     on).
+
+25. ⏳ **DRAFTED 2026-09-17 (the user: "Lets add this to the roadmap first.. I want to finish IP arc first though..")
+    — Arc IN, the install (§3.19): sequenced after Arc IP, nothing built.** Open, each with the builder's
+    recommendation:
+    **(a) Adoption and order** — IN-1 and IN-2 first (cheap, low risk, real gaps), IN-3 beside them, IN-4 last with its
+    own plan. *Recommended: yes, after Arc IP.*
+    **(b) A data home (IN-4)** — the state leaves the checkout. *Recommended: yes, planned on its own — it touches every
+    store.*
+    **(c) The industries question** — it stays in the install (§6 item 21, answer 1), now asked only where a person can
+    answer, or it moves to the app's first run with `--industries` kept for scripts. *Recommended: keep it in the
+    install, add `--non-interactive`, and measure it once in a real Windows console before calling Windows done.*
+    **(d) A short install address** — it needs a domain the project owns. *Recommended: when there is one; until then
+    the README shows the PowerShell-native form beside the Command Prompt one.*
+    **(e) WSL2** — named as supported. *Recommended: measure the installer there first, then say so.*
+    **(f) Not copied** — a portable Git Bash, Termux, a root multi-user install, the stage protocol, shell rc edits.
+    *Recommended: not now (reasons in §3.19).*
 
 ---
 

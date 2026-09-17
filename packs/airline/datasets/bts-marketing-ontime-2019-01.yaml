@@ -1,0 +1,47 @@
+# The public dataset gate 4 measures airline on — the one file in this package that names tables. It loads BTS's
+# January 2019 marketing-carrier on-time file into four tables (flights, and the carriers, airports and aircraft they
+# reference) and binds the flight role's attributes to the flights table's columns.
+id: bts-marketing-ontime-2019-01
+title: BTS Marketing Carrier On-Time Performance, January 2019
+source: bts-prezip-marketing-ontime-2019-01
+url: https://transtats.bts.gov/PREZIP/On_Time_Marketing_Carrier_On_Time_Performance_Beginning_January_2018_2019_1.zip
+bytes: 34217271
+sha256: c8cc2c6e365d2f48a4e772de7e8d0df0e2cd80d42379c6c03ca81d96d65d501b
+licence: U.S. Government work (public domain)
+member: On_Time_Marketing_Carrier_On_Time_Performance_(Beginning_January_2018)_2019_1.csv
+load:
+  - >
+    CREATE TABLE flights AS
+    SELECT ROW_NUMBER() OVER () AS flight_id,
+           FlightDate AS flight_date,
+           Marketing_Airline_Network AS carrier_id,
+           Operating_Airline AS operating_carrier_id,
+           Tail_Number AS aircraft_id,
+           Origin AS origin_airport_id,
+           Dest AS dest_airport_id,
+           CAST(Cancelled AS INTEGER) AS cancelled,
+           CancellationCode AS cancellation_code,
+           CAST(Diverted AS INTEGER) AS diverted,
+           CAST(ArrDel15 AS INTEGER) AS arr_del15,
+           CASE WHEN Cancelled = 1 THEN 'cancelled' WHEN Diverted = 1 THEN 'diverted' ELSE 'arrived' END AS status
+    FROM read_csv_auto('{data}', header = true, sample_size = -1)
+  - CREATE TABLE carriers AS SELECT DISTINCT carrier_id FROM flights
+  - CREATE TABLE aircraft AS SELECT DISTINCT aircraft_id FROM flights WHERE aircraft_id IS NOT NULL
+  - >
+    CREATE TABLE airports AS SELECT DISTINCT airport_id
+    FROM (SELECT origin_airport_id AS airport_id FROM flights UNION SELECT dest_airport_id FROM flights)
+binding:
+  flight:
+    table: flights
+    columns:
+      flight_date: flight_date
+      marketing_carrier: carrier_id
+      operating_carrier: operating_carrier_id
+      tail_number: aircraft_id
+      origin: origin_airport_id
+      destination: dest_airport_id
+      cancelled: cancelled
+      cancellation_code: cancellation_code
+      diverted: diverted
+      arrived_15_late: arr_del15
+measures: [on_time_arrival_rate, cancellation_rate, completion_factor]

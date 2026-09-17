@@ -871,6 +871,51 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/arrivals/notes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Arrival Notes
+         * @description Stored and shown — the conversation notes filed on one securable, each with its
+         *     provenance stamp. This is the surface the injection gate points at while it holds:
+         *     a reader SEES what people said; a prompt gets it only after measured lift.
+         */
+        get: operations["arrival_notes_arrivals_notes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/arrivals/slack": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Slack Arrival
+         * @description One inbound thread reply → a staged note on the filed object, with provenance.
+         *
+         *     404 when the thread is not filed on anything — an unfiled thread is ordinary
+         *     conversation, and inventing an object for it would be a model's guess.
+         */
+        post: operations["slack_arrival_arrivals_slack_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ask": {
         parameters: {
             query?: never;
@@ -3241,8 +3286,10 @@ export interface paths {
         };
         /**
          * Get Departures
-         * @description The ledger, newest first — departed and held rows alike, reasons and checks
-         *     verbatim (the receipt that travels, readable where it was recorded).
+         * @description The ledger, newest first — departed and held rows alike, reasons, guard outcomes and
+         *     the receipt verbatim (the receipt that travels, readable where it was recorded).
+         *     ``awaiting`` narrows to what a person still owes: an unmarked probation departure or an
+         *     unanswered owner question.
          */
         get: operations["get_departures_departures_get"];
         put?: never;
@@ -3274,6 +3321,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/departures/summary": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Summary
+         * @description How many departures took each state, and how many a person still owes — the count
+         *     the departures screen and its badge show.
+         */
+        get: operations["get_summary_departures_summary_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/departures/{departure_id}": {
         parameters: {
             query?: never;
@@ -3285,6 +3353,29 @@ export interface paths {
         get: operations["get_one_departures__departure_id__get"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/departures/{departure_id}/answer": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Answer
+         * @description Law 6 — the owner chooses one of the readings a held departure asked about. The
+         *     choice is remembered in the ambiguity ledger at user authority, so the next analysis of
+         *     that metric binds it and never pauses on it again. The held message is not re-sent: a
+         *     hold is a verdict, and the next run departs on the answer.
+         */
+        post: operations["answer_departures__departure_id__answer_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -5305,6 +5396,32 @@ export interface paths {
          *     port, not a passthrough.
          */
         post: operations["call_webhook_hooks__automation_id__post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/hub/map": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Hub Map
+         * @description The map. Omit `conn_id` for the whole hub; pass it to narrow to one connection.
+         *
+         *     `cost` on every row is a floor, not a total (`floor: true` says so in the payload):
+         *     it folds the session log over the traces this automation's recent runs caused, and
+         *     carries `unpriced_calls`/`calls_without_usage` so an unknown price never renders as
+         *     free. `probation.precision` is null until anything is marked — "not measured", never
+         *     0%.
+         */
+        get: operations["get_hub_map_hub_map_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -9464,6 +9581,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/org-settings/industries": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Industry Choice
+         * @description IP-2 — the shipped industry packages and which of them this deployment reads.
+         */
+        get: operations["get_industry_choice_org_settings_industries_get"];
+        /**
+         * Put Industry Choice
+         * @description IP-2 — choose the industry packages this deployment reads: null for every industry (each
+         *     connection's detected on its own), else the ids to keep. A stored business profile whose industry
+         *     now resolves to a different package is dropped so it re-infers on next use; the rest are kept.
+         */
+        put: operations["put_industry_choice_org_settings_industries_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/org-settings/llm": {
         parameters: {
             query?: never;
@@ -9661,6 +9804,31 @@ export interface paths {
          *     be fully bound. NOTE: runs one planner pass per eval — a deliberate, on-demand gate.
          */
         post: operations["post_evaluate_packs__pack_id__evaluate_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/packs/{pack_id}/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Install
+         * @description Install this pack's function layer (HB-6, §6 24 c): the group it ships — tagged
+         *     via subscribe grants on its domains, subscribed to its securables, waiting for
+         *     members — and its automations, which land declared, on probation and disarmed.
+         *
+         *     Idempotent; a deprecated pack, a pack with no function.yaml, or any invalid entry
+         *     refuses the install whole with nothing written.
+         */
+        post: operations["post_install_packs__pack_id__install_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -11522,6 +11690,11 @@ export interface components {
             /** Table */
             table: string;
         };
+        /** AnswerBody */
+        AnswerBody: {
+            /** Reading */
+            reading: string;
+        };
         /** AppBody */
         AppBody: {
             /**
@@ -12886,6 +13059,49 @@ export interface components {
                 [key: string]: unknown;
             };
         };
+        /** IndustryChoiceIn */
+        IndustryChoiceIn: {
+            /** Industries */
+            industries?: string[] | null;
+        };
+        /**
+         * IndustryChoiceOut
+         * @description The industry packages this deployment ships, and the ones it reads.
+         */
+        IndustryChoiceOut: {
+            /**
+             * Ignored
+             * @default []
+             */
+            ignored: string[];
+            /** Industries */
+            industries?: string[] | null;
+            /**
+             * Problem
+             * @default
+             */
+            problem: string;
+            /**
+             * Profiles Refreshed
+             * @default 0
+             */
+            profiles_refreshed: number;
+            /**
+             * Shipped
+             * @default []
+             */
+            shipped: components["schemas"]["ShippedIndustryOut"][];
+            /**
+             * Source
+             * @default
+             */
+            source: string;
+            /**
+             * Updated At
+             * @default
+             */
+            updated_at: string;
+        };
         /**
          * InputContentDataSource
          * @description Inline base64-encoded source.
@@ -12919,6 +13135,19 @@ export interface components {
             value: string;
         } & {
             [key: string]: unknown;
+        };
+        /** InstallIn */
+        InstallIn: {
+            /**
+             * Actor
+             * @default
+             */
+            actor: string;
+            /**
+             * Connection Id
+             * @default
+             */
+            connection_id: string;
         };
         /** InstructionsRequest */
         InstructionsRequest: {
@@ -13831,6 +14060,42 @@ export interface components {
             source: string;
             /** Spreadsheet */
             spreadsheet: string;
+        };
+        /** ShippedIndustryOut */
+        ShippedIndustryOut: {
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+            /** Id */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+        };
+        /** SlackArrival */
+        SlackArrival: {
+            /**
+             * Author
+             * @default
+             */
+            author: string;
+            /**
+             * Author Ref
+             * @default
+             */
+            author_ref: string;
+            /** Channel */
+            channel: string;
+            /** Text */
+            text: string;
+            /** Thread Ts */
+            thread_ts: string;
         };
         /** SlackBotBody */
         SlackBotBody: {
@@ -15309,6 +15574,8 @@ export interface components {
         };
         /** _SendFindingBody */
         _SendFindingBody: {
+            /** Conn Id */
+            conn_id?: string | null;
             /** Headline */
             headline?: string | null;
             /** Metric Name */
@@ -17079,6 +17346,71 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["AllowRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    arrival_notes_arrivals_notes_get: {
+        parameters: {
+            query: {
+                object_ref: string;
+                connection_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    slack_arrival_arrivals_slack_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SlackArrival"];
             };
         };
         responses: {
@@ -21316,6 +21648,9 @@ export interface operations {
             query?: {
                 state?: string | null;
                 automation_id?: string | null;
+                addressed_to?: string | null;
+                kind?: string | null;
+                awaiting?: boolean;
                 limit?: number;
             };
             header?: never;
@@ -21375,6 +21710,26 @@ export interface operations {
             };
         };
     };
+    get_summary_departures_summary_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+        };
+    };
     get_one_departures__departure_id__get: {
         parameters: {
             query?: never;
@@ -21385,6 +21740,41 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    answer_departures__departure_id__answer_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                departure_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AnswerBody"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -24541,6 +24931,37 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_hub_map_hub_map_get: {
+        parameters: {
+            query?: {
+                conn_id?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
                 };
             };
             /** @description Validation Error */
@@ -31769,6 +32190,59 @@ export interface operations {
             };
         };
     };
+    get_industry_choice_org_settings_industries_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndustryChoiceOut"];
+                };
+            };
+        };
+    };
+    put_industry_choice_org_settings_industries_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndustryChoiceIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndustryChoiceOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     get_org_llm_org_settings_llm_get: {
         parameters: {
             query?: never;
@@ -32086,6 +32560,41 @@ export interface operations {
         requestBody: {
             content: {
                 "application/json": components["schemas"]["EvalIn"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_install_packs__pack_id__install_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                pack_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InstallIn"];
             };
         };
         responses: {

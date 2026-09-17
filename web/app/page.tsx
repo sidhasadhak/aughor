@@ -1307,7 +1307,7 @@ const VALID_LAYERS = new Set<IntelLayer>([
 const OPS_LAYERS = new Set<OpsLayer>(["monitors", "actions", "integrations", "spend", "security"]);
 const EVALS_LAYERS = new Set<EvalsLayer>(["suites", "runs", "experiments"]);
 const AGENTIC_LAYERS = new Set<AgentsLayer>([
-  "fleet", "agents", "attention", "activity", "automations",
+  "fleet", "agents", "attention", "activity", "automations", "hub", "departures",
 ]);
 
 function layerFromUrl(): string | null {

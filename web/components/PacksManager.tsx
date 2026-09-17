@@ -37,17 +37,29 @@ export function PacksManager() {
                 </Badge>
                 <Badge color={p.ok ? "#46b06a" : "#e5534b"}>{p.ok ? "valid" : "invalid"}</Badge>
                 {scopeLabel(p.scope) && <Badge color="#888">{scopeLabel(p.scope)}</Badge>}
+                {layerLabel(p) && <Badge color="#888">{layerLabel(p)}</Badge>}
               </span>
               <span className="aug-fs-xs text-zinc-500">
-                {(p.metrics ?? 0)}m · {(p.roles ?? 0)}r · {(p.evals ?? 0)}e {sel === p.id ? "▾" : "▸"}
+                {p.layer ? "" : `${p.metrics ?? 0}m · ${p.roles ?? 0}r · ${p.evals ?? 0}e `}
+                {sel === p.id ? "▾" : "▸"}
               </span>
             </button>
-            {sel === p.id && <PackDeploy packId={p.id} />}
+            {sel === p.id && (p.layer
+              // IP-1 — a knowledge package is reference every connection reads: there is
+              // nothing to bind or evaluate, so it says what it carries instead.
+              ? <p className="aug-fs-xs text-zinc-400 mt-2">{p.description || "Reference knowledge every connection reads."}</p>
+              : <PackDeploy packId={p.id} />)}
           </div>
         ))}
       </div>
     </div>
   );
+}
+
+/** IP-1 — the knowledge layer a package carries, as the roster badges it. */
+function layerLabel(p: PackSummary): string {
+  if (!p.layer) return "";
+  return p.layer === "industry" && p.industry ? `industry · ${p.industry}` : p.layer;
 }
 
 /** An engine-scoped pack reads and steers only on connections of that engine, so the

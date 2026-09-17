@@ -1,7 +1,7 @@
 """The directory per-connection GENERATED state lives in — one resolver, one env var.
 
 `data/` holds two very different kinds of file. Some are **authored** and version-controlled
-(`glossary.yaml`, `kb/*.json`, `global_rules.md`); the rest are **generated per connection**
+(`glossary.yaml`, `global_rules.md`; the knowledge base moved into `packs/*/kb/` with IP-1); the rest are **generated per connection**
 and derived from a warehouse — exploration findings, business profiles, the briefing cache,
 the explore watermark. This module owns the second kind ONLY.
 

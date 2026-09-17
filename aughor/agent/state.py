@@ -435,6 +435,11 @@ class AnswerReport(TypedDict):
     # ON-10 — the question's frame: its business terms resolved against the DECLARED ontology before the intake read it
     # (`aughor.ontology.framing.Frame`, dumped). Shown with the answer. Absent when nothing declared was reached.
     frame: NotRequired[Optional[dict]]
+    # IP-1 — the Verifier's rule-outs for the move this report states: the known ways its metric reads high (it
+    # rose) or low (it fell), each with its fix and the play it came from, and the note that none was checked
+    # against the data (`aughor.playbook.rule_outs`). Absent when the report states no move or its metric
+    # names no KB entry.
+    rule_outs: NotRequired[Optional[dict]]
 
 
 class AgentState(TypedDict):

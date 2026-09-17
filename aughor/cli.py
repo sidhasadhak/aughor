@@ -778,6 +778,17 @@ def _print_ada_report(report: dict, elapsed: float):
         for g in report["data_gaps"]:
             console.print(f"  [dim]✗ {g}[/dim]")
 
+    # Rule out first (IP-1) — the known ways the stated move can be the data, before the actions
+    rule_outs = report.get("rule_outs") or {}
+    if rule_outs.get("items"):
+        from rich.markup import escape
+        console.print("\n[bold]Rule out first[/bold]")
+        console.print(f"  [dim]{escape(rule_outs.get('lead') or 'Not checked against your data.')}[/dim]")
+        for item in rule_outs["items"]:
+            console.print(f"  • {escape(item.get('cause', ''))}")
+            if item.get("fix"):
+                console.print(f"    [dim]Fix: {escape(item['fix'])}[/dim]")
+
     # Recommendations
     recs = report.get("recommendations") or []
     if recs:
@@ -1061,6 +1072,95 @@ def packs_list(packs_dir: Path):
                   f"by an agent or selectable for steering.")
 
 
+@packs.command("check")
+@click.argument("pack_id")
+def packs_check(pack_id: str):
+    """IP-3 — run the static gate (gate 3) on PACK_ID: sources, sourced sane ranges, formulas over roles, no alias
+    collision, bound plays, goldens and datasets. Exits 1 on any finding. A pack that does not declare
+    `anatomy: 1` is not held to it."""
+    from aughor.packs.gate3 import applies, run_gate3
+    from aughor.packs.loader import PacksError, load_pack
+    from aughor.packs.roots import pack_dir
+
+    folder = pack_dir(pack_id)
+    if folder is None:
+        console.print(f"[red]✗[/red] no pack {pack_id!r} in either pack root")
+        sys.exit(1)
+    try:
+        pack = load_pack(folder)
+    except PacksError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    if not applies(pack):
+        console.print(f"[yellow]{pack_id} does not declare anatomy: 1 — the static gate does not hold it[/yellow]")
+        return
+    report = run_gate3(pack)
+    for line in report.lines():
+        console.print(f"  [red]✗[/red] {line}")
+    if not report.ok:
+        console.print(f"\n[red]{len(report.findings)} finding(s)[/red] — gate 3 fails for {pack_id}")
+        sys.exit(1)
+    console.print(f"[green]✓[/green] gate 3 passes for {pack_id}: {len(pack.metrics)} metrics, "
+                  f"{len(pack.playbooks)} plays, {len(pack.evals)} goldens, {len(pack.sources)} sources, "
+                  f"{len(pack.datasets)} dataset(s)")
+
+
+@packs.command("measure")
+@click.argument("pack_id")
+@click.option("--dataset", "dataset_id", default="", help="The dataset to measure on (default: the package's first).")
+@click.option("--download", is_flag=True, help="Download the dataset into the cache if it is not there yet.")
+@click.option("--write", is_flag=True, help="Store the receipt as measurements/<dataset>.json inside the package.")
+def packs_measure(pack_id: str, dataset_id: str, download: bool, write: bool):
+    """IP-3 — run gate 4 on PACK_ID: measure its recipes, goldens, detections and ontology claims on a named public
+    dataset, with no model. Exits 1 on any finding."""
+    import os
+
+    # A measurement reads a public file; it records nothing in this deployment's stores.
+    os.environ.setdefault("AUGHOR_KERNEL_EVENTS", "0")
+    from aughor.packs.gate3 import applies, run_gate3
+    from aughor.packs.gate4 import Gate4Error, run_gate4, write_receipt
+    from aughor.packs.loader import PacksError, load_pack
+    from aughor.packs.roots import pack_dir
+
+    folder = pack_dir(pack_id)
+    if folder is None:
+        console.print(f"[red]✗[/red] no pack {pack_id!r} in either pack root")
+        sys.exit(1)
+    try:
+        pack = load_pack(folder)
+    except PacksError as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    if not applies(pack) or not run_gate3(pack).ok:
+        console.print(f"[red]✗[/red] {pack_id} must pass gate 3 first: aughor packs check {pack_id}")
+        sys.exit(1)
+    try:
+        report = run_gate4(pack, dataset_id, download=download)
+    except Gate4Error as exc:
+        console.print(f"[red]✗[/red] {exc}")
+        sys.exit(1)
+    console.print(f"[bold]{pack_id}[/bold] on [bold]{report.dataset_id}[/bold] "
+                  f"({', '.join(f'{t} {n:,}' for t, n in report.rows.items())})")
+    for m in report.metrics:
+        mark = "[green]✓[/green]" if m.in_range else "[red]✗[/red]"
+        console.print(f"  {mark} {m.metric} = {m.value}  [dim]sane [{m.sane_min}, {m.sane_max}][/dim]")
+    passed = sum(g.ok for g in report.goldens)
+    console.print(f"  goldens: {passed} of {len(report.goldens)} reproduce their published figure")
+    for g in report.goldens:
+        if not g.ok:
+            console.print(f"    [red]✗[/red] {g.question} — measured {g.measured}, published {g.expected}")
+    for d in report.detections:
+        console.print(f"  detection {d.play}: {d.count if d.error == '' else 'error — ' + d.error}")
+    console.print(f"  claims: {report.claims_by_tier}")
+    for line in report.findings:
+        console.print(f"  [red]✗[/red] {line}")
+    if write:
+        console.print(f"[dim]receipt: {write_receipt(pack, report)}[/dim]")
+    if not report.ok:
+        sys.exit(1)
+    console.print(f"[green]✓[/green] gate 4 passes for {pack_id}")
+
+
 @packs.command("promote")
 @click.argument("pack_id")
 @click.option("--packs-dir", default=None, type=Path,
@@ -1109,6 +1209,58 @@ def packs_demote(pack_id: str, packs_dir: Path, status: str, actor: str):
         console.print(f"[red]✗[/red] {exc}")
         sys.exit(1)
     console.print(f"[yellow]✓ {status}[/yellow] {pack_id}")
+
+
+@cli.command()
+@click.argument("choice", nargs=-1)
+def industries(choice: tuple):
+    """Which industry packages Aughor reads (IP-2) — the question the installer asked.
+
+    With no argument, lists the shipped industries and the current choice. `aughor industries retail saas`
+    keeps only those (numbers from the list and package names work too), `aughor industries all` keeps
+    every one with each connection's industry detected, and `aughor industries none` keeps only the
+    knowledge every industry shares. Settings > Organization changes the same choice.
+    """
+    from aughor.business_profile.metric_kb import refresh_profiles_for_choice
+    from aughor.installer import Industry, parse_industries
+    from aughor.packs.industry_choice import choice_path, describe, read_choice, shipped_industries, write_choice
+    from aughor.packs.knowledge import packages
+
+    shipped = shipped_industries()
+    current = read_choice()
+    if not choice:
+        if not shipped:
+            console.print("[yellow]No industry packages ship with this checkout.[/yellow]")
+            return
+        width = len(str(len(shipped)))
+        for number, industry in enumerate(shipped, 1):
+            kept = current.industries is None or industry.id in current.industries
+            mark = "[green]✓[/green]" if kept else "[dim]·[/dim]"
+            console.print(f"  {mark} {str(number).rjust(width)}  {industry.name}  [dim]{industry.id}[/dim]")
+        console.print(f"\nIndustries: {describe(current)}"
+                      + (f"  [dim]({current.source}, {current.updated_at})[/dim]" if current.source else ""))
+        if current.ignored:
+            console.print(f"[yellow]Ignored — no package carries: {', '.join(current.ignored)}[/yellow]")
+        if current.problem:
+            console.print(f"[yellow]{current.problem}[/yellow]")
+        console.print(f"[dim]{choice_path()}[/dim]")
+        return
+
+    folders = {p.industry: p.pack_id for p in packages() if p.layer == "industry" and p.industry}
+    options = [Industry(id=i.id, name=i.name, pack=folders.get(i.id, i.id)) for i in shipped]
+    try:
+        chosen = parse_industries(" ".join(choice), options)
+        after = write_choice(chosen, source="cli")
+    except ValueError as exc:   # an answer no package matches (UnknownIndustry is one too)
+        console.print(f"[red]✗[/red] {exc} Industries are: {', '.join(i.id for i in shipped)} — or all, or none.")
+        sys.exit(1)
+    refreshed = 0
+    if current.industries != after.industries:
+        refreshed = refresh_profiles_for_choice(current.industries, after.industries)
+    console.print(f"[green]✓[/green] Industries: {describe(after)}")
+    if refreshed:
+        console.print(f"[dim]{refreshed} business profile(s) resolved to a different package and will be "
+                      f"rebuilt the next time their data is used.[/dim]")
 
 
 @cli.group()

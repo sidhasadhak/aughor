@@ -1,0 +1,12 @@
+id: otp-read-with-completion-factor
+kind: diagnostic
+trigger_metric: on_time_arrival_rate
+trigger_condition: on-time arrival rate rises while cancellations rise
+trigger_operator: gt
+recommendation: >
+  Read the on-time rate beside the cancellation rate and the completion factor. A schedule that cancels its latest
+  flights raises the share of the rest that arrive on time; the published report states both for the same month.
+expected_impact: An on-time gain bought with cancellations is not reported as an operational improvement.
+owner_role: Operations Control
+tags: [on-time performance, completion factor]
+sources: [bts-atcr-2019-01]

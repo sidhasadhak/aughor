@@ -130,14 +130,37 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
                 monitor.id, monitor.name, channel, alert.id)
             return None
 
+        from aughor.govern.departure import gate_departure
+        from aughor.govern.departure_basis import measurement_for_monitor_alert
         from aughor.notifications.executor import fire_action
         from aughor.notifications.models import ActionPayload
+        from aughor.org.context import current_org_id
+
+        recommendation = (f"{alert.monitor_name or 'Monitor'} "
+                          f"[{alert.severity}]: {_threshold_phrase(alert)}")
+        # HB-2 — the departure gate. An alert is the platform speaking unattended, so it is
+        # gated harder than the screen: the alert row stays (the screen shows it), and a
+        # held alert simply does not leave. Its numbers are the reading the monitor took in
+        # this tick; its definition is the monitor a person declared. Re-notification is
+        # the monitor's own policy (its grace window already ran upstream).
+        name = alert.monitor_name or getattr(monitor, "name", "") or "Monitor"
+        verdict = gate_departure(
+            kind="monitor_alert", org_id=current_org_id(), conn_id=alert.conn_id or "",
+            text=f"{recommendation}. {alert.message or ''}".strip(), target=trigger.id,
+            actor=f"monitor:{alert.monitor_id}", source_kind="monitor",
+            source_id=alert.monitor_id, source_name=name,
+            about=f"metric:{alert.metric_name}" if alert.metric_name else "",
+            measurement=measurement_for_monitor_alert(alert, monitor),
+            declared_definition=f"monitor '{name}' (declared)")
+        if verdict.held:
+            logger.info("monitor alert %s held at departure (departure %s): %s",
+                        alert.id, verdict.record_id, verdict.reason_sentence())
+            return None
 
         log = fire_action(trigger, ActionPayload(
             investigation_id=f"monitor:{alert.monitor_id}",
             rec_index=0,
-            recommendation=(f"{alert.monitor_name or 'Monitor'} "
-                            f"[{alert.severity}]: {_threshold_phrase(alert)}"),
+            recommendation=recommendation,
             metric_name=alert.metric_name or "",
             headline=alert.message,
             trigger_id=trigger.id,
@@ -146,7 +169,8 @@ def dispatch_alert(alert: "MonitorAlert", monitor: Optional["Monitor"] = None) -
             # timeout, and a slow-but-successful receiver must be able to tell that
             # retry from a genuinely new alert. One alert, one delivery key, forever.
             delivery_key=f"monitor-alert:{alert.id}",
-            context=alert_context(alert),
+            context={**alert_context(alert), "receipt": verdict.receipt,
+                     "receipt_line": verdict.receipt_line()},
         ))
         if getattr(log, "status", "") != "ok":
             logger.warning("monitor alert %s delivery to %r ended %s: %s",

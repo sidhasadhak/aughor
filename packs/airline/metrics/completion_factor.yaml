@@ -1,0 +1,21 @@
+name: completion_factor
+title: Completion factor
+aliases: [completion rate, flights completed share, schedule completion]
+unit: ratio
+definition: >
+  The share of scheduled flights that were not cancelled — the complement of the cancellation rate. A diverted flight
+  was flown, so it counts as completed.
+formula: >
+  SUM(CASE WHEN {{role.flight.cancelled}} = 0 THEN 1.0 ELSE 0.0 END) / NULLIF(COUNT(*), 0)
+grain: Scheduled flights of a marketing carrier network over a period.
+binds:
+  required: [flight]
+anti_patterns:
+  - "Reporting on-time without the completion factor: a schedule that cancels its late flights looks punctual."
+sane_range:
+  min: 0.9505
+  max: 0.9975
+  basis: >
+    The complement of the cancellation-rate band: U.S. marketing carrier networks' January 2019 cancellation rates by
+    carrier, from 0.3% to 4.9%, widened by their one-decimal rounding.
+  sources: [bts-atcr-2019-01]

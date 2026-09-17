@@ -1,0 +1,19 @@
+id: food-delivery
+name: Food delivery
+version: 1
+description: >
+  The food-delivery industry package: delivery time, cancellations by party, courier utilisation, take rate, cohort retention, and the deep knowledge behind them.
+layer: industry
+industry: food_delivery
+owner_team: Platform
+domains:
+  - food delivery
+  - on-demand marketplace
+  - last mile
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").

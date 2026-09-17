@@ -54,6 +54,11 @@ def _summary(pack_dir: Path) -> dict:
         # is or is not in play.
         "scope": _scope.entries(m.scope),
         "evals": len(pack.evals), "ok": r.ok,
+        # HB-6 — whether this pack ships a function layer (a group to install).
+        "function": pack.function is not None,
+        # IP-1 — the knowledge this pack is a package of: its layer, the industry an
+        # industry package carries, and the sentence that says what it holds.
+        "layer": m.layer, "industry": m.industry, "description": m.description,
         "errors": r.errors, "warnings": r.warnings,
     }
 
@@ -92,6 +97,7 @@ def get_pack(pack_id: str):
         "questions": pack.questions.model_dump(),
         "playbooks": [p.model_dump() for p in pack.playbooks],
         "evals": [e.model_dump() for e in pack.evals],
+        "function": pack.function.model_dump() if pack.function else None,
         "validation": {"ok": r.ok, "errors": r.errors, "warnings": r.warnings},
     }
 
@@ -193,6 +199,36 @@ def post_bind(pack_id: str, body: BindIn):
 def get_binding(pack_id: str, connection_id: str, schema: Optional[str] = None):
     """The pinned binding for (org, pack, connection, schema), or null."""
     return load_binding(pack_id, connection_id, schema or "")
+
+
+class InstallIn(BaseModel):
+    actor: str = ""
+    #: Where the pack's automations run. Omit it and the group, tags and subscriptions
+    #: still install; the automations are reported as waiting for a connection.
+    connection_id: str = ""
+
+
+@router.post("/packs/{pack_id}/install")
+def post_install(pack_id: str, body: InstallIn):
+    """Install this pack's function layer (HB-6, §6 24 c): the group it ships — tagged
+    via subscribe grants on its domains, subscribed to its securables, waiting for
+    members — and its automations, which land declared, on probation and disarmed.
+
+    Idempotent; a deprecated pack, a pack with no function.yaml, or any invalid entry
+    refuses the install whole with nothing written."""
+    # G1: declared LOW like pack.bind — auto-allowed and AUDITED. Install creates only
+    # inert structure, but who granted a group its reach belongs on the trail.
+    from aughor import govern
+    govern.guard("pack.install", pack_id)
+    from aughor.packs.install import InstallRefused, install_pack
+    try:
+        return install_pack(pack_id, actor=body.actor, connection_id=body.connection_id)
+    except InstallRefused as e:
+        # 409 for the same reason promotion uses it: the request is well-formed and the
+        # pack is real — the pack's own state or layer says no.
+        raise HTTPException(status_code=409, detail=str(e))
+    except PacksError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 @router.get("/packs/{pack_id}/deltas")

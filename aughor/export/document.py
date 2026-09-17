@@ -381,6 +381,14 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
             for w in wf
         ]))
 
+    # IP-1 — the Verifier's rule-outs, where the web report puts them: before the actions.
+    rule_outs = rep.get("rule_outs") or {}
+    if rule_outs.get("items"):
+        blocks.append(_h("Rule out first"))
+        blocks.append(_p(rule_outs.get("lead") or "Not checked against your data."))
+        blocks.append(_bul([i.get("cause", "") + (f" — fix: {i['fix']}" if i.get("fix") else "")
+                            for i in rule_outs["items"]]))
+
     recs = rep.get("recommendations") or []
     if recs:
         blocks.append(_h("Recommendations"))

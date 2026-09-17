@@ -1,0 +1,18 @@
+id: marketing
+name: Marketing
+version: 1
+description: >
+  The marketing function, read by every industry: attribution and spend, campaign performance, promotions and acquisition.
+layer: function
+owner_team: Platform
+domains:
+  - marketing
+  - attribution
+  - campaigns
+extends: []
+scope:
+  connections: ["*"]
+status: draft
+source: aughor
+# IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
+# connection of its scope without a binding (§3.17 "reference is not steering").

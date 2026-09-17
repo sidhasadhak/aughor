@@ -23,6 +23,7 @@ import { setOrgSettingsCache } from "@/lib/orgSettings";
 import { CHART_PALETTE_NAMES, chartPaletteLabel } from "@/lib/chartPalettes";
 import { Button } from "@/components/ui/button";
 import { OrgByokSection } from "@/components/OrgByokSection";
+import { OrgIndustriesSection } from "@/components/OrgIndustriesSection";
 
 const EMPTY: OrgSettings = {
   company_name: "", website: "", hq_location: "", industry: "",
@@ -201,6 +202,10 @@ export function OrgSettingsPanel({ workspaceId, workspaceName }: { workspaceId?:
           A set industry overrides what Aughor infers.
         </div>
       </div>
+
+      {/* Industries (IP-2) — the installer's question, deployment-wide, so app scope only. It saves on
+          its own: the choice is a server file, not a field of the settings row. */}
+      {scope === "app" && <OrgIndustriesSection />}
 
       {/* Localization */}
       <div>

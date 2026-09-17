@@ -1,0 +1,13 @@
+id: late-flag-on-a-flight-that-never-arrived
+kind: data_quality
+trigger_metric: on_time_arrival_rate
+trigger_condition: a cancelled or diverted flight also carries an arrival delay flag
+recommendation: >
+  A flight that never arrived cannot have arrived late. A late flag on a cancelled or diverted flight counts it twice
+  when late arrivals and cancellations are added together; clear the flag or count by outcome.
+expected_impact: Late, cancelled and diverted flights partition the schedule.
+owner_role: Data Engineer
+tags: [on-time performance, data quality]
+detection: >
+  SUM(CASE WHEN ({{role.flight.cancelled}} = 1 OR {{role.flight.diverted}} = 1)
+           AND {{role.flight.arrived_15_late}} = 1 THEN 1 ELSE 0 END)

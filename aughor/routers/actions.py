@@ -149,13 +149,32 @@ def execute_recommendation_action(inv_id: str, rec_index: int, body: dict):
     except Exception:
         pass
 
+    # HB-2 — the departure gate. A person pressed Execute, so probation and the repeat law
+    # do not apply; the accuracy laws do — the recommendation's numbers must be in the
+    # analysis it came from, and a forecast never leaves. A hold answers 200 with the
+    # verdict, so the screen can say WHY instead of reporting a failed request.
+    from aughor.govern.departure import PERSON, gate_departure
+    from aughor.govern.departure_basis import measurement_for_analysis
+    from aughor.org.context import current_org_id, current_user_id
+    conn_id = str(inv.get("connection_id") or "")
+    verdict = gate_departure(
+        kind="recommendation", org_id=current_org_id(), conn_id=conn_id, text=rec_text,
+        target=trigger_id, actor=f"user:{current_user_id()}" if current_user_id() else "person",
+        investigation_id=inv_id, origin=PERSON, source_kind="analysis", source_id=inv_id,
+        source_name=str(inv.get("headline") or "")[:120],
+        measurement=measurement_for_analysis(inv_id, conn_id))
+    if verdict.held:
+        return {"status": "held", "http_status": None, "departure_id": verdict.record_id,
+                "error": f"held at departure — {verdict.reason_sentence()}"}
+
     payload = ActionPayload(
         investigation_id=inv_id, rec_index=rec_index, recommendation=rec_text,
         metric_name=body.get("metric_name", ""), headline=inv.get("headline"),
         trigger_id=trigger_id,
         triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()},
     )
-    return fire_action(trigger, payload).to_dict()
+    return {**fire_action(trigger, payload).to_dict(), "departure_id": verdict.record_id}
 
 
 class _SendFindingBody(BaseModel):
@@ -163,6 +182,10 @@ class _SendFindingBody(BaseModel):
     metric_name: Optional[str] = None
     headline:    Optional[str] = None   # context line (e.g. domain · angle)
     source_id:   Optional[str] = None   # insight_id / canvas_id / conn_id for provenance
+    #: HB-2 — the connection the finding was measured on, so the departure gate can re-run
+    #: its query and check its definitions. Absent (an older client), the share departs on
+    #: no measurement and law 1 judges its magnitudes on that.
+    conn_id:     Optional[str] = None
 
 
 @router.post("/actions/triggers/{trigger_id}/send", dependencies=[gate(Capability.ACTION_HUB)])
@@ -184,14 +207,34 @@ def send_finding_to_trigger(trigger_id: str, body: _SendFindingBody):
     if not trigger:
         raise HTTPException(status_code=404, detail="Trigger not found")
 
+    # HB-2 — the departure gate. A person pressed Share: the accuracy laws apply (the
+    # finding's query is re-run at departure and its numbers must still be in it; its
+    # definitions must be approved; a causal or forecast sentence does not leave), probation
+    # and the repeat law do not. A hold answers 200 with the verdict and its reasons.
+    from aughor.govern.departure import PERSON, gate_departure
+    from aughor.govern.departure_basis import measurement_for_finding
+    from aughor.org.context import current_org_id, current_user_id
+    conn_id = (body.conn_id or "").strip()
+    source_id = (body.source_id or "").strip()
+    verdict = gate_departure(
+        kind="finding_share", org_id=current_org_id(), conn_id=conn_id, text=body.text,
+        target=trigger_id, actor=f"user:{current_user_id()}" if current_user_id() else "person",
+        origin=PERSON, source_kind="finding", source_id=source_id,
+        source_name=(body.headline or "")[:120],
+        measurement=measurement_for_finding(source_id, conn_id) if conn_id and source_id else None)
+    if verdict.held:
+        return {"status": "held", "http_status": None, "departure_id": verdict.record_id,
+                "error": f"held at departure — {verdict.reason_sentence()}"}
+
     payload = ActionPayload(
         investigation_id=body.source_id or "", rec_index=0,
         recommendation=body.text,
         metric_name=body.metric_name or "", headline=body.headline,
         trigger_id=trigger_id,
         triggered_at=datetime.datetime.now(datetime.timezone.utc).isoformat().replace("+00:00", "Z"),
+        context={"receipt": verdict.receipt, "receipt_line": verdict.receipt_line()},
     )
-    return fire_action(trigger, payload).to_dict()
+    return {**fire_action(trigger, payload).to_dict(), "departure_id": verdict.record_id}
 
 
 @router.get("/actions/logs")

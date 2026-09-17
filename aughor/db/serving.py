@@ -32,6 +32,14 @@ PIDFILE_NAME = ".serving.pid"
 _checked = False
 _foreign = False
 
+#: Read by `_alive`, and set by the tests that hold its Windows branch.
+_WINDOWS = os.name == "nt"
+
+# kernel32 values for the Windows liveness probe.
+_SYNCHRONIZE = 0x00100000
+_WAIT_TIMEOUT = 0x00000102
+_ERROR_ACCESS_DENIED = 5
+
 
 def _pidfile() -> Path:
     from aughor.db.paths import state_dir
@@ -67,13 +75,49 @@ def serving_pid() -> Optional[int]:
         pid = int(_pidfile().read_text().strip())
     except (OSError, ValueError):
         return None
+    return pid if _alive(pid) else None
+
+
+def _alive(pid: int) -> bool:
+    """Whether a process with this pid is running.
+
+    Never `os.kill(pid, 0)` on Windows. There signal 0 is CTRL_C_EVENT, so CPython calls
+    GenerateConsoleCtrlEvent(CTRL_C_EVENT, pid): a Ctrl+C for process group `pid`. A server's
+    pid is no process group, so the console host finds nobody to deliver it to, resets its
+    target to every process and keeps the Ctrl+C pending (conhost's ProcessCtrlEvents); the
+    next process to touch that console delivers it to all of them. `/health` asks this, so
+    on Windows `aughor up` stopped itself seconds after both servers answered.
+    """
+    if _WINDOWS:
+        return _alive_on_windows(pid)
     try:
-        os.kill(pid, 0)                         # signal 0: liveness only, delivers nothing
+        os.kill(pid, 0)                         # POSIX signal 0: liveness only, delivers nothing
     except ProcessLookupError:
-        return None
+        return False
     except PermissionError:
-        return pid                              # alive, owned by somebody else
-    return pid
+        return True                             # alive, owned by somebody else
+    return True
+
+
+def _alive_on_windows(pid: int) -> bool:
+    """Open the process and ask whether it has exited, which sends it nothing."""
+    import ctypes
+    from ctypes import wintypes
+
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = (wintypes.DWORD, wintypes.BOOL, wintypes.DWORD)
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = (wintypes.HANDLE, wintypes.DWORD)
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = (wintypes.HANDLE,)
+    handle = kernel32.OpenProcess(_SYNCHRONIZE, False, pid)
+    if not handle:
+        return ctypes.get_last_error() == _ERROR_ACCESS_DENIED   # alive, owned by somebody else
+    try:
+        # An exited process can still be opened while anything holds a handle to it.
+        return kernel32.WaitForSingleObject(handle, 0) == _WAIT_TIMEOUT
+    finally:
+        kernel32.CloseHandle(handle)
 
 
 def warn_if_foreign(path: Path) -> bool:

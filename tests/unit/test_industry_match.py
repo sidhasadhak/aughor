@@ -6,9 +6,6 @@ industry no curated KB covers, nothing curated is better than another industry's
 """
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 import aughor.business_profile.store as profile_store
@@ -22,7 +19,6 @@ from aughor.business_profile.metric_kb import (
     load_industry_kbs,
 )
 
-_KB_ROOT = Path(__file__).resolve().parents[2] / "data" / "kb"
 
 
 @pytest.mark.parametrize("text, expected", [
@@ -74,33 +70,41 @@ def test_no_uncurated_industry_word_is_a_specific_alias_of_a_curated_kb():
         assert not specific & uncurated, (kb_id, specific & uncurated)
 
 
-def _entry_ids(path: Path) -> list[str]:
-    data = json.loads(path.read_text())
+def _entry_ids(data) -> list[str]:
     return [e["id"] for e in (data if isinstance(data, list) else [data]) if isinstance(e, dict) and e.get("id")]
 
 
-def test_every_kb_file_an_industry_claims_exists_and_has_one_owner():
-    owner: dict[str, str] = {}
+def test_every_kb_file_an_industry_claims_is_carried_by_that_industrys_package():
+    """IP-1 — ownership is by place: an industry's `kb_files` are exactly the files its package carries,
+    no file is carried twice, and the resolver finds nothing structurally wrong."""
+    from aughor.packs.knowledge import kb_files, problems
+
+    assert problems() == ()
+    carried: dict[str, set[str]] = {}
+    for f in kb_files():
+        if f.industry:
+            carried.setdefault(f.industry, set()).add(f.stem)
     for kb_id, kb in _kbs().items():
-        for stem in kb.get("kb_files", []):
-            assert (_KB_ROOT / f"{stem}.json").is_file(), (kb_id, stem)
-            assert stem not in owner, (stem, owner.get(stem), kb_id)
-            owner[stem] = kb_id
+        assert set(kb.get("kb_files", [])) == carried.get(kb_id, set()), kb_id
+    names = [f.name for f in kb_files()]
+    assert len(names) == len(set(names))
 
 
-def test_an_unclaimed_kb_file_carries_no_claimed_industry_prefix():
-    """An ec_*.json no industry claims would reach every industry's playbook. The prefixes come from the
-    claimed files' own entry ids, so the check holds no list of its own."""
-    claimed = {stem for kb in _kbs().values() for stem in kb.get("kb_files", [])}
-    prefixes = {i.split("_")[0] + "_" for stem in claimed for i in _entry_ids(_KB_ROOT / f"{stem}.json")}
+def test_a_shared_kb_file_carries_no_industry_prefix():
+    """An ec_*.json a function or the analytics base carried would reach every industry's playbook. The
+    prefixes come from the industry packages' own entry ids, so the check holds no list of its own."""
+    from aughor.packs.knowledge import iter_kb_payloads
+
+    payloads = list(iter_kb_payloads())
+    prefixes = {i.split("_")[0] + "_" for f, data in payloads if f.industry for i in _entry_ids(data)}
     assert prefixes
-    for path in sorted(_KB_ROOT.glob("*.json")):
-        if path.stem not in claimed:
-            stray = [i for i in _entry_ids(path) if any(i.startswith(p) for p in prefixes)]
-            assert not stray, (path.name, stray[:3])
+    for f, data in payloads:
+        if not f.industry:
+            stray = [i for i in _entry_ids(data) if any(i.startswith(p) for p in prefixes)]
+            assert not stray, (f.pack_id, f.name, stray[:3])
 
 
-def test_a_kb_entry_belongs_to_the_industry_that_claims_its_file():
+def test_a_kb_entry_belongs_to_the_industry_whose_package_carries_it():
     assert kb_entry_industry("air_load_factor") == "airline"
     assert kb_entry_industry("ec_gmv") == "retail"
     assert kb_entry_industry("saas_mrr") == "saas"

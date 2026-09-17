@@ -156,3 +156,14 @@ class PiiScanner:
         """Quick check — returns True if any PII was detected (without redacting)."""
         result = cls.scan_and_redact(columns, rows)
         return result.redacted_count > 0
+
+
+def redact_text(text: str) -> str:
+    """Free-text redaction over the same patterns the row scanner uses — HB-5's intake
+    customs (an arrival sentence is scrubbed before it is stored as a note). The
+    decimal-number guard is a CELL rule and deliberately does not apply to prose:
+    a sentence is never one bare aggregate."""
+    out = text or ""
+    for pattern, label in _PATTERNS:
+        out = pattern.sub(label, out)
+    return out

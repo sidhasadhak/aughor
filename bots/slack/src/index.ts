@@ -20,7 +20,7 @@
 import { createSlackAdapter } from "@chat-adapter/slack";
 import { createMemoryState } from "@chat-adapter/state-memory";
 
-import { createAskStream } from "./aughor.js";
+import { createArrivalPoster, createAskStream } from "./aughor.js";
 import { buildBot } from "./bot.js";
 import { createChartRenderer } from "./chart.js";
 import { createRegistry, type BotRecord } from "./registry.js";
@@ -46,6 +46,12 @@ async function makeBot(record: BotRecord) {
       AUGHOR_AGENT_ID: record.agent_id,
     }),
     renderChart,
+    // HB-5 — the note verb's transport: "@bot note: …" files the sentence on the
+    // object this thread is about, through the arrivals door's customs.
+    postArrival: createArrivalPoster({
+      AUGHOR_API_URL: apiUrl,
+      AUGHOR_API_KEY: process.env.AUGHOR_API_KEY,
+    }),
     // Where "Open in Aughor →" points. Absent, answers simply carry no link —
     // a wrong host is worse than none, so this is never guessed.
     webUrl: process.env.AUGHOR_WEB_URL,
