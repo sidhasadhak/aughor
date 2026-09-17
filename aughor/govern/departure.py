@@ -300,6 +300,8 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         "held_lines": len(held_lines or []),
         "link": departure_link(record_id),
     }
+    # The exact sentence that travels, stored with the row — readable where it was recorded.
+    receipt["line"] = receipt_line(receipt)
     written = _record(
         id=record_id, kind=kind, org_id=org_id, conn_id=conn_id, state=state,
         automation_id=automation_id, automation_name=automation_name or source_name,
@@ -312,6 +314,7 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         as_of=as_of, question=json.dumps(_question_record(disagreement)))
     if not written:
         receipt = {**receipt, "departure_id": "", "link": ""}
+        receipt["line"] = receipt_line(receipt)
     return DepartureVerdict(state=state, reasons=reasons, checks=checks, record_id=written,
                             guards=guards, receipt=receipt, addressed_to=addressed_to)
 

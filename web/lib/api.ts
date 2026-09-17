@@ -2,6 +2,7 @@ import type { EvalBasis } from "./agentEval";
 import { getApiBase } from "./config";
 import { installUpsellInterceptor } from "./upsell";
 import { installApprovalInterceptor } from "./approval";
+import { normalizeDeparture } from "./departures";
 
 // Screen every API response for HTTP 402 (capability_locked) → app-wide upsell modal,
 // and HTTP 428 (approval_required) → app-wide approval modal. Idempotent, client-only;
@@ -4415,6 +4416,131 @@ export async function getHubMap(connId?: string): Promise<HubMapResponse | null>
   return res.json();
 }
 
+// ── HB-2 · the departures ledger — what left, what was held, what a person owes ──
+
+export type DepartureState = "departed" | "held" | "held_probation" | "held_owner";
+export type DepartureGuardOutcome =
+  "passed" | "held" | "asked" | "not_applicable" | "unavailable" | "exempt";
+
+/** Law 8 — the receipt the message carried: its source, definition, as-of, each guard's
+ *  outcome, and `line`, the exact sentence that travelled with it. */
+export interface DepartureReceipt {
+  departure_id?: string;
+  source?: string;
+  definition?: string;
+  as_of?: string;
+  guards?: Record<string, DepartureGuardOutcome>;
+  held_lines?: number;
+  link?: string;
+  line?: string;
+}
+
+/** Law 6 — what the owner is asked when the readings of a metric disagreed. */
+export interface DepartureQuestion {
+  subject?: string;
+  metric_label?: string;
+  metric_name?: string;
+  question?: string;
+  options?: string[];
+  previews?: string[];
+  readings?: { label: string; sql: string }[];
+}
+
+export interface Departure {
+  id: string;
+  ts: string;
+  org_id: string;
+  kind: string;
+  state: DepartureState;
+  conn_id: string;
+  automation_id: string;
+  automation_name: string;
+  actor: string;
+  target: string;
+  /** The declarer (probation) or the owner (a question) — "" when nobody is routable. */
+  addressed_to: string;
+  reasons: string[];
+  checks: Record<string, string>;
+  guards: Record<string, DepartureGuardOutcome>;
+  receipt: DepartureReceipt;
+  question: DepartureQuestion;
+  text_preview: string;
+  investigation_id: string;
+  source_kind: string;
+  source_id: string;
+  origin: string;
+  about: string;
+  as_of: string;
+  verdict: "" | "accept" | "correct" | "reject";
+  verdict_note: string;
+  verdict_at: string;
+  answer: string;
+  answered_by: string;
+  answered_at: string;
+}
+
+export interface DepartureSummary {
+  by_state: Partial<Record<DepartureState, number>>;
+  total: number;
+  /** Unmarked probation departures plus unanswered owner questions. */
+  awaiting: number;
+}
+
+async function departureError(res: Response, fallback: string): Promise<Error> {
+  const body = await res.json().catch(() => ({}));
+  const detail = (body as { detail?: unknown }).detail;
+  return new Error(typeof detail === "string" && detail ? detail : `${fallback} (${res.status})`);
+}
+
+/** HB-2 — the departures ledger, newest first. Null when the door is absent (an older
+ *  API), so the screen says so instead of throwing. Rows are normalised: a ledger written
+ *  before the doors decoded their JSON columns still reads as structured data. */
+export async function getDepartures(opts: { awaiting?: boolean; limit?: number } = {}): Promise<Departure[] | null> {
+  const qs = new URLSearchParams({ limit: String(opts.limit ?? 200) });
+  if (opts.awaiting) qs.set("awaiting", "true");
+  const res = await fetch(`${getApiBase()}/departures?${qs.toString()}`);
+  if (res.status === 404) return null;
+  if (!res.ok) throw await departureError(res, "Failed to read the departures ledger");
+  const body = await res.json();
+  return ((body.departures ?? []) as Record<string, unknown>[]).map(normalizeDeparture);
+}
+
+/** HB-2 — departures by state and what a person still owes. Null on an older API. */
+export async function getDepartureSummary(): Promise<DepartureSummary | null> {
+  const res = await fetch(`${getApiBase()}/departures/summary`);
+  if (res.status === 404 || res.status === 422) return null;
+  if (!res.ok) throw await departureError(res, "Failed to read the departures summary");
+  return res.json();
+}
+
+/** HB-2 — the declarer marks a probation departure; graduation is measured server-side. */
+export async function markDeparture(
+  id: string, verdict: "accept" | "correct" | "reject", note = "",
+): Promise<{ departure: Departure; graduated: boolean }> {
+  const res = await fetch(`${getApiBase()}/departures/${encodeURIComponent(id)}/verdict`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ verdict, note }),
+  });
+  if (!res.ok) throw await departureError(res, "Failed to record the mark");
+  const body = await res.json();
+  return { departure: normalizeDeparture(body.departure), graduated: Boolean(body.graduated) };
+}
+
+/** HB-2 law 6 — the owner chooses a reading; the server remembers it for the next run. */
+export async function answerDeparture(
+  id: string, reading: string,
+): Promise<{ departure: Departure; resolutionId: string }> {
+  const res = await fetch(`${getApiBase()}/departures/${encodeURIComponent(id)}/answer`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reading }),
+  });
+  if (!res.ok) throw await departureError(res, "Failed to record the answer");
+  const body = await res.json();
+  return { departure: normalizeDeparture(body.departure), resolutionId: String(body.resolution_id ?? "") };
+}
+
 
 /** List automations. Returns [] when the plane is off (404) so a caller can render the
  *  "not enabled" empty state instead of throwing. */
@@ -4846,15 +4972,19 @@ export async function getActionTriggers(): Promise<ActionTrigger[]> {
 }
 
 export interface SendFindingResult {
-  status: "ok" | "failed" | "timeout";
+  /** HB-2 — `held`: the departure gate kept it on the screen; `error` says why. */
+  status: "ok" | "failed" | "timeout" | "held";
   http_status: number | null;
   error: string | null;
+  /** The departures-ledger row the gate recorded for this send. */
+  departure_id?: string;
 }
 
-/** Share a finding (Briefing/Hub insight) to a configured Action Hub trigger. */
+/** Share a finding (Briefing/Hub insight) to a configured Action Hub trigger. `conn_id`
+ *  lets the departure gate re-run the finding's query before its numbers leave. */
 export async function sendFindingToTrigger(
   triggerId: string,
-  body: { text: string; metric_name?: string; headline?: string; source_id?: string },
+  body: { text: string; metric_name?: string; headline?: string; source_id?: string; conn_id?: string },
 ): Promise<SendFindingResult> {
   const res = await fetch(`${getApiBase()}/actions/triggers/${encodeURIComponent(triggerId)}/send`, {
     method: "POST",

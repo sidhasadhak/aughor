@@ -32,6 +32,7 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
   const [triggers, setTriggers] = useState<Trigger[]>([]);
   const [firing,   setFiring]   = useState<string | null>(null);
   const [done,     setDone]     = useState<string | null>(null); // trigger name on success
+  const [held,     setHeld]     = useState<string | null>(null); // HB-2 — the gate's reason
 
   useEffect(() => {
     if (open && triggers.length === 0) {
@@ -45,16 +46,24 @@ function ExecuteButton({ invId, index, text }: { invId: string; index: number; t
     setFiring(triggerId);
     setOpen(false);
     try {
-      await fetch(`${getApiBase()}/investigations/${invId}/recommendations/${index}/execute`, {
+      const res = await fetch(`${getApiBase()}/investigations/${invId}/recommendations/${index}/execute`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ trigger_id: triggerId }),
       });
-      setDone(triggerName);
+      // HB-2 — the departure gate may keep a recommendation in (a forecast, a number with
+      // no measurement behind it). Reporting "✓ sent" for a send that never left was the
+      // lie this read replaces.
+      const body = await res.json().catch(() => ({}));
+      if (body?.status === "held") setHeld(String(body.error || "held at departure"));
+      else setDone(triggerName);
     } catch { /* silent */ }
     setFiring(null);
   };
 
+  if (held) return (
+    <span className="aug-fs-xs px-1.5" style={{ color: "var(--amb3)" }} title={held}>Not sent — held at departure</span>
+  );
   if (done) return (
     <span className="aug-fs-xs text-emerald-400 font-medium px-1.5">✓ {done}</span>
   );
