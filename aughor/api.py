@@ -790,10 +790,17 @@ async def _start_continuous_exploration_loop() -> None:
 
 async def _seed_playbook() -> None:
     try:
-        from aughor.playbook.builder import seed_from_kb, activate_seeded
+        from aughor.playbook.builder import seed_from_kb, activate_seeded, top_up_data_quality
         n = seed_from_kb()
         if n:
             logger.info("Playbook seeded with %d entries from KB.", n)
+        # IP-1 — an existing playbook receives the data-quality checks it was seeded without, once;
+        # a play a person deleted stays deleted (see top_up_data_quality).
+        topped = top_up_data_quality()
+        if topped["added"] or topped["filled"]:
+            logger.info("Playbook topped up: %d data-quality plays added, %d given their cause and fix "
+                        "(%d deleted by a person, kept deleted).",
+                        topped["added"], topped["filled"], topped["kept_deleted"])
         # Activate the seed by default — promote KB-seeded drafts to 'active' so
         # they're live playbook items the user can keep / modify / remove, not
         # dormant drafts. Idempotent; never touches user-deprecated entries.

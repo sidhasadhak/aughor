@@ -778,6 +778,17 @@ def _print_ada_report(report: dict, elapsed: float):
         for g in report["data_gaps"]:
             console.print(f"  [dim]✗ {g}[/dim]")
 
+    # Rule out first (IP-1) — the known ways the stated move can be the data, before the actions
+    rule_outs = report.get("rule_outs") or {}
+    if rule_outs.get("items"):
+        from rich.markup import escape
+        console.print("\n[bold]Rule out first[/bold]")
+        console.print(f"  [dim]{escape(rule_outs.get('lead') or 'Not checked against your data.')}[/dim]")
+        for item in rule_outs["items"]:
+            console.print(f"  • {escape(item.get('cause', ''))}")
+            if item.get("fix"):
+                console.print(f"    [dim]Fix: {escape(item['fix'])}[/dim]")
+
     # Recommendations
     recs = report.get("recommendations") or []
     if recs:

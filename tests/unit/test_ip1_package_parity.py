@@ -10,6 +10,10 @@ which industry owns which entry, and each industry's metric vocabulary.
 These tests recompute all of it through the package resolver. A digest that moves is a move
 that changed something — fix the move, never the fixture (it cannot be re-measured: the old
 loaders are gone).
+
+A play's content is compared over the fields a play HAD when the fixture was measured: the
+`cause` and `fix` IP-1 added afterwards, for the Verifier's rule-outs, are not part of the move
+and are checked in `test_ip1_rule_outs.py`.
 """
 from __future__ import annotations
 
@@ -23,6 +27,10 @@ import pytest
 
 BASELINE = json.loads((Path(__file__).resolve().parents[1] / "fixtures" / "ip1_kb_parity.json")
                       .read_text(encoding="utf-8"))
+
+
+#: PlaybookEntry fields added after the fixture was measured (IP-1's rule-outs).
+_ADDED_AFTER_THE_MOVE = ("cause", "fix")
 
 
 def _sha(lines) -> str:
@@ -49,7 +57,8 @@ def test_the_seeder_builds_the_same_plays(plays):
         kind = "data_quality" if is_data_quality(p) else "diagnostic"
         by[f"{kind}|{kb_entry_industry(p.source_kb_id) or 'shared'}"] += 1
         content.append(json.dumps({k: v for k, v in p.model_dump().items()
-                                   if k not in ("id", "updated_at", "receipt")}, sort_keys=True))
+                                   if k not in ("id", "updated_at", "receipt") + _ADDED_AFTER_THE_MOVE},
+                                  sort_keys=True))
     assert len(plays) == BASELINE["plays_total"] == 878
     assert dict(sorted(by.items())) == BASELINE["plays_by_kind_industry"]
     assert _sha(sorted(p.id.rsplit("_", 1)[0] for p in plays)) == BASELINE["play_keys_sha"]

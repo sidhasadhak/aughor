@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from pathlib import Path
 
 from aughor.playbook.models import DATA_QUALITY_TAG, PlaybookEntry
 from aughor.playbook.store import count_entries, save_entries
@@ -58,6 +59,21 @@ def _cause_text(cause) -> str:
     if isinstance(cause, str):
         return cause.strip()
     return ""
+
+
+def _cause_fix(cause) -> str:
+    """The KB's fix for a cause, verbatim, or "" (27 of the 486 causes carry none, and a bare string
+    carries nothing but its cause)."""
+    if isinstance(cause, dict):
+        return str(cause.get("fix") or "").strip()
+    return ""
+
+
+def stable_key(entry_id: str) -> str:
+    """A seeded play's id without its random six-hex suffix: the same KB cause gives the same key on
+    every build, so an existing playbook can be matched against a fresh one. Unique across the 878
+    plays the shipped packages build."""
+    return entry_id.rsplit("_", 1)[0]
 
 
 def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
@@ -110,6 +126,8 @@ def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
             owner_role="Data Analyst",
             tags=tags + [DATA_QUALITY_TAG, "inflation"],
             status="draft",
+            cause=cause_text,
+            fix=_cause_fix(cause),
         ))
 
     # 3. deflation_causes → one entry per cause
@@ -128,6 +146,8 @@ def _build_entries_for_kb(e: dict) -> list[PlaybookEntry]:
             owner_role="Data Analyst",
             tags=tags + [DATA_QUALITY_TAG, "deflation"],
             status="draft",
+            cause=cause_text,
+            fix=_cause_fix(cause),
         ))
 
     return results
@@ -177,3 +197,48 @@ def seed_from_kb(force: bool = False) -> int:
     save_entries(playbook)
 
     return len(playbook)
+
+
+def top_up_data_quality(path: Path | None = None) -> dict:
+    """IP-1 — give an EXISTING playbook the data-quality plays it never received (§6 item 21, answer 7).
+
+    `seed_from_kb` writes only into an empty playbook, so every playbook seeded before IP-0 fixed the
+    cause parser holds the 392 diagnostic plays and none of the 486 inflation and deflation checks.
+    Now that those checks reach the Verifier (deep-analysis rule-outs), they arrive — on these terms:
+
+    - a play is **added** only when no play with its stable key is in the playbook and none ever was:
+      a key in the version log whose play is gone was deleted by a person, and is never resurrected;
+    - a play already there keeps everything a person may have changed — status, wording, tags — and
+      only an EMPTY ``cause`` or ``fix`` is filled from the KB (a playbook seeded between IP-0 and
+      IP-1 holds the checks without them);
+    - an empty playbook is left to `seed_from_kb`, and diagnostic plays are never touched.
+
+    Idempotent by construction: after one pass every key is in the playbook or in the log. One read
+    and one write. Returns the counts ``{"added", "filled", "kept_deleted"}``."""
+    from aughor.playbook.retriever import is_data_quality
+    from aughor.playbook.store import ever_saved_ids, list_entries
+
+    counts = {"added": 0, "filled": 0, "kept_deleted": 0}
+    if count_entries(path) == 0:
+        return counts
+    built = [p for e in _load_all_kb() if _has_causal_data(e)
+             for p in _build_entries_for_kb(e) if is_data_quality(p)]
+    present = {stable_key(e.id): e for e in list_entries(path)}
+    ever = {stable_key(entry_id) for entry_id in ever_saved_ids(path)}
+
+    to_save: list[PlaybookEntry] = []
+    for play in built:
+        key = stable_key(play.id)
+        held = present.get(key)
+        if held is not None:
+            fill = {f: getattr(play, f) for f in ("cause", "fix") if getattr(play, f) and not getattr(held, f)}
+            if fill:
+                to_save.append(held.model_copy(update=fill))
+                counts["filled"] += 1
+        elif key in ever:
+            counts["kept_deleted"] += 1
+        else:
+            to_save.append(play)
+            counts["added"] += 1
+    save_entries(to_save, path)
+    return counts
