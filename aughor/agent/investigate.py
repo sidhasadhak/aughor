@@ -4171,9 +4171,25 @@ def _observation_window_is_wrong(obs_start, obs_end, cov_min: str, cov_max: str)
     return not s or not e or e < cov_min or s > cov_max
 
 
+#: Both month-key probes below called themselves "dialect-robust" and hardcoded
+#: `CAST(col AS VARCHAR)`, which BigQuery rejects outright ("Type not found: VARCHAR") and
+#: MySQL rejects without a length. Measured over September 2026: 71 of 222 live SQL failures
+#: — 32% — were these two probes, all on the theLook BigQuery connection.
+#:
+#: They fail open (`return None` on any error), so nothing ever surfaced: the density guard
+#: and the TRAILING-PARTIAL guard simply never ran on a BigQuery or MySQL connection, and the
+#: intake carried on as though the window were dense and its final month complete.
+#:
+#: The fix is the seam that already exists rather than a second one here:
+#: `aughor.db.dialects.native_sql` transpiles DuckDB-written platform SQL into the dialect
+#: the connection actually runs, for every `writes_native_sql` engine, and returns DuckDB's
+#: own SQL untouched. It handles strictly more than a type-name map would — the `::` cast
+#: operator, `date_trunc`, function names — which is the point of not hand-rolling one.
+
+
 def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
     """Count of distinct POPULATED months of the metric's date column within [start, end]. A
-    cheap, dialect-robust probe (COUNT DISTINCT of the 'YYYY-MM' text prefix). Returns None on any
+    cheap probe (COUNT DISTINCT of the 'YYYY-MM' text prefix, cast per dialect). Returns None on any
     failure (fail-open, like the span probe). Feeds the density guard: a window whose calendar span
     survived the clamp but whose real data is sparse (a gap / slow ramp) is still a thin PoP baseline."""
     if not conn_id or not table or not date_col or not start or not end:
@@ -4186,12 +4202,21 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_col)
+        from aughor.db.dialects import native_sql
         res = db.execute(
             "intake_density",
-            f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
-            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'",
+            native_sql(db, f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
+                           f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'"),
         )
         if res.error or not res.rows or res.rows[0][0] is None:
+            # Still fail-open, but no longer SILENT: this probe returning None disables the
+            # density guard, and for months on BigQuery it did so on every run with nobody
+            # able to see it.
+            if res.error:
+                from aughor.kernel.errors import tolerate
+                tolerate(RuntimeError(res.error),
+                         "the month-density probe failed; the density guard is skipped for "
+                         "this run", counter="intake.density_probe_failed", conn_id=conn_id)
             return None
         return int(res.rows[0][0])
     except Exception:
@@ -4207,8 +4232,8 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
 
 
 def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: str) -> "list | None":
-    """Ordered [(YYYY-MM, row_count)] for the metric's date column within [start, end]. Cheap and
-    dialect-robust (GROUP BY the 'YYYY-MM' text prefix). Feeds the trailing-partial guard. Returns
+    """Ordered [(YYYY-MM, row_count)] for the metric's date column within [start, end]. Cheap
+    (GROUP BY the 'YYYY-MM' text prefix, cast per dialect). Feeds the trailing-partial guard. Returns
     None on any failure (fail-open, like the other probes)."""
     if not conn_id or not table or not date_col or not start or not end:
         return None
@@ -4220,12 +4245,22 @@ def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: st
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_col)
+        from aughor.db.dialects import native_sql
         res = db.execute(
             "intake_monthly",
-            f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
-            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' GROUP BY 1 ORDER BY 1",
+            native_sql(db, f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
+                           f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' "
+                           f"GROUP BY 1 ORDER BY 1"),
         )
         if res.error or not res.rows:
+            # As above: None here disables the TRAILING-PARTIAL guard — the one whose warning
+            # a reader needs to not read a half-finished month as a decline.
+            if res.error:
+                from aughor.kernel.errors import tolerate
+                tolerate(RuntimeError(res.error),
+                         "the monthly-counts probe failed; the trailing-partial guard is "
+                         "skipped for this run", counter="intake.monthly_probe_failed",
+                         conn_id=conn_id)
             return None
         return [(str(r[0]), int(r[1])) for r in res.rows if r[0] is not None]
     except Exception:
