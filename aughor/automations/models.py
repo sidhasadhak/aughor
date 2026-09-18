@@ -413,6 +413,10 @@ class Automation(BaseModel):
     """
     id: str = Field(default_factory=_new_id)
     conn_id: str = Field(description="Connection this automation runs against")
+    #: The workspace that owns this chain. "" = UNOWNED (visible wherever its
+    #: connection is) — the state of every automation authored before workspaces
+    #: owned anything. Never moved by an update: see the upsert's ON CONFLICT.
+    workspace_id: str = ""
     name: str
     description: str = ""
     #: VA-9b — the UserAgent this automation OPERATES AS. "" = unattributed, which is

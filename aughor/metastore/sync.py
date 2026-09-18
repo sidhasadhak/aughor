@@ -95,19 +95,39 @@ def scoped_to_workspace(rows, key: str = "connection_id", workspace_id=None):
     listed every one of them, which is most of what made a workspace read as a view
     rather than a boundary.
 
-    A row naming no connection is org-level (a Slack bot with no connection answers
-    from whatever the caller asks about) and stays visible everywhere: hiding it would
-    be a guess about ownership this layer cannot make. Giving such a row a real
-    workspace owner is the separate schema change, not a filter decision.
+    Two rules, ownership first:
+
+    • A row carrying a ``workspace_id`` is OWNED, and belongs to that workspace alone.
+      This is what makes a workspace a sub-tenant rather than a lens: two workspaces
+      granted the same connection each keep their own agents, automations and bots
+      instead of sharing one pile keyed by the warehouse.
+    • A row with no owner falls back to its connection — visible wherever that
+      connection is. Every row written before ownership existed is in this state, so
+      the fallback is not a nicety: without it this change would empty the product.
+
+    A row naming neither an owner nor a connection is org-level (a Slack bot bound to
+    nothing answers about whatever the caller asks) and stays visible everywhere.
 
     ``rows`` may hold mappings or objects; ``workspace_id`` defaults to the ambient one.
     """
+    if not workspace_id:
+        from aughor.workspace.context import current_workspace_id
+        workspace_id = current_workspace_id()
     allowed = accessible_catalog_ids(workspace_id)
     if allowed is None:
         return list(rows)
+
+    def _field(row, name):
+        return (row.get(name) if isinstance(row, dict) else getattr(row, name, "")) or ""
+
     out = []
     for r in rows:
-        cid = (r.get(key) if isinstance(r, dict) else getattr(r, key, "")) or ""
+        owner = _field(r, "workspace_id")
+        if owner:
+            if owner == workspace_id:
+                out.append(r)
+            continue
+        cid = _field(r, key)
         if not cid or cid in allowed:
             out.append(r)
     return out

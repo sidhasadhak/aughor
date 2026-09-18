@@ -389,7 +389,14 @@ def create(body: CreateAutomationRequest):
     """Create an automation. A malformed condition or effect is rejected HERE, at construction —
     it never reaches the store, so a broken automation cannot sit in the DB looking schedulable."""
     try:
-        automation = Automation(**body.model_dump())
+        payload = body.model_dump()
+        if not (payload.get("workspace_id") or ""):
+            # Born into the workspace the author is looking at. Ambient, so the request
+            # body does not have to carry it and an automation created outside any
+            # workspace (a pack install) stays honestly unowned.
+            from aughor.workspace.context import current_workspace_id
+            payload["workspace_id"] = current_workspace_id() or ""
+        automation = Automation(**payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=_validation_detail(exc)) from exc
     # HB-2 — a DECLARED automation is born on probation, addressed to its declarer.

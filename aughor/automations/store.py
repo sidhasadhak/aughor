@@ -248,6 +248,13 @@ _MIGRATIONS: list[Migration] = [
                                         "TEXT NOT NULL DEFAULT ''"),
                   add_column_if_missing(conn, "automations", "probation",
                                         "INTEGER NOT NULL DEFAULT 0"))),
+    #: Version 9 read off the LIVE store, like 4 above: `PRAGMA user_version` on the
+    #: deployed `data/automations.db` returns 8, so 9 is the next one that will run.
+    #: '' = UNOWNED, which is what every automation written before this is — and an
+    #: unowned automation stays visible wherever its connection is, unchanged.
+    Migration(version=9, name="workspace ownership (the sub-tenant that owns this chain)",
+              apply=lambda conn: add_column_if_missing(
+                  conn, "automations", "workspace_id", "TEXT NOT NULL DEFAULT ''")),
 ]
 
 
@@ -397,13 +404,13 @@ def upsert_automation(automation: Automation) -> Automation:
                     id, conn_id, name, description, conditions, condition_logic, effects,
                     fallback_effect, enabled, paused_until, expires_at, max_retries,
                     retry_backoff_seconds, agent_id, timezone, scheduling, exposed_as_tool,
-                    declared_by, probation,
+                    declared_by, probation, workspace_id,
                     created_at, updated_at, last_run_at, last_status
                 ) VALUES (
                     :id, :conn_id, :name, :description, :conditions, :condition_logic, :effects,
                     :fallback_effect, :enabled, :paused_until, :expires_at, :max_retries,
                     :retry_backoff_seconds, :agent_id, :timezone, :scheduling, :exposed_as_tool,
-                    :declared_by, :probation,
+                    :declared_by, :probation, :workspace_id,
                     :created_at, :updated_at, :last_run_at, :last_status
                 )
                 ON CONFLICT(id) DO UPDATE SET

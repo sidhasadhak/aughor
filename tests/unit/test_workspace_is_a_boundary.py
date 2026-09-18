@@ -123,3 +123,50 @@ def test_connections_list_is_scoped(client):
     assert scoped.json() == [], "an unknown workspace must see no connections"
     # Unscoped behaviour is unchanged — this change adds a gate, it does not close one.
     assert len(unscoped.json()) >= len(scoped.json())
+
+
+# ── ownership: a shared connection must not mean shared agents ─────────────────
+
+def test_an_owned_row_belongs_to_its_workspace_alone():
+    """The sub-tenant rule. Two workspaces granted the SAME connection (live: 8233e4fd
+    is in both `default` and `761c30bf`) must not see each other's agents — which the
+    connection rule alone cannot express, because the connection is identical."""
+    rows = [
+        {"connection_id": "shared", "workspace_id": "ws_a", "name": "a's"},
+        {"connection_id": "shared", "workspace_id": "ws_b", "name": "b's"},
+    ]
+    with workspace_scope("ws_a"):
+        assert [r["name"] for r in scoped_to_workspace(rows, workspace_id="ws_a")] == ["a's"]
+    with workspace_scope("ws_b"):
+        assert [r["name"] for r in scoped_to_workspace(rows, workspace_id="ws_b")] == ["b's"]
+
+
+def test_ownership_wins_over_the_connection_rule():
+    """An owned row must NOT leak into another workspace merely because that workspace
+    can reach its connection. Ownership is the stronger claim, so it is checked first."""
+    rows = [{"connection_id": "shared", "workspace_id": "ws_a"}]
+    # ws_b would pass the connection test if ownership were ignored…
+    with workspace_scope("ws_b"):
+        assert scoped_to_workspace(rows, workspace_id="ws_b") == []
+
+
+def test_unowned_rows_are_untouched_by_ownership():
+    """Every row written before ownership existed has `workspace_id == ""`. If those
+    stopped falling back to the connection rule, this change would empty the product."""
+    rows = [{"connection_id": "shared", "workspace_id": ""}]
+    with workspace_scope("no-such-workspace"):
+        assert scoped_to_workspace(rows, workspace_id="no-such-workspace") == []
+    # …and unscoped still sees everything.
+    assert len(scoped_to_workspace(rows)) == 1
+
+
+def test_every_operational_model_can_carry_an_owner():
+    """The filter is only half of it — a store that cannot PERSIST an owner makes the
+    rule above unreachable, which is how a feature ships tested and inert."""
+    from aughor.automations.models import Automation
+    from aughor.briefing.models import BriefSubscription
+    from aughor.custom_agents.models import UserAgent
+    from aughor.slackbots.models import SlackBot
+    for model in (UserAgent, Automation, SlackBot, BriefSubscription):
+        assert "workspace_id" in model.model_fields, model.__name__
+        assert model.model_fields["workspace_id"].default == "", model.__name__

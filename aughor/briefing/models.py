@@ -28,6 +28,8 @@ class BriefSubscription(BaseModel):
     period:       str = "week"                  # "week" | "day"
     send_cron:    str = ""                       # cron expr; derived from period if blank
     trigger_id:   str                            # Action Hub trigger that delivers it
+    #: Owning workspace; "" = UNOWNED, visible wherever its connection is.
+    workspace_id: str = ""
     enabled:      bool = True
     # HB-1 — a subscription says what it is ABOUT and who it is FOR. Both were
     # implicit before (the whole connection, the organisation); "" keeps exactly that
