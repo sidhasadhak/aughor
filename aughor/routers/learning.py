@@ -105,6 +105,24 @@ def get_datasets():
     return {"stats": store.stats(), "gates": exporters.gate_status()}
 
 
+@router.get("/learning/decisions")
+def get_decisions(site: Optional[str] = None, limit: int = 50):
+    """The decision-record accumulation, made visible: per-site volume (total, trainable,
+    outcome-closed) and the newest rows. This is the observability half of "is this
+    decision learnable" — the volume answer that must exist before any scorer does."""
+    from aughor.learning.decisions import list_decisions, site_stats
+    return {"stats": site_stats(), "recent": list_decisions(site=site, limit=limit)}
+
+
+@router.post("/learning/export/decisions")
+def post_export_decisions(site: Optional[str] = None, task: str = "decision"):
+    """Export decision records as selection corpora (`choice` + held-out `choice_golden`
+    per site). Idempotent like every exporter — an unchanged corpus registers no new
+    version — so it is safe to call repeatedly and safe to schedule later."""
+    from aughor.learning import exporters
+    return {"datasets": exporters.export_decisions(site=site, task=task)}
+
+
 @router.get("/learning/datasets/{name}")
 def get_dataset(name: str, version: Optional[int] = None):
     """One dataset node plus its provenance — which verdicts fed it. The question MI-4

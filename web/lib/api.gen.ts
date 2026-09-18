@@ -6575,6 +6575,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/learning/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Decisions
+         * @description The decision-record accumulation, made visible: per-site volume (total, trainable,
+         *     outcome-closed) and the newest rows. This is the observability half of "is this
+         *     decision learnable" — the volume answer that must exist before any scorer does.
+         */
+        get: operations["get_decisions_learning_decisions_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/learning/export": {
         parameters: {
             query?: never;
@@ -6594,6 +6616,28 @@ export interface paths {
          *     with, which is this codebase's most-repeated failure shape.
          */
         post: operations["post_export_learning_export_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/learning/export/decisions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post Export Decisions
+         * @description Export decision records as selection corpora (`choice` + held-out `choice_golden`
+         *     per site). Idempotent like every exporter — an unchanged corpus registers no new
+         *     version — so it is safe to call repeatedly and safe to schedule later.
+         */
+        post: operations["post_export_decisions_learning_export_decisions_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7000,7 +7044,12 @@ export interface paths {
          * Cache Probe
          * @description Measure whether the active binding reuses a shared prompt prefix across requests
          *     (PLATFORM_ARCHITECTURE.md §5b.3) and persist the verdict so the capability seam adopts
-         *     it. Makes a handful of tiny real completions — defaults to the coder role's model.
+         *     it. Makes a handful of real completions — defaults to the coder role's model.
+         *
+         *     The verdict may be ``inconclusive``, which CLEARS any persisted override rather than
+         *     writing one, and the report then carries a ``reason``. That is a real answer: latency
+         *     inference cannot resolve prefix caching on a noisy hosted binding, and this probe used
+         *     to return confident contradictory verdicts instead of saying so.
          */
         post: operations["cache_probe_llm_config_cache_probe_post"];
         delete?: never;
@@ -26793,11 +26842,75 @@ export interface operations {
             };
         };
     };
+    get_decisions_learning_decisions_get: {
+        parameters: {
+            query?: {
+                site?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     post_export_learning_export_post: {
         parameters: {
             query?: {
                 task?: string;
                 publish_golden?: boolean;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    post_export_decisions_learning_export_decisions_post: {
+        parameters: {
+            query?: {
+                site?: string | null;
+                task?: string;
             };
             header?: never;
             path?: never;

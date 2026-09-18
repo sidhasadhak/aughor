@@ -583,12 +583,44 @@ _WINDOW_PROPS = {
 }
 
 
+#: Which of `platform_tools`' twelve reads the ANALYST is offered. Just one.
+#:
+#: `platform_tools` was built for the chat roster, where a question can be about anything
+#: the product knows — monitors, packs, the audit log, the briefing, the docs. An analyst
+#: is not answering that question. It is answering "why did this metric move", and the
+#: measurement says so: across the 14 analyst turns in the live session log the twelve
+#: were offered on EVERY turn and exactly one was ever called — `propose_context_note`,
+#: once. The other eleven were never chosen, not once.
+#:
+#: They were not free. The twelve serialise to ~7,500 wire characters, re-sent on every
+#: turn of a loop whose median is 3 calls and whose tail reaches 56; dropping eleven of
+#: them takes ~5,800 characters (~1,450 tokens) off every analyst tool call. And the cost
+#: is not only tokens: `converse_tools` already states the rule this follows — the model
+#: picks from what it can see, and a tool it can see is one it will spend a turn trying.
+#:
+#: `propose_context_note` stays because it is not platform administration. It is the
+#: analyst writing back what it just learned about the DATA — a unit, a value meaning, a
+#: caveat — which is the analysis path's own business, and it is the one that was used.
+#:
+#: Membership is by NAME against the live `platform_tools` output rather than a second
+#: copy of the declaration, so the tool keeps one definition. That makes a rename able to
+#: empty this filter silently, which is why the test asserts the kept tool is PRESENT in
+#: the built roster and not merely that the dropped ones are absent.
+_ANALYST_PLATFORM_TOOLS = frozenset({"propose_context_note"})
+
+
 def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
                   session_id: str = "", canvas_id: Optional[str] = None,
                   user_question: str = "") -> list[ToolSpec]:
     """The analyst's roster: the phase library as tools, the deterministic probes, the
-    warehouse primitives, and the platform reads. Bound by closure like every converse
-    tool — the model cannot name a connection, session or spec it was not given."""
+    warehouse primitives, and the ONE platform tool that is analysis business. Bound by
+    closure like every converse tool — the model cannot name a connection, session or
+    spec it was not given.
+
+    It is deliberately not the chat roster. See :data:`_ANALYST_PLATFORM_TOOLS` for what
+    was taken out and why; the short version is that a tool the model can see is a tool
+    it will spend a turn trying, and this roster is re-sent on every turn of a loop whose
+    tail reaches 56 calls."""
     from aughor.agent.converse_tools import describe_table, list_tables, run_sql
     from aughor.agent.platform_tools import platform_tools
 
@@ -712,7 +744,8 @@ def analyst_tools(turn: AnalystTurn, *, emit: Optional[Emit] = None,
             }, "required": ["table"]},
             run=lambda a: describe_table(cid, a),
         ),
-    ] + platform_tools(cid, session_id=session_id)
+    ] + [t for t in platform_tools(cid, session_id=session_id)
+         if t.name in _ANALYST_PLATFORM_TOOLS]
 
 
 # ── The prompt ────────────────────────────────────────────────────────────────

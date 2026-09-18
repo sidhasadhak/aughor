@@ -21,6 +21,7 @@ outputs precisely so the distillation premise stays falsifiable.
 from __future__ import annotations
 
 import hashlib
+import json
 from typing import Optional
 
 from aughor.learning import store
@@ -239,6 +240,52 @@ def export_all(*, task: str = "nl2sql") -> dict[str, dict]:
     return {"sft": export_sft(task=task),
             "dpo": export_dpo(task=task),
             "golden": export_golden(task=task)}
+
+
+def export_decisions(site: Optional[str] = None, *, task: str = "decision") -> dict[str, dict]:
+    """Decision records → selection corpora: `{context, options, label}` rows per site.
+
+    The same three properties the graded exporters guarantee, kept the same way:
+    deterministic (identical records hash to the identical snapshot), disjoint (a tenth
+    held out as `choice_golden` by the stable hash of the RECORD id, so the split never
+    moves between exports), scrubbed (the context is user text and goes through the PII
+    seam; the options are platform-declared vocabulary — tool names, route names,
+    declared definitions — and are exported as the decider saw them).
+
+    Rows whose label is -1 (the decider picked none of the listed options) are excluded
+    by `list_for_export`: they are real records worth keeping, but a selection corpus
+    needs a selected option. Returns `{site: {"choice": node, "golden": node}}`.
+    """
+    from aughor.learning.decisions import list_for_export, sites
+
+    out: dict[str, dict] = {}
+    for s in ([site] if site else sites()):
+        records = list_for_export(s)
+        seen: set[str] = set()
+        train_rows, golden_rows = [], []
+        train_ids, golden_ids = [], []
+        for r in records:
+            example = {"context": _scrub(r["context"]), "options": r["options"],
+                       "label": r["label"], "task": f"{task}:{s}"}
+            key = hashlib.sha256(json.dumps(
+                [example["context"], example["options"], example["label"]],
+                sort_keys=True).encode("utf-8")).hexdigest()
+            if key in seen:
+                continue          # duplicates add weight, not signal — same as _dedupe
+            seen.add(key)
+            if _is_golden({"id": r["id"]}):
+                golden_rows.append(example); golden_ids.append(r["id"])
+            else:
+                train_rows.append(example); train_ids.append(r["id"])
+        out[s] = {
+            "choice": store.register(
+                f"decisions-{s}", "choice", train_rows, task=f"{task}:{s}",
+                lineage=[("decision_record", i) for i in train_ids]),
+            "golden": store.register(
+                f"decisions-{s}-golden", "choice_golden", golden_rows, task=f"{task}:{s}",
+                lineage=[("decision_record", i) for i in golden_ids]),
+        }
+    return out
 
 
 def gate_status(org_id: Optional[str] = None) -> dict:

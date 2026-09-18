@@ -6,8 +6,11 @@ through the real converse loop with the real coder model, so ~30 asks cost rough
 scores the recordings in CI with no model, forever.
 
 Isolation: every store is redirected to a scratch directory (the same
-`_isolate_stores` the OpenAPI dump uses, since 2026-09-15 covering ALL stores), so
-nothing here stages onto the live inbox or touches `data/`. Only the MODEL is live.
+`_isolate_stores` the OpenAPI dump uses — "covering ALL stores" was claimed here on
+2026-09-15 and was 22 stores short; a test holds it to the suite's isolation since
+2026-09-17), so nothing here stages onto the live inbox or touches `data/`. Only the
+MODEL is live, and it binds from the environment (`.env`), never from the deployment's
+Settings choice: both model-config stores are scratch too.
 
 Usage:
     .venv/bin/python scripts/record_authoring_drafts.py --yes-spend [--connection ID]
@@ -101,6 +104,10 @@ def main() -> int:
         load_dotenv(Path(__file__).parent.parent / ".env")
     except ImportError:
         pass
+    # The demo warehouse is scratch as well, so the `fixture` connection this drafts against
+    # by default does not exist until it is seeded — into the scratch path, deterministically.
+    from aughor.demo.setup import ensure_fixture_db
+    ensure_fixture_db()
     _seed(args.connection)
     from aughor.actions.inbox import list_proposals
     from aughor.agent.converse_tools import converse

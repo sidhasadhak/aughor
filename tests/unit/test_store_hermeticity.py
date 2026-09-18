@@ -8,9 +8,20 @@ file), mirroring the SQLite-store isolation. These tests pin the isolation and t
 """
 from __future__ import annotations
 
+import ast
+import functools
+import json
+import os
 import pathlib
+import re
+import subprocess
+import sys
+
+import pytest
 
 from aughor.semantic import glossary, metrics
+
+_REPO = pathlib.Path(__file__).resolve().parents[2]
 
 
 def test_glossary_and_metrics_paths_are_isolated():
@@ -235,29 +246,17 @@ def test_every_store_env_override_is_pointed_at_the_test_dir():
     inside the repo's data/", not "inside one named temp dir" — the ledger and the registry
     each get their own temp directory, and a guard that insisted on one prefix would have
     reported those two as leaks and taught the next reader to loosen it.
-    """
-    import ast
-    import os
 
-    root = pathlib.Path(__file__).resolve().parents[2] / "aughor"
-    found: dict[str, str] = {}
-    for path in root.rglob("*.py"):
-        try:
-            tree = ast.parse(path.read_text())
-        except SyntaxError:                      # not ours to police here
-            continue
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call) and node.args):
-                continue
-            name = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
-            if name != "resolve_db_path":
-                continue
-            first = node.args[0]
-            if isinstance(first, ast.Constant) and isinstance(first.value, str):
-                found[first.value] = str(path.relative_to(root))
+    The call sites come from `_environment_reads`, which also resolves a name held in a module
+    constant — `resolve_db_path(STATE_DIR_ENV, …)`. The literals-only scan this used to run
+    could not see the four stores that resolve that way (the state dir, the industry choice,
+    both pack roots); all four happened to be isolated already.
+    """
+    reads, _ = _environment_reads()
+    found = {env: where["resolve_db_path"] for env, where in reads.items() if "resolve_db_path" in where}
 
     assert found, "found no resolve_db_path call sites — this guard has gone blind"
-    repo_data = (root.parent / "data").resolve()
+    repo_data = (_REPO / "data").resolve()
 
     def _leaks(env: str) -> bool:
         resolved = pathlib.Path(os.environ.get(env, "") or "").resolve()
@@ -383,3 +382,214 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
         "these stores read their own env var and fall back into the repo's data/, and the "
         f"suite has not pointed them anywhere else: {unisolated}. Add each to the list in "
         "tests/conftest.py (and to scripts/dump_openapi.py, its sibling)")
+
+
+# ── 2026-09-17: the LIVE-DRIVE isolation. `scripts/dump_openapi._isolate_stores()` is not only
+# the spec dump's: live drives (scratch API servers started to verify a change) and the SP-M
+# recorder import it, and its comment said it was "kept equal to tests/conftest.py's allowlist BY
+# MEASUREMENT". It was not. A scratch API started after it created data/org_llm.db inside a
+# worktree — from the main checkout, that file is the live deployment's org model config. Measured
+# the same day, with both bodies run from an empty environment: the conftest pinned 75 stores and
+# the helper 54, 22 of the suite's stores were missing from the helper, and one of the helper's
+# names (AUGHOR_ORGSETTINGS_DB) is read by no code at all. A comment that says "by measurement" is
+# not a measurement, so these tests are. ─────────────────────────────────────────────────────────
+
+#: Stores the suite isolates that a live drive deliberately READS from the checkout. Each entry is
+#: re-checked below (still read by the code, still isolated by the suite, still left alone by the
+#: helper), so an exclusion cannot quietly outlive its reason.
+LIVE_DRIVE_READS_FROM_THE_CHECKOUT = {
+    "AUGHOR_PACKS_DIR": (
+        "the authored package tree (the tracked packs/): a drive must see the real packages. Not "
+        "free of writes: promotion rewrites pack.yaml, which is why the suite isolates a COPY — a "
+        "drive from the main checkout that promotes a pack changes the tree the running API reads, "
+        "visibly, in git status."),
+    "AUGHOR_SAMPLES_DB": (
+        "the bundled samples warehouse, opened and ATTACHed read-only. Nothing outside the suite "
+        "seeds it (re-measured below), so a drive can only read it; isolated, a drive would lose "
+        "the samples connection with no way to get it back."),
+}
+
+
+@functools.lru_cache(maxsize=1)
+def _parsed_aughor() -> tuple[tuple[str, ast.Module], ...]:
+    parsed = []
+    for path in sorted((_REPO / "aughor").rglob("*.py")):
+        try:
+            parsed.append((str(path.relative_to(_REPO / "aughor")), ast.parse(path.read_text())))
+        except SyntaxError:                      # not ours to police here
+            continue
+    return tuple(parsed)
+
+
+@functools.lru_cache(maxsize=1)
+def _environment_reads() -> tuple[dict[str, dict[str, str]], tuple[str, ...]]:
+    """Every AUGHOR_* name the code in aughor/ reads → {route: first place it is read}, and the
+    `resolve_db_path` call sites whose name could not be resolved.
+
+    Two routes: "resolve_db_path", the seam most stores pass through, and "environ" —
+    `os.environ.get`, `os.getenv`, `os.environ[...]`, `.setdefault`, `.pop`, `in os.environ`. A
+    name held in a module-level constant is resolved (`resolve_db_path(STATE_DIR_ENV, …)`), in its
+    own module or, when the constant's name is unambiguous, imported from another. An unresolved
+    `resolve_db_path` name is RETURNED rather than dropped, because a store the scan cannot name
+    would otherwise leave every population below without a word.
+    """
+    def _is_env_name(value) -> bool:
+        return isinstance(value, str) and re.fullmatch(r"AUGHOR_[A-Z0-9_]+", value) is not None
+
+    own: dict[str, dict[str, str]] = {}
+    anywhere: dict[str, set[str]] = {}
+    for where, tree in _parsed_aughor():
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                targets, value = node.targets, node.value
+            elif isinstance(node, ast.AnnAssign):
+                targets, value = [node.target], node.value
+            else:
+                continue
+            if isinstance(value, ast.Constant) and _is_env_name(value.value):
+                for target in targets:
+                    if isinstance(target, ast.Name):
+                        own.setdefault(where, {})[target.id] = value.value
+                        anywhere.setdefault(target.id, set()).add(value.value)
+
+    def _resolve(where: str, node: ast.AST) -> str | None:
+        if isinstance(node, ast.Constant):
+            return node.value if _is_env_name(node.value) else None
+        name = getattr(node, "id", None) or getattr(node, "attr", None)
+        if name in own.get(where, {}):
+            return own[where][name]
+        values = anywhere.get(name, set())
+        return next(iter(values)) if len(values) == 1 else None
+
+    def _is_environ(node: ast.AST) -> bool:
+        return getattr(node, "attr", None) == "environ" or getattr(node, "id", None) == "environ"
+
+    reads: dict[str, dict[str, str]] = {}
+    unresolved: list[str] = []
+    for where, tree in _parsed_aughor():
+        for node in ast.walk(tree):
+            route, named = None, None
+            if isinstance(node, ast.Call) and node.args:
+                called = getattr(node.func, "id", None) or getattr(node.func, "attr", None)
+                if called == "resolve_db_path":
+                    route, named = "resolve_db_path", node.args[0]
+                elif called == "getenv" or (called in ("get", "setdefault", "pop")
+                                            and _is_environ(getattr(node.func, "value", None))):
+                    route, named = "environ", node.args[0]
+            elif isinstance(node, ast.Subscript) and _is_environ(node.value):
+                route, named = "environ", node.slice
+            elif isinstance(node, ast.Compare) and any(_is_environ(c) for c in node.comparators):
+                route, named = "environ", node.left
+            if route is None:
+                continue
+            env = _resolve(where, named)
+            if env:
+                reads.setdefault(env, {}).setdefault(route, f"{where}:{node.lineno}")
+            elif route == "resolve_db_path":
+                unresolved.append(f"{where}:{node.lineno}")
+    return reads, tuple(unresolved)
+
+
+def _pinned_by(body: str, temp_root: pathlib.Path) -> dict[str, str]:
+    """Run an isolation body in a FRESH interpreter that inherits no AUGHOR_* variable, and return
+    the AUGHOR_* variables it leaves pointing inside its own temp root.
+
+    Fresh, because this process ran the conftest long ago, and because both bodies decide what to
+    set from what is already set — an inherited value would pass for a pin the body never makes.
+    "Inside the temp root" is what isolation means for a path, and it is also what tells a store
+    from a behaviour switch (`AUGHOR_API_KEY=""`) without a list of either.
+    """
+    temp_root.mkdir(parents=True)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("AUGHOR_")}
+    env["TMPDIR"] = str(temp_root)
+    code = (body + "\nimport json, os\n"
+            "print(json.dumps({k: v for k, v in os.environ.items() if k.startswith('AUGHOR_')}))")
+    done = subprocess.run([sys.executable, "-c", code], cwd=_REPO, env=env,
+                          capture_output=True, text=True, timeout=120)
+    assert done.returncode == 0, f"the isolation body failed to run:\n{done.stderr}"
+    values = json.loads(done.stdout.strip().splitlines()[-1])
+    root = temp_root.resolve()
+    return {k: v for k, v in values.items() if v and root in pathlib.Path(v).resolve().parents}
+
+
+@pytest.fixture(scope="module")
+def isolation_bodies(tmp_path_factory) -> dict[str, dict[str, str]]:
+    """What each isolation list actually pins: the conftest's module body, and
+    `_isolate_stores()` as a drive imports it (`run_name` keeps the dump itself from running)."""
+    root = tmp_path_factory.mktemp("isolation-bodies")
+    conftest = str(_REPO / "tests" / "conftest.py")
+    helper = str(_REPO / "scripts" / "dump_openapi.py")
+    return {
+        "tests/conftest.py": _pinned_by(f"import runpy; runpy.run_path({conftest!r})", root / "suite"),
+        "_isolate_stores()": _pinned_by(
+            f"import runpy; runpy.run_path({helper!r}, run_name='live_drive_probe')['_isolate_stores']()",
+            root / "drive"),
+    }
+
+
+def test_the_environment_scan_finds_what_it_exists_to_find():
+    """The scan's premise, tested, so the populations below cannot go vacuous: one store per
+    route, including the constant-resolved one a literals-only scan misses."""
+    reads, unresolved = _environment_reads()
+    assert unresolved == (), (
+        f"resolve_db_path is called with names the scan cannot resolve: {list(unresolved)}. "
+        "Teach `_environment_reads` the new shape — every store population here is built from it")
+    assert len(reads) > 100, f"found only {len(reads)} AUGHOR_* reads in aughor/ — the scan has gone blind"
+    assert "resolve_db_path" in reads["AUGHOR_ORG_LLM_DB"]         # a literal
+    assert "resolve_db_path" in reads["AUGHOR_STATE_DIR"]          # through STATE_DIR_ENV
+    assert "environ" in reads["AUGHOR_UPLOAD_DIR"]                 # os.environ.get("…")
+    assert "environ" in reads["AUGHOR_QDRANT_PATH"]                # os.getenv(QDRANT_PATH_ENV)
+
+
+def test_live_drive_isolation_covers_every_store_the_suite_isolates(isolation_bodies):
+    """The population is not listed anywhere. The stores are the AUGHOR_* names the code reads (the
+    scan above), and "isolated" is where each body — the conftest and `_isolate_stores()`, each run
+    from an empty environment — actually points the variable. So a store registered in the conftest
+    and not in the helper fails here, whatever route it reads its variable by, instead of being
+    found the way ORG_LLM was: by a drive writing the store."""
+    reads, _ = _environment_reads()
+    suite, drive = isolation_bodies["tests/conftest.py"], isolation_bodies["_isolate_stores()"]
+    # Only the REFERENCE is held to a floor: a blind probe of the conftest would leave nothing to
+    # compare. The helper gets none on purpose — the first run of this test had one, and against
+    # the 54-store helper it reported "the probe has gone blind" instead of the 20 missing stores.
+    assert len(suite) > 60, (
+        f"the conftest pinned only {len(suite)} stores under its temp root — the probe has gone "
+        "blind (does the conftest still create its stores with tempfile under TMPDIR?)")
+    missing = sorted(env for env in reads
+                     if env in suite and env not in drive and env not in LIVE_DRIVE_READS_FROM_THE_CHECKOUT)
+    assert missing == [], (
+        "scripts/dump_openapi._isolate_stores() leaves these stores at their defaults although "
+        f"tests/conftest.py isolates every one: {missing}. A live drive or the SP-M recorder WRITES "
+        "them — run from the main checkout, into the running deployment's own stores. Add each to "
+        "_isolate_stores(), or, for a store a drive must read from the checkout, to "
+        "LIVE_DRIVE_READS_FROM_THE_CHECKOUT with the reason.")
+
+
+def test_both_isolation_lists_pin_only_stores_the_code_reads(isolation_bodies):
+    """The failure the old comment hid in plain sight: `AUGHOR_ORGSETTINGS_DB` sat in the helper
+    from the day it was written, while the org store's real name, AUGHOR_ORGS_DB, went unpinned —
+    and a stale name reads exactly like coverage. The same check keeps the test above honest: its
+    population is the scan, so a store the scan could not see would silently drop out of it; here
+    that store fails instead."""
+    reads, _ = _environment_reads()
+    for body, pinned in isolation_bodies.items():
+        unread = sorted(set(pinned) - set(reads))
+        assert unread == [], (
+            f"{body} pins {unread}, which no code in aughor/ reads: a renamed store's old name, or a "
+            "read the scan cannot see. Either way the store it was meant for is not what is pinned.")
+
+
+def test_every_store_a_live_drive_reads_from_the_checkout_still_earns_it(isolation_bodies):
+    reads, _ = _environment_reads()
+    suite, drive = isolation_bodies["tests/conftest.py"], isolation_bodies["_isolate_stores()"]
+    for env in LIVE_DRIVE_READS_FROM_THE_CHECKOUT:
+        assert env in reads, f"no code reads {env} any more — drop it from LIVE_DRIVE_READS_FROM_THE_CHECKOUT"
+        assert env in suite, f"the suite no longer isolates {env}, so this exclusion excuses nothing"
+        assert env not in drive, f"_isolate_stores() pins {env} now — drop it from LIVE_DRIVE_READS_FROM_THE_CHECKOUT"
+    # AUGHOR_SAMPLES_DB's reason is a claim about writers; re-measure it rather than trust it.
+    seeders = [f"{where}:{node.lineno}" for where, tree in _parsed_aughor() for node in ast.walk(tree)
+               if isinstance(node, ast.Call)
+               and (getattr(node.func, "id", None) or getattr(node.func, "attr", None)) == "ensure_samples_db"]
+    assert seeders == [], (
+        f"aughor/ now seeds the samples warehouse ({seeders}), so a live drive can write it: isolate "
+        "AUGHOR_SAMPLES_DB in _isolate_stores() and drop its exclusion.")
