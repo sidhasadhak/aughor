@@ -654,6 +654,20 @@ class SchemaExplorer:
         self._status.queries_executed += 1
         if schema:
             sql = self._repair_contra_amount(sql)
+        else:
+            # PLATFORM SQL, written by this agent in DuckDB's dialect (the docstring above
+            # says so: the profiling / percentile / catalog / join probes are built here from
+            # parsed metadata, not by a model). On a `writes_native_sql` engine it was sent as
+            # written, and BigQuery refused it: measured over September 2026, 40 of the
+            # explorer's 42 SQL failures were `CAST(x AS FLOAT)` ("Type not found: FLOAT"),
+            # `CAST(x AS VARCHAR)` ("Type not found: VARCHAR") and `::` ("CAST operators are
+            # not supported"). `native_sql` is the seam for exactly this and returns DuckDB's
+            # own SQL untouched, so the common path pays nothing.
+            #
+            # NOT applied to model-written SQL above: the model is told the target dialect and
+            # writes in it, so reading that as DuckDB and transpiling would corrupt it.
+            from aughor.db.dialects import native_sql
+            sql = native_sql(self._conn, sql)
         self._last_executed_sql = sql
         try:
             if schema:
@@ -838,7 +852,11 @@ class SchemaExplorer:
             f"FROM {table} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
         )
         try:
-            r = self._conn.execute("__explorer__", sql)
+            # Direct connector call (this probe does not go through `_run`), so it needs the
+            # same dialect translation: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery
+            # rejects the `::` operator outright.
+            from aughor.db.dialects import native_sql
+            r = self._conn.execute("__explorer__", native_sql(self._conn, sql))
         except Exception:
             return None
         rows = (r.rows or []) if not getattr(r, "error", None) else []
@@ -889,7 +907,11 @@ class SchemaExplorer:
             f"FROM {anchor} WHERE {ts_col} IS NOT NULL GROUP BY 1 ORDER BY 1"
         )
         try:
-            r = self._conn.execute("__explorer__", sql)
+            # Direct connector call (this probe does not go through `_run`), so it needs the
+            # same dialect translation: `date_trunc(...)::VARCHAR` is DuckDB, and BigQuery
+            # rejects the `::` operator outright.
+            from aughor.db.dialects import native_sql
+            r = self._conn.execute("__explorer__", native_sql(self._conn, sql))
         except Exception:
             return None
         rows = (r.rows or []) if not getattr(r, "error", None) else []
@@ -1370,7 +1392,12 @@ class SchemaExplorer:
                 # HLL: orphans ≈ |fk ∪ pk| − |pk| (FK distinct values absent from PK).
                 sql = (
                     f"SELECT "
-                    f"approx_count_distinct(CAST({c1} AS VARCHAR)) FILTER (WHERE {c1} IS NOT NULL) AS fk_distinct, "
+                    # No `FILTER (WHERE … IS NOT NULL)`: every aggregate but COUNT(*) already
+                    # ignores NULLs, so it was a no-op — and BigQuery has no FILTER clause, which
+                    # sqlglot does not rewrite either, so `native_sql` could not save this one.
+                    # The sibling subquery on the next line always expressed the same intent as a
+                    # plain WHERE; this now matches it.
+                    f"approx_count_distinct(CAST({c1} AS VARCHAR)) AS fk_distinct, "
                     f"(SELECT approx_count_distinct(CAST({c2} AS VARCHAR)) FROM {t2} WHERE {c2} IS NOT NULL) AS pk_distinct, "
                     f"GREATEST(0, (SELECT approx_count_distinct(v) FROM ("
                     f"   SELECT CAST({c1} AS VARCHAR) AS v FROM {t1} WHERE {c1} IS NOT NULL "
