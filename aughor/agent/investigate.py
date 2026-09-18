@@ -5475,7 +5475,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     live DB for a join-reachable population date; it is optional and the recovery fails open
     (falling back to the schema-string parse) when a connection isn't supplied.
     """
-    from aughor.agent.prompts_investigate import INTAKE_PROMPT, IntakeOutput
+    from aughor.agent.prompts_investigate import (
+        INTAKE_PROMPT, IntakeAsk, IntakeOutput, widen_intake)
 
     question = state["question"]
     # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
@@ -5550,11 +5551,15 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         prompt = directive_from_signals(_loss_sig) + "\n" + prompt
 
     try:
-        intake: IntakeOutput = _provider("coder").complete(
+        # `IntakeAsk` is `IntakeOutput` minus the three fields code overwrites on the next
+        # lines (`descriptive_only`, `no_prior_period`, `named_dimensions`). The model was
+        # spending attention and output tokens on values that were discarded; `widen_intake`
+        # restores them at their defaults, which is exactly what the overwrite assumes.
+        intake: IntakeOutput = widen_intake(_provider("coder").complete(
             system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
             user=prompt,
-            response_model=IntakeOutput,
-        )
+            response_model=IntakeAsk,
+        ))
     except Exception as e:
         intake = None
         intake_error = str(e)
@@ -5581,11 +5586,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 "comparison window that actually contains data)."
             )
             try:
-                intake = _provider("coder").complete(
+                intake = widen_intake(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
+                    response_model=IntakeAsk,
+                ))
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake correction retry failed; keeping the original intake "
@@ -5730,11 +5735,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 "another table, pick the closest single-column proxy instead. Return the fixed spec."
             )
             try:
-                _retry = _provider("coder").complete(
+                _retry = widen_intake(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
+                    response_model=IntakeAsk,
+                ))
                 if _retry is not None and not _unsafe_metric_sql(_retry.metric_sql):
                     intake = _retry
                     _qualify_intake_table_names(intake, schema)
@@ -5763,15 +5768,15 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             r"(price|amount|revenue|cost|total|spend|value|sales|mrr|gmv|fee|charge)", _msql, re.IGNORECASE)
         if not _has_money_col and re.search(r"\bCOUNT\s*\(", _msql, re.IGNORECASE):
             try:
-                _retry2 = _provider("coder").complete(
+                _retry2 = widen_intake(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=prompt + (
                         "\n\nCORRECTION REQUIRED: the question is about MONEY, but the previous "
                         "metric_sql counted rows instead of aggregating a monetary column. "
                         "Re-express metric_sql as an aggregate over an actual money column "
                         "(price/amount/revenue/total) from the schema. Return the fixed spec."),
-                    response_model=IntakeOutput,
-                )
+                    response_model=IntakeAsk,
+                ))
                 if _retry2 is not None and re.search(
                         r"(price|amount|revenue|cost|total|spend|value|sales)",
                         _retry2.metric_sql or "", re.IGNORECASE):

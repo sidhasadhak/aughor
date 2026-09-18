@@ -65,11 +65,6 @@ TASK: Parse this question into a precise investigation specification.
    magnitude. Indicator columns are recognisable by name (`*_risk`, `is_*`, `has_*`, `*_flag`,
    `*_indicator`) or by holding only 0 and 1. Use the flag only when the question itself asks about
    frequency ("how often are we late", "what share of orders are late").
-   METRIC KIND: set metric_is_ratio=true when the metric is a RATIO / percentage / rate / per-unit
-   average (it divides one aggregate by another, scales by *100, or is an AVG / mean — e.g. "freight
-   as % of order value", "cancellation rate", "average order value", "margin %"). Set it false for a
-   plain additive total (SUM/COUNT of revenue, orders, units). This governs how downstream phases
-   aggregate the metric across segments — a ratio is never summed or divided by row count.
 
 2. OBSERVATION PERIOD — What time period is in question?
    Extract explicit dates or infer from question language ("February 2026" → 2026-02-01 to 2026-02-28).
@@ -781,7 +776,7 @@ class IntakeOutput(BaseModel):
     metric_table: str
     dimensions: list[str] = Field(description="List of 'table.column' pairs available for drill-down")
     cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend, OR it is a DRIVER question (does X affect/relate to/drive Y) — analyse across DIMENSIONS/SEGMENTS, not time.")
-    metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals.")
+    metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean, e.g. 'freight as % of order value', 'cancellation rate', 'average order value', 'margin %'. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals of revenue, orders or units.")
     comparison_segment_sql: str = Field(default="", description="For a DRIVER question (does X lower/raise/affect/relate-to Y), the boolean/CASE SQL expression defining the contrasted condition X — e.g. (order_delivered_ts > order_estimated_delivery) for 'late deliveries', or (is_new_customer) for 'new vs returning'. Empty for non-driver questions.")
     comparison_segment_label: str = Field(default="", description="Human label for comparison_segment_sql, e.g. 'late vs on-time delivery'. Empty when comparison_segment_sql is empty.")
     relationship_left_sql: str = Field(default="", description="For a RELATIONSHIP question (how do A and B relate / is there a correlation between A and B), the column — or the arithmetic measuring it — for the FIRST side, e.g. '\"Days for shipping (real)\" - \"Days for shipment (scheduled)\"' for 'shipping delay'. NOT an aggregate: no SUM/AVG/COUNT. Empty for non-relationship questions.")
@@ -792,6 +787,42 @@ class IntakeOutput(BaseModel):
     intervention_column: str = Field(default="", description="A column recording an INTERVENTION or ASSIGNMENT that was applied to units — a treatment arm, an A/B variant, a campaign flag deliberately assigned, a policy applied from a date. This is what makes a causal contrast identifiable. Empty unless the data genuinely records an assignment; a column that merely correlates with an outcome is NOT an intervention.")
     claim_type_suggestion: str = Field(default="", description="Optional: the weakest claim this question needs — one of 'descriptive', 'associational', 'predictive'. Never 'causal'; a causal licence comes from the design, not from this field. Leave empty unless the question is clearly weaker than the design allows.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
+
+
+#: What the MODEL is actually asked for: `IntakeOutput` minus the fields code overwrites
+#: immediately afterwards.
+#:
+#: Three of the 28 fields carry "(set by code …)" in their own description — `descriptive_only`
+#: (overwritten unconditionally from the question), `no_prior_period` (decided by
+#: `_clamp_intake_to_coverage` from the real date coverage) and `named_dimensions` (resolved from
+#: the question against the schema). The model was being asked to reason about, and emit, values
+#: that were thrown away on the next line. That costs its attention as well as the tokens.
+#:
+#: The subset is DERIVED from that marker, not listed beside it: add a fourth code-set field and
+#: it leaves the ask automatically, and nothing here has to be remembered. Every excluded field has
+#: a default, so widening back to `IntakeOutput` reproduces exactly the object the code then
+#: overwrites — this is a removal of wasted work, not a behaviour change, and
+#: `test_intake_ask_model` holds the two equal.
+_CODE_SET_INTAKE_FIELDS = frozenset(
+    name for name, f in IntakeOutput.model_fields.items()
+    if "set by code" in (f.description or "")
+)
+
+
+def _build_intake_ask_model():
+    from pydantic import create_model
+    keep = {n: (f.annotation, f) for n, f in IntakeOutput.model_fields.items()
+            if n not in _CODE_SET_INTAKE_FIELDS}
+    return create_model("IntakeAsk", __doc__=IntakeOutput.__doc__, **keep)
+
+
+IntakeAsk = _build_intake_ask_model()
+
+
+def widen_intake(asked) -> IntakeOutput:
+    """The model's answer as a full `IntakeOutput`; the code-set fields take their defaults,
+    which is precisely the value the caller overwrites a few lines later."""
+    return IntakeOutput(**asked.model_dump())
 
 
 class SemanticField(BaseModel):
