@@ -118,6 +118,42 @@ def _repair_from_candidates(error: str, sql: str, table_cols: dict[str, list[str
     return new_sql if new_sql != sql else None
 
 
+#: BigQuery answers a TIMESTAMP-vs-DATE comparison with this. Matched on the SIGNATURE, not
+#: on the engine name, so any strict-typing engine that words it the same way is covered.
+_TS_DATE_MISMATCH = re.compile(
+    r"no matching signature for operator.*?\b(?:TIMESTAMP|DATETIME)\b.*?\bDATE\b"
+    r"|no matching signature for operator.*?\bDATE\b.*?\b(?:TIMESTAMP|DATETIME)\b",
+    re.I | re.S)
+
+#: A DATE literal — `DATE '2026-01-01'`, with or without the space. NOT the `DATE(expr)`
+#: function, which takes a paren and never a quote.
+_DATE_LITERAL = re.compile(r"\bDATE\s*('(?:[^']|'')*')", re.I)
+
+
+def _repair_timestamp_date_literal(error: str, sql: str) -> str | None:
+    """Promote `DATE 'x'` to `TIMESTAMP 'x'` when the engine refused to compare the two.
+
+    Measured 2026-09-18: 42 of September's 222 live SQL failures were this one shape, all on
+    the theLook BigQuery connection, all `TIMESTAMP >= DATE`, and every literal in them was
+    the explicit `DATE 'x'` form (228 of them across 42 queries) — never a bare string.
+
+    The BigQuery rule block has warned about this since it was written, and the model kept
+    producing it anyway: the rule describes a BARE '2026-08-01' literal, while the model
+    writes `DATE '2026-08-01'`, which reads as already-typed and correct. Guidance had its
+    chance 42 times. This is deterministic and costs no round-trip.
+
+    MEANING-PRESERVING for the operators that actually occur. A DATE promoted to TIMESTAMP is
+    midnight of that day, which is precisely what an engine that DOES coerce (DuckDB,
+    Postgres) computes — so `ts >= DATE 'x'` and `ts < DATE 'y'` keep their boundaries exactly.
+    It is the caller's dry-run that decides whether the rewrite is adopted, so a query this
+    does not actually help is discarded rather than executed.
+    """
+    if not sql or not error or not _TS_DATE_MISMATCH.search(str(error)):
+        return None
+    out, n = _DATE_LITERAL.subn(lambda m: f"TIMESTAMP {m.group(1)}", sql)
+    return out if n and out.strip() != sql.strip() else None
+
+
 def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]],
                     dialect: str = "duckdb") -> str:
     """
@@ -453,6 +489,20 @@ class SqlWriter:
                     ok=True, sql=_det,
                     explanation="Deterministic candidate-binding substitution.",
                     attempts=0, error_class="binder",
+                )
+
+        # Second deterministic fast-path: a strict-typing engine refusing TIMESTAMP vs DATE.
+        # 42 of September 2026's 222 live failures were this one shape, and every one of them
+        # paid an LLM round-trip to learn that `DATE 'x'` should be `TIMESTAMP 'x'`. Same
+        # dry-run gate as above — the rewrite is adopted only if it binds.
+        _ts = _repair_timestamp_date_literal(current_error, current_sql)
+        if _ts:
+            _tok, _ = self._db.dry_run(_ts)
+            if _tok:
+                return FixResult(
+                    ok=True, sql=_ts,
+                    explanation="Deterministic DATE-literal promotion to TIMESTAMP.",
+                    attempts=0, error_class="type_mismatch",
                 )
 
         for attempt in range(1, max_retries + 1):
