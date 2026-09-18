@@ -2,9 +2,9 @@
 
 /**
  * SemanticLayerPanel — the connection's declared meaning, in five tabs:
- *  1. Annotations — table + column business descriptions injected into schema
- *  2. Knowledge   — metric definitions, synonyms, join rules (per connection)
- *  3. Metrics     — governed KPI definitions
+ *  1. Metrics     — governed KPI definitions (the landing tab)
+ *  2. Annotations — table + column business descriptions injected into schema
+ *  3. Knowledge   — metric definitions, synonyms, join rules (per connection)
  *  4. Benchmarks  — gold questions for SQL quality regression testing
  *  5. Import      — the intake lane (PX-3): bring knowledge in from files, sheets,
  *                   wikis or usage, review the plan, accept per object, export back
@@ -736,7 +736,14 @@ function BenchmarksTab({ connId }: { connId: string }) {
 // Main Panel
 // ═══════════════════════════════════════════════════════════════════════════════
 
-const TABS = ["Annotations", "Knowledge", "Metrics", "Benchmarks", "Import"];
+// Metrics leads: it is the governed answer to "what does this number mean", and the
+// one tab whose contents the AI reuses in every chart and answer. It was third,
+// behind two tabs of annotation, so the definitions a connection already carried
+// were the last thing anyone saw.
+const TABS = ["Metrics", "Annotations", "Knowledge", "Benchmarks", "Import"];
+//: The landing tab, and the one that carries no `?semtab=`. Derived from TABS so
+//: reordering the array cannot leave the default pointing at a tab that moved.
+const DEFAULT_TAB = TABS[0];
 
 // ── Scope selector (connection → schema → table) ───────────────────────────────
 
@@ -782,14 +789,14 @@ export function SemanticLayerPanel({ connectionId, connName, connections = [] }:
   // change via replaceState — the shell's URL sync starts from location.search and
   // only touches its own params, so semtab survives its rewrites.
   const [activeTab, setActiveTab] = useState<string>(() => {
-    if (typeof window === "undefined") return "Annotations";
+    if (typeof window === "undefined") return DEFAULT_TAB;
     const want = new URLSearchParams(window.location.search).get("semtab") ?? "";
-    return TABS.find(t => t.toLowerCase() === want.toLowerCase()) ?? "Annotations";
+    return TABS.find(t => t.toLowerCase() === want.toLowerCase()) ?? DEFAULT_TAB;
   });
   useEffect(() => {
     if (typeof window === "undefined") return;
     const params = new URLSearchParams(window.location.search);
-    if (activeTab === "Annotations") params.delete("semtab");
+    if (activeTab === DEFAULT_TAB) params.delete("semtab");
     else params.set("semtab", activeTab.toLowerCase());
     const qs = params.toString();
     window.history.replaceState(null, "", `${window.location.pathname}${qs ? `?${qs}` : ""}`);
