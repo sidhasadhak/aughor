@@ -110,3 +110,89 @@ class TestTheGuidanceNamesTheFormTheModelWrites:
         line = next(l for l in rules_for_dialect("bigquery").splitlines()
                     if "TIMESTAMP vs DATE" in l)
         assert "TIMESTAMP '2026-08-01'" in line and "DATE(ts_col)" in line
+
+
+# ── The transpile candidate ───────────────────────────────────────────────────
+# Promoting the DATE literals alone repaired 34 of the 42 measured failures. The other 8
+# carried a SECOND DuckDB spelling in the same query — 5 x `DATE_TRUNC('x', col)`, 3 x
+# `::cast` — and the dry-run gate correctly discarded a rewrite that still did not bind. A
+# model that writes one DuckDB form usually writes another.
+
+class _Conn:
+    """A native-execution connection: `native_sql` transpiles for it."""
+    dialect, writes_native_sql = "bigquery", True
+
+
+DUCK_TWO_ERRORS = ("SELECT DATE_TRUNC('week', created_at) AS w, COUNT(order_id) AS n "
+                   "FROM orders WHERE created_at >= DATE '2026-06-07' "
+                   "AND created_at < DATE '2026-09-01' GROUP BY 1")
+
+
+class TestTheTranspileCandidate:
+    def test_it_fixes_BOTH_spellings_at_once(self):
+        out = W._repair_by_transpile(_Conn(), ERR, DUCK_TWO_ERRORS)
+        assert out is not None
+        assert "TIMESTAMP_TRUNC(created_at, WEEK)" in out, "the DuckDB DATE_TRUNC survived"
+        assert "TIMESTAMP '2026-06-07'" in out, "the DATE literal survived"
+        assert "DATE '" not in out and "AS DATE)" not in out
+
+    def test_the_order_is_transpile_then_promote(self):
+        """Load-bearing, and the reverse of the obvious one. Verified against live BigQuery
+        on the run that exposed this:
+
+            transpile only         TIMESTAMP >= DATE      (the literal survives)
+            promote only           valid date part name   (DATE_TRUNC survives)
+            promote -> transpile   TIMESTAMP >= DATETIME  (sqlglot maps DuckDB's naive
+                                                           TIMESTAMP to BigQuery's DATETIME)
+            transpile -> promote   binds
+
+        So a promoted literal must NOT be fed through the transpiler."""
+        import sqlglot
+        wrong = sqlglot.transpile(W._repair_timestamp_date_literal(ERR, DUCK_TWO_ERRORS),
+                                  read="duckdb", write="bigquery")[0]
+        assert "DATETIME" in wrong.upper(), (
+            "the DATETIME trap is gone — re-verify the order before relaxing this")
+        right = W._repair_by_transpile(_Conn(), ERR, DUCK_TWO_ERRORS)
+        assert "DATETIME" not in right.upper()
+
+    @pytest.mark.parametrize("err", [
+        'Binder Error: Referenced column "x" not found in FROM clause!',
+        "400 Unrecognized name: thelook at [1:20]",
+        "Table \"orders\" must be qualified with a dataset",
+    ])
+    def test_a_name_error_never_triggers_a_transpile(self, err):
+        """Re-reading SQL as DuckDB is safe when the engine rejected its SHAPE and unsafe
+        when it merely could not find a name — that SQL may be good target-dialect SQL a
+        round trip would mangle."""
+        assert W._repair_by_transpile(_Conn(), err, DUCK_TWO_ERRORS) is None
+
+    def test_a_duckdb_connection_gets_nothing(self):
+        """`native_sql` is a no-op there, so the candidate must decline rather than loop."""
+        class Duck: dialect, writes_native_sql = "duckdb", False
+        assert W._repair_by_transpile(Duck(), ERR, DUCK_TWO_ERRORS) is None
+
+    def test_unparseable_sql_declines_quietly(self):
+        """BigQuery's backtick-quoted `project-id.dataset.table` cannot be read as DuckDB —
+        `native_sql` hands such SQL back unchanged and this must return None, not the input."""
+        bt = chr(96)
+        sql = ("SELECT DATE_TRUNC('week', created_at) FROM " + bt +
+               "bigquery-public-data.thelook.orders" + bt + " WHERE created_at >= DATE '2026-01-01'")
+        assert W._repair_by_transpile(_Conn(), ERR, sql) is None
+
+
+class TestCandidateOrdering:
+    def test_the_narrow_repair_is_tried_first(self):
+        """When promotion alone suffices — 34 of 42 — it is the smaller change, so it must
+        be attempted before re-spelling the whole query."""
+        src = inspect.getsource(W.SqlWriter.fix)
+        assert src.index("_repair_timestamp_date_literal") < src.index("_repair_by_transpile")
+
+    def test_the_transpile_still_precedes_the_llm(self):
+        src = inspect.getsource(W.SqlWriter.fix)
+        assert src.index("_repair_by_transpile") < src.index("for attempt in range(1, max_retries + 1)")
+
+    def test_it_is_dry_run_gated(self):
+        src = inspect.getsource(W.SqlWriter.fix)
+        seg = src[src.index("_repair_by_transpile"):]
+        assert "dry_run(" in seg.split("return FixResult")[0]
+        assert 'error_class="dialect"' in seg.split("for attempt")[0]
