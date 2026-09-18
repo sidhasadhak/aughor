@@ -1,0 +1,31 @@
+name: return_rate
+title: Return rate
+aliases: [item return rate, returns rate, refund rate, return / refund rate]
+unit: ratio
+definition: The share of sold lines that the customer sent back.
+formula: >
+  SUM(CASE WHEN {{role.order_item.returned_at}} IS NOT NULL THEN 1.0 ELSE 0.0 END)
+  / NULLIF(SUM(CASE WHEN {{role.order_item.cancelled}} = 1 THEN 0.0 ELSE 1.0 END), 0)
+grain: >
+  Sold lines over a period; by category, brand or month by filtering the same lines. The denominator
+  is lines that were actually sold — a cancelled line never shipped, so it could not be returned and
+  must not sit in the denominator diluting the rate.
+binds:
+  required: [order_item]
+anti_patterns:
+  - "Dividing returns by ALL lines including cancelled ones: a cancelled line was never eligible to be returned, so it understates the rate by inflating the denominator."
+  - "Counting return ROWS rather than returned lines: one returned line can carry several rows in a returns table, which inflates the numerator."
+  - "Reading a period's rate without its lag: a line sold on the last day of the period has not had time to be returned, so a recent window always reads low until the return window closes."
+sane_range:
+  min: 0.0
+  max: 0.30
+  basis: >
+    Anchored on U.S. all-retail returns of roughly 12.6% of sales — NRF projected $890 billion of
+    returns for 2024, read against the U.S. Census Bureau's $7,041.0 billion of retail sales (NAICS
+    44-45). DERIVED, not published: neither publisher states a rate, and the two totals are for
+    different years (2024 returns against 2022 sales), so the quotient is an order-of-magnitude
+    anchor rather than a measurement. The band is set wide around it — 0 to 0.30 — because it must
+    hold for a whole sector whose categories differ by more than the anchor itself, and the upper
+    bound is a bound on plausibility, not a figure either source published. A rate above it is far
+    more likely a denominator that excludes sold lines than a real return problem.
+  sources: [nrf-returns-2024, census-arts-2022]

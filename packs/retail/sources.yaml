@@ -1,0 +1,54 @@
+# The cited sources behind retail's sane ranges. Every figure below was read on the publisher's own
+# page on the retrieved date, and quotes the words it was published in. The U.S. Census Bureau work is
+# a U.S. government work (public domain); the others are quoted as published figures with attribution.
+sources:
+  - id: baymard-cart-abandonment-2026
+    title: "50 Cart Abandonment Rate Statistics"
+    publisher: Baymard Institute
+    url: https://baymard.com/lists/cart-abandonment-rate
+    published: 2026-01-01
+    retrieved: 2026-09-19
+    notes: >
+      Baymard's running meta-study: 50 published cart-abandonment studies, each listed with its own
+      rate and the date Baymard retrieved it. The page states the average it computes from them, and
+      the individual studies give the observed spread — which is what the band below is built from,
+      rather than from the average alone. The page carries no single publication date; `published` is
+      the year its title states.
+    figures:
+      - {label: "Average documented online shopping cart abandonment rate", value: 70.22, unit: percent,
+         quote: "70.22% – average documented online shopping cart abandonment rate"}
+      - {label: "Basis of the average", value: 50, unit: count,
+         quote: "This value is an average calculated based on 50 different studies containing statistics on ecommerce shopping cart abandonment."}
+      - {label: "Lowest documented abandonment rate of the 50 studies (Forrester Research 2010)", value: 55.00, unit: percent,
+         quote: "55.00% Forrester Research 2010"}
+      - {label: "Highest documented abandonment rate of the 50 studies (SaleCycle 2020)", value: 84.27, unit: percent,
+         quote: "84.27% SaleCycle 2020"}
+
+  - id: census-arts-2022
+    title: "Annual Retail Trade Survey (ARTS) — U.S. Retail Sales Reach $7,040 Billion"
+    publisher: U.S. Census Bureau
+    url: https://www.census.gov/programs-surveys/arts.html
+    published: 2024-01-29
+    retrieved: 2026-09-19
+    notes: >
+      Total U.S. retail sales, NAICS 44-45, employer firms. Used here only as the DENOMINATOR the
+      returns figure below is read against — Census publishes no return rate of its own.
+    figures:
+      - {label: "U.S. retail sales (NAICS 44-45), 2022", value: 7041.0, unit: billion_usd,
+         quote: "U.S. Retail sales (NAICS 44-45) increased 8.0% from $6,519.8 billion in 2021 to $7,041.0 billion in 2022, according to new estimates from the 2022 ARTS."}
+
+  - id: nrf-returns-2024
+    title: "NRF and Happy Returns 2024 Consumer Returns in the Retail Industry"
+    publisher: National Retail Federation
+    url: https://nrf.com/research/2024-consumer-returns-retail-industry
+    published: 2024-12-05
+    retrieved: 2026-09-19
+    notes: >
+      NRF publishes the returns TOTAL on this page, not a rate. The rate used below is derived from
+      it against the Census sales total above — see `sane_range.basis` on `return_rate`, which states
+      the derivation and the year mismatch rather than presenting the result as a published figure.
+    figures:
+      - {label: "Total retail returns, projected, 2024", value: 890, unit: billion_usd,
+         quote: "Total returns for the retail industry are projected to reach $890 billion in 2024."}
+      - {label: "Consumers for whom free returns decide where they shop", value: 76, unit: percent,
+         quote: "76% of consumers consider free returns a key factor in deciding where to shop."}

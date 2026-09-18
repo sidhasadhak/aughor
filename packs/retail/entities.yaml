@@ -1,0 +1,72 @@
+# The roles retail's formulas name — never a table. A connection's binding maps each
+# attribute to that warehouse's own column, which is the whole point: theLook carries the
+# money on `order_items.sale_price` and LuxExperience carries it somewhere else, and one
+# formula has to survive both.
+#
+# Named to match `packs/core-ecommerce/ontology.yaml`'s objects (customer, order,
+# order_item, product, cart) so a connection that already bound that ontology binds these
+# without a second act.
+roles:
+  order_item:
+    description: >
+      One line of one order — a single product at a single price. The grain most retail money
+      questions are answered at, because the amount lives on the line, not on the order.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      item_id: {type: id, description: The line's own identifier, unique within the warehouse.}
+      order_id: {type: id, description: The order this line belongs to.}
+      product_id: {type: id, description: The product sold on this line.}
+      customer_id: {type: id, description: Who bought it.}
+      sold_at: {type: timestamp, description: When the line was sold.}
+      sale_price:
+        type: money
+        description: What the customer paid for this line, after discounts and before tax and shipping.
+      unit_cost:
+        type: money
+        description: What the goods on this line cost the business — COGS at line grain, not landed cost.
+      status:
+        type: code
+        description: >
+          Where the line stands — the warehouse's own vocabulary (shipped, complete, cancelled,
+          returned). Bind the column that carries the LINE's state, not the order's.
+      returned_at:
+        type: timestamp
+        description: >
+          When the line was returned; empty when it was not. A flag column works equally well —
+          what matters is that a returned line is distinguishable from one that was never returned.
+      cancelled:
+        type: flag
+        description: >
+          1 when the line was cancelled before fulfilment. A cancelled line never shipped, so it is
+          not a return and must not be counted as one.
+
+  cart:
+    description: >
+      One shopping cart a visitor created, whether or not it became an order. Distinct from
+      `order`: a warehouse that only stores orders has no carts, and every funnel metric over
+      this role is honestly uncomputable there rather than silently wrong.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      cart_id: {type: id, description: The cart's own identifier.}
+      created_at: {type: timestamp, description: When the cart was created.}
+      converted_order_id:
+        type: id
+        description: >
+          The order this cart became; empty when the cart was abandoned. A conversion flag works
+          equally well — what matters is that a converted cart is distinguishable from one that
+          was abandoned.
+
+  customer:
+    description: One buyer, as the warehouse identifies them across orders.
+    expects: {kind: party}
+    attributes:
+      customer_id: {type: id, description: The buyer's identifier, stable across their orders.}
+      first_seen_at: {type: timestamp, description: When the buyer first appeared — registration or first order.}
+
+  product:
+    description: One sellable item in the catalogue.
+    expects: {kind: catalog}
+    attributes:
+      product_id: {type: id, description: The product's identifier.}
+      category: {type: code, description: The merchandising category the product sits in.}
+      brand: {type: code, description: The brand the product belongs to.}
