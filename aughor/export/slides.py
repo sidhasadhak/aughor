@@ -219,6 +219,10 @@ class _Deck:
             parts = [f"{k.label}: {k.value}" + (f" ({k.delta})" if k.delta else "") for k in b.keynums]
             _para(tf, "    ".join(parts), size=12.5, bold=True, color=_INK, space_before=4)
         elif b.kind == "chart" and b.png:
+            # `b.svg` is deliberately not read here: PPTX has no vector surface, so a chart
+            # reaches a deck as the raster the SSR step produced alongside it. The SVG is
+            # the PDF's (see Block.svg). Named explicitly because an unread producer field
+            # is otherwise indistinguishable from the one that dropped every stat_note.
             self.image_slide(b.png, b.caption)
             self._orphaned_caption = ""
         elif b.kind == "chart":
