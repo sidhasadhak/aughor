@@ -233,9 +233,23 @@ def drifted_registered_metric(finding_text: str, sql: str, connection_id: str = 
                         lbl, ident, getattr(m, "sql", ""))
                     # "metric formula drift" is load-bearing text, not a label: the deep path's
                     # `_COMPUTATION_ERROR_CAVEAT_RE` matches on it to reframe the headline.
-                    return (f"metric formula drift: the finding asserts {lbl} but the query "
-                            f"computes it a different way (it reads '{ident}'), so this number "
-                            f"is not {lbl} as your organisation defines it")
+                    #
+                    # The sentence after it is what a READER sees, first thing, in the
+                    # executive summary. It used to say the query "computes it a different
+                    # way (it reads 'order_items')" — which names a table as if reading it
+                    # were the error. On theLook, `order_items` is the obvious place revenue
+                    # lives, so the caveat read as a false positive and the check looked
+                    # broken (reported 2026-09-18). The real evidence is stronger than that
+                    # phrasing admits: `ident` comes from the metric's OWN
+                    # `wrong_usage_examples` — the registered definition explicitly warns
+                    # against computing it this way. Saying so makes the claim checkable by
+                    # someone who cannot see the governed SQL, which is the whole point of a
+                    # caveat they are being asked to act on. The governed formula and the
+                    # remedy still go only to the log (see above): this is the reader's half.
+                    return (f"metric formula drift: this figure is labelled {lbl} but was not "
+                            f"computed from your organisation's definition of it — it reads "
+                            f"'{ident}', which that definition warns against. Read it as an "
+                            f"unlabelled number, not as {lbl}")
     return None
 
 
