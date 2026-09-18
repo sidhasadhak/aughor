@@ -16,7 +16,8 @@ today (the dump imports and calls `app.openapi()`, and these stores write when t
 are USED) — so this closes a latent hole rather than a bleeding one, and the stray
 `data/qdrant/` seen on 2026-09-02 was NOT this script (reproduced with the old
 shape; it did not appear). Adding a store means adding it HERE and in
-`tests/conftest.py` — the two lists are siblings.
+`tests/conftest.py` — the two lists are siblings, and
+`tests/unit/test_store_hermeticity.py` fails when they drift apart.
 
 Usage: uv run python scripts/dump_openapi.py [out.json]   (default: stdout)
 """
@@ -33,21 +34,41 @@ def _isolate_stores() -> None:
     tmp = tempfile.mkdtemp(prefix="aughor-openapi-")
     os.environ.setdefault("AUGHOR_SYSTEM_DB", os.path.join(tmp, "system.db"))
     os.environ.setdefault("AUGHOR_REGISTRY_DB", os.path.join(tmp, "connections.db"))
-    # Kept equal to tests/conftest.py's allowlist BY MEASUREMENT, not by memory: diff
-    # every `resolve_db_path("AUGHOR_*_DB")` in aughor/ against this list before trusting
-    # it. Five stores were missing until 2026-09-15 (AGENTS · AGENT_ALERTS · EVALS ·
-    # MATCACHE · ORGS) — latent for the spec dump itself, but this helper is also the
-    # isolation for LIVE DRIVES, and a drive that created agents wrote them into the
-    # running deployment's data/agents.db.
+    # The registry's sibling file: builtin connection settings, including which builtins a
+    # person has hidden.
+    os.environ.setdefault("AUGHOR_CONNECTION_SETTINGS", os.path.join(tmp, "connection_settings.json"))
+    # This helper is also the isolation for LIVE DRIVES (scratch API servers started to
+    # verify a change) and for the SP-M recorder, so a store missing here is one the drive
+    # writes: a drive that created agents once wrote them into the running deployment's
+    # data/agents.db. The comment here used to say this list was "kept equal to
+    # tests/conftest.py's allowlist BY MEASUREMENT". On 2026-09-17 it was 22 stores short of
+    # the suite's — a scratch API created data/org_llm.db in a worktree, which from the main
+    # checkout is the live org model config — and it pinned ORGSETTINGS, a name no code has
+    # ever read. The measurement is a test now: tests/unit/test_store_hermeticity.py runs this
+    # function and the conftest in fresh interpreters and fails on any store the suite
+    # isolates that this does not.
     for name in (
         "HISTORY", "METASTORE", "WORKSPACES", "AUDIT", "CANVAS", "ARTIFACTS",
-        "EVIDENCE", "MONITORS", "ORGSETTINGS", "SAVEDQUERY", "VOLUMES",
+        "EVIDENCE", "MONITORS", "SAVEDQUERY", "VOLUMES",
         "VERDICTS", "PACK_DELTAS", "PACK_BINDINGS", "CHECKPOINTS",
         "IDEMPOTENCY", "RBAC", "AUTOMATIONS", "KINETIC_INBOX", "KINETIC_GRANTS",
         "LEARNING", "INTAKE", "USER_PREFS", "DEPARTURES", "HUB_LINKS",
         "AGENTS", "AGENT_ALERTS", "EVALS", "MATCACHE", "ORGS",
+        "ORG_LLM", "AMBIGUITY_LEDGER", "OVERLAY_LEDGER", "GOVERN_TAGS", "GOVERN_CAPS",
+        "QUALITY", "IDENTITY", "OVERVIEW_DRILLS", "POPULARITY", "DASHBOARD",
     ):
         os.environ.setdefault(f"AUGHOR_{name}_DB", os.path.join(tmp, f"{name.lower()}.db"))
+    # The runtime LLM config (a model chosen in Settings, and its encrypted keys). Isolated
+    # with ORG_LLM above, so a drive that needs a model binds it from the environment, never
+    # from — or into — the deployment's own choice.
+    os.environ.setdefault("AUGHOR_LLM_CONFIG_PATH", os.path.join(tmp, "llm_config.json"))
+    # The demo warehouse. "Explore the demo" writes it when it is absent, so a scratch
+    # deployment starts without one; a drive that wants it calls
+    # `aughor.demo.setup.ensure_fixture_db()`, which seeds the deterministic scenario here.
+    os.environ.setdefault("AUGHOR_FIXTURE_DB", os.path.join(tmp, "aughor.duckdb"))
+    # NOT isolated, on purpose: the authored package tree (AUGHOR_PACKS_DIR) and the samples
+    # warehouse (AUGHOR_SAMPLES_DB), which a drive reads from the checkout. The suite isolates
+    # both; that test holds the reasons and fails when either stops being true.
     os.environ.setdefault("AUGHOR_BRIEFS_FILE", os.path.join(tmp, "briefs.json"))
     os.environ.setdefault("AUGHOR_INSTRUCTIONS_FILE", os.path.join(tmp, "instructions.json"))
     os.environ.setdefault("AUGHOR_CANVAS_INSTRUCTIONS_FILE",
@@ -68,6 +89,17 @@ def _isolate_stores() -> None:
     # metrics.json on 2026-09-16 because this list still lacked them.
     os.environ.setdefault("AUGHOR_METRICS_PATH", os.path.join(tmp, "metrics.json"))
     os.environ.setdefault("AUGHOR_GLOSSARY_PATH", os.path.join(tmp, "glossary.yaml"))
+    # …and the vetted-query store beside them, which saving a query writes.
+    os.environ.setdefault("AUGHOR_TRUSTED_QUERIES_PATH", os.path.join(tmp, "trusted_queries.json"))
+    # File trees and registries outside the directory family below, each written when used:
+    # saved synonyms, `skills import`, the per-column config (whose default tree is TRACKED
+    # under data/), and the documents registry with the uploaded bytes it indexes (a delete
+    # rmtree()s the latter).
+    os.environ.setdefault("AUGHOR_VOCABULARY_ROOT", os.path.join(tmp, "vocabulary"))
+    os.environ.setdefault("AUGHOR_IMPORTED_PACKS_DIR", os.path.join(tmp, "packs-imported"))
+    os.environ.setdefault("AUGHOR_COLUMN_CONFIG_ROOT", os.path.join(tmp, "ontology_column_config"))
+    os.environ.setdefault("AUGHOR_DOCUMENTS_REGISTRY", os.path.join(tmp, "documents.json"))
+    os.environ.setdefault("AUGHOR_DOCUMENTS_DIR", os.path.join(tmp, "documents"))
 
     # The DIRECTORY stores, which this dump never isolated: the docstring above said
     # "every store honours its AUGHOR_*_DB override", and that sentence was the gap — a
@@ -89,8 +121,9 @@ def _isolate_stores() -> None:
     # default here does not merely dirty `data/`, it contends with a running API.
     os.environ.setdefault("AUGHOR_QDRANT_PATH", os.path.join(tmp, "qdrant"))
     # ON-1b — the ontology's file trees: human overrides (a measure WRITES verdicts back into it), the export beside it,
-    # the engine's recommendations, and (ON-7b) the explorer's draft record. Isolated in tests/conftest.py too.
-    for _tree in ("OVERRIDES", "EXPORT", "RECOMMENDATIONS", "DRAFTS"):
+    # the engine's recommendations, (ON-7b) the explorer's draft record, and (R8) the compiled doc tree. Isolated in
+    # tests/conftest.py too.
+    for _tree in ("OVERRIDES", "EXPORT", "RECOMMENDATIONS", "DRAFTS", "DOCS"):
         os.environ.setdefault(f"AUGHOR_ONTOLOGY_{_tree}_DIR", os.path.join(tmp, f"ontology_{_tree.lower()}"))
 
 
