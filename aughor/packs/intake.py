@@ -32,7 +32,9 @@ def known_pack_ids(packs_dir=None) -> list[str]:
 
 
 def active_packs(packs_dir=None) -> list[Pack]:
-    """Loadable, status==active packs across both roots (best-effort)."""
+    """Loadable packs that steer — status==active and not a knowledge package — across both roots
+    (best-effort). An active knowledge package is reference the agents read through
+    `aughor.packs.knowledge`, never a pack to route, disclose or promote a binding for."""
     from aughor.packs.roots import pack_dir as _pack_dir
 
     out: list[Pack] = []
@@ -46,7 +48,7 @@ def active_packs(packs_dir=None) -> list[Pack]:
             from aughor.kernel.errors import tolerate
             tolerate(e, f"skip pack {pid} during active scan", counter="packs.active_scan")
             continue
-        if p.manifest.status == "active":
+        if p.manifest.steers:
             out.append(p)
     return out
 

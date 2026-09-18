@@ -27,8 +27,8 @@ ANATOMY_VERSIONS = (0, 1)
 PLAY_KINDS = ("diagnostic", "data_quality", "practice")
 #: The units a metric's value is stated in, so a measured value and its sane range are read the same way.
 METRIC_UNITS = ("ratio", "percent", "minutes", "hours", "miles", "count", "currency", "number")
-#: The kinds of attribute a role carries.
-ATTRIBUTE_TYPES = ("flag", "number", "count", "minutes", "hours", "miles", "date", "time", "code", "text")
+#: The kinds of attribute a role carries. `currency` is an amount of money: a balance, or income over a period.
+ATTRIBUTE_TYPES = ("flag", "number", "count", "currency", "minutes", "hours", "miles", "date", "time", "code", "text")
 
 
 class _Base(BaseModel):
@@ -69,6 +69,13 @@ class PackManifest(_Base):
     industry: str = ""
     #: IP-3 — the package anatomy this pack declares (`ANATOMY_VERSIONS`); 1 puts it under the static gate.
     anatomy: int = 0
+
+    @property
+    def steers(self) -> bool:
+        """Whether this pack can steer an answer: active, and not a knowledge package. A knowledge package's
+        `status` says whether the agents read it as reference (§3.17 gate 6: a person's review moves a draft
+        to active); it never makes it a pack a question is routed to, disclosed as or read through."""
+        return self.status == "active" and self.layer not in KNOWLEDGE_LAYERS
 
 
 class MetricBinds(_Base):

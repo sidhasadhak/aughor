@@ -1,0 +1,16 @@
+id: period-end-balance-read-as-the-average
+kind: data_quality
+trigger_metric: return_on_assets
+trigger_condition: an entity's balance at the period's end differs from its average by more than a quarter
+recommendation: >
+  A rate over a period divides by the balance averaged over it — the FDIC averages the opening and closing balances
+  — never the balance at its end. For an entity that merged, was acquired or started within the period, the two
+  differ by a quarter or more, and reading the period-end balance as the average moves its return and its margin by
+  as much.
+expected_impact: Rates over a period are read over average balances.
+owner_role: Data Engineer
+tags: [average balances, return on assets, data quality]
+sources: [fdic-qbp-notes-2025-q2]
+detection: >
+  SUM(CASE WHEN {{role.financial_period.average_assets}} > 0 AND ABS({{role.financial_period.total_assets}} -
+  {{role.financial_period.average_assets}}) > 0.25 * {{role.financial_period.average_assets}} THEN 1 ELSE 0 END)

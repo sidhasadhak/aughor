@@ -22,7 +22,7 @@
  */
 import { useEffect, useState } from "react";
 import NumberFlow from "@number-flow/react";
-import { getBusinessProfile, runDirectQuery, currencySymbol } from "@/lib/api";
+import { getBusinessProfile, runDirectQuery, currencySymbol, type StatedRange } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toast";
 import { GroundedNumber } from "@/components/brief/GroundedNumber";
@@ -65,15 +65,17 @@ const trendCaption = (sign: number, favorable: boolean | null) =>
  *  the /chart-lab harness. */
 export function buildKpi(args: {
   name: string; raw: number; unit: string; accent: string;
+  /** How `unit` reads, as the API shipped it (`stated_range`) — absent reads as open, never a guessed bound. */
+  range?: StatedRange;
   sym?: string; sql?: string; series?: number[];
   chart?: { columns: string[]; rows: unknown[][] } | null;
 }): Kpi | null {
-  const { name, raw, unit, accent, sym = "$", sql = "", series, chart = null } = args;
-  const f = formatMetric(raw, unit, sym, name);
+  const { name, raw, unit, range, accent, sym = "$", sql = "", series, chart = null } = args;
+  const f = formatMetric(raw, unit, sym, name, range);
   if (!f.ok) return null;
   let trend: Trend | null = null;
   if (series && series.length >= 2) {
-    const d = deltaInfo(series, unit, name);
+    const d = deltaInfo(series, unit, name, range);
     if (d) {
       const fav = d.sign === 0 ? null : betterIsHigher(name) ? d.sign > 0 : d.sign < 0;
       trend = { values: series, deltaText: d.text, sign: d.sign, favorable: fav, caption: trendCaption(d.sign, fav) };
@@ -248,7 +250,7 @@ export function IndustryKpiStrip({ connectionId, schema, scopeKey }: {
               }
             } catch { /* no trend → card degrades to label + value */ }
           }
-          return buildKpi({ name: m.name, raw: Number(cell), unit: m.unit_or_range, accent: KPI_ACCENTS[i % KPI_ACCENTS.length], sym, sql: m.value_sql, series, chart });
+          return buildKpi({ name: m.name, raw: Number(cell), unit: m.unit_or_range, range: m.stated_range, accent: KPI_ACCENTS[i % KPI_ACCENTS.length], sym, sql: m.value_sql, series, chart });
         } catch { return null; }
       }));
 

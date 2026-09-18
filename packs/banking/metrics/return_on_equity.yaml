@@ -1,0 +1,26 @@
+name: return_on_equity
+title: Return on equity
+aliases: [ROE, return on equity, return on average equity]
+unit: ratio
+definition: >
+  Net income attributable to the entity as a share of its average equity capital, at an annual rate.
+formula: >
+  SUM({{role.financial_period.net_income}} * {{role.financial_period.periods_per_year}})
+    / NULLIF(SUM({{role.financial_period.average_equity}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Including minority interests in the equity but not in the income, or the other way round."
+  - "Comparing entities with very different capital levels on return on equity alone: less equity raises the ratio at the same income."
+sane_range:
+  min: -0.03015
+  max: 0.25175
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Credit card banks -3.01% (second quarter 2025) to Other specialized under $1 billion 25.17% (second
+    quarter 2025), widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside
+    a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

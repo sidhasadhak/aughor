@@ -1,0 +1,14 @@
+id: charge-offs-rise-read-with-noncurrent-loans
+kind: diagnostic
+trigger_metric: net_charge_off_rate
+trigger_condition: net charge-off rate rises period over period
+trigger_operator: gt
+recommendation: >
+  Read net charge-offs with the noncurrent loans of the periods before. Loans are charged off after months of
+  nonpayment, so noncurrent loans rising first is the book deteriorating, while charge-offs rising alone points at
+  one large credit, a sale or a change of charge-off policy. Split by loan category before reading the total: a card
+  book and a mortgage book lose at rates two orders apart.
+expected_impact: The rise is placed in a loan category and read as deterioration or as a one-off.
+owner_role: Credit Risk
+tags: [charge-offs, noncurrent loans, credit quality]
+sources: [fdic-qbp-2025-q2]

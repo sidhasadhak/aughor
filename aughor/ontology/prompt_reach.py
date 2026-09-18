@@ -49,6 +49,7 @@ from aughor.ontology.models import (
     Binding,
     BusinessRule,
     ComputedProperty,
+    CoreClaim,
     DefinitionSource,
     DisplayProperty,
     EntityProperty,
@@ -275,7 +276,26 @@ def fixture_graph() -> OntologyGraph:
         entity_to_tables={"Order": ["orders"], "Customer": ["customers"]},
         table_to_entity={"orders": "Order", "customers": "Customer"},
         relationship_index={"Order": [rel.id], "Customer": [rel.id]},
+        # ON-0a claims, one per tier and one from a pack that is NOT deployed here: the explorer's catalogue may
+        # render only what a DEPLOYED pack measured true, so the audit has to hold both sides of that gate.
+        core_claims=[
+            CoreClaim(kind="object", subject="Order", expected="present", measured="Order (orders)",
+                      tier="measured-true", provenance="pack:core-ecommerce", note="matched Order backed by orders"),
+            CoreClaim(kind="lifecycle", subject="Order", expected="delivered, canceled", tier="expected",
+                      provenance="pack:core-ecommerce", note="no table matched"),
+            CoreClaim(kind="link", subject="Order → Customer", expected="N:1", measured="1:1",
+                      tier="measured-false", provenance="pack:core-ecommerce", note="the data wins"),
+            CoreClaim(kind="rule", subject="free_shipping", expected="a threshold", tier="human",
+                      provenance="pack:core-ecommerce", note="a person settled it"),
+            CoreClaim(kind="object", subject="Product", expected="present", measured="Product (products)",
+                      tier="measured-true", provenance="pack:fashion-ecommerce", note="not deployed here"),
+        ],
     )
+
+
+#: The packs the fixture's connection has DEPLOYED (active and bound). `explorer_catalogue` renders claims only
+#: from these, and only where the data measured them true.
+FIXTURE_DEPLOYED_PACKS: tuple[str, ...] = ("core-ecommerce",)
 
 
 # ── The blocks: every pure graph → prompt-text renderer on the answer path ───────────
@@ -350,6 +370,11 @@ def _question_frame(g: OntologyGraph) -> str:
     return "\n\n".join(render_frame_block(frame_question(q, g)) for q in FRAME_QUESTIONS)
 
 
+def _explorer_catalogue(g: OntologyGraph) -> str:
+    from aughor.ontology.explorer import source_catalogue
+    return source_catalogue(g, deployed_packs=FIXTURE_DEPLOYED_PACKS)
+
+
 BLOCKS: tuple[Block, ...] = (
     Block("entity_model", "heavy phase · schema-wide (every chat + deep prompt once intelligence is built)",
           "aughor/agent/schema_annotators.py:262", _entity_model),
@@ -369,6 +394,10 @@ BLOCKS: tuple[Block, ...] = (
                             "(question-scoped; only when the question reaches a declared definition)",
           "aughor/agent/investigate.py (the deep analysis's intake) · aughor/agent/explore.py (the chain planner)",
           _question_frame),
+    # ON-7b (2026-09-13) gave the explorer a catalogue and this ratchet did not measure it, so a PACK CLAIMS block
+    # reached a prompt while the baseline still read "claims are never rendered". It is a block like any other now.
+    Block("explorer_catalogue", "the ontology explorer's ONE model call, per scope",
+          "aughor/ontology/explorer.py:source_catalogue → EXPLORE_BUSINESS_PROMPT", _explorer_catalogue),
 )
 
 #: Prompt sites the harness cannot render in isolation, named so the count stays honest.

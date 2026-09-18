@@ -746,11 +746,40 @@ def _qt(table: str) -> str:
     return _q(table)
 
 
+def _sampled_table(qt: str, large: bool) -> str:
+    """What a scan reads FROM: the quoted table, or on a large table a `_SAMPLE_PCT` sample of it.
+
+    The sample rides on the table (`t TABLESAMPLE SYSTEM (5 PERCENT)`), never as DuckDB's query-level
+    `USING SAMPLE` written after the name. That spelling has no place before WHERE in DuckDB's grammar,
+    and sqlglot, which `DuckDBConnection` runs every statement through and which transpiles for the other
+    engines, moves it to the end, after LIMIT, where DuckDB, Postgres, BigQuery and Snowflake all refuse
+    it. Each refusal read as "no values": measured 2026-09-17 on BTS's January 2019 on-time table (638,649
+    rows), `flights.status` had 3 values, no `top_values`, and so no lifecycle. SYSTEM is the method DuckDB
+    already picked for a percentage sample, so only the position moves.
+    """
+    return f"{qt} TABLESAMPLE SYSTEM ({_SAMPLE_PCT} PERCENT)" if large else qt
+
+
+#: Engines that read a large table's VALUE LISTS (top values, entity values) whole rather than from the sample.
+#: A value list reaches the prompt and decides the lifecycle, and a SYSTEM sample takes whole 2,048-row blocks,
+#: so on a table whose rows are grouped it misses whole values. Olist's public geolocation table (1,000,163 rows,
+#: grouped by state) listed the wrong top ten states from the sample in 3 rebuilds of 3, and the right ones from
+#: the whole column in 3 of 3, in the same 0.07 s (0.31 s against 0.28 s on 20M rows). DuckDB's SUMMARIZE has
+#: already scanned every column by then; a warehouse bills the scan, so it keeps the sample.
+_EXACT_VALUE_DIALECTS = ("", "duckdb")
+
+
 def _safe_float(v) -> Optional[float]:
     try:
         return float(v)
     except (TypeError, ValueError):
         return None
+
+
+#: Populated months `_robust_date_range` reads, a thousand years of them. Its read is bounded
+#: because `execute` keeps 500 rows, the first 500 months of the ascending list: a timestamp
+#: spanning 1950 to 2024 placed its dense region's end in 1991 (measured 2026-09-17).
+_DENSE_RANGE_MAX_MONTHS = 12_000
 
 
 def _robust_date_range(
@@ -770,15 +799,18 @@ def _robust_date_range(
     in which case callers should fall back to the absolute date_range.
     """
     try:
-        r = conn.execute(
+        r = conn.execute_bounded(
             "__profiler__",
             f"SELECT date_trunc('month', {qts})::VARCHAR AS m, COUNT(*) AS c "
             f"FROM {qt} WHERE {qts} IS NOT NULL GROUP BY 1 ORDER BY 1",
+            _DENSE_RANGE_MAX_MONTHS,
         )
     except Exception:
         return None
     if r.error or not r.rows:
         return None
+    if (r.row_count or 0) > len(r.rows):
+        return None     # part of the months cannot say where the dense region ends
 
     months = [(str(row[0]), int(row[1])) for row in r.rows if row[0] is not None]
     if len(months) < 2:
@@ -1276,6 +1308,10 @@ def build_table_profile(
 #: on the table is not a rule.
 _PAIR_SAMPLE_ROWS = 300
 
+#: Engines whose statements keep a table sample through the transpile. MySQL and SQLite lose it, and a
+#: shuffle there would sort every row of the table to pick 300.
+_TABLE_SAMPLE_DIALECTS = ("", "duckdb", "postgres", "bigquery", "snowflake")
+
 
 def _row_sample(conn: "DatabaseConnection", table: str, columns: list, row_count: int) -> list:
     """One ROW-ALIGNED sample of every column, as text. `[]` on any failure.
@@ -1295,16 +1331,20 @@ def _row_sample(conn: "DatabaseConnection", table: str, columns: list, row_count
     large = row_count > _LARGE_TABLE_THRESHOLD
     if large:
         # Match the file's existing large-table idiom rather than reservoir-sampling a
-        # warehouse fact: a percentage sample is cheap, and 300 of those rows is plenty.
-        sql = (f"SELECT {selects} FROM {_qt(table)} USING SAMPLE {_SAMPLE_PCT} PERCENT "
-               f"LIMIT {_PAIR_SAMPLE_ROWS}")
+        # warehouse fact: a percentage sample is cheap, and 300 of those rows is plenty —
+        # drawn at random from it. LIMIT alone returns 300 CONSECUTIVE rows of one sampled
+        # block: on BTS's flights, one carrier's two-letter codes then read as US states, and
+        # `carrier_id` came out `geo.region` in 2 rebuilds of 10 (0 of 10 with the shuffle).
+        shuffle = " ORDER BY random()" if getattr(conn, "dialect", "") in _TABLE_SAMPLE_DIALECTS else ""
+        sql = f"SELECT {selects} FROM {_sampled_table(_qt(table), large)}{shuffle} LIMIT {_PAIR_SAMPLE_ROWS}"
     else:
         sql = f"SELECT {selects} FROM {_qt(table)} USING SAMPLE {_PAIR_SAMPLE_ROWS} ROWS"
     r = conn.execute("__profiler__", sql)
     if r.error or not r.rows:
-        # `USING SAMPLE` is DuckDB's spelling. Everywhere else, take the cheap prefix and
-        # accept that it is a prefix — a biased sample still answers "do these two columns
-        # hold the same value", and a failed probe must not look like a true negative.
+        # `USING SAMPLE … ROWS` is DuckDB's spelling, and not every engine takes a table
+        # sample. Where one is refused, take the cheap prefix and accept that it is a
+        # prefix — a biased sample still answers "do these two columns hold the same
+        # value", and a failed probe must not look like a true negative.
         r = conn.execute("__profiler__", f"SELECT {selects} FROM {_qt(table)} LIMIT {_PAIR_SAMPLE_ROWS}")
     if r.error or not r.rows:
         return []
@@ -1347,6 +1387,8 @@ def build_column_profiles(
     qt = _qt(table)
     fast_stats = fast_stats or {}
     large = row_count > _LARGE_TABLE_THRESHOLD
+    scan_from = _sampled_table(qt, large)
+    values_from = qt if getattr(conn, "dialect", "") in _EXACT_VALUE_DIALECTS else scan_from
 
     # ── Drain catalog stats ───────────────────────────────────────────────────
     raw_stats: dict[str, dict] = {}       # col → {non_null, distinct}
@@ -1415,7 +1457,6 @@ def build_column_profiles(
     missing_cols = [c for c, _ in columns if c not in raw_stats]
     if missing_cols:
         CHUNK = 30
-        sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
         chunks = [missing_cols[i: i + CHUNK] for i in range(0, len(missing_cols), CHUNK)]
         # The sampled distinct is linearly scaled below — right for COUNT(col),
         # mathematically wrong for COUNT(DISTINCT col): a 10-value column sampled at
@@ -1434,7 +1475,7 @@ def build_column_profiles(
                     selects.append(f"approx_count_distinct({qc}) AS _dc_{col}")
                 else:
                     selects.append(f"COUNT(DISTINCT {qc}) AS _dc_{col}")
-            sql = f"SELECT {', '.join(selects)} FROM {qt}{'' if approx else sample_clause}"
+            sql = f"SELECT {', '.join(selects)} FROM {qt if approx else scan_from}"
             r = conn.execute("__profiler__", sql)
             if r.error or not r.rows:
                 for col in chunk:
@@ -1467,12 +1508,11 @@ def build_column_profiles(
         # value_range and the manifest's measure gate could never pass. A sampled
         # MIN/MAX under-reads the extremes slightly; for "does this measure have a
         # real range" that is the honest cheap answer.
-        range_sample = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
         selects = []
         for col, _ in numeric_missing[:20]:
             qc = _q(col)
             selects.append(f"MIN({qc})::DOUBLE AS _lo_{col}, MAX({qc})::DOUBLE AS _hi_{col}")
-        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {qt}{range_sample}")
+        r = conn.execute("__profiler__", f"SELECT {', '.join(selects)} FROM {scan_from}")
         if not r.error and r.rows:
             row_data = r.rows[0]
             for i, (col, _) in enumerate(numeric_missing[:20]):
@@ -1495,10 +1535,9 @@ def build_column_profiles(
 
     for col in dim_missing:
         qc = _q(col)
-        sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
         r = conn.execute(
             "__profiler__",
-            f"SELECT {qc}, COUNT(*) AS n FROM {qt}{sample_clause} "
+            f"SELECT {qc}, COUNT(*) AS n FROM {values_from} "
             f"WHERE {qc} IS NOT NULL GROUP BY 1 ORDER BY 2 DESC LIMIT 10",
         )
         if not r.error and r.rows:
@@ -1509,6 +1548,15 @@ def build_column_profiles(
     # cap, persist the distinct set so entity resolution can bind offline. The
     # distinct GATE (from raw_stats) bounds the scan; LIMIT cap+1 + the len check
     # drops any column that turns out larger than the cap (kept as live-probe only).
+    #
+    # The read is BOUNDED at cap+1 because `execute` stops at the connection's answer
+    # cap, 500 rows on DuckDB and Postgres, far below this one. Through it a column of
+    # 900 values stored 500 of them as the complete set, and the len check could never
+    # see a column past the cap. A read the connection still cut (`row_count` counting
+    # more rows than `rows` holds) is not the distinct set either, so it is not kept.
+    # A partial set costs more than a live probe: offline binding matches it fuzzily,
+    # and a token whose value was cut bound to a kept neighbour ('City 3' as 'City 39')
+    # for more than 9 in 10 of the cut values, measured 2026-09-17.
     value_sample_map: dict[str, list[str]] = {}
 
     def _index_eligible(col: str) -> bool:
@@ -1530,13 +1578,14 @@ def build_column_profiles(
     ][:_VALUE_SAMPLE_MAX_COLS]
     for col in highcard_dims:
         qc = _q(col)
-        sample_clause = f" USING SAMPLE {_SAMPLE_PCT} PERCENT" if large else ""
-        r = conn.execute(
+        r = conn.execute_bounded(
             "__profiler__",
-            f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {qt}{sample_clause} "
+            f"SELECT DISTINCT CAST({qc} AS VARCHAR) AS v FROM {values_from} "
             f"WHERE {qc} IS NOT NULL LIMIT {_VALUE_SAMPLE_MAX_DISTINCT + 1}",
+            _VALUE_SAMPLE_MAX_DISTINCT + 1,
         )
-        if not r.error and r.rows and len(r.rows) <= _VALUE_SAMPLE_MAX_DISTINCT:
+        if (not r.error and r.rows and len(r.rows) <= _VALUE_SAMPLE_MAX_DISTINCT
+                and (r.row_count or 0) <= len(r.rows)):
             vals = [str(row[0]) for row in r.rows if row[0] is not None]
             if vals:
                 value_sample_map[col] = vals
@@ -1658,14 +1707,20 @@ class _TranspilingConnection:
     def __getattr__(self, name):
         return getattr(self._raw, name)
 
-    def execute(self, label, sql):
-        out = sql
+    def _transpile(self, sql):
         try:
             import sqlglot
-            out = sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
+            return sqlglot.transpile(sql, read="duckdb", write=self._raw.dialect)[0]
         except Exception:
-            out = sql
-        return self._raw.execute(label, out)
+            return sql
+
+    def execute(self, label, sql):
+        return self._raw.execute(label, self._transpile(sql))
+
+    # Spelled out rather than left to `__getattr__`, which would hand the engine's own bounded read the
+    # DuckDB spelling untranspiled.
+    def execute_bounded(self, label, sql, max_rows):
+        return self._raw.execute_bounded(label, self._transpile(sql), max_rows)
 
 
 def profile_connection(

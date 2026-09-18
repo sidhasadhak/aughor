@@ -1,0 +1,85 @@
+# The role banking's formulas, goldens and detections name — never a table. A dataset's binding
+# (datasets/*.yaml) maps each attribute to that dataset's column.
+roles:
+  financial_period:
+    description: >
+      One reporting entity's results for one period — a bank's quarter in its Call Report, or a legal entity's or
+      business line's month in a finance mart: what it earned, paid and charged off over the period, its balances
+      averaged over the period, and its balances at the period's end.
+    expects: {kind: event, has_timestamp: true}
+    attributes:
+      period_end:
+        type: date
+        description: "The last day of the period."
+      entity_id:
+        type: code
+        description: "The reporting entity: an insured institution (its FDIC certificate), a legal entity or a business line."
+      peer_group:
+        type: code
+        description: "The peer group the entity is compared within — for an FDIC-insured institution, its asset concentration group; empty where none applies."
+      periods_per_year:
+        type: number
+        description: "How many periods of this length make a year: 4 for a quarter, 12 for a month. Income over the period times this is the annual rate."
+      interest_income:
+        type: currency
+        description: "Total interest, dividend and fee income earned on loans and investments over the period."
+      interest_expense:
+        type: currency
+        description: "Total interest paid on deposits and other borrowed money over the period."
+      noninterest_income:
+        type: currency
+        description: "Total noninterest income over the period: fees, service charges, trading and servicing income."
+      noninterest_expense:
+        type: currency
+        description: "Total noninterest expense over the period: salaries, premises and every other operating expense."
+      amortization_of_intangibles:
+        type: currency
+        description: "Amortization and impairment losses on intangible assets over the period — the part of noninterest expense the efficiency ratio leaves out."
+      provision_for_credit_losses:
+        type: currency
+        description: "The provision for credit losses charged to income over the period."
+      net_income:
+        type: currency
+        description: "Net income over the period attributable to the entity itself, after taxes and gains or losses on securities, before minority interests."
+      gross_charge_offs:
+        type: currency
+        description: "Loans and leases charged off over the period — removed from the balance sheet as uncollectible."
+      recoveries:
+        type: currency
+        description: "Amounts recovered over the period on loans and leases charged off earlier."
+      average_assets:
+        type: currency
+        description: "Total assets averaged over the period: its opening and closing balances, and any in between."
+      average_earning_assets:
+        type: currency
+        description: "Earning assets — loans and other investments that earn interest or dividend income — averaged over the period."
+      average_loans:
+        type: currency
+        description: "Loans and leases averaged over the period."
+      average_equity:
+        type: currency
+        description: "The entity's own equity capital averaged over the period."
+      total_assets:
+        type: currency
+        description: "Total assets at the end of the period."
+      total_deposits:
+        type: currency
+        description: "Total deposits at the end of the period, in domestic and foreign offices."
+      total_loans:
+        type: currency
+        description: "Loans and leases at the end of the period, net of unearned income, before the allowance for credit losses."
+      net_loans:
+        type: currency
+        description: "Loans and leases at the end of the period after the allowance for credit losses."
+      allowance_for_credit_losses:
+        type: currency
+        description: "The allowance for credit losses on loans and leases at the end of the period."
+      noncurrent_loans:
+        type: currency
+        description: "Loans and leases 90 days or more past due, or in nonaccrual status, at the end of the period."
+      past_due_30_89_loans:
+        type: currency
+        description: "Loans and leases 30 to 89 days past due and still accruing at the end of the period."
+      equity_capital:
+        type: currency
+        description: "The entity's own equity capital at the end of the period, before minority interests."

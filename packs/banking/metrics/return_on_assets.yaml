@@ -1,0 +1,27 @@
+name: return_on_assets
+title: Return on assets
+aliases: [ROA, return on assets, return on average assets]
+unit: ratio
+definition: >
+  Net income attributable to the entity, including gains or losses on securities, as a share of average total
+  assets, at an annual rate.
+formula: >
+  SUM({{role.financial_period.net_income}} * {{role.financial_period.periods_per_year}})
+    / NULLIF(SUM({{role.financial_period.average_assets}}), 0)
+grain: >
+  An entity's results for a period — a bank's quarter — summed over the entities, then divided; read by peer group,
+  size or period by filtering the same rows, never by averaging the entities' rates.
+binds:
+  required: [financial_period]
+anti_patterns:
+  - "Annualizing a quarter that carries a one-time gain or loss as if it repeats."
+  - "Dividing by period-end assets: an entity that grew in the period reads a lower return than it earned."
+sane_range:
+  min: -0.00385
+  max: 0.03585
+  basis: >
+    The FDIC's asset concentration groups and asset size groups of insured institutions, second quarters of 2025 and
+    2026: from Credit card banks -0.38% (second quarter 2025) to Other specialized under $1 billion 3.58% (second
+    quarter 2025), widened by the ±0.005 points of their two-decimal rounding. A single institution can sit outside
+    a group's rate.
+  sources: [fdic-qbp-2025-q2, fdic-qbp-2026-q2]

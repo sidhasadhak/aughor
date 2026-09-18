@@ -16,7 +16,9 @@ domains:
 extends: []
 scope:
   connections: ["*"]
-status: draft
+status: active
 source: aughor
 # IP-1 (2026-09-17): moved unchanged from data/kb. Reference knowledge — read by every
 # connection of its scope without a binding (§3.17 "reference is not steering").
+# IP-4 (2026-09-17): active. The agents read only active packages; a draft awaits a person's
+# review (§3.17 gate 6). This package was already read before that gate was enforced.

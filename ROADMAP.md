@@ -5411,7 +5411,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 BUILT** 2026-09-17 on `claude/ip-3-generator`, local)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 MERGED #519**, squash `21a4484f`, 2026-09-17; **IP-4 STARTED** 2026-09-17 on `claude/ip-4-banking`, local: gate 6 enforced, banking & lending through gates 1–4, a draft)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5504,7 +5504,7 @@ the live playbook topped up from 392 to 878 plays (the 486 checks, all active; 4
 
 **IP-2 · Chosen at install — BUILT 2026-09-17, MERGED #518** with IP-1. Merged over one red check, the user's call:
 the Windows "Start, and both servers answer" install step has failed on main since #509 (2026-09-15) with the same
-signature, before this work — the servers answer, then `aughor up` stops a few seconds later; its own task. The answer is one file,
+signature, before this work — the servers answer, then `aughor up` stops a few seconds later. Root-caused and fixed in #519: the serving check's `os.kill(pid, 0)` is a Ctrl+C on Windows, which the console host holds and delivers to every process on the console at its next call; it now asks whether the process exited. The answer is one file,
 `data/industries.json` (`AUGHOR_INDUSTRIES_FILE` moves it; gitignored), with three writers in one shape: the
 installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-settings/industries`).
 - **What an answer means** (`aughor/packs/industry_choice.py`). No file, or `null`, keeps every shipped industry and
@@ -5549,8 +5549,8 @@ installer, `aughor industries`, and Settings → Organization (`GET`/`PUT /org-s
   by design); the profile inference prompt does not name the chosen industries — the narrowing is at resolution,
   deterministic, and a prompt change waits for a measured reason.
 
-**IP-3 · The generator: gates 3 and 4 as code, airline as the reference — BUILT 2026-09-17** on
-`claude/ip-3-generator` (`5a9fa8c9` the anatomy and gate 3, `388a3c7b` airline and gate 4), local, nothing pushed.
+**IP-3 · The generator: gates 3 and 4 as code, airline as the reference — BUILT 2026-09-17, MERGED #519** (squash
+`21a4484f`, with the Windows install fix; all 14 checks green, both Windows install jobs included).
 
 The anatomy a package declares with `anatomy: 1`:
 - role attributes, named in expressions as `{{role.<role>.<attribute>}}`;
@@ -5621,8 +5621,76 @@ or ontology file used to escape every caller, the roster route included.
   - The runtime still reads `industry.json` and `kb/`: pack plays are not seeded into the playbook store, and
     `kb/` detection SQL still names example tables.
   - Gate 5, the with-and-without comparison, spends model calls and waits for the user's go.
-  - Gate 6 (a person's review, draft → active).
+  - Gate 6 (a person's review, draft → active) — enforced by IP-4.
   - Authoring the next package (gates 1–2 for IP-4) is still by hand.
+
+**IP-4 · The tiers — STARTED 2026-09-17** on `claude/ip-4-banking` (`84524f75` gate 6, `57447363` banking), local,
+nothing pushed. The user: *"lets start ip-4"*.
+
+- **Gate 6 enforced first.** Every knowledge package said `status: draft` and was read anyway, so a package the
+  generator drafts would have reached every agent on the next restart before anyone reviewed it. Measured by a code
+  survey: its industry offered at install and matched, its checks topped into the playbook, its example SQL steering
+  the profiler.
+  - The resolver and the installer's industry list read only **active** packages. A draft awaits a person's review;
+    a deprecated package is retired.
+  - The eleven packages that were already read are marked active and read exactly as before: the IP-1 parity tests
+    pass unchanged.
+  - Active never makes a knowledge package steer. `PackManifest.steers` gates `active_packs()` (disclosure,
+    steering, bound-pack claims, the agent proposer's catalogue) and routing; `read_pack` answers that a knowledge
+    package reaches the agents as reference.
+  - A review does not stale a measurement: the receipt's fingerprint leaves pack.yaml's `status:` line out.
+    Airline was re-measured on the cached BTS file with identical results.
+  - Receipts: `tests/unit/test_ip4_release_gate.py` and the draft cases in the resolver and installer tests. Five
+    guards were each broken once, and each was caught.
+- **Banking & lending — gates 1 to 4, a draft** (`packs/banking`; dossier
+  `docs/INDUSTRY_DOSSIER_BANKING_2026-09-17.md`).
+  - **Data.** The FDIC's per-institution financials for June 30, 2025, from the BankFind Suite API: the Quarterly
+    Banking Profile's 4,421 insured Call Report filers, 2,938,692 bytes, SHA-256 `2e7f6707…564c`. The user approved
+    the one download. The FFIEC's bulk Call Reports have no stable URL (a form postback).
+  - **Package.** One role, `financial_period`. Twelve metrics, each a sum over entities, then a division — the
+    FDIC's weighted average — with a quarter's income annualized. Bands run from the lowest to the highest rate the
+    FDIC published for its asset concentration and size groups in the second quarters of 2025 and 2026. Also
+    8 bound plays (4 data-quality with detections), an ontology, questions, and 75 quoted figures.
+  - **Measured, no model:**
+    - every recipe inside its band;
+    - **51 of 51 goldens** reproduce the FDIC's published figure within its rounding — 45 as the Q2 2026 profile
+      restates them (return on assets, net charge-offs, the equity capital ratio; all institutions and 14 groups),
+      and 6 all-institution figures as first published;
+    - detections 1 / 0 / 6 / 1,036;
+    - claims 2 measured-true, 12 expected, none false.
+  - **Found on the way.** The FDIC amends old quarters: the API's snapshot reproduces the restated figures, not the
+    originals. Return on equity, efficiency and coverage have no golden, because the amendments moved them past the
+    rounding of their only publication. The data settled one definition: the equity ratio uses the bank's own equity.
+  - **Receipts:** `tests/unit/test_ip4_banking_package.py` — four banks in the API's layout, every value worked by
+    hand, no download. An average of the banks' margins, and a quarter left unannualized, each fail; the committed
+    receipt holds the 51 goldens.
+- **Open:**
+  - **The runtime reads a package's anatomy** — metrics, plays, questions. Banking carries no `industry.json` or
+    `kb/`, so activating it today would change nothing an agent reads.
+  - **Industry matching.** `_UNCURATED_INDUSTRY_TERMS` lists banking's words; they come out at activation, and a
+    shipped industry that is not chosen must keep blocking a generic match (measured: "Retail Banking" would match
+    retail again).
+  - **Loan-level lending**: delinquency buckets, roll rates, vintages, approval rates.
+  - **Payments & fintech, then insurance.**
+  - **Gate 5**: not needed for banking — gate 4 is unambiguous (answer 8).
+  - **Gate 6**: the user's review.
+  - **Found by the survey:** promotion rewrites pack.yaml without its comments (its own task).
+  - ✅ **A published figure is reported from the receipt that measured it.** `check_expectation` skipped every
+    expectation key it did not know, so IP-3's goldens scored as passing wherever the evaluate and status doors ran
+    them — airline 14 of 14, banking 51 of 51, with nothing computed and a planner pass spent on each. The checker
+    now refuses a golden it cannot judge (and any unknown key, by name), and the runner reads what
+    `aughor packs measure` wrote in `measurements/<dataset>.json`: a receipt that is missing, that describes an
+    older package, or that says a figure did not reproduce is reported as that, never as a pass. The door
+    downloads nothing, builds nothing and calls no model.
+  - ✅ **A pack's claims can no longer reach a model through the explorer.** ON-7b gave the ontology explorer a
+    catalogue that rendered every claim — expectations included, from any pack a person had measured against the
+    connection — while `ontology_map.py` and `CoreClaim` both said claims are never rendered, and ON-0a's rule is
+    "nothing from the map reaches a prompt block except through the same verified tier" (an entry measuring FALSE
+    is "rendered nowhere"). The catalogue now renders a claim only when a pack DEPLOYED on the connection (active
+    and bound) measured it TRUE; the measure door still takes any pack id, because reviewing a package against
+    your own data is what gate 6 asks for, and its answer says whether the pack is deployed. The two comments say
+    that now. The reach ratchet did not cover the explorer's prompt at all — that is why the block landed
+    unnoticed — so `explorer_catalogue` is one of its blocks, with its measured reach recorded (49 fields).
 
 **The package.** A pack — the plane that already has `extends`, a draft → active gate, validation, evals, bindings and
 ontology claims — carrying one industry: `pack.yaml` (id, industry id, aliases, extends), `ontology.yaml` (claims),
@@ -5668,8 +5736,9 @@ draft → active.
   ✅ BUILT 2026-09-17 (above): the Verifier's rule-outs on deep reports, then the top-up.
 - **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
-  ✅ BUILT 2026-09-17 (above): 14 of 14 published BTS figures reproduced with no model.
-- **IP-4 the tiers.**
+  ✅ MERGED #519 (above): 14 of 14 published BTS figures reproduced with no model.
+- **IP-4 the tiers.** ⏳ STARTED 2026-09-17 (above): gate 6 enforced; banking & lending through gates 1–4, 51 of 51
+  FDIC figures reproduced with no model, a draft awaiting review.
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
     and FFIEC Call Reports that reconcile to the FDIC's published totals), then payments & fintech (it reuses
     banking's parties, accounts and transactions), then insurance; the finance and risk-and-fraud functions alongside.
@@ -6515,11 +6584,14 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         IP-2 ✅ MERGED #518: the installer asks once which industries (through the
         terminal, before anything slow; --industries / AUGHOR_INDUSTRIES answer ahead); one file
         narrows every industry read; Settings → Organization and `aughor industries` change it.
-        IP-3 ✅ BUILT 2026-09-17 (local): the anatomy and gate 3 (static, CI) · gate 4 measures a
+        IP-3 ✅ MERGED #519 (`21a4484f`): the anatomy and gate 3 (static, CI) · gate 4 measures a
         package on a named public dataset with no model · airline the reference — 3 sourced
         metrics, 8 bound plays, 14 goldens; all 14 of BTS's published January 2019 figures
         reproduced on its 638,649-flight file; 6 claims measured-true, 2 expected.
-        Next: IP-4 tier 1: banking & lending first, then payments & fintech, then insurance.
+        IP-4 ⏳ STARTED 2026-09-17 (local): gate 6 enforced — the agents read only active packages ·
+        banking & lending drafted through gates 1–4 on the FDIC's per-institution data, 51 of 51
+        published figures reproduced, no model. Next: the runtime reads a package's anatomy, then
+        payments & fintech, then insurance.
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what Hermes Agent's installer
         teaches; sequenced AFTER Arc IP (the user's order); nothing built. Measured on `1c150b05`:

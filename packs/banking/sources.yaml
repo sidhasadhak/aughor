@@ -1,0 +1,221 @@
+# The cited sources behind banking's sane ranges, plays and goldens. Every figure below was read in the publisher's
+# own document on the retrieved date and quotes the table row it was published in (whitespace collapsed; a table row
+# reads left to right across its groups). U.S. government works (public domain).
+sources:
+  - id: fdic-qbp-2025-q2
+    title: "FDIC Quarterly Banking Profile: Second Quarter 2025"
+    publisher: Federal Deposit Insurance Corporation
+    url: https://www.fdic.gov/quarterly-banking-profile/quarterly-banking-profile-second-quarter-2025-pdf.pdf
+    published: 2025-08-26
+    retrieved: 2026-09-17
+    notes: >
+      All FDIC-insured Call Report filers, excluding insured branches of foreign banks: 4,421 institutions. Table
+      III-A holds the second quarter's performance ratios (annualized) and Tables IV-A and V-A the condition ratios
+      on June 30, 2025, for the asset concentration groups (credit card, international, agricultural, commercial,
+      mortgage and consumer lenders, other specialized under $1 billion, all other under and over $1 billion) and
+      the asset size groups. The FDIC has since amended the quarter's data; the second quarter 2026 profile restates
+      part of it, and the figures it restates are cited from there.
+    figures:
+      - {label: "Yield on earning assets, Mortgage lenders, second quarter 2025 (Table III-A, asset concentration groups)", value: 3.57, unit: percent,
+         quote: "Yield on earning assets 5.54 12.27 5.31 5.77 5.57 3.57 8.00 5.09 5.29 4.90"}
+      - {label: "Yield on earning assets, Credit card banks, second quarter 2025 (Table III-A, asset concentration groups)", value: 12.27, unit: percent,
+         quote: "Yield on earning assets 5.54 12.27 5.31 5.77 5.57 3.57 8.00 5.09 5.29 4.90"}
+      - {label: "Cost of funding earning assets, Consumer lenders, second quarter 2025 (Table III-A, asset concentration groups)", value: 3.38, unit: percent,
+         quote: "Cost of funding earning assets 2.28 3.19 2.60 2.03 2.10 1.36 3.38 1.29 1.61 2.15"}
+      - {label: "Net interest margin, Mortgage lenders, second quarter 2025 (Table III-A, asset concentration groups)", value: 2.21, unit: percent,
+         quote: "Net interest margin 3.26 9.08 2.71 3.74 3.47 2.21 4.62 3.80 3.68 2.75"}
+      - {label: "Return on assets, Credit card banks, second quarter 2025 (Table III-A, asset concentration groups)", value: -0.38, unit: percent,
+         quote: "Return on assets 1.13 -0.38 1.19 1.28 1.16 1.09 1.39 3.58 1.25 1.23"}
+      - {label: "Return on assets, Other specialized under $1 billion, second quarter 2025 (Table III-A, asset concentration groups)", value: 3.58, unit: percent,
+         quote: "Return on assets 1.13 -0.38 1.19 1.28 1.16 1.09 1.39 3.58 1.25 1.23"}
+      - {label: "Return on equity, Credit card banks, second quarter 2025 (Table III-A, asset concentration groups)", value: -3.01, unit: percent,
+         quote: "Return on equity 11.22 -3.01 13.51 12.85 10.53 11.43 14.50 25.17 12.34 12.29"}
+      - {label: "Return on equity, Other specialized under $1 billion, second quarter 2025 (Table III-A, asset concentration groups)", value: 25.17, unit: percent,
+         quote: "Return on equity 11.22 -3.01 13.51 12.85 10.53 11.43 14.50 25.17 12.34 12.29"}
+      - {label: "Net charge-offs to loans and leases, Mortgage lenders, second quarter 2025 (Table III-A, asset concentration groups)", value: 0.02, unit: percent,
+         quote: "Net charge-offs to loans and leases 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.08 0.50"}
+      - {label: "Net charge-offs to loans and leases, Credit card banks, second quarter 2025 (Table III-A, asset concentration groups)", value: 3.6, unit: percent,
+         quote: "Net charge-offs to loans and leases 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.08 0.50"}
+      - {label: "Net loans and leases to deposits, Other specialized under $1 billion, June 30, 2025 (Table IV-A, asset concentration groups)", value: 31.36, unit: percent,
+         quote: "Net loans and leases to deposits 65.23 89.14 45.46 79.02 81.93 48.49 89.92 31.36 64.66 59.59"}
+      - {label: "Percent of loans noncurrent, Credit card banks, June 30, 2025 (Table V-A, asset concentration groups)", value: 1.56, unit: percent,
+         quote: "Total loans and leases 0.96 1.56 0.82 0.80 0.96 0.49 0.76 0.69 0.74 0.97"}
+      - {label: "Percent of loans past due 30 days or more and nonaccrual, Credit card banks, June 30, 2025 (Table V-A, asset concentration groups)", value: 3.35, unit: percent,
+         quote: "Total loans and leases 1.50 3.35 1.28 1.47 1.39 0.88 2.77 1.34 1.76 1.38"}
+      - {label: "Net interest margin, All insured institutions, second quarter 2025 (Table III-A, asset concentration groups)", value: 3.26, unit: percent,
+         quote: "Net interest margin 3.26 9.08 2.71 3.74 3.47 2.21 4.62 3.80 3.68 2.75"}
+      - {label: "Yield on earning assets, All insured institutions, second quarter 2025 (Table III-A, asset concentration groups)", value: 5.54, unit: percent,
+         quote: "Yield on earning assets 5.54 12.27 5.31 5.77 5.57 3.57 8.00 5.09 5.29 4.90"}
+      - {label: "Cost of funding earning assets, All insured institutions, second quarter 2025 (Table III-A, asset concentration groups)", value: 2.28, unit: percent,
+         quote: "Cost of funding earning assets 2.28 3.19 2.60 2.03 2.10 1.36 3.38 1.29 1.61 2.15"}
+      - {label: "Percent of loans noncurrent, All insured institutions, June 30, 2025 (Table V-A, asset concentration groups)", value: 0.96, unit: percent,
+         quote: "Total loans and leases 0.96 1.56 0.82 0.80 0.96 0.49 0.76 0.69 0.74 0.97"}
+      - {label: "Net loans and leases to deposits, All insured institutions, June 30, 2025 (Table IV-A, asset concentration groups)", value: 65.23, unit: percent,
+         quote: "Net loans and leases to deposits 65.23 89.14 45.46 79.02 81.93 48.49 89.92 31.36 64.66 59.59"}
+      - {label: "Percent of loans past due 30 days or more and nonaccrual, All insured institutions, June 30, 2025 (Table V-A, asset concentration groups)", value: 1.5, unit: percent,
+         quote: "Total loans and leases 1.50 3.35 1.28 1.47 1.39 0.88 2.77 1.34 1.76 1.38"}
+  - id: fdic-qbp-2026-q2
+    title: "FDIC Quarterly Banking Profile: Second Quarter 2026"
+    publisher: Federal Deposit Insurance Corporation
+    url: https://www.fdic.gov/quarterly-banking-profile/quarterly-banking-profile-second-quarter-2026.pdf
+    published: 2026-08-25
+    retrieved: 2026-09-17
+    notes: >
+      All FDIC-insured Call Report filers, 4,238 institutions in the second quarter of 2026. Its Tables III-A and
+      IV-A also restate the second quarter of 2025 under PRIOR SECOND QUARTERS and PRIOR FIRST HALVES: return on
+      assets and net charge-offs to loans for the quarter, and the equity capital ratio on June 30, 2025 — the
+      figures gate 4 reproduces from the amended data.
+    figures:
+      - {label: "Cost of funding earning assets, Other specialized under $1 billion, second quarter 2026 (Table III-A, asset concentration groups)", value: 1.01, unit: percent,
+         quote: "Cost of funding earning assets 2.03 2.85 2.28 1.84 1.84 1.08 3.09 1.01 1.46 1.97"}
+      - {label: "Net interest margin, Credit card banks, second quarter 2026 (Table III-A, asset concentration groups)", value: 9.41, unit: percent,
+         quote: "Net interest margin 3.32 9.41 2.75 3.98 3.65 2.60 4.73 3.49 4.03 2.67"}
+      - {label: "Efficiency ratio, Mortgage lenders, second quarter 2026 (Table III-A, asset concentration groups)", value: 50.06, unit: percent,
+         quote: "Efficiency ratio 55.38 57.42 54.20 55.13 58.25 50.06 53.15 73.58 59.53 52.87"}
+      - {label: "Efficiency ratio, Less than $100 million, second quarter 2026 (Table III-A, asset size groups)", value: 76.47, unit: percent,
+         quote: "Efficiency ratio 55.38 76.47 64.64 57.43 56.59 53.74 56.01 53.67 57.22 52.80 55.27 56.61"}
+      - {label: "Loss allowance to noncurrent loans and leases, Less than $100 million, June 30, 2026 (Table IV-A, asset size groups)", value: 106.41, unit: percent,
+         quote: "Noncurrent loans and leases 172.68 106.41 141.86 150.78 152.08 195.36 126.11 201.00 174.30 198.10 82.87 262.07"}
+      - {label: "Loss allowance to noncurrent loans and leases, Credit card banks, June 30, 2026 (Table IV-A, asset concentration groups)", value: 394.92, unit: percent,
+         quote: "Noncurrent loans and leases 172.68 394.92 254.59 147.21 123.06 111.83 351.92 161.41 133.15 139.80"}
+      - {label: "Equity capital ratio, International banks, June 30, 2026 (Table IV-A, asset concentration groups)", value: 8.31, unit: percent,
+         quote: "Equity capital ratio 9.92 13.44 8.31 10.74 11.43 9.10 9.82 18.00 11.42 9.33"}
+      - {label: "Equity capital ratio, Other specialized under $1 billion, June 30, 2026 (Table IV-A, asset concentration groups)", value: 18.0, unit: percent,
+         quote: "Equity capital ratio 9.92 13.44 8.31 10.74 11.43 9.10 9.82 18.00 11.42 9.33"}
+      - {label: "Net loans and leases to deposits, Consumer lenders, June 30, 2026 (Table IV-A, asset concentration groups)", value: 91.71, unit: percent,
+         quote: "Net loans and leases to deposits 66.17 89.53 48.38 80.21 83.35 51.57 91.71 33.50 66.61 59.56"}
+      - {label: "Percent of loans noncurrent, Mortgage lenders, June 30, 2026 (Table V-A, asset concentration groups)", value: 0.46, unit: percent,
+         quote: "Total loans and leases 0.93 1.44 0.72 0.87 1.01 0.46 0.64 1.00 0.92 0.90"}
+      - {label: "Percent of loans past due 30 days or more and nonaccrual, Mortgage lenders, June 30, 2026 (Table V-A, asset concentration groups)", value: 0.85, unit: percent,
+         quote: "Total loans and leases 1.44 3.16 1.16 1.50 1.42 0.85 2.46 1.72 1.96 1.28"}
+      - {label: "Return on assets, All insured institutions, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.14, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, Credit card banks, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: -0.38, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, International banks, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.19, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, Agricultural banks, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.28, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, Commercial lenders, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.16, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, Mortgage lenders, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.09, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, Consumer lenders, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.39, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, Other specialized under $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 3.57, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, All other under $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.25, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Return on assets, All other over $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.23, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 -0.38 1.19 1.28 1.16 1.09 1.39 3.57 1.25 1.23"}
+      - {label: "Net charge-offs to loans and leases, All insured institutions, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.6, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, Credit card banks, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 3.6, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, International banks, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.8, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, Agricultural banks, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.25, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, Commercial lenders, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.24, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, Mortgage lenders, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.02, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, Consumer lenders, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 1.04, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, Other specialized under $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.23, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, All other under $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.09, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Net charge-offs to loans and leases, All other over $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset concentration groups)", value: 0.5, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 3.60 0.80 0.25 0.24 0.02 1.04 0.23 0.09 0.50"}
+      - {label: "Return on assets, Less than $100 million, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 2.26, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 2.26 1.25 1.24 1.27 1.04 1.05 0.68 1.32 1.22 1.21 1.59"}
+      - {label: "Return on assets, $100 million to $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 1.25, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 2.26 1.25 1.24 1.27 1.04 1.05 0.68 1.32 1.22 1.21 1.59"}
+      - {label: "Return on assets, $1 billion to $10 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 1.24, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 2.26 1.25 1.24 1.27 1.04 1.05 0.68 1.32 1.22 1.21 1.59"}
+      - {label: "Return on assets, $10 billion to $250 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 1.27, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 2.26 1.25 1.24 1.27 1.04 1.05 0.68 1.32 1.22 1.21 1.59"}
+      - {label: "Return on assets, Greater than $250 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 1.04, unit: percent,
+         quote: "Return on assets (%) 2025 1.14 2.26 1.25 1.24 1.27 1.04 1.05 0.68 1.32 1.22 1.21 1.59"}
+      - {label: "Net charge-offs to loans and leases, Less than $100 million, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 0.19, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 0.19 0.12 0.31 0.57 0.77 0.38 0.80 0.50 0.63 0.15 1.09"}
+      - {label: "Net charge-offs to loans and leases, $100 million to $1 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 0.12, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 0.19 0.12 0.31 0.57 0.77 0.38 0.80 0.50 0.63 0.15 1.09"}
+      - {label: "Net charge-offs to loans and leases, $1 billion to $10 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 0.31, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 0.19 0.12 0.31 0.57 0.77 0.38 0.80 0.50 0.63 0.15 1.09"}
+      - {label: "Net charge-offs to loans and leases, $10 billion to $250 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 0.57, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 0.19 0.12 0.31 0.57 0.77 0.38 0.80 0.50 0.63 0.15 1.09"}
+      - {label: "Net charge-offs to loans and leases, Greater than $250 billion, second quarter 2025, as restated in the second quarter 2026 profile (Table III-A, asset size groups)", value: 0.77, unit: percent,
+         quote: "Net charge-offs to loans & leases (%) 2025 0.60 0.19 0.12 0.31 0.57 0.77 0.38 0.80 0.50 0.63 0.15 1.09"}
+      - {label: "Equity capital ratio, All insured institutions, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 10.14, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Credit card banks, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 13.48, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, International banks, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 8.68, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Agricultural banks, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 10.05, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Commercial lenders, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 11.07, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Mortgage lenders, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 9.67, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Consumer lenders, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 9.69, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Other specialized under $1 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 14.44, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, All other under $1 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 10.26, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, All other over $1 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset concentration groups)", value: 9.97, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.48 8.68 10.05 11.07 9.67 9.69 14.44 10.26 9.97"}
+      - {label: "Equity capital ratio, Less than $100 million, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset size groups)", value: 13.89, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.89 10.48 10.73 10.61 9.77 10.66 10.65 9.39 9.75 10.63 10.36"}
+      - {label: "Equity capital ratio, $100 million to $1 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset size groups)", value: 10.48, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.89 10.48 10.73 10.61 9.77 10.66 10.65 9.39 9.75 10.63 10.36"}
+      - {label: "Equity capital ratio, $1 billion to $10 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset size groups)", value: 10.73, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.89 10.48 10.73 10.61 9.77 10.66 10.65 9.39 9.75 10.63 10.36"}
+      - {label: "Equity capital ratio, $10 billion to $250 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset size groups)", value: 10.61, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.89 10.48 10.73 10.61 9.77 10.66 10.65 9.39 9.75 10.63 10.36"}
+      - {label: "Equity capital ratio, Greater than $250 billion, June 30, 2025, as restated in the second quarter 2026 profile (Table IV-A, asset size groups)", value: 9.77, unit: percent,
+         quote: "Equity capital ratio (%) 2025 10.14 13.89 10.48 10.73 10.61 9.77 10.66 10.65 9.39 9.75 10.63 10.36"}
+  - id: fdic-qbp-notes-2025-q2
+    title: "Quarterly Banking Profile: Notes to Users, Second Quarter 2025"
+    publisher: Federal Deposit Insurance Corporation
+    url: https://www.fdic.gov/quarterly-banking-profile/qbp-notes-users-second-quarter-2025.pdf
+    published: 2025-08-26
+    retrieved: 2026-09-17
+    notes: >
+      The definitions every recipe follows, quoted: 'All condition and performance ratios represent weighted
+      averages, which is the sum of the individual numerator values divided by the sum of individual denominator
+      values. All asset and liability figures used in calculating performance ratios represent average amounts for
+      the period (beginning-of-period amount plus end-of-period amount plus any interim periods, divided by the
+      total number of periods).' 'Net interest margin – the difference between interest and dividends earned on
+      interest-bearing assets and interest paid to depositors and other creditors, expressed as a percentage of
+      average earning assets. No adjustments are made for interest income that is tax exempt.' 'Yield on earning
+      assets – total interest, dividend, and fee income earned on loans and investments as a percentage of average
+      earning assets.' 'Cost of funding earning assets – total interest expense paid on deposits and other borrowed
+      money as a percentage of average earning assets.' 'Efficiency ratio – noninterest expense less amortization of
+      intangible assets as a percent of net interest income plus noninterest income.' 'Return on assets – bank net
+      income (including gains or losses on securities and extraordinary items) as a percentage of average total
+      (consolidated) assets.' 'Return on equity – bank net income (including gains or losses on securities and
+      extraordinary items) as a percentage of average total equity capital.' 'Net charge-offs – total loans and
+      leases charged off (removed from balance sheet because of uncollectability), less amounts recovered on loans
+      and leases previously charged off.' 'Noncurrent loan rates represent the percentage of loans in each category
+      that are past due 90 days or more or that are in nonaccrual status.' 'Earning assets – all loans and other
+      investments that earn interest or dividend income.'
+    figures: []
+  - id: fdic-bankfind-financials-2025-q2
+    title: "FDIC BankFind Suite API: institution financials, report date June 30, 2025"
+    publisher: Federal Deposit Insurance Corporation
+    url: https://api.fdic.gov/banks/docs
+    published: 2026-08-19
+    retrieved: 2026-09-17
+    notes: >
+      The per-institution Call Report data behind the Quarterly Banking Profile, served by the API's financials
+      endpoint (field definitions: https://api.fdic.gov/banks/docs/risview_properties.yaml). Read 2026-09-17 from
+      the index created 2026-08-19, filtered to report date 20250630 and charter classes N, NM, SM, SB, SI and SL —
+      the profile's 4,421 institutions, every asset concentration group and asset size group with the profile's
+      count. Amounts in thousands of dollars. Quarterly fields (INTINQ, EINTXQ, NONIIQ, NONIXQ, EAMINTQ, ELNATQ,
+      NETINCQ, DRLNLSQ, CRLNLSQ) are the quarter's income; the two-point averages (ASSET2, ERNAST2, LNLSGR2, EQ2)
+      average the March 31 and June 30 balances, as the notes define the average for a quarter.
+    figures: []

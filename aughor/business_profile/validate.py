@@ -17,7 +17,9 @@ authorities the explorer uses on its own SQL:
   4. a live range/boundary check — a bounded rate (0..1 / 0..100%) that comes out
      ABOVE its bound, or rounds to either boundary (0 or the max) at display
      precision, is a grain artifact, not a real value. (The classic >1 conversion
-     bug and the abandoned=0 → 100% bug both land here.)
+     bug and the abandoned=0 → 100% bug both land here.) So is a value outside any
+     other band the unit/range states ('0..24' block hours, '≥ 1' order per active
+     user); a band it only calls typical is never a bound.
 
 A metric that fails is BLANKED (``value_sql = ""``); the Briefing's KPI strip
 already drops metrics with no value_sql, so the result is "show nothing" rather
@@ -36,20 +38,87 @@ import re
 logger = logging.getLogger(__name__)
 
 
-def _range_kind(unit_or_range: str) -> tuple[str, float | None]:
-    """Classify the declared unit into a (kind, max_bound) the live check uses.
+# A number as range text writes it: "0", "-1", "0.95", "1,000,000".
+_NUM = r"[-−]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?"
+# "0..1", "0.8–1.4", "~5–60", "$25–$75", "0% to 100%", "0 to +∞", "0 to 10,000,000+". A bound never starts glued
+# to what precedes it: not the 2 of "B2B", the -1 of "month-1" or the second 0 of "0.0 to total revenue".
+_TWO_SIDED_RE = re.compile(
+    r"(?<![\w.])(?P<lo_approx>[~≈]\s*)?[$€£¥₹]?(?P<lo>" + _NUM + r")\s*%?\s*(?:\.\.|[–—‐‑‒−-]|\bto\b)\s*"
+    r"(?:(?P<hi_inf>\+?\s*(?:∞|inf(?:inity)?\b))|(?P<hi_approx>[~≈]\s*)?[$€£¥₹]?(?P<hi>" + _NUM + r")(?P<hi_plus>\+)?)"
+)
+_BRACKET_RE = re.compile(r"\[\s*(?P<lo>" + _NUM + r")\s*,\s*(?P<hi>" + _NUM + r")\s*\]")
+# "≥ 1", "<= 5", "0+" — a bound on one side, read only where the text declares its range (see stated_range).
+_ONE_SIDED_RE = re.compile(
+    r"(?P<op>≥|>=|≤|<=|>|<)\s*(?P<approx>[~≈]\s*)?[$€£¥₹]?(?P<num>" + _NUM + r")"
+    r"|(?<![\w.])(?P<plus>" + _NUM + r")\+"
+)
+# Clauses: a band, and the words that hedge it, never cross ';', a parenthesis or a sentence's end.
+_CLAUSE_SPLIT_RE = re.compile(r"[;()]|(?<!e\.g)(?<!i\.e)\.\s+(?=[A-Z])")
+# Words that make a band what is usual rather than what is possible. "human scale" is the guess F4
+# (infer._calibrate_ranges) names — 'USD (human scale: 20-150)' would flag a correct $537 AOV.
+_HEDGE_RE = re.compile(
+    r"\b(?:typical(?:ly)?|often|commonly|usually|e\.g\.|for example|expect(?:ed)?|roughly|approx(?:imately)?"
+    r"|target(?:s|ed)?|healthy|human scale)",
+    re.I,
+)
 
-    kinds: 'ratio01' (bounded 0..1), 'pct100' (bounded 0..100), 'open' (anything
-    else — currency/days/unbounded ratio 0..∞, range-checked only for sign)."""
-    u = (unit_or_range or "").lower()
-    # An explicitly unbounded ratio (0..∞ / 0-inf) is NOT a bounded rate.
-    if re.search(r"0\s*[-.]*\s*(?:∞|inf|infinity)", u) or "0-∞" in u:
-        return ("open", None)
-    if re.search(r"percent|0\s*-\s*100|0\.\.100|%", u):
-        return ("pct100", 100.0)
-    if re.search(r"ratio|0\s*-\s*1|0\.\.1", u):
-        return ("ratio01", 1.0)
-    return ("open", None)
+
+def _number(text: str) -> float:
+    return float(text.replace(",", "").replace("−", "-"))
+
+
+def _first_stated_band(text: str) -> tuple[float | None, float | None, bool] | None:
+    """(lo, hi, hedged) of the first band `text` states — None for an end the text leaves open — or None."""
+    for i, clause in enumerate(_CLAUSE_SPLIT_RE.split(text)):
+        forms = (_TWO_SIDED_RE, _BRACKET_RE, _ONE_SIDED_RE) if i == 0 else (_TWO_SIDED_RE, _BRACKET_RE)
+        found = [m for m in (form.search(clause) for form in forms) if m]
+        if not found:
+            continue
+        m = min(found, key=lambda match: match.start())
+        groups = m.groupdict()
+        if m.re is _ONE_SIDED_RE:
+            if groups["plus"] is not None:
+                lo, hi = _number(groups["plus"]), None
+            else:
+                bound = _number(groups["num"])
+                lo, hi = (bound, None) if groups["op"] in ("≥", ">=", ">") else (None, bound)
+            approx = bool(groups["approx"])
+        else:
+            lo = _number(groups["lo"])
+            hi = None if groups.get("hi_inf") or groups.get("hi_plus") else _number(groups["hi"])
+            approx = bool(groups.get("lo_approx") or groups.get("hi_approx"))
+        return (lo, hi, approx or bool(_HEDGE_RE.search(clause[:m.start()])))
+    return None
+
+
+def stated_range(unit_or_range: str) -> tuple[str, float | None, float | None]:
+    """Read the range a metric's unit/range text states, as the (kind, lo, hi) the live checks hold it to.
+
+    kinds: 'ratio01' (a stated 0..1), 'pct100' (a stated 0..100), 'band' (any other stated band, open at an end
+    where the text says so — '0..24', '≥ 1'), 'typical' (a band the text hedges — 'typically 0.8..1.4', 'often
+    80–200', '~5–60' — which real values also fall outside, so it is never a bound), 'open' (no band, or one open
+    above from zero — 'USD', 'ratio 0..∞', '≥ 0').
+
+    The FIRST band the text states is its range; what follows glosses or comments on it, so 'ratio 0..1
+    (0..100%); industry-typical 0.75–0.90' is a ratio. A one-sided bound counts only
+    in the opening clause, where it declares the range ('ratio ≥ 1'); later ones are commentary thresholds
+    ('healthy SaaS payback is <12 months'). A unit word alone states no band: 'ratio', 'percent' and '%' read
+    'open' — a guessed bound fails real values (an inventory turnover of 5 read as a 0..1 ratio)."""
+    band = _first_stated_band(unit_or_range or "")
+    if band is None:
+        return ("open", None, None)
+    lo, hi, hedged = band
+    if lo is not None and hi is not None and lo > hi:
+        return ("open", None, None)
+    if hi is None and lo == 0.0:
+        return ("open", None, None)
+    if hedged:
+        return ("typical", lo, hi)
+    if (lo, hi) == (0.0, 1.0):
+        return ("ratio01", lo, hi)
+    if (lo, hi) == (0.0, 100.0):
+        return ("pct100", lo, hi)
+    return ("band", lo, hi)
 
 
 # Generic words in a metric name that don't identify WHICH metric it is — excluded
@@ -65,7 +134,11 @@ def profile_metric_ranges(profile) -> list[tuple]:
     metrics so a FINDING can be checked against the metric's DECLARED sane range —
     the authoritative answer to "is a conversion of 1.41 a bug?" (yes, it's 'ratio
     0-1') vs "is a ROAS of 2.3 a bug?" (no, it's 'ratio 0-∞'). The text/keyword guess
-    can't tell those apart; the profile can."""
+    can't tell those apart; the profile can.
+
+    max_bound is a bounded RATE's ceiling (1 or 100) and None for every other kind: a band bounds the
+    metric's own scalar (audit_value_sql), not each column a finding returns beside it — the 31 aircraft
+    next to a fleet's 11.2 block hours a day are not an impossible utilization."""
     import re as _re
     out: list[tuple] = []
     for m in (getattr(profile, "north_star_metrics", None) or []):
@@ -76,8 +149,8 @@ def profile_metric_ranges(profile) -> list[tuple]:
         )
         if not toks:
             continue
-        kind, mx = _range_kind(getattr(m, "unit_or_range", "") or "")
-        out.append((toks, kind, mx))
+        kind, _lo, hi = stated_range(getattr(m, "unit_or_range", "") or "")
+        out.append((toks, kind, hi if kind in ("ratio01", "pct100") else None))
     return out
 
 
@@ -253,23 +326,30 @@ def audit_value_sql(value_sql: str, table_cols: dict, conn, unit_or_range: str) 
             val = _first_numeric(getattr(res, "rows", []) or [])
             if val is None:
                 return (False, "no scalar (NULL/empty result)")
-            kind, mx = _range_kind(unit_or_range)
-            if mx is not None:
-                # Above the bound → grain over-count (the >1 conversion bug).
-                if val > mx * 1.05:
-                    return (False, f"out of range: {val:g} > {mx:g} for '{unit_or_range}'")
+            kind, lo, hi = stated_range(unit_or_range)
+            if kind in ("ratio01", "pct100", "band"):
+                # Outside a stated bound → a grain artifact (the >1 conversion bug, a
+                # 26-hour aircraft day). Slack is 5% of the band's width — a rate's 1.05,
+                # a percent's 105 — or of its one bound when an end is open.
+                scale = (hi - lo) if lo is not None and hi is not None else abs(hi if lo is None else lo)
+                slack = 0.05 * scale
+                if hi is not None and val > hi + slack:
+                    return (False, f"out of range: {val:g} > {hi:g} for '{unit_or_range}'")
+                if lo is not None and val < lo - slack:
+                    return (False, f"out of range: {val:g} < {lo:g} for '{unit_or_range}'")
+            if kind in ("ratio01", "pct100"):
                 # Rounds to a boundary at display precision → degenerate. A real
                 # bounded rate is almost never exactly 0% or 100%; both boundaries
                 # are the signature of a broken denominator (abandoned=0 → 100%,
                 # ROUND(weight) → 0). Mirrors the KPI strip's existing "drop 0".
-                disp = (val / mx) if kind == "ratio01" else (val / 100.0)  # → 0..1
+                disp = val / hi  # → 0..1
                 if round(disp, 3) <= 0.0 or round(disp, 3) >= 1.0:
                     return (False, f"degenerate boundary value {val:g} for bounded rate '{unit_or_range}'")
-            else:
-                # Open-ended (currency/days/ratio 0..∞): only a rounds-to-zero scalar
-                # is degenerate (no card should read $0 / 0d / 0.0).
-                if round(val, 4) == 0.0:
-                    return (False, f"degenerate zero value for '{unit_or_range}'")
+            elif round(val, 4) == 0.0:
+                # Anything else — a band, a typical band (never a bound: real values
+                # fall outside it), currency/days/ratio 0..∞ — is degenerate only when
+                # it rounds to zero (no card should read $0 / 0d / 0.0).
+                return (False, f"degenerate zero value for '{unit_or_range}'")
         except Exception:
             pass  # execution failed unexpectedly → don't punish the metric
 

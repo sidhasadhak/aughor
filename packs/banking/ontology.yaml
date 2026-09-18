@@ -1,0 +1,73 @@
+# What a bank's data is expected to hold — claims, each measured into a tier (expected · measured-true ·
+# measured-false) on a connection, and by gate 4 on the package's public dataset. Never the organisation's ontology.
+# The FDIC's per-institution file holds institutions and their Call Reports; customers, accounts, loans and
+# transactions stay expected until a dataset that carries them measures them.
+objects:
+  - name: Institution
+    roles: [party]
+    aliases: [institutions, banks, reporting_entities, legal_entities]
+    description: A bank, savings institution or legal entity that files financial reports.
+  - name: CallReport
+    roles: [event]
+    aliases: [call_reports, regulatory_reports, financial_reports, financials]
+    description: One institution's financial report for one period — its income over the period and its balances.
+  - name: Customer
+    roles: [party]
+    aliases: [customers, clients, borrowers, depositors, parties]
+    description: A person or organisation that holds an account or borrows.
+  - name: DepositAccount
+    roles: [asset]
+    aliases: [deposit_accounts, accounts, deposits]
+    description: A checking, savings, money market or time deposit account.
+  - name: Loan
+    roles: [asset]
+    aliases: [loans, facilities, credit_accounts, loan_accounts]
+    description: A loan, lease or line of credit extended to a customer.
+  - name: Transaction
+    roles: [event, transaction]
+    aliases: [transactions, postings, account_transactions]
+    description: A posting to a deposit or loan account.
+  - name: Branch
+    roles: [place]
+    aliases: [branches, offices]
+    description: A branch or office an account is held at.
+
+links:
+  - from_object: CallReport
+    to_object: Institution
+    cardinality: "N:1"
+    via: cert
+    description: Every report is filed by one institution; an institution files one per period.
+  - from_object: DepositAccount
+    to_object: Customer
+    cardinality: "N:1"
+    via: customer_id
+    description: A deposit account belongs to a customer (joint owners are a separate role).
+  - from_object: Loan
+    to_object: Customer
+    cardinality: "N:1"
+    via: customer_id
+    description: A loan is extended to a borrower.
+  - from_object: Transaction
+    to_object: DepositAccount
+    cardinality: "N:1"
+    via: account_id
+    description: A transaction posts to one account.
+  - from_object: DepositAccount
+    to_object: Branch
+    cardinality: "N:1"
+    via: branch_id
+    to_side_optional: true
+    description: An account is held at a branch; one opened online may have none.
+
+lifecycles:
+  - object: Loan
+    column_hint: status
+    states: [application, approved, funded, current, delinquent, nonaccrual, charged_off, paid_off]
+    terminal_states: [charged_off, paid_off]
+    end_state_names: [charged_off, paid_off, paid_in_full, written_off, closed]
+  - object: DepositAccount
+    column_hint: status
+    states: [open, dormant, frozen, closed]
+    terminal_states: [closed]
+    end_state_names: [closed, escheated]

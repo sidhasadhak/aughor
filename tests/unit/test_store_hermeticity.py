@@ -340,14 +340,17 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
         except SyntaxError:                      # not ours to police here
             continue
         # `os.environ.get(VAR) or <default>` puts the default in the enclosing BoolOp,
-        # not in the call, so the fallback has to be read from around the call.
-        enclosing: dict[int, str] = {}
+        # not in the call, so the fallback has to be read from around the call — from the
+        # OUTERMOST BoolOp above it. `ast.walk` is breadth-first, so each parent is reached
+        # before its children and hands them that BoolOp in the same pass.
+        outermost_boolop: dict[int, ast.BoolOp] = {}
         for node in ast.walk(tree):
-            if isinstance(node, ast.BoolOp):
-                segment = ast.get_source_segment(source, node) or ""
-                for child in ast.walk(node):
-                    enclosing.setdefault(id(child), segment)
-        for node in ast.walk(tree):
+            around = outermost_boolop.get(id(node))
+            if around is None and isinstance(node, ast.BoolOp):
+                around = node
+            if around is not None:
+                for child in ast.iter_child_nodes(node):
+                    outermost_boolop[id(child)] = around
             if not (isinstance(node, ast.Call) and node.args):
                 continue
             name = getattr(node.func, "attr", None) or getattr(node.func, "id", None)
@@ -359,7 +362,10 @@ def test_every_env_pathed_store_is_pointed_outside_the_repo_data_dir():
             if not (reads_env and isinstance(first, ast.Constant)
                     and isinstance(first.value, str) and first.value.startswith("AUGHOR_")):
                 continue
-            segment = enclosing.get(id(node)) or ast.get_source_segment(source, node) or ""
+            # Sliced here, for the calls that got this far, and never per BoolOp: on 3.11
+            # `get_source_segment` re-splits the whole file in pure Python on every call, so
+            # slicing all ~10k BoolOps up front was ~70s of this test (measured 2026-09-17).
+            segment = ast.get_source_segment(source, outermost_boolop.get(id(node), node)) or ""
             if _falls_back_to_repo_data(segment):
                 found.setdefault(first.value, str(path.relative_to(root)))
 

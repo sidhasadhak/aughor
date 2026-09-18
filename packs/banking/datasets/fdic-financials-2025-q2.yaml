@@ -1,0 +1,77 @@
+# The public dataset gate 4 measures banking on — the one file in this package that names tables. The FDIC's
+# BankFind Suite API: every insured Call Report filer's financials for June 30, 2025 (the Quarterly Banking Profile's
+# population — insured U.S. branches of foreign banks and noninsured trust companies left out), with the quarter's
+# income and its two-point average balances. Amounts are in thousands of dollars.
+# The API serves the FDIC's current data, not a frozen file: this snapshot was read 2026-09-17 and carries the
+# amendments filed until then. A later download that differs is refused by its size and SHA-256.
+id: fdic-financials-2025-q2
+title: FDIC BankFind Suite financials, June 30, 2025 — FDIC-insured Call Report filers
+source: fdic-bankfind-financials-2025-q2
+url: "https://api.fdic.gov/banks/financials?filters=REPDTE%3A20250630%20AND%20BKCLASS%3A%28N%20OR%20NM%20OR%20SM%20OR%20SB%20OR%20SI%20OR%20SL%29&fields=CERT%2CREPDTE%2CNAME%2CRSSDID%2CBKCLASS%2CSPECGRP%2CSPECGRPDESC%2CCB%2CASSET%2CDEP%2CDEPDOM%2CLNLS%2CLNLSGR%2CLNATRES%2CLNATRESJ%2CLNLSNET%2CERNAST%2CEQ%2CEQTOT%2CNCLNLS%2CP9LNLS%2CNALNLS%2CP3LNLS%2CINTAN%2CASSET2%2CASSET5%2CERNAST2%2CERNAST5%2CLNLSGR2%2CLNLSGR5%2CEQ2%2CEQ5%2CINTINC%2CEINTEXP%2CNIM%2CNONII%2CNONIX%2CEAMINTAN%2CELNATR%2CIGLSEC%2CITAX%2CEXTRA%2CNETINBM%2CNETIMIN%2CNETINC%2CDRLNLS%2CCRLNLS%2CNTLNLS%2CINTINQ%2CEINTXQ%2CNIMQ%2CNONIIQ%2CNONIXQ%2CEAMINTQ%2CELNATQ%2CIGLSECQ%2CNETINBMQ%2CNETIMINQ%2CNETINCQ%2CDRLNLSQ%2CCRLNLSQ%2CNTLNLSQ%2CEEFF%2CIEFF%2CEEFFQ%2CIEFFQ%2CNIMY%2CNIMYQ%2CINTINCY%2CINTINCYQ%2CINTEXPY%2CINTEXPYQ%2CROA%2CROAQ%2CROE%2CROEQ%2CEEFFR%2CEEFFQR%2CNTLNLSR%2CNTLNLSQR%2CNCLNLSR%2CLNATRESR%2CLNRESNCR%2CLNLSDEPR%2CEQV%2CERNASTR&sort_by=CERT&sort_order=ASC&limit=10000&offset=0&format=csv"
+bytes: 2938692
+sha256: 2e7f670703044711b3ebd31d92fb2c3ab0827eeafb7679257c0fb7b81fea564c
+licence: U.S. Government work (public domain)
+load:
+  - >
+    CREATE TABLE call_reports AS
+    SELECT CAST(CERT AS VARCHAR) AS cert,
+           strptime(CAST(REPDTE AS VARCHAR), '%Y%m%d')::DATE AS period_end,
+           CAST(SPECGRP AS VARCHAR) AS peer_group,
+           4 AS periods_per_year,
+           INTINQ AS interest_income,
+           EINTXQ AS interest_expense,
+           NONIIQ AS noninterest_income,
+           NONIXQ AS noninterest_expense,
+           EAMINTQ AS amortization_of_intangibles,
+           ELNATQ AS provision_for_credit_losses,
+           NETINCQ AS net_income,
+           DRLNLSQ AS gross_charge_offs,
+           CRLNLSQ AS recoveries,
+           ASSET2 AS average_assets,
+           ERNAST2 AS average_earning_assets,
+           LNLSGR2 AS average_loans,
+           EQ2 AS average_equity,
+           ASSET AS total_assets,
+           DEP AS total_deposits,
+           LNLSGR AS total_loans,
+           LNLSNET AS net_loans,
+           LNATRES AS allowance_for_credit_losses,
+           NCLNLS AS noncurrent_loans,
+           P3LNLS AS past_due_30_89_loans,
+           EQ AS equity_capital
+    FROM read_csv_auto('{data}', header = true, sample_size = -1)
+  - >
+    CREATE TABLE institutions AS
+    SELECT CAST(CERT AS VARCHAR) AS cert, NAME AS name, BKCLASS AS charter_class,
+           CAST(SPECGRP AS VARCHAR) AS peer_group, SPECGRPDESC AS peer_group_name
+    FROM read_csv_auto('{data}', header = true, sample_size = -1)
+binding:
+  financial_period:
+    table: call_reports
+    columns:
+      period_end: period_end
+      entity_id: cert
+      peer_group: peer_group
+      periods_per_year: periods_per_year
+      interest_income: interest_income
+      interest_expense: interest_expense
+      noninterest_income: noninterest_income
+      noninterest_expense: noninterest_expense
+      amortization_of_intangibles: amortization_of_intangibles
+      provision_for_credit_losses: provision_for_credit_losses
+      net_income: net_income
+      gross_charge_offs: gross_charge_offs
+      recoveries: recoveries
+      average_assets: average_assets
+      average_earning_assets: average_earning_assets
+      average_loans: average_loans
+      average_equity: average_equity
+      total_assets: total_assets
+      total_deposits: total_deposits
+      total_loans: total_loans
+      net_loans: net_loans
+      allowance_for_credit_losses: allowance_for_credit_losses
+      noncurrent_loans: noncurrent_loans
+      past_due_30_89_loans: past_due_30_89_loans
+      equity_capital: equity_capital
+measures: [net_interest_margin, yield_on_earning_assets, cost_of_funding_earning_assets, return_on_assets, return_on_equity, efficiency_ratio, net_charge_off_rate, noncurrent_loan_rate, past_due_and_nonaccrual_rate, reserve_coverage_ratio, loans_to_deposits_ratio, equity_capital_ratio]
