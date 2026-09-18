@@ -186,7 +186,16 @@ class AuditLogger:
                 params.append(label)
             where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             rows = c.execute(
-                f"SELECT * FROM audit_log {where} ORDER BY ts DESC LIMIT ?",
+                # `rowid DESC` is not decoration. `ts` is written at SECOND resolution
+                # (`time.strftime("%Y-%m-%dT%H:%M:%SZ")`), so every statement run inside the
+                # same second carries an identical key and `ORDER BY ts DESC` alone leaves
+                # their order to the query plan — which scans the `idx_audit_ts` index and
+                # returns them ASCENDING by rowid. "Newest first" therefore served the
+                # current second BACKWARDS: `recent(...)[0]` was the OLDEST row of that
+                # second, not the newest. rowid is insertion order on a rowid table, which
+                # is the tiebreaker the key itself is too coarse to supply. (The same shape
+                # is already used by `learning/decisions.py`.)
+                f"SELECT * FROM audit_log {where} ORDER BY ts DESC, rowid DESC LIMIT ?",
                 [*params, limit],
             ).fetchall()
             return [dict(r) for r in rows]
@@ -323,7 +332,11 @@ class GuardVerdicts:
                 params.append(pattern)
             where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
             rows = c.execute(
-                f"SELECT * FROM guard_verdicts {where} ORDER BY ts DESC LIMIT ?",
+                # Same second-resolution `ts`, same inversion, same tiebreaker — see the
+                # note in `AuditLogger.recent`. A verdict table is read newest-first to
+                # answer "what did the guards just say", so serving a second backwards is
+                # the same defect wearing different data.
+                f"SELECT * FROM guard_verdicts {where} ORDER BY ts DESC, rowid DESC LIMIT ?",
                 [*params, limit],
             ).fetchall()
             return [dict(r) for r in rows]
