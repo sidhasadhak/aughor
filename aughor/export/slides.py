@@ -194,6 +194,12 @@ class _Deck:
                 _para(tf, b.caption, size=14, bold=True, color=_INK, space_before=8)
             if b.text:
                 _para(tf, b.text, size=12.5, color=_BODY)
+            # The statistical verdict — same omission the PDF had: `document.py` sets it on
+            # every finding and this branch never read it, so a deck shipped the claim
+            # without the caveat that qualifies it. Not uppercased: on a finding this field
+            # is a sentence, not a label.
+            if b.tag:
+                _para(tf, b.tag, size=10, color=_MUTED)
             if b.confidence is not None:
                 pct = int(round(b.confidence * 100))
                 _para(tf, f"confidence: {pct}%", size=10, color=_MUTED)

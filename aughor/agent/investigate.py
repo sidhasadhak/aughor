@@ -2064,7 +2064,19 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
         if coverage_end and not getattr(r, "error", None) and getattr(r, "rows", None):
             _partial = _partial_terminal_period_note(r.columns, r.rows, coverage_end)
             if _partial:
-                parts.append("STATISTICAL VERDICT for this query — " + _partial)
+                # Its two siblings above each end in an IMPERATIVE — "Do NOT call any value
+                # here significant…", "A PROPORTIONAL split is NOT a finding: do not call
+                # it concentration…". This one stated a fact and hoped, and the difference
+                # shows: of the 7 stored investigations where this note fired, 3 never told
+                # the reader the period was partial (2026-09-04, 09-15, 09-18), while the
+                # other 4 did. A coin flip on whether a reader learns the final month is
+                # incomplete is not a guard, so it now carries the same obligation the
+                # other two do.
+                parts.append(
+                    "STATISTICAL VERDICT for this query — it OVERRIDES what the rows below "
+                    "suggest. You MUST say in the interpretation that the final period is "
+                    "incomplete, and you must NOT quote its total as a trend point, a "
+                    "decline or a record: " + _partial)
         # Exposure normalisation, same rationale one column over: the leading group leads almost
         # any additive metric BY BEING LARGEST, and a narrator handed only `pct_of_total` will
         # write "X accounts for over half — cost is concentrated in X" about a group that holds
