@@ -10,6 +10,7 @@ from pydantic import BaseModel
 from aughor.licensing import Capability, gate
 
 from aughor.semantic.metrics import (
+    GLOBAL_CONNECTION,
     MetricDefinition,
     compute_value,
     delete_metric,
@@ -38,6 +39,18 @@ GUARDED_TRANSITIONS = {"approve": "metric.approve", "propose": "metric.propose"}
 
 class MetricRequest(BaseModel):
     name: str
+    #: WHICH connection this definition governs. The store has always keyed metrics by
+    #: the (connection, name) PAIR — this model did not carry the field, so every write
+    #: through the API fell back to the model default `"*"` and became global. Two
+    #: consequences, both seen live: a second connection could never hold its own
+    #: `revenue` (the duplicate check 409'd on the name alone), and EDITING a
+    #: connection-scoped metric silently re-wrote it as global — which is how theLook's
+    #: `sales_volume_by_category`, whose SQL reads `inventory_items`, appeared in
+    #: LuxExperience's catalogue where that table does not exist.
+    #:
+    #: Two e-commerce businesses do not share a formula; the tables and columns differ.
+    #: `"*"` stays the default so an intentionally global house metric is still one call.
+    connection: str = GLOBAL_CONNECTION
     label: str
     sql: str
     tables: list[str] = []
@@ -126,8 +139,20 @@ def create_metric(req: MetricRequest):
     # trail. The approval question belongs to the approve transition, not to authoring.
     from aughor import govern
     govern.guard("metric.define", req.name)
-    if get_metric(req.name):
-        raise HTTPException(status_code=409, detail=f"Metric '{req.name}' already exists. Use PUT to update.")
+    # Scoped: `revenue` on this connection is a different metric from `revenue` on
+    # another, and from the global default. Checking the name alone refused the second
+    # connection's own definition — the very thing the store's (connection, name) key
+    # exists to allow.
+    # EXACT scope, not a resolving read: `get_metric(name, connection_id=…)` falls back
+    # to the global definition when the connection has none of its own — correct for
+    # answering "what does this connection use", and wrong here, where it would report
+    # the global `revenue` as this connection's duplicate and refuse the scoped one.
+    _existing = get_metric(req.name, connection_id=req.connection)
+    if _existing is not None and _existing.connection == req.connection:
+        raise HTTPException(
+            status_code=409,
+            detail=(f"Metric '{req.name}' already exists for connection "
+                    f"'{req.connection}'. Use PUT to update."))
     m = MetricDefinition(**req.model_dump())
     save_metric(m)
     return m.model_dump()
@@ -137,7 +162,18 @@ def create_metric(req: MetricRequest):
 def update_metric(name: str, req: MetricRequest):
     from aughor import govern
     govern.guard("metric.define", name)   # G1: same declared action, the edit door
-    existing = get_metric(name)
+    # Resolve the metric being edited WITHIN its connection, and keep it there. Before
+    # this, an edit rebuilt the definition from a request that could not express a
+    # connection, so a scoped metric was rewritten as global and leaked into every
+    # other connection's catalogue carrying SQL for tables they do not have.
+    existing = get_metric(name, connection_id=req.connection)
+    if existing is not None and existing.connection != req.connection:
+        # A RESOLVING read, so this is the global definition standing in for a connection
+        # that has none of its own. It is not the thing being edited: writing a scoped
+        # override must not inherit the global's governance state, or a brand-new
+        # per-connection formula would arrive already stamped `approved` by whoever
+        # approved the house default. Treat it as a new definition at this scope.
+        existing = None
     data = {**req.model_dump(), "name": name}
     audit = None
     if existing is not None:
@@ -166,6 +202,12 @@ def update_metric(name: str, req: MetricRequest):
 class TransitionRequest(BaseModel):
     action: str   # propose | approve | reject | deprecate
     actor: str    # who is performing it (person/team)
+    #: WHICH connection's definition is being governed. Resolving by name alone meant a
+    #: transition aimed at one connection's `revenue` landed on another's — live, an
+    #: approve intended for theLook's draft was refused because the SAMPLES `revenue`
+    #: was already approved, and the draft stayed unapproved with no sign why.
+    #: Approval is per formula, and two connections' formulas are different things.
+    connection: str = GLOBAL_CONNECTION
 
 
 @router.post("/metrics/{name}/transition", dependencies=[gate(Capability.METRICS_DEFINE)])
@@ -177,9 +219,15 @@ def transition_metric(name: str, req: TransitionRequest):
     from aughor.semantic.governance import apply_transition
     from aughor.kernel.ledger import Ledger
 
-    m = get_metric(name)
+    m = get_metric(name, connection_id=req.connection)
+    if m is not None and m.connection != req.connection:
+        # A resolving read reached the house default, not this connection's definition.
+        # Approving that would stamp the global formula on someone else's intent.
+        m = None
     if not m:
-        raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
+        raise HTTPException(
+            status_code=404,
+            detail=f"Metric '{name}' not found for connection '{req.connection}'.")
     # G1: the two DECLARED transitions carry their declared risk — `metric.approve` is HIGH
     # (it is what makes a formula authoritative for every later answer) and `metric.propose`
     # is LOW. Verbs govern.actions does not declare are left to the existing transition
@@ -209,7 +257,8 @@ def metric_audit(name: str, limit: int = 50):
 
 
 @router.delete("/metrics/{name}", dependencies=[gate(Capability.METRICS_DEFINE)])
-def remove_metric(name: str, sql: Optional[str] = None):
+def remove_metric(name: str, sql: Optional[str] = None,
+                  connection: Optional[str] = None):
     """Remove a metric — the one irreversible verb on this router, and until now the only
     unguarded one.
 
@@ -222,6 +271,11 @@ def remove_metric(name: str, sql: Optional[str] = None):
     `metric.delete` is declared HIGH, so this now asks for approval like every other
     destructive verb, and the deletion lands in the same `metric.governance` trail as the
     transitions that preceded it.
+
+    `connection` narrows it to ONE connection's definition. Omitted, the old behaviour
+    stands and every connection's metric of that name goes — which is what you want when
+    retiring a name outright, and emphatically not what you want when one warehouse
+    redefines its own `revenue`.
     """
     from datetime import datetime, timezone
 
@@ -232,7 +286,7 @@ def remove_metric(name: str, sql: Optional[str] = None):
     # Read BEFORE deleting: the trail should say what was removed, and afterwards there is
     # nothing left to describe.
     doomed = get_metric(name)
-    if not delete_metric(name, sql=sql):
+    if not delete_metric(name, sql=sql, connection_id=connection):
         raise HTTPException(status_code=404, detail=f"Metric '{name}' not found.")
     Ledger.default().emit("metric.governance", {
         "metric": name,

@@ -316,8 +316,14 @@ export function MetricsPanel({ connId }: { connId?: string }) {
     if (!metric.sql) { setError("SQL expression is required"); return; }
     setSaving(true);
     try {
-      if (adding) { await createMetric(metric); }
-      else { await updateMetric(selected!, metric); }
+      // Scope every write to the connection this tab is showing. Without it the request
+      // fell back to the server's "*" default, so editing theLook's metric republished
+      // its SQL — over `inventory_items` — to every connection, including ones with no
+      // such table. A metric with no connection is a house default, and that is a
+      // deliberate choice, not what an edit here means.
+      const scoped = connId ? { ...metric, connection: connId } : metric;
+      if (adding) { await createMetric(scoped); }
+      else { await updateMetric(selected!, scoped); }
       await load();
       cancelForm();
     } catch (e: unknown) {

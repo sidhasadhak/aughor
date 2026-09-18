@@ -937,7 +937,10 @@ export interface Metric {
   // Governance lifecycle (B-8) — backend-owned; optional so editor forms needn't set them.
   status?: string;
   version?: number;
-  /** "*" for a metric that applies to every connection, else the connection's id. */
+  /** "*" for a metric that applies to every connection, else the connection's id.
+   *  SEND IT ON SAVE. The field existed here and the server's request model had none,
+   *  so every write fell back to "*" — and editing theLook's metric republished its
+   *  SQL, over `inventory_items`, to connections with no such table. */
   connection?: string;
   proposed_by?: string | null;
   proposed_at?: string | null;
