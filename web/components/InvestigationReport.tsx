@@ -30,6 +30,7 @@ import {
   BriefFigure,
   renderEmphasis,
 } from "@/components/brief/Brief";
+import { SignificanceBadge } from "@/components/brief/StatBadge";
 import { RuleOutsSection } from "@/components/brief/RuleOuts";
 import { TrendStrip } from "@/components/brief/Sparkline";
 import { Icon } from "@/components/ui/icon";
@@ -195,6 +196,37 @@ function KeyNumbersInline({ metrics }: { metrics: PhaseKeyNumber[] }) {
 /** A brief, human name for a finding's underlying data — labels the source-data icon
  *  (Genie's descriptive "…for viz" footer) instead of an opaque "Source N". The finding
  *  title already says what the exhibit shows; trim it so the chip stays one short line. */
+/** The prefixes that mark the READER-FACING half of a `stat_note`.
+ *
+ *  Mirror of the backend's `READER_FACING_STAT_MARKERS` (grep that name), which
+ *  interpolates these into the notes it writes. `test_stat_note_markers_parity` walks both
+ *  — the same arrangement chart_vocab.JOB_TO_FORM has with chartTypeInference.ts. */
+const STAT_WARNING_MARKERS = ["PARTIAL FINAL PERIOD", "EXPOSURE CHECK"] as const;
+
+/** A stat note split into the machinery and the warning.
+ *
+ *  A note is two things concatenated: a verdict ("z = 8.2 — significant"), and sometimes a
+ *  warning about whether the number can be read at all ("PARTIAL FINAL PERIOD: September
+ *  2026 holds 21 of 30 days (70%) — its total is not comparable to a full month…").
+ *
+ *  They are split because the clean-output policy below is right about one and wrong about
+ *  the other. A z-score is the machine talking to itself and belongs out of the body. A
+ *  sentence telling the reader the final month is incomplete is not machinery — it changes
+ *  what the number in front of them MEANS, and withholding it is how run 29c3c169 shipped
+ *  "reaching $342,313 in September 2026 … an increase of 27.4%" about a month that was 70%
+ *  over (2026-09-18). Sniffing for capitals instead of these declared markers would split
+ *  on "THE OUTNET", a retailer's name quoted out of the data. */
+function splitStatNote(note?: string): { verdict: string; warning: string } {
+  const t = (note || "").trim();
+  if (!t) return { verdict: "", warning: "" };
+  const at = STAT_WARNING_MARKERS
+    .map((m) => t.indexOf(m))
+    .filter((i) => i >= 0)
+    .sort((a, b) => a - b)[0];
+  if (at === undefined) return { verdict: t, warning: "" };
+  return { verdict: t.slice(0, at).trim(), warning: t.slice(at).trim() };
+}
+
 function sourceLabel(title: string): string {
   const t = (title || "").replace(/\*/g, "").trim();
   if (!t) return "Source data";
@@ -202,6 +234,7 @@ function sourceLabel(title: string): string {
 }
 
 function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFinding; onShowSource?: ShowSource }) {
+  const { verdict, warning } = splitStatNote(finding.stat_note);
   const hasData = finding.columns.length > 0 && finding.rows.length > 0;
   const hasChart = hasData && finding.chart_type !== "none" && finding.rows.length >= 2;
   // CA-4 "title = claim": the claim leads the figure; the query's descriptive
@@ -219,7 +252,17 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
         </BriefFigure>
       )}
 
-      {/* Source data — opens the right-side data + SQL + Query Builder drawer (same as the quick answer) */}
+      {/* Source data — opens the right-side data + SQL + Query Builder drawer (same as the quick answer).
+          The significance verdict rides THIS row, not the body: it is verification machinery, and this
+          row is the verification affordance the clean-output policy below means by "Details". The badge
+          existed for this and was imported by nothing until now (found by the producer→surface ratchet,
+          2026-09-18) — both ends of a feature existed while the feature did not, the same way
+          `trust_caveat` did before it. */}
+      {verdict && (
+        <div className="self-end">
+          <SignificanceBadge significant={finding.is_significant} note={verdict} />
+        </div>
+      )}
       {hasData && onShowSource && (
         <button
           onClick={() => onShowSource({ columns: finding.columns, rows: finding.rows as unknown[][], sql: finding.sql || null, title: finding.title })}
@@ -237,6 +280,12 @@ function EvidenceBlock({ finding, onShowSource }: { finding: InvestigationFindin
 
       {/* Key numbers — one inline prose line, not a tile row (R16 P1) */}
       {finding.key_numbers.length > 0 && <KeyNumbersInline metrics={finding.key_numbers} />}
+
+      {/* A completeness warning is NOT machinery — it changes what the number means, so it
+          sits with the number, styled like the trust advisory it resembles. */}
+      {warning && (
+        <div className="aug-fs-xs text-amber-400/90 leading-relaxed">⚠ {warning}</div>
+      )}
 
       {/* Interpretation narrative */}
       {finding.interpretation && <BriefProse text={finding.interpretation} muted />}

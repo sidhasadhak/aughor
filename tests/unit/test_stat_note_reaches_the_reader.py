@@ -116,3 +116,67 @@ class TestThePromptObliges:
         """A reader cannot tell which caveat was optional, so none of them may be."""
         src = inspect.getsource(I._results_text_with_verdicts)
         assert src.count("OVERRIDES what the") >= 3
+
+
+# ── The web is the third surface ──────────────────────────────────────────────
+# Found by the producer→surface ratchet on 2026-09-18, AFTER the PDF and the deck were
+# fixed: `stat_note` was declared on the web's finding interface and read nowhere under
+# `web/`, and `SignificanceBadge` — written to display it — was imported by nothing. So the
+# warning was missing from all THREE surfaces, and the fix that "restored it for the
+# reader" had restored it for two.
+#
+# The web's clean-output policy ("the significance verdict + stat note are VERIFICATION
+# machinery — they live in the Trust Receipt / Details, never in the body") is right about
+# HALF of a stat note and wrong about the other half, which is why the note is split rather
+# than the policy overruled: the verdict rides the verification row, the warning sits with
+# the number it qualifies.
+
+import pathlib
+import re as _re
+
+_WEB_REPORT = pathlib.Path(__file__).resolve().parents[2] / "web" / "components" / "InvestigationReport.tsx"
+
+
+def _web_markers() -> list[str]:
+    src = _WEB_REPORT.read_text()
+    m = _re.search(r"const STAT_WARNING_MARKERS = \[(.*?)\]", src, _re.S)
+    assert m, "the web mirror is gone — the split cannot work without it"
+    return _re.findall(r'"([^"]+)"', m.group(1))
+
+
+class TestTheMarkersCannotDrift:
+    def test_python_and_the_web_agree(self):
+        """The same arrangement `chart_vocab.JOB_TO_FORM` has with chartTypeInference.ts.
+        A marker reworded on one side silently stops splitting on the other: the warning
+        would then render as part of the z-score, in muted mono, on the Details row."""
+        from aughor.agent.investigate import READER_FACING_STAT_MARKERS
+        assert list(READER_FACING_STAT_MARKERS) == _web_markers()
+
+    def test_each_marker_is_actually_emitted(self):
+        """A marker nothing writes is a split that never fires. Both are interpolated into
+        the producers, so this reads the source rather than trusting the constant."""
+        import inspect
+
+        from aughor.agent import investigate as I
+        src = inspect.getsource(I)
+        for name in ("PARTIAL_PERIOD_MARKER", "EXPOSURE_CHECK_MARKER"):
+            assert src.count(f"{{{name}}}") >= 1, (
+                f"{name} is declared but never interpolated into a note")
+
+
+class TestTheWebShowsBothHalves:
+    def test_the_badge_is_imported(self):
+        """It existed for this and was imported by nothing for months."""
+        assert "SignificanceBadge" in _WEB_REPORT.read_text()
+
+    def test_the_warning_renders_in_the_body(self):
+        src = _WEB_REPORT.read_text()
+        assert "{warning && (" in src, "the completeness warning is not rendered"
+        assert "{verdict && (" in src, "the significance verdict is not rendered"
+
+    def test_the_split_is_declared_not_sniffed(self):
+        """A capitals scan would split on 'THE OUTNET' — a retailer's name quoted out of
+        the data, which is 9 of the 630 stored notes."""
+        src = _WEB_REPORT.read_text()
+        assert "STAT_WARNING_MARKERS" in src
+        assert "A-Z]{3,}" not in src, "the split sniffs for capitals instead of declaring"

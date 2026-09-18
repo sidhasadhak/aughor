@@ -1806,6 +1806,29 @@ def _results_to_text(results, max_rows: Optional[int] = None) -> str:
 _PERIOD_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[ T]00:00:00(?:\.0+)?)?$")
 
 
+#: The prefixes that mark the READER-FACING half of a `stat_note`.
+#:
+#: A stat note is two things concatenated: a statistical verdict ("z = 8.2 — significant"),
+#: which is verification machinery, and sometimes a WARNING about whether the number can be
+#: read at all ("PARTIAL FINAL PERIOD: September 2026 holds 21 of 30 days…"). The web's
+#: clean-output policy keeps machinery out of the body and is right to; a warning is not
+#: machinery, and keeping it out cost the reader the one sentence that changed the meaning
+#: of the headline (run 29c3c169, 2026-09-18).
+#:
+#: Defined here and INTERPOLATED into the notes below, so the marker a reader keys on and
+#: the marker a producer writes cannot drift. Mirrored in
+#: `web/components/InvestigationReport.tsx`; `test_stat_note_markers_parity` walks both —
+#: the same arrangement `chart_vocab.JOB_TO_FORM` has with `chartTypeInference.ts`.
+#:
+#: Derived from the live corpus, not guessed: of 630 stored stat notes, 7 carry
+#: PARTIAL FINAL PERIOD and 15 carry EXPOSURE CHECK. ("THE OUTNET" also matches a naive
+#: all-caps scan — it is a retailer's name quoted out of the data, which is exactly why the
+#: markers are declared rather than sniffed.)
+PARTIAL_PERIOD_MARKER = "PARTIAL FINAL PERIOD"
+EXPOSURE_CHECK_MARKER = "EXPOSURE CHECK"
+READER_FACING_STAT_MARKERS = (PARTIAL_PERIOD_MARKER, EXPOSURE_CHECK_MARKER)
+
+
 def _partial_terminal_period_note(columns, rows, coverage_end: Optional[str]) -> Optional[str]:
     """A code-written verdict when a time series' LAST period is incomplete — CA-0.
 
@@ -1861,7 +1884,7 @@ def _partial_terminal_period_note(columns, rows, coverage_end: Optional[str]) ->
         return None
     label = last.strftime("%B %Y") if grain == "month" else f"week of {last.isoformat()}"
     pct = round(100.0 * covered / full_days)
-    note = (f"PARTIAL FINAL PERIOD: {label} holds {covered} of {full_days} days ({pct}%) — "
+    note = (f"{PARTIAL_PERIOD_MARKER}: {label} holds {covered} of {full_days} days ({pct}%) — "
             f"its total is not comparable to a full {grain}; compare per-day rates, and do not "
             f"read the smaller total as a drop or a correction.")
     # per-day rate of the last vs previous period, when exactly one numeric measure exists
@@ -2009,7 +2032,7 @@ def _concentration_note(columns, rows) -> Optional[str]:
             verdict = (f"PROPORTIONAL — {index:.2f}× its share of the population, i.e. {g} leads "
                        f"because it is the largest group, not because it is the weakest. Ranking "
                        f"by this metric restates group size.")
-        return (f"EXPOSURE CHECK: {g} holds {share_m:.1f}% of the metric and {share_n:.1f}% of the "
+        return (f"{EXPOSURE_CHECK_MARKER}: {g} holds {share_m:.1f}% of the metric and {share_n:.1f}% of the "
                 f"rows — {verdict}")
     except Exception:
         return None
