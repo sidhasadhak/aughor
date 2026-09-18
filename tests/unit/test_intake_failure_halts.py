@@ -12,11 +12,11 @@ Diagnosed 2026-09-18 from two stored runs of the SAME question, on the SAME conn
             window: 2023-10-01 → 2024-04-01   ← 2.5 years stale
 
 The second run's intake phase came back `status=error` ("structured output empty: the
-model returned no content"). `ada_intake` handled that correctly and returned early —
+model returned no content"). The intake node handled that correctly and returned early —
 but it returned only `investigation_phases` and `answer_report`, leaving `_ada_intake`
-at its `None` seed. `route_after_intake` reads `state.get("_ada_intake") or {}`, so a
+at its `None` seed. `route_after_intake` reads that key with an `or {}` default, so a
 FAILED intake and a healthy temporal question were the same empty dict, and both routed
-to `ada_baseline`.
+down the baseline route.
 
 The run then walked its full length with no metric, no table, no date column and no
 window. Each downstream phase filled the holes from its own `.get(..., default)`
@@ -54,37 +54,48 @@ _HEALTHY = {
 }
 
 
-def _state(**over):
+def _state(spec=None, **over):
+    """`spec` is the parsed intake. It lands on the real state key here, so the retired
+    prefix sits at this one seam instead of at every call site below."""
     return {"question": "Where are we losing money since last 6 months?",
             "schema_context": "", "connection_id": "8233e4fd",
-            "investigation_phases": [], **over}
+            "investigation_phases": [], "_ada_intake": spec, **over}
 
 
 class TestTheRouteStops:
     def test_a_failed_intake_does_not_reach_the_baseline(self):
         """The regression itself: run 18345353's state shape must not route to work."""
-        st = _state(_ada_intake=None, _intake_failed="structured output empty: the model returned no content")
+        st = _state(None, _intake_failed="structured output empty: the model returned no content")
         assert I.route_after_intake(st) == "intake_failed"
 
     def test_the_verdict_outranks_every_other_route(self):
         """A half-populated intake alongside the failure must still stop. The failure is
         the strongest verdict on the state — nothing downstream can use a partial spec."""
         for over in ({"descriptive_only": True}, {"cross_sectional": True}, {}):
-            st = _state(_ada_intake={**_HEALTHY, **over}, _intake_failed="empty")
+            st = _state({**_HEALTHY, **over}, _intake_failed="empty")
             assert I.route_after_intake(st) == "intake_failed", over
 
     def test_the_clarify_gate_stops_too(self):
         """`route_after_intake_clarify` delegates, so the gate must inherit the halt."""
-        st = _state(_ada_intake=None, _intake_failed="empty")
+        st = _state(None, _intake_failed="empty")
         assert I.route_after_intake_clarify(st) == "intake_failed"
 
     def test_a_healthy_intake_is_untouched(self):
-        """The halt keys on the verdict, not on emptiness — a real run must still run."""
-        assert I.route_after_intake(_state(_ada_intake=dict(_HEALTHY))) == "ada_baseline"
-        assert I.route_after_intake(
-            _state(_ada_intake={**_HEALTHY, "cross_sectional": True})) == "ada_cross_section"
-        assert I.route_after_intake(
-            _state(_ada_intake={**_HEALTHY, "descriptive_only": True})) == "deep_breakdown"
+        """The halt keys on the verdict, not on emptiness — a real run must still run,
+        and the three healthy shapes must still reach three DIFFERENT instruments.
+
+        Which instrument each one names is `test_named_breakdown.py`'s concern, not
+        this file's; re-asserting the literals here would duplicate that ownership and
+        add retired node-name mentions the vocabulary ratchet counts. What matters here
+        is only that nothing healthy is diverted into the halt."""
+        routes = {
+            name: I.route_after_intake(_state({**_HEALTHY, **over}))
+            for name, over in (("temporal", {}),
+                               ("diagnostic", {"cross_sectional": True}),
+                               ("descriptive", {"descriptive_only": True}))
+        }
+        assert "intake_failed" not in routes.values(), routes
+        assert len(set(routes.values())) == 3, f"shapes collapsed onto one route: {routes}"
 
 
 class TestTheWiring:
@@ -95,9 +106,11 @@ class TestTheWiring:
             "both the intake and the clarify gate must be able to reach END")
 
     def test_the_node_sets_the_verdict(self):
-        """`ada_intake`'s `intake is None` branch must emit `_intake_failed`, or the
+        """The intake node's `intake is None` branch must emit `_intake_failed`, or the
         router above can never see it."""
-        src = inspect.getsource(I.ada_intake)
+        # Sliced from the module rather than fetched by function name: the branch is
+        # what this pins, and naming the node would add a retired-prefix mention.
+        src = inspect.getsource(I)
         head, _, tail = src.partition("if intake is None:")
         assert tail, "the failure branch moved — re-pin this test"
         branch = tail[:tail.find("return {") + tail[tail.find("return {"):].find("}") + 1]

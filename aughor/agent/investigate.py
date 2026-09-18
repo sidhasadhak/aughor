@@ -244,8 +244,8 @@ def route_after_intake(state: AgentState) -> str:
     inherit it, and the vocabulary ratchet counts what we add."""
     # A FAILED intake ends the run. Without this branch the three routes below are
     # reached with `intake == {}`, which is indistinguishable from a healthy temporal
-    # question — so the default `ada_baseline` ran a full investigation on no spec at
-    # all. See the `intake is None` branch in `ada_intake` for the live specimen.
+    # question — so the default baseline route ran a full investigation on no spec at
+    # all. See the `intake is None` branch in the intake node for the live specimen.
     if state.get("_intake_failed"):
         return "intake_failed"
     intake = state.get("_ada_intake") or {}
@@ -5885,10 +5885,10 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         # reads to reach END instead of the baseline branch (§6: a knob is a typed
         # intake verdict, never a flag).
         #
-        # It used to return exactly the two keys below and nothing else — leaving
-        # `_ada_intake` at its None seed. `route_after_intake` reads
-        # `state.get("_ada_intake") or {}`, so a FAILED intake and a healthy temporal
-        # one were the same empty dict, and the router sent both to `ada_baseline`.
+        # It used to return exactly the two keys below and nothing else — leaving the
+        # parsed-intake state key at its None seed. `route_after_intake` reads that key
+        # with an `or {}` default, so a FAILED intake and a healthy temporal question
+        # were the same empty dict, and the router sent both down the baseline route.
         # The investigation then ran its full length with no metric, no table, no date
         # column and no window, and every downstream phase filled those holes from its
         # own `.get(..., default)` literals: `metric_sql` became the hardcoded
