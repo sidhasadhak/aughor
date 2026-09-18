@@ -5,15 +5,17 @@ unit: ratio
 definition: The share of sold lines that the customer sent back.
 formula: >
   SUM(CASE WHEN {{role.order_item.returned_at}} IS NOT NULL THEN 1.0 ELSE 0.0 END)
-  / NULLIF(SUM(CASE WHEN {{role.order_item.cancelled}} = 1 THEN 0.0 ELSE 1.0 END), 0)
+  / NULLIF(COUNT(*), 0)
 grain: >
-  Sold lines over a period; by category, brand or month by filtering the same lines. The denominator
-  is lines that were actually sold — a cancelled line never shipped, so it could not be returned and
-  must not sit in the denominator diluting the rate.
+  Sold lines over a period; by category, brand or month by filtering the same lines. Deliberately
+  over ALL lines rather than over non-cancelled ones: `cancelled` is a flag many warehouses do not
+  carry (theLook spells it as a `status` value, not a column), and a formula that names an attribute
+  most warehouses cannot bind is a formula nobody can compute. Where cancellations ARE marked,
+  filter them out of the population before reading this — see the anti-patterns.
 binds:
   required: [order_item]
 anti_patterns:
-  - "Dividing returns by ALL lines including cancelled ones: a cancelled line was never eligible to be returned, so it understates the rate by inflating the denominator."
+  - "Reading it over a population that still contains cancelled lines: a cancelled line never shipped, so it was never eligible to be returned, and leaving it in the denominator understates the rate. Filter cancellations out of the population first — the formula cannot, because not every warehouse marks them the same way."
   - "Counting return ROWS rather than returned lines: one returned line can carry several rows in a returns table, which inflates the numerator."
   - "Reading a period's rate without its lag: a line sold on the last day of the period has not had time to be returned, so a recent window always reads low until the return window closes."
 sane_range:

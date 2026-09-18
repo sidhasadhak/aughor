@@ -315,6 +315,82 @@ class MaterialiseError(Exception):
     """The row cannot become an editable definition, and why."""
 
 
+#: `{{role.<role>.<attribute>}}` — the one token an industry formula is written in.
+_ROLE_TOKEN = re.compile(r"\{\{\s*role\.([A-Za-z_][\w]*)\.([A-Za-z_][\w]*)\s*\}\}")
+
+
+def _quote_for(connection_id: str, identifier: str) -> str:
+    """`identifier` quoted the way THIS connection's engine quotes identifiers.
+
+    Backtick engines (BigQuery, MySQL) read a double-quoted token as a string; the rest
+    read a backtick as one. There is no neutral character, which is why the caller above
+    avoids quoting whenever it can."""
+    dialect = ""
+    try:
+        from aughor.db.registry import get_dsn
+        from aughor.db.connection import connection_traits
+        conn_type, _ = get_dsn(connection_id)
+        dialect = str((connection_traits(conn_type) or {}).get("dialect") or "")
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "dialect lookup is best-effort; the identifier is quoted the "
+                      "ANSI way", counter="metric_catalogue.dialect")
+    if dialect in ("bigquery", "mysql"):
+        return "`" + identifier.replace("`", "``") + "`"
+    return '"' + identifier.replace('"', '""') + '"'
+
+
+def _resolve_roles(sql: str, pack_id: str, connection_id: str,
+                   schema_name: Optional[str]) -> tuple[str, list[str]]:
+    """An industry formula with every role token replaced by the column this connection
+    bound to it. Returns (sql, unresolved) — `unresolved` names what had no binding.
+
+    Materialise used to copy `entry.sql` verbatim, so a metric that passed the role gate
+    landed as a `defined` metric whose SQL still read `{{role.order_item.returned_at}}` —
+    a governed definition nobody can run. The resolver already existed one module away
+    (`packs.gate4.bind_expression`, which measures a pack against its own dataset); it
+    simply was not reached from the door a person uses.
+
+    Checked per ATTRIBUTE, which the catalogue's `missing_roles` cannot be: that gate is
+    role-level, so a formula naming an attribute the connection never bound passes it and
+    then renders a token. theLook binds `order_item` and has no `cancelled` column — role
+    bound, attribute missing, and only this catches it.
+    """
+    unresolved: list[str] = []
+    try:
+        from aughor.packs.bindings import load_binding
+        bound = (load_binding(pack_id, connection_id, schema_name or "") or {}).get("bindings") or {}
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "binding lookup is best-effort; the formula is reported unresolved",
+                 counter="metric_catalogue.resolve")
+        bound = {}
+
+    def _sub(m: "re.Match") -> str:
+        role, attribute = m.group(1), m.group(2)
+        columns = (bound.get(role) or {}).get("columns") or {}
+        column = columns.get(attribute)
+        if not column:
+            unresolved.append(f"{role}.{attribute}")
+            return m.group(0)
+        # BARE where it is safe, because the quote character is not portable and getting
+        # it wrong is SILENT. `gate4.bind_expression` wraps the column in double quotes,
+        # which is right for DuckDB and catastrophic on BigQuery: there `"returned_at"`
+        # is a STRING LITERAL, never NULL, so `CASE WHEN "returned_at" IS NOT NULL` is
+        # true for every row. Measured on theLook — the metric read 1.0 (a 100% return
+        # rate) where the same formula over the bare column reads 0.0987. A wrong number
+        # that runs is worse than SQL that fails, and this one runs everywhere.
+        #
+        # An ordinary identifier needs no quoting in any dialect this platform speaks, so
+        # emit it as written and quote only what actually needs it — and then in the
+        # dialect's own character.
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", column):
+            return column
+        return _quote_for(connection_id, column)
+
+    return _ROLE_TOKEN.sub(_sub, sql or ""), unresolved
+
+
 def materialise(connection_id: str, name: str, schema_name: Optional[str] = None,
                 actor: str = "") -> "object":
     """Turn an industry or explorer row into a connection-scoped `MetricDefinition`.
@@ -355,11 +431,20 @@ def materialise(connection_id: str, name: str, schema_name: Optional[str] = None
             f"{entry.label!r} needs {roles} bound to this connection before it can be "
             f"edited — its formula still names roles, not columns")
 
+    sql = entry.sql
+    if entry.source == SOURCE_INDUSTRY:
+        sql, unresolved = _resolve_roles(sql, entry.pack_id, connection_id, schema_name)
+        if unresolved:
+            raise MaterialiseError(
+                f"{entry.label!r} names {', '.join(sorted(set(unresolved)))}, which this "
+                f"connection has not bound — binding the ROLE is not enough, every "
+                f"attribute the formula names needs a column")
+
     metric = MetricDefinition(
         name=normalize_name(entry.name),
         connection=connection_id,
         label=entry.label or entry.name,
-        sql=entry.sql,
+        sql=sql,
         tables=list(entry.tables),
         dimensions=list(entry.dimensions),
         unit=entry.unit or None,
