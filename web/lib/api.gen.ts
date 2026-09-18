@@ -7413,11 +7413,67 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Get Metrics */
+        /**
+         * Get Metrics
+         * @description The registry, optionally narrowed to one connection.
+         *
+         *     `connection_id` applies `list_metrics`' own connection-shadows-global rule. It stays
+         *     OPTIONAL so every existing caller is byte-identical: making it required would turn a
+         *     re-key into a caller migration, and each unconverted site becomes a silent global read
+         *     that looks correct (the same reasoning `list_metrics` records for its own default).
+         */
         get: operations["get_metrics_metrics_get"];
         put?: never;
         /** Create Metric */
         post: operations["create_metric_metrics_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/catalogue/{conn_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Metric Catalogue
+         * @description Every metric that APPLIES to this connection — defined, industry and explorer.
+         *
+         *     Not the same list as `/metrics`: that one is the registry, and most of what applies to
+         *     a connection is not in the registry yet. A pack's recipe is role-bound until this
+         *     connection binds those roles, and the explorer's judgement lives on the business
+         *     profile. Both are computed here and materialised only when someone edits one.
+         */
+        get: operations["get_metric_catalogue_metrics_catalogue__conn_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/metrics/catalogue/{conn_id}/{name}/materialise": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Materialise Metric
+         * @description Copy-on-write: turn a computed row into an editable, connection-scoped definition.
+         *
+         *     Lands as `draft` — see `metric_catalogue.materialise`. A row that needs a binding is
+         *     refused with the roles it is missing, rather than written as SQL that cannot run.
+         */
+        post: operations["materialise_metric_metrics_catalogue__conn_id___name__materialise_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -28434,7 +28490,9 @@ export interface operations {
     };
     get_metrics_metrics_get: {
         parameters: {
-            query?: never;
+            query?: {
+                connection_id?: string | null;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -28448,6 +28506,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };
@@ -28466,6 +28533,75 @@ export interface operations {
                 "application/json": components["schemas"]["MetricRequest"];
             };
         };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_metric_catalogue_metrics_catalogue__conn_id__get: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    materialise_metric_metrics_catalogue__conn_id___name__materialise_post: {
+        parameters: {
+            query?: {
+                schema?: string | null;
+                actor?: string;
+                connection_id?: string | null;
+            };
+            header?: never;
+            path: {
+                conn_id: string;
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             201: {

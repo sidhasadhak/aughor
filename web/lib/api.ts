@@ -994,9 +994,65 @@ export async function getHealthScorecard(connId: string): Promise<ScorecardItem[
   return res.json();
 }
 
-export async function getMetrics(): Promise<Metric[]> {
-  const res = await fetch(`${getApiBase()}/metrics`);
+export async function getMetrics(connectionId?: string): Promise<Metric[]> {
+  const q = connectionId ? `?connection_id=${encodeURIComponent(connectionId)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics${q}`);
   if (!res.ok) throw new Error("Failed to fetch metrics");
+  return res.json();
+}
+
+/** One row of a connection's metric catalogue — see aughor/semantic/metric_catalogue.py. */
+export interface CatalogueMetric {
+  name: string;
+  label: string;
+  /** "defined" | "industry" | "explorer" — where this metric came from. */
+  source: string;
+  /** "defined" | "proposed" | "needs_binding" | "needs_formula". */
+  state: string;
+  sql: string;
+  unit: string;
+  definition: string;
+  grain: string;
+  dimensions: string[];
+  tables: string[];
+  anti_patterns: string[];
+  pack_id: string;
+  required_roles: string[];
+  missing_roles: string[];
+  sane_range: { min?: number; max?: number; basis?: string; sources?: string[] } | null;
+  why_it_matters: string;
+  status: string;
+  version: number;
+  owner: string;
+  /** False until the row is materialised — a recipe is not edited in place. */
+  editable: boolean;
+}
+
+export interface MetricCatalogue {
+  connection_id: string;
+  metrics: CatalogueMetric[];
+  counts: Record<string, number>;
+}
+
+/** Every metric that APPLIES to this connection: defined + industry + explorer. */
+export async function getMetricCatalogue(connectionId: string, schema?: string): Promise<MetricCatalogue> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(`${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}${q}`);
+  if (!res.ok) throw new Error("Failed to fetch the metric catalogue");
+  return res.json();
+}
+
+/** Copy-on-write: make a computed row editable as a connection-scoped draft. */
+export async function materialiseMetric(connectionId: string, name: string, schema?: string): Promise<Metric> {
+  const q = schema ? `?schema=${encodeURIComponent(schema)}` : "";
+  const res = await fetch(
+    `${getApiBase()}/metrics/catalogue/${encodeURIComponent(connectionId)}/${encodeURIComponent(name)}/materialise${q}`,
+    { method: "POST" },
+  );
+  if (!res.ok) {
+    const body = await res.json().catch(() => null);
+    throw new Error(body?.detail || "Could not make this metric editable");
+  }
   return res.json();
 }
 

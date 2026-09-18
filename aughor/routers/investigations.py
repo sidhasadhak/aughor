@@ -4078,7 +4078,7 @@ async def _stream_investigation(
             # graph change (route_question honors requested_mode ∈ {investigate, explore}).
             "requested_mode": requested_mode,
             "sub_questions": [], "current_subq_idx": 0, "subq_answers": [], "explore_report": None,
-            "investigation_phases": [], "answer_report": None, "_ada_intake": None,
+            "investigation_phases": [], "answer_report": None, "_ada_intake": None, "_intake_failed": None,
             "ontology_frame": _frame_dump,
             "canvas_id": canvas_id, "canvas_schema_context": canvas_schema_context,
             "scope_schema": scope_schema or "",

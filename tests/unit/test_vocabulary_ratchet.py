@@ -345,7 +345,12 @@ BANNED: dict[str, tuple[str, tuple[str, ...], tuple[str, ...], str]] = {
          # The workspace's test renders `IntelligenceWorkspace`, so it must pass the
          # component's required `onInvestigate` prop — the shell's contract, the same case as
          # the Overview above. That prop name is the file's one occurrence.
-         "web/components/IntelligenceWorkspace.test.tsx"),
+         "web/components/IntelligenceWorkspace.test.tsx",
+         # Same case one component over: this test renders `InvestigationReportView` to
+         # prove a finding's completeness warning reaches the body (2026-09-18 — it reached
+         # no surface at all). A test cannot rename the component it renders, and the two
+         # occurrences are the import line: the symbol and its path.
+         "web/components/InvestigationReport.statnote.test.tsx"),
         "the user-visible word is 'deep analysis'. `investigation` stays as the BACKEND "
         "spelling only (frozen table/route/job-kind); web/lib/api.ts is exempt because it "
         "must mirror the backend contract field-for-field, and the SSE→UIMessage seam is "

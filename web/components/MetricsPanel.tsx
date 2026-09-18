@@ -3,16 +3,18 @@
 import { useEffect, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { ResizableSplit } from "@/components/ResizableSplit";
 import {
   createMetric,
   deleteMetric,
+  getMetricCatalogue,
   getMetrics,
+  materialiseMetric,
   getMetricFreshness,
   updateMetric,
   validateMetric,
   transitionMetric,
   getMetricAudit,
+  type CatalogueMetric,
   type Metric,
   type MetricValidationResult,
   type MetricFreshnessResult,
@@ -234,11 +236,59 @@ export function MetricsPanel({ connId }: { connId?: string }) {
   const [checkingFreshness, setCheckingFreshness] = useState(false);
   const [freshnessResult, setFreshnessResult] = useState<MetricFreshnessResult | null>(null);
 
+  // The CATALOGUE is what this tab lists: every metric that applies to this connection,
+  // not just the ones already in the registry. Most of what applies is not in the registry
+  // — an industry package's recipe is role-bound until this connection binds those roles,
+  // and the explorer's judgement lives on the business profile. Both are computed server
+  // side and materialised only when someone edits one.
+  const [rows, setRows] = useState<CatalogueMetric[]>([]);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const [materialising, setMaterialising] = useState<string | null>(null);
+  const [rowError, setRowError] = useState<Record<string, string>>({});
+
   const load = async () => {
-    try { setMetrics(await getMetrics()); } catch {}
+    // `metrics` still holds the raw registry: the governance section and the duplicate-name
+    // warning read it, and both are about what is STORED, not about what applies.
+    try { setMetrics(await getMetrics(connId)); } catch {}
+    if (!connId) { setRows([]); setCounts({}); return; }
+    try {
+      const cat = await getMetricCatalogue(connId);
+      setRows(cat.metrics); setCounts(cat.counts);
+    } catch { setRows([]); setCounts({}); }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [connId]);
+
+  // Opening a row is the edit gesture. An already-editable row opens straight into the
+  // editor; a computed one opens to its provenance with a Customise action, because a
+  // recipe is copied before it is changed — editing it in place would rewrite a definition
+  // shared by every connection that reads the same package.
+  const toggleRow = (row: CatalogueMetric) => {
+    if (expanded === row.name) { setExpanded(null); cancelForm(); return; }
+    setExpanded(row.name);
+    setRowError((prev) => ({ ...prev, [row.name]: "" }));
+    const stored = metrics.find((m) => m.name === row.name);
+    if (row.editable && stored) startEdit(stored);
+    else { setAdding(false); setSelected(null); }
+  };
+
+  const customise = async (row: CatalogueMetric) => {
+    if (!connId) return;
+    setMaterialising(row.name);
+    setRowError((prev) => ({ ...prev, [row.name]: "" }));
+    try {
+      const made = await materialiseMetric(connId, row.name);
+      await load();
+      startEdit(made);
+      setExpanded(made.name);
+    } catch (e: unknown) {
+      setRowError((prev) => ({
+        ...prev,
+        [row.name]: e instanceof Error ? e.message : "Could not make this metric editable",
+      }));
+    } finally { setMaterialising(null); }
+  };
 
   const startAdd = () => {
     setAdding(true); setSelected(null);
@@ -324,89 +374,11 @@ export function MetricsPanel({ connId }: { connId?: string }) {
 
   const isEditing = adding || selected !== null;
 
-  return (
-    <ResizableSplit storageKey="metrics" initial={272} min={200} max={440} className="h-full"
-      left={
-      <div className="flex flex-col gap-2 h-full overflow-y-auto pr-2">
-        <div className="flex items-center justify-between mb-1">
-          <span className="text-xs font-semibold text-zinc-400 uppercase tracking-wider">Metrics</span>
-          <button
-            onClick={startAdd}
-            className="text-xs text-violet-400 hover:text-violet-300 transition-colors"
-          >
-            + Add
-          </button>
-        </div>
-
-        {metrics.length === 0 && !adding && (
-          <p className="text-xs text-zinc-500 mt-2">
-            No metrics defined yet. Add a KPI formula to ensure consistent SQL across all deep analyses.
-          </p>
-        )}
-
-        <div className="flex flex-col gap-1">
-          {metrics.map((m, i) => (
-            <div
-              key={`${m.name}:${i}`}
-              onClick={() => startEdit(m)}
-              className={`group flex items-start justify-between rounded-md px-3 py-2 cursor-pointer transition-colors ${
-                selected === m.name
-                  ? "bg-violet-500/15 border border-violet-500/30"
-                  : "hover:bg-zinc-700/60 border border-transparent"
-              }`}
-            >
-              <div className="min-w-0">
-                <div className="flex items-center gap-1.5">
-                  <span className="text-sm font-medium text-zinc-200 truncate">{m.label}</span>
-                  {m.status && (
-                    <span
-                      className={`aug-fs-xs px-1 rounded border shrink-0 ${STATUS_STYLE[m.status] ?? STATUS_STYLE.draft}`}
-                      title={`Governance status: ${m.status}${m.version ? ` (v${m.version})` : ""}`}
-                    >
-                      {m.status}{m.status === "approved" && m.version ? ` v${m.version}` : ""}
-                    </span>
-                  )}
-                  {nameCounts[m.name] > 1 && (
-                    <span
-                      className="aug-fs-xs text-amber-400 shrink-0"
-                      title={`Duplicate name "${m.name}" — two definitions share this identity. Downstream only one is used (most-recent wins). Delete removes ALL copies (then re-add one canonical definition), or rename/scope one here.`}
-                    >
-                      ⚠ dup
-                    </span>
-                  )}
-                </div>
-                <div className="text-xs text-zinc-500 font-mono truncate">{m.name}</div>
-                {m.owner && (
-                  <div className="aug-fs-xs text-zinc-500 truncate">{m.owner}</div>
-                )}
-              </div>
-              <div className="flex items-center gap-1 ml-2 flex-shrink-0">
-                {m.target_value != null && (
-                  <span className="w-[5px] h-[5px] rounded-[var(--r-pill)] bg-emerald-400/60 shrink-0" title="Has target" />
-                )}
-                {m.quality_tests.length > 0 && (
-                  <span className="w-[5px] h-[5px] rounded-[var(--r-pill)] bg-blue-400/60 shrink-0" title="Has quality tests" />
-                )}
-                {m.unit && (
-                  <Badge className="aug-fs-xs px-1 py-0 border-zinc-600 bg-zinc-800 text-zinc-400">
-                    {m.unit}
-                  </Badge>
-                )}
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleDelete(m); }}
-                  className="opacity-0 group-hover:opacity-100 text-zinc-500 hover:text-red-400 text-xs transition-[opacity,color] ml-1"
-                  disabled={deleting === m.name}
-                >
-                  {deleting === m.name ? "…" : "✕"}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      }
-      right={
-      <div className="flex-1 min-w-0 overflow-y-auto pl-2">
+  // The editor, unchanged. It used to be the right pane of a ResizableSplit; it now renders
+  // INSIDE the expanded row, because this sub-tab is a table you open in place (asked for
+  // 2026-09-18). Same state, same fields, same governance section.
+  const editor = (
+    <div className="min-w-0">
         {!isEditing && (
           <div className="h-full flex items-center justify-center text-zinc-500 text-sm">
             Select a metric to edit, or add a new one
@@ -661,11 +633,65 @@ export function MetricsPanel({ connId }: { connId?: string }) {
             </div>
           </div>
         )}
-      </div>
-      }
-    />
+    </div>
+  );
+
+  return (
+    <div className="flex flex-col gap-3 h-full overflow-y-auto pr-1">
+      <CatalogueHeader counts={counts} connId={connId} onAdd={startAdd} />
+
+      {adding && (
+        <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-3">{editor}</div>
+      )}
+
+      {rows.length === 0 && !adding && (
+        <p className="aug-text-ui text-zinc-500 mt-2">
+          {connId
+            ? "Nothing applies to this connection yet. The explorer proposes metrics as it profiles the data, and an industry package contributes its own once its roles are bound to this connection."
+            : "Select a connection to see the metrics that apply to it."}
+        </p>
+      )}
+
+      {rows.length > 0 && (
+        <table className="w-full border-collapse">
+          <thead>
+            <tr className="border-b border-zinc-700 text-left">
+              <Th className="w-[40%]">Metric</Th>
+              <Th className="w-[13%]">Source</Th>
+              <Th className="w-[12%]">Unit</Th>
+              <Th className="w-[21%]">State</Th>
+              <Th className="w-[14%]">Where it lives</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row) => (
+              <MetricRow
+                key={`${row.source}:${row.name}`}
+                row={row}
+                open={expanded === row.name}
+                onToggle={() => toggleRow(row)}
+                onCustomise={() => customise(row)}
+                busy={materialising === row.name}
+                error={rowError[row.name] ?? ""}
+                duplicate={(nameCounts[row.name] ?? 0) > 1}
+                editor={selected === row.name ? editor : null}
+              />
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
+
+function Th({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+  return (
+    <th className={`aug-fs-xs font-semibold text-zinc-500 uppercase tracking-wider pb-2 pr-3 ${className}`}>
+      {children}
+    </th>
+  );
+}
+
 
 // ── Sub-components ─────────────────────────────────────────────────────────────
 
@@ -726,6 +752,204 @@ function Field({
         {hint && <span className="text-zinc-500 ml-1">— {hint}</span>}
       </label>
       {children}
+    </div>
+  );
+}
+
+
+// ── The catalogue table ───────────────────────────────────────────────────────
+// Three sources in one list. A row says where it came from and whether this connection can
+// actually compute it, because "applicable" and "available" are different claims and a
+// table that blurred them would be the confident-wrong report in miniature.
+
+const SOURCE_STYLE: Record<string, { label: string; cls: string; title: string }> = {
+  defined: {
+    label: "Defined", cls: "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+    title: "A definition in your registry — edited here, and what the agents use.",
+  },
+  industry: {
+    label: "Industry", cls: "border-sky-500/40 bg-sky-500/10 text-sky-400",
+    title: "A recipe from the knowledge package for the industry set in Settings.",
+  },
+  explorer: {
+    label: "Explorer", cls: "border-violet-500/40 bg-violet-500/10 text-violet-400",
+    title: "Proposed by the explorer from this connection's own tables and columns.",
+  },
+};
+
+const STATE_TEXT: Record<string, { label: string; cls: string; title: string }> = {
+  defined: { label: "In use", cls: "text-zinc-300",
+             title: "A stored definition. Its governance status is shown when you open it." },
+  proposed: { label: "Proposed", cls: "text-zinc-400",
+              title: "Computable here, but not yet a governed definition. Open it to customise." },
+  needs_binding: { label: "Needs binding", cls: "text-amber-400",
+                   title: "This recipe names roles this connection has not bound, so it cannot be computed here yet." },
+  needs_formula: { label: "Needs a formula", cls: "text-amber-400",
+                   title: "The columns are identified but no SQL was proposed. Open it and supply one." },
+};
+
+function CatalogueHeader({ counts, connId, onAdd }:
+    { counts: Record<string, number>; connId?: string; onAdd: () => void }) {
+  const parts: string[] = [];
+  if (counts.defined) parts.push(`${counts.defined} defined`);
+  if (counts.industry) parts.push(`${counts.industry} from your industry`);
+  if (counts.explorer) parts.push(`${counts.explorer} proposed by the explorer`);
+  return (
+    <div className="flex items-start justify-between gap-3">
+      <div className="min-w-0">
+        <div className="aug-fs-xs font-semibold text-zinc-400 uppercase tracking-wider">
+          Metrics for this connection
+        </div>
+        <p className="aug-text-ui text-zinc-500 mt-1">
+          {connId
+            ? (parts.length
+                ? `${counts.total} apply here — ${parts.join(", ")}. Open one to edit it.`
+                : "")
+            : "Select a connection."}
+        </p>
+      </div>
+      <Button
+        onClick={onAdd}
+        className="shrink-0 bg-transparent text-violet-400 hover:text-violet-300 border border-transparent"
+      >
+        + Add
+      </Button>
+    </div>
+  );
+}
+
+function MetricRow({ row, open, onToggle, onCustomise, busy, error, duplicate, editor }: {
+  row: CatalogueMetric;
+  open: boolean;
+  onToggle: () => void;
+  onCustomise: () => void;
+  busy: boolean;
+  error: string;
+  duplicate: boolean;
+  editor: React.ReactNode;
+}) {
+  const src = SOURCE_STYLE[row.source] ?? SOURCE_STYLE.defined;
+  const st = STATE_TEXT[row.state] ?? STATE_TEXT.proposed;
+  const where = row.tables.length ? row.tables.join(", ") : (row.pack_id || "—");
+  return (
+    <>
+      <tr
+        onClick={onToggle}
+        className={`border-b border-zinc-800 cursor-pointer transition-colors ${
+          open ? "bg-zinc-800/60" : "hover:bg-zinc-800/40"
+        }`}
+      >
+        <td className="py-2 pr-3 align-top">
+          <div className="flex items-start gap-1.5 min-w-0">
+            <span className={`text-zinc-500 shrink-0 transition-transform ${open ? "rotate-90" : ""}`}>›</span>
+            <div className="min-w-0">
+              <div className="aug-text-ui font-medium text-zinc-200 truncate">{row.label}</div>
+              <div className="aug-fs-xs text-zinc-500 font-mono truncate">{row.name}</div>
+            </div>
+            {duplicate && (
+              <span className="aug-fs-xs text-amber-400 shrink-0" title="Two definitions share this name.">
+                ⚠ dup
+              </span>
+            )}
+          </div>
+        </td>
+        <td className="py-2 pr-3 align-top">
+          <span className={`aug-fs-xs px-1 rounded border ${src.cls}`} title={src.title}>{src.label}</span>
+        </td>
+        <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-400 truncate">{row.unit || "—"}</td>
+        <td className="py-2 pr-3 align-top">
+          <span className={`aug-fs-xs ${st.cls}`} title={st.title}>{st.label}</span>
+          {row.state === "defined" && row.status ? (
+            <span className="aug-fs-xs text-zinc-500"> · {row.status}</span>
+          ) : null}
+        </td>
+        <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-500 font-mono truncate" title={where}>{where}</td>
+      </tr>
+
+      {open && (
+        <tr className="border-b border-zinc-800 bg-zinc-900/40">
+          <td colSpan={5} className="px-3 py-3">
+            {editor ?? (
+              <MetricProvenance row={row} onCustomise={onCustomise} busy={busy} error={error} />
+            )}
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/** What a computed row shows before it is copied: what it means, and what it would take. */
+function MetricProvenance({ row, onCustomise, busy, error }: {
+  row: CatalogueMetric; onCustomise: () => void; busy: boolean; error: string;
+}) {
+  const blocked = row.state === "needs_binding";
+  return (
+    <div className="flex flex-col gap-3 max-w-3xl">
+      {row.definition && <p className="aug-text-ui text-zinc-300">{row.definition}</p>}
+      {row.why_it_matters && <p className="aug-text-ui text-zinc-400">{row.why_it_matters}</p>}
+
+      {row.sql ? (
+        <div>
+          <SectionHeader label="Formula" />
+          <pre className="aug-fs-xs font-mono text-zinc-300 whitespace-pre-wrap bg-zinc-900 rounded p-2 border border-zinc-800">
+            {row.sql}
+          </pre>
+        </div>
+      ) : (
+        <p className="aug-text-ui text-amber-400">
+          No formula was proposed for this one — open it after customising and supply the SQL.
+        </p>
+      )}
+
+      {row.grain && <p className="aug-fs-xs text-zinc-500">Grain — {row.grain}</p>}
+
+      {blocked && (
+        <p className="aug-text-ui text-amber-400">
+          {`This connection has not bound ${row.missing_roles.join(", ") || "the roles"} that `
+            + `${row.label} is defined over, so it cannot be computed here yet. Its formula `
+            + `still names roles rather than your columns.`}
+        </p>
+      )}
+
+      {row.sane_range && (row.sane_range.min != null || row.sane_range.max != null) && (
+        <div>
+          <SectionHeader label="Published range" />
+          <p className="aug-fs-xs text-zinc-400">
+            {row.sane_range.min} – {row.sane_range.max}
+            {row.sane_range.basis ? ` · ${row.sane_range.basis}` : ""}
+          </p>
+          <p className="aug-fs-xs text-zinc-500 mt-1">
+            Published for the population above — not a measurement of your data.
+          </p>
+        </div>
+      )}
+
+      {row.anti_patterns.length > 0 && (
+        <div>
+          <SectionHeader label="Never" />
+          <ul className="aug-fs-xs text-zinc-400 list-disc pl-4 flex flex-col gap-1">
+            {row.anti_patterns.map((a, i) => <li key={i}>{a}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {error && <p className="aug-text-ui text-red-400">{error}</p>}
+
+      <div className="flex items-center gap-2">
+        <Button
+          onClick={onCustomise}
+          disabled={busy || blocked}
+          className="bg-violet-600 hover:bg-violet-500 text-white disabled:opacity-40"
+        >
+          {busy ? "Copying…" : "Customise for this connection"}
+        </Button>
+        <span className="aug-fs-xs text-zinc-500">
+          {blocked
+            ? "Bind the roles first."
+            : "Takes a copy scoped to this connection, as a draft. The original is untouched."}
+        </span>
+      </div>
     </div>
   );
 }

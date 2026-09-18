@@ -225,17 +225,21 @@ def _compile(execute_node, scan_node, explore_execute_node, explore_scan_subq_no
     # touches the gate and behaviour is unchanged. On resume the passthrough runs once and route_after_intake
     # picks the real branch from the (now user-bound) intake.
     graph.add_node("clarify_gate", lambda s: {})
+    # `intake_failed` → END: the intake could not be parsed, so there is no metric, no
+    # table, no date column and no window to investigate with. The node has already
+    # emitted its error phase; anything past this point would be measuring defaults.
     graph.add_conditional_edges(
         "ada_intake",
         route_after_intake_clarify,
         {"clarify_gate": "clarify_gate", "ada_cross_section": _xsec_target,
-         "ada_baseline": _baseline_target, "deep_breakdown": "deep_breakdown"},
+         "ada_baseline": _baseline_target, "deep_breakdown": "deep_breakdown",
+         "intake_failed": END},
     )
     graph.add_conditional_edges(
         "clarify_gate",
         route_after_intake,
         {"ada_cross_section": _xsec_target, "ada_baseline": _baseline_target,
-         "deep_breakdown": "deep_breakdown"},
+         "deep_breakdown": "deep_breakdown", "intake_failed": END},
     )
 
     graph.add_conditional_edges(
@@ -439,6 +443,7 @@ def run_investigation(
         "investigation_phases": [],
         "answer_report": None,
         "_ada_intake": None,
+        "_intake_failed": None,
         "current_plan": None,
         "data_catalog": "",
         "subq_data_portrait": {},

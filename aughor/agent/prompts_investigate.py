@@ -65,11 +65,6 @@ TASK: Parse this question into a precise investigation specification.
    magnitude. Indicator columns are recognisable by name (`*_risk`, `is_*`, `has_*`, `*_flag`,
    `*_indicator`) or by holding only 0 and 1. Use the flag only when the question itself asks about
    frequency ("how often are we late", "what share of orders are late").
-   METRIC KIND: set metric_is_ratio=true when the metric is a RATIO / percentage / rate / per-unit
-   average (it divides one aggregate by another, scales by *100, or is an AVG / mean — e.g. "freight
-   as % of order value", "cancellation rate", "average order value", "margin %"). Set it false for a
-   plain additive total (SUM/COUNT of revenue, orders, units). This governs how downstream phases
-   aggregate the metric across segments — a ratio is never summed or divided by row count.
 
 2. OBSERVATION PERIOD — What time period is in question?
    Extract explicit dates or infer from question language ("February 2026" → 2026-02-01 to 2026-02-28).
@@ -241,9 +236,9 @@ For EACH query result, write:
     State whether the observed change is statistically significant.
     If a business calendar event may explain the anomaly, note it.
   - key_numbers: the 1–3 most important values (label, value, delta, context)
-  - chart_type: "line" for time series, "bar" for comparisons, "pareto" for concentration
-    (one categorical + one measure where a few categories drive most of the total — 80/20),
-    "none" for single-value outputs
+  - chart_type: name the data's JOB (see the field's own description) — typically "trend"
+    for a time series, "magnitude" to compare sizes, "change" for a signed per-item delta,
+    "none" for a single value. The renderer picks the form from the job.
   - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
   - is_significant: true ONLY when the change is BOTH statistically significant (|z| > {z_threshold})
     AND practically material (absolute change ≥ {pct_threshold}% of the prior-period value). A large
@@ -422,7 +417,8 @@ dimension lives in another table, JOIN to reach it (use DISTINCT or a pre-aggreg
 one-to-many join does NOT fan out and multiply the metric). NO date filters and NO status/price/other
 filters — every row counts. SELECT the dimension column FIRST, aliased with the dimension's OWN name
 (e.g. channel, region, product, currency) — never a generic alias like "dimension_value"; that label
-becomes the chart axis. metric_total comes SECOND. chart_type: "bar_horizontal".
+becomes the chart axis. metric_total comes SECOND. chart_type: "magnitude" (a ranked bar),
+or "change" when the measure is a signed delta per item.
 """
 
 # The metric-computation steps are branched by metric KIND. An ADDITIVE metric (a plain
@@ -538,7 +534,8 @@ For EACH dimension, write a finding:
     at 47% vs the ~51% average") — never an absolute superlative.
   - key_numbers: the 1–3 most telling values — include a TOTAL and an AVERAGE where the
     average reveals something the total hides.
-  - chart_type: "bar_horizontal".
+  - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
+    per item, or "share" when the rows are parts of one whole.
   - is_significant: true ONLY when this dimension is below a benchmark or far below the average — not merely the minimum of a healthy spread.
 
 Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
@@ -578,7 +575,8 @@ For EACH dimension, write a finding:
     ("the lowest at **2.2%** vs the ~4.3% of the rest").
   - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
     where it explains the result.
-  - chart_type: "bar_horizontal".
+  - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
+    per item, or "share" when the rows are parts of one whole.
   - is_significant: true ONLY when this dimension is clearly adverse vs a benchmark or a genuine
     outlier — not merely the minimum of a tight, healthy spread.
 
@@ -749,7 +747,15 @@ of total_change_label."""
 # ── Pydantic response models for structured LLM outputs ──────────────────────
 
 from pydantic import BaseModel, Field
+
+from aughor.agent.chart_vocab import chart_vocab_field_description
 from typing import Literal, Optional
+
+
+#: CA-4/A5 — the chart vocabulary, read from the ONE registry. Bound at import because a
+#: pydantic `Field(description=…)` is evaluated once at class definition; `chart_vocab.py`
+#: is pure, so this cannot go stale relative to the prompt sentence it shares its dicts with.
+_CHART_VOCAB = chart_vocab_field_description()
 
 
 class IntakeOutput(BaseModel):
@@ -770,7 +776,7 @@ class IntakeOutput(BaseModel):
     metric_table: str
     dimensions: list[str] = Field(description="List of 'table.column' pairs available for drill-down")
     cross_sectional: bool = Field(default=False, description="True when the question asks where/which/what is weakest / losing money / underperforming, OR the data has too few periods for a trend, OR it is a DRIVER question (does X affect/relate to/drive Y) — analyse across DIMENSIONS/SEGMENTS, not time.")
-    metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals.")
+    metric_is_ratio: bool = Field(default=False, description="True when metric_sql is a RATIO / percentage / rate / per-unit average rather than a plain additive total — i.e. it divides one aggregate by another (SUM(a)/SUM(b)), scales by *100, or is an AVG / per-record mean, e.g. 'freight as % of order value', 'cancellation rate', 'average order value', 'margin %'. Such a metric must NOT be summed across groups or divided by COUNT(*); it is re-aggregated per group as numerator/denominator. False for plain SUM/COUNT totals of revenue, orders or units.")
     comparison_segment_sql: str = Field(default="", description="For a DRIVER question (does X lower/raise/affect/relate-to Y), the boolean/CASE SQL expression defining the contrasted condition X — e.g. (order_delivered_ts > order_estimated_delivery) for 'late deliveries', or (is_new_customer) for 'new vs returning'. Empty for non-driver questions.")
     comparison_segment_label: str = Field(default="", description="Human label for comparison_segment_sql, e.g. 'late vs on-time delivery'. Empty when comparison_segment_sql is empty.")
     relationship_left_sql: str = Field(default="", description="For a RELATIONSHIP question (how do A and B relate / is there a correlation between A and B), the column — or the arithmetic measuring it — for the FIRST side, e.g. '\"Days for shipping (real)\" - \"Days for shipment (scheduled)\"' for 'shipping delay'. NOT an aggregate: no SUM/AVG/COUNT. Empty for non-relationship questions.")
@@ -781,6 +787,42 @@ class IntakeOutput(BaseModel):
     intervention_column: str = Field(default="", description="A column recording an INTERVENTION or ASSIGNMENT that was applied to units — a treatment arm, an A/B variant, a campaign flag deliberately assigned, a policy applied from a date. This is what makes a causal contrast identifiable. Empty unless the data genuinely records an assignment; a column that merely correlates with an outcome is NOT an intervention.")
     claim_type_suggestion: str = Field(default="", description="Optional: the weakest claim this question needs — one of 'descriptive', 'associational', 'predictive'. Never 'causal'; a causal licence comes from the design, not from this field. Leave empty unless the question is clearly weaker than the design allows.")
     intake_notes: str = Field(description="Any caveats about the schema or question interpretation")
+
+
+#: What the MODEL is actually asked for: `IntakeOutput` minus the fields code overwrites
+#: immediately afterwards.
+#:
+#: Three of the 28 fields carry "(set by code …)" in their own description — `descriptive_only`
+#: (overwritten unconditionally from the question), `no_prior_period` (decided by
+#: `_clamp_intake_to_coverage` from the real date coverage) and `named_dimensions` (resolved from
+#: the question against the schema). The model was being asked to reason about, and emit, values
+#: that were thrown away on the next line. That costs its attention as well as the tokens.
+#:
+#: The subset is DERIVED from that marker, not listed beside it: add a fourth code-set field and
+#: it leaves the ask automatically, and nothing here has to be remembered. Every excluded field has
+#: a default, so widening back to `IntakeOutput` reproduces exactly the object the code then
+#: overwrites — this is a removal of wasted work, not a behaviour change, and
+#: `test_intake_ask_model` holds the two equal.
+_CODE_SET_INTAKE_FIELDS = frozenset(
+    name for name, f in IntakeOutput.model_fields.items()
+    if "set by code" in (f.description or "")
+)
+
+
+def _build_intake_ask_model():
+    from pydantic import create_model
+    keep = {n: (f.annotation, f) for n, f in IntakeOutput.model_fields.items()
+            if n not in _CODE_SET_INTAKE_FIELDS}
+    return create_model("IntakeAsk", __doc__=IntakeOutput.__doc__, **keep)
+
+
+IntakeAsk = _build_intake_ask_model()
+
+
+def widen_intake(asked) -> IntakeOutput:
+    """The model's answer as a full `IntakeOutput`; the code-set fields take their defaults,
+    which is precisely the value the caller overwrites a few lines later."""
+    return IntakeOutput(**asked.model_dump())
 
 
 class SemanticField(BaseModel):
@@ -803,7 +845,8 @@ class SemanticStep(BaseModel):
 class PhaseQueryPlan(BaseModel):
     title: str
     sql: str
-    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = "auto"
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = Field(
+        default="auto", description=_CHART_VOCAB)
     rationale: str
     semantic: Optional[SemanticStep] = Field(
         default=None,
@@ -840,7 +883,8 @@ class PhaseFindingModel(BaseModel):
     )
     interpretation: str
     key_numbers: list[PhaseKeyNumberModel] = Field(default_factory=list)
-    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = "auto"
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = Field(
+        default="auto", description=_CHART_VOCAB)
     stat_note: Optional[str] = None
     is_significant: bool = False
 

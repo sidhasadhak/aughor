@@ -160,6 +160,22 @@ def _flow(block: Block, S) -> list:
             out.append(Paragraph(_rich(block.caption), S["claim"]))
         if block.text:
             out.append(Paragraph(_rich(block.text), S["body"]))
+        # The statistical verdict. `document.py` has always set it here (a finding's
+        # `stat_note`), and this branch has never read it — so every z-score, every
+        # significance verdict and every completeness warning stats.py produced was
+        # discarded on the way to the page. Measured 2026-09-18: 630 stored findings carry
+        # a stat_note; none of them could ever reach a PDF.
+        #
+        # The damaging instance is the partial-period warning. Run 29c3c169 carried
+        # "PARTIAL FINAL PERIOD: September 2026 holds 21 of 30 days (70%) — its total is
+        # not comparable to a full month … Per day: 16,301 vs previous month 8,664", and
+        # the exported report quoted that partial month's total as a trend point anyway.
+        #
+        # NOT uppercased like a prose tag: on a finding this field is a SENTENCE, not a
+        # short label ("Caveat"), and `.upper()` on 200 characters shouts. Small muted
+        # text under the interpretation, where a qualifier belongs.
+        if block.tag:
+            out.append(Paragraph(_rich(block.tag), S["small"]))
         if block.confidence is not None:
             out.append(Paragraph(_confidence_chip(block.confidence), S["small"]))
         out.append(Spacer(1, 4))

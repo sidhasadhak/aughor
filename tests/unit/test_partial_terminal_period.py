@@ -46,7 +46,15 @@ def test_verdict_reaches_the_interpret_text_and_the_finding():
     r = SimpleNamespace(columns=COLS, rows=ROWS, error=None, row_count=3, sql="SELECT 1",
                         truncated=False, stats=[], duration_ms=0)
     text = _results_text_with_verdicts([r], 20, coverage_end="2026-08-18")
-    assert "STATISTICAL VERDICT for this query — PARTIAL FINAL PERIOD: August 2026" in text
+    # Asserted as the two things that must BOTH hold, not as one contiguous string: the
+    # verdict is labelled and outranks the rows, and it names the partial period. They were
+    # pinned as a single concatenation, so adding the obligation between them (2026-09-18 —
+    # this verdict alone lacked the imperative its two siblings carry, and the reader was
+    # told in only 4 of 7 live runs) broke the assertion without breaking the behaviour.
+    assert "STATISTICAL VERDICT for this query" in text
+    assert "PARTIAL FINAL PERIOD: August 2026" in text
+    assert "OVERRIDES" in text and "MUST" in text, (
+        "the partial-period verdict must oblige the narrator, not merely inform it")
     findings = [{"finding_id": "baseline_1", "stat_note": "σ unavailable"}]
     _stamp_partial_period_verdicts(findings, [(None, r)], "2026-08-18")
     assert findings[0]["stat_note"].startswith("σ unavailable PARTIAL FINAL PERIOD")

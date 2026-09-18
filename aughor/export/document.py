@@ -307,7 +307,15 @@ def _build_ada(inv: dict, money_symbol: str = "") -> ExportDoc:
                 # the query's descriptive name stays as the chart caption below.
                 caption=f.get("claim") or f.get("title") or "",
                 text=f.get("interpretation") or "",
-                tag=(f.get("stat_note") or "") if f.get("is_significant") else "",
+                # Gated on the PRESENCE of a stat note, not on `is_significant` — the rule
+                # `web/components/brief/StatBadge.tsx` already states for the same field on
+                # the same findings. The two are orthogonal: `is_significant` is about
+                # whether a CHANGE cleared a threshold, while a stat note also carries
+                # whether the data behind it is COMPLETE. Gating on significance suppressed
+                # every "PARTIAL FINAL PERIOD" warning on a finding whose change happened
+                # not to be significant — which is precisely when a reader is most likely to
+                # read a partial month's smaller total as a decline.
+                tag=(f.get("stat_note") or ""),
             ))
             kns = f.get("key_numbers") or []
             if kns:

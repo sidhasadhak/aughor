@@ -557,6 +557,7 @@ class AgentState(TypedDict):
     investigation_phases: list[InvestigationPhaseResult]
     answer_report: Optional[AnswerReport]
     _ada_intake: Optional[dict]      # intake spec passed between deep-analysis phase nodes
+    _intake_failed: Optional[str]    # why intake produced no spec; set ⇒ the run ends at intake
     # ON-10 — the frame the investigation door resolved before the graph started (a dumped
     # `aughor.ontology.framing.Frame`); the intake completes it with a model's choice when ambiguous.
     ontology_frame: Optional[dict]

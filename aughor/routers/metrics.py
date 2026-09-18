@@ -62,8 +62,59 @@ class MetricRequest(BaseModel):
 
 
 @router.get("/metrics")
-def get_metrics():
-    return [m.model_dump() for m in list_metrics()]
+def get_metrics(connection_id: Optional[str] = None):
+    """The registry, optionally narrowed to one connection.
+
+    `connection_id` applies `list_metrics`' own connection-shadows-global rule. It stays
+    OPTIONAL so every existing caller is byte-identical: making it required would turn a
+    re-key into a caller migration, and each unconverted site becomes a silent global read
+    that looks correct (the same reasoning `list_metrics` records for its own default)."""
+    return [m.model_dump() for m in list_metrics(connection_id=connection_id)]
+
+
+# The path parameter is `conn_id`, not `connection_id`: `require_capability` (the `gate`
+# below) declares `connection_id` as a QUERY parameter, and FastAPI refuses a name declared
+# both ways on one route. `connection_owner_guard` accepts either spelling, so DATA-06
+# ownership is enforced on these doors exactly as on the rest of the router.
+@router.get("/metrics/catalogue/{conn_id}")
+def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
+    """Every metric that APPLIES to this connection — defined, industry and explorer.
+
+    Not the same list as `/metrics`: that one is the registry, and most of what applies to
+    a connection is not in the registry yet. A pack's recipe is role-bound until this
+    connection binds those roles, and the explorer's judgement lives on the business
+    profile. Both are computed here and materialised only when someone edits one."""
+    from aughor.semantic.metric_catalogue import catalogue_for
+
+    rows = catalogue_for(conn_id, schema)
+    return {
+        "connection_id": conn_id,
+        "metrics": [r.as_dict() for r in rows],
+        "counts": {
+            "total": len(rows),
+            "defined": sum(1 for r in rows if r.source == "defined"),
+            "industry": sum(1 for r in rows if r.source == "industry"),
+            "explorer": sum(1 for r in rows if r.source == "explorer"),
+            "needs_binding": sum(1 for r in rows if r.state == "needs_binding"),
+            "needs_formula": sum(1 for r in rows if r.state == "needs_formula"),
+        },
+    }
+
+
+@router.post("/metrics/catalogue/{conn_id}/{name}/materialise",
+             status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
+def materialise_metric(conn_id: str, name: str, schema: Optional[str] = None,
+                       actor: str = ""):
+    """Copy-on-write: turn a computed row into an editable, connection-scoped definition.
+
+    Lands as `draft` — see `metric_catalogue.materialise`. A row that needs a binding is
+    refused with the roles it is missing, rather than written as SQL that cannot run."""
+    from aughor.semantic.metric_catalogue import MaterialiseError, materialise
+
+    try:
+        return materialise(conn_id, name, schema, actor=actor).model_dump()
+    except MaterialiseError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.post("/metrics", status_code=201, dependencies=[gate(Capability.METRICS_DEFINE)])
