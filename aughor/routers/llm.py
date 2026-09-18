@@ -133,15 +133,25 @@ def remove_llm_model(backend: str, model: str):
 
 class _ProbeRequest(BaseModel):
     role: Optional[str] = None       # which role's bound model to probe (default coder)
-    rounds: Optional[int] = None     # shared/distinct calls per series (default 3)
+    rounds: Optional[int] = None     # shared/distinct calls per series (probe's own default)
 
 
 @router.post("/llm/config/cache-probe")
 def cache_probe(req: Optional[_ProbeRequest] = None):
     """Measure whether the active binding reuses a shared prompt prefix across requests
     (PLATFORM_ARCHITECTURE.md §5b.3) and persist the verdict so the capability seam adopts
-    it. Makes a handful of tiny real completions — defaults to the coder role's model."""
+    it. Makes a handful of real completions — defaults to the coder role's model.
+
+    The verdict may be ``inconclusive``, which CLEARS any persisted override rather than
+    writing one, and the report then carries a ``reason``. That is a real answer: latency
+    inference cannot resolve prefix caching on a noisy hosted binding, and this probe used
+    to return confident contradictory verdicts instead of saying so.
+    """
     from aughor.llm import cache_probe as _probe
 
     req = req or _ProbeRequest()
-    return _probe.probe_prefix_cache(role=(req.role or "coder"), rounds=(req.rounds or 3))
+    # `rounds` is forwarded only when the caller named one. Repeating a default here is how
+    # the route silently pinned 3 after the probe itself moved to 5 — one default, one
+    # place, and the probe owns it.
+    kw = {"rounds": req.rounds} if req.rounds else {}
+    return _probe.probe_prefix_cache(role=(req.role or "coder"), **kw)
