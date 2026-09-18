@@ -241,9 +241,9 @@ For EACH query result, write:
     State whether the observed change is statistically significant.
     If a business calendar event may explain the anomaly, note it.
   - key_numbers: the 1–3 most important values (label, value, delta, context)
-  - chart_type: "line" for time series, "bar" for comparisons, "pareto" for concentration
-    (one categorical + one measure where a few categories drive most of the total — 80/20),
-    "none" for single-value outputs
+  - chart_type: name the data's JOB (see the field's own description) — typically "trend"
+    for a time series, "magnitude" to compare sizes, "change" for a signed per-item delta,
+    "none" for a single value. The renderer picks the form from the job.
   - stat_note: if z-score is available, format as "z = X.X — [significant/within normal range]"
   - is_significant: true ONLY when the change is BOTH statistically significant (|z| > {z_threshold})
     AND practically material (absolute change ≥ {pct_threshold}% of the prior-period value). A large
@@ -422,7 +422,8 @@ dimension lives in another table, JOIN to reach it (use DISTINCT or a pre-aggreg
 one-to-many join does NOT fan out and multiply the metric). NO date filters and NO status/price/other
 filters — every row counts. SELECT the dimension column FIRST, aliased with the dimension's OWN name
 (e.g. channel, region, product, currency) — never a generic alias like "dimension_value"; that label
-becomes the chart axis. metric_total comes SECOND. chart_type: "bar_horizontal".
+becomes the chart axis. metric_total comes SECOND. chart_type: "magnitude" (a ranked bar),
+or "change" when the measure is a signed delta per item.
 """
 
 # The metric-computation steps are branched by metric KIND. An ADDITIVE metric (a plain
@@ -538,7 +539,8 @@ For EACH dimension, write a finding:
     at 47% vs the ~51% average") — never an absolute superlative.
   - key_numbers: the 1–3 most telling values — include a TOTAL and an AVERAGE where the
     average reveals something the total hides.
-  - chart_type: "bar_horizontal".
+  - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
+    per item, or "share" when the rows are parts of one whole.
   - is_significant: true ONLY when this dimension is below a benchmark or far below the average — not merely the minimum of a healthy spread.
 
 Be honest: if a dimension is healthy or evenly spread, say it is NOT a problem area.
@@ -578,7 +580,8 @@ For EACH dimension, write a finding:
     ("the lowest at **2.2%** vs the ~4.3% of the rest").
   - key_numbers: the 1–3 most telling values — include the ratio, and the numerator or denominator
     where it explains the result.
-  - chart_type: "bar_horizontal".
+  - chart_type: "magnitude" (a ranked bar), or "change" when the measure is a signed delta
+    per item, or "share" when the rows are parts of one whole.
   - is_significant: true ONLY when this dimension is clearly adverse vs a benchmark or a genuine
     outlier — not merely the minimum of a tight, healthy spread.
 
@@ -749,7 +752,15 @@ of total_change_label."""
 # ── Pydantic response models for structured LLM outputs ──────────────────────
 
 from pydantic import BaseModel, Field
+
+from aughor.agent.chart_vocab import chart_vocab_field_description
 from typing import Literal, Optional
+
+
+#: CA-4/A5 — the chart vocabulary, read from the ONE registry. Bound at import because a
+#: pydantic `Field(description=…)` is evaluated once at class definition; `chart_vocab.py`
+#: is pure, so this cannot go stale relative to the prompt sentence it shares its dicts with.
+_CHART_VOCAB = chart_vocab_field_description()
 
 
 class IntakeOutput(BaseModel):
@@ -803,7 +814,8 @@ class SemanticStep(BaseModel):
 class PhaseQueryPlan(BaseModel):
     title: str
     sql: str
-    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = "auto"
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = Field(
+        default="auto", description=_CHART_VOCAB)
     rationale: str
     semantic: Optional[SemanticStep] = Field(
         default=None,
@@ -840,7 +852,8 @@ class PhaseFindingModel(BaseModel):
     )
     interpretation: str
     key_numbers: list[PhaseKeyNumberModel] = Field(default_factory=list)
-    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = "auto"
+    chart_type: Literal["auto", "magnitude", "trend", "identity", "change", "share", "distribution", "relation", "histogram", "boxplot", "counter", "funnel", "waterfall", "sankey", "small_multiples", "line_forecast", "gantt", "choropleth", "point_map", "treemap", "heatmap", "none"] = Field(
+        default="auto", description=_CHART_VOCAB)
     stat_note: Optional[str] = None
     is_significant: bool = False
 

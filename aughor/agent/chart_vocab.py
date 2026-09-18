@@ -96,6 +96,37 @@ def chart_vocab_line() -> str:
     )
 
 
+def chart_vocab_field_description() -> str:
+    """The same vocabulary, shaped as a STRUCTURED-OUTPUT field description.
+
+    `chart_vocab_line()` is a prompt sentence ("Also return chart_type — …"); this is what
+    a `Field(description=…)` needs, and it exists because the deep path never reads the
+    prompt sentence. Measured 2026-09-18 over 1,026 stored investigations / 1,477 findings:
+    the job vocabulary was named **zero** times. `chart_vocab_line()` is spliced only into
+    `prompts.py` (the quick path), so on the deep path the model saw a bare
+    `Literal[...]` — 22 opaque tokens with no descriptions — while the prompt text told it
+    to return "line", "bar", "pareto" and "bar_horizontal", three of which that Literal
+    forbids and one (`pareto`) this module never offers at all.
+
+    So it could not comply: it emitted a legacy token and structured output fell back to
+    the default `auto`. The result was 53% `bar_horizontal`, 38% `auto`/`none`, and six
+    distinct types ever chosen out of twenty-two.
+
+    Putting the vocabulary HERE reaches every prompt that uses the model, including the
+    decomposition, dimensional, breakdown and behavioural interpreters — none of which
+    mention charts at all, and all of which return this field. Derived from the same two
+    dicts as the prompt sentence, so the two cannot drift.
+    """
+    jobs = "; ".join(f"{j} — {what}" for j, what in CHART_JOBS.items())
+    exotic = "; ".join(f"{t} — {shape}" for t, shape in EXOTIC_SHAPES.items())
+    return (
+        "Name the data's JOB — what the reader must DO with this result — and the renderer "
+        f"picks the form. Jobs: {jobs}. Specialised types, ONLY when the result matches the "
+        f"stated shape: {exotic}. Use 'none' when there is nothing to plot (a single value, "
+        "or prose), and 'auto' only when no job above fits."
+    )
+
+
 def answer_chart_payload(
     chart_type: str | None,
     chart_config: dict | None,
