@@ -7044,7 +7044,12 @@ export interface paths {
          * Cache Probe
          * @description Measure whether the active binding reuses a shared prompt prefix across requests
          *     (PLATFORM_ARCHITECTURE.md §5b.3) and persist the verdict so the capability seam adopts
-         *     it. Makes a handful of tiny real completions — defaults to the coder role's model.
+         *     it. Makes a handful of real completions — defaults to the coder role's model.
+         *
+         *     The verdict may be ``inconclusive``, which CLEARS any persisted override rather than
+         *     writing one, and the report then carries a ``reason``. That is a real answer: latency
+         *     inference cannot resolve prefix caching on a noisy hosted binding, and this probe used
+         *     to return confident contradictory verdicts instead of saying so.
          */
         post: operations["cache_probe_llm_config_cache_probe_post"];
         delete?: never;
