@@ -242,6 +242,12 @@ def route_after_intake(state: AgentState) -> str:
     The new node takes the LIVE vocabulary rather than the prefix beside it: those two keep a
     retired prefix because their names are frozen API, but nothing obliges fresh code to
     inherit it, and the vocabulary ratchet counts what we add."""
+    # A FAILED intake ends the run. Without this branch the three routes below are
+    # reached with `intake == {}`, which is indistinguishable from a healthy temporal
+    # question — so the default baseline route ran a full investigation on no spec at
+    # all. See the `intake is None` branch in the intake node for the live specimen.
+    if state.get("_intake_failed"):
+        return "intake_failed"
     intake = state.get("_ada_intake") or {}
     if intake.get("descriptive_only"):
         return "deep_breakdown"
@@ -1800,6 +1806,29 @@ def _results_to_text(results, max_rows: Optional[int] = None) -> str:
 _PERIOD_TS_RE = re.compile(r"^\d{4}-\d{2}-\d{2}(?:[ T]00:00:00(?:\.0+)?)?$")
 
 
+#: The prefixes that mark the READER-FACING half of a `stat_note`.
+#:
+#: A stat note is two things concatenated: a statistical verdict ("z = 8.2 — significant"),
+#: which is verification machinery, and sometimes a WARNING about whether the number can be
+#: read at all ("PARTIAL FINAL PERIOD: September 2026 holds 21 of 30 days…"). The web's
+#: clean-output policy keeps machinery out of the body and is right to; a warning is not
+#: machinery, and keeping it out cost the reader the one sentence that changed the meaning
+#: of the headline (run 29c3c169, 2026-09-18).
+#:
+#: Defined here and INTERPOLATED into the notes below, so the marker a reader keys on and
+#: the marker a producer writes cannot drift. Mirrored in
+#: `web/components/InvestigationReport.tsx`; `test_stat_note_markers_parity` walks both —
+#: the same arrangement `chart_vocab.JOB_TO_FORM` has with `chartTypeInference.ts`.
+#:
+#: Derived from the live corpus, not guessed: of 630 stored stat notes, 7 carry
+#: PARTIAL FINAL PERIOD and 15 carry EXPOSURE CHECK. ("THE OUTNET" also matches a naive
+#: all-caps scan — it is a retailer's name quoted out of the data, which is exactly why the
+#: markers are declared rather than sniffed.)
+PARTIAL_PERIOD_MARKER = "PARTIAL FINAL PERIOD"
+EXPOSURE_CHECK_MARKER = "EXPOSURE CHECK"
+READER_FACING_STAT_MARKERS = (PARTIAL_PERIOD_MARKER, EXPOSURE_CHECK_MARKER)
+
+
 def _partial_terminal_period_note(columns, rows, coverage_end: Optional[str]) -> Optional[str]:
     """A code-written verdict when a time series' LAST period is incomplete — CA-0.
 
@@ -1855,7 +1884,7 @@ def _partial_terminal_period_note(columns, rows, coverage_end: Optional[str]) ->
         return None
     label = last.strftime("%B %Y") if grain == "month" else f"week of {last.isoformat()}"
     pct = round(100.0 * covered / full_days)
-    note = (f"PARTIAL FINAL PERIOD: {label} holds {covered} of {full_days} days ({pct}%) — "
+    note = (f"{PARTIAL_PERIOD_MARKER}: {label} holds {covered} of {full_days} days ({pct}%) — "
             f"its total is not comparable to a full {grain}; compare per-day rates, and do not "
             f"read the smaller total as a drop or a correction.")
     # per-day rate of the last vs previous period, when exactly one numeric measure exists
@@ -2003,7 +2032,7 @@ def _concentration_note(columns, rows) -> Optional[str]:
             verdict = (f"PROPORTIONAL — {index:.2f}× its share of the population, i.e. {g} leads "
                        f"because it is the largest group, not because it is the weakest. Ranking "
                        f"by this metric restates group size.")
-        return (f"EXPOSURE CHECK: {g} holds {share_m:.1f}% of the metric and {share_n:.1f}% of the "
+        return (f"{EXPOSURE_CHECK_MARKER}: {g} holds {share_m:.1f}% of the metric and {share_n:.1f}% of the "
                 f"rows — {verdict}")
     except Exception:
         return None
@@ -2058,7 +2087,19 @@ def _results_text_with_verdicts(results, max_rows: Optional[int] = None,
         if coverage_end and not getattr(r, "error", None) and getattr(r, "rows", None):
             _partial = _partial_terminal_period_note(r.columns, r.rows, coverage_end)
             if _partial:
-                parts.append("STATISTICAL VERDICT for this query — " + _partial)
+                # Its two siblings above each end in an IMPERATIVE — "Do NOT call any value
+                # here significant…", "A PROPORTIONAL split is NOT a finding: do not call
+                # it concentration…". This one stated a fact and hoped, and the difference
+                # shows: of the 7 stored investigations where this note fired, 3 never told
+                # the reader the period was partial (2026-09-04, 09-15, 09-18), while the
+                # other 4 did. A coin flip on whether a reader learns the final month is
+                # incomplete is not a guard, so it now carries the same obligation the
+                # other two do.
+                parts.append(
+                    "STATISTICAL VERDICT for this query — it OVERRIDES what the rows below "
+                    "suggest. You MUST say in the interpretation that the final period is "
+                    "incomplete, and you must NOT quote its total as a trend point, a "
+                    "decline or a record: " + _partial)
         # Exposure normalisation, same rationale one column over: the leading group leads almost
         # any additive metric BY BEING LARGEST, and a narrator handed only `pct_of_total` will
         # write "X accounts for over half — cost is concentrated in X" about a group that holds
@@ -4130,9 +4171,25 @@ def _observation_window_is_wrong(obs_start, obs_end, cov_min: str, cov_max: str)
     return not s or not e or e < cov_min or s > cov_max
 
 
+#: Both month-key probes below called themselves "dialect-robust" and hardcoded
+#: `CAST(col AS VARCHAR)`, which BigQuery rejects outright ("Type not found: VARCHAR") and
+#: MySQL rejects without a length. Measured over September 2026: 71 of 222 live SQL failures
+#: — 32% — were these two probes, all on the theLook BigQuery connection.
+#:
+#: They fail open (`return None` on any error), so nothing ever surfaced: the density guard
+#: and the TRAILING-PARTIAL guard simply never ran on a BigQuery or MySQL connection, and the
+#: intake carried on as though the window were dense and its final month complete.
+#:
+#: The fix is the seam that already exists rather than a second one here:
+#: `aughor.db.dialects.native_sql` transpiles DuckDB-written platform SQL into the dialect
+#: the connection actually runs, for every `writes_native_sql` engine, and returns DuckDB's
+#: own SQL untouched. It handles strictly more than a type-name map would — the `::` cast
+#: operator, `date_trunc`, function names — which is the point of not hand-rolling one.
+
+
 def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, end: str) -> "int | None":
     """Count of distinct POPULATED months of the metric's date column within [start, end]. A
-    cheap, dialect-robust probe (COUNT DISTINCT of the 'YYYY-MM' text prefix). Returns None on any
+    cheap probe (COUNT DISTINCT of the 'YYYY-MM' text prefix, cast per dialect). Returns None on any
     failure (fail-open, like the span probe). Feeds the density guard: a window whose calendar span
     survived the clamp but whose real data is sparse (a gap / slow ramp) is still a thin PoP baseline."""
     if not conn_id or not table or not date_col or not start or not end:
@@ -4145,12 +4202,21 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_col)
+        from aughor.db.dialects import native_sql
         res = db.execute(
             "intake_density",
-            f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
-            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'",
+            native_sql(db, f"SELECT COUNT(DISTINCT substr(CAST({col} AS VARCHAR), 1, 7)) "
+                           f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}'"),
         )
         if res.error or not res.rows or res.rows[0][0] is None:
+            # Still fail-open, but no longer SILENT: this probe returning None disables the
+            # density guard, and for months on BigQuery it did so on every run with nobody
+            # able to see it.
+            if res.error:
+                from aughor.kernel.errors import tolerate
+                tolerate(RuntimeError(res.error),
+                         "the month-density probe failed; the density guard is skipped for "
+                         "this run", counter="intake.density_probe_failed", conn_id=conn_id)
             return None
         return int(res.rows[0][0])
     except Exception:
@@ -4166,8 +4232,8 @@ def _populated_month_count(conn_id: str, table: str, date_col: str, start: str, 
 
 
 def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: str) -> "list | None":
-    """Ordered [(YYYY-MM, row_count)] for the metric's date column within [start, end]. Cheap and
-    dialect-robust (GROUP BY the 'YYYY-MM' text prefix). Feeds the trailing-partial guard. Returns
+    """Ordered [(YYYY-MM, row_count)] for the metric's date column within [start, end]. Cheap
+    (GROUP BY the 'YYYY-MM' text prefix, cast per dialect). Feeds the trailing-partial guard. Returns
     None on any failure (fail-open, like the other probes)."""
     if not conn_id or not table or not date_col or not start or not end:
         return None
@@ -4179,12 +4245,22 @@ def _monthly_counts(conn_id: str, table: str, date_col: str, start: str, end: st
         from aughor.db.connection import open_connection_for
         db = open_connection_for(conn_id)
         ref, col = _resolve_probe_ref(table, date_col)
+        from aughor.db.dialects import native_sql
         res = db.execute(
             "intake_monthly",
-            f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
-            f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' GROUP BY 1 ORDER BY 1",
+            native_sql(db, f"SELECT substr(CAST({col} AS VARCHAR), 1, 7) AS m, COUNT(*) AS n "
+                           f"FROM {ref} WHERE {col} >= '{s}' AND {col} <= '{e}' "
+                           f"GROUP BY 1 ORDER BY 1"),
         )
         if res.error or not res.rows:
+            # As above: None here disables the TRAILING-PARTIAL guard — the one whose warning
+            # a reader needs to not read a half-finished month as a decline.
+            if res.error:
+                from aughor.kernel.errors import tolerate
+                tolerate(RuntimeError(res.error),
+                         "the monthly-counts probe failed; the trailing-partial guard is "
+                         "skipped for this run", counter="intake.monthly_probe_failed",
+                         conn_id=conn_id)
             return None
         return [(str(r[0]), int(r[1])) for r in res.rows if r[0] is not None]
     except Exception:
@@ -5434,7 +5510,8 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
     live DB for a join-reachable population date; it is optional and the recovery fails open
     (falling back to the schema-string parse) when a connection isn't supplied.
     """
-    from aughor.agent.prompts_investigate import INTAKE_PROMPT, IntakeOutput
+    from aughor.agent.prompts_investigate import (
+        INTAKE_PROMPT, IntakeAsk, IntakeOutput, widen_intake)
 
     question = state["question"]
     # Size the intake caps to the bound model's window (Layer A, §5b.3): unchanged on a
@@ -5509,11 +5586,15 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
         prompt = directive_from_signals(_loss_sig) + "\n" + prompt
 
     try:
-        intake: IntakeOutput = _provider("coder").complete(
+        # `IntakeAsk` is `IntakeOutput` minus the three fields code overwrites on the next
+        # lines (`descriptive_only`, `no_prior_period`, `named_dimensions`). The model was
+        # spending attention and output tokens on values that were discarded; `widen_intake`
+        # restores them at their defaults, which is exactly what the overwrite assumes.
+        intake: IntakeOutput = widen_intake(_provider("coder").complete(
             system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
             user=prompt,
-            response_model=IntakeOutput,
-        )
+            response_model=IntakeAsk,
+        ))
     except Exception as e:
         intake = None
         intake_error = str(e)
@@ -5540,11 +5621,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 "comparison window that actually contains data)."
             )
             try:
-                intake = _provider("coder").complete(
+                intake = widen_intake(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
+                    response_model=IntakeAsk,
+                ))
             except Exception as _exc:
                 from aughor.kernel.errors import tolerate
                 tolerate(_exc, "intake correction retry failed; keeping the original intake "
@@ -5689,11 +5770,11 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
                 "another table, pick the closest single-column proxy instead. Return the fixed spec."
             )
             try:
-                _retry = _provider("coder").complete(
+                _retry = widen_intake(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=retry_prompt,
-                    response_model=IntakeOutput,
-                )
+                    response_model=IntakeAsk,
+                ))
                 if _retry is not None and not _unsafe_metric_sql(_retry.metric_sql):
                     intake = _retry
                     _qualify_intake_table_names(intake, schema)
@@ -5722,15 +5803,15 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             r"(price|amount|revenue|cost|total|spend|value|sales|mrr|gmv|fee|charge)", _msql, re.IGNORECASE)
         if not _has_money_col and re.search(r"\bCOUNT\s*\(", _msql, re.IGNORECASE):
             try:
-                _retry2 = _provider("coder").complete(
+                _retry2 = widen_intake(_provider("coder").complete(
                     system="You are a precise data analyst parsing a business question. Return a structured investigation specification.",
                     user=prompt + (
                         "\n\nCORRECTION REQUIRED: the question is about MONEY, but the previous "
                         "metric_sql counted rows instead of aggregating a monetary column. "
                         "Re-express metric_sql as an aggregate over an actual money column "
                         "(price/amount/revenue/total) from the schema. Return the fixed spec."),
-                    response_model=IntakeOutput,
-                )
+                    response_model=IntakeAsk,
+                ))
                 if _retry2 is not None and re.search(
                         r"(price|amount|revenue|cost|total|spend|value|sales)",
                         _retry2.metric_sql or "", re.IGNORECASE):
@@ -5875,9 +5956,37 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             "Could not parse investigation specification.",
             [_skipped_finding("intake", intake_error)],
         )
+        # The run STOPS here. `_intake_failed` is a typed verdict `route_after_intake`
+        # reads to reach END instead of the baseline branch (§6: a knob is a typed
+        # intake verdict, never a flag).
+        #
+        # It used to return exactly the two keys below and nothing else — leaving the
+        # parsed-intake state key at its None seed. `route_after_intake` reads that key
+        # with an `or {}` default, so a FAILED intake and a healthy temporal question
+        # were the same empty dict, and the router sent both down the baseline route.
+        # The investigation then ran its full length with no metric, no table, no date
+        # column and no window, and every downstream phase filled those holes from its
+        # own `.get(..., default)` literals: `metric_sql` became the hardcoded
+        # "SUM(revenue)", the window became whatever the planner model invented, and
+        # `_no_prior` went True — so the prompt asserted "no period before the
+        # observation window exists in the data" over 7.7 years of history.
+        #
+        # Live specimen (2026-09-18, theLook `8233e4fd`, run 18345353): the same
+        # question asked 42 s after a healthy run reported "Revenue grew 11.8%" over
+        # 2023-10-01 → 2024-04-01 — a window 2.5 years stale — and headlined an "85.6%
+        # final-week collapse" that was its own `< '2024-04-01'` filter cutting a
+        # Sunday-start week bucket after one day ($4,071 ≈ $28,351/7). It shipped
+        # recommendations to Data Engineering with a one-day deadline for a phantom.
+        #
+        # Every deterministic guard that exists to prevent precisely this
+        # (`_clamp_intake_to_coverage`'s stale-window re-anchor, `_flag_trailing_partial`,
+        # `_validate_intake_windows`) lives inside `if intake is not None:` above, so
+        # they are skipped in exactly the case they were written for. A run with no
+        # spec cannot be guarded into correctness — it can only be stopped.
         return {
             "investigation_phases": [phase],
             "answer_report": None,
+            "_intake_failed": intake_error or "the model returned no investigation specification",
         }
 
     # The displayed spec must describe the run that will ACTUALLY happen. The cross-sectional branch
@@ -6530,8 +6639,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     phases = state.get("investigation_phases", [])
-    metric_label = intake_data.get("metric_label", "the core metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "the observation period")
@@ -6863,8 +6972,8 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     phases = state.get("investigation_phases", [])
     baseline_summary = state.get("_baseline_summary", "Baseline established.")
 
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "observation period")
@@ -6968,8 +7077,8 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     phases = state.get("investigation_phases", [])
 
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "observation period")
@@ -7084,8 +7193,8 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
 
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "observation period")
@@ -7275,7 +7384,7 @@ def deep_breakdown(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     phases = state.get("investigation_phases", [])
     intake_data = state.get("_ada_intake") or {}
-    metric_label = intake_data.get("metric_label", "the metric")
+    metric_label = intake_data.get("metric_label") or ""
     _title, _emoji = "Breakdown", "📑"
 
     # The cuts: what the question NAMED, else the intake's dimensions in priority order
@@ -7366,8 +7475,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     if extra_schema:
         schema = schema + extra_schema
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     metric_table = intake_data.get("metric_table", "")
     dimensions = dims_override if dims_override is not None else intake_data.get("dimensions", [])
     # Auto-drill WHERE→WHY (flag AUGHOR_CAUSAL_DRILL) — only on a clean top-level scan, never a sub-lens
@@ -8414,8 +8523,8 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
     WHERE scan uses, so the two lenses' rates are comparable rather than order-vs-item contradictory."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
-    metric_sql = intake.get("metric_sql", "SUM(revenue)")
+    metric_label = intake.get("metric_label") or ""
+    metric_sql = intake.get("metric_sql") or ""
     metric_table = intake.get("metric_table", "")
     date_column = axis["date_column"]
     _grain_plan = _grain_plan_directive(grain) if grain else ""
@@ -8537,7 +8646,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
     actual 'why' (e.g. size_fit = 42% of returns). Returns a phase dict or None. Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     # Lead the WHY with the causal dims; drop downstream ops metadata (carrier/refund method) so the
     # composition answers "why", not "how it shipped" (fail-safe keeps all when nothing looks causal).
@@ -8647,7 +8756,7 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
     join. Returns a phase dict or None. Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
@@ -8743,7 +8852,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
     LLM-planned. Returns a phase dict or None. Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
@@ -8798,7 +8907,7 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
     Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
@@ -9143,7 +9252,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             intake_data.get("dimensions", []),
             intake_data.get("metric_table", ""),
             intake_data.get("metric_sql", ""),
-            intake_data.get("metric_label", "the metric"),
+            intake_data.get("metric_label") or "",
             "cross_section",
             state.get("schema_context", ""))
 

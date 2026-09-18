@@ -118,6 +118,101 @@ def _repair_from_candidates(error: str, sql: str, table_cols: dict[str, list[str
     return new_sql if new_sql != sql else None
 
 
+#: BigQuery answers a TIMESTAMP-vs-DATE comparison with this. Matched on the SIGNATURE, not
+#: on the engine name, so any strict-typing engine that words it the same way is covered.
+_TS_DATE_MISMATCH = re.compile(
+    r"no matching signature for operator.*?\b(?:TIMESTAMP|DATETIME)\b.*?\bDATE\b"
+    r"|no matching signature for operator.*?\bDATE\b.*?\b(?:TIMESTAMP|DATETIME)\b",
+    re.I | re.S)
+
+#: A DATE literal in either spelling: `DATE '2026-01-01'` as a model writes it, and
+#: `CAST('2026-01-01' AS DATE)` as sqlglot renders it after a transpile. Both require a
+#: QUOTED string, so neither `DATE(expr)` nor `CAST(col AS DATE)` — casts of a COLUMN, where
+#: rewriting would change the column side of the comparison — can match.
+_DATE_LITERAL = re.compile(r"\bDATE\s*('(?:[^']|'')*')", re.I)
+_DATE_CAST_LITERAL = re.compile(r"\bCAST\s*\(\s*('(?:[^']|'')*')\s*AS\s+DATE\s*\)", re.I)
+
+
+def _promote_date_literals(sql: str) -> "tuple[str, int]":
+    """Both DATE-literal spellings promoted to TIMESTAMP. Returns (sql, count)."""
+    out, a = _DATE_LITERAL.subn(lambda m: f"TIMESTAMP {m.group(1)}", sql or "")
+    out, b = _DATE_CAST_LITERAL.subn(lambda m: f"TIMESTAMP {m.group(1)}", out)
+    return out, a + b
+
+
+#: Engine answers that mean "this is not my dialect" rather than "this name is wrong". The
+#: transpile candidate fires only on these: re-reading SQL as DuckDB is safe when the engine
+#: has rejected its SHAPE, and risky when it merely could not find a column — there the SQL
+#: may be perfectly good target-dialect SQL that a round trip would mangle.
+_DIALECT_REJECTION = re.compile(
+    r"type not found|cast operators are not supported|no matching signature for operator"
+    r"|a valid date part name is required|unsupported function|function not found"
+    r"|syntax error: expected", re.I)
+
+
+def _repair_timestamp_date_literal(error: str, sql: str) -> str | None:
+    """Promote `DATE 'x'` to `TIMESTAMP 'x'` when the engine refused to compare the two.
+
+    Measured 2026-09-18: 42 of September's 222 live SQL failures were this one shape, all on
+    the theLook BigQuery connection, all `TIMESTAMP >= DATE`, and every literal in them was
+    the explicit `DATE 'x'` form (228 of them across 42 queries) — never a bare string.
+
+    The BigQuery rule block has warned about this since it was written, and the model kept
+    producing it anyway: the rule describes a BARE '2026-08-01' literal, while the model
+    writes `DATE '2026-08-01'`, which reads as already-typed and correct. Guidance had its
+    chance 42 times. This is deterministic and costs no round-trip.
+
+    MEANING-PRESERVING for the operators that actually occur. A DATE promoted to TIMESTAMP is
+    midnight of that day, which is precisely what an engine that DOES coerce (DuckDB,
+    Postgres) computes — so `ts >= DATE 'x'` and `ts < DATE 'y'` keep their boundaries exactly.
+    It is the caller's dry-run that decides whether the rewrite is adopted, so a query this
+    does not actually help is discarded rather than executed.
+    """
+    if not sql or not error or not _TS_DATE_MISMATCH.search(str(error)):
+        return None
+    out, n = _promote_date_literals(sql)
+    return out if n and out.strip() != sql.strip() else None
+
+
+def _repair_by_transpile(db, error: str, sql: str) -> str | None:
+    """The model wrote DuckDB-flavoured SQL and the engine refused its SHAPE — transpile it.
+
+    The third and last deterministic candidate. Measured 2026-09-18: promoting the DATE
+    literals alone repaired 34 of September's 42 TIMESTAMP-vs-DATE failures, and the other 8
+    carried a SECOND DuckDB spelling in the same query (5 x `DATE_TRUNC('x', col)`, 3 x
+    `::cast`) that the dry-run gate then correctly discarded the rewrite for. A model that
+    writes one DuckDB form usually writes another.
+
+    ORDER IS LOAD-BEARING, and it is the reverse of the obvious one. Verified against live
+    BigQuery on the run that exposed this:
+
+        transpile only          ok=False   TIMESTAMP >= DATE       (the literal survives as DATE)
+        promote only            ok=False   valid date part name    (DATE_TRUNC survives)
+        promote -> transpile    ok=False   TIMESTAMP >= DATETIME   (sqlglot maps DuckDB's naive
+                                                                    TIMESTAMP onto BigQuery's
+                                                                    DATETIME — correctly)
+        transpile -> promote    ok=TRUE
+
+    So transpile first, THEN promote in the target's own spelling.
+
+    Gated on `_DIALECT_REJECTION`: re-reading SQL as DuckDB is safe when the engine rejected
+    its shape, and unsafe when it merely could not find a column — that SQL may be perfectly
+    good target-dialect SQL a round trip would mangle. `native_sql` is a no-op on DuckDB
+    connections, so this costs nothing on the common engine. The caller's dry-run decides.
+    """
+    if not sql or not _DIALECT_REJECTION.search(str(error or "")):
+        return None
+    try:
+        from aughor.db.dialects import native_sql
+        moved = native_sql(db, sql)
+    except Exception:
+        return None
+    if not moved or moved.strip() == sql.strip():
+        return None
+    promoted, _n = _promote_date_literals(moved)
+    return promoted if promoted.strip() != sql.strip() else None
+
+
 def _make_diagnosis(error: str, sql: str, table_cols: dict[str, list[str]],
                     dialect: str = "duckdb") -> str:
     """
@@ -453,6 +548,34 @@ class SqlWriter:
                     ok=True, sql=_det,
                     explanation="Deterministic candidate-binding substitution.",
                     attempts=0, error_class="binder",
+                )
+
+        # Second deterministic fast-path: a strict-typing engine refusing TIMESTAMP vs DATE.
+        # 42 of September 2026's 222 live failures were this one shape, and every one of them
+        # paid an LLM round-trip to learn that `DATE 'x'` should be `TIMESTAMP 'x'`. Same
+        # dry-run gate as above — the rewrite is adopted only if it binds.
+        _ts = _repair_timestamp_date_literal(current_error, current_sql)
+        if _ts:
+            _tok, _ = self._db.dry_run(_ts)
+            if _tok:
+                return FixResult(
+                    ok=True, sql=_ts,
+                    explanation="Deterministic DATE-literal promotion to TIMESTAMP.",
+                    attempts=0, error_class="type_mismatch",
+                )
+
+        # Third and last deterministic candidate: the whole query re-spelled in the engine's
+        # dialect. Tried AFTER the narrow promotion above, because when the promotion alone
+        # suffices it is the smaller change — and it suffices for 34 of the 42 measured. This
+        # catches the other 8, where a second DuckDB spelling sits in the same query.
+        _tr = _repair_by_transpile(self._db, current_error, current_sql)
+        if _tr:
+            _trok, _ = self._db.dry_run(_tr)
+            if _trok:
+                return FixResult(
+                    ok=True, sql=_tr,
+                    explanation="Deterministic transpile into the engine's dialect.",
+                    attempts=0, error_class="dialect",
                 )
 
         for attempt in range(1, max_retries + 1):

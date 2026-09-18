@@ -209,10 +209,17 @@ def test_the_reader_facing_reason_does_not_leak_the_governed_SQL():
 
 def test_it_still_SAYS_the_number_is_not_the_governed_metric():
     """The half a reader genuinely needs: distrust this number. Dropping the remedy must
-    not drop the diagnosis — that would trade a useless sentence for a silent one."""
+    not drop the diagnosis — that would trade a useless sentence for a silent one.
+
+    Reworded 2026-09-18 (the old text named a table as if reading it were the error, so
+    the caveat read as a false positive). Asserted on SEMANTICS, not on the old phrasing:
+    the sentence must still name the metric, deny that the figure is that metric, and
+    tell the reader how to read it instead."""
     reason = _drift_reason()
     assert "Revenue" in reason
-    assert "different way" in reason or "not Revenue" in reason
+    assert "was not computed from" in reason, "the denial must survive any reword"
+    assert "definition" in reason, "it must say WHAT the figure failed to match"
+    assert "unlabelled number" in reason, "it must tell the reader how to read it instead"
 
 
 def test_the_caveat_still_trips_the_headline_reframe():

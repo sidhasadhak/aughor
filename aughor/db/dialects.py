@@ -49,7 +49,7 @@ _DIALECT_RULES: dict[str, str] = {
 BIGQUERY (GoogleSQL) DIALECT RULES (violations cause query errors):
 - Date bucketing: DATE_TRUNC(date_col, MONTH) or TIMESTAMP_TRUNC(ts, MONTH) / DATETIME_TRUNC(dt, MONTH). The grain (DAY/WEEK/MONTH/QUARTER/YEAR) is an UNQUOTED keyword, and the column is the FIRST arg — NOT date_trunc('month', col).
 - Date differences: DATE_DIFF(d1, d2, DAY) / TIMESTAMP_DIFF(a, b, SECOND) (unit is an unquoted keyword, last arg).
-- TIMESTAMP vs DATE: BigQuery does NOT coerce between them in comparisons — a bare '2026-08-01' literal is a DATE, so ts_col >= '2026-08-01' is a type error. Write ts_col >= TIMESTAMP '2026-08-01', or DATE(ts_col) >= '2026-08-01' when day precision is meant.
+- TIMESTAMP vs DATE: BigQuery does NOT coerce between them in comparisons. This is the single most common error in generated SQL here, and it has TWO forms — a bare '2026-08-01' literal IS a DATE, and an explicit DATE '2026-08-01' is one too. So BOTH `ts_col >= '2026-08-01'` and `ts_col >= DATE '2026-08-01'` are type errors against a TIMESTAMP column. Write `ts_col >= TIMESTAMP '2026-08-01'`, or `DATE(ts_col) >= '2026-08-01'` when day precision is meant. Writing DATE in front of the literal does NOT make it match a TIMESTAMP column — it is what makes it a DATE.
 - Division: use SAFE_DIVIDE(a, b) to avoid divide-by-zero errors (returns NULL).
 - Type casting: CAST(x AS INT64 | FLOAT64 | NUMERIC | STRING | DATE | TIMESTAMP). Use INT64/FLOAT64/STRING — NOT INTEGER/VARCHAR. SAFE_CAST(...) returns NULL on failure.
 - String aggregation: STRING_AGG(col, ',').

@@ -194,6 +194,12 @@ class _Deck:
                 _para(tf, b.caption, size=14, bold=True, color=_INK, space_before=8)
             if b.text:
                 _para(tf, b.text, size=12.5, color=_BODY)
+            # The statistical verdict — same omission the PDF had: `document.py` sets it on
+            # every finding and this branch never read it, so a deck shipped the claim
+            # without the caveat that qualifies it. Not uppercased: on a finding this field
+            # is a sentence, not a label.
+            if b.tag:
+                _para(tf, b.tag, size=10, color=_MUTED)
             if b.confidence is not None:
                 pct = int(round(b.confidence * 100))
                 _para(tf, f"confidence: {pct}%", size=10, color=_MUTED)
@@ -213,6 +219,10 @@ class _Deck:
             parts = [f"{k.label}: {k.value}" + (f" ({k.delta})" if k.delta else "") for k in b.keynums]
             _para(tf, "    ".join(parts), size=12.5, bold=True, color=_INK, space_before=4)
         elif b.kind == "chart" and b.png:
+            # `b.svg` is deliberately not read here: PPTX has no vector surface, so a chart
+            # reaches a deck as the raster the SSR step produced alongside it. The SVG is
+            # the PDF's (see Block.svg). Named explicitly because an unread producer field
+            # is otherwise indistinguishable from the one that dropped every stat_note.
             self.image_slide(b.png, b.caption)
             self._orphaned_caption = ""
         elif b.kind == "chart":

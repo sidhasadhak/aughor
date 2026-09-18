@@ -104,6 +104,19 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
     # (including a malformed forwardedProps value) degrades to auto routing
     # rather than 422-ing the run.
     _mode = _forwarded(inp, "mode")
+    _depth = _forwarded(inp, "depth") or "auto"
+    # The composer's Quick/Agent toggle sends mode="ask" for Quick — a value `AskRequest.mode`
+    # (Literal["investigate","explore"]) cannot carry, so it was coerced to None one line
+    # below and the request became byte-identical to one where the user chose nothing.
+    # `decide_route` then auto-classified, and any causal phrasing ("where are we losing
+    # money…") matched its `causal` signal and ran the full deep investigation. So the
+    # toggle worked in ONE direction only: Agent pinned deep because "investigate" is in
+    # the tuple, while Quick was silently discarded — on exactly the questions a user picks
+    # Quick to make cheap. Quick is a DEPTH choice, and `depth="quick"` is the knob
+    # `decide_route` already honours ("answering directly, as you asked"). An explicit
+    # depth from the caller still wins; this only fills the "auto" default.
+    if _mode == "ask" and _depth == "auto":
+        _depth = "quick"
     return AskRequest(
         question=_latest_user_question(inp),
         connection_id=_forwarded(inp, "connection_id") or "",
@@ -111,7 +124,7 @@ def ask_request_from(inp: RunAgentInput) -> AskRequest:
         session_id=inp.thread_id or "",
         history=history,
         schema=_forwarded(inp, "schema"),
-        depth=_forwarded(inp, "depth") or "auto",
+        depth=_depth,
         mode=_mode if _mode in ("investigate", "explore") else None,
         purpose=str(_forwarded(inp, "purpose") or ""),
         agent_id=_forwarded(inp, "agent_id"),
