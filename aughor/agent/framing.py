@@ -89,6 +89,15 @@ def choose_definition(frame: Frame, graph: Any, *, provider: Any = None, synonym
                  counter="framing.choose")
         return frame
     name = (getattr(choice, "definition", "") or "").strip()
+    # Decision record: the menu is the listing the model was SHOWN (name: label — definition),
+    # the label is the candidate's index, and "picked none of them" is a real -1 row. The
+    # provider-failed path above records nothing — no decision was made there.
+    from aughor.learning.decisions import record_decision
+    _names = [c.name for c in frame.candidates()]
+    _menu = [" ".join(f"{c.name}: {c.label} — {c.definition}".split()) for c in frame.candidates()]
+    record_decision("framing.definition", frame.question, _menu,
+                    label=_names.index(name) if name in _names else -1,
+                    chosen=name if name in _names else "", source="llm")
     if not name:
         frame.notes.append("a model read none of the declared definitions as what the question means")
         return frame

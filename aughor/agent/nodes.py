@@ -162,6 +162,17 @@ def classify_question(question: str) -> tuple[str, RouteDecision]:
         from aughor.kernel.errors import tolerate
         tolerate(_exc, "declarative-mode route override is best-effort; keep the code route",
                  counter="modes.route_override")
+
+    # Decision record: the FINAL route (confidence floor, driver regex, KB path and
+    # manifest overrides included), because that is what a reflex would have to
+    # reproduce — the LLM's raw pick alone is only one input to it. The menu is derived
+    # from RouteDecision's own Literal, never hand-listed beside it.
+    from typing import get_args as _get_args
+    from aughor.learning.decisions import record_decision
+    record_decision("ask.route", question,
+                    list(_get_args(RouteDecision.model_fields["mode"].annotation)),
+                    chosen=effective_mode, source="llm",
+                    confidence=float(decision.confidence))
     return effective_mode, decision
 
 
