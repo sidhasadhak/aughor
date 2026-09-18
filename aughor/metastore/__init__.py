@@ -33,6 +33,7 @@ from aughor.metastore.store import (
     upsert_schema,
 )
 from aughor.metastore.sync import (
+    scoped_to_workspace,
     accessible_catalog_ids,
     ensure_catalogs_for_connections,
     explicit_catalog_ids,
@@ -40,6 +41,7 @@ from aughor.metastore.sync import (
 )
 
 __all__ = [
+    "scoped_to_workspace",
     # models
     "Catalog", "Grant", "Schema", "USAGE",
     "workspace_principal", "catalog_securable", "securable_catalog_id",

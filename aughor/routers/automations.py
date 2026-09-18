@@ -206,7 +206,9 @@ def write_layout(automation_id: str, body: LayoutRequest, request: Request):
 
 @router.get("/automations")
 def list_all(conn_id: Optional[str] = None, enabled_only: bool = False):
-    return {"automations": [a.model_dump() for a in list_automations(conn_id, enabled_only)]}
+    from aughor.metastore import scoped_to_workspace
+    rows = scoped_to_workspace(list_automations(conn_id, enabled_only), key="conn_id")
+    return {"automations": [a.model_dump() for a in rows]}
 
 
 @router.get("/automations/runs")

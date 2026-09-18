@@ -13,6 +13,7 @@ import { applyTheme } from "@/lib/themeSwitch";
 import { useNavCollapsed } from "@/components/shell/useNavCollapsed";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { installAuthFetch } from "@/lib/auth";
+import { installWorkspaceHeader, setActiveWorkspace } from "@/lib/workspace";
 import { InferencePanel } from "@/components/InferencePanel";
 import { OrgSettingsPanel } from "@/components/OrgSettingsPanel";
 import { setOrgSettingsCache, localizeCurrency } from "@/lib/orgSettings";
@@ -83,6 +84,11 @@ import { getApiBase, DEMO_PACK } from "@/lib/config";
 // fetch, so it installs at module load — an effect would run after children
 // already raced their initial reads out unauthenticated.
 if (typeof window !== "undefined") installAuthFetch(getApiBase());
+// AFTER the auth wrapper on purpose, so this one ends up OUTERMOST: it writes the
+// workspace into `init.headers`, which is exactly what the auth wrapper spreads when it
+// adds the bearer token. Installed the other way round, the workspace header would be
+// built before auth replaced the init and would be dropped.
+if (typeof window !== "undefined") installWorkspaceHeader();
 import {
   getConnections,
   seedDemoConnection,
@@ -1683,6 +1689,10 @@ export default function Home() {
     if (selectedWorkspace && typeof window !== "undefined") {
       localStorage.setItem(LAST_WS_KEY, selectedWorkspace);
     }
+    // Tell the transport which workspace every subsequent request belongs to. This is
+    // what makes the boundary hold: the server scopes on the header, so a call site that
+    // never learned to pass `?workspace_id=` is still answered for THIS workspace.
+    setActiveWorkspace(selectedWorkspace);
   }, [selectedWorkspace]);
 
   // Populate the org-settings cache that the display formatters read (currency symbol,

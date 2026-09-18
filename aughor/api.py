@@ -303,6 +303,59 @@ class _OrgContextMiddleware:
                 tolerate(_exc, "org contextvar reset (best-effort)", counter="org.reset")
 
 
+class _WorkspaceContextMiddleware:
+    """Bind ``current_workspace_id()`` for the whole request — the sub-tenant gate.
+
+    Pure ASGI for the same reason the org one is: the contextvar has to be set in the
+    REQUEST's context so ``run_in_threadpool`` copies it into sync handlers. A
+    generator dependency's context is discarded before the handler runs.
+
+    Two sources, header first:
+      • ``X-Aughor-Workspace`` — the client's ACTIVE workspace, sent on every request
+        from one place, so a route is scoped without each handler remembering to ask;
+      • ``?workspace_id=`` — the legacy per-call parameter, still honoured so the
+        handlers that already take it keep agreeing with the ambient value.
+
+    Unlike the org middleware this does NOT require identity: a workspace is a
+    visibility scope within an org, and scoping a single-tenant install by workspace
+    has to work before sign-in is switched on. Absent both sources the workspace is
+    ``None`` — unscoped, exactly today's behaviour."""
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] != "http":
+            return await self.app(scope, receive, send)
+        ws = ""
+        for raw_k, raw_v in scope.get("headers") or []:
+            if raw_k == b"x-aughor-workspace":
+                ws = raw_v.decode("latin-1").strip()
+                break
+        if not ws:
+            # Parsed by hand rather than via starlette's Request so this stays a cheap
+            # byte scan on every request — no QueryParams object built for the majority
+            # of calls that carry no workspace at all.
+            qs = scope.get("query_string") or b""
+            if b"workspace_id=" in qs:
+                from urllib.parse import parse_qs
+                vals = parse_qs(qs.decode("latin-1")).get("workspace_id") or []
+                ws = (vals[0] if vals else "").strip()
+        if not ws:
+            return await self.app(scope, receive, send)
+        from aughor.workspace.context import reset_workspace_id, set_workspace_id
+        token = set_workspace_id(ws)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            try:
+                reset_workspace_id(token)
+            except Exception as _exc:
+                from aughor.kernel.errors import tolerate
+                tolerate(_exc, "workspace contextvar reset (best-effort)",
+                         counter="workspace.reset")
+
+
 class _TraceFlushMiddleware:
     """Force-export buffered spans before a serverless invocation freezes (OA·LF-1).
 
@@ -335,6 +388,7 @@ from aughor.rbac.deps import enforce_rbac  # noqa: E402
 app = FastAPI(title="Aughor API", lifespan=_lifespan,
               dependencies=[Depends(_require_auth), Depends(enforce_rbac)])
 app.add_middleware(_OrgContextMiddleware)
+app.add_middleware(_WorkspaceContextMiddleware)
 app.add_middleware(_TraceFlushMiddleware)
 
 # ── CORS ──────────────────────────────────────────────────────────────────────
