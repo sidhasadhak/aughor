@@ -242,6 +242,12 @@ def route_after_intake(state: AgentState) -> str:
     The new node takes the LIVE vocabulary rather than the prefix beside it: those two keep a
     retired prefix because their names are frozen API, but nothing obliges fresh code to
     inherit it, and the vocabulary ratchet counts what we add."""
+    # A FAILED intake ends the run. Without this branch the three routes below are
+    # reached with `intake == {}`, which is indistinguishable from a healthy temporal
+    # question — so the default `ada_baseline` ran a full investigation on no spec at
+    # all. See the `intake is None` branch in `ada_intake` for the live specimen.
+    if state.get("_intake_failed"):
+        return "intake_failed"
     intake = state.get("_ada_intake") or {}
     if intake.get("descriptive_only"):
         return "deep_breakdown"
@@ -5875,9 +5881,37 @@ def ada_intake(state: AgentState, conn: "DatabaseConnection" = None) -> dict:
             "Could not parse investigation specification.",
             [_skipped_finding("intake", intake_error)],
         )
+        # The run STOPS here. `_intake_failed` is a typed verdict `route_after_intake`
+        # reads to reach END instead of the baseline branch (§6: a knob is a typed
+        # intake verdict, never a flag).
+        #
+        # It used to return exactly the two keys below and nothing else — leaving
+        # `_ada_intake` at its None seed. `route_after_intake` reads
+        # `state.get("_ada_intake") or {}`, so a FAILED intake and a healthy temporal
+        # one were the same empty dict, and the router sent both to `ada_baseline`.
+        # The investigation then ran its full length with no metric, no table, no date
+        # column and no window, and every downstream phase filled those holes from its
+        # own `.get(..., default)` literals: `metric_sql` became the hardcoded
+        # "SUM(revenue)", the window became whatever the planner model invented, and
+        # `_no_prior` went True — so the prompt asserted "no period before the
+        # observation window exists in the data" over 7.7 years of history.
+        #
+        # Live specimen (2026-09-18, theLook `8233e4fd`, run 18345353): the same
+        # question asked 42 s after a healthy run reported "Revenue grew 11.8%" over
+        # 2023-10-01 → 2024-04-01 — a window 2.5 years stale — and headlined an "85.6%
+        # final-week collapse" that was its own `< '2024-04-01'` filter cutting a
+        # Sunday-start week bucket after one day ($4,071 ≈ $28,351/7). It shipped
+        # recommendations to Data Engineering with a one-day deadline for a phantom.
+        #
+        # Every deterministic guard that exists to prevent precisely this
+        # (`_clamp_intake_to_coverage`'s stale-window re-anchor, `_flag_trailing_partial`,
+        # `_validate_intake_windows`) lives inside `if intake is not None:` above, so
+        # they are skipped in exactly the case they were written for. A run with no
+        # spec cannot be guarded into correctness — it can only be stopped.
         return {
             "investigation_phases": [phase],
             "answer_report": None,
+            "_intake_failed": intake_error or "the model returned no investigation specification",
         }
 
     # The displayed spec must describe the run that will ACTUALLY happen. The cross-sectional branch
@@ -6530,8 +6564,8 @@ def ada_baseline(state: AgentState, conn: "DatabaseConnection") -> dict:
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
     phases = state.get("investigation_phases", [])
-    metric_label = intake_data.get("metric_label", "the core metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "the observation period")
@@ -6863,8 +6897,8 @@ def ada_decompose(state: AgentState, conn: "DatabaseConnection") -> dict:
     phases = state.get("investigation_phases", [])
     baseline_summary = state.get("_baseline_summary", "Baseline established.")
 
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "observation period")
@@ -6968,8 +7002,8 @@ def ada_dimensional(state: AgentState, conn: "DatabaseConnection") -> dict:
     schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     phases = state.get("investigation_phases", [])
 
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "observation period")
@@ -7084,8 +7118,8 @@ def ada_behavioral(state: AgentState, conn: "DatabaseConnection") -> dict:
     events = state.get("events_context") or ""
     events_section = f"BUSINESS CALENDAR:\n{events}\n" if events else ""
 
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     obs_start = intake_data.get("observation_start", "")
     obs_end = intake_data.get("observation_end", "")
     obs_label = intake_data.get("observation_label", "observation period")
@@ -7275,7 +7309,7 @@ def deep_breakdown(state: AgentState, conn: "DatabaseConnection") -> dict:
     )
     phases = state.get("investigation_phases", [])
     intake_data = state.get("_ada_intake") or {}
-    metric_label = intake_data.get("metric_label", "the metric")
+    metric_label = intake_data.get("metric_label") or ""
     _title, _emoji = "Breakdown", "📑"
 
     # The cuts: what the question NAMED, else the intake's dimensions in priority order
@@ -7366,8 +7400,8 @@ def ada_cross_section(state: AgentState, conn: "DatabaseConnection", *,
     schema = _with_ledger(state, intake_data.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     if extra_schema:
         schema = schema + extra_schema
-    metric_label = intake_data.get("metric_label", "the metric")
-    metric_sql = intake_data.get("metric_sql", "SUM(revenue)")
+    metric_label = intake_data.get("metric_label") or ""
+    metric_sql = intake_data.get("metric_sql") or ""
     metric_table = intake_data.get("metric_table", "")
     dimensions = dims_override if dims_override is not None else intake_data.get("dimensions", [])
     # Auto-drill WHERE→WHY (flag AUGHOR_CAUSAL_DRILL) — only on a clean top-level scan, never a sub-lens
@@ -8414,8 +8448,8 @@ def _run_temporal_lens(state: AgentState, conn: "DatabaseConnection", axis: dict
     WHERE scan uses, so the two lenses' rates are comparable rather than order-vs-item contradictory."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
-    metric_sql = intake.get("metric_sql", "SUM(revenue)")
+    metric_label = intake.get("metric_label") or ""
+    metric_sql = intake.get("metric_sql") or ""
     metric_table = intake.get("metric_table", "")
     date_column = axis["date_column"]
     _grain_plan = _grain_plan_directive(grain) if grain else ""
@@ -8537,7 +8571,7 @@ def _run_composition_lens(state: AgentState, conn: "DatabaseConnection", event_d
     actual 'why' (e.g. size_fit = 42% of returns). Returns a phase dict or None. Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     # Lead the WHY with the causal dims; drop downstream ops metadata (carrier/refund method) so the
     # composition answers "why", not "how it shipped" (fail-safe keeps all when nothing looks causal).
@@ -8647,7 +8681,7 @@ def _run_interaction_lens(state: AgentState, conn: "DatabaseConnection",
     join. Returns a phase dict or None. Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
@@ -8743,7 +8777,7 @@ def _run_reason_benchmark_lens(state: AgentState, conn: "DatabaseConnection", wh
     LLM-planned. Returns a phase dict or None. Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
@@ -8798,7 +8832,7 @@ def _run_reason_drill_lens(state: AgentState, conn: "DatabaseConnection", why_su
     Fail-open."""
     intake = state.get("_ada_intake") or {}
     question = state["question"]
-    metric_label = intake.get("metric_label", "the metric")
+    metric_label = intake.get("metric_label") or ""
     schema = _with_ledger(state, intake.get("filtered_schema") or _trim(state["schema_context"], _schema_limit()))
     try:
         _run = run_analysis_phase(
@@ -9143,7 +9177,7 @@ def ada_cross_section_multilens(state: AgentState, conn: "DatabaseConnection") -
             intake_data.get("dimensions", []),
             intake_data.get("metric_table", ""),
             intake_data.get("metric_sql", ""),
-            intake_data.get("metric_label", "the metric"),
+            intake_data.get("metric_label") or "",
             "cross_section",
             state.get("schema_context", ""))
 
