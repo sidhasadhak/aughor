@@ -97,6 +97,9 @@ def get_metric_catalogue(conn_id: str, schema: Optional[str] = None):
             "explorer": sum(1 for r in rows if r.source == "explorer"),
             "needs_binding": sum(1 for r in rows if r.state == "needs_binding"),
             "needs_formula": sum(1 for r in rows if r.state == "needs_formula"),
+            # Counted apart from `needs_formula` on purpose: a connection where every
+            # metric lands here is telling you about the CONNECTION, not about missing SQL.
+            "formula_rejected": sum(1 for r in rows if r.state == "formula_rejected"),
         },
     }
 

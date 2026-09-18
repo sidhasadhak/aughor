@@ -38,6 +38,12 @@ override-wins discipline `list_metrics` and `data/ontology_overrides/` already p
 - ``needs_binding`` — an industry recipe whose required roles are NOT bound to this
   connection, so it cannot be computed here. Listed on purpose (the user asked for every
   applicable metric) but never as though it were available. `unmeasured ⇒ never read`.
+- ``formula_rejected`` — an explorer metric that HAD a `value_sql` and lost it: the
+  build-time audit could not trust it and blanked it, and the recipe-grounded
+  regeneration did not recover it. The row carries the audit's own reason. This is
+  deliberately NOT ``needs_formula``: on a connection where nothing binds (a warehouse
+  whose default dataset does not resolve) every metric fails this way, and labelling it
+  "needs a formula" sends the reader to write SQL when the fault is the connection.
 - ``needs_formula`` — an explorer metric that names its columns but gave no `value_sql`.
   Measured on the live corpus 2026-09-18: 18 of 77 stored north-star metrics (23%) have
   none. It is still applicable and still editable — supplying the formula IS the edit —
@@ -70,6 +76,7 @@ _PRECEDENCE = (SOURCE_DEFINED, SOURCE_INDUSTRY, SOURCE_EXPLORER)
 STATE_DEFINED = "defined"
 STATE_NEEDS_BINDING = "needs_binding"
 STATE_NEEDS_FORMULA = "needs_formula"
+STATE_FORMULA_REJECTED = "formula_rejected"
 STATE_PROPOSED = "proposed"
 
 
@@ -105,6 +112,10 @@ class CatalogueEntry:
     sane_range: Optional[dict] = None
     #: Explorer only — why an operator in this industry watches it.
     why_it_matters: str = ""
+    #: Explorer only — the audit's own words for why this metric's formula was dropped.
+    #: Empty for every other state; a `formula_rejected` row without one would be the
+    #: same unexplained dead end this state exists to replace.
+    reason: str = ""
     #: Defined only — the governance status of the stored definition.
     status: str = ""
     version: int = 0
@@ -225,15 +236,34 @@ def _explorer_entries(connection_id: str, schema_name: Optional[str]) -> list[Ca
         tolerate(exc, "the business profile is best-effort; the catalogue lists the other "
                       "sources", counter="metric_catalogue.profile")
         return []
+    # The audit's verdicts, persisted beside the profile. Best-effort: an older payload
+    # written before they were recorded simply has none, and those rows stay
+    # `needs_formula` — which is honest, because for them we genuinely do not know.
+    rejections: dict = {}
+    try:
+        raw = profile_store.load_raw(connection_id, schema_name) or {}
+        rejections = raw.get("rejections") or {}
+    except Exception as exc:
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "metric rejection reasons are best-effort; the row still lists",
+                 counter="metric_catalogue.rejections")
+
     out: list[CatalogueEntry] = []
     for m in (getattr(profile, "north_star_metrics", None) or []):
         # `maps_to` is prose naming real columns ("order_items.sale_price, …"); split it
         # back into the tables it touches so the row can say where the metric lives.
         tables = sorted({p.split(".")[0] for p in re.findall(r"[\w.]+\.[\w]+", m.maps_to or "")})
         value_sql = (getattr(m, "value_sql", "") or "").strip()
+        reason = "" if value_sql else str(rejections.get(m.name) or "").strip()
+        if value_sql:
+            state = STATE_PROPOSED
+        elif reason:
+            state = STATE_FORMULA_REJECTED   # it HAD one; say why it went
+        else:
+            state = STATE_NEEDS_FORMULA
         out.append(CatalogueEntry(
             name=normalize_name(m.name), label=m.name, source=SOURCE_EXPLORER,
-            state=STATE_PROPOSED if value_sql else STATE_NEEDS_FORMULA, sql=value_sql,
+            state=state, sql=value_sql, reason=reason,
             unit=m.unit_or_range or "", definition=(m.definition or "").strip(),
             tables=tables, why_it_matters=(m.why_it_matters or "").strip(),
             editable=False,

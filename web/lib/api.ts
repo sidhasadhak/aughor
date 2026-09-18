@@ -1007,7 +1007,7 @@ export interface CatalogueMetric {
   label: string;
   /** "defined" | "industry" | "explorer" — where this metric came from. */
   source: string;
-  /** "defined" | "proposed" | "needs_binding" | "needs_formula". */
+  /** "defined" | "proposed" | "needs_binding" | "needs_formula" | "formula_rejected". */
   state: string;
   sql: string;
   unit: string;
@@ -1021,6 +1021,8 @@ export interface CatalogueMetric {
   missing_roles: string[];
   sane_range: { min?: number; max?: number; basis?: string; sources?: string[] } | null;
   why_it_matters: string;
+  /** `formula_rejected` only — the audit's own words for why the formula was dropped. */
+  reason: string;
   status: string;
   version: number;
   owner: string;

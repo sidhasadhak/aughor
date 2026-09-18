@@ -46,7 +46,7 @@ function row(over: Partial<CatalogueMetric> = {}): CatalogueMetric {
     sql: "SUM(sale_price)", unit: "EUR", definition: "Total sales volume.", grain: "",
     dimensions: [], tables: ["order_items"], anti_patterns: [], pack_id: "",
     required_roles: [], missing_roles: [], sane_range: null,
-    why_it_matters: "Primary indicator of scale.", status: "", version: 0, owner: "",
+    why_it_matters: "Primary indicator of scale.", reason: "", status: "", version: 0, owner: "",
     editable: false, ...over,
   };
 }
@@ -164,5 +164,35 @@ describe("a published range is provenance, not a measurement", () => {
     const range = await screen.findByText(/FDIC 2026 Q2/);
     expect(range).toBeInTheDocument();
     expect(screen.getByText(/not a measurement of your data/i)).toBeInTheDocument();
+  });
+});
+
+describe("a rejected formula is not a missing one", () => {
+  // theLook's six metrics all HAD formulas and lost them to the build-time audit. Shown
+  // as "Needs a formula" they read as never-written, sending the reader to supply SQL —
+  // which would not help, because on that connection nothing binds.
+  const REJECTED = row({
+    name: "gmv", label: "Gross Merchandise Value", source: "explorer",
+    state: "formula_rejected", sql: "",
+    reason: "does not bind: Table \"order_items\" must be qualified with a dataset",
+  });
+
+  beforeEach(() => {
+    getMetricCatalogue.mockResolvedValue({
+      connection_id: "c1", metrics: [REJECTED],
+      counts: { total: 1, defined: 0, industry: 0, explorer: 1, formula_rejected: 1 },
+    });
+  });
+
+  it("says the formula was rejected, not that one is needed", async () => {
+    render(<MetricsPanel connId="c1" />);
+    expect(await screen.findByText("Formula rejected")).toBeInTheDocument();
+    expect(screen.queryByText("Needs a formula")).not.toBeInTheDocument();
+  });
+
+  it("carries the audit's own reason, so the reader learns it is the connection", async () => {
+    render(<MetricsPanel connId="c1" />);
+    const chip = await screen.findByText("Formula rejected");
+    expect(chip).toHaveAttribute("title", expect.stringContaining("must be qualified"));
   });
 });

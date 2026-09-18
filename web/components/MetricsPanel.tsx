@@ -786,6 +786,11 @@ const STATE_TEXT: Record<string, { label: string; cls: string; title: string }> 
                    title: "This recipe names roles this connection has not bound, so it cannot be computed here yet." },
   needs_formula: { label: "Needs a formula", cls: "text-amber-400",
                    title: "The columns are identified but no SQL was proposed. Open it and supply one." },
+  // Distinct from "Needs a formula" on purpose. A formula WAS written and the build-time
+  // audit refused to trust it, so the work is to fix what it names — often the connection
+  // rather than the SQL. Every metric landing here is a statement about the connection.
+  formula_rejected: { label: "Formula rejected", cls: "text-amber-400",
+                      title: "A formula was proposed and the audit could not trust it, so it was dropped. Hover the row for the reason." },
 };
 
 function CatalogueHeader({ counts, connId, onAdd }:
@@ -858,7 +863,7 @@ function MetricRow({ row, open, onToggle, onCustomise, busy, error, duplicate, e
         </td>
         <td className="py-2 pr-3 align-top aug-fs-xs text-zinc-400 truncate">{row.unit || "—"}</td>
         <td className="py-2 pr-3 align-top">
-          <span className={`aug-fs-xs ${st.cls}`} title={st.title}>{st.label}</span>
+          <span className={`aug-fs-xs ${st.cls}`} title={row.reason || st.title}>{st.label}</span>
           {row.state === "defined" && row.status ? (
             <span className="aug-fs-xs text-zinc-500"> · {row.status}</span>
           ) : null}

@@ -213,6 +213,9 @@ def infer_business_profile(connection_id: str,
     # blanked that HAS a curated recipe, regenerate its value_sql FROM the recipe's
     # canonical formula+grain (the recipe is the SQL-accuracy authority) and re-audit
     # — turning "drop the wrong number" into "show the right one" where we can.
+    #: {metric name: why its value_sql was rejected} — filled below and persisted, so a
+    #: metric that LOST a formula is not later mistaken for one that never had one.
+    rejections: dict[str, str] = {}
     try:
         from aughor.business_profile.validate import audit_profile
         from aughor.db.connection import open_connection_for, open_connection_for_with_schema
@@ -231,6 +234,15 @@ def infer_business_profile(connection_id: str,
             if repaired:
                 logger.info("[profile:%s] recipe-grounded regeneration recovered SQL for %d metric(s): %s",
                             connection_id, len(repaired), sorted(repaired))
+        # The verdict that survives: a metric STILL without SQL after the regeneration had
+        # its chance, and whose SQL the audit named a reason for. A metric the model left
+        # empty never enters `failed`, so it is not claimed as rejected — "nobody wrote one"
+        # and "the one written does not bind" are different facts and the reader acts on
+        # them differently. Until now both rendered as "Needs a formula", which sends
+        # someone to write SQL when the fault is the connection.
+        rejections = {m.name: failed[m.name]
+                      for m in (profile.north_star_metrics or [])
+                      if not (m.value_sql or "").strip() and m.name in failed}
         _calibrate_ranges(profile, _conn)   # F4 — anchor sane bands on the MEASURED magnitude
     except Exception as exc:
         logger.warning("[profile:%s] value_sql audit failed (non-fatal): %s", connection_id, exc)
@@ -256,6 +268,7 @@ def infer_business_profile(connection_id: str,
         model=getattr(llm, "_model", None),
         generated_at=datetime.now(timezone.utc).isoformat(),
         recipes=recipes,
+        rejections=rejections,
     )
     logger.info(
         "[profile:%s] inferred industry=%r model=%r — %d metrics, %d questions, %d recipes (conf=%.2f)",
