@@ -207,6 +207,13 @@ class UsageRow:
     total_tokens: int = 0
     calls_without_usage: int = 0      # backend reported no usage — tokens are UNKNOWN, not 0
     unpriced_calls: int = 0           # no declared price — cost is UNKNOWN, not 0
+    #: Prompt tokens the provider served from its OWN cache. `prompt_tokens` counts a cached
+    #: token exactly like a fresh one, so without this a repeated prefix reads as full price
+    #: whether or not a penny of it was charged. Summed only over the calls that reported it;
+    #: `calls_reporting_cache` is the denominator, because "no backend said" and "nothing was
+    #: cached" are different answers and folding them makes the rate lie.
+    cached_tokens: int = 0
+    calls_reporting_cache: int = 0
     cost_usd: float = 0.0             # the priced portion only
     total_ms: float = 0.0
 
@@ -214,6 +221,15 @@ class UsageRow:
     def cost_is_complete(self) -> bool:
         """Whether ``cost_usd`` accounts for every call in this group."""
         return self.unpriced_calls == 0 and self.calls_without_usage == 0
+
+    @property
+    def cache_hit_rate(self) -> Optional[float]:
+        """Share of this group's prompt tokens the provider served from cache, or None when
+        no call in it reported a cache figure at all. None, never 0.0 — an unreported cache
+        and a cold one look identical in a number and mean opposite things."""
+        if not self.calls_reporting_cache or not self.prompt_tokens:
+            return None
+        return min(1.0, self.cached_tokens / self.prompt_tokens)
 
     def to_dict(self) -> dict:
         return {
@@ -224,6 +240,9 @@ class UsageRow:
             "total_tokens": self.total_tokens,
             "calls_without_usage": self.calls_without_usage,
             "unpriced_calls": self.unpriced_calls,
+            "cached_tokens": self.cached_tokens,
+            "calls_reporting_cache": self.calls_reporting_cache,
+            "cache_hit_rate": (round(r, 3) if (r := self.cache_hit_rate) is not None else None),
             "cost_usd": round(self.cost_usd, 6),
             "cost_is_complete": self.cost_is_complete,
             "mean_ms": round(self.total_ms / self.calls, 1) if self.calls else 0.0,
@@ -271,6 +290,20 @@ def cost_of_call(event: dict) -> tuple[float, bool]:
             + (ct / 1_000_000.0) * price.output_per_1m), True
 
 
+def _payload_of(event: dict) -> dict:
+    """An event's payload as a dict, whether the sink stored it parsed or as JSON text."""
+    p = event.get("payload")
+    if isinstance(p, dict):
+        return p
+    if isinstance(p, str) and p.strip().startswith("{"):
+        import json as _json
+        try:
+            return _json.loads(p)
+        except Exception:
+            return {}
+    return {}
+
+
 def rollup(
     events: Iterable[dict],
     *,
@@ -315,6 +348,18 @@ def rollup(
         row.prompt_tokens += pt
         row.completion_tokens += ct
         row.total_tokens += int(e.get("total_tokens") or 0)
+
+        # Cached prompt tokens ride in the event PAYLOAD rather than a column: adding one
+        # would mean a migration on `system.db`, and the live API serves out of it. The
+        # figure is recorded only when the backend reported one, so the denominator below
+        # counts calls that ANSWERED rather than calls that were asked.
+        _cached = _payload_of(e).get("cached_tokens")
+        if _cached is not None:
+            try:
+                row.cached_tokens += int(_cached)
+                row.calls_reporting_cache += 1
+            except (TypeError, ValueError):
+                pass
 
         usd, priced = cost_of_call(e)
         if priced:

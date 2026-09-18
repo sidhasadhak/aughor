@@ -1087,6 +1087,53 @@ def _extract_usage(raw) -> tuple[int, int]:
         return 0, 0
 
 
+def _extract_cached_tokens(raw) -> Optional[int]:
+    """Prompt tokens the PROVIDER served from its own cache, or None if it did not say.
+
+    `_extract_usage` above reports `prompt_tokens` — and a cached token is counted there
+    exactly like a fresh one. So every cost figure this platform produces has been unable
+    to tell a cache hit from a cache miss, and a repeated prefix reads as full price whether
+    or not a penny of it was charged.
+
+    That matters most where it was measured (2026-09-18): `run_tool_loop` is 42.7% of all
+    prompt tokens, and 94% of its per-turn prefix is the 37 tool schemas — ~8,200 tokens
+    re-sent on EVERY turn of a loop whose median length is 3 and whose tail reaches 24.
+    Gemini, the live binding, is an `auto_prefix` backend (`control_plane/inference.py`):
+    that prefix is very likely already being served from cache. Without this number there
+    is no way to know, and trimming tools to fix a cost that is not being charged would be
+    work spent on nothing.
+
+    Three vocabularies, because three providers name it differently:
+      * OpenAI-compatible — `usage.prompt_tokens_details.cached_tokens`
+      * Anthropic         — `usage.cache_read_input_tokens`
+      * Gemini            — `usage.cached_content_token_count`
+
+    None (not 0) when the backend is silent, for the same reason `_record_llm_call`
+    distinguishes them: folding "did not say" into "said zero" makes the aggregate lie.
+    """
+    usage = getattr(raw, "usage", None)
+    if usage is None:
+        return None
+
+    def _get(obj, name):
+        if obj is None:
+            return None
+        v = getattr(obj, name, None)
+        if v is None and isinstance(obj, dict):
+            v = obj.get(name)
+        return v
+
+    v = _get(_get(usage, "prompt_tokens_details"), "cached_tokens")
+    if v is None:
+        v = _get(usage, "cache_read_input_tokens")
+    if v is None:
+        v = _get(usage, "cached_content_token_count")
+    try:
+        return int(v) if v is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
 # ── Resilience: per-endpoint concurrency cap + transient-error retry/backoff ──
 # Cloud inference endpoints throttle and intermittently 429/5xx/timeout under sustained load
 # (observed: a benchmark run hung after ~2.5h of unbounded parallel calls). This is a platform
@@ -2056,10 +2103,14 @@ class LLMProvider:
         pt, ct = _extract_usage(raw)
         metering.record_llm(pt, ct, _ms)
         _pt, _ct = _usage_or_none(raw)
+        # The tool loop re-sends its whole prefix every turn; whether that prefix is
+        # actually BILLED is the difference between a 42.7% cost and a 42.7% count.
+        _cached = _extract_cached_tokens(raw)
         _record_llm_call(backend=backend, model=model, role=self.role,
                          prompt_tokens=_pt, completion_tokens=_ct, ms=_ms, retries=0,
                          temperature=temperature, fallback=fallback, system=system,
-                         user=user, output=_out)
+                         user=user, output=_out,
+                         extra=({"cached_tokens": _cached} if _cached is not None else None))
         metering.check_budget()
         turn = _parse_tool_turn(raw, _out)
         if (turn.tool_call is None and not turn.text and not turn.malformed
@@ -2334,8 +2385,12 @@ class LLMProvider:
                          # A call that only succeeded because the normalizer repaired it
                          # must not read as clean in the log — "which binding needs
                          # salvaging how often" is the signal that retires a bad model.
-                         extra=({"salvaged": True, "repairs": _stats.get("repairs", [])}
-                                if _stats.get("salvaged") else None))
+                         extra={
+                             **({"salvaged": True, "repairs": _stats.get("repairs", [])}
+                                if _stats.get("salvaged") else {}),
+                             **({"cached_tokens": _cached}
+                                if (_cached := _extract_cached_tokens(raw)) is not None else {}),
+                         } or None)
         _answered.set((backend, model, bool(fallback)))
         metering.check_budget()   # in-context budget (chat/insight path); no-op for jobs
         return out
