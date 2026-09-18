@@ -205,10 +205,7 @@ class BigQueryConnection(Connector):
                     f"Use a string, number or boolean, or inline that value in the SQL.")
             declared.append(bigquery.ScalarQueryParameter(name, bq_type, value))
 
-        job_config = bigquery.QueryJobConfig(
-            default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None,
-            query_parameters=declared,
-        )
+        job_config = self._job_config(query_parameters=declared)
         with self._running(self._client.query(sql, job_config=job_config)) as job:
             rows_it = job.result(max_results=self.max_rows + 1)   # one past the cap, so a cut read shows
             return [f.name for f in rows_it.schema], [list(row.values()) for row in rows_it]
@@ -253,13 +250,9 @@ class BigQueryConnection(Connector):
         """One BigQuery job → a QueryResult; an error is a value, never a raise. Its raw values are offered to a typed
         capture, so a BigQuery table can be one side of a cross-source object query."""
         try:
-            from google.cloud import bigquery
-
             from aughor.connectors.base import stage_type
             from aughor.db.connection import offer_typed_rows
-            job_config = bigquery.QueryJobConfig(
-                default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None
-            )
+            job_config = self._job_config()
             with self._running(self._client.query(sql, job_config=job_config)) as job:
                 # one row past the cap: a read the cap cut counts more rows than it keeps
                 rows_it = job.result(max_results=max_rows + 1)
@@ -281,11 +274,29 @@ class BigQueryConnection(Connector):
                 columns=[], rows=[], row_count=0, error=str(e),
             )
 
+    def _job_config(self, **overrides):
+        """The job configuration EVERY query on this connection runs under.
+
+        It exists because the dry run did not have it. `execute()` and the typed read
+        both set `default_dataset`, so `FROM order_items` resolves; `dry_run()` built its
+        own config without it, so the same SQL came back
+        "Table must be qualified with a dataset" — and `audit_value_sql` opens with
+        `conn.dry_run(sql)` and blanks the metric on a bind failure.
+
+        The result: on this connection every unqualified metric formula was rejected by a
+        validator configured differently from the executor that would have run it happily.
+        A dry run that is not the real run's configuration is not a dry run of that query.
+        """
+        from google.cloud import bigquery
+        return bigquery.QueryJobConfig(
+            default_dataset=f"{self._project}.{self._dataset}" if self._dataset else None,
+            **overrides,
+        )
+
     def dry_run(self, sql: str) -> tuple[bool, str]:
         """Use BigQuery's native dry-run — validates SQL + estimates bytes, zero cost."""
         try:
-            from google.cloud import bigquery
-            job_config = bigquery.QueryJobConfig(dry_run=True, use_query_cache=False)
+            job_config = self._job_config(dry_run=True, use_query_cache=False)
             self._client.query(sql.rstrip(";"), job_config=job_config)
             return True, ""
         except Exception as e:
