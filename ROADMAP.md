@@ -5634,7 +5634,7 @@ chip, receipt chain, confidence, citation, why-this-number, refusal); error and 
 ~30 components that still carry raw hexes.
 
 
-### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 MERGED #519**, squash `21a4484f`, 2026-09-17; **IP-4 STARTED** 2026-09-17 on `claude/ip-4-banking`, local: gate 6 enforced, banking & lending through gates 1–4, a draft)
+### 3.17 · Arc IP — industry packages: one playbook per industry, chosen at install, read for the connection's own industry (drafted and adopted 2026-09-14 — §6 item 21, all nine answers; **IP-0 BUILT** the same day, **MERGED #503**, squash `aebe5feb`, 2026-09-14; **IP-1 and IP-2 MERGED #518**, squash `1c150b05`, 2026-09-17; **IP-3 MERGED #519**, squash `21a4484f`, 2026-09-17; **IP-4 MERGED #520**, squash `7e13f64e`, 2026-09-17: gate 6 enforced, banking & lending through gates 1–4 — and the package ships `status: draft`, which by gate 6's own rule means no agent reads it until a person activates it)
 
 > **Origin.** The user, 2026-09-14: *"With a hope that our Explorer agents curator agents briefing agents analyst
 > agents are reading the playbook and taking it as a reference for business analysis, I think we should have packages
@@ -5847,8 +5847,15 @@ or ontology file used to escape every caller, the roster route included.
   - Gate 6 (a person's review, draft → active) — enforced by IP-4.
   - Authoring the next package (gates 1–2 for IP-4) is still by hand.
 
-**IP-4 · The tiers — STARTED 2026-09-17** on `claude/ip-4-banking` (`84524f75` gate 6, `57447363` banking), local,
-nothing pushed. The user: *"lets start ip-4"*.
+**IP-4 · The tiers — ✅ MERGED #520** (squash `7e13f64e`, 2026-09-17; `84524f75` gate 6, `57447363` banking).
+The user: *"lets start ip-4"*.
+
+⚠️ **This entry read "STARTED … local, nothing pushed" for two days after it merged, in three places at once**
+(here, §3.17's header and §5's band), and a plan-of-record read on 2026-09-19 reported Arc IP as unfinished because
+of it. The ledger's own standing lesson, a fourth time: *a struck-through debt list stays honest because striking it
+is a deliberate act; a prose claim inside a section rots silently, because nothing forces anyone to look at it
+again.* 🔑 The cheap check that would have caught it is one command — `git log main --oneline | grep IP-4` — and it
+belongs in any read of this document that a decision hangs on.
 
 - **Gate 6 enforced first.** Every knowledge package said `status: draft` and was read anyway, so a package the
   generator drafts would have reached every agent on the next restart before anyone reviewed it. Measured by a code
@@ -5960,8 +5967,13 @@ draft → active.
 - **IP-2 chosen at install**, as above. ✅ BUILT 2026-09-17 (above).
 - **IP-3 the generator.** Gates 3 and 4 as code, and airline brought to the full anatomy as the reference package.
   ✅ MERGED #519 (above): 14 of 14 published BTS figures reproduced with no model.
-- **IP-4 the tiers.** ⏳ STARTED 2026-09-17 (above): gate 6 enforced; banking & lending through gates 1–4, 51 of 51
-  FDIC figures reproduced with no model, a draft awaiting review.
+- **IP-4 the tiers.** ✅ MERGED #520, squash `7e13f64e` (above): gate 6 enforced; banking & lending through gates
+  1–4, 51 of 51 FDIC figures reproduced with no model.
+  🔴 **Shipped and INERT, which is gate 6 working rather than a defect.** `packs/banking/pack.yaml` carries
+  `status: draft`, and a draft is read by nobody — not the resolver, not the installer's industry list. Measured
+  2026-09-19 on `c7085899`: four other packages sit in the same state (`core-ecommerce`, `customer-analytics`,
+  `fashion-ecommerce`, `supply-chain`). **The next act on this wave is a person's review, not a build** — and that
+  is the gate doing exactly what it was built for, one wave after being built.
   - **Tier 1:** banking & lending **first** (answer 3, the builder's pick: 26 of 27, nine of ten vendor catalogues,
     and FFIEC Call Reports that reconcile to the FDIC's published totals), then payments & fintech (it reuses
     banking's parties, accounts and transactions), then insurance; the finance and risk-and-fraud functions alongside.
@@ -6812,10 +6824,17 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         package on a named public dataset with no model · airline the reference — 3 sourced
         metrics, 8 bound plays, 14 goldens; all 14 of BTS's published January 2019 figures
         reproduced on its 638,649-flight file; 6 claims measured-true, 2 expected.
-        IP-4 ⏳ STARTED 2026-09-17 (local): gate 6 enforced — the agents read only active packages ·
+        IP-4 ✅ MERGED #520 (`7e13f64e`) 2026-09-17: gate 6 enforced — the agents read only active packages ·
         banking & lending drafted through gates 1–4 on the FDIC's per-institution data, 51 of 51
-        published figures reproduced, no model. Next: the runtime reads a package's anatomy, then
-        payments & fintech, then insurance.
+        published figures reproduced, no model. 🔴 banking ships `status: draft`, so gate 6 keeps it
+        INERT until a person activates it — the next act on this wave is a REVIEW, not a build.
+        Next, after that review: payments & fintech (it reuses banking's parties, accounts and
+        transactions), then insurance. ⚠️ This band also carried "the runtime reads a package's
+        anatomy" as the first next step; that was written BEFORE #520 and has not been
+        re-measured since. On `c7085899` the word lives in the loader and both gates
+        (`packs/loader.py`, `gate3.py`, `gate4.py`) — whether the AGENT runtime consumes it is the
+        open question, and it is one grep away for whoever schedules this. Re-measure before
+        scheduling from it; a catalogue is a measurement with a timestamp.
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
         the authored step. ✅ ALL THREE BUILT 2026-09-19 in the user's order — DS-17b (ranking was NOT
