@@ -62,9 +62,22 @@ Read a live store through a snapshot, not in place — `sqlite3 "file:data/decis
 ".backup /tmp/snap.db"`. A plain `cp` loses rows still in the WAL, and opening the live file
 migrates its schema underneath a running API.
 
-Status 2026-09-19 (pre-A1 baseline, 40 rows): `converse.tool` 40 rows, 0 attributable, 0 with
-a probability, outcomes `{ok: 40}`; `ask.route` and `framing.definition` silent. Falsifier
-FIRES, as it must on rows the old code wrote — that is the number A1 has to beat.
+Arm A is derived PER SITE (`_ARM_A_CAPABILITY`), not as a blanket zero: `ask.route` always
+passed the model's confidence, so the probability column is not what A1 bought there. An
+unknown site is assumed arm-A-capable, which makes A1 look like it bought less rather than
+more.
+
+Status 2026-09-19, pre-A1 baseline (live store, 40 rows): `converse.tool` 40 rows, 0
+attributable, 0 with a probability, outcomes `{ok: 40}`; `ask.route` and `framing.definition`
+silent. Falsifier FIRES, as it must on rows the old code wrote.
+
+Status 2026-09-19, arm B (8 LuxExperience questions through the instrumented router,
+gemini-3.1-flash-lite, hermetic scratch store): `ask.route` 8 rows, attributable 0 -> 8,
+with a probability 8 -> 8, discriminating False -> True on `{rejected: 1, corrected: 1}`
+after two stand-in verdicts. Falsifier HOLDS. Caveat worth more than the pass: the model
+returned confidence **1.00 on all 8**, including the question both models in the ON-10
+receipts got wrong — so the probability column is populated but flat, and A2 has an input
+that cannot yet rank anything.
 
 ## P7 model bake-off (`model_bakeoff.py`)
 

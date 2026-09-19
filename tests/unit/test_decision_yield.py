@@ -97,16 +97,35 @@ def test_a_one_option_menu_is_not_trainable():
     assert decisions.corpus_yield()["converse.tool"]["trainable"] == 0
 
 
-def test_arm_a_is_three_structural_zeros_not_a_guess():
-    """Arm A could not have written these columns, whatever the traffic was."""
-    measured = {"converse.tool": {"total": 40, "attributable": 40, "with_probability": 0,
-                                  "trainable": 40, "outcomes": {"ok": 39, "rejected": 1},
-                                  "discriminating": True}}
-    a = arm_a(measured)["converse.tool"]
-    assert a["attributable"] == 0
-    assert a["with_probability"] == 0
-    assert a["discriminating"] is False
-    assert a["total"] == 40 and a["trainable"] == 40, "A1 records more, it does not decide more"
+def test_arm_a_is_derived_per_site_not_blanket_zeroes():
+    """The pre-A1 code was not equally blind at every site, and pretending it was would
+    overstate A1. ask.route ALWAYS passed the model's confidence, so the probability column
+    is not what A1 bought there — attribution and the outcome are."""
+    measured = {
+        "converse.tool": {"total": 40, "attributable": 40, "with_probability": 0,
+                          "trainable": 40, "outcomes": {"ok": 39, "rejected": 1},
+                          "discriminating": True},
+        "ask.route": {"total": 8, "attributable": 8, "with_probability": 8,
+                      "trainable": 8, "outcomes": {"rejected": 1}, "discriminating": False},
+    }
+    a = arm_a(measured)
+    assert a["converse.tool"]["with_probability"] == 0
+    assert a["converse.tool"]["outcomes"] == {"ok": 40}
+    assert a["ask.route"]["with_probability"] == 8, "ask.route always had a probability"
+    assert a["ask.route"]["outcomes"] == {}, "nothing ever closed a route decision"
+    for site in a.values():
+        assert site["attributable"] == 0
+        assert site["discriminating"] is False
+    assert a["converse.tool"]["total"] == 40 and a["converse.tool"]["trainable"] == 40, \
+        "A1 records more, it does not decide more"
+
+
+def test_an_unknown_site_is_assumed_arm_a_capable():
+    """The conservative direction: a site missing from the capability table must make A1
+    look like it bought LESS, never more."""
+    measured = {"new.site": {"total": 5, "attributable": 5, "with_probability": 5,
+                             "trainable": 5, "outcomes": {"ok": 5}, "discriminating": False}}
+    assert arm_a(measured)["new.site"]["with_probability"] == 5
 
 
 def test_the_falsifier_fires_when_instrumentation_bought_nothing():

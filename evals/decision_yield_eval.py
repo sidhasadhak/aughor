@@ -58,20 +58,47 @@ def load_yield(db_path: Path) -> dict:
     return decisions.corpus_yield()
 
 
+#: What the PRE-A1 code could write, PER SITE. Site-specific on purpose: a blanket "arm A
+#: recorded nothing" is not true and would overstate A1. `ask.route` always passed the
+#: model's confidence (`nodes.py`, `confidence=float(decision.confidence)`), so the
+#: probability column is NOT what A1 bought there — attribution and the outcome are.
+#: `converse.tool` passed an outcome, but only ever the literal "did the tool raise", so it
+#: is one value forever. `framing.definition` passed neither: its response model had a single
+#: `definition` field, and nothing downstream ever closed it.
+_ARM_A_CAPABILITY = {
+    #                      probability?  outcome the old code wrote
+    "ask.route":          (True,         None),
+    "converse.tool":      (False,        "ok"),
+    "framing.definition": (False,        None),
+}
+
+
 def arm_a(measured: dict) -> dict:
     """Arm A's yield for the same rows, derived — not re-run.
 
-    Three structural zeros, each true for ANY traffic volume, because the pre-A1 code had no
-    parameter to carry the value: no site passed `conn_id` (so nothing is attributable), the
-    definition chooser's response model had one field (so no row carries a probability), and
-    the only writer of `outcome` was `tool_loop`'s inline "did it raise" (so the column takes
-    one value and cannot discriminate). `total` and `trainable` are unchanged: A1 did not add
-    or remove a decision, it only recorded more about each one.
+    Derivable because each cell is a property of the pre-A1 SOURCE, not of the traffic: no
+    site had a `conn_id` parameter, so `attributable` is zero at every volume; and each
+    site's probability and outcome capability is fixed by `_ARM_A_CAPABILITY` above. `total`
+    and `trainable` are unchanged — A1 records more about a decision, it does not make more
+    decisions.
+
+    An unknown site is treated as arm-A-capable on both columns. That is the conservative
+    direction: it makes A1 look like it bought LESS, so a new site cannot flatter the result
+    by being absent from the table above.
     """
-    return {site: {"total": s["total"], "attributable": 0, "with_probability": 0,
-                   "trainable": s["trainable"], "outcomes": {"ok": s["total"]} if s["total"] else {},
-                   "discriminating": False}
-            for site, s in measured.items()}
+    out = {}
+    for site, s in measured.items():
+        has_prob, outcome = _ARM_A_CAPABILITY.get(site, (True, None))
+        outcomes = {outcome: s["total"]} if (outcome and s["total"]) else {}
+        out[site] = {
+            "total": s["total"],
+            "attributable": 0,
+            "with_probability": s["with_probability"] if has_prob else 0,
+            "trainable": s["trainable"],
+            "outcomes": outcomes,
+            "discriminating": len(outcomes) > 1,
+        }
+    return out
 
 
 def summarize(a: dict, b: dict) -> dict:
