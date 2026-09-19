@@ -1712,6 +1712,29 @@ approved, nothing later"*).
   **Receipt:** the LuxExperience Automations palette, where the gated kinds sit below the runnable ones and "Trusted
   query" no longer reads as absent.
 
+- ⏳ **DS-18a · a synthesis cannot leave the platform, and that is a real gap — OPEN, §6 item 27.** Found by
+  building the first real chain on the new steps (theLook, 2026-09-19): `trusted_query` → `synthesize` →
+  `slack_post` runs green and the send is **HELD at departure**, permanently, for a reason no amount of
+  authoring can fix. HB-2 law 1 requires every stated magnitude to sit in *the measurement the message
+  departs on*, and `departure_basis` builds one only from an `investigation_id` or an alert
+  (`govern/departure_basis.py`'s `measurement_for_*` family). A `synthesize` step publishes `answer` and no
+  measurement, so **a step whose stated purpose is "delivered either in Inbox or slack or practically
+  anywhere" can never deliver.** The wave is incomplete without this, and it is deliberately NOT patched
+  here: widening what may leave the platform is a governance decision, not a builder's.
+  🔑 **The proposal is in-pattern rather than an exception**: a `measurement_for_synthesis` builder beside
+  its siblings, whose `values` are the numbers in the rows the answer was grounded in, `source` the trusted
+  query, `measured_at` its execution, and `remeasure` a re-run of that query. The warrant is arguably
+  STRONGER than an analysis's prose, because `check_grounding` has already proved every number in the answer
+  is present in those exact rows, and the rows came from a query verified on save (DS-19).
+  **Two holds were measured on the live chain, and only one of them is this gap:** law 2 wanted an approved
+  definition (`units_sold` on theLook is `draft`; `revenue` is approved) — that is the user's ordinary
+  metric call, not a gap. Law 1 is the gap.
+  🔑 **And one hold was the author's own wording, which is the gate working.** The `context` instruction
+  written to PREVENT a misleading claim — "the product ranking is driven by unit price rather than demand" —
+  was itself read as a causal claim by `check_claim_type` and held the send. Reworded to state the fact
+  ("each sold 1 unit for 903.0") the hold cleared, and the sentence reads better: the reader draws the
+  conclusion instead of being handed one the analysis had no licence for.
+
 **The order, as the user set it** — DS-17b first, because a fix for a defect should not wait on a feature; then
 DS-19, which gets the SQL in; then DS-18, which turns it into something worth delivering. The pair is what closes the
 user's sentence; DS-17b is what stops the next capability from reading as missing.
@@ -7610,6 +7633,23 @@ the browser** · **measure the premise before building.**
     Not decided here because it isn't ripe: a Python node (refused, §4.1/§4.2 and `_NO_CODE_LAW`, and the user's
     "python or SQL" was answered by separating the three threats rather than by softening the law); an expression
     language on bindings (`dataflow.py:58` refuses it for the same reason).
+
+27. ⏳ **OPEN (2026-09-19, found by building the first real chain on DS-18/DS-19) — may a synthesis leave the
+    platform on the rows it was grounded in?** `trusted_query` → `synthesize` → `slack_post` runs green and is
+    HELD at departure, permanently: HB-2 law 1 admits only a measurement built from an analysis or an alert, and
+    a `synthesize` step publishes prose plus no measurement. So the step built to deliver a write-up "to Slack or
+    practically anywhere" cannot deliver one, and no authoring fixes it.
+    **(a)** Add a `measurement_for_synthesis` builder beside its siblings in `govern/departure_basis.py` — values
+    = the numbers in the rows the answer was grounded in, source = the trusted query, `remeasure` = re-run it?
+    *Recommended: yes. It is the existing one-builder-per-source-kind pattern rather than an exception, and the
+    warrant is stronger than the prose case it would sit beside: `check_grounding` has already proved every
+    number in the answer appears in those exact rows, and DS-19 verified the query by executing it at save.*
+    **(b)** Should that basis require the query to be PROMOTED (in the connection's catalogue) rather than
+    chain-private? *Recommended: no — scope is about who may SEE a query (§6 item 26 (c)), and a chain-private
+    query is verified and approved exactly like a promoted one. Tying departure to visibility would conflate the
+    two again, the distinction item 26 (c) was decided to keep apart.*
+    Not part of this: law 2's approved-definition requirement, which held the same send because theLook's
+    `units_sold` is a draft. That is an ordinary metric call, not a gap.
 
 ---
 
