@@ -204,6 +204,39 @@ def mark_outcomes_for_run(*, inv_id: str = "", trace_id: str = "", outcome: str 
         return 0
 
 
+def attach_run(trace_id: str, inv_id: str) -> int:
+    """Give a turn's decisions the investigation id, once the turn has one.
+
+    A conversational turn's id does not exist while the turn runs — `save_chat_turn` mints
+    it FROM the answer, after the tool loop has already made and recorded every pick. So the
+    loop records a trace it chose up front, and this stitches the investigation on at the
+    end. Without it a converse decision can never be closed by a verdict: measured
+    2026-09-20, four rows from two real LuxExperience turns carried `conn_id` and an empty
+    `inv_id`, which is attribution without a return path.
+
+    Only fills rows that have none — a decision already attached to an investigation is not
+    reassigned by a later turn that happens to share a trace. Never raises.
+    """
+    if not trace_id or not inv_id:
+        return 0
+    try:
+        with _LOCK:
+            conn = _connect()
+            try:
+                cur = conn.execute(
+                    "UPDATE decision_record SET inv_id = ? WHERE trace_id = ? AND inv_id = ''",
+                    (str(inv_id), str(trace_id)))
+                conn.commit()
+                return int(cur.rowcount or 0)
+            finally:
+                conn.close()
+    except Exception as exc:  # noqa: BLE001 — observation must never fail the observed
+        from aughor.kernel.errors import tolerate
+        tolerate(exc, "a turn whose decisions could not be attached still answered",
+                 counter="learning.decision_attach")
+        return 0
+
+
 def corpus_yield(site: Optional[str] = None) -> dict:
     """What the accumulated rows are actually worth as a selection corpus, per site.
 

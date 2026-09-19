@@ -3401,10 +3401,18 @@ async def _stream_converse(
                 tolerate(_exc, "agent lookup for tool grants is best-effort — an "
                                "unreadable agent means READ-ONLY, never open",
                          counter="converse.agent_lookup")
+        # One trace for this turn's decision records. Chosen HERE, before the loop, because
+        # a conversational turn has no investigation id until `save_chat_turn` mints one
+        # from the answer below — so the picks are recorded against the trace and stitched
+        # to the investigation afterwards. Without it every converse decision is a row no
+        # verdict can ever close.
+        import uuid as _uuid
+        _decision_trace = _uuid.uuid4().hex
         result = converse(connection_id, question,
                           extra_context=_memory,
                           on_step=_on_step, tool_emit=_forward,
-                          session_id=session_id, canvas_id=canvas_id, agent=_agent_rec)
+                          session_id=session_id, canvas_id=canvas_id, agent=_agent_rec,
+                          trace_id=_decision_trace)
 
         answer = (result.answer or "").strip()
         if not answer:
@@ -3474,6 +3482,13 @@ async def _stream_converse(
                 tolerate(exc, "filing a conversational turn is best-effort — the answer "
                               "has already been sent either way",
                          counter="converse.file_turn")
+
+        # The turn now has an id, so its decisions can be found by a later verdict.
+        # Best-effort, after the answer: an unattached decision costs a learning row, not
+        # an answer.
+        if turn["inv_id"]:
+            from aughor.learning.decisions import attach_run
+            attach_run(_decision_trace, turn["inv_id"])
 
         emit("done", {"inv_id": turn["inv_id"], "has_receipt": turn["has_receipt"],
                       "body": "converse", "stop_reason": result.stop_reason,

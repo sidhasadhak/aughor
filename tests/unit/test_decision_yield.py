@@ -128,6 +128,36 @@ def test_an_unknown_site_is_assumed_arm_a_capable():
     assert arm_a(measured)["new.site"]["with_probability"] == 5
 
 
+def test_a_conversational_turn_gets_its_investigation_stitched_on_afterwards():
+    """A converse turn has no investigation id while it runs — save_chat_turn mints one
+    FROM the answer. Measured 2026-09-20 before this existed: four rows from two real
+    LuxExperience turns carried conn_id and an empty inv_id, which is attribution with no
+    return path."""
+    _wipe()
+    for tool in ("list_tables", "run_sql"):
+        decisions.record_decision("converse.tool", "q", ["list_tables", "run_sql", "answer_question"],
+                                  chosen=tool, conn_id="914df862", trace_id="tr-chat", outcome="ok")
+    decisions.record_decision("converse.tool", "other", ["a", "b"], chosen="a",
+                              conn_id="914df862", trace_id="tr-other", outcome="ok")
+
+    assert decisions.attach_run("tr-chat", "inv-chat") == 2
+    closed = decisions.mark_outcomes_for_run(inv_id="inv-chat", outcome="rejected")
+    assert closed == 2, "a verdict can now reach a conversational turn's picks"
+
+    others = [r for r in decisions.list_decisions(limit=10) if r["trace_id"] == "tr-other"]
+    assert [r["inv_id"] for r in others] == [""], "another turn must not be stitched"
+
+
+def test_attach_run_never_reassigns_an_investigation_it_did_not_open():
+    _wipe()
+    decisions.record_decision("converse.tool", "q", ["a", "b"], chosen="a",
+                              conn_id="c1", trace_id="tr", inv_id="inv-first")
+    assert decisions.attach_run("tr", "inv-second") == 0
+    assert decisions.list_decisions(limit=5)[0]["inv_id"] == "inv-first"
+    assert decisions.attach_run("", "inv-x") == 0
+    assert decisions.attach_run("tr", "") == 0
+
+
 def test_the_falsifier_fires_when_instrumentation_bought_nothing():
     flat = {"converse.tool": {"total": 40, "attributable": 0, "with_probability": 0,
                               "trainable": 40, "outcomes": {"ok": 40}, "discriminating": False}}

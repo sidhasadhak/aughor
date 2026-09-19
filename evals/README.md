@@ -79,6 +79,14 @@ returned confidence **1.00 on all 8**, including the question both models in the
 receipts got wrong — so the probability column is populated but flat, and A2 has an input
 that cannot yet rank anything.
 
+Status 2026-09-20, arm B on the conversational path (2 real LuxExperience turns through
+`converse`, same model, hermetic scratch store): `converse.tool` 5 rows, attributable
+0 -> 5, with a probability 0 -> 0 (the loop passes none, by design), outcomes `{ok: 5}`
+after two truthful `accept` verdicts. Falsifier HOLDS on attribution alone. Two properties
+worth stating rather than discovering later: `accept` does not propagate, so a correct
+answer leaves no per-pick signal; and the negative class therefore only ever arrives from
+failures, which on a mostly-correct system makes this corpus heavily imbalanced.
+
 ## P7 model bake-off (`model_bakeoff.py`)
 
 Compare candidate `coder` models head-to-head, scored deterministically (no LLM
