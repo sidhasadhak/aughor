@@ -3488,8 +3488,23 @@ follow-up chips already ride) and `proposal_ref` (the real approval card, render
 run-a-trusted-query actions wait on a deep-link registry — recorded open, not drifted into. **Receipt:** a click asks
 the follow-up through the same path a typed question takes.
 
-**AV-M · Measure alongside.** Parts-versus-prose per converse turn, counted from the session log; the baseline is the
-2026-09-15 screenshot's all-prose turn. **Needs:** nothing.
+**AV-M · Measure alongside — ✅ BUILT 2026-09-19** (`aughor/obs/vocabulary_uptake.py`). Parts-versus-prose per
+converse turn, counted from the session log, no model anywhere — SP-M's shape one movement over.
+**The population is the turns where the tool was OFFERED.** `present` reaches only a streaming converse turn, so a
+deep run or an automation could never have used it and must not be counted against it; `ask.converse` is the
+denominator. An unreadable log reports `measured: false` and **no rate** — 0% would be a claim about the product
+where the truth is a claim about the log (SP-7's law: a failed probe is not an absence).
+**First reading, live: 2 of 41 converse turns answered in parts — both on 2026-09-15, the day the vocabulary
+shipped.** Since then, 2 converse turns, both prose. Not yet damning at n=2, and exactly the number that was
+unanswerable before this module: the question "is it used" took hand-written sqlite.
+🔴 **The meter shipped with the defect it exists to catch, for ten minutes.** Its first cut read `kind="tool_call"`
+only — and on the live log `ask.converse` appears 41× as a `tool_call` and NEVER as a result, while `present`
+appears 4× as a `tool_call_result` and NEVER as a call. It reported **zero uptake on a feature that had been
+used**. 🔑 **A tool's evidence may live under either kind; never assume one.** Pinned by the first test in the file.
+🔑 And the meter is stricter than the hand query that found the bug: raw SQL counted 3 traces carrying `present`,
+the meter counts 2, because one (`562bf533`) has no `ask.converse` call and so sits outside the population. Which
+path offered `present` there is an open question, recorded rather than chased.
+**Needs:** nothing.
 
 ### 3.12 · Arc MT — self-serve multi-tenancy (drafted 2026-09-07; decision §6 item 12; **DROPPED by the user 2026-09-12 — not while the platform runs locally**)
 
