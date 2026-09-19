@@ -695,7 +695,7 @@ with no second process running and no environment variable set.
 
 ---
 
-### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.5)
+### 3.7 · Arc DS — the Design arc (adopted 2026-08-31; decision §6.5; **the four phases COMPLETE 2026-09-02**; **SECOND MOVEMENT — the authored step — drafted AND ADOPTED 2026-09-19 at the user's direction, §6 item 26, all five clauses decided the same day; nothing built**)
 
 > **Origin.** The user's 2026-08-31 directive — *"any & every agent that we spawn should be
 > created via langflow style visual editor… fork it, clone it or whatever… go all in… think
@@ -1537,6 +1537,128 @@ flow-JSON format (DS-16), the component anatomy (palette parity), and their CVE 
 which doubles as a checklist of mistakes for §3.4 to avoid (their seeded-PRNG Fernet key
 derivation is the class example; ours was audited clean 2026-08-31 — no derivation step
 exists to get wrong).
+
+
+#### The second movement — the authored step (drafted AND ADOPTED 2026-09-19 at the user's direction; §6 item 26, all five clauses decided the same day; DS-17b, then DS-19, then DS-18)
+
+> **Origin.** The user, 2026-09-19, reading the Automations palette on the LuxExperience 9am chain:
+> *"Surprisingly, we dont have code component in the Add Action component list.. this could be handy when
+> User know required SQL and needs its synthesis to be delivered either in Inbox or slack or practically
+> anywhere.. code should be python or SQL in my opinion.."* — and, once the measurement below was put to
+> them: *"Add the rows-to-synthesis step to the roadmap.. but instead the component should say synthesize
+> data output from previous node and context can be added in the current node… Plus, I do see Trusted Query
+> as an item there but it needs to be generally available for explicity SQL input by the user.. think it
+> through, I thinik it makes super sense.."*
+
+**What is true today (measured 2026-09-19 on main `9b6b5fc1`, read-only — no model calls, no writes).**
+
+- **A SQL step ships and the user could not see it.** `trusted_query` is `palette.py:124` at weight 90 — it
+  sorts immediately after "Governed metric", which is the last row above the fold on a 1280-tall window.
+  It renders its prereq sentence rather than a `+` because `list_trusted(conn_id)` counts **0** on every
+  connection but one: all 11 trusted queries on this deployment sit on `workspace`, none on LuxExperience.
+  So the palette was telling the truth and the truth was one scroll down, dimmed. 🔑 **A gated row below the
+  fold reads as an absent capability** — the prereq grammar (`palette.py:244`) is right and its PLACEMENT is
+  what failed; a kind that is dimmed on this connection ranks as if it were available.
+- **The step names a query id, never SQL.** `REQUIRED_CONFIG["trusted_query"] = ("query_id",)`
+  (`models.py:155`), and `models.py:148` carries the reasoning: *"there is no expression here for anyone to
+  author, so there is none for anyone to inject."*
+- **Python is refused by a named law**, `_NO_CODE_LAW` (`import_flow.py:36`): *"a node is a reference to a
+  governed capability, never an implementation."* Sixteen component classes are refused by name at the flow
+  import border, their conditional router among them because it takes a Python predicate string.
+- **There is no path from rows to a write-up.** `trusted_query` publishes `("rows", "columns", "count")`
+  (`dataflow.py:706`); `investigate` binds exactly one field, `question` (`dataflow.py:746`); and a binding
+  REPLACES a field — this plane has no interpolation and refuses an expression language by the same
+  reasoning as the code law (`dataflow.py:58`). So a chain can post raw rows, or ask a question in English
+  and let the agent write the SQL, and **cannot say "here is my SQL, write it up."**
+
+**The distinction this movement turns on, and why it is not a softening of the law.** Three threats were
+collapsed into one sentence, and only two of them are the law's:
+
+1. **An imported artefact carries executable behaviour** — someone else's flow JSON with a Python function
+   in it. Refused at the border, unchanged, forever.
+2. **A model authors an expression that then runs unattended** — the injection case. Refused, unchanged,
+   and hardened by this movement rather than relaxed: the SQL field below is **human-authorable only**, and
+   the propose path is guarded so a drafted step may carry every other field and never that one.
+3. **A person types SQL they already own.** This is neither of the above, **and the product already permits
+   it**: `routers/query.py` is a query runner where a human runs arbitrary SQL against these same
+   connections, with a signed provenance receipt (`query.py:150`). Refusing the same act in the automations
+   plane is not the law — it is an inconsistency the law was being asked to justify.
+
+What an unattended run actually needs that an editor session does not is three things: it must really have
+run before it is armed, a name must be against the content, and an edit must re-open both. That is not a new
+gate to invent — **it is exactly the trusted-query lifecycle** (`routers/learning.py:240`: an edit resets to
+`proposed`, or `draft` on failure, and clears the prior stamp, because *"an approval covers the content it
+approved, nothing later"*).
+
+- **DS-18 · Synthesize — write up what the step before produced.** A new effect kind, `synthesize`, whose
+  input port is the FIRST in this plane to accept any published key rather than a named string: `rows` from
+  a trusted query, `value` from a governed metric, `text` from an MCP call, `answer` or `summary` from an
+  investigation, an outcome from a declared action. Beside it on the node, authored not bound, a `context`
+  field — what to make of this data, in the author's own words (bindable too, so a trigger's payload can
+  reach it). It publishes `answer`, and the cap it applied, stated rather than implied.
+  **What makes it this platform's step and not a "call an LLM" node** — the honesty machinery that already
+  exists, pointed at it: every number in the answer appears in the input it was handed (the numeric-grounding
+  check, `e08b1116`'s lesson — a figure is salient however it is spelled); empty input yields a STATED
+  refusal and never a paragraph about nothing (§3.11's `or {}` lesson: failed and healthy-empty must not
+  render alike); the row cap is named in the output the way `mcp_call` publishes `truncated`, because a step
+  reading the answer must be able to tell a whole one from half; and the answer carries the provenance of
+  what it read, so a Slack message's receipt names the approved query behind it. One governed answer path,
+  capped, spanned, audited, no model id in `aughor/`.
+  **Falsifier:** a `synthesize` answer that states a number absent from its input. If that can happen, the
+  step is wrong and ships behind nothing.
+  **Receipt:** a chain whose trusted query runs, whose `synthesize` writes it up under the author's context,
+  and whose Slack message arrives through HB-2's departure gate carrying the query id it was grounded on.
+- **DS-19 · SQL a person authored — private to the chain, promotable later.** The Trusted query step gains a
+  "write SQL" authoring mode: question + SQL typed on the node. On SAVE — not at 09:00 — it runs through
+  `trusted_verify` exactly as the door does; verification is not optional and an edit resets the stamp, which
+  is item 26 (b) as decided.
+  **Scope, per item 26 (c) — the user's call, against the recommendation, and the better one:** a query
+  authored on a node belongs to that chain and does NOT enter the connection's catalogue. A catalogue filled
+  with one-off chain SQL stops being a catalogue, which is the thing it exists to be. A "Promote" door on the
+  node moves it into the catalogue when it turns out to be worth reusing.
+  🔑 **What keeps that from becoming a second governance store** — and this is the trap this repo has paid for
+  before (two places holding one fact are two places that will disagree): a private query is still a row in
+  the ONE trusted-query store, carrying its own verification, stamp and audit, marked as owned by its
+  automation and hidden from the catalogue picker. **Promotion is a flag flip, not a data move**, and there
+  is exactly one lifecycle to reason about. A verification record stored on the step itself is the shape to
+  refuse.
+  **The cost, named rather than discovered:** this DOES change the wire format — `REQUIRED_CONFIG` for
+  `trusted_query` becomes *exactly one of* `query_id` or an inline `question` + `sql`, and every validator
+  that reads it needs the second shape. The published keys, `LIST_PUBLISHED` and the dataflow table are
+  untouched, because what the step publishes is unchanged. That is the price of (c) and it is worth paying.
+  **The guard that keeps the law literally true:** `sql` is human-only. `automations/propose.py` may draft
+  every field of a `trusted_query` step and is refused on that one, with a test that fails if a drafted or
+  imported step ever carries it. A model may propose the QUESTION; a person writes the SQL. **The user's own
+  argument for it, 2026-09-19, and it is the cleanest statement of the law in this document:** *"Never —
+  thats the whole point. Investigate node exists separately to form its own SQL, etc"* — a node whose job is
+  "a model writes the SQL" already ships and is governed as such, so a second one with none of that
+  machinery has no reason to exist.
+  **Falsifier:** a save path that arms a query which never executed · a model-authored `sql` reaching a
+  stored automation · a private query whose verification or approval lives anywhere but the trusted-query
+  store.
+  **Receipt:** SQL typed on the node, verified on save, running on schedule while absent from the catalogue
+  picker, then promoted by one click and picked by a second chain — with the stamp resetting, in front of the
+  person who made it, when the SQL is edited.
+
+- **DS-17b · The palette ranks what this deployment can actually run.** Item 26 (e), taken separately at the user's
+  direction and FIRST — because it is a defect and the other two are features. `palette.py` sorts by a static weight,
+  so a kind whose prereq is unmet on this connection ranks as if it were available, and the sentence explaining why it
+  is dimmed can fall below the fold. Available kinds sort above gated ones; the gated ones keep their sentence and
+  their door; the order within each group is unchanged. Numbered DS-17b rather than DS-20 because it belongs to the
+  first movement's palette work, not to this movement's two waves.
+  **Falsifier:** the measurement that produced this item, re-run — a connection with no trusted queries where
+  `trusted_query` still outranks a kind that connection can run today.
+  **Receipt:** the LuxExperience Automations palette, where the gated kinds sit below the runnable ones and "Trusted
+  query" no longer reads as absent.
+
+**The order, as the user set it** — DS-17b first, because a fix for a defect should not wait on a feature; then
+DS-19, which gets the SQL in; then DS-18, which turns it into something worth delivering. The pair is what closes the
+user's sentence; DS-17b is what stops the next capability from reading as missing.
+
+**Not this:** a Python node (item 1 and 2 above stand) · an expression language on bindings (`dataflow.py:58`)
+· a second STORE for queries — an inline query is private to its chain (item 26 (c)) but is still a row in the
+one trusted-query store, because scope is a flag and custody is not · a `synthesize` that re-derives a governed number instead of reading it (`metric_value` exists and is
+the governed answer) · a model that authors SQL into a saved automation.
 
 ### 3.8 · Canvas parity — the primitive gap, and why our nodes drag badly
 
@@ -6464,7 +6586,8 @@ LATER   ✅ DS-12 ontology components SHIPPED 2026-09-01
         SHIPPED 2026-09-02 (one Deploy menu: schedule · webhook (the fifth trigger kind,
         with the repo's one publicly-reachable route) · Slack · MCP tool, each `open |
         closed | needs_setup | unavailable` with the alt-door sentence — §3.7 Phase 4;
-        **§3.7 is now COMPLETE**)
+        **§3.7's four phases are COMPLETE**; its SECOND MOVEMENT — the authored step — was drafted
+        2026-09-19 and is listed under ARC DS II below)
         VA-10 multi-user + admin  (hardening pass over everything above) — ✅ UNBLOCKED
                                    2026-09-02: §6.4 decided (visible metadata, gated payloads,
                                    break-glass audited and visible to the user). §3.5 carries it.
@@ -6593,6 +6716,20 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         published figures reproduced, no model. Next: the runtime reads a package's anatomy, then
         payments & fintech, then insurance.
         The user, 2026-09-17: finish Arc IP before Arc IN
+ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
+        the authored step; nothing built. The user's order: DS-17b, then DS-19, then DS-18.
+        Measured the same day: `trusted_query` ships at palette weight 90, below the fold and dimmed
+        (0 trusted queries on every connection but `workspace`); it names a `query_id`, never SQL; and
+        nothing carries rows to a write-up (`investigate` binds only `question`, and this plane has no
+        interpolation). Waves: DS-18 `synthesize` — write up the step before, under context authored on
+        the node, with every number grounded in its input · DS-19 SQL a person authored, verified on SAVE
+        through the trusted-query door, PRIVATE to its chain with a Promote door (item 26 (c), the user's
+        call against the recommendation — visibility is a product question, custody a governance one, and
+        only custody was at risk: one store, scope a flag, promotion a flag flip). The `sql` field is
+        human-only, because the Investigate node is already the governed path where a model writes SQL.
+        DS-17b ranks the palette by what this deployment can actually run — item 26 (e), taken SEPARATELY and
+        first at the user's direction, because it is a defect and the other two are features: a gated kind
+        currently sorts as if it were available, which is how `trusted_query` shipped and read as absent.
 ARC IN  ⏳ DRAFTED 2026-09-17 (§3.19; §6 item 25) — the install, from what Hermes Agent's installer
         teaches; sequenced AFTER Arc IP (the user's order); nothing built. Measured on `1c150b05`:
         state lives in the checkout's data/, a re-run never updates the code, no update or doctor
@@ -6980,6 +7117,16 @@ the browser** · **measure the premise before building.**
 > HB-6, (e) for HB-3, (f) holds on the OAuth client, (g) rides the arc. Open: 16, 18(c), 22(c), 24(c·e·f·g).
 > **Amended 2026-09-16, HB-6:** item 24 (c) decided on the user's *"Start hb-6"*, on the recorded recommendation —
 > packs ship function groups; (e) had been taken with HB-3 the same day. Open: 16, 18(c), 22(c), 24(f·g).
+> **Amended 2026-09-19:** item 26 (Arc DS's second movement — the authored step) arrived from the user reading the
+> Automations palette, and is **OPEN with recommendations**; the measurement behind it corrected the premise (a SQL
+> step ships, dimmed and below the fold) and separated a person authoring SQL from the two things the no-code law
+> actually refuses. Open: 16, 18(c), 22(c), 24(f·g), 25, 26.
+> **Amended 2026-09-19, later the same turn:** item 26 (a)–(d) answered by the user — adopted with DS-19 first,
+> verification always and approval on the identity posture, a chain-private query with a Promote door (NOT as
+> recommended), and `sql` never model-filled. Only (e), the palette's ranking, stays open, and it was never put
+> to them. Open: 16, 18(c), 22(c), 24(f·g), 25, 26(e).
+> **Amended 2026-09-19, same turn:** 26 (e) decided too — the palette ranking is taken SEPARATELY and first, as
+> DS-17b. Item 26 is closed whole. Open: 16, 18(c), 22(c), 24(f·g), 25.
 
 1. ✅ **DECIDED 2026-08-30 — no third-party custodian: Aughor owns the vault.**
    The question dissolved once the bundle was split: vendors sell (a) the OAuth dance +
@@ -7353,6 +7500,47 @@ the browser** · **measure the premise before building.**
     **(e) WSL2** — named as supported. *Recommended: measure the installer there first, then say so.*
     **(f) Not copied** — a portable Git Bash, Termux, a root multi-user install, the stage protocol, shell rc edits.
     *Recommended: not now (reasons in §3.19).*
+
+26. ✅ **DECIDED 2026-09-19 (the user) — Arc DS's second movement, the authored step (§3.7): a `synthesize` node,
+    and explicit SQL on the Trusted query step.** Drafted and answered the same day; (a)–(d) stamped in the user's own
+    reply, and (e) in a follow-up the same turn. The user's two sentences are the spec:
+    the component *"should say synthesize data output from previous node and context can be added in the current node"*,
+    and Trusted query *"needs to be generally available for explicity SQL input by the user"*. Open, each with the
+    builder's recommendation:
+    ✅ **(a) DECIDED — adopted, DS-19 first, as recommended** (the user: *"Okay"*). The two are independent; the pair
+    is what closes the user's sentence, and DS-19 gives DS-18 something worth writing up.
+    ✅ **(b) DECIDED — as recommended** (the user: *"Agreed"*). Verification is always mandatory: a real execution plus
+    the battery, on SAVE, never at 09:00. Approval follows the deployment's identity posture — recorded self-approval
+    under the author's name while identity is off, a second principal once VA-10 is on. Requiring a second click from
+    the only account on a local install is theatre, and theatre is how a gate stops being read.
+    ✅ **(c) DECIDED — private to the chain, with a Promote door; NOT as recommended** (the user: *"Private in the
+    chain with option to promote it later"*). The recommendation argued that a private copy is a second place queries
+    live; the answer is better, because it separates two things the recommendation had fused. **Where a query is
+    VISIBLE is a product question — a catalogue filled with one-off chain SQL stops being a catalogue — and where its
+    CUSTODY lives is a governance one.** Only the second was ever at risk. So: private by default, promotable by one
+    click, and still a row in the ONE trusted-query store with its own verification, stamp and audit, marked as owned
+    by its automation and hidden from the picker. Promotion is a flag flip, not a data move. 🔑 The shape to refuse is
+    a verification record stored on the step itself — that would be the second store the recommendation feared, and it
+    is avoidable while giving the user exactly what they asked for. Cost, recorded on DS-19: `REQUIRED_CONFIG` for
+    `trusted_query` becomes *exactly one of* `query_id` or inline `question` + `sql`.
+    ✅ **(d) DECIDED — never, as recommended, and on a better argument than the one offered** (the user: *"Never -
+    thats the whole point. Investigate node exists separately to form its own SQL, etc"*). The recommendation appealed
+    to the no-code law; the user's reason is structural and stronger — **a node whose job is "a model writes the SQL"
+    already ships, governed, spanned and grounded as such, so a second one carrying none of that machinery has no
+    reason to exist.** The two nodes are not competing shapes of one idea; they are the model's path and the person's,
+    and each is already whole. Guarded in `propose.py`, with a test that fails if a drafted or imported step carries a
+    `sql` field.
+    ✅ **(e) DECIDED 2026-09-19 (the user: *"take 26(e) separately"*) — the palette's ranking, as its own change,
+    ahead of DS-19 and not folded into it.** A kind that is dimmed on this connection currently sorts as if it were
+    available, which is how a shipped capability read as a missing one and produced this whole item. Taking it apart
+    from DS-19 is the right call for a reason worth recording: **it is a defect, and DS-19 is a feature.** Folded
+    together, the fix would ship only when the feature did, and its receipt would read "the new thing is visible"
+    rather than "the thing that was always there is now findable" — which is the claim that actually needs testing, on
+    the palette as it stands today. It also repairs the surface for `metric_value`, `mcp_call` and `integration_call`,
+    each gated the same way and none of them waiting on DS-19.
+    Not decided here because it isn't ripe: a Python node (refused, §4.1/§4.2 and `_NO_CODE_LAW`, and the user's
+    "python or SQL" was answered by separating the three threats rather than by softening the law); an expression
+    language on bindings (`dataflow.py:58` refuses it for the same reason).
 
 ---
 
