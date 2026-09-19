@@ -15,8 +15,6 @@ So the reason is persisted beside the profile — not on `BusinessProfile`, whic
 generation schema and would describe the field to the model on every inference — and the
 catalogue reports ``formula_rejected`` carrying the audit's own words.
 """
-import pytest
-
 from aughor.semantic import metric_catalogue as mc
 
 
