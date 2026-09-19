@@ -296,3 +296,69 @@ def test_a_code_rendered_alert_is_grounded_by_construction():
               declared_definition="alert rule 'errors' (declared)")
     assert v.state == "departed", v.reason_sentence()
     assert "grounded by construction" in v.checks["remeasure"]
+
+
+# ── A4: a measurement's caveat travels with the number it measured ───────────────────────────
+
+_IMPOSSIBLE = ("counted as kept although impossible: 4,199 of the 50,048 Return objects reached refunded "
+               "BEFORE received_at, so their lag is negative and none of them can break the promise — "
+               "without them the rate is 25.41%, not 23.27%")
+
+
+def test_a_promises_caveat_rides_the_receipt_rather_than_stopping_at_the_record(monkeypatch):
+    """The LuxExperience shape. Every other surface already showed a promise's flags — the panel
+    in red, the object door as query caveats, the frame as notes — and the one that dropped them
+    was the one that leaves the building. A number departing at 23.27% when 4,199 of its 50,048
+    objects were refunded BEFORE they arrived is the defect this carries."""
+    stamp = Measurement(source="promise refund of Return to refund",
+                        values=[50048.0, 11648.0], rates=[0.232737],
+                        measured_at=datetime.now(timezone.utc).isoformat(),
+                        as_of="2025-08-14", caveats=[_IMPOSSIBLE])
+    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+                        lambda s, c: {"kind": "promise", "measured": True,
+                                      "label": "promise refund of Return to refund"})
+    v = _gate("The refund promise broke on 11,648 of 50,048 returns (23.27%).", conn_id="c1",
+              about="promise:return_to_refund.refund", measurement=stamp)
+    assert v.state == "departed", v.reason_sentence()
+
+    line = v.receipt_line()
+    assert "caveat: counted as kept although impossible" in line
+    assert "25.41%, not 23.27%" in line, "the alternative rate is the actionable half"
+    assert line.index("caveat:") < line.index("checked:"), \
+        "a caveat after a list of green ticks reads as a footnote to reassurance"
+
+    row = ds.get_departure(v.record_id)
+    assert json.loads(row["receipt"])["caveats"] == [_IMPOSSIBLE]
+
+
+def test_a_caveat_qualifies_a_number_and_never_holds_it(monkeypatch):
+    """Deliberate, and the user's call to change: a gate that blocked on every caveat would
+    teach senders to stop writing them. The flag is information, not a refutation."""
+    stamp = Measurement(source="promise refund of Return to refund",
+                        values=[50048.0, 11648.0], rates=[0.232737],
+                        measured_at=datetime.now(timezone.utc).isoformat(),
+                        as_of="2025-08-14", caveats=[_IMPOSSIBLE, "never broken: none of them"])
+    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+                        lambda s, c: {"kind": "promise", "measured": True,
+                                      "label": "promise refund of Return to refund"})
+    v = _gate("The refund promise broke on 11,648 of 50,048 returns (23.27%).", conn_id="c1",
+              about="promise:return_to_refund.refund", measurement=stamp)
+    assert v.state == "departed"
+    assert v.guards["definition"] == "passed" and v.guards["remeasure"] == "passed"
+    assert v.receipt_line().count("caveat: ") == 2, "every caveat travels, not just the first"
+
+
+def test_a_measurement_with_no_caveat_leaves_the_receipt_exactly_as_it_was(monkeypatch):
+    """The no-op half: a clean promise must not grow an empty 'caveat:' fragment."""
+    stamp = Measurement(source="promise dispatch of order_to_delivery",
+                        values=[111456.0, 10423.0], rates=[0.093517],
+                        measured_at=datetime.now(timezone.utc).isoformat(),
+                        as_of="2018-09-11 19:48:28")
+    monkeypatch.setattr("aughor.govern.departure_basis.declared_thing",
+                        lambda s, c: {"kind": "promise", "measured": True,
+                                      "label": "promise dispatch of order_to_delivery"})
+    v = _gate("Dispatch broke on 10,423 of 111,456 order lines (9.35%).", conn_id="c1",
+              about="promise:order_to_delivery.dispatch", measurement=stamp)
+    assert v.state == "departed"
+    assert "caveat" not in v.receipt_line()
+    assert json.loads(ds.get_departure(v.record_id)["receipt"])["caveats"] == []

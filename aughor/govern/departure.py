@@ -186,6 +186,14 @@ class Measurement:
     remeasure: Optional[Callable[[list], Optional[tuple]]] = None
     stale_note: str = ""
     rendered: bool = False
+    #: What the measurement itself found worth a reader's eye — a promise's `flags`. These do
+    #: NOT hold a departure: they qualify a number rather than refute it, and a gate that
+    #: blocked on every caveat would teach senders to stop writing them. They ride the receipt
+    #: instead, because the alternative is what shipped on LuxExperience: a refund promise
+    #: departing as "23.27% breached" when 4,199 of the 50,048 objects were refunded BEFORE
+    #: they arrived and were counted as kept — 25.41% without them, with nothing on the
+    #: message to say so.
+    caveats: list = field(default_factory=list)
 
 
 @dataclass
@@ -298,6 +306,7 @@ def gate_departure(*, kind: str, org_id: str, conn_id: str, text: str,
         "as_of": as_of,
         "guards": guards,
         "held_lines": len(held_lines or []),
+        "caveats": list(measurement.caveats) if measurement else [],
         "link": departure_link(record_id),
     }
     # The exact sentence that travels, stored with the row — readable where it was recorded.
@@ -334,6 +343,10 @@ def receipt_line(receipt: dict) -> str:
              else "definition: none named",
              f"as of {str(receipt['as_of'])[:10]}" if receipt.get("as_of")
              else "as of: not stated by the source"]
+    # Before the guard list, not after: a caveat qualifies the number a reader just read, and
+    # a sentence that ends in a list of green ticks reads as reassurance whatever follows it.
+    for caveat in (receipt.get("caveats") or []):
+        parts.append(f"caveat: {caveat}")
     if ran:
         parts.append("checked: " + ", ".join(ran))
     if could_not:

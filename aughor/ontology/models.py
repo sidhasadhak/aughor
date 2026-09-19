@@ -630,7 +630,8 @@ class Promise(BaseModel):
     breach_rate: Optional[float] = None
     as_of: str = ""
     verified: Optional[bool] = None
-    #: What the measurement found worth a person's eye without refuting the promise: never broken, always broken.
+    #: What the measurement found worth a person's eye without refuting the promise: never broken, always broken, and
+    #: objects counted as kept although their lag is impossible (reached this stage before the one before it).
     flags: list[str] = Field(default_factory=list)
     note: str = ""
 

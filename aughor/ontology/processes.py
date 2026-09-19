@@ -463,6 +463,54 @@ def _cutoff_hours(as_of: str, hours: int) -> str:
     return (moment - timedelta(hours=hours)).isoformat(sep=" ", timespec="seconds")
 
 
+def _flag_out_of_order(promise: Any, stage: ProcessStage, spec: dict, process: Process, grain: Any) -> None:
+    """Carry the stage's impossible orderings onto the PROMISE, with what they do to its rate.
+
+    The measurement already counts objects whose moment here precedes the previous stage's
+    (`stage.out_of_order`) and already says so — in `stage.note`, one level up from the
+    promise block. But the promise is what a reader is shown and what departs, and its rate
+    is computed over a population that silently includes those objects on the KEPT side: a
+    negative lag is never greater than the window. Live on LuxExperience 2026-09-20: 4,199
+    of 50,048 Returns were refunded BEFORE they were received, the promise read 23.27%
+    breached with `flags: []`, and without them it is 25.41% — the failure understated by
+    2.14 points, in the business's favour, on a number that leaves the platform.
+
+    The alternative rate is arithmetic, not a second query, and it is only stated when it is
+    SOUND to state:
+
+    * a window promise, never a `deadline` one — `out_of_order` compares this stage's moment
+      with the PREVIOUS stage's, which is the window's start (`derived.promise_filters`) but
+      has nothing to do with a deadline column;
+    * the promise counted per the process's own type, so the two counts share a population
+      (`promise.grain` may name another);
+    * and at least one object left once they are removed.
+
+    When any of those fails the ordering is still flagged, just without a rate — saying less
+    beats saying something that was derived from the wrong denominator.
+    """
+    early = stage.out_of_order or 0
+    if not early or not promise.reached:
+        return
+    previous_name = spec.get("start")
+    if not previous_name:
+        # A deadline promise. `out_of_order` compares this stage's moment with the PREVIOUS
+        # STAGE's, and the deadline has nothing to do with either — an object that arrived
+        # out of order can still miss its deadline, so "cannot break the promise" would be
+        # a false sentence here, not merely an unhelpful one.
+        return
+    remaining = promise.reached - early
+    if spec.get("grain") == process.entity and remaining > 0:
+        without = promise.breached / remaining
+        promise.flags.append(
+            f"counted as kept although impossible: {early:,} of the {promise.reached:,} {grain.id} objects reached "
+            f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise — "
+            f"without them the rate is {without:.2%}, not {promise.breach_rate:.2%}")
+        return
+    promise.flags.append(
+        f"counted as kept although impossible: {early:,} of the {promise.reached:,} {grain.id} objects reached "
+        f"{stage.name} BEFORE {previous_name}, so their lag is negative and none of them can break the promise")
+
+
 def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Process, index: int, measured: Process) -> None:
     spec = promise_filters(work.processes[process.id], index)
     stage = measured.stages[index]
@@ -507,6 +555,7 @@ def _measure_promise(counter: ObjectCounter, work: OntologyGraph, process: Proce
     elif promise.breached == promise.reached:
         promise.flags.append(f"always broken: every one of the {promise.reached:,} {grain.id} objects that reached "
                              f"{stage.name} went past {what} — {check}")
+    _flag_out_of_order(promise, stage, spec, process, grain)
     promise.note = (f"{promise.breached:,} of the {promise.reached:,} {grain.id} objects that reached {stage.name} broke "
                     f"the {noun} promise ({promise.breach_rate:.2%}); {promise.open:,} have not reached it"
                     + (f", {promise.open_overdue:,} of them already past it as of {promise.as_of}"

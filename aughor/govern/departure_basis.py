@@ -179,6 +179,7 @@ def measurement_for_promise(securable: str, conn_id: str) -> Optional[Measuremen
             rates=[float(rate)] if isinstance(rate, (int, float)) else [],
             as_of=str(stamp.get("as_of") or ""),
             definition=f"promise {ident} (declared)",
+            caveats=[str(f) for f in (stamp.get("flags") or [])],
             stale_note="a promise is re-measured by the ontology's measure pass, not at a send")
     process, promise = found
     values = [float(promise[k]) for k in ("objects", "reached", "breached", "kept", "open",
@@ -192,6 +193,11 @@ def measurement_for_promise(securable: str, conn_id: str) -> Optional[Measuremen
         measured_at=str(process.get("measured_at") or ""),
         as_of=str(promise.get("as_of") or ""),
         definition=f"promise {promise.get('name', '')} (declared)",
+        # The measurement's own caveats travel with the number it measured. Everywhere else a
+        # promise's flags already ride — the panel renders them red, the object door turns
+        # them into query caveats, the frame carries them as notes — and the ONE surface that
+        # dropped them was the one that leaves the building.
+        caveats=[str(f) for f in (promise.get("flags") or [])],
         stale_note="a promise is re-measured by the ontology's measure pass, not at a send")
 
 
