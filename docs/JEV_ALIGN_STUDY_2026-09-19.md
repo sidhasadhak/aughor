@@ -165,9 +165,13 @@ site** (`converse.tool`). The other two registered sites — `ask.route` (`agent
 `source='llm'` and **`confidence = 0.0`**: the deciders offer no probability, so there is nothing to
 sort a labeling queue by. Menus are 11 or 38 options wide.
 
-**The loop has no return path.** `mark_outcome` (`aughor/learning/decisions.py:128`) has **zero call
-sites** outside its own definition and tests. Every one of those 40 rows carries `outcome = ''`. The
-menu and the pick are recorded; whether the pick worked is not.
+**The outcome column is written, and it cannot discriminate.** `tool_loop.py:226` passes
+`outcome="ok" if ok else "error"` inline at insert — so all 40 rows carry an outcome, and it is
+**`'ok'` on 40 of 40**. What it records is that the tool *ran*, not that the pick was *right*: every
+tool that executed, executed. A selection model trained on that column sees only positive examples.
+`mark_outcome` (`aughor/learning/decisions.py:128`) — the function that exists to write the real
+outcome once it is known — has **zero call sites** outside its own definition and tests. So the corpus
+has a label column whose value is a constant, and the seam for the real label is unused.
 
 **Grading has not moved in sixteen days.** `aughor/learning/exporters.py`'s docstring records a
 measurement taken 2026-09-03: five verdicts, none carrying `sql_source` or `corrected_sql`. Re-measured
@@ -191,15 +195,17 @@ numbered separately (**A1–A6**) because `ROADMAP.md` §3.19 is currently conte
 (unmerged, `origin/claude/fervent-cori-w9ogfc`) and Arc IN — the section number is the user's call, not
 this study's.
 
-### A1 · The return path: `mark_outcome` gets called *(no vendor, no model, smallest diff here)*
+### A1 · The return path: an outcome that can be wrong *(no vendor, no model, smallest diff here)*
 
-Three `record_decision` sites, zero `mark_outcome` sites. A decision whose outcome is never written is
-a row that can never be trained on, ranked by, or learned from — and the exporter beside it already
-filters on exactly that. Wire the outcome at the sites where it is already known: a tool loop step that
-errored, a route that was re-asked, a definition the user overrode.
-**Receipt:** rows with a non-empty `outcome`, by site, one week after wiring. **Falsifier:** if no site
-can say what "worked" means without a new judgement call, then the outcome is not free and belongs in
-A2's human loop instead — say so and stop.
+The outcome column is not empty — it is **constant**: `'ok'` on 40 of 40, because `tool_loop.py:226`
+writes "the tool ran" at insert time. A label that never takes its other value carries no information,
+and the exporter beside it will happily ship 40 positive examples. The fix is not to start writing an
+outcome; it is to write one that can come out negative, later, when the answer is judged — which is
+what `mark_outcome` exists for and why its zero call sites matter. Wire it where the verdict is already
+known: a finding the user rejected, a definition the user overrode, a route that was re-asked.
+**Receipt:** the distribution of `outcome` by site — the number is worthless until it is not all one
+value. **Falsifier:** if no site can say what "worked" means without a fresh judgement call, the
+outcome is not free and belongs in A2's human loop instead — say so and stop.
 
 ### A2 · Uncertainty schedules the human, not policy *(needs JD-1's probability)*
 
@@ -294,7 +300,7 @@ instrument; `jev-align` owns the loop; neither owns the proof.**
 
 | # | Finding | Needs | Verdict |
 | --- | --- | --- | --- |
-| A1 | `mark_outcome` gets called | nothing | **Adopt** — smallest diff, unblocks everything else |
+| A1 | An outcome that can come out negative (`mark_outcome`) | nothing | **Adopt** — smallest diff, unblocks everything else |
 | A4 | Measurement scope named in the artifact | nothing | **Adopt** — correctness, not a bet |
 | A2 | Uncertainty schedules the human, with an audit slot | JD-1's probability | **Adopt after JD-1** |
 | A3 | Definition change = diff + score + named population | A4 | **Adopt** — it is the screen the departure hold is missing |
