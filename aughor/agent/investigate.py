@@ -931,7 +931,7 @@ _USER_CAUSAL_ASSUMPTION_RE = re.compile(
     r"|take\s+it\s+as\s+given|suppose\s+that)\b[^.?!]*", re.I)
 
 
-def _recorded_claim_licence(intake_data: dict) -> str:
+def _recorded_claim_licence(intake_data: dict, phases: list | None = None) -> str:
     """The licence this analysis RECORDED, not the optional field the model may leave blank.
 
     `claim_type_suggestion` is declared to the model as "Leave empty unless the question is
@@ -956,9 +956,31 @@ def _recorded_claim_licence(intake_data: dict) -> str:
         return declared
     for line in (data.get("intake_notes") or "").split(". "):
         if line.strip().startswith("CLAIM LICENCE:"):
-            rest = line.split(":", 1)[-1].strip()
-            return rest.split("—")[0].strip().split()[0].strip().lower() if rest else ""
+            return _licence_word(line)
+    # Third and most reliable: the INTAKE PHASE itself. Measured on investigation
+    # e644a25b — `CLAIM LICENCE: descriptive` is in the record, and `intake_notes` is not
+    # a key on it at all: `_stamp_claim_type` writes the line onto the intake model, and
+    # what survives to synthesis is the rendered phase, not the field. The phases are
+    # handed to both consumers already, so this reads the one copy known to be there.
+    for phase in (phases or []):
+        ph = phase if isinstance(phase, dict) else getattr(phase, "__dict__", {})
+        if (ph.get("phase_id") or "") != "intake":
+            continue
+        for finding in (ph.get("findings") or []):
+            fd = finding if isinstance(finding, dict) else getattr(finding, "__dict__", {})
+            for line in str(fd.get("interpretation") or "").split(". "):
+                if "CLAIM LICENCE:" in line:
+                    return _licence_word(line[line.index("CLAIM LICENCE:"):])
     return ""
+
+
+def _licence_word(line: str) -> str:
+    """The bare claim type out of a `CLAIM LICENCE: <type> — <why>` line."""
+    rest = line.split(":", 1)[-1].strip()
+    if not rest:
+        return ""
+    head = rest.split("—")[0].strip()
+    return head.split()[0].strip().lower() if head else ""
 
 
 def _claim_licence_section(intake_data: dict, phases: list) -> str:
@@ -971,7 +993,7 @@ def _claim_licence_section(intake_data: dict, phases: list) -> str:
     Not requesting it is the fix; the check stops firing because the artefact stops existing.
     """
     from aughor.agent.claim_type import admissible_verbs_directive, is_at_least
-    claim_type = _recorded_claim_licence(intake_data)
+    claim_type = _recorded_claim_licence(intake_data, phases)
     if not claim_type:
         return ""
     why = ""
@@ -9846,8 +9868,10 @@ def ada_synthesize(state: AgentState) -> dict:
     if synth is not None:
         try:
             from aughor.agent.report_checks import run_report_checks
-            _violations = run_report_checks(synth, question, evidence_log, phases,
-                                              _recorded_claim_licence(intake_data))
+            _licence = _recorded_claim_licence(intake_data, phases)
+            from aughor.stats import stats as _stl
+            _stl.inc(f"deep_analysis.report_check_licence.{_licence or 'none'}")
+            _violations = run_report_checks(synth, question, evidence_log, phases, _licence)
             if _violations:
                 from aughor.stats import stats as _st
                 _st.inc("deep_analysis.report_check_retry")
@@ -9861,8 +9885,7 @@ def ada_synthesize(state: AgentState) -> dict:
                         response_model=ADASynthesisModel)
                     if _retry is not None:
                         synth = _retry
-                        _violations = run_report_checks(synth, question, evidence_log, phases,
-                                              _recorded_claim_licence(intake_data))
+                        _violations = run_report_checks(synth, question, evidence_log, phases, _licence)
                 except Exception as _exc:
                     from aughor.kernel.errors import tolerate
                     tolerate(_exc, "report-check retry is best-effort; the first draft "

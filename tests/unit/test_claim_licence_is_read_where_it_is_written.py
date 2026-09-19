@@ -68,3 +68,37 @@ def test_the_shipped_headline_would_now_be_caught():
         "with the licence recovered, the report check must flag the causal headline "
         "before synthesis returns — not leave it for the departure gate"
     )
+
+
+# ── the shape the live runs actually had ──────────────────────────────────────
+
+def _intake_phase(text: str) -> list:
+    return [{"phase_id": "baseline", "findings": []},
+            {"phase_id": "intake",
+             "findings": [{"interpretation": f"DATA COVERAGE: re-anchored. {text} ROUTING: temporal."}]}]
+
+
+def test_the_licence_is_found_in_the_intake_PHASE():
+    """Measured on investigation e644a25b: `CLAIM LICENCE: descriptive` is in the record
+    and `intake_notes` is not a key on it at all. `_stamp_claim_type` writes the line onto
+    the intake MODEL; what survives to synthesis is the rendered phase. Both consumers are
+    handed the phases already, so this reads the one copy known to be present."""
+    assert _recorded_claim_licence({}, _intake_phase(NOTES)) == "descriptive"
+
+
+def test_the_field_still_beats_the_phase():
+    """A resolved field is the most direct answer and must not be second-guessed."""
+    assert _recorded_claim_licence({"claim_type_suggestion": "causal"},
+                                   _intake_phase(NOTES)) == "causal"
+
+
+def test_no_licence_in_the_phases_is_still_no_licence():
+    assert _recorded_claim_licence({}, _intake_phase("no licence here.")) == ""
+    assert _recorded_claim_licence({}, []) == ""
+
+
+def test_only_the_intake_phase_is_read():
+    """A later phase quoting the words must not be mistaken for the recorded verdict."""
+    phases = [{"phase_id": "baseline",
+               "findings": [{"interpretation": "CLAIM LICENCE: causal — not the record."}]}]
+    assert _recorded_claim_licence({}, phases) == ""
