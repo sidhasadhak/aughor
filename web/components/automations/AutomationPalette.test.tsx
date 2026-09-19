@@ -57,14 +57,23 @@ function mount(props: Partial<React.ComponentProps<typeof AutomationPalette>> = 
 }
 
 describe("what the deployment can actually do", () => {
+  /** DS-17b — the gated rows now sit behind a counted fold, so a test about how a gated
+   *  row LOOKS has to open it first. What these three guard is unchanged: a row whose
+   *  object is missing must look different, say why, and offer no affordance that fails. */
+  async function openGated() {
+    fireEvent.click(await screen.findByTestId("palette-gated-toggle-action"));
+  }
+
   it("dims a row whose object does not exist here, and says why in place", async () => {
     mount();
+    await openGated();
     const reason = await screen.findByTestId("palette-reason-slack_post");
     expect(reason.textContent).toContain("No Slack bots configured");
   });
 
   it("offers no add control on a row that cannot be used", async () => {
     mount();
+    await openGated();
     await screen.findByTestId("palette-row-slack_post");
     // An affordance that fails is worse than an absent one — the same law the rail
     // enforces by ABSENCE for the last remaining step.
@@ -74,6 +83,7 @@ describe("what the deployment can actually do", () => {
 
   it("does not let an unusable row be dragged either", async () => {
     mount();
+    await openGated();
     const row = await screen.findByTestId("palette-row-slack_post");
     expect(row.getAttribute("draggable")).toBe("false");
   });
@@ -221,5 +231,139 @@ describe("the three-key sort", () => {
     // And a prefix beats a mere substring.
     expect(searchScore(labelHit, "post")).toBeLessThan(
       searchScore(ENTRY({ label: "Repost" }), "post"));
+  });
+});
+
+/**
+ * DS-17b — the defect that produced §3.7's second movement: a step that SHIPS, gated on
+ * this connection, read as a missing feature because it sat below the fold.
+ *
+ * 🔑 The first draft of this suite ranked availability and called it fixed. The mutation
+ * run said otherwise: the FALSIFIER stayed green against the pre-fix sort, because the
+ * fixture happened to give every gated kind the highest priority, so both orders agreed.
+ * The real palette does not look like that — `notify` (30), `brief` (40) and
+ * `integration_call` (70) are gated and sit ABOVE four runnable kinds. The fixture below
+ * is the measured live shape, and the arithmetic it exposed is why this wave needed a
+ * second half: `trusted_query` is the 9th of 10 rows under BOTH orders, so ranking alone
+ * moved it exactly nowhere.
+ */
+const ACTIONS: AutomationPaletteEntry[] = [
+  ENTRY({ kind: "investigate", label: "Investigate", priority: 10 }),
+  ENTRY({ kind: "slack_post", label: "Post to Slack", priority: 20 }),
+  ENTRY({ kind: "notify", label: "Notify", priority: 30, availability: "needs_setup",
+          reason: "No notification triggers configured — create one first." }),
+  ENTRY({ kind: "brief", label: "Deliver briefing", priority: 40,
+          availability: "needs_setup",
+          reason: "No briefing subscriptions on this connection — create one first." }),
+  ENTRY({ kind: "kinetic_action", label: "Declared action", priority: 50 }),
+  ENTRY({ kind: "subchain", label: "Run a chain", priority: 60 }),
+  ENTRY({ kind: "integration_call", label: "Use an integration", priority: 70,
+          availability: "needs_setup",
+          reason: "No connected accounts — connect one under Integrations." }),
+  ENTRY({ kind: "metric_value", label: "Governed metric", priority: 80 }),
+  ENTRY({ kind: "trusted_query", label: "Trusted query", priority: 90,
+          availability: "needs_setup",
+          reason: "No trusted queries on this connection — promote a verified answer first." }),
+  ENTRY({ kind: "mcp_call", label: "Call an MCP tool", priority: 95,
+          availability: "needs_setup",
+          reason: "No MCP servers on this deployment — add one under MCP servers." }),
+];
+
+describe("a gated row ranks below what this deployment can run", () => {
+  it("THE FALSIFIER, on the measured live shape: no gated row precedes a runnable one",
+    async () => {
+      const { ordered } = await import("@/components/automations/AutomationPalette");
+      const kinds = ordered(ACTIONS, "").map(e => e.kind);
+      expect(kinds).toEqual([
+        // the five this connection can run, in the server's curated order…
+        "investigate", "slack_post", "kinetic_action", "subchain", "metric_value",
+        // …then the five it cannot, keeping theirs.
+        "notify", "brief", "integration_call", "trusted_query", "mcp_call",
+      ]);
+      // Stated as the property, so a future fixture cannot satisfy it by accident.
+      const ranks = ordered(ACTIONS, "").map(e => e.availability === "ready" ? 0 : 1);
+      expect(ranks).toEqual([...ranks].sort((a, b) => a - b));
+    });
+
+  it("the curated order still decides WITHIN each group", async () => {
+    const { ordered } = await import("@/components/automations/AutomationPalette");
+    const kinds = ordered(ACTIONS, "").map(e => e.kind);
+    expect(kinds.indexOf("investigate")).toBeLessThan(kinds.indexOf("metric_value"));
+    expect(kinds.indexOf("notify")).toBeLessThan(kinds.indexOf("trusted_query"));
+  });
+
+  it("a TYPED query outranks availability — the person named the thing", async () => {
+    const { ordered } = await import("@/components/automations/AutomationPalette");
+    // "trusted" hits Trusted query's LABEL and nothing else's, so it must lead despite
+    // being gated and despite carrying the second-lowest curated weight on the panel.
+    expect(ordered(ACTIONS, "trusted").map(e => e.kind)[0]).toBe("trusted_query");
+  });
+
+  it("relevance outranks the curated weight — the second defect this wave found",
+    async () => {
+      const { ordered } = await import("@/components/automations/AutomationPalette");
+      // Both READY, so availability is not what is measured here: a low-priority
+      // description hit must not outrank the label the person actually typed.
+      const rows = [
+        ENTRY({ kind: "notify", label: "Notify", priority: 10,
+                description: "send a trusted message" }),
+        ENTRY({ kind: "trusted_query", label: "Trusted query", priority: 90,
+                description: "run a vetted query" }),
+      ];
+      expect(ordered(rows, "trusted").map(e => e.kind)).toEqual(["trusted_query", "notify"]);
+      expect(ordered(rows, "").map(e => e.kind)).toEqual(["notify", "trusted_query"]);
+    });
+});
+
+/**
+ * The half the ranking could not do. Ranking made the gated rows contiguous; it did not
+ * make them cost less vertical space, and space was the actual mechanism — three
+ * multi-line prereq sentences between the top of the list and the row being looked for.
+ */
+describe("the gated rows collapse behind one counted line", () => {
+  const mountWith = (rows: AutomationPaletteEntry[]) => {
+    getAutomationPalette.mockImplementation(async () => rows);
+    return mount();
+  };
+
+  it("a gated row is not rendered until the fold is opened, and its count is stated",
+    async () => {
+      mountWith(ACTIONS);
+      await screen.findByTestId("palette-row-investigate");
+      // The five runnable ones are there…
+      expect(screen.getByTestId("palette-row-metric_value")).toBeInTheDocument();
+      // …the five gated ones are not, and the panel SAYS so rather than going quiet.
+      expect(screen.queryByTestId("palette-row-trusted_query")).not.toBeInTheDocument();
+      const toggle = screen.getByTestId("palette-gated-toggle-action");
+      expect(toggle).toHaveTextContent("5 steps need setup");
+      expect(toggle).toHaveAttribute("aria-expanded", "false");
+
+      fireEvent.click(toggle);
+      expect(await screen.findByTestId("palette-row-trusted_query")).toBeInTheDocument();
+      expect(screen.getByTestId("palette-gated-toggle-action"))
+        .toHaveAttribute("aria-expanded", "true");
+    });
+
+  it("an opened row keeps the sentence that is its only door", async () => {
+    mountWith(ACTIONS);
+    fireEvent.click(await screen.findByTestId("palette-gated-toggle-action"));
+    expect(await screen.findByTestId("palette-reason-trusted_query"))
+      .toHaveTextContent("promote a verified answer first");
+  });
+
+  it("SEARCHING never hides a match behind the fold", async () => {
+    mountWith(ACTIONS);
+    await screen.findByTestId("palette-row-investigate");
+    fireEvent.change(screen.getByPlaceholderText("Search steps…"),
+      { target: { value: "trusted" } });
+    // Typed the name, got the row — no fold, no toggle, no second click.
+    expect(await screen.findByTestId("palette-row-trusted_query")).toBeInTheDocument();
+    expect(screen.queryByTestId("palette-gated-toggle-action")).not.toBeInTheDocument();
+  });
+
+  it("no gated rows, no fold — the panel never invents an empty one", async () => {
+    mountWith(ACTIONS.filter(e => e.availability === "ready"));
+    await screen.findByTestId("palette-row-investigate");
+    expect(screen.queryByTestId("palette-gated-toggle-action")).not.toBeInTheDocument();
   });
 });

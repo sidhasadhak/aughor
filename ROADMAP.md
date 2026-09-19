@@ -1640,8 +1640,28 @@ approved, nothing later"*).
   picker, then promoted by one click and picked by a second chain — with the stamp resetting, in front of the
   person who made it, when the SQL is edited.
 
-- **DS-17b · The palette ranks what this deployment can actually run.** Item 26 (e), taken separately at the user's
-  direction and FIRST — because it is a defect and the other two are features. `palette.py` sorts by a static weight,
+- **DS-17b · The palette ranks what this deployment can actually run — ✅ BUILT 2026-09-19.** Item 26 (e), taken
+  separately at the user's direction and FIRST — because it is a defect and the other two are features.
+  🔑 **The ranking alone did NOT fix it, and the mutation run is what said so.** The first cut sorted available kinds
+  above gated ones and looked right; its falsifier stayed green against the pre-fix sort, because the fixture had
+  given every gated kind the highest priority so both orders agreed. Re-drawn on the measured live shape — `notify`
+  (30), `brief` (40) and `integration_call` (70) are gated and sit ABOVE four runnable kinds — the arithmetic came
+  out flat: **`trusted_query` is the 9th of 10 action rows under BOTH orders**, so the same eight rows precede it and
+  it occupies the same pixels. Ranking moved it exactly nowhere.
+  **What the mechanism actually was:** the three multi-line prereq sentences above it. So the gated rows now collapse
+  behind one counted line — "5 steps need setup" — which the ranking is what makes possible, by putting them
+  contiguously at the end. The count is the signal the flat list never gave: a reader who cannot see those rows still
+  learns they exist. Not while searching, because a row hidden behind a fold when the person typed its name is the
+  original defect with a lid on it.
+  **A second defect found in passing:** the sort ran priority BEFORE search score, so typing "trusted" ranked
+  priority-10 "Notify" (which merely says *trusted* in its description) above the priority-90 "Trusted query" just
+  named. Relevance now leads; it is inert on an empty query, so it changes exactly the case it is about.
+  **Receipt, taken live 2026-09-19** on the `workspace` connection at :3000: the Actions list renders five runnable
+  rows and one fold, whole and without scrolling, with "Trusted query" fifth and usable where it had been ninth;
+  the fold opens to the five gated kinds, each keeping its sentence. 26 tests, four mutants killed
+  (no-availability-key · priority-before-relevance · collapse-while-searching · fold-open-by-default), seven
+  frontend gates green.
+  **Original note.** `palette.py` sorts by a static weight,
   so a kind whose prereq is unmet on this connection ranks as if it were available, and the sentence explaining why it
   is dimmed can fall below the fold. Available kinds sort above gated ones; the gated ones keep their sentence and
   their door; the order within each group is unchanged. Numbered DS-17b rather than DS-20 because it belongs to the
@@ -6717,7 +6737,9 @@ ARC IP  ✅ ADOPTED 2026-09-14 (§3.17; §6 item 21) — industry packages, chos
         payments & fintech, then insurance.
         The user, 2026-09-17: finish Arc IP before Arc IN
 ARC DS II ✅ ADOPTED 2026-09-19 (§3.7 second movement; §6 item 26, ALL FIVE clauses decided the same day) —
-        the authored step; nothing built. The user's order: DS-17b, then DS-19, then DS-18.
+        the authored step. ✅ DS-17b BUILT 2026-09-19 (ranking was NOT enough — trusted_query is 9th of 10
+        under both orders; the gated rows now collapse behind a counted line, receipt taken live).
+        The user's order: DS-17b, then DS-19, then DS-18.
         Measured the same day: `trusted_query` ships at palette weight 90, below the fold and dimmed
         (0 trusted queries on every connection but `workspace`); it names a `query_id`, never SQL; and
         nothing carries rows to a write-up (`investigate` binds only `question`, and this plane has no
